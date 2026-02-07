@@ -453,9 +453,11 @@ export class CompileQueue implements CompileWorkQueue {
 
     // Compile (track time separately)
     const compileStart = Date.now();
+    const modelLabel = item.context.variantId || item.context.llmModel;
     const compilationResult = await this.containerProvider.compileProject(
       this.containerName,
       project,
+      { label: modelLabel },
     );
     const compileDuration = Date.now() - compileStart;
 
@@ -518,11 +520,13 @@ export class CompileQueue implements CompileWorkQueue {
     const project = await ALProjectManager.loadProject(projectDir);
 
     const testStart = Date.now();
+    const modelLabel = item.context.variantId || item.context.llmModel;
     const testResult = await this.containerProvider.runTests(
       this.containerName,
       project,
       compileResult.compilationResult.artifactPath,
       item.context.manifest.expected.testCodeunitId,
+      { label: modelLabel },
     );
     const testDuration = Date.now() - testStart;
 
@@ -567,6 +571,11 @@ export class CompileQueue implements CompileWorkQueue {
       idRanges: [{ from: 70000, to: 89999 }],
       features: ["NoImplicitWith"],
     };
+
+    // Add target if specified (OnPrem required for HttpClient, NavApp, etc.)
+    if (item.context.manifest.metadata?.target) {
+      appJson["target"] = item.context.manifest.metadata.target;
+    }
 
     // Add test toolkit dependencies if testApp is specified
     if (hasTestApp) {

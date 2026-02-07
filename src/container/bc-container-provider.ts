@@ -37,7 +37,7 @@ import { buildCompileScript, buildTestScript } from "./bc-script-builders.ts";
  * Markers format: "PHASE_START:timestamp" and "PHASE_END:timestamp"
  * Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place
  */
-function logSubTimings(output: string): void {
+function logSubTimings(output: string, contextLog: Logger = log): void {
   const lines = output.split("\n");
   const timestamps: Record<string, number> = {};
 
@@ -62,7 +62,7 @@ function logSubTimings(output: string): void {
     }
   }
   if (Object.keys(timings).length > 0) {
-    log.debug("Sub-timings", timings);
+    contextLog.debug("Sub-timings", timings);
   }
 }
 
@@ -382,6 +382,7 @@ export class BcContainerProvider implements ContainerProvider {
   private buildCompilationResult(
     output: string,
     duration: number,
+    contextLog: Logger = log,
   ): CompilationResult {
     const errors = parseCompilationErrors(output);
     const warnings = parseCompilationWarnings(output);
@@ -389,12 +390,12 @@ export class BcContainerProvider implements ContainerProvider {
     const success = isCompilationSuccessful(output, errors.length);
 
     if (success) {
-      log.info(`Compilation succeeded`, {
+      contextLog.info(`Compilation succeeded`, {
         errors: errors.length,
         warnings: warnings.length,
       });
     } else {
-      log.error(`Compilation failed`, {
+      contextLog.error(`Compilation failed`, {
         errors: errors.length,
         warnings: warnings.length,
       });
@@ -413,8 +414,10 @@ export class BcContainerProvider implements ContainerProvider {
   async compileProject(
     containerName: string,
     project: ALProject,
+    options?: { label?: string },
   ): Promise<CompilationResult> {
-    log.info(`Compiling AL project for container: ${containerName}`);
+    const contextLog = options?.label ? log.child(options.label) : log;
+    contextLog.info(`Compiling AL project for container: ${containerName}`);
 
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
@@ -448,7 +451,7 @@ export class BcContainerProvider implements ContainerProvider {
       );
       const result = await this.executePowerShell(script);
 
-      return this.buildCompilationResult(result.output, Date.now() - startTime);
+      return this.buildCompilationResult(result.output, Date.now() - startTime, contextLog);
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message
@@ -545,8 +548,10 @@ export class BcContainerProvider implements ContainerProvider {
     project: ALProject,
     appFilePath?: string,
     testCodeunitId?: number,
+    options?: { label?: string },
   ): Promise<TestResult> {
-    log.info(`Running tests in container: ${containerName}`);
+    const contextLog = options?.label ? log.child(options.label) : log;
+    contextLog.info(`Running tests in container: ${containerName}`);
 
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
@@ -590,14 +595,14 @@ export class BcContainerProvider implements ContainerProvider {
     const duration = Date.now() - startTime;
 
     // Log sub-timings from PowerShell markers
-    logSubTimings(result.output);
+    logSubTimings(result.output, contextLog);
 
     // Debug: Check for marker presence
     const hasPublishStart = result.output.includes("PUBLISH_START:");
     const hasPublishEnd = result.output.includes("PUBLISH_END:");
     const hasTestStart = result.output.includes("TEST_START:");
     const hasTestEnd = result.output.includes("TEST_END:");
-    log.debug("Markers", {
+    contextLog.debug("Markers", {
       PUBLISH_START: hasPublishStart,
       PUBLISH_END: hasPublishEnd,
       TEST_START: hasTestStart,
@@ -618,12 +623,12 @@ export class BcContainerProvider implements ContainerProvider {
     const { totalTests, passedTests, failedTests, success } =
       calculateTestMetrics(results, allPassed, publishFailed);
 
-    this.logTestResult(success, passedTests, totalTests);
+    this.logTestResult(success, passedTests, totalTests, contextLog);
 
     // Debug: Log raw output when no tests are found (helps diagnose parsing issues)
     if (totalTests === 0) {
-      log.warn("No tests detected");
-      log.debug("Raw output", { output: result.output });
+      contextLog.warn("No tests detected");
+      contextLog.debug("Raw output", { output: result.output });
     }
 
     return {
@@ -716,11 +721,12 @@ export class BcContainerProvider implements ContainerProvider {
     success: boolean,
     passedTests: number,
     totalTests: number,
+    contextLog: Logger = log,
   ): void {
     if (success) {
-      log.info(`Tests passed: ${passedTests}/${totalTests}`);
+      contextLog.info(`Tests passed: ${passedTests}/${totalTests}`);
     } else {
-      log.error(`Tests failed: ${passedTests}/${totalTests} passed`);
+      contextLog.error(`Tests failed: ${passedTests}/${totalTests} passed`);
     }
   }
 

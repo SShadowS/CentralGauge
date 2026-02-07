@@ -21,6 +21,7 @@ export interface ContainerProvider {
   compileProject(
     containerName: string,
     project: ALProject,
+    options?: { label?: string },
   ): Promise<CompilationResult>;
 
   // Publish an app to the container (install and sync)
@@ -34,6 +35,7 @@ export interface ContainerProvider {
     project: ALProject,
     appFilePath?: string,
     testCodeunitId?: number,
+    options?: { label?: string },
   ): Promise<TestResult>;
 
   // File operations
