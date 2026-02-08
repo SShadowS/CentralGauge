@@ -7,16 +7,14 @@ codeunit 80010 "CG-AL-E010 Test"
     var
         Assert: Codeunit Assert;
         LibraryInventory: Codeunit "Library - Inventory";
+        LastMessageText: Text;
 
     [Test]
-    procedure TestEventSubscriberCodeunitExists()
+    procedure TestCodeunitExists()
     var
         AllObj: Record AllObj;
     begin
-        // [SCENARIO] Item Event Subscriber codeunit exists with correct ID
-        // [GIVEN] The codeunit definition
-        // [WHEN] We check for the codeunit in system objects
-        // [THEN] Codeunit 70001 "Item Event Subscriber" exists
+        // [SCENARIO] Item Event Subscriber codeunit exists with correct ID and name
         AllObj.SetRange("Object Type", AllObj."Object Type"::Codeunit);
         AllObj.SetRange("Object ID", 70001);
         Assert.IsTrue(AllObj.FindFirst(), 'Codeunit 70001 should exist');
@@ -24,52 +22,57 @@ codeunit 80010 "CG-AL-E010 Test"
     end;
 
     [Test]
-    procedure TestEventSubscriberCanBeInstantiated()
-    var
-        ItemEventSubscriber: Codeunit "Item Event Subscriber";
-    begin
-        // [SCENARIO] Item Event Subscriber codeunit can be instantiated
-        // [GIVEN] The codeunit "Item Event Subscriber" definition with ID 70001
-        // [WHEN] We create a variable of the codeunit type
-        // [THEN] No error occurs - the codeunit exists and compiles
-        Assert.IsTrue(true, 'Item Event Subscriber codeunit can be instantiated');
-    end;
-
-    [Test]
-    procedure TestEventFiringOnInsert()
+    [HandlerFunctions('MessageHandler')]
+    procedure TestMessageOnInsert()
     var
         Item: Record Item;
     begin
-        // [SCENARIO] Event subscriber fires when item is inserted without errors
+        // [SCENARIO] Subscriber fires and displays a message containing the item number
         // [GIVEN] The event subscriber is bound to Item.OnAfterInsertEvent
+        LastMessageText := '';
+
         // [WHEN] We insert an item
         LibraryInventory.CreateItem(Item);
 
-        // [THEN] No error occurs - the event subscriber executes successfully
-        Assert.IsTrue(Item."No." <> '', 'Item should be created successfully');
+        // [THEN] A message was displayed containing the item number
+        Assert.IsTrue(StrPos(LastMessageText, Item."No.") > 0,
+            'Message should contain the item number ' + Item."No.");
 
         // Cleanup
         Item.Delete();
     end;
 
     [Test]
-    procedure TestMultipleItemInserts()
+    [HandlerFunctions('MessageHandler')]
+    procedure TestMultipleInsertsEachFireMessage()
     var
         Item1: Record Item;
         Item2: Record Item;
         Item3: Record Item;
     begin
-        // [SCENARIO] Event subscriber fires for each item insert without errors
+        // [SCENARIO] Each item insert fires the subscriber independently
         // [GIVEN] The event subscriber is bound to OnAfterInsertEvent
-        // [WHEN] We insert multiple items
-        LibraryInventory.CreateItem(Item1);
-        LibraryInventory.CreateItem(Item2);
-        LibraryInventory.CreateItem(Item3);
 
-        // [THEN] All items are created successfully (event fires each time without error)
-        Assert.IsTrue(Item1."No." <> '', 'First item should be created');
-        Assert.IsTrue(Item2."No." <> '', 'Second item should be created');
-        Assert.IsTrue(Item3."No." <> '', 'Third item should be created');
+        // [WHEN] We insert the first item
+        LastMessageText := '';
+        LibraryInventory.CreateItem(Item1);
+        // [THEN] Message contains first item number
+        Assert.IsTrue(StrPos(LastMessageText, Item1."No.") > 0,
+            'Message should contain first item number ' + Item1."No.");
+
+        // [WHEN] We insert the second item
+        LastMessageText := '';
+        LibraryInventory.CreateItem(Item2);
+        // [THEN] Message contains second item number
+        Assert.IsTrue(StrPos(LastMessageText, Item2."No.") > 0,
+            'Message should contain second item number ' + Item2."No.");
+
+        // [WHEN] We insert the third item
+        LastMessageText := '';
+        LibraryInventory.CreateItem(Item3);
+        // [THEN] Message contains third item number
+        Assert.IsTrue(StrPos(LastMessageText, Item3."No.") > 0,
+            'Message should contain third item number ' + Item3."No.");
 
         // Cleanup
         Item1.Delete();
@@ -78,19 +81,21 @@ codeunit 80010 "CG-AL-E010 Test"
     end;
 
     [Test]
-    procedure TestItemModificationAfterInsert()
+    [HandlerFunctions('MessageHandler')]
+    procedure TestSubscriberDoesNotBlockModification()
     var
         Item: Record Item;
     begin
-        // [SCENARIO] Item can be modified after insert (event subscriber doesn't block)
-        // [GIVEN] An inserted item
+        // [SCENARIO] Item can be modified after insert (subscriber doesn't block)
+        // [GIVEN] An inserted item (subscriber fires)
+        LastMessageText := '';
         LibraryInventory.CreateItem(Item);
 
-        // [WHEN] We modify the item
+        // [WHEN] We modify the item description
         Item.Description := 'Modified after insert';
         Item.Modify();
 
-        // [THEN] Modification succeeds
+        // [THEN] Modification persists
         Item.Get(Item."No.");
         Assert.AreEqual('Modified after insert', Item.Description, 'Item should be modifiable after insert');
 
@@ -99,13 +104,15 @@ codeunit 80010 "CG-AL-E010 Test"
     end;
 
     [Test]
-    procedure TestItemDeletionAfterInsert()
+    [HandlerFunctions('MessageHandler')]
+    procedure TestSubscriberDoesNotBlockDeletion()
     var
         Item: Record Item;
         ItemNo: Code[20];
     begin
-        // [SCENARIO] Item can be deleted after insert (event subscriber doesn't block deletion)
-        // [GIVEN] An inserted item
+        // [SCENARIO] Item can be deleted after insert (subscriber doesn't block deletion)
+        // [GIVEN] An inserted item (subscriber fires)
+        LastMessageText := '';
         LibraryInventory.CreateItem(Item);
         ItemNo := Item."No.";
 
@@ -116,23 +123,9 @@ codeunit 80010 "CG-AL-E010 Test"
         Assert.IsFalse(Item.Get(ItemNo), 'Item should be deleted');
     end;
 
-    [Test]
-    procedure TestItemInsertWithDescription()
-    var
-        Item: Record Item;
+    [MessageHandler]
+    procedure MessageHandler(Message: Text[1024])
     begin
-        // [SCENARIO] Event subscriber handles items with descriptions
-        // [GIVEN] The event subscriber is bound to OnAfterInsertEvent
-        // [WHEN] We insert an item with a description
-        LibraryInventory.CreateItem(Item);
-        Item.Description := 'Test Item for Event Subscriber';
-        Item.Modify();
-
-        // [THEN] Item is created and modified without errors
-        Item.Get(Item."No.");
-        Assert.AreEqual('Test Item for Event Subscriber', Item.Description, 'Item description should be preserved');
-
-        // Cleanup
-        Item.Delete();
+        LastMessageText := Message;
     end;
 }
