@@ -33,6 +33,7 @@ codeunit 80009 "CG-AL-E009 Test"
         OutStream: OutStream;
         InStream: InStream;
         XMLText: Text;
+        Line: Text;
     begin
         // [SCENARIO] Item Export XMLport can export items to XML
         // [GIVEN] An item record
@@ -47,7 +48,11 @@ codeunit 80009 "CG-AL-E009 Test"
 
         // [THEN] XML content is generated
         TempBlob.CreateInStream(InStream);
-        InStream.Read(XMLText);
+        XMLText := '';
+        while not InStream.EOS() do begin
+            InStream.ReadText(Line);
+            XMLText += Line;
+        end;
         Assert.AreNotEqual('', XMLText, 'XML content should be generated');
 
         // Cleanup
@@ -63,6 +68,7 @@ codeunit 80009 "CG-AL-E009 Test"
         OutStream: OutStream;
         InStream: InStream;
         XMLText: Text;
+        Line: Text;
     begin
         // [SCENARIO] Exported XML contains all required fields: No, Description, Unit Price, Inventory
         // [GIVEN] An item with specific data
@@ -81,7 +87,11 @@ codeunit 80009 "CG-AL-E009 Test"
 
         // [THEN] XML contains all required fields
         TempBlob.CreateInStream(InStream);
-        InStream.Read(XMLText);
+        XMLText := '';
+        while not InStream.EOS() do begin
+            InStream.ReadText(Line);
+            XMLText += Line;
+        end;
         Assert.IsTrue(XMLText.Contains(Item."No."), 'XML should contain item No');
         Assert.IsTrue(XMLText.Contains('Test Item Description'), 'XML should contain Description');
         Assert.IsTrue(XMLText.Contains('99.99') or XMLText.Contains('99,99'), 'XML should contain Unit Price');
@@ -102,6 +112,7 @@ codeunit 80009 "CG-AL-E009 Test"
         OutStream: OutStream;
         InStream: InStream;
         XMLText: Text;
+        Line: Text;
     begin
         // [SCENARIO] XMLport can export multiple items
         // [GIVEN] Multiple item records
@@ -117,7 +128,11 @@ codeunit 80009 "CG-AL-E009 Test"
 
         // [THEN] XML contains both items
         TempBlob.CreateInStream(InStream);
-        InStream.Read(XMLText);
+        XMLText := '';
+        while not InStream.EOS() do begin
+            InStream.ReadText(Line);
+            XMLText += Line;
+        end;
         Assert.IsTrue(XMLText.Contains(Item1."No."), 'XML should contain first item');
         Assert.IsTrue(XMLText.Contains(Item2."No."), 'XML should contain second item');
 
@@ -135,6 +150,7 @@ codeunit 80009 "CG-AL-E009 Test"
         OutStream: OutStream;
         InStream: InStream;
         XMLText: Text;
+        Line: Text;
     begin
         // [SCENARIO] Exported XML has correct element structure (Items root with Item children)
         // [GIVEN] An item record
@@ -149,7 +165,11 @@ codeunit 80009 "CG-AL-E009 Test"
 
         // [THEN] XML has Items root element and Item child element
         TempBlob.CreateInStream(InStream);
-        InStream.Read(XMLText);
+        XMLText := '';
+        while not InStream.EOS() do begin
+            InStream.ReadText(Line);
+            XMLText += Line;
+        end;
         Assert.IsTrue(XMLText.Contains('<Items'), 'XML should have Items root element');
         Assert.IsTrue(XMLText.Contains('<Item'), 'XML should have Item child elements');
         Assert.IsTrue(XMLText.Contains('</Items>'), 'XML should have closing Items tag');

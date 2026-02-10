@@ -30,7 +30,7 @@
     "lint": "deno lint",
     "fmt": "deno fmt",
     "check": "deno check cli/centralgauge.ts",
-    "deploy": "npx wrangler pages deploy reports-output/"
+    "deploy": "CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b npx wrangler pages deploy reports-output/ --project-name centralguage --commit-dirty=true"
   },
   "imports": {
     "@cliffy/prompt": "jsr:@cliffy/prompt@^1.0.0-rc.8",

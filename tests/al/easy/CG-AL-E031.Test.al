@@ -29,6 +29,8 @@ codeunit 80031 "CG-AL-E031 Test"
         Assert.AreEqual(WorkDate(), Plan."Created Date", 'Created Date should default to WorkDate on insert');
         Assert.AreNotEqual(0DT, Plan."Last Modified DateTime", 'Last Modified DateTime should be set on insert');
 
+        Plan.Active := false;
+        Plan.Modify(false);
         Plan.Delete();
     end;
 
@@ -65,15 +67,16 @@ codeunit 80031 "CG-AL-E031 Test"
         Plan.Description := 'Test plan';
         Plan.Validate("Monthly Fee", 1);
         Plan.Insert(true);
+        Commit();
 
-        asserterror Plan.Delete();
+        asserterror Plan.Delete(true);
         Assert.AreEqual('Cannot delete active subscription plan', GetLastErrorText(), 'Active delete must be blocked');
 
         Plan.Get(CodeValue);
         Plan.Active := false;
         Plan.Modify(true);
 
-        Plan.Delete();
+        Plan.Delete(true);
 
         Assert.IsFalse(Plan.Get(CodeValue), 'Plan should be deleted when inactive');
     end;
