@@ -23,7 +23,7 @@ function createMockTask(overrides?: Partial<FailingTask>): FailingTask {
     compilationErrors: [],
     output: "COMPILE_ERROR",
     taskYamlPath:
-      "U:/Git/CentralGuage/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
+      "U:/Git/CentralGauge/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
     testAlPath: "tests/al/easy/CG-AL-E053.Test.al",
     generatedCodePath:
       "debug/artifacts/CG-AL-E053/test-model/attempt_1/project",
@@ -35,7 +35,7 @@ function createMockTask(overrides?: Partial<FailingTask>): FailingTask {
 Deno.test("parseAnalysisResponse: uses task.taskYamlPath for task_yaml fixes, not LLM path", () => {
   const task = createMockTask({
     taskYamlPath:
-      "U:/Git/CentralGuage/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
+      "U:/Git/CentralGauge/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
   });
 
   // LLM returns wrong path (missing suffix, wrong extension)
@@ -60,7 +60,7 @@ Deno.test("parseAnalysisResponse: uses task.taskYamlPath for task_yaml fixes, no
     // Should use the correct path from task, not the LLM's wrong path
     assertEquals(
       result.fix.filePath,
-      "U:/Git/CentralGuage/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
+      "U:/Git/CentralGauge/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
     );
     assertEquals(result.fix.fileType, "task_yaml");
   }
@@ -99,7 +99,7 @@ Deno.test("parseAnalysisResponse: uses task.testAlPath for test_al fixes, not LL
 Deno.test("parseAnalysisResponse: handles missing filePath in LLM response", () => {
   const task = createMockTask({
     taskYamlPath:
-      "U:/Git/CentralGuage/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
+      "U:/Git/CentralGauge/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
   });
 
   // LLM doesn't provide filePath at all
@@ -124,7 +124,7 @@ Deno.test("parseAnalysisResponse: handles missing filePath in LLM response", () 
     // Should still use correct path from task
     assertEquals(
       result.fix.filePath,
-      "U:/Git/CentralGuage/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
+      "U:/Git/CentralGauge/tasks/easy/CG-AL-E053-extend-cardpageid.yml",
     );
   }
 });

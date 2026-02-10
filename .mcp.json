@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "tree-sitter-mcp": {
+      "command": "cmd",
+      "args": [
+        "/c",
+        "npx",
+        "@nendo/tree-sitter-mcp",
+        "--mcp"
+      ],
+      "cwd": "/u/git/CentralGauge/"
+    }
+  }
+}

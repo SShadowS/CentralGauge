@@ -14,8 +14,8 @@ This guide covers setting up a development environment for contributing to Centr
 
 ```bash
 # Clone the repository
-git clone https://github.com/SShadowS/CentralGuage.git
-cd CentralGuage
+git clone https://github.com/SShadowS/CentralGauge.git
+cd CentralGauge
 
 # Copy environment file
 cp .env.example .env
@@ -68,7 +68,7 @@ deno task coverage:html
 ## Project Structure
 
 ```
-CentralGuage/
+CentralGauge/
 ├── cli/                    # CLI commands and helpers
 │   ├── commands/           # Command implementations
 │   │   ├── bench-command.ts

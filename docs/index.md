@@ -58,10 +58,10 @@ CentralGauge is an open-source benchmark suite for evaluating large language mod
 
 | Resource                                                                          | Description                |
 | --------------------------------------------------------------------------------- | -------------------------- |
-| [GitHub Repository](https://github.com/SShadowS/CentralGuage)                     | Source code and issues     |
-| [Example Tasks](https://github.com/SShadowS/CentralGuage/tree/master/tasks)       | Benchmark task definitions |
-| [Benchmark Results](https://github.com/SShadowS/CentralGuage/tree/master/results) | Sample benchmark outputs   |
+| [GitHub Repository](https://github.com/SShadowS/CentralGauge)                     | Source code and issues     |
+| [Example Tasks](https://github.com/SShadowS/CentralGauge/tree/master/tasks)       | Benchmark task definitions |
+| [Benchmark Results](https://github.com/SShadowS/CentralGauge/tree/master/results) | Sample benchmark outputs   |
 
 ## License
 
-CentralGauge is released under the MIT License. See [LICENSE](https://github.com/SShadowS/CentralGuage/blob/master/LICENSE) for details.
+CentralGauge is released under the MIT License. See [LICENSE](https://github.com/SShadowS/CentralGauge/blob/master/LICENSE) for details.

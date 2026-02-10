@@ -29,7 +29,7 @@ mcpServers:
     args:
       - run
       - --allow-all
-      - U:/Git/CentralGuage/mcp/al-tools-server.ts
+      - U:/Git/CentralGauge/mcp/al-tools-server.ts
 
 limits:
   maxCompileAttempts: 10

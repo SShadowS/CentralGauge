@@ -82,8 +82,8 @@ Get-Module -ListAvailable bccontainerhelper
 ## Step 4: Clone CentralGauge
 
 ```bash
-git clone https://github.com/SShadowS/CentralGuage.git
-cd CentralGuage
+git clone https://github.com/SShadowS/CentralGauge.git
+cd CentralGauge
 ```
 
 ## Step 5: Configure API Keys

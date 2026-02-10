@@ -1,8 +1,8 @@
 site_name: CentralGauge
 site_description: Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code
-site_url: https://sshadows.github.io/CentralGuage/
-repo_url: https://github.com/SShadowS/CentralGuage
-repo_name: SShadowS/CentralGuage
+site_url: https://sshadows.github.io/CentralGauge/
+repo_url: https://github.com/SShadowS/CentralGauge
+repo_name: SShadowS/CentralGauge
 edit_uri: edit/master/docs/
 
 theme:

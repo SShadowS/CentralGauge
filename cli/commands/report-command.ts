@@ -331,7 +331,7 @@ function generateSummaryHtml(
 function generateFooterHtml(version: string): string {
   const isoTimestamp = new Date().toISOString();
   return `<p>CentralGauge v${version} &bull; Generated ${isoTimestamp}</p>
-    <p><a href="https://github.com/SShadowS/CentralGuage" target="_blank" rel="noopener">GitHub</a></p>`;
+    <p><a href="https://github.com/SShadowS/CentralGauge" target="_blank" rel="noopener">GitHub</a></p>`;
 }
 
 /**

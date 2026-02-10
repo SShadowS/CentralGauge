@@ -39,8 +39,8 @@ CentralGauge evaluates large language models on their ability to generate, debug
 curl -fsSL https://deno.land/x/install/install.sh | sh
 
 # Clone the repo
-git clone https://github.com/SShadowS/CentralGuage.git
-cd CentralGuage
+git clone https://github.com/SShadowS/CentralGauge.git
+cd CentralGauge
 
 # Set up your API keys
 cp .env.example .env

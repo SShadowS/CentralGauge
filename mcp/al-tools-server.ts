@@ -1800,7 +1800,7 @@ if (import.meta.main) {
   const useHttp = args.includes("--http");
 
   // Parse --workspace-map for sandbox mode path translation
-  // Format: --workspace-map "C:\workspace=U:\Git\CentralGuage\results\..."
+  // Format: --workspace-map "C:\workspace=U:\Git\CentralGauge\results\..."
   const mapIndex = args.indexOf("--workspace-map");
   const mapArg = mapIndex !== -1 ? args[mapIndex + 1] : undefined;
   if (mapArg) {
