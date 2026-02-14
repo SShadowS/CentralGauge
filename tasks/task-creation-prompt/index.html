@@ -1,0 +1,3498 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/tasks/task-creation-prompt/">
+      
+      
+        <link rel="prev" href="../categories/">
+      
+      
+        <link rel="next" href="../../architecture/overview/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+      
+        <title>Task Creation Guide - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#centralgauge-task-creation-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Task Creation Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#your-goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your Goal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-al" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is AL?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-yaml-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task YAML Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Task YAML Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#id-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ID Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Naming
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-file-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test File Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Test File Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-codeunit-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Codeunit IDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helper-object-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Object IDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#helper-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Helper Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mock-implementations-for-interface-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mock Implementations (for interface tests)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enums-provided-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enums (provided dependencies)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#difficulty-levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Difficulty Levels
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Difficulty Levels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#easy-cg-al-e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Easy (CG-AL-E###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#medium-cg-al-m" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Medium (CG-AL-M###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hard-cg-al-h" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard (CG-AL-H###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#critical-rules-for-task-descriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Critical Rules for Task Descriptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Critical Rules for Task Descriptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#do-not-add-guidance-or-hints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO NOT Add Guidance or Hints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-exact-error-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Exact Error Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-field-types-and-names-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Field Types and Names Exactly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-procedure-signatures-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Procedure Signatures Exactly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#critical-rules-for-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Critical Rules for Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Critical Rules for Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#never-use-placeholder-assertions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NEVER Use Placeholder Assertions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-everything-specified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Everything Specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-boundary-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Boundary Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-edge-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Edge Cases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interface-tests-need-mock-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface Tests Need Mock Implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#al-object-types-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AL Object Types Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AL Object Types Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page-card" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page (Card)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codeunit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codeunit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interface-no-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface (NO ID!)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table Extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-subscriber" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Subscriber
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ideas-for-challenging-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ideas for Challenging Tasks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ideas for Challenging Tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-al-specific-knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test AL-Specific Knowledge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-business-central-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Business Central Conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-complex-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Complex Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Output Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-task-yaml-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Task YAML File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-test-al-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Test AL File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-helper-files-if-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Helper Files (if needed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checklist-before-submitting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checklist Before Submitting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-complete-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Complete Task
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Complete Task">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-yaml-taskseasycg-al-e020-discount-calculatoryml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task YAML (tasks/easy/CG-AL-E020-discount-calculator.yml)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-file-testsaleasycg-al-e020testal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test File (tests/al/easy/CG-AL-E020.Test.al)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#your-goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your Goal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-al" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is AL?
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#task-yaml-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task YAML Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Task YAML Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#id-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ID Format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#file-naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File Naming
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-file-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test File Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Test File Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#basic-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Basic Structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-codeunit-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Codeunit IDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helper-object-ids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Object IDs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#helper-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Files
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Helper Files">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#mock-implementations-for-interface-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mock Implementations (for interface tests)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enums-provided-dependencies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enums (provided dependencies)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#difficulty-levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Difficulty Levels
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Difficulty Levels">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#easy-cg-al-e" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Easy (CG-AL-E###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#medium-cg-al-m" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Medium (CG-AL-M###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hard-cg-al-h" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard (CG-AL-H###)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#critical-rules-for-task-descriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Critical Rules for Task Descriptions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Critical Rules for Task Descriptions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#do-not-add-guidance-or-hints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO NOT Add Guidance or Hints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-exact-error-messages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Exact Error Messages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-field-types-and-names-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Field Types and Names Exactly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#do-specify-procedure-signatures-exactly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DO Specify Procedure Signatures Exactly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#critical-rules-for-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Critical Rules for Tests
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Critical Rules for Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#never-use-placeholder-assertions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NEVER Use Placeholder Assertions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-everything-specified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Everything Specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-boundary-conditions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Boundary Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-edge-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Edge Cases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interface-tests-need-mock-implementations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface Tests Need Mock Implementations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#al-object-types-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AL Object Types Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AL Object Types Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#table" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#page-card" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Page (Card)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#codeunit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Codeunit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enum" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enum
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#interface-no-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interface (NO ID!)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#table-extension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table Extension
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-subscriber" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event Subscriber
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ideas-for-challenging-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ideas for Challenging Tasks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ideas for Challenging Tasks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-al-specific-knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test AL-Specific Knowledge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-business-central-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Business Central Conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-complex-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Complex Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#output-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Output Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Output Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-task-yaml-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Task YAML File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-test-al-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Test AL File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-helper-files-if-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Helper Files (if needed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#checklist-before-submitting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Checklist Before Submitting
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#example-complete-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example Complete Task
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Example Complete Task">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-yaml-taskseasycg-al-e020-discount-calculatoryml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task YAML (tasks/easy/CG-AL-E020-discount-calculator.yml)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-file-testsaleasycg-al-e020testal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test File (tests/al/easy/CG-AL-E020.Test.al)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/tasks/task-creation-prompt.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="centralgauge-task-creation-guide">CentralGauge Task Creation Guide<a class="headerlink" href="#centralgauge-task-creation-guide" title="Permanent link">&para;</a></h1>
+<p>You are being asked to create benchmark tasks for <strong>CentralGauge</strong>, an open-source benchmark for evaluating LLMs on AL (Application Language) code generation for Microsoft Dynamics 365 Business Central.</p>
+<h2 id="your-goal">Your Goal<a class="headerlink" href="#your-goal" title="Permanent link">&para;</a></h2>
+<p>Create challenging but fair benchmark tasks that test whether LLMs truly understand AL syntax, semantics, and Business Central conventions - not just pattern matching.</p>
+<hr />
+<h2 id="what-is-al">What is AL?<a class="headerlink" href="#what-is-al" title="Permanent link">&para;</a></h2>
+<p>AL (Application Language) is the programming language for Microsoft Dynamics 365 Business Central. It's used to create:</p>
+<ul>
+<li><strong>Tables</strong> - Data storage with fields, keys, triggers, and relations</li>
+<li><strong>Pages</strong> - User interfaces (Cards, Lists, API pages)</li>
+<li><strong>Codeunits</strong> - Business logic containers</li>
+<li><strong>Reports</strong> - Data extraction and presentation</li>
+<li><strong>Enums</strong> - Type-safe option values</li>
+<li><strong>Interfaces</strong> - Contract definitions for polymorphism</li>
+<li><strong>Table Extensions</strong> - Extend existing tables with new fields</li>
+<li><strong>Page Extensions</strong> - Extend existing pages with new controls/actions</li>
+<li><strong>XMLports</strong> - Data import/export</li>
+<li><strong>Queries</strong> - SQL-like data retrieval</li>
+</ul>
+<hr />
+<h2 id="task-yaml-format">Task YAML Format<a class="headerlink" href="#task-yaml-format" title="Permanent link">&para;</a></h2>
+<p>Each task is defined in a <code>.yml</code> file with this structure:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CG-AL-XXXX</span><span class="w"> </span><span class="c1"># Unique ID (E=Easy, M=Medium, H=Hard)</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">prompt_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code-gen.md</span><span class="w"> </span><span class="c1"># Always use this</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">fix_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bugfix.md</span><span class="w"> </span><span class="c1"># Always use this</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">max_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span><span class="w"> </span><span class="c1"># Always 2 (first attempt + one retry)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="no">Clear description of what to build.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="no">Include specific requirements:</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="no">- Object names and IDs</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="no">- Field names, types, and constraints</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="no">- Procedure signatures</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="no">- Expected behaviors</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="no">- Error messages (exact text if validation is tested)</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="nt">expected</span><span class="p">:</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">  </span><span class="nt">compile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">  </span><span class="nt">testApp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests/al/{difficulty}/CG-AL-XXXX.Test.al</span>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="nt">metrics</span><span class="p">:</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compile_pass</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests_pass</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pass_attempt</span>
+</code></pre></div>
+<h3 id="id-format">ID Format<a class="headerlink" href="#id-format" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>CG-AL-E###</code> - Easy tasks (001-999)</li>
+<li><code>CG-AL-M###</code> - Medium tasks (001-999)</li>
+<li><code>CG-AL-H###</code> - Hard tasks (001-999)</li>
+</ul>
+<h3 id="file-naming">File Naming<a class="headerlink" href="#file-naming" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Task YAML: <code>tasks/{difficulty}/CG-AL-{ID}-{short-name}.yml</code></li>
+<li>Test file: <code>tests/al/{difficulty}/CG-AL-{ID}.Test.al</code></li>
+<li>Helper files: <code>tests/al/{difficulty}/CG-AL-{ID}.{HelperName}.al</code></li>
+</ul>
+<hr />
+<h2 id="test-file-format">Test File Format<a class="headerlink" href="#test-file-format" title="Permanent link">&para;</a></h2>
+<p>Tests are AL codeunits that verify the LLM's generated code works correctly.</p>
+<h3 id="basic-structure">Basic Structure<a class="headerlink" href="#basic-structure" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>codeunit 80XXX &quot;CG-AL-XXXX Test&quot;
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>{
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    Subtype = Test;
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    TestPermissions = Disabled;
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    var
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>        Assert: Codeunit Assert;
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        LibraryRandom: Codeunit &quot;Library - Random&quot;;
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>    [Test]
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>    procedure TestName()
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>    var
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>        // Variables
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>    begin
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>        // [SCENARIO] What we&#39;re testing
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>        // [GIVEN] Initial conditions
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>        // [WHEN] Action taken
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>        // [THEN] Expected result
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>        // Actual test code with assertions
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    end;
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>}
+</code></pre></div>
+<h3 id="test-codeunit-ids">Test Codeunit IDs<a class="headerlink" href="#test-codeunit-ids" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Easy tests: 80001-80099</li>
+<li>Medium tests: 80100-80199</li>
+<li>Hard tests: 80200-80299</li>
+</ul>
+<h3 id="helper-object-ids">Helper Object IDs<a class="headerlink" href="#helper-object-ids" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Mock codeunits/enums: 70090-70099</li>
+</ul>
+<hr />
+<h2 id="helper-files">Helper Files<a class="headerlink" href="#helper-files" title="Permanent link">&para;</a></h2>
+<p>Some tasks require helper objects that are provided to the LLM (not generated by it).</p>
+<h3 id="mock-implementations-for-interface-tests">Mock Implementations (for interface tests)<a class="headerlink" href="#mock-implementations-for-interface-tests" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>codeunit 70096 &quot;CG-AL-E008 Mock Processor&quot; implements &quot;Payment Processor&quot;
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>{
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    procedure ProcessPayment(Amount: Decimal; PaymentMethod: Text): Boolean
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    begin
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>        exit(Amount &gt; 0);  // Simple mock logic
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    end;
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    // ... other interface methods
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>}
+</code></pre></div>
+<h3 id="enums-provided-dependencies">Enums (provided dependencies)<a class="headerlink" href="#enums-provided-dependencies" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>enum 70098 &quot;CG Product Type&quot;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>{
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    Extensible = false;
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>    value(0; Standard) { Caption = &#39;Standard&#39;; }
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    value(1; Food) { Caption = &#39;Food&#39;; }
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    value(2; Books) { Caption = &#39;Books&#39;; }
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>}
+</code></pre></div>
+<hr />
+<h2 id="difficulty-levels">Difficulty Levels<a class="headerlink" href="#difficulty-levels" title="Permanent link">&para;</a></h2>
+<h3 id="easy-cg-al-e">Easy (CG-AL-E###)<a class="headerlink" href="#easy-cg-al-e" title="Permanent link">&para;</a></h3>
+<p><strong>What makes it Easy:</strong></p>
+<ul>
+<li>Single object creation</li>
+<li>Standard patterns with minimal complexity</li>
+<li>Basic syntax knowledge</li>
+<li>Few or no edge cases</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<ul>
+<li>Create a simple table with 3-4 fields</li>
+<li>Create a basic enum with options</li>
+<li>Create a page for an existing table</li>
+<li>Create a simple codeunit with one procedure</li>
+<li>Create a basic interface definition</li>
+<li>Create a simple table extension</li>
+</ul>
+<h3 id="medium-cg-al-m">Medium (CG-AL-M###)<a class="headerlink" href="#medium-cg-al-m" title="Permanent link">&para;</a></h3>
+<p><strong>What makes it Medium:</strong></p>
+<ul>
+<li>Multiple related objects</li>
+<li>Complex validation logic</li>
+<li>Triggers with business rules</li>
+<li>Error handling requirements</li>
+<li>Cross-object interactions</li>
+<li>API pages with CRUD operations</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<ul>
+<li>Table with complex validation triggers (date ranges, status transitions)</li>
+<li>Multi-object scenarios (table + page + codeunit)</li>
+<li>Interface implementation</li>
+<li>Reports with calculations</li>
+<li>Workflow-like state machines</li>
+<li>Integration scenarios with HTTP calls</li>
+</ul>
+<h3 id="hard-cg-al-h">Hard (CG-AL-H###)<a class="headerlink" href="#hard-cg-al-h" title="Permanent link">&para;</a></h3>
+<p><strong>What makes it Hard:</strong></p>
+<ul>
+<li>Complex conditional logic with many branches</li>
+<li>Multiple interacting rules</li>
+<li>Precise mathematical calculations</li>
+<li>Boundary condition handling</li>
+<li>Country/region-specific logic</li>
+<li>Performance-sensitive operations</li>
+<li>Advanced patterns (dependency injection, events)</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<ul>
+<li>Tax calculator with tiered rates by country and product type</li>
+<li>Multi-currency conversion with rounding rules</li>
+<li>Complex discount engines</li>
+<li>Inventory costing algorithms</li>
+<li>Posting routines with multiple validations</li>
+</ul>
+<hr />
+<h2 id="critical-rules-for-task-descriptions">Critical Rules for Task Descriptions<a class="headerlink" href="#critical-rules-for-task-descriptions" title="Permanent link">&para;</a></h2>
+<h3 id="do-not-add-guidance-or-hints">DO NOT Add Guidance or Hints<a class="headerlink" href="#do-not-add-guidance-or-hints" title="Permanent link">&para;</a></h3>
+<p><strong>BAD - This guides the model:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="no">Create an interface called &quot;Payment Processor&quot;</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="no">(note: interfaces in AL do not use numeric IDs)</span>
+</code></pre></div>
+<p><strong>GOOD - This tests the model's knowledge:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="no">Create an interface called &quot;Payment Processor&quot;</span>
+</code></pre></div>
+<p>If a model incorrectly adds an ID to an interface, that's a valid test failure - it shows the model doesn't understand AL syntax.</p>
+<h3 id="do-specify-exact-error-messages">DO Specify Exact Error Messages<a class="headerlink" href="#do-specify-exact-error-messages" title="Permanent link">&para;</a></h3>
+<p>If you're testing validation, specify the exact error message:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="no">OnDelete trigger to prevent deletion of Active contracts.</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="no">Error message must be exactly: &quot;Cannot delete active contract&quot;</span>
+</code></pre></div>
+<p>This allows precise test assertions.</p>
+<h3 id="do-specify-field-types-and-names-exactly">DO Specify Field Types and Names Exactly<a class="headerlink" href="#do-specify-field-types-and-names-exactly" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="no">Fields:</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="no">- Contract No. (Code[20], primary key)</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="no">- Customer No. (Code[20], with TableRelation to Customer)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">  </span><span class="no">- Start Date (Date)</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="no">- Contract Value (Decimal)</span>
+</code></pre></div>
+<h3 id="do-specify-procedure-signatures-exactly">DO Specify Procedure Signatures Exactly<a class="headerlink" href="#do-specify-procedure-signatures-exactly" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="no">CalculateTax(Amount: Decimal; CountryCode: Code[2]; ProductType: Enum &quot;CG Product Type&quot;): Decimal</span>
+</code></pre></div>
+<hr />
+<h2 id="critical-rules-for-tests">Critical Rules for Tests<a class="headerlink" href="#critical-rules-for-tests" title="Permanent link">&para;</a></h2>
+<h3 id="never-use-placeholder-assertions">NEVER Use Placeholder Assertions<a class="headerlink" href="#never-use-placeholder-assertions" title="Permanent link">&para;</a></h3>
+<p><strong>BAD:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>[Test]
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>procedure TestSomething()
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>begin
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    Assert.IsTrue(true, &#39;This always passes&#39;);  // USELESS
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>end;
+</code></pre></div>
+<p><strong>GOOD:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>[Test]
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>procedure TestSomething()
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>var
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    Result: Decimal;
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>begin
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    Result := Calculator.Add(2, 3);
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>    Assert.AreEqual(5, Result, &#39;Addition should return correct sum&#39;);
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>end;
+</code></pre></div>
+<h3 id="test-everything-specified">Test Everything Specified<a class="headerlink" href="#test-everything-specified" title="Permanent link">&para;</a></h3>
+<p>If the task says "Active field defaults to true", test it:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>[Test]
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>procedure TestActiveDefaultValue()
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>var
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    ProductCategory: Record &quot;Product Category&quot;;
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    TestCode: Code[20];
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>begin
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    TestCode := CopyStr(LibraryRandom.RandText(10), 1, 20);
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    ProductCategory.Init();
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>    ProductCategory.Code := TestCode;
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    ProductCategory.Description := &#39;Test&#39;;
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    ProductCategory.&quot;Created Date&quot; := WorkDate();
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>    // Note: Active NOT explicitly set
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>    ProductCategory.Insert(true);
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>    Clear(ProductCategory);
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a>    ProductCategory.Get(TestCode);
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a>    Assert.IsTrue(ProductCategory.Active, &#39;Active should default to true via InitValue&#39;);
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a>    ProductCategory.Delete();
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>end;
+</code></pre></div>
+<h3 id="test-boundary-conditions">Test Boundary Conditions<a class="headerlink" href="#test-boundary-conditions" title="Permanent link">&para;</a></h3>
+<p>If the task says "tax is 7% for amounts &gt;= 100 and &lt; 1000":</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>[Test]
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>procedure TestUS_JustBelowLowerThreshold_NoTax()
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>begin
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    // $99.99 should have 0% tax
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    Result := TaxCalculator.CalculateTax(99.99, &#39;US&#39;, &quot;CG Product Type&quot;::Standard);
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    Assert.AreEqual(0, Result, &#39;US amount 99.99 should have 0% tax&#39;);
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>end;
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>[Test]
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>procedure TestUS_ExactlyAtLowerThreshold_7Percent()
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>begin
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>    // $100 exactly should have 7% tax
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>    Result := TaxCalculator.CalculateTax(100, &#39;US&#39;, &quot;CG Product Type&quot;::Standard);
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>    Assert.AreEqual(7, Result, &#39;US amount exactly 100 should have 7% tax&#39;);
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>end;
+</code></pre></div>
+<h3 id="test-edge-cases">Test Edge Cases<a class="headerlink" href="#test-edge-cases" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Negative amounts</li>
+<li>Zero amounts</li>
+<li>Empty strings</li>
+<li>Unknown/invalid codes</li>
+<li>Maximum length strings</li>
+</ul>
+<h3 id="interface-tests-need-mock-implementations">Interface Tests Need Mock Implementations<a class="headerlink" href="#interface-tests-need-mock-implementations" title="Permanent link">&para;</a></h3>
+<p>Interfaces can't be instantiated directly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>[Test]
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>procedure TestProcessPayment()
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>var
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>    PaymentProcessor: Interface &quot;Payment Processor&quot;;
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>    MockProcessor: Codeunit &quot;CG-AL-E008 Mock Processor&quot;;
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>begin
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>    PaymentProcessor := MockProcessor;
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>    Assert.IsTrue(PaymentProcessor.ProcessPayment(100.00, &#39;Card&#39;), &#39;Should process&#39;);
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>end;
+</code></pre></div>
+<hr />
+<h2 id="al-object-types-reference">AL Object Types Reference<a class="headerlink" href="#al-object-types-reference" title="Permanent link">&para;</a></h2>
+<h3 id="table">Table<a class="headerlink" href="#table" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>table 70000 &quot;Product Category&quot;
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>{
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    Caption = &#39;Product Category&#39;;
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    DataClassification = CustomerContent;
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>    fields
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>    {
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>        field(1; &quot;Code&quot;; Code[20])
+<a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a>        {
+<a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>            Caption = &#39;Code&#39;;
+<a id="__codelineno-14-11" name="__codelineno-14-11" href="#__codelineno-14-11"></a>            NotBlank = true;
+<a id="__codelineno-14-12" name="__codelineno-14-12" href="#__codelineno-14-12"></a>        }
+<a id="__codelineno-14-13" name="__codelineno-14-13" href="#__codelineno-14-13"></a>        field(2; Description; Text[100])
+<a id="__codelineno-14-14" name="__codelineno-14-14" href="#__codelineno-14-14"></a>        {
+<a id="__codelineno-14-15" name="__codelineno-14-15" href="#__codelineno-14-15"></a>            Caption = &#39;Description&#39;;
+<a id="__codelineno-14-16" name="__codelineno-14-16" href="#__codelineno-14-16"></a>        }
+<a id="__codelineno-14-17" name="__codelineno-14-17" href="#__codelineno-14-17"></a>        field(3; Active; Boolean)
+<a id="__codelineno-14-18" name="__codelineno-14-18" href="#__codelineno-14-18"></a>        {
+<a id="__codelineno-14-19" name="__codelineno-14-19" href="#__codelineno-14-19"></a>            Caption = &#39;Active&#39;;
+<a id="__codelineno-14-20" name="__codelineno-14-20" href="#__codelineno-14-20"></a>            InitValue = true;
+<a id="__codelineno-14-21" name="__codelineno-14-21" href="#__codelineno-14-21"></a>        }
+<a id="__codelineno-14-22" name="__codelineno-14-22" href="#__codelineno-14-22"></a>    }
+<a id="__codelineno-14-23" name="__codelineno-14-23" href="#__codelineno-14-23"></a>
+<a id="__codelineno-14-24" name="__codelineno-14-24" href="#__codelineno-14-24"></a>    keys
+<a id="__codelineno-14-25" name="__codelineno-14-25" href="#__codelineno-14-25"></a>    {
+<a id="__codelineno-14-26" name="__codelineno-14-26" href="#__codelineno-14-26"></a>        key(PK; &quot;Code&quot;) { Clustered = true; }
+<a id="__codelineno-14-27" name="__codelineno-14-27" href="#__codelineno-14-27"></a>    }
+<a id="__codelineno-14-28" name="__codelineno-14-28" href="#__codelineno-14-28"></a>
+<a id="__codelineno-14-29" name="__codelineno-14-29" href="#__codelineno-14-29"></a>    trigger OnInsert()
+<a id="__codelineno-14-30" name="__codelineno-14-30" href="#__codelineno-14-30"></a>    begin
+<a id="__codelineno-14-31" name="__codelineno-14-31" href="#__codelineno-14-31"></a>        // Insert logic
+<a id="__codelineno-14-32" name="__codelineno-14-32" href="#__codelineno-14-32"></a>    end;
+<a id="__codelineno-14-33" name="__codelineno-14-33" href="#__codelineno-14-33"></a>}
+</code></pre></div>
+<h3 id="page-card">Page (Card)<a class="headerlink" href="#page-card" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>page 70000 &quot;Product Category Card&quot;
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>{
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    PageType = Card;
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    SourceTable = &quot;Product Category&quot;;
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    Caption = &#39;Product Category Card&#39;;
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    ApplicationArea = All;
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    UsageCategory = Documents;
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    layout
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>    {
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>        area(Content)
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>        {
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>            group(General)
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>            {
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>                field(&quot;Code&quot;; Rec.&quot;Code&quot;) { }
+<a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a>                field(Description; Rec.Description) { }
+<a id="__codelineno-15-17" name="__codelineno-15-17" href="#__codelineno-15-17"></a>            }
+<a id="__codelineno-15-18" name="__codelineno-15-18" href="#__codelineno-15-18"></a>        }
+<a id="__codelineno-15-19" name="__codelineno-15-19" href="#__codelineno-15-19"></a>    }
+<a id="__codelineno-15-20" name="__codelineno-15-20" href="#__codelineno-15-20"></a>}
+</code></pre></div>
+<h3 id="codeunit">Codeunit<a class="headerlink" href="#codeunit" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>codeunit 70000 &quot;Calculator&quot;
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>{
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    Access = Public;
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>    procedure Add(A: Decimal; B: Decimal): Decimal
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>    begin
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>        exit(A + B);
+<a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a>    end;
+<a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a>}
+</code></pre></div>
+<h3 id="enum">Enum<a class="headerlink" href="#enum" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>enum 70000 &quot;Order Status&quot;
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>{
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    Extensible = true;
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>    value(0; Draft) { Caption = &#39;Draft&#39;; }
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>    value(1; Released) { Caption = &#39;Released&#39;; }
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>    value(2; Shipped) { Caption = &#39;Shipped&#39;; }
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>}
+</code></pre></div>
+<h3 id="interface-no-id">Interface (NO ID!)<a class="headerlink" href="#interface-no-id" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>interface &quot;Payment Processor&quot;
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>{
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    Access = Public;
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>    procedure ProcessPayment(Amount: Decimal; PaymentMethod: Text): Boolean;
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>    procedure ValidatePayment(PaymentData: Text): Boolean;
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>}
+</code></pre></div>
+<h3 id="table-extension">Table Extension<a class="headerlink" href="#table-extension" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>tableextension 70000 &quot;Item Extension&quot; extends Item
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>{
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    fields
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    {
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>        field(70000; &quot;Warranty Period&quot;; Integer)
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>        {
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>            Caption = &#39;Warranty Period&#39;;
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>            DataClassification = CustomerContent;
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>        }
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>    }
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>}
+</code></pre></div>
+<h3 id="event-subscriber">Event Subscriber<a class="headerlink" href="#event-subscriber" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>codeunit 70001 &quot;Item Event Subscriber&quot;
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>{
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>    Access = Internal;
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>    [EventSubscriber(ObjectType::Table, Database::Item, &#39;OnAfterInsertEvent&#39;, &#39;&#39;, false, false)]
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a>    local procedure OnAfterInsertItem(var Rec: Record Item)
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a>    begin
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a>        Message(&#39;Item %1 created&#39;, Rec.&quot;No.&quot;);
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>    end;
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a>}
+</code></pre></div>
+<hr />
+<h2 id="ideas-for-challenging-tasks">Ideas for Challenging Tasks<a class="headerlink" href="#ideas-for-challenging-tasks" title="Permanent link">&para;</a></h2>
+<h3 id="test-al-specific-knowledge">Test AL-Specific Knowledge<a class="headerlink" href="#test-al-specific-knowledge" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Interfaces don't have IDs (unlike most AL objects)</li>
+<li>CalcFormula syntax for flowfields</li>
+<li>TableRelation with conditions</li>
+<li>Proper trigger usage (OnValidate, OnInsert, OnModify, OnDelete)</li>
+<li>Option vs Enum differences</li>
+<li>FlowField vs normal field behaviors</li>
+</ul>
+<h3 id="test-business-central-conventions">Test Business Central Conventions<a class="headerlink" href="#test-business-central-conventions" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Proper naming conventions (spaces, quotes)</li>
+<li>Caption requirements</li>
+<li>ApplicationArea and UsageCategory</li>
+<li>Proper use of Rec vs xRec</li>
+<li>TestPermissions in test codeunits</li>
+</ul>
+<h3 id="test-complex-logic">Test Complex Logic<a class="headerlink" href="#test-complex-logic" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Multi-condition validations</li>
+<li>State machines (Draft -&gt; Active -&gt; Completed)</li>
+<li>Calculations with rounding</li>
+<li>Date arithmetic</li>
+<li>Currency conversions</li>
+<li>Tiered pricing/tax rules</li>
+</ul>
+<h3 id="test-error-handling">Test Error Handling<a class="headerlink" href="#test-error-handling" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Specific error messages</li>
+<li>Error vs Confirm dialogs</li>
+<li>Try functions</li>
+<li>Transaction handling</li>
+</ul>
+<hr />
+<h2 id="output-format">Output Format<a class="headerlink" href="#output-format" title="Permanent link">&para;</a></h2>
+<p>For each task you create, provide:</p>
+<h3 id="1-task-yaml-file">1. Task YAML File<a class="headerlink" href="#1-task-yaml-file" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CG-AL-XXXX</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nt">prompt_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code-gen.md</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="nt">fix_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bugfix.md</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="nt">max_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="w">  </span><span class="no">[Your task description here]</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="nt">expected</span><span class="p">:</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="w">  </span><span class="nt">compile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="w">  </span><span class="nt">testApp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests/al/{difficulty}/CG-AL-XXXX.Test.al</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="nt">metrics</span><span class="p">:</span>
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compile_pass</span>
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests_pass</span>
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pass_attempt</span>
+</code></pre></div>
+<h3 id="2-test-al-file">2. Test AL File<a class="headerlink" href="#2-test-al-file" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>codeunit 80XXX &quot;CG-AL-XXXX Test&quot;
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>{
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a>    Subtype = Test;
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a>    TestPermissions = Disabled;
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a>    // Your test procedures here
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a>}
+</code></pre></div>
+<h3 id="3-helper-files-if-needed">3. Helper Files (if needed)<a class="headerlink" href="#3-helper-files-if-needed" title="Permanent link">&para;</a></h3>
+<p>Any mock implementations, enums, or other supporting objects.</p>
+<hr />
+<h2 id="checklist-before-submitting">Checklist Before Submitting<a class="headerlink" href="#checklist-before-submitting" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] Task ID is unique and follows format (CG-AL-E/M/H###)</li>
+<li>[ ] Description specifies exact names, types, and signatures</li>
+<li>[ ] Description does NOT include hints or guidance</li>
+<li>[ ] Test codeunit has proper ID in range</li>
+<li>[ ] All assertions verify actual computed values (no <code>Assert.IsTrue(true, ...)</code>)</li>
+<li>[ ] Tests cover all requirements from description</li>
+<li>[ ] Tests cover boundary conditions and edge cases</li>
+<li>[ ] Helper files provided if task involves interfaces or external dependencies</li>
+<li>[ ] Error messages match exactly between task description and test assertions</li>
+</ul>
+<hr />
+<h2 id="example-complete-task">Example Complete Task<a class="headerlink" href="#example-complete-task" title="Permanent link">&para;</a></h2>
+<h3 id="task-yaml-taskseasycg-al-e020-discount-calculatoryml">Task YAML (<code>tasks/easy/CG-AL-E020-discount-calculator.yml</code>)<a class="headerlink" href="#task-yaml-taskseasycg-al-e020-discount-calculatoryml" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CG-AL-E020</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="nt">prompt_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">code-gen.md</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="nt">fix_template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bugfix.md</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="nt">max_attempts</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="nt">description</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">&gt;-</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="w">  </span><span class="no">Create a codeunit called &quot;Discount Calculator&quot; with ID 70010.</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="w">  </span><span class="no">Implement a procedure:</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="w">  </span><span class="no">CalculateDiscount(OrderAmount: Decimal; CustomerTier: Option Standard,Silver,Gold): Decimal</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a>
+<a id="__codelineno-23-11" name="__codelineno-23-11" href="#__codelineno-23-11"></a><span class="w">  </span><span class="no">Discount rules:</span>
+<a id="__codelineno-23-12" name="__codelineno-23-12" href="#__codelineno-23-12"></a><span class="w">  </span><span class="no">- Standard customers: No discount (0%)</span>
+<a id="__codelineno-23-13" name="__codelineno-23-13" href="#__codelineno-23-13"></a><span class="w">  </span><span class="no">- Silver customers: 5% discount</span>
+<a id="__codelineno-23-14" name="__codelineno-23-14" href="#__codelineno-23-14"></a><span class="w">  </span><span class="no">- Gold customers: 10% discount</span>
+<a id="__codelineno-23-15" name="__codelineno-23-15" href="#__codelineno-23-15"></a>
+<a id="__codelineno-23-16" name="__codelineno-23-16" href="#__codelineno-23-16"></a><span class="w">  </span><span class="no">The procedure should return the discount AMOUNT (not the discounted price).</span>
+<a id="__codelineno-23-17" name="__codelineno-23-17" href="#__codelineno-23-17"></a><span class="w">  </span><span class="no">Negative order amounts should return 0.</span>
+<a id="__codelineno-23-18" name="__codelineno-23-18" href="#__codelineno-23-18"></a>
+<a id="__codelineno-23-19" name="__codelineno-23-19" href="#__codelineno-23-19"></a><span class="w">  </span><span class="no">Include Access = Public on the codeunit.</span>
+<a id="__codelineno-23-20" name="__codelineno-23-20" href="#__codelineno-23-20"></a><span class="nt">expected</span><span class="p">:</span>
+<a id="__codelineno-23-21" name="__codelineno-23-21" href="#__codelineno-23-21"></a><span class="w">  </span><span class="nt">compile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<a id="__codelineno-23-22" name="__codelineno-23-22" href="#__codelineno-23-22"></a><span class="w">  </span><span class="nt">testApp</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests/al/easy/CG-AL-E020.Test.al</span>
+<a id="__codelineno-23-23" name="__codelineno-23-23" href="#__codelineno-23-23"></a><span class="nt">metrics</span><span class="p">:</span>
+<a id="__codelineno-23-24" name="__codelineno-23-24" href="#__codelineno-23-24"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">compile_pass</span>
+<a id="__codelineno-23-25" name="__codelineno-23-25" href="#__codelineno-23-25"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tests_pass</span>
+<a id="__codelineno-23-26" name="__codelineno-23-26" href="#__codelineno-23-26"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pass_attempt</span>
+</code></pre></div>
+<h3 id="test-file-testsaleasycg-al-e020testal">Test File (<code>tests/al/easy/CG-AL-E020.Test.al</code>)<a class="headerlink" href="#test-file-testsaleasycg-al-e020testal" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>codeunit 80020 &quot;CG-AL-E020 Test&quot;
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>{
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>    Subtype = Test;
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>    TestPermissions = Disabled;
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>    var
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>        Assert: Codeunit Assert;
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>        DiscountCalculator: Codeunit &quot;Discount Calculator&quot;;
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a>    [Test]
+<a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a>    procedure TestStandardCustomer_NoDiscount()
+<a id="__codelineno-24-12" name="__codelineno-24-12" href="#__codelineno-24-12"></a>    var
+<a id="__codelineno-24-13" name="__codelineno-24-13" href="#__codelineno-24-13"></a>        Result: Decimal;
+<a id="__codelineno-24-14" name="__codelineno-24-14" href="#__codelineno-24-14"></a>    begin
+<a id="__codelineno-24-15" name="__codelineno-24-15" href="#__codelineno-24-15"></a>        Result := DiscountCalculator.CalculateDiscount(100, 0); // Standard = 0
+<a id="__codelineno-24-16" name="__codelineno-24-16" href="#__codelineno-24-16"></a>        Assert.AreEqual(0, Result, &#39;Standard customers should get 0% discount&#39;);
+<a id="__codelineno-24-17" name="__codelineno-24-17" href="#__codelineno-24-17"></a>    end;
+<a id="__codelineno-24-18" name="__codelineno-24-18" href="#__codelineno-24-18"></a>
+<a id="__codelineno-24-19" name="__codelineno-24-19" href="#__codelineno-24-19"></a>    [Test]
+<a id="__codelineno-24-20" name="__codelineno-24-20" href="#__codelineno-24-20"></a>    procedure TestSilverCustomer_5Percent()
+<a id="__codelineno-24-21" name="__codelineno-24-21" href="#__codelineno-24-21"></a>    var
+<a id="__codelineno-24-22" name="__codelineno-24-22" href="#__codelineno-24-22"></a>        Result: Decimal;
+<a id="__codelineno-24-23" name="__codelineno-24-23" href="#__codelineno-24-23"></a>    begin
+<a id="__codelineno-24-24" name="__codelineno-24-24" href="#__codelineno-24-24"></a>        Result := DiscountCalculator.CalculateDiscount(100, 1); // Silver = 1
+<a id="__codelineno-24-25" name="__codelineno-24-25" href="#__codelineno-24-25"></a>        Assert.AreEqual(5, Result, &#39;Silver customers should get 5% discount = 5&#39;);
+<a id="__codelineno-24-26" name="__codelineno-24-26" href="#__codelineno-24-26"></a>    end;
+<a id="__codelineno-24-27" name="__codelineno-24-27" href="#__codelineno-24-27"></a>
+<a id="__codelineno-24-28" name="__codelineno-24-28" href="#__codelineno-24-28"></a>    [Test]
+<a id="__codelineno-24-29" name="__codelineno-24-29" href="#__codelineno-24-29"></a>    procedure TestGoldCustomer_10Percent()
+<a id="__codelineno-24-30" name="__codelineno-24-30" href="#__codelineno-24-30"></a>    var
+<a id="__codelineno-24-31" name="__codelineno-24-31" href="#__codelineno-24-31"></a>        Result: Decimal;
+<a id="__codelineno-24-32" name="__codelineno-24-32" href="#__codelineno-24-32"></a>    begin
+<a id="__codelineno-24-33" name="__codelineno-24-33" href="#__codelineno-24-33"></a>        Result := DiscountCalculator.CalculateDiscount(200, 2); // Gold = 2
+<a id="__codelineno-24-34" name="__codelineno-24-34" href="#__codelineno-24-34"></a>        Assert.AreEqual(20, Result, &#39;Gold customers should get 10% discount = 20&#39;);
+<a id="__codelineno-24-35" name="__codelineno-24-35" href="#__codelineno-24-35"></a>    end;
+<a id="__codelineno-24-36" name="__codelineno-24-36" href="#__codelineno-24-36"></a>
+<a id="__codelineno-24-37" name="__codelineno-24-37" href="#__codelineno-24-37"></a>    [Test]
+<a id="__codelineno-24-38" name="__codelineno-24-38" href="#__codelineno-24-38"></a>    procedure TestNegativeAmount_ReturnsZero()
+<a id="__codelineno-24-39" name="__codelineno-24-39" href="#__codelineno-24-39"></a>    var
+<a id="__codelineno-24-40" name="__codelineno-24-40" href="#__codelineno-24-40"></a>        Result: Decimal;
+<a id="__codelineno-24-41" name="__codelineno-24-41" href="#__codelineno-24-41"></a>    begin
+<a id="__codelineno-24-42" name="__codelineno-24-42" href="#__codelineno-24-42"></a>        Result := DiscountCalculator.CalculateDiscount(-100, 2);
+<a id="__codelineno-24-43" name="__codelineno-24-43" href="#__codelineno-24-43"></a>        Assert.AreEqual(0, Result, &#39;Negative amounts should return 0&#39;);
+<a id="__codelineno-24-44" name="__codelineno-24-44" href="#__codelineno-24-44"></a>    end;
+<a id="__codelineno-24-45" name="__codelineno-24-45" href="#__codelineno-24-45"></a>
+<a id="__codelineno-24-46" name="__codelineno-24-46" href="#__codelineno-24-46"></a>    [Test]
+<a id="__codelineno-24-47" name="__codelineno-24-47" href="#__codelineno-24-47"></a>    procedure TestZeroAmount_ReturnsZero()
+<a id="__codelineno-24-48" name="__codelineno-24-48" href="#__codelineno-24-48"></a>    var
+<a id="__codelineno-24-49" name="__codelineno-24-49" href="#__codelineno-24-49"></a>        Result: Decimal;
+<a id="__codelineno-24-50" name="__codelineno-24-50" href="#__codelineno-24-50"></a>    begin
+<a id="__codelineno-24-51" name="__codelineno-24-51" href="#__codelineno-24-51"></a>        Result := DiscountCalculator.CalculateDiscount(0, 2);
+<a id="__codelineno-24-52" name="__codelineno-24-52" href="#__codelineno-24-52"></a>        Assert.AreEqual(0, Result, &#39;Zero amount should return 0 discount&#39;);
+<a id="__codelineno-24-53" name="__codelineno-24-53" href="#__codelineno-24-53"></a>    end;
+<a id="__codelineno-24-54" name="__codelineno-24-54" href="#__codelineno-24-54"></a>
+<a id="__codelineno-24-55" name="__codelineno-24-55" href="#__codelineno-24-55"></a>    [Test]
+<a id="__codelineno-24-56" name="__codelineno-24-56" href="#__codelineno-24-56"></a>    procedure TestLargeAmount_Gold()
+<a id="__codelineno-24-57" name="__codelineno-24-57" href="#__codelineno-24-57"></a>    var
+<a id="__codelineno-24-58" name="__codelineno-24-58" href="#__codelineno-24-58"></a>        Result: Decimal;
+<a id="__codelineno-24-59" name="__codelineno-24-59" href="#__codelineno-24-59"></a>    begin
+<a id="__codelineno-24-60" name="__codelineno-24-60" href="#__codelineno-24-60"></a>        Result := DiscountCalculator.CalculateDiscount(9999.99, 2);
+<a id="__codelineno-24-61" name="__codelineno-24-61" href="#__codelineno-24-61"></a>        Assert.AreEqual(999.999, Result, &#39;Large amount gold discount should be 999.999&#39;);
+<a id="__codelineno-24-62" name="__codelineno-24-62" href="#__codelineno-24-62"></a>    end;
+<a id="__codelineno-24-63" name="__codelineno-24-63" href="#__codelineno-24-63"></a>}
+</code></pre></div>
+<hr />
+<p>Now create new benchmark tasks! Aim for variety - different object types, different difficulty levels, and tasks that test knowledge models might NOT have seen as frequently in training data.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
