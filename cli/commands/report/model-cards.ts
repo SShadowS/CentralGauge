@@ -9,7 +9,12 @@ import type {
   PerModelStats,
 } from "../../types/cli-types.ts";
 import type { ModelShortcomingsFile } from "../../../src/verify/types.ts";
-import { formatCost, formatRate } from "./html-utils.ts";
+import {
+  formatCost,
+  formatRate,
+  sanitizeModelNameForUrl,
+} from "./html-utils.ts";
+import { extractModelName } from "../../helpers/mod.ts";
 import { generateShortcomingsHtml } from "./shortcomings.ts";
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
@@ -24,7 +29,7 @@ const PILL_CLASSES = [
 /**
  * Get the passedByAttempt array, falling back to legacy fields for old data
  */
-function getPassedByAttempt(m: PerModelStats): number[] {
+export function getPassedByAttempt(m: PerModelStats): number[] {
   if (m.passedByAttempt?.length) {
     return m.passedByAttempt;
   }
@@ -39,7 +44,7 @@ function getPassedByAttempt(m: PerModelStats): number[] {
 /**
  * Generate attempt pill badges HTML
  */
-function generateAttemptPillsHtml(
+export function generateAttemptPillsHtml(
   passedByAttempt: number[],
   tasksFailed: number,
   tasksPassed: number,
@@ -103,9 +108,10 @@ export function generateModelCardsHtml(
       mTotal,
     );
 
+    const slug = sanitizeModelNameForUrl(extractModelName(variantId));
     modelCardsHtml += `
           <div class="model-card">
-            <h3>${variantId}</h3>
+            <h3><a href="model-${slug}.html" class="model-card-link">${variantId}</a></h3>
             <div class="model-stats">
               <div class="stat"><span class="stat-label" title="Percentage of tasks that passed across all allowed attempts.">Pass Rate:</span><span class="stat-value">${
       formatRate(passRate)
@@ -123,6 +129,7 @@ export function generateModelCardsHtml(
     }</span></div>
             </div>
             ${generateShortcomingsHtml(variantId, shortcomingsMap)}
+            <a href="model-${slug}.html" class="card-details-link">View details &rsaquo;</a>
           </div>`;
   }
 
@@ -176,9 +183,10 @@ export function generateFallbackModelCardsHtml(
       mTotal,
     );
 
+    const slug = sanitizeModelNameForUrl(extractModelName(model));
     modelCardsHtml += `
           <div class="model-card">
-            <h3>${model}</h3>
+            <h3><a href="model-${slug}.html" class="model-card-link">${model}</a></h3>
             <div class="model-stats">
               <div class="stat"><span class="stat-label" title="Percentage of tasks that passed across all allowed attempts.">Pass Rate:</span><span class="stat-value">${
       formatRate(mPassed / mTotal)
@@ -189,6 +197,7 @@ export function generateFallbackModelCardsHtml(
     }</span></div>
             </div>
             ${generateShortcomingsHtml(model, shortcomingsMap)}
+            <a href="model-${slug}.html" class="card-details-link">View details &rsaquo;</a>
           </div>`;
   }
 
@@ -236,9 +245,10 @@ export function generateMultiRunModelCardsHtml(
       ? Math.round(m.tokens / m.runCount)
       : m.tokens;
 
+    const slug = sanitizeModelNameForUrl(extractModelName(variantId));
     modelCardsHtml += `
           <div class="model-card">
-            <h3>${variantId}</h3>
+            <h3><a href="model-${slug}.html" class="model-card-link">${variantId}</a></h3>
             <div class="model-stats">
               <div class="stat"><span class="stat-label" title="Number of independent benchmark runs aggregated.">Runs:</span><span class="stat-value">${m.runCount}</span></div>
               <div class="stat"><span class="stat-label" title="Probability of passing a task in a single randomly sampled run.">pass@1:</span><span class="stat-value">${
@@ -263,6 +273,7 @@ export function generateMultiRunModelCardsHtml(
     }</span></div>
             </div>
             ${generateShortcomingsHtml(variantId, shortcomingsMap)}
+            <a href="model-${slug}.html" class="card-details-link">View details &rsaquo;</a>
           </div>`;
   }
 
