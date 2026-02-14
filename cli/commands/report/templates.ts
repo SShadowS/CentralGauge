@@ -85,7 +85,7 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
 
     ${
     params.analyticsHtml
-      ? `<section class="analytics-sections"><h2>Analytics</h2>${params.analyticsHtml}</section>`
+      ? `<section class="analytics-sections"><h2>Analytics</h2><p class="analytics-intro">Compare pass rate and cost across models at a glance.</p>${params.analyticsHtml}</section>`
       : ""
   }
 

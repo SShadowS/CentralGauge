@@ -242,7 +242,7 @@ export function svgXAxis(
         x,
         y + 16,
         label,
-        `text-anchor="middle" font-size="10" fill="var(--cg-chart-text)" class="chart-label"`,
+        `text-anchor="middle" class="chart-label"`,
       ),
     );
   }
@@ -276,7 +276,7 @@ export function svgXAxisLabels(
         pos,
         y + 16,
         label,
-        `text-anchor="middle" font-size="10" fill="var(--cg-chart-text)" class="chart-label"`,
+        `text-anchor="middle" class="chart-label"`,
       ),
     );
   }
@@ -315,7 +315,7 @@ export function svgYAxis(
         textX,
         y + 3,
         String(tick),
-        `text-anchor="${textAnchor}" font-size="10" fill="var(--cg-chart-text)"`,
+        `text-anchor="${textAnchor}" class="chart-axis"`,
       ),
     );
   }
@@ -325,7 +325,7 @@ export function svgYAxis(
     const midY = (dim.margin.top + dim.height - dim.margin.bottom) / 2;
     const labelX = side === "left" ? 14 : dim.width - 14;
     parts.push(
-      `<text x="${labelX}" y="${midY}" text-anchor="middle" font-size="11" fill="var(--cg-chart-axis)" transform="rotate(-90,${labelX},${midY})">${
+      `<text x="${labelX}" y="${midY}" text-anchor="middle" class="chart-axis-title" transform="rotate(-90,${labelX},${midY})">${
         escapeHtml(label)
       }</text>`,
     );
@@ -350,7 +350,7 @@ export function svgGrid(
         y,
         "var(--cg-chart-grid)",
         1,
-        'stroke-dasharray="4,4"',
+        'stroke-dasharray="4,6" opacity="0.6"',
       ),
     );
   }
@@ -371,7 +371,9 @@ export function wrapSvgChart(
   <div class="chart-container">
     <svg viewBox="0 0 ${dim.width} ${dim.height}" xmlns="http://www.w3.org/2000/svg" class="analytics-chart">
       <style>
-        .chart-label { font-family: system-ui, -apple-system, sans-serif; }
+        .chart-label { font-family: system-ui, -apple-system, sans-serif; font-size: 11px; fill: var(--cg-chart-text); }
+        .chart-axis { font-family: system-ui, -apple-system, sans-serif; font-size: 11px; fill: var(--cg-chart-text); }
+        .chart-axis-title { font-family: system-ui, -apple-system, sans-serif; font-size: 12px; fill: var(--cg-chart-axis); letter-spacing: 0.01em; }
       </style>
       ${innerSvg}
     </svg>

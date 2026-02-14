@@ -266,16 +266,18 @@ export const INDEX_PAGE_STYLES = `
     --cg-model-15: #fca5a5;
     }
     /* Analytics sections */
-    .analytics-sections { margin: 2rem 0; }
-    .analytics-sections > h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
-    .analytics-section { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .analytics-section h3 { margin: 0 0 1rem; font-size: 1.1rem; color: #1f2937; }
-    .chart-container { max-width: 100%; overflow-x: auto; }
-    .chart-container svg.analytics-chart { width: 100%; height: auto; }
+    .analytics-sections { margin: 2.25rem 0; }
+    .analytics-sections > h2 { color: #1f2937; margin: 2rem 0 0.5rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+    .analytics-intro { color: #6b7280; font-size: 0.95rem; margin: 0 0 1.25rem; }
+    .analytics-section { background: white; border: 1px solid #e5e7eb; border-radius: 0.6rem; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); position: relative; }
+    .analytics-section::before { content: ""; position: absolute; left: 0; top: 0; height: 3px; width: 100%; background: linear-gradient(90deg, #2563eb, #22c55e); border-top-left-radius: 0.6rem; border-top-right-radius: 0.6rem; }
+    .analytics-section h3 { margin: 0 0 0.85rem; font-size: 1.05rem; color: #111827; letter-spacing: 0.01em; }
+    .chart-container { max-width: 100%; overflow-x: auto; padding-bottom: 0.25rem; }
+    .chart-container svg.analytics-chart { width: 100%; height: auto; min-width: 640px; }
     /* Analytics legend */
-    .chart-legend-inline { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 0.75rem; font-size: 0.8rem; }
-    .chart-legend-item { display: inline-flex; align-items: center; gap: 0.3rem; }
-    .chart-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+    .chart-legend-inline { display: flex; flex-wrap: wrap; gap: 0.85rem; margin: 0.25rem 0 0.75rem; font-size: 0.82rem; }
+    .chart-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .chart-legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
     .chart-legend-label { color: #374151; white-space: nowrap; }
     .chart-legend-more { color: #9ca3af; font-style: italic; }
     /* Heatmap table */
@@ -291,7 +293,9 @@ export const INDEX_PAGE_STYLES = `
     .heatmap-scroll { overflow-x: auto; }
     /* Analytics dark mode */
     body.dark .analytics-sections > h2 { color: #f3f4f6; border-bottom-color: #374151; }
-    body.dark .analytics-section { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    body.dark .analytics-intro { color: #9ca3af; }
+    body.dark .analytics-section { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.28); }
+    body.dark .analytics-section::before { background: linear-gradient(90deg, #60a5fa, #34d399); }
     body.dark .analytics-section h3 { color: #f3f4f6; }
     body.dark .chart-legend-label { color: #d1d5db; }
     body.dark .chart-legend-more { color: #6b7280; }

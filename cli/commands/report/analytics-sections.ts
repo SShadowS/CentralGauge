@@ -940,7 +940,7 @@ function generateDualAxisChart(
   const dim: ChartDimensions = {
     width: 700,
     height: 350,
-    margin: { top: 20, right: 60, bottom: 90, left: 60 },
+    margin: { top: 20, right: 70, bottom: 100, left: 60 },
   };
 
   const band = createBandScale(
@@ -982,7 +982,7 @@ function generateDualAxisChart(
     const x = band(i) + band.bandwidth / 2;
     svg += `<text x="${x}" y="${
       xBottom + 14
-    }" text-anchor="end" font-size="10" fill="var(--cg-chart-text)" transform="rotate(-45,${x},${
+    }" text-anchor="end" font-size="11" fill="var(--cg-chart-text)" transform="rotate(-45,${x},${
       xBottom + 14
     })">${escapeHtml(displayName(d.name))}</text>`;
   }
@@ -995,9 +995,22 @@ function generateDualAxisChart(
     svg +=
       `<rect x="${x}" y="${y}" width="${band.bandwidth}" height="${barH}" fill="${
         getModelColor(d.idx)
-      }" opacity="0.6" rx="2"><title>${escapeHtml(d.name)}: ${
+      }" opacity="0.75" rx="2" stroke="var(--cg-chart-axis)" stroke-opacity="0.15"><title>${escapeHtml(d.name)}: ${
         d.passRate.toFixed(1)
       }% pass rate</title></rect>`;
+  }
+
+  // Top 3 pass rate labels
+  const topThree = data.slice(0, 3);
+  for (const [i, d] of topThree.entries()) {
+    const x = band(i) + band.bandwidth / 2;
+    const y = yScaleLeft(d.passRate) - 6;
+    svg += svgText(
+      x,
+      y,
+      `${d.passRate.toFixed(1)}%`,
+      `text-anchor="middle" font-size="10" fill="var(--cg-chart-text)" font-weight="600"`,
+    );
   }
 
   // Cost dots
@@ -1005,15 +1018,18 @@ function generateDualAxisChart(
     const dotCx = band(i) + band.bandwidth / 2;
     const dotCy = yScaleRight(d.cost);
     svg +=
-      `<circle cx="${dotCx}" cy="${dotCy}" r="5" fill="var(--cg-chart-text)" stroke="var(--cg-chart-bg)" stroke-width="2"><title>${
+      `<circle cx="${dotCx}" cy="${dotCy}" r="6" fill="var(--cg-chart-text)" stroke="var(--cg-chart-bg)" stroke-width="2.5"><title>${
         escapeHtml(d.name)
       }: $${d.cost.toFixed(2)}</title></circle>`;
   }
 
   const legendHtml =
     `<div class="chart-legend-inline" style="margin-top:0.5rem">
-    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6;opacity:0.6"></span><span class="chart-legend-label">Pass Rate (bars)</span></span>
-    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--cg-chart-text);border-radius:50%"></span><span class="chart-legend-label">Cost (dots)</span></span>
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6;opacity:0.75"></span><span class="chart-legend-label">Pass Rate</span></span>
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:var(--cg-chart-text);border-radius:50%"></span><span class="chart-legend-label">Cost</span></span>
+  </div>
+  <div class="chart-legend-inline" style="margin-top:-0.25rem">
+    <span class="chart-legend-label" style="color:var(--cg-chart-muted)">Bars = pass rate • Dots = cost</span>
   </div>`;
 
   return wrapSvgChart(dim, svg, "Performance vs Cost") + legendHtml;
