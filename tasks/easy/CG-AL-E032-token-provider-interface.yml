@@ -11,6 +11,9 @@ description: >-
   Procedures:
   - GetToken(Endpoint: Text; ForceRefresh: Boolean): Text
   - ClearCache()
+metadata:
+  category: interfaces-events
+  tags: [interface, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E032.Test.al

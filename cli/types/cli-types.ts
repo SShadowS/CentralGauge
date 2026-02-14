@@ -65,6 +65,8 @@ export interface BenchmarkResult {
     variantConfig?: PerModelStats["variantConfig"];
     manifest?: {
       description?: string;
+      category?: string;
+      tags?: string[];
     };
   };
 }

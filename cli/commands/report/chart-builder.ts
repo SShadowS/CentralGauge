@@ -8,6 +8,8 @@ import type {
   PerModelStats,
 } from "../../types/cli-types.ts";
 import { shortVariantName } from "../../../src/utils/formatters.ts";
+import { sanitizeModelNameForUrl } from "./html-utils.ts";
+import { extractModelName } from "../../helpers/model-utils.ts";
 
 /**
  * Chart data for a single model
@@ -89,8 +91,9 @@ export function generateChartHtml(chartData: ChartDataEntry[]): string {
       const secondPct = (d.secondPassRate * 100).toFixed(0);
       const firstLabel = d.firstPassRate > 0.08 ? `${firstPct}%` : "";
       const secondLabel = d.secondPassRate > 0.08 ? `${secondPct}%` : "";
+      const modelSlug = sanitizeModelNameForUrl(extractModelName(d.variantId));
       return `<div class="bar-row">
-                <div class="bar-label" title="${d.variantId}">${d.shortName}</div>
+                <a href="model-${modelSlug}.html" class="bar-label" title="${d.variantId}">${d.shortName}</a>
                 <div class="bar-container">
                   <div class="bar-fill bar-first" style="width: ${
         d.firstPassRate * 100
@@ -199,8 +202,9 @@ export function generateMultiRunChartHtml(
       const secondPct = (d.additionalPassAtK * 100).toFixed(0);
       const firstLabel = d.passAt1Rate > 0.08 ? `${firstPct}%` : "";
       const secondLabel = d.additionalPassAtK > 0.08 ? `${secondPct}%` : "";
+      const modelSlug = sanitizeModelNameForUrl(extractModelName(d.variantId));
       return `<div class="bar-row">
-                <div class="bar-label" title="${d.variantId}">${d.shortName}</div>
+                <a href="model-${modelSlug}.html" class="bar-label" title="${d.variantId}">${d.shortName}</a>
                 <div class="bar-container">
                   <div class="bar-fill bar-first" style="width: ${
         d.passAt1Rate * 100

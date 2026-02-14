@@ -26,6 +26,9 @@ description: >-
 
   Include proper report layout structure, variables for calculations,
   and comprehensive data processing logic. Use ApplicationArea and UsageCategory.
+metadata:
+  category: user-interface
+  tags: [report, fields, dataset, calculations]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M007.Test.al

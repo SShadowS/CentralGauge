@@ -11,6 +11,9 @@ description: >-
 
   Include proper captions and ensure the extension follows Business Central conventions.
   The new fields should appear in the existing General group on the Customer Card.
+metadata:
+  category: user-interface
+  tags: [page-extension, fields]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E006.Test.al

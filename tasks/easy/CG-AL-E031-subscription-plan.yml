@@ -29,6 +29,9 @@ description: >-
     - Set Last Modified DateTime to CurrentDateTime
   - OnDelete trigger:
     - If Active is true, block deletion with error text exactly: "Cannot delete active subscription plan"
+metadata:
+  category: data-modeling
+  tags: [table, fields, enum, keys]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E031.Test.al

@@ -30,6 +30,8 @@ description: >-
   authentication headers, JSON serialization/deserialization, and timeout handling.
   Use HttpClient, JsonToken, JsonObject patterns and include comprehensive error messages.
 metadata:
+  category: data-exchange
+  tags: [http, json, codeunit, external-api, error-handling]
   target: OnPrem
 expected:
   compile: true

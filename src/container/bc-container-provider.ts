@@ -451,7 +451,11 @@ export class BcContainerProvider implements ContainerProvider {
       );
       const result = await this.executePowerShell(script);
 
-      return this.buildCompilationResult(result.output, Date.now() - startTime, contextLog);
+      return this.buildCompilationResult(
+        result.output,
+        Date.now() - startTime,
+        contextLog,
+      );
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message

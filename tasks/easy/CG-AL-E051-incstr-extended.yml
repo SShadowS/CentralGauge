@@ -23,6 +23,9 @@ description: >-
      Example: DecrementValue('ORD-005') returns 'ORD-004'.
 
   Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, string-operations, procedure]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E051.Test.al

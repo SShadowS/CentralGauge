@@ -633,6 +633,43 @@ async function copyTestFile(
 }
 
 /**
+ * Copy companion test files (e.g., mock implementations) that share the same
+ * task ID prefix as the test file. For example, if the test file is
+ * "CG-AL-M009.Test.al", this will also copy "CG-AL-M009.MockShippingProvider.al".
+ */
+async function copyCompanionTestFiles(
+  testFilePath: string,
+  targetDir: string,
+): Promise<string[]> {
+  const testFileName = basename(testFilePath);
+  const testDir = dirname(testFilePath);
+
+  // Extract task ID prefix (e.g., "CG-AL-M009" from "CG-AL-M009.Test.al")
+  const dotIndex = testFileName.indexOf(".");
+  if (dotIndex === -1) return [];
+  const taskPrefix = testFileName.substring(0, dotIndex);
+
+  const copied: string[] = [];
+  try {
+    for await (const entry of Deno.readDir(testDir)) {
+      if (
+        entry.isFile &&
+        entry.name.endsWith(".al") &&
+        entry.name.startsWith(taskPrefix + ".") &&
+        entry.name !== testFileName
+      ) {
+        const content = await Deno.readTextFile(join(testDir, entry.name));
+        await Deno.writeTextFile(join(targetDir, entry.name), content);
+        copied.push(entry.name);
+      }
+    }
+  } catch {
+    // Directory read error - not fatal
+  }
+  return copied;
+}
+
+/**
  * Copy support files (e.g., RDLC layouts, images) for a task into the target directory.
  * Looks for files in tests/al/support-files/{task-id}/ and copies them all.
  */
@@ -1290,6 +1327,15 @@ async function handleAlVerify(params: {
     if (!testFileResult.success) {
       debugLog("al_verify", "FAILED: Test file copy failed");
       return { success: false, message: testFileResult.message };
+    }
+
+    // Copy companion test files (mock implementations, etc.)
+    const companionFiles = await copyCompanionTestFiles(
+      params.testFile,
+      verifyDir,
+    );
+    if (companionFiles.length > 0) {
+      debugLog("al_verify", "Companion test files copied", { companionFiles });
     }
 
     // Copy prereq app files to .alpackages so the compiler can find dependency symbols

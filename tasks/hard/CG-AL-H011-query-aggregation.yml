@@ -15,6 +15,9 @@ description: >-
 
   The query should export columns for Document_No, Sell_to_Customer_No, Line_Amount_Sum, and Line_Count.
 
+metadata:
+  category: advanced-patterns
+  tags: [query, fields, calculations]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H011.Test.al

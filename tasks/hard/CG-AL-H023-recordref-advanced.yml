@@ -90,6 +90,9 @@ description: >-
   Also create interface "IFieldTransformer" with procedure:
   Transform(var FieldRef: FieldRef): Variant
   (Return the new value to set, or the same value to keep unchanged)
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H023.Test.al

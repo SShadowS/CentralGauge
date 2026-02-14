@@ -21,6 +21,9 @@ description: >-
        Call the gateway's Authorize method.
        If true, return: 'Authorized by [GatewayName]'.
        If false, return: 'Declined by [GatewayName]'.
+metadata:
+  category: interfaces-events
+  tags: [interface, http, json, codeunit]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H015.Test.al

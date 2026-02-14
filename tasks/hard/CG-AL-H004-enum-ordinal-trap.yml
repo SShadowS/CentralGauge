@@ -27,6 +27,9 @@ description: >-
      - Returns 0 if A = B
      - Returns 1 if A > B (higher priority)
      - Must compare using ordinal values, not enum names
+metadata:
+  category: data-modeling
+  tags: [table, enum, fields, triggers]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H004.Test.al

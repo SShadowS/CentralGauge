@@ -28,6 +28,8 @@ description: >-
   Include Access = Public on the codeunit.
   Use HttpClient, HttpRequestMessage, HttpResponseMessage, and HttpContent appropriately.
 metadata:
+  category: data-exchange
+  tags: [http, json, codeunit, procedure]
   target: OnPrem
 expected:
   compile: true

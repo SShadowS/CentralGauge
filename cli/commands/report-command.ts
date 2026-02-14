@@ -21,10 +21,12 @@ import {
   calculateBenchmarkStats,
   calculateMultiRunStats,
   calculatePerModelStats,
+  calculateThemeSummaries,
   confirmDatasetUsage,
   detectMultiRun,
   escapeHtml,
   filterExistingDatasetFiles,
+  filterResultsByTheme,
   generateChartHtml,
   generateFallbackModelCardsHtml,
   generateHtmlTemplate,
@@ -35,7 +37,12 @@ import {
   generateMultiRunChartHtml,
   generateMultiRunMatrixRowsHtml,
   generateMultiRunModelCardsHtml,
+  generateOgImage,
+  generateThemeNavHtml,
+  generateThemePage,
+  generateThemeSummaryHtml,
   getModelList,
+  getPassedByAttempt,
   groupResultsByModelAndTask,
   handleDatasetCollision,
   loadDataset,
@@ -49,6 +56,11 @@ import {
   updateDataset,
   validateComparability,
 } from "./report/mod.ts";
+import {
+  generateAnalyticsSections,
+  generateThemeAnalytics,
+} from "./report/analytics-sections.ts";
+import { THEMES } from "../../src/tasks/themes.ts";
 
 interface ReportOptions {
   html: boolean;
@@ -57,6 +69,7 @@ interface ReportOptions {
   addTo?: string;
   dataset?: string;
   listDatasets: boolean;
+  ogText?: string;
 }
 
 async function generateReport(
@@ -210,7 +223,12 @@ async function generateHtmlReportWithDataset(
   }
 
   // Generate the HTML report from selected files
-  await generateHtmlReportFromFiles(resultsDir, outputDir, selectedFiles);
+  await generateHtmlReportFromFiles(
+    resultsDir,
+    outputDir,
+    selectedFiles,
+    options,
+  );
 }
 
 /**
@@ -406,6 +424,7 @@ async function generateHtmlReportFromFiles(
   _resultsDir: string,
   outputDir: string,
   selectedFiles: string[],
+  options: ReportOptions,
 ): Promise<void> {
   // Load results preserving file boundaries for multi-run detection
   const fileData = await loadResultFilesGrouped(selectedFiles);
@@ -427,8 +446,13 @@ async function generateHtmlReportFromFiles(
   let matrixRowsHtml: string;
   let summaryHtml: string;
   let matrixLegendHtml: string;
+  let analyticsHtml: string;
   let perModelForDetailPages:
     | Record<string, import("../types/cli-types.ts").PerModelStats>
+    | undefined;
+  let isMultiRunReport = false;
+  let multiRunStatsForDetailPages:
+    | Map<string, MultiRunModelStats>
     | undefined;
 
   if (multiRunInfo.isMultiRun) {
@@ -506,6 +530,18 @@ async function generateHtmlReportFromFiles(
         [id, stats],
       ) => [id, stats as import("../types/cli-types.ts").PerModelStats]),
     );
+    isMultiRunReport = true;
+    multiRunStatsForDetailPages = multiRunStats;
+
+    // Analytics
+    analyticsHtml = generateAnalyticsSections(
+      allResults,
+      sortedMultiModels.map((
+        [id, stats],
+      ) => [id, stats as import("../types/cli-types.ts").PerModelStats]),
+      shortcomingsMap,
+      { isMultiRun: true, multiRunStats },
+    );
   } else {
     // --- Single-run pipeline (unchanged) ---
     const perModelMap = calculatePerModelStats(allResults);
@@ -540,6 +576,14 @@ async function generateHtmlReportFromFiles(
       `<p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>`;
 
     perModelForDetailPages = stats?.perModel;
+
+    // Analytics
+    analyticsHtml = generateAnalyticsSections(
+      allResults,
+      sortedModels,
+      shortcomingsMap,
+      { isMultiRun: false },
+    );
   }
 
   // --- Shared rendering ---
@@ -561,6 +605,10 @@ async function generateHtmlReportFromFiles(
   const version = await getVersion();
   const footerHtml = generateFooterHtml(version);
 
+  // Build theme navigation for main page
+  const themeSummaries = calculateThemeSummaries(allResults);
+  const themeNavHtml = generateThemeNavHtml(themeSummaries);
+
   const htmlContent = generateHtmlTemplate({
     chartsHtml,
     modelCardsHtml,
@@ -571,6 +619,8 @@ async function generateHtmlReportFromFiles(
     summaryHtml,
     footerHtml,
     matrixLegendHtml,
+    themeNavHtml,
+    analyticsHtml,
   });
 
   // Copy favicon if it exists
@@ -581,11 +631,26 @@ async function generateHtmlReportFromFiles(
     // Favicon not found - continue without it
   }
 
+  // Generate OG image (with optional custom text)
+  try {
+    await generateOgImage(outputDir, options.ogText);
+  } catch {
+    // OG image generation failed - try static fallback
+    try {
+      await Deno.copyFile(
+        "./reports/static/og-image.png",
+        `${outputDir}/og-image.png`,
+      );
+    } catch {
+      // No OG image available
+    }
+  }
+
   // Write the main HTML file
   const outputFile = `${outputDir}/index.html`;
   await Deno.writeTextFile(outputFile, htmlContent);
 
-  // Generate model detail pages
+  // Generate model detail pages for all models
   if (perModelForDetailPages) {
     let detailPagesGenerated = 0;
 
@@ -594,25 +659,51 @@ async function generateHtmlReportFromFiles(
     ) {
       const modelName = extractModelName(variantId);
       const modelShortcomings = shortcomingsMap.get(modelName);
-
-      if (modelShortcomings && modelShortcomings.shortcomings.length > 0) {
-        const sortedShortcomings = [...modelShortcomings.shortcomings].sort(
+      const sortedShortcomings = modelShortcomings
+        ? [...modelShortcomings.shortcomings].sort(
           (a, b) => b.occurrences - a.occurrences,
-        );
+        )
+        : undefined;
 
-        const sanitizedName = sanitizeModelNameForUrl(modelName);
-        const detailPageContent = generateModelDetailPage({
-          modelName,
-          variantId,
-          shortcomings: sortedShortcomings,
-          stats: modelStats,
-          escapeHtml,
-        });
+      const sanitizedName = sanitizeModelNameForUrl(modelName);
+      const temperature = tempLookup.get(variantId);
+      const passedByAttempt = getPassedByAttempt(modelStats);
 
-        const detailFile = `${outputDir}/model-${sanitizedName}.html`;
-        await Deno.writeTextFile(detailFile, detailPageContent);
-        detailPagesGenerated++;
+      // Build multi-run stats if applicable
+      let multiRunDetailStats:
+        | {
+          runCount: number;
+          passAtK: Record<number, number>;
+          consistency: number;
+        }
+        | undefined;
+      if (isMultiRunReport && multiRunStatsForDetailPages) {
+        const mrStats = multiRunStatsForDetailPages.get(variantId);
+        if (mrStats) {
+          multiRunDetailStats = {
+            runCount: mrStats.runCount,
+            passAtK: mrStats.passAtK,
+            consistency: mrStats.consistency,
+          };
+        }
       }
+
+      const detailPageContent = generateModelDetailPage({
+        modelName,
+        variantId,
+        modelSlug: sanitizedName,
+        shortcomings: sortedShortcomings,
+        stats: modelStats,
+        escapeHtml,
+        temperature,
+        passedByAttempt,
+        isMultiRun: isMultiRunReport,
+        multiRunStats: multiRunDetailStats,
+      });
+
+      const detailFile = `${outputDir}/model-${sanitizedName}.html`;
+      await Deno.writeTextFile(detailFile, detailPageContent);
+      detailPagesGenerated++;
     }
 
     if (detailPagesGenerated > 0) {
@@ -620,6 +711,148 @@ async function generateHtmlReportFromFiles(
         `[OK] Generated ${detailPagesGenerated} model detail page(s)`,
       );
     }
+  }
+
+  // Generate theme subpages
+  let themePagesGenerated = 0;
+  for (const theme of THEMES) {
+    const themeResults = filterResultsByTheme(allResults, theme.slug);
+    if (themeResults.length === 0) continue;
+
+    const themeTaskIds = [...new Set(themeResults.map((r) => r.taskId))].sort();
+    const themeTaskDescriptions = buildTaskDescriptions(themeResults);
+    const themeShortcomingMap = buildTaskShortcomingMap(shortcomingsMap);
+    const themeTempLookup = buildTemperatureLookup(themeResults);
+
+    let themeChartsHtml: string;
+    let themeModelCardsHtml: string;
+    let themeMatrixHeaderHtml: string;
+    let themeMatrixRowsHtml: string;
+    let themeSummaryHtml: string;
+    let themeMatrixLegendHtml: string;
+    let themeModelCount: number;
+    let themeAnalyticsHtml: string;
+
+    if (multiRunInfo.isMultiRun) {
+      // Multi-run theme page
+      const themeFileData = fileData.map((fd) => ({
+        ...fd,
+        results: filterResultsByTheme(fd.results, theme.slug),
+      })).filter((fd) => fd.results.length > 0);
+
+      const themeGrouped = groupResultsByModelAndTask(themeFileData);
+      const themeMultiRunStats = calculateMultiRunStats(
+        themeGrouped,
+        multiRunInfo.runCount,
+      );
+
+      const sortedThemeModels = [...themeMultiRunStats.entries()].sort(
+        ([, a], [, b]) => (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0),
+      );
+
+      themeModelCount = sortedThemeModels.length;
+      const themeMultiChartData = buildMultiRunChartData(
+        sortedThemeModels,
+        themeTempLookup,
+      );
+      themeChartsHtml = generateMultiRunChartHtml(themeMultiChartData);
+      themeModelCardsHtml = generateMultiRunModelCardsHtml(
+        sortedThemeModels,
+        themeTempLookup,
+        shortcomingsMap,
+      );
+
+      const themeModelList = sortedThemeModels.map(([id]) => id);
+      themeMatrixHeaderHtml = generateMatrixHeaderHtml(themeModelList);
+      const themeMultiRunMatrix = buildMultiRunResultMatrix(themeGrouped);
+      themeMatrixRowsHtml = generateMultiRunMatrixRowsHtml(
+        themeTaskIds,
+        themeModelList,
+        themeMultiRunMatrix,
+        themeTaskDescriptions,
+        themeShortcomingMap,
+      );
+
+      themeSummaryHtml = generateThemeSummaryHtml(
+        new Map(
+          sortedThemeModels.map(([id, stats]) => [id, stats]),
+        ),
+        themeTaskIds.length,
+      );
+
+      themeMatrixLegendHtml =
+        `<p class="matrix-legend">N/M = passed N of M runs (hover for details)</p>`;
+
+      themeAnalyticsHtml = generateThemeAnalytics(
+        themeResults,
+        sortedThemeModels.map((
+          [id, stats],
+        ) => [id, stats as import("../types/cli-types.ts").PerModelStats]),
+      );
+    } else {
+      // Single-run theme page
+      const themePerModelMap = calculatePerModelStats(themeResults);
+      const sortedThemeModels = sortModelsByPassRate(themePerModelMap);
+      themeModelCount = themePerModelMap.size;
+
+      const themeChartData = buildChartData(sortedThemeModels, themeTempLookup);
+      themeChartsHtml = generateChartHtml(themeChartData);
+      themeModelCardsHtml = generateModelCardsHtml(
+        sortedThemeModels,
+        themeTempLookup,
+        shortcomingsMap,
+      );
+
+      const themeModelList = getModelList(themeResults);
+      const themeResultMatrix = buildResultMatrix(themeResults);
+      themeMatrixHeaderHtml = generateMatrixHeaderHtml(themeModelList);
+      themeMatrixRowsHtml = generateMatrixRowsHtml(
+        themeTaskIds,
+        themeModelList,
+        themeResultMatrix,
+        themeTaskDescriptions,
+        themeShortcomingMap,
+      );
+
+      themeSummaryHtml = generateThemeSummaryHtml(
+        themePerModelMap,
+        themeTaskIds.length,
+      );
+
+      themeMatrixLegendHtml =
+        `<p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>`;
+
+      themeAnalyticsHtml = generateThemeAnalytics(
+        themeResults,
+        sortedThemeModels,
+      );
+    }
+
+    const themePageContent = generateThemePage({
+      theme,
+      chartsHtml: themeChartsHtml,
+      modelCardsHtml: themeModelCardsHtml,
+      matrixHeaderHtml: themeMatrixHeaderHtml,
+      matrixRowsHtml: themeMatrixRowsHtml,
+      summaryHtml: themeSummaryHtml,
+      matrixLegendHtml: themeMatrixLegendHtml,
+      footerHtml,
+      generatedDate,
+      dataDateRange,
+      taskCount: themeTaskIds.length,
+      modelCount: themeModelCount,
+      analyticsHtml: themeAnalyticsHtml,
+    });
+
+    const themeFile = `${outputDir}/theme-${theme.slug}.html`;
+    await Deno.writeTextFile(themeFile, themePageContent);
+    themePagesGenerated++;
+  }
+
+  if (themePagesGenerated > 0) {
+    console.log(
+      `[OK] Generated ${themePagesGenerated} theme page(s)`,
+    );
   }
 
   console.log("[OK] HTML report generated successfully!");
@@ -661,6 +894,7 @@ export function registerReportCommand(cli: Command): void {
     .option("--add-to <name:string>", "Add files to existing dataset")
     .option("--dataset <name:string>", "Generate report from saved dataset")
     .option("--list-datasets", "List all saved datasets", { default: false })
+    .option("--og-text <text:string>", "Custom banner text on OG image")
     .action(async (options, resultsDir: string) => {
       if (!await exists(resultsDir)) {
         console.error(

@@ -227,18 +227,30 @@ export class VerifyOrchestrator {
           });
         }
       } else if (this.config.mode === "shortcomings-only") {
-        // Keep only tasks where SOME models failed (model knowledge gaps)
-        tasksToProcess = failingTasks.filter((t) =>
-          analysis.get(t.taskId)?.isUnanimousFail === false
-        );
-        const skipped = failingTasks.length - tasksToProcess.length;
-        if (skipped > 0) {
+        if (allModels.length <= 1) {
+          // Single-model run: unanimous/partial distinction is meaningless
+          // (1/1 failed = "unanimous" for every task), so keep all failures
           this.emit({
             type: "tasks_filtered",
             kept: tasksToProcess.length,
-            skipped,
-            reason: "unanimous failures (likely fixable issues)",
+            skipped: 0,
+            reason:
+              "single-model run, all failures treated as potential shortcomings",
           });
+        } else {
+          // Multi-model: keep only tasks where SOME models failed (model knowledge gaps)
+          tasksToProcess = failingTasks.filter((t) =>
+            analysis.get(t.taskId)?.isUnanimousFail === false
+          );
+          const skipped = failingTasks.length - tasksToProcess.length;
+          if (skipped > 0) {
+            this.emit({
+              type: "tasks_filtered",
+              kept: tasksToProcess.length,
+              skipped,
+              reason: "unanimous failures (likely fixable issues)",
+            });
+          }
         }
       }
     }

@@ -66,6 +66,7 @@ test-streaming.ts
 
 # Local docs
 DEPLOY.md
+docs/blog/
 # Agent task working directories
 test-configs/*/.tasks/
 
@@ -79,3 +80,9 @@ TestLookupSandbox.md
 bug.md
 dockerstatus.md
 sandbox-debug.log
+
+# AL test runner cache
+.altestrunner/
+
+# Local notes
+Insights.md

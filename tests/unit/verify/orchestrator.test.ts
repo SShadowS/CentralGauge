@@ -180,6 +180,63 @@ Deno.test("orchestrator: does not deduplicate in shortcomings-only mode", async 
   }
 });
 
+Deno.test("orchestrator: keeps all failures in shortcomings-only mode with single model", async () => {
+  // With only 1 model, every task's isUnanimousFail is true (1/1 = unanimous).
+  // The shortcomings-only filter should bypass unanimous filtering and keep all tasks.
+  const failingTasks: FailingTask[] = [
+    createMockTask("CG-AL-E001", "gpt-4o"),
+    createMockTask("CG-AL-E002", "gpt-4o"),
+    createMockTask("CG-AL-E003", "gpt-4o"),
+  ];
+
+  const tempDir = await Deno.makeTempDir();
+  try {
+    const orchestrator = new VerifyOrchestrator({
+      mode: "shortcomings-only",
+      maxParallel: 1,
+      dryRun: true,
+      analyzerConfig: {},
+      shortcomingsDir: tempDir,
+    });
+
+    const events: { type: string; [key: string]: unknown }[] = [];
+    orchestrator.on((event) => {
+      events.push(event);
+    });
+
+    const options = createMockOptions("shortcomings-only", tempDir);
+
+    try {
+      await orchestrator.runVerification(failingTasks, options);
+    } catch {
+      // Expected - no real LLM configured
+    }
+
+    // Check tasks_filtered event indicates single-model bypass
+    const filterEvent = events.find((e) => e.type === "tasks_filtered");
+    assertEquals(
+      filterEvent?.["kept"],
+      3,
+      "Single-model run should keep all 3 failing tasks",
+    );
+    assertEquals(
+      filterEvent?.["skipped"],
+      0,
+      "Single-model run should skip 0 tasks",
+    );
+
+    // Check started event confirms all tasks are processed
+    const startedEvent = events.find((e) => e.type === "started");
+    assertEquals(
+      startedEvent?.["totalTasks"],
+      3,
+      "Should start processing all 3 tasks",
+    );
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
 Deno.test("orchestrator: selects best model task during deduplication", async () => {
   // Verify that the highest-priority model's task is selected during deduplication
   // Model priority: claude-opus > gpt-4o > claude-haiku

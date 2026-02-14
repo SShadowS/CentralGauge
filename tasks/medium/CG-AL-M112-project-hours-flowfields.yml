@@ -46,6 +46,9 @@ description: >-
   Behavior:
   - Hours OnValidate: if Hours <= 0 then error. Error text must be exactly: "Hours must be greater than zero"
   - OnInsert trigger: if Entry Date is 0D then set it to WorkDate()
+metadata:
+  category: data-modeling
+  tags: [table, flowfield, calcformula, fields, keys]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M112.Test.al

@@ -13,6 +13,9 @@ description: >-
   that runs the Item Card page for the current record.
 
   Include ApplicationArea = All on the action.
+metadata:
+  category: user-interface
+  tags: [page-extension, table]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E053.Test.al

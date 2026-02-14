@@ -47,6 +47,9 @@ description: >-
      Always close the RecordRef when done.
 
   Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H022.Test.al

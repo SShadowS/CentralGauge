@@ -20,6 +20,9 @@ description: >-
      {data: {details: {amount: 123.45}}}. Navigate through nested objects using Get() and
      extract the decimal amount. Return Decimal.
 
+metadata:
+  category: data-exchange
+  tags: [json, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H014.Test.al

@@ -23,6 +23,9 @@ description: >-
   - Actions that modify data should request confirmation
 
   Dynamic action behavior: Disable CalculateTotals and ApplyDiscount when Status is Released.
+metadata:
+  category: user-interface
+  tags: [page, fields, triggers, validation]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M004.Test.al

@@ -37,6 +37,9 @@ description: >-
 
   All results must be rounded to 2 decimal places.
   Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, calculations, numeric-precision]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H001.Test.al

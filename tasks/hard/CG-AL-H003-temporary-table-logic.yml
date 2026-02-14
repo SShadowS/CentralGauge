@@ -28,6 +28,9 @@ description: >-
 
   The codeunit must have Access = Public.
   Critical: The TempResult parameter must be marked as "temporary" in the procedure signature.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, temporary-table, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H003.Test.al

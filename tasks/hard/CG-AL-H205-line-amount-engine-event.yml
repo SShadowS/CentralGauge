@@ -23,6 +23,9 @@ description: >-
   OnAfterCalculateLineAmount(var Result: Decimal; UnitPrice: Decimal; Quantity: Decimal; DiscountPercent: Decimal; RoundingPrecision: Decimal)
 
   The event must be raised for every call to CalculateLineAmount where no error is thrown.
+metadata:
+  category: interfaces-events
+  tags: [interface, event-subscriber, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H205.Test.al

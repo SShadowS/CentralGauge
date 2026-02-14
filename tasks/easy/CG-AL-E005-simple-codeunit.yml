@@ -11,6 +11,9 @@ description: >-
 
   Include proper Access property and ensure all procedures have appropriate parameter and return types.
   Follow Business Central codeunit conventions.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, validation]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E005.Test.al

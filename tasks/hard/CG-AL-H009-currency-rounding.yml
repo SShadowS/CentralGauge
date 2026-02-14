@@ -36,6 +36,9 @@ description: >-
 
   Critical: Must use Currency.Get() with proper handling when currency not found.
   Use Currency.InitRoundingPrecision() to set defaults.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, numeric-precision, rounding]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H009.Test.al

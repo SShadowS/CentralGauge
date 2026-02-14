@@ -24,6 +24,9 @@ description: >-
   4. local procedure InternalHelper(): Text
      - Returns 'Helper Result'
 
+metadata:
+  category: error-handling
+  tags: [permissions, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H019.Test.al

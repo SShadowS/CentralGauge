@@ -31,6 +31,9 @@ description: >-
   [IntegrationEvent(true, false)]
   local procedure OnBeforeValidateOrder(OrderNo: Code[20]; Amount: Decimal; var IsValid: Boolean; var Handled: Boolean)
 
+metadata:
+  category: interfaces-events
+  tags: [event-publisher, event-subscriber, codeunit]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H010.Test.al

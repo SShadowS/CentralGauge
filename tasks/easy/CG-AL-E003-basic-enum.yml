@@ -12,6 +12,9 @@ description: >-
 
   Include proper captions for each value.
   Follow Business Central enum conventions and ensure the enum can be used as a field type.
+metadata:
+  category: data-modeling
+  tags: [enum, fields]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E003.Test.al

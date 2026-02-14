@@ -25,6 +25,9 @@ description: >-
   - Total days in period depends on Plan (Basic=30, Premium=90, Enterprise=365).
   - Formula: (TotalAmount / Total Days) * (Total Days - DaysUsed).
   - Round the result to 2 decimal places.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, calculations]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M088.Test.al

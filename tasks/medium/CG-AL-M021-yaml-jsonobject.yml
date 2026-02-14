@@ -28,6 +28,9 @@ description: >-
      (overwriting if exists). Return the merged result as YAML Text.
 
   Include Access = Public on the codeunit.
+metadata:
+  category: data-exchange
+  tags: [json, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M021.Test.al

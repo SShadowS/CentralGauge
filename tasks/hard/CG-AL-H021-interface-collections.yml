@@ -42,6 +42,9 @@ description: >-
         Clears both the list and dictionary of channels.
 
   All codeunits should have Access = Public.
+metadata:
+  category: interfaces-events
+  tags: [interface, collections, codeunit]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H021.Test.al

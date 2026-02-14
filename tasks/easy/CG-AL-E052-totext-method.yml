@@ -18,6 +18,9 @@ description: >-
      "Order: [OrderNo], Amount: [Amount], Shipped: [IsShipped], Date: [OrderDate]"
 
   Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, enum]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E052.Test.al

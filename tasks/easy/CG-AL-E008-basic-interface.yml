@@ -11,6 +11,9 @@ description: >-
 
   Include proper Access property and ensure all procedures have appropriate parameter and return types.
   Follow Business Central interface conventions and include basic documentation comments.
+metadata:
+  category: interfaces-events
+  tags: [interface, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E008.Test.al

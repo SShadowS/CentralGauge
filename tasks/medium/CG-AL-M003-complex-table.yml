@@ -24,6 +24,9 @@ description: >-
     Error message must be exactly: "Cannot delete active contract"
 
   Include proper captions, data classification, and field validation patterns.
+metadata:
+  category: data-modeling
+  tags: [table, fields, keys, validation, triggers]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M003.Test.al

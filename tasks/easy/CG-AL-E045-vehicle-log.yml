@@ -19,6 +19,9 @@ description: >-
      - If "Odometer End" is less than "Odometer Start", throw an error.
      - The error message must be exactly: "End reading cannot be lower than start reading."
      - If "Odometer Start" is 0, allow any positive End reading.
+metadata:
+  category: data-modeling
+  tags: [table, fields, enum, keys]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E045.Test.al

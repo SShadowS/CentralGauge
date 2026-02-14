@@ -12,6 +12,9 @@ description: >-
 
   Include proper captions and data classification.
   Set appropriate primary key and ensure the table follows Business Central conventions.
+metadata:
+  category: data-modeling
+  tags: [table, fields, keys, captions, data-classification]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E001.Test.al

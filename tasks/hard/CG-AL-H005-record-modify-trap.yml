@@ -36,6 +36,9 @@ description: >-
 
   Critical: The OnModify trigger must correctly use xRec to detect changes.
   The audit log "Entry No." must auto-increment (use AutoIncrement property).
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, recordref, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H005.Test.al

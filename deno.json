@@ -53,7 +53,8 @@
     "@db/sqlite": "jsr:@db/sqlite@0.13.0",
     "tui": "https://deno.land/x/tui@2.1.11/mod.ts",
     "tui/components": "https://deno.land/x/tui@2.1.11/src/components/mod.ts",
-    "crayon": "https://deno.land/x/crayon@3.3.3/mod.ts"
+    "crayon": "https://deno.land/x/crayon@3.3.3/mod.ts",
+    "resvg-wasm": "https://deno.land/x/resvg_wasm@0.2.0/mod.ts"
   },
   "lint": {
     "rules": {

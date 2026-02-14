@@ -21,6 +21,9 @@ description: >-
 
   Include field validation triggers, OnValidate events, and integration with existing Customer events.
   Use proper data classification and include comprehensive validation logic.
+metadata:
+  category: data-modeling
+  tags: [table-extension, fields, keys, triggers]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M006.Test.al

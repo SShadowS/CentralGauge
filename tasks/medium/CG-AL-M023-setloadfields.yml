@@ -29,6 +29,9 @@ description: >-
      Return list of item numbers where Unit Price >= MinPrice.
 
   Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, procedure, recordref]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M023.Test.al

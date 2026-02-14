@@ -21,6 +21,9 @@ description: >-
 
   Use proper interface syntax, implements keyword, and include error handling
   for all procedures. Add logging and audit trail functionality.
+metadata:
+  category: interfaces-events
+  tags: [interface, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M009.Test.al

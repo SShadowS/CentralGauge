@@ -36,6 +36,9 @@ description: >-
      - Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)
 
   Critical: Use ErrorInfo.Create() pattern and CustomDimensions correctly.
+metadata:
+  category: error-handling
+  tags: [errorinfo, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H007.Test.al

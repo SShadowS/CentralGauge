@@ -24,6 +24,9 @@ description: >-
 
   Use event subscribers for Purchase Header events, proper error handling,
   and comprehensive logging. Include approval status management and state transitions.
+metadata:
+  category: business-logic
+  tags: [codeunit, interface, event-subscriber, procedure]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M008.Test.al

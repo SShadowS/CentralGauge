@@ -22,6 +22,9 @@ description: >-
   6. Build(): Text - returns formatted representation containing URL, method, headers, body, timeout
   7. Create(): Codeunit "CG Request Builder" - returns a new cleared instance
 
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, fluent-api, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H018.Test.al

@@ -22,6 +22,9 @@ description: >-
   The CalcFormula for "Entry Count" must use: Count("CG Warehouse Entry" WHERE("Warehouse Code"=FIELD(Code)))
 
   FlowFields must have Editable = false and FieldClass = FlowField.
+metadata:
+  category: data-modeling
+  tags: [table, flowfield, calcformula, fields, keys]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H002.Test.al

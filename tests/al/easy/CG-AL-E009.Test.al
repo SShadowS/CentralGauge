@@ -63,6 +63,8 @@ codeunit 80009 "CG-AL-E009 Test"
     procedure TestXMLportContainsAllRequiredFields()
     var
         Item: Record Item;
+        ItemLedgerEntry: Record "Item Ledger Entry";
+        NextEntryNo: Integer;
         ItemExport: XMLport "Item Export";
         TempBlob: Codeunit "Temp Blob";
         OutStream: OutStream;
@@ -75,8 +77,20 @@ codeunit 80009 "CG-AL-E009 Test"
         LibraryInventory.CreateItem(Item);
         Item.Description := 'Test Item Description';
         Item."Unit Price" := 99.99;
-        Item.Inventory := 50;
         Item.Modify();
+
+        // Create Item Ledger Entry so Inventory FlowField calculates to 50
+        ItemLedgerEntry.Reset();
+        if ItemLedgerEntry.FindLast() then
+            NextEntryNo := ItemLedgerEntry."Entry No." + 1
+        else
+            NextEntryNo := 1;
+        ItemLedgerEntry.Init();
+        ItemLedgerEntry."Entry No." := NextEntryNo;
+        ItemLedgerEntry."Item No." := Item."No.";
+        ItemLedgerEntry.Quantity := 50;
+        ItemLedgerEntry."Posting Date" := WorkDate();
+        ItemLedgerEntry.Insert(false);
 
         // [WHEN] We export using the XMLport
         TempBlob.CreateOutStream(OutStream);
@@ -98,6 +112,7 @@ codeunit 80009 "CG-AL-E009 Test"
         Assert.IsTrue(XMLText.Contains('50'), 'XML should contain Inventory');
 
         // Cleanup
+        ItemLedgerEntry.Delete();
         Item.Delete();
     end;
 

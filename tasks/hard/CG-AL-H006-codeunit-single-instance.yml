@@ -39,6 +39,9 @@ description: >-
 
   Critical: The SingleInstance property must be set correctly for state to persist.
   The Initialize() procedure must be idempotent.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, singleinstance, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H006.Test.al

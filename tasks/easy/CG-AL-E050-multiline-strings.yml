@@ -30,6 +30,9 @@ description: >-
      (Replace [CustomerName] with the actual parameter value)
 
   Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, string-operations, procedure]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E050.Test.al

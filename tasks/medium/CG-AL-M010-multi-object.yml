@@ -40,6 +40,9 @@ description: >-
   5. Implement cascade delete: When a Project is deleted with Delete(true), all related Project Tasks should also be deleted.
 
   Include proper relationships, validations, and business logic across all objects.
+metadata:
+  category: business-logic
+  tags: [codeunit, table, page, procedure, validation]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M010.Test.al

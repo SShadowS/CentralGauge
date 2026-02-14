@@ -36,6 +36,9 @@ description: >-
      - Uses TryDivide for both attempts
 
   Critical: The [TryFunction] attribute must be on the correct procedures and used correctly.
+metadata:
+  category: error-handling
+  tags: [tryfunction, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H008.Test.al

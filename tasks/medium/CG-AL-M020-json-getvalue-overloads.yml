@@ -32,6 +32,9 @@ description: >-
      otherwise return "none".
 
   Include Access = Public on the codeunit.
+metadata:
+  category: data-exchange
+  tags: [json, codeunit, procedure]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M020.Test.al

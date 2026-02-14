@@ -18,6 +18,9 @@ description: >-
      above the threshold. Use a for loop with continue to skip values at or below threshold.
      Return empty string if no values above threshold.
 
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, validation]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H013.Test.al

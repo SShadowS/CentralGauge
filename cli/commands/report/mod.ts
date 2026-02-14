@@ -91,9 +91,11 @@ export {
 
 // Model cards generation
 export {
+  generateAttemptPillsHtml,
   generateFallbackModelCardsHtml,
   generateModelCardsHtml,
   generateMultiRunModelCardsHtml,
+  getPassedByAttempt,
 } from "./model-cards.ts";
 
 // Run detection
@@ -105,3 +107,26 @@ export {
 
 // HTML templates
 export { generateHtmlTemplate, generateModelDetailPage } from "./templates.ts";
+
+// Theme pages
+export type { ThemePageParams, ThemeSummary } from "./theme-builder.ts";
+export {
+  calculateThemeSummaries,
+  filterResultsByTheme,
+  generateThemeNavHtml,
+  generateThemePage,
+  generateThemeSummaryHtml,
+} from "./theme-builder.ts";
+
+// OG image generation
+export { generateOgImage } from "./og-image.ts";
+
+// Analytics sections
+export type { AnalyticsOptions } from "./analytics-sections.ts";
+export {
+  generateAnalyticsSections,
+  generateThemeAnalytics,
+} from "./analytics-sections.ts";
+
+// SVG chart primitives
+export { getModelColor, getModelColorHex } from "./svg-charts.ts";

@@ -27,6 +27,9 @@ description: >-
   7. procedure GetKeys(Dict: Dictionary of [Code[20], Decimal]): List of [Code[20]]
      - Returns list of all keys from the dictionary
 
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, collections, procedure]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H020.Test.al

@@ -11,6 +11,9 @@ description: >-
 
   The codeunit should have Access = Internal and include proper event subscriber syntax.
   Use appropriate procedure naming and ensure the event subscription follows Business Central patterns.
+metadata:
+  category: interfaces-events
+  tags: [event-subscriber, codeunit]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E010.Test.al

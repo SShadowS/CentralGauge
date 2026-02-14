@@ -13,6 +13,9 @@ description: >-
   Use proper page layout with a Content area containing a group for the fields.
   Include appropriate captions and ensure the page follows Business Central conventions.
   The page should allow editing of all fields.
+metadata:
+  category: user-interface
+  tags: [page, fields, table]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E002.Test.al

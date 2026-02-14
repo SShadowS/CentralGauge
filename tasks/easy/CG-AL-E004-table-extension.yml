@@ -12,6 +12,9 @@ description: >-
 
   Include proper captions, data classification, and ensure all fields follow Business Central conventions.
   Use proper field numbering starting from 70000.
+metadata:
+  category: data-modeling
+  tags: [table-extension, fields, keys]
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E004.Test.al
