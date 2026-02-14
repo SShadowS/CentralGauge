@@ -609,7 +609,7 @@ export function generateHtmlTemplate(params: {
   <title>CentralGauge - Benchmark Results</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; line-height: 1.5; }
     .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
     header { text-align: center; margin-bottom: 3rem; }
     header h1 { font-size: 2.5rem; margin: 0; color: #2563eb; }
@@ -622,17 +622,17 @@ export function generateHtmlTemplate(params: {
     .metric-card.error { border-color: #ef4444; background: #fef2f2; }
     .metric-value { font-size: 2rem; font-weight: bold; color: #1f2937; }
     .metric-label { font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
-    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; font-size: 1.75rem; line-height: 1.3; }
     .models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
     .model-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .model-card h3 { margin: 0 0 1rem 0; color: #1f2937; font-size: 1rem; word-break: break-all; }
+    .model-card h3 { margin: 0 0 1rem 0; color: #1f2937; font-size: 1.125rem; line-height: 1.3; word-break: break-all; }
     .stat { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
     .stat-label { color: #6b7280; font-size: 0.875rem; }
     .stat-value { font-weight: 500; color: #1f2937; }
     .shortcomings-section { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
     .shortcomings-section h4 { margin: 0 0 0.5rem 0; font-size: 0.875rem; color: #4b5563; font-weight: 600; }
     .shortcomings-list { list-style: none; padding: 0; margin: 0; }
-    .shortcoming-item { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.8rem; cursor: help; }
+    .shortcoming-item { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.8125rem; cursor: help; }
     .shortcoming-concept { color: #dc2626; }
     .shortcoming-count { color: #6b7280; font-size: 0.75rem; }
     .shortcomings-more { font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; }
@@ -667,30 +667,30 @@ export function generateHtmlTemplate(params: {
     .matrix-legend .pass { color: #166534; font-weight: bold; }
     .matrix-legend .fail { color: #991b1b; font-weight: bold; }
     .matrix-container { overflow-x: auto; background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .result-matrix { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+    .result-matrix { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
     .result-matrix th, .result-matrix td { padding: 0.5rem; text-align: center; border: 1px solid #e5e7eb; }
     .result-matrix th { background: #f9fafb; font-weight: 600; color: #374151; white-space: nowrap; }
     .result-matrix .task-id { text-align: left; font-family: monospace; font-weight: 500; white-space: nowrap; background: #f9fafb; position: sticky; left: 0; }
-    .result-matrix .task-desc { text-align: left; max-width: 300px; font-size: 0.75rem; color: #4b5563; cursor: help; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .result-matrix .task-desc { text-align: left; max-width: 300px; font-size: 0.8125rem; color: #4b5563; cursor: help; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .matrix-cell { width: 2rem; font-weight: bold; }
     .matrix-cell.pass { background: #dcfce7; color: #166534; }
     .matrix-cell.fail { background: #fee2e2; color: #991b1b; }
     .chart-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .chart-legend { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.8rem; color: #374151; }
+    .chart-legend { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.875rem; color: #374151; }
     .chart-legend .legend-item { display: flex; align-items: center; gap: 0.4rem; }
     .chart-legend .legend-dot { width: 14px; height: 14px; border-radius: 3px; }
     .chart-legend .legend-dot.bar-first { background: #22c55e; }
     .chart-legend .legend-dot.bar-second { background: #3b82f6; }
     .h-bar-chart .bar-row { display: flex; align-items: center; margin-bottom: 0.5rem; }
-    .h-bar-chart .bar-label { width: 180px; font-size: 0.8rem; color: #374151; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
+    .h-bar-chart .bar-label { width: 180px; font-size: 0.875rem; color: #374151; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
     .h-bar-chart .bar-container { flex: 1; height: 24px; background: #f3f4f6; border-radius: 4px; margin: 0 0.75rem; overflow: hidden; display: flex; }
     .h-bar-chart .bar-fill { height: 100%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; position: relative; }
     .h-bar-chart .bar-fill.bar-first { background: #22c55e; border-radius: 4px 0 0 4px; }
     .h-bar-chart .bar-fill.bar-second { background: #3b82f6; border-radius: 0 4px 4px 0; }
-    .h-bar-chart .bar-pct { font-size: 0.7rem; font-weight: 600; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-    .h-bar-chart .bar-value { width: 50px; font-size: 0.8rem; font-weight: 600; color: #374151; text-align: right; }
+    .h-bar-chart .bar-pct { font-size: 0.75rem; font-weight: 600; color: white; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+    .h-bar-chart .bar-value { width: 50px; font-size: 0.875rem; font-weight: 600; color: #374151; text-align: right; }
     @media (max-width: 768px) {
-      .result-matrix { font-size: 0.7rem; }
+      .result-matrix { font-size: 0.8rem; }
       .result-matrix th, .result-matrix td { padding: 0.25rem; }
     }
     .theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 100; background: #e5e7eb; border: none; border-radius: 2rem; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; transition: background 0.2s, color 0.2s; }
@@ -869,10 +869,10 @@ export function generateModelDetailPage(params: {
   <title>${escapeHtml(modelName)} - Model Shortcomings - CentralGauge</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; line-height: 1.5; }
     .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
     h1 { color: #1f2937; margin: 0 0 0.5rem; font-size: 1.5rem; word-break: break-all; }
-    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; font-size: 1.75rem; line-height: 1.3; }
     p { color: #6b7280; margin: 0.5rem 0; }
     .back-link { display: inline-block; margin-bottom: 1.5rem; color: #2563eb; text-decoration: none; font-weight: 500; }
     .back-link:hover { text-decoration: underline; }
