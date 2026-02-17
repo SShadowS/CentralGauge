@@ -414,7 +414,7 @@ export function registerBenchCommand(cli: Command): void {
 
       // Execute parallel benchmark
       const outputFormat = (options.format || "verbose") as OutputFormat;
-      await executeParallelBenchmark(
+      const result = await executeParallelBenchmark(
         benchOptions,
         options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
         options.containerProvider,
@@ -423,8 +423,18 @@ export function registerBenchCommand(cli: Command): void {
         options.tui ?? false,
       );
 
-      // Explicitly exit to close any lingering connections
-      Deno.exit(0);
+      // If dashboard is running, keep process alive for result review
+      if (result.dashboardUrl) {
+        console.log(
+          `\n${colors.green("[Dashboard]")} Results available at ${
+            colors.bold(result.dashboardUrl)
+          } - Press Ctrl+C to exit`,
+        );
+        // Don't call Deno.exit - the HTTP server keeps the event loop alive
+      } else {
+        // Explicitly exit to close any lingering connections
+        Deno.exit(0);
+      }
     });
 }
 

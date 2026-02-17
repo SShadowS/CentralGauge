@@ -53,6 +53,7 @@ import {
   saveScoresFile,
 } from "./results-writer.ts";
 import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
+import type { DashboardServer } from "../../dashboard/mod.ts";
 
 /**
  * Convert TaskSetHashResult to HashResult for results serialization
@@ -81,7 +82,7 @@ export async function executeParallelBenchmark(
   outputFormat: OutputFormat = "verbose",
   jsonEvents = false,
   tuiMode = false,
-): Promise<void> {
+): Promise<{ dashboardUrl?: string | undefined }> {
   // Always load environment variables (API keys needed for model validation)
   await EnvLoader.loadEnvironment();
 
@@ -123,6 +124,8 @@ export async function executeParallelBenchmark(
   log.info(`Task Concurrency: ${options.taskConcurrency ?? 3}`);
   log.info(`Output: ${options.outputDir}`);
 
+  let dashboard: DashboardServer | null = null;
+
   try {
     await Deno.mkdir(options.outputDir, { recursive: true });
 
@@ -135,7 +138,7 @@ export async function executeParallelBenchmark(
       );
 
     if (taskManifests.length === 0) {
-      return;
+      return {};
     }
 
     // Load config
@@ -168,7 +171,7 @@ export async function executeParallelBenchmark(
         taskManifests,
         variants,
       );
-      if (!retryResult) return; // No missing combinations
+      if (!retryResult) return {}; // No missing combinations
       previousResults = retryResult.previousResults;
       taskManifests = retryResult.taskManifests;
       variants = retryResult.variants;
@@ -222,6 +225,29 @@ export async function executeParallelBenchmark(
       primaryContainerName,
       containerProvider.name,
     );
+
+    // Start live dashboard
+    try {
+      const { DashboardServer: DashServer, openBrowser } = await import(
+        "../../dashboard/mod.ts"
+      );
+      dashboard = await DashServer.start({
+        models: variants.map((v) => v.variantId),
+        taskIds: taskManifests.map((t) => t.id),
+        totalRuns,
+        attempts: options.attempts,
+        temperature: options.temperature || 0.1,
+        containerName: primaryContainerName,
+      });
+      log.info(`[Dashboard] Live at ${dashboard.url}`);
+      openBrowser(dashboard.url);
+    } catch (e) {
+      log.warn(
+        `[Dashboard] Failed to start: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
 
     for (let runIndex = 1; runIndex <= totalRuns; runIndex++) {
       if (totalRuns > 1) {
@@ -282,6 +308,12 @@ export async function executeParallelBenchmark(
         jsonEvents,
         tuiSetup?.tui ?? null,
       );
+
+      // Connect dashboard to orchestrator events
+      if (dashboard) {
+        dashboard.bridge.setRun(runIndex);
+        orchestrator.on((event) => dashboard!.bridge.handleEvent(event));
+      }
 
       // Run parallel benchmark with interactive retry loop
       let allResults = [...previousResults];
@@ -446,10 +478,17 @@ export async function executeParallelBenchmark(
       await displayMultiRunSummary(resultFilePaths, totalRuns);
     }
 
+    // Mark dashboard as complete (keeps server alive for review)
+    if (dashboard) {
+      dashboard.bridge.markComplete();
+    }
+
     // Finalize debug logging
     if (debugLogger) {
       await debugLogger.finalize();
     }
+
+    return dashboard ? { dashboardUrl: dashboard.url } : {};
   } catch (error) {
     // Check if this is a critical infrastructure error
     if (CriticalError.isCriticalError(error)) {
@@ -476,6 +515,11 @@ export async function executeParallelBenchmark(
 
     if (debugLogger) {
       await debugLogger.finalize();
+    }
+
+    // Mark dashboard complete on error too
+    if (dashboard) {
+      dashboard.bridge.markComplete();
     }
 
     throw error;
