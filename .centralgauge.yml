@@ -1,33 +1,37 @@
-# CentralGauge Configuration
-# Configuration for Business Central AL code generation benchmark
+# CentralGauge Configuration File
+# Place this file as .centralgauge.yml in your project root or home directory
 
 # Default models for different scenarios
 defaultModels:
-  benchmark: [sonnet, gpt-4o] # Models for production benchmarks
-  development: [mock] # Models for development/testing
-  comparison: [claude-4.5, gpt-5] # Flagship models for comparison
+  benchmark: [sonnet, gpt-4o]      # Models for production benchmarks
+  development: [mock]              # Models for development/testing
+  comparison: [flagship]           # Models for side-by-side comparison
 
 # LLM provider settings
 llm:
-  temperature: 0.1 # Lower = more deterministic
-  maxTokens: 4000 # Maximum response length
-  timeout: 60000 # Request timeout in milliseconds (60s for complex tasks)
+  temperature: 0.1                 # Lower = more deterministic
+  maxTokens: 4000                  # Maximum response length
+  timeout: 30000                   # Request timeout in milliseconds
 
 # Benchmark execution settings
 benchmark:
-  attempts: 2 # Number of attempts per task
-  outputDir: results # Directory for benchmark results
-  templateDir: templates # Directory for prompt templates
+  attempts: 2                      # Number of attempts per task
+  outputDir: results               # Directory for benchmark results
+  templateDir: templates           # Directory for prompt templates
 
-# Container settings - configured for Cronus27
+# Container settings
 container:
-  provider: bccontainer # Use real BC container (bccontainer, docker, mock)
-  name: Cronus27 # Container name
-  bcVersion: "27.0" # Business Central version
-  memoryLimit: 8G # Container memory limit
+  provider: bccontainer            # Container provider (mock, bccontainer, docker)
+  name: Cronus27                   # Container name
+  bcVersion: "24.0"               # Business Central version
+  memoryLimit: 8G                  # Container memory limit
   credentials:
-    username: sshadows # Container authentication username
-    password: "1234" # Container authentication password
+    username: sshadows             # Container authentication username
+    password: "1234"               # Container authentication password
+
+# Logging settings (console output)
+logging:
+  level: info                        # Log level: debug, info, warn, error
 
 # Environment variable overrides (optional)
 # These will be set during execution
@@ -42,43 +46,52 @@ container:
 #     content: |
 #       You are a strict AL code generator for Business Central.
 #       Only output valid AL code without explanations.
+#   creative:
+#     content: |
+#       Think creatively about solutions while ensuring code compiles.
 
 # Named variant profiles for comparing same model with different configs
 # Reference these in model specs: sonnet@profile=conservative
-variantProfiles:
-  conservative:
-    description: "Low temperature for deterministic output"
-    config:
-      temperature: 0.1
-      maxTokens: 4000
-  creative:
-    description: "Higher temperature for varied solutions"
-    config:
-      temperature: 0.8
-      maxTokens: 8000
-      systemPromptName: strict-al
-  deep-thinking:
-    description: "Extended reasoning for complex tasks"
-    config:
-      temperature: 0.2
-      thinkingBudget: 50000
+# variantProfiles:
+#   conservative:
+#     description: "Low temperature for deterministic output"
+#     config:
+#       temperature: 0.1
+#       maxTokens: 4000
+#   creative:
+#     description: "Higher temperature for varied solutions"
+#     config:
+#       temperature: 0.8
+#       maxTokens: 8000
+#       systemPromptName: creative
+#   deep-thinking:
+#     description: "Extended reasoning for complex tasks"
+#     config:
+#       temperature: 0.2
+#       thinkingBudget: 50000
 
-# Benchmark presets - reusable benchmark configurations
-# Run with: deno task start bench --preset <name>
+# Notification settings
+# Pushbullet notifications are sent when benchmarks complete
+# notifications:
+#   pushbullet:
+#     enabled: true                       # Enable/disable notifications
+#     accessToken: "o.xxxxx"              # Or use PUSHBULLET_ACCESS_TOKEN env var
+
+# Benchmark presets - save complex benchmark configurations as reusable presets
+# Run with: deno task start bench --preset my-comparison
 # List presets: deno task start bench --list-presets
-benchmarkPresets:
-  quick-test:
-    description: "Fast smoke test with mock model"
-    llms:
-      - mock
-    tasks:
-      - "tasks/easy/*.yml"
-    attempts: 1
-  flagship-compare:
-    description: "Compare flagship models on all tasks"
-    llms:
-      - sonnet
-      - gpt-4o
-      - gemini
-    stream: true
-    attempts: 2
+# benchmarkPresets:
+#   my-comparison:
+#     description: "Compare 2025 models with thinking"
+#     llms:
+#       - "opus@thinking=50000"
+#       - "gpt-5@reasoning=high"
+#       - "sonnet"
+#       - "openrouter/deepseek/deepseek-v3.2"
+#     stream: true
+#     attempts: 2
+#   quick-test:
+#     description: "Fast smoke test with mock model"
+#     llms: [mock]
+#     tasks: ["tasks/easy/*.yml"]
+#     attempts: 1
