@@ -17,14 +17,15 @@ export const DEFAULT_TEMPERATURE = 0.1;
 
 /**
  * Default maximum output tokens for LLM responses.
- * 4000 tokens is a reasonable default that works across most models.
+ * 64000 tokens accommodates large thinking/reasoning budgets (Anthropic requires
+ * max_tokens > thinkingBudget since thinking tokens count against the limit).
  */
-export const DEFAULT_MAX_TOKENS = 4000;
+export const DEFAULT_MAX_TOKENS = 64000;
 
 /**
- * Extended max tokens for Gemini models which support larger outputs.
+ * Default max tokens for Gemini models, consistent with the global default.
  */
-export const GEMINI_DEFAULT_MAX_TOKENS = 8192;
+export const GEMINI_DEFAULT_MAX_TOKENS = 64000;
 
 /**
  * Default timeout for LLM API requests in milliseconds.

@@ -141,7 +141,7 @@ Deno.test("buildParallelOptions", async (t) => {
     assertEquals(result.containerProvider, "bccontainer");
     assertEquals(result.attemptLimit, 2);
     assertEquals(result.temperature, 0.1); // default
-    assertEquals(result.maxTokens, 4000); // default
+    assertEquals(result.maxTokens, 64000); // default
     assertEquals(result.outputDir, "./results");
     assertEquals(result.debugMode, false);
     assertEquals(result.stream, false);

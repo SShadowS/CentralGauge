@@ -189,15 +189,16 @@ Avoid over-engineering: Don't create abstractions for one-off use cases or add i
 
 ## Running Tests
 
-Tests must be run using the configured tasks (which include `--allow-all` and `--parallel` flags):
+Tests must be run using the configured tasks (which include `--allow-all`):
 
 ```bash
-deno task test:unit   # Unit tests only (parallel, fastest)
+deno task test:unit   # Unit tests only
 deno task test        # Full test suite
 ```
 
-- **Prefer `deno task test:unit`** — runs tests in parallel across workers, completes in ~25s
+- **Prefer `deno task test:unit`** for fast feedback
 - Do NOT run `deno test` directly — it lacks the required permissions (`--allow-all`) for filesystem and environment access
+- Do NOT use `--parallel` — some tests share static state (e.g. `PricingService`) which causes false positives under parallel execution
 - After any code change, run `deno check`, `deno lint`, and `deno fmt` as well
 
 ## Writing Task Specifications (YAML)

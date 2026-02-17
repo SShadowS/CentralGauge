@@ -4,6 +4,7 @@
  */
 
 import * as colors from "@std/fmt/colors";
+import { DEFAULT_MAX_TOKENS } from "../../../src/constants.ts";
 import { EnvLoader } from "../../../src/utils/env-loader.ts";
 import { SplashScreen } from "../../../src/utils/splash-screen.ts";
 import { DebugLogger } from "../../../src/utils/debug-logger.ts";
@@ -786,7 +787,7 @@ export function buildParallelOptions(
       containerProvider: containerProviderName,
       attemptLimit: options.attempts,
       temperature: options.temperature || 0.1,
-      maxTokens: options.maxTokens || 4000,
+      maxTokens: options.maxTokens || DEFAULT_MAX_TOKENS,
       outputDir: options.outputDir,
       debugMode: options.debug || false,
       stream: options.stream ?? false,

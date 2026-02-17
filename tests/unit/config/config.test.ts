@@ -84,7 +84,7 @@ describe("ConfigManager", () => {
 
         assertExists(config.llm);
         assertEquals(config.llm.temperature, 0.1);
-        assertEquals(config.llm.maxTokens, 4000);
+        assertEquals(config.llm.maxTokens, 64000);
         assertEquals(config.llm.timeout, 30000);
 
         assertExists(config.benchmark);
@@ -149,7 +149,7 @@ describe("ConfigManager", () => {
       );
       assert(
         isNaN(config.llm?.maxTokens as number) ||
-          config.llm?.maxTokens === 4000,
+          config.llm?.maxTokens === 64000,
       );
       assert(
         isNaN(config.benchmark?.attempts as number) ||
@@ -439,7 +439,7 @@ describe("ConfigManager", () => {
       assert(sample.includes("development: [mock]"));
       assert(sample.includes("comparison: [flagship]"));
       assert(sample.includes("temperature: 0.1"));
-      assert(sample.includes("maxTokens: 4000"));
+      assert(sample.includes("maxTokens: 64000"));
       assert(sample.includes("attempts: 2"));
       assert(sample.includes('bcVersion: "24.0"'));
     });
@@ -535,7 +535,7 @@ benchmark:
         // Override specified value
         assertEquals(config.llm?.temperature, 0.9);
         // Keep default for unspecified value
-        assertEquals(config.llm?.maxTokens, 4000);
+        assertEquals(config.llm?.maxTokens, 64000);
         assertEquals(config.llm?.timeout, 30000);
       } finally {
         Deno.chdir(originalCwd);

@@ -95,7 +95,7 @@ describe("TaskTransformer", () => {
 
       // Verify defaults
       assertEquals(context.temperature, 0.1);
-      assertEquals(context.maxTokens, 4000);
+      assertEquals(context.maxTokens, 64000);
       assertEquals(context.outputDir, "results");
       assertEquals(context.debugMode, false);
 

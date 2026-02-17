@@ -10,7 +10,7 @@ defaultModels:
 # LLM provider settings
 llm:
   temperature: 0.1                 # Lower = more deterministic
-  maxTokens: 4000                  # Maximum response length
+  maxTokens: 64000                 # Maximum response length (high for thinking budgets)
   timeout: 30000                   # Request timeout in milliseconds
 
 # Benchmark execution settings

@@ -92,16 +92,18 @@ export class OpenAIAdapter extends BaseLLMAdapter
   }
 
   /**
-   * Check if the model is a reasoning-only model that doesn't support temperature
-   * o1 and o3 models don't support temperature parameter
+   * Check if the model is a reasoning-only model that doesn't support temperature.
+   * o1, o3, and codex models have mandatory reasoning and reject temperature.
    */
   private isReasoningOnlyModel(model: string): boolean {
-    return model.startsWith("o1") || model.startsWith("o3");
+    return model.startsWith("o1") || model.startsWith("o3") ||
+      model.includes("codex");
   }
 
   /**
-   * Get reasoning effort for supported models (o1, o3, GPT-5)
-   * Returns "low", "medium", or "high" if configured, undefined otherwise
+   * Get reasoning effort for supported models (o1, o3, GPT-5, codex).
+   * Returns "low", "medium", or "high" if configured.
+   * Codex models require reasoning_effort, so default to "medium" for them.
    */
   private getReasoningEffort(): "low" | "medium" | "high" | undefined {
     const budget = this.config.thinkingBudget;
@@ -110,6 +112,10 @@ export class OpenAIAdapter extends BaseLLMAdapter
       if (lower === "low" || lower === "medium" || lower === "high") {
         return lower as "low" | "medium" | "high";
       }
+    }
+    // Codex models have mandatory reasoning - default to "medium"
+    if (this.config.model.includes("codex")) {
+      return "medium";
     }
     return undefined;
   }
