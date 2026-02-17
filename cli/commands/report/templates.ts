@@ -32,6 +32,10 @@ export interface HtmlTemplateParams {
   themeNavHtml?: string;
   /** Analytics sections HTML (optional) */
   analyticsHtml?: string;
+  /** Changelog banner HTML to show after the header (optional) */
+  bannerHtml?: string | undefined;
+  /** Whether a changelog page exists (adds nav link) */
+  hasChangelog?: boolean | undefined;
 }
 
 /**
@@ -69,10 +73,13 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
       <nav class="header-links">
         <a href="https://github.com/SShadowS/CentralGauge" target="_blank" rel="noopener">GitHub</a>
         <a href="https://blog.sshadows.dk/" target="_blank" rel="noopener">Blog</a>
+        ${params.hasChangelog ? '<a href="changelog.html">Changelog</a>' : ""}
       </nav>
       <p class="report-date">Report generated: ${params.generatedDate}</p>
       <p class="data-date">Benchmark data: ${params.dataDateRange}</p>
     </header>
+
+    ${params.bannerHtml ?? ""}
 
     <section class="summary-metrics">
       ${params.summaryHtml}

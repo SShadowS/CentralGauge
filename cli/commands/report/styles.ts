@@ -306,6 +306,22 @@ export const INDEX_PAGE_STYLES = `
     body.dark .analytics-heatmap td.cell-fail { background: #7f1d1d; color: #fca5a5; }
     body.dark .analytics-heatmap td.cell-na { background: #1f2937; color: #6b7280; }
     body.dark .analytics-heatmap .difficulty-band { background: #1e293b; color: #94a3b8; }
+    /* Changelog banner */
+    .changelog-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 0.5rem; padding: 1rem 1.5rem; margin-bottom: 2rem; }
+    .changelog-banner h3 { margin: 0 0 0.25rem; font-size: 1rem; color: #1e40af; line-height: 1.3; }
+    .changelog-banner p { margin: 0.25rem 0; color: #1e3a5f; font-size: 0.9rem; }
+    .changelog-banner .changelog-link { font-size: 0.85rem; }
+    body.dark .changelog-banner { background: #1e293b; border-color: #334155; }
+    body.dark .changelog-banner h3 { color: #93c5fd; }
+    body.dark .changelog-banner p { color: #cbd5e1; }
+    body.dark .changelog-banner .changelog-link { color: #60a5fa; }
+    /* Changelog page entries */
+    .changelog-entries .changelog-entry { margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid #e5e7eb; }
+    .changelog-entries .changelog-entry:last-child { border-bottom: none; }
+    .changelog-entries .changelog-entry h2 { font-size: 1.25rem; margin: 0 0 0.5rem; border-bottom: none; padding-bottom: 0; }
+    .changelog-entries .changelog-entry p { color: #374151; font-size: 0.95rem; line-height: 1.6; }
+    body.dark .changelog-entries .changelog-entry { border-bottom-color: #374151; }
+    body.dark .changelog-entries .changelog-entry p { color: #d1d5db; }
 `;
 
 /**

@@ -121,6 +121,15 @@ export {
 // OG image generation
 export { generateOgImage } from "./og-image.ts";
 
+// Changelog
+export type { ChangelogEntry, ChangelogPageParams } from "./changelog.ts";
+export {
+  extractLatestEntry,
+  generateChangelogPage,
+  loadChangelog,
+  renderMarkdown,
+} from "./changelog.ts";
+
 // Analytics sections
 export type { AnalyticsOptions } from "./analytics-sections.ts";
 export {

@@ -25,8 +25,10 @@ import {
   confirmDatasetUsage,
   detectMultiRun,
   escapeHtml,
+  extractLatestEntry,
   filterExistingDatasetFiles,
   filterResultsByTheme,
+  generateChangelogPage,
   generateChartHtml,
   generateFallbackModelCardsHtml,
   generateHtmlTemplate,
@@ -45,6 +47,7 @@ import {
   getPassedByAttempt,
   groupResultsByModelAndTask,
   handleDatasetCollision,
+  loadChangelog,
   loadDataset,
   loadResultFilesGrouped,
   loadShortcomingsData,
@@ -69,7 +72,6 @@ interface ReportOptions {
   addTo?: string;
   dataset?: string;
   listDatasets: boolean;
-  ogText?: string;
 }
 
 async function generateReport(
@@ -424,7 +426,7 @@ async function generateHtmlReportFromFiles(
   _resultsDir: string,
   outputDir: string,
   selectedFiles: string[],
-  options: ReportOptions,
+  _options: ReportOptions,
 ): Promise<void> {
   // Load results preserving file boundaries for multi-run detection
   const fileData = await loadResultFilesGrouped(selectedFiles);
@@ -609,6 +611,25 @@ async function generateHtmlReportFromFiles(
   const themeSummaries = calculateThemeSummaries(allResults);
   const themeNavHtml = generateThemeNavHtml(themeSummaries);
 
+  // Load changelog and build banner / OG text
+  const changelogMd = await loadChangelog("./reports/static");
+  let bannerHtml: string | undefined;
+  let hasChangelog = false;
+  let ogBannerText: string | undefined;
+
+  if (changelogMd) {
+    const latestEntry = extractLatestEntry(changelogMd);
+    if (latestEntry) {
+      hasChangelog = true;
+      ogBannerText = latestEntry.heading;
+      bannerHtml = `<div class="changelog-banner">
+        <h3>${escapeHtml(latestEntry.heading)}</h3>
+        ${latestEntry.bodyHtml}
+        <p class="changelog-link"><a href="changelog.html">View full changelog &rarr;</a></p>
+      </div>`;
+    }
+  }
+
   const htmlContent = generateHtmlTemplate({
     chartsHtml,
     modelCardsHtml,
@@ -621,6 +642,8 @@ async function generateHtmlReportFromFiles(
     matrixLegendHtml,
     themeNavHtml,
     analyticsHtml,
+    bannerHtml,
+    hasChangelog,
   });
 
   // Copy favicon if it exists
@@ -631,9 +654,9 @@ async function generateHtmlReportFromFiles(
     // Favicon not found - continue without it
   }
 
-  // Generate OG image (with optional custom text)
+  // Generate OG image (banner text auto-derived from changelog)
   try {
-    await generateOgImage(outputDir, options.ogText);
+    await generateOgImage(outputDir, ogBannerText);
   } catch {
     // OG image generation failed - try static fallback
     try {
@@ -644,6 +667,41 @@ async function generateHtmlReportFromFiles(
     } catch {
       // No OG image available
     }
+  }
+
+  // Generate changelog page if changelog exists
+  if (hasChangelog && changelogMd) {
+    const allEntries = changelogMd
+      .split(/^(?=## )/m)
+      .map((section) => section.trim())
+      .filter(Boolean)
+      .map((section) => {
+        const firstNewline = section.indexOf("\n");
+        const heading = section.slice(
+          3,
+          firstNewline > 0 ? firstNewline : undefined,
+        ).trim();
+        const body = firstNewline > 0
+          ? section.slice(firstNewline + 1).trim()
+          : "";
+        const bodyHtml = body
+          ? body.split(/\n\s*\n/).filter(Boolean).map((p) =>
+            `<p>${escapeHtml(p.trim())}</p>`
+          ).join("\n")
+          : "";
+        return { heading, bodyHtml };
+      });
+
+    const changelogPageContent = generateChangelogPage({
+      entries: allEntries,
+      footerHtml,
+      generatedDate,
+    });
+    await Deno.writeTextFile(
+      `${outputDir}/changelog.html`,
+      changelogPageContent,
+    );
+    console.log("[OK] Generated changelog page");
   }
 
   // Write the main HTML file
@@ -894,7 +952,6 @@ export function registerReportCommand(cli: Command): void {
     .option("--add-to <name:string>", "Add files to existing dataset")
     .option("--dataset <name:string>", "Generate report from saved dataset")
     .option("--list-datasets", "List all saved datasets", { default: false })
-    .option("--og-text <text:string>", "Custom banner text on OG image")
     .action(async (options, resultsDir: string) => {
       if (!await exists(resultsDir)) {
         console.error(
