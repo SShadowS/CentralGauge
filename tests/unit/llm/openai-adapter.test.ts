@@ -435,6 +435,92 @@ Deno.test("OpenAIAdapter - constructor", async (t) => {
 });
 
 // =============================================================================
+// Codex / Responses API Model Detection Tests
+// =============================================================================
+
+Deno.test("OpenAIAdapter - Codex model detection", async (t) => {
+  await t.step("accepts codex model configuration without error", () => {
+    const adapter = new OpenAIAdapter();
+    const errors = adapter.validateConfig({
+      provider: "openai",
+      apiKey: "test-key",
+      model: "gpt-5.2-codex",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("accepts codex-mini model configuration without error", () => {
+    const adapter = new OpenAIAdapter();
+    const errors = adapter.validateConfig({
+      provider: "openai",
+      apiKey: "test-key",
+      model: "gpt-5.3-codex-mini",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("configures codex model without throwing", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "gpt-5.2-codex",
+      apiKey: "test-key",
+    });
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step(
+    "codex model with thinkingBudget configures without error",
+    () => {
+      const adapter = new OpenAIAdapter();
+      adapter.configure({
+        provider: "openai",
+        model: "gpt-5.2-codex",
+        apiKey: "test-key",
+        thinkingBudget: "high",
+      });
+      assertEquals(adapter.name, "openai");
+    },
+  );
+
+  await t.step("non-codex models are not detected as responses-only", () => {
+    const adapter = new OpenAIAdapter();
+
+    // These should all pass config validation (they're valid models)
+    for (const model of ["gpt-4o", "gpt-5.1", "o1-preview", "o3-mini"]) {
+      const errors = adapter.validateConfig({
+        provider: "openai",
+        apiKey: "test-key",
+        model,
+      });
+      assertEquals(errors.length, 0, `Model ${model} should be valid`);
+    }
+  });
+
+  await t.step(
+    "codex model still implements full LLMAdapter interface",
+    () => {
+      const adapter = new OpenAIAdapter();
+      adapter.configure({
+        provider: "openai",
+        model: "gpt-5.2-codex",
+        apiKey: "test-key",
+      });
+
+      assertEquals(typeof adapter.configure, "function");
+      assertEquals(typeof adapter.generateCode, "function");
+      assertEquals(typeof adapter.generateFix, "function");
+      assertEquals(typeof adapter.validateConfig, "function");
+      assertEquals(typeof adapter.estimateCost, "function");
+      assertEquals(typeof adapter.isHealthy, "function");
+      assertEquals(typeof adapter.generateCodeStream, "function");
+      assertEquals(typeof adapter.generateFixStream, "function");
+      assertEquals(adapter.supportsStreaming, true);
+    },
+  );
+});
+
+// =============================================================================
 // Streaming Interface Tests
 // =============================================================================
 

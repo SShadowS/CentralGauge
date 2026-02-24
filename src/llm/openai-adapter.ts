@@ -80,6 +80,14 @@ export class OpenAIAdapter extends BaseLLMAdapter
   }
 
   /**
+   * Check if the model requires the Responses API instead of Chat Completions.
+   * Codex models (gpt-5.2-codex, gpt-5.3-codex, etc.) are Responses API only.
+   */
+  private isResponsesOnlyModel(model: string): boolean {
+    return model.includes("codex");
+  }
+
+  /**
    * Check if the model uses max_completion_tokens instead of max_tokens
    * GPT-5 series and reasoning models (o1, o3) use the new parameter
    */
@@ -173,6 +181,10 @@ export class OpenAIAdapter extends BaseLLMAdapter
     request: LLMRequest,
     includeRaw = false,
   ): Promise<ProviderCallResult> {
+    if (this.isResponsesOnlyModel(this.config.model)) {
+      return this.callProviderResponses(request);
+    }
+
     const startTime = Date.now();
     const client = this.ensureClient();
     const params = this.buildRequestParams(request);
@@ -197,10 +209,56 @@ export class OpenAIAdapter extends BaseLLMAdapter
     };
   }
 
+  /**
+   * Call the OpenAI Responses API for Codex models.
+   * Codex models don't support Chat Completions and require this endpoint.
+   */
+  private async callProviderResponses(
+    request: LLMRequest,
+  ): Promise<ProviderCallResult> {
+    const client = this.ensureClient();
+    const startTime = Date.now();
+    const reasoningEffort = this.getReasoningEffort();
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    const response = await client.responses.create({
+      model: this.config.model,
+      input: request.prompt,
+      ...(request.systemPrompt ? { instructions: request.systemPrompt } : {}),
+      max_output_tokens: maxTokens,
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+      store: false,
+    });
+
+    const duration = Date.now() - startTime;
+
+    return {
+      response: {
+        content: response.output_text ?? "",
+        model: this.config.model,
+        usage: {
+          promptTokens: response.usage?.input_tokens ?? 0,
+          completionTokens: response.usage?.output_tokens ?? 0,
+          totalTokens: response.usage?.total_tokens ?? 0,
+          estimatedCost: this.estimateCost(
+            response.usage?.input_tokens ?? 0,
+            response.usage?.output_tokens ?? 0,
+          ),
+        },
+        duration,
+        finishReason: "stop",
+      },
+    };
+  }
+
   protected async *streamProvider(
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    if (this.isResponsesOnlyModel(this.config.model)) {
+      return yield* this.streamProviderResponses(request, options);
+    }
+
     const state = createStreamState();
     const client = this.ensureClient();
     const params = this.buildRequestParams(request, true);
@@ -229,6 +287,79 @@ export class OpenAIAdapter extends BaseLLMAdapter
         options,
       });
 
+      yield finalChunk;
+      return result;
+    } catch (error) {
+      handleStreamError(error, options);
+    }
+  }
+
+  /**
+   * Stream from the OpenAI Responses API for Codex models.
+   * Uses stream: true on responses.create() and processes SSE events.
+   */
+  private async *streamProviderResponses(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const state = createStreamState();
+    const client = this.ensureClient();
+    const reasoningEffort = this.getReasoningEffort();
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    try {
+      const stream = await client.responses.create({
+        model: this.config.model,
+        input: request.prompt,
+        ...(request.systemPrompt ? { instructions: request.systemPrompt } : {}),
+        max_output_tokens: maxTokens,
+        ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+        store: false,
+        stream: true,
+      });
+
+      let finalUsage: TokenUsage | undefined;
+      for await (const event of stream) {
+        if (
+          event.type === "response.output_text.delta" &&
+          "delta" in event
+        ) {
+          yield createChunk(event.delta as string, state, options);
+        }
+        if (
+          event.type === "response.completed" && "response" in event
+        ) {
+          const resp = event.response as {
+            usage?: {
+              input_tokens?: number;
+              output_tokens?: number;
+              total_tokens?: number;
+            };
+          };
+          if (resp?.usage) {
+            const u = resp.usage;
+            finalUsage = {
+              promptTokens: u.input_tokens ?? 0,
+              completionTokens: u.output_tokens ?? 0,
+              totalTokens: u.total_tokens ?? 0,
+              estimatedCost: this.estimateCost(
+                u.input_tokens ?? 0,
+                u.output_tokens ?? 0,
+              ),
+            };
+          }
+        }
+      }
+
+      const usage = finalUsage ??
+        createFallbackUsage(request.prompt, state.accumulatedText);
+      const { finalChunk, result } = finalizeStream({
+        state,
+        model: this.config.model,
+        usage,
+        finishReason: "stop",
+        options,
+      });
       yield finalChunk;
       return result;
     } catch (error) {
