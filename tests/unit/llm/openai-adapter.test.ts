@@ -449,15 +449,18 @@ Deno.test("OpenAIAdapter - Codex model detection", async (t) => {
     assertEquals(errors.length, 0);
   });
 
-  await t.step("accepts codex-mini model configuration without error", () => {
-    const adapter = new OpenAIAdapter();
-    const errors = adapter.validateConfig({
-      provider: "openai",
-      apiKey: "test-key",
-      model: "gpt-5.3-codex-mini",
-    });
-    assertEquals(errors.length, 0);
-  });
+  await t.step(
+    "accepts gpt-5.3-codex model configuration without error",
+    () => {
+      const adapter = new OpenAIAdapter();
+      const errors = adapter.validateConfig({
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-5.3-codex",
+      });
+      assertEquals(errors.length, 0);
+    },
+  );
 
   await t.step("configures codex model without throwing", () => {
     const adapter = new OpenAIAdapter();

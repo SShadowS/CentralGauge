@@ -2,7 +2,7 @@
   "$schema": "./pricing.schema.json",
   "$comment": "Offline fallback only. LiteLLMService is the primary pricing source at runtime.",
   "version": "1.1.0",
-  "lastUpdated": "2026-02-05",
+  "lastUpdated": "2026-02-24",
   "currency": "USD",
   "unit": "per_1k_tokens",
   "providers": {
@@ -33,9 +33,11 @@
       "models": {
         "gpt-5.2-2025-12-11": { "input": 0.00175, "output": 0.014 },
         "gpt-5-pro": { "input": 0.015, "output": 0.12 },
+        "gpt-5.3-codex": { "input": 0.00175, "output": 0.014 },
         "gpt-5.2-codex": { "input": 0.00175, "output": 0.014 },
         "gpt-5.1-codex-max": { "input": 0.00125, "output": 0.01 },
-        "gpt-5.1-codex-mini": { "input": 0.00025, "output": 0.002 },
+        "gpt-5.1-codex": { "input": 0.00125, "output": 0.01 },
+        "gpt-5-codex": { "input": 0.00125, "output": 0.01 },
         "gpt-5.1": { "input": 0.00125, "output": 0.01 },
         "gpt-4o": { "input": 0.0025, "output": 0.01 },
         "gpt-4o-mini": { "input": 0.00015, "output": 0.0006 },

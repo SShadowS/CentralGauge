@@ -29,9 +29,8 @@ export const MODEL_ALIASES: Record<string, ModelAlias> = {
   // OpenAI — GPT-5 family
   "gpt-5": { provider: "openai", model: "gpt-5.2-2025-12-11" },
   "gpt-5-pro": { provider: "openai", model: "gpt-5-pro" },
-  "codex": { provider: "openai", model: "gpt-5.2-codex" },
+  "codex": { provider: "openai", model: "gpt-5.3-codex" },
   "codex-max": { provider: "openai", model: "gpt-5.1-codex-max" },
-  "codex-mini": { provider: "openai", model: "gpt-5.1-codex-mini" },
   // OpenAI — GPT-4 + reasoning
   "gpt-4o": { provider: "openai", model: "gpt-4o" },
   "o1": { provider: "openai", model: "o1-preview" },
@@ -102,9 +101,9 @@ export const MODEL_DISPLAY_NAMES: Record<string, string> = {
   // OpenAI
   "gpt-5.2-2025-12-11": "GPT-5.2",
   "gpt-5-pro": "GPT-5 Pro",
+  "gpt-5.3-codex": "GPT-5.3 Codex",
   "gpt-5.2-codex": "GPT-5.2 Codex",
   "gpt-5.1-codex-max": "GPT-5.1 Codex Max",
-  "gpt-5.1-codex-mini": "GPT-5.1 Codex Mini",
   "gpt-4o": "GPT-4o",
   "gpt-4o-mini": "GPT-4o Mini",
   "gpt-4-turbo": "GPT-4 Turbo",
@@ -168,7 +167,6 @@ export const MODEL_GROUPS: Record<string, string[]> = {
     "haiku-4.5",
     "gemini-flash",
     "gemini-2.5-flash",
-    "codex-mini",
     "llama",
   ],
   "quality": [
@@ -187,7 +185,6 @@ export const MODEL_GROUPS: Record<string, string[]> = {
     "gpt-5",
     "codex",
     "codex-max",
-    "codex-mini",
     "sonnet-4.5",
     "gpt-4o",
     "sonnet",
@@ -204,7 +201,6 @@ export const MODEL_GROUPS: Record<string, string[]> = {
     "gpt-5-pro",
     "codex",
     "codex-max",
-    "codex-mini",
     "claude-4.5",
     "sonnet-4.5",
     "haiku-4.5",
