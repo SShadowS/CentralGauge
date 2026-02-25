@@ -485,9 +485,15 @@ async function generateHtmlReportFromFiles(
       multiRunInfo.runCount,
     );
 
-    // Sort by pass@1 descending
+    // Sort by highest pass@k descending, then pass@1 as tiebreaker
     const sortedMultiModels = [...multiRunStats.entries()].sort(
-      ([, a], [, b]) => (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0),
+      ([, a], [, b]) => {
+        const aMax = a.passAtK[a.runCount] ?? a.passAtK[1] ?? 0;
+        const bMax = b.passAtK[b.runCount] ?? b.passAtK[1] ?? 0;
+        const diff = bMax - aMax;
+        if (diff !== 0) return diff;
+        return (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0);
+      },
     );
 
     // Charts
@@ -805,7 +811,13 @@ async function generateHtmlReportFromFiles(
       );
 
       const sortedThemeModels = [...themeMultiRunStats.entries()].sort(
-        ([, a], [, b]) => (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0),
+        ([, a], [, b]) => {
+          const aMax = a.passAtK[a.runCount] ?? a.passAtK[1] ?? 0;
+          const bMax = b.passAtK[b.runCount] ?? b.passAtK[1] ?? 0;
+          const diff = bMax - aMax;
+          if (diff !== 0) return diff;
+          return (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0);
+        },
       );
 
       themeModelCount = sortedThemeModels.length;
