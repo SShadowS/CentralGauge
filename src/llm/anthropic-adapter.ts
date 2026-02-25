@@ -183,13 +183,27 @@ export class AnthropicAdapter extends BaseLLMAdapter
       .map((block) => block.text)
       .join("");
 
+    // deno-lint-ignore no-explicit-any
+    const usageAny = message.usage as any;
+    const cacheCreationTokens = usageAny?.cache_creation_input_tokens as
+      | number
+      | undefined;
+    const cacheReadTokens = usageAny?.cache_read_input_tokens as
+      | number
+      | undefined;
     const usage: TokenUsage = {
       promptTokens: message.usage.input_tokens,
       completionTokens: message.usage.output_tokens,
       totalTokens: message.usage.input_tokens + message.usage.output_tokens,
-      estimatedCost: this.estimateCost(
+      ...(cacheCreationTokens ? { cacheCreationTokens } : {}),
+      ...(cacheReadTokens ? { cacheReadTokens } : {}),
+      estimatedCost: PricingService.estimateCostWithCacheSync(
+        this.name,
+        this.config.model,
         message.usage.input_tokens,
         message.usage.output_tokens,
+        cacheCreationTokens,
+        cacheReadTokens,
       ),
     };
 
@@ -320,7 +334,15 @@ export class AnthropicAdapter extends BaseLLMAdapter
           content: request.prompt,
         },
       ],
-      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
+      ...(request.systemPrompt
+        ? {
+          system: [{
+            type: "text" as const,
+            text: request.systemPrompt,
+            cache_control: { type: "ephemeral" as const },
+          }],
+        }
+        : {}),
       ...(request.stop ? { stop_sequences: request.stop } : {}),
     };
 
@@ -376,13 +398,27 @@ export class AnthropicAdapter extends BaseLLMAdapter
   private buildUsageFromMessage(
     message: Anthropic.Message,
   ): TokenUsage {
+    // deno-lint-ignore no-explicit-any
+    const usageAny = message.usage as any;
+    const cacheCreationTokens = usageAny?.cache_creation_input_tokens as
+      | number
+      | undefined;
+    const cacheReadTokens = usageAny?.cache_read_input_tokens as
+      | number
+      | undefined;
     return {
       promptTokens: message.usage.input_tokens,
       completionTokens: message.usage.output_tokens,
       totalTokens: message.usage.input_tokens + message.usage.output_tokens,
-      estimatedCost: this.estimateCost(
+      ...(cacheCreationTokens ? { cacheCreationTokens } : {}),
+      ...(cacheReadTokens ? { cacheReadTokens } : {}),
+      estimatedCost: PricingService.estimateCostWithCacheSync(
+        this.name,
+        this.config.model,
         message.usage.input_tokens,
         message.usage.output_tokens,
+        cacheCreationTokens,
+        cacheReadTokens,
       ),
     };
   }

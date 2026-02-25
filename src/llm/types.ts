@@ -57,6 +57,9 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  cacheCreationTokens?: number | undefined; // Anthropic: tokens written to cache
+  cacheReadTokens?: number | undefined; // Anthropic: tokens read from cache
+  reasoningTokens?: number | undefined; // OpenAI o1/o3 + Gemini thinking tokens
   estimatedCost?: number | undefined; // USD
 }
 

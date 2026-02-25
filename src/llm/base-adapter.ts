@@ -309,9 +309,9 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
   async isHealthy(): Promise<boolean> {
     try {
       const testRequest: LLMRequest = {
-        prompt: "Say 'OK' if you can respond.",
+        prompt: "OK",
         temperature: 0,
-        maxTokens: 5,
+        maxTokens: 1,
       };
 
       await this.callProvider(testRequest);

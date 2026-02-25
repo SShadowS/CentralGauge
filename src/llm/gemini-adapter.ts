@@ -36,6 +36,7 @@ interface GeminiUsageMetadata {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
   totalTokenCount?: number;
+  thoughtsTokenCount?: number;
 }
 
 export class GeminiAdapter extends BaseLLMAdapter
@@ -167,15 +168,24 @@ export class GeminiAdapter extends BaseLLMAdapter
     const startTime = Date.now();
     const ai = this.ensureClient();
 
+    const thinkingBudget = typeof this.config.thinkingBudget === "number"
+      ? this.config.thinkingBudget
+      : undefined;
+
     const apiResponse = await ai.models.generateContent({
       model: this.config.model,
       contents: request.prompt,
       config: {
-        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        ...(thinkingBudget !== undefined ? {} : {
+          temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        }),
         maxOutputTokens: request.maxTokens ?? this.config.maxTokens ?? 8192,
         ...(request.stop ? { stopSequences: request.stop } : {}),
         ...(request.systemPrompt
           ? { systemInstruction: request.systemPrompt }
+          : {}),
+        ...(thinkingBudget !== undefined
+          ? { thinkingConfig: { thinkingBudget } }
           : {}),
       },
     });
@@ -187,6 +197,8 @@ export class GeminiAdapter extends BaseLLMAdapter
     const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
     const estimatedCompletionTokens = Math.ceil(contentText.length / 4);
 
+    const thoughtsTokens = (apiResponse.usageMetadata as GeminiUsageMetadata)
+      ?.thoughtsTokenCount;
     const usage: TokenUsage = {
       promptTokens: apiResponse.usageMetadata?.promptTokenCount ??
         estimatedPromptTokens,
@@ -194,6 +206,7 @@ export class GeminiAdapter extends BaseLLMAdapter
         estimatedCompletionTokens,
       totalTokens: apiResponse.usageMetadata?.totalTokenCount ??
         (estimatedPromptTokens + estimatedCompletionTokens),
+      ...(thoughtsTokens ? { reasoningTokens: thoughtsTokens } : {}),
       estimatedCost: this.estimateCost(
         apiResponse.usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
         apiResponse.usageMetadata?.candidatesTokenCount ??
@@ -226,20 +239,31 @@ export class GeminiAdapter extends BaseLLMAdapter
     let usageMetadata: GeminiUsageMetadata | undefined;
 
     try {
+      const thinkingBudget = typeof this.config.thinkingBudget === "number"
+        ? this.config.thinkingBudget
+        : undefined;
+
       const stream = await ai.models.generateContentStream({
         model: this.config.model,
         contents: request.prompt,
         config: {
-          temperature: request.temperature ?? this.config.temperature ?? 0.1,
+          ...(thinkingBudget !== undefined ? {} : {
+            temperature: request.temperature ?? this.config.temperature ?? 0.1,
+          }),
           maxOutputTokens: request.maxTokens ?? this.config.maxTokens ?? 8192,
           ...(request.stop ? { stopSequences: request.stop } : {}),
           ...(request.systemPrompt
             ? { systemInstruction: request.systemPrompt }
             : {}),
+          ...(thinkingBudget !== undefined
+            ? { thinkingConfig: { thinkingBudget } }
+            : {}),
         },
       });
 
       for await (const chunk of stream) {
+        if (options?.abortSignal?.aborted) break;
+
         const text = chunk.text || "";
 
         if (text) {
@@ -261,11 +285,14 @@ export class GeminiAdapter extends BaseLLMAdapter
       const completionTokens = usageMetadata?.candidatesTokenCount ??
         estimateTokens(state.accumulatedText);
 
+      const thoughtsTokens = (usageMetadata as GeminiUsageMetadata | undefined)
+        ?.thoughtsTokenCount;
       const usage: TokenUsage = {
         promptTokens,
         completionTokens,
         totalTokens: usageMetadata?.totalTokenCount ??
           (promptTokens + completionTokens),
+        ...(thoughtsTokens ? { reasoningTokens: thoughtsTokens } : {}),
         estimatedCost: this.estimateCost(promptTokens, completionTokens),
       };
 

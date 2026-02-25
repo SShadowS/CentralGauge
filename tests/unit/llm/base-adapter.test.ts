@@ -460,7 +460,7 @@ Deno.test("BaseLLMAdapter - isHealthy template method", async (t) => {
     assertEquals(adapter.callProviderCalls.length, 1);
     const call = adapter.callProviderCalls[0];
     assertExists(call);
-    assertEquals(call.request.maxTokens, 5);
+    assertEquals(call.request.maxTokens, 1);
   });
 
   await t.step("returns false when callProvider throws", async () => {

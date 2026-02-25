@@ -84,7 +84,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
    * Codex models (gpt-5.2-codex, gpt-5.3-codex, etc.) are Responses API only.
    */
   private isResponsesOnlyModel(model: string): boolean {
-    return model.includes("codex");
+    return /\bcodex\b/.test(model);
   }
 
   /**
@@ -105,7 +105,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
    */
   private isReasoningOnlyModel(model: string): boolean {
     return model.startsWith("o1") || model.startsWith("o3") ||
-      model.includes("codex");
+      /\bcodex\b/.test(model);
   }
 
   /**
@@ -122,7 +122,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
       }
     }
     // Codex models have mandatory reasoning - default to "medium"
-    if (this.config.model.includes("codex")) {
+    if (/\bcodex\b/.test(this.config.model)) {
       return "medium";
     }
     return undefined;
@@ -240,13 +240,28 @@ export class OpenAIAdapter extends BaseLLMAdapter
           promptTokens: response.usage?.input_tokens ?? 0,
           completionTokens: response.usage?.output_tokens ?? 0,
           totalTokens: response.usage?.total_tokens ?? 0,
+          ...((response.usage as {
+              output_tokens_details?: { reasoning_tokens?: number };
+            })
+              ?.output_tokens_details?.reasoning_tokens
+            ? {
+              reasoningTokens: (response.usage as {
+                output_tokens_details?: { reasoning_tokens?: number };
+              })
+                ?.output_tokens_details?.reasoning_tokens,
+            }
+            : {}),
           estimatedCost: this.estimateCost(
             response.usage?.input_tokens ?? 0,
             response.usage?.output_tokens ?? 0,
           ),
         },
         duration,
-        finishReason: "stop",
+        finishReason: response.status === "incomplete"
+          ? "length"
+          : response.status === "failed"
+          ? "error"
+          : "stop",
       },
     };
   }
@@ -319,6 +334,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
       });
 
       let finalUsage: TokenUsage | undefined;
+      let responseStatus: string | undefined;
       for await (const event of stream) {
         if (
           event.type === "response.output_text.delta" &&
@@ -336,12 +352,17 @@ export class OpenAIAdapter extends BaseLLMAdapter
               total_tokens?: number;
             };
           };
+          responseStatus = (resp as { status?: string })?.status;
           if (resp?.usage) {
             const u = resp.usage;
+            const reasoningTokens =
+              (u as { output_tokens_details?: { reasoning_tokens?: number } })
+                ?.output_tokens_details?.reasoning_tokens;
             finalUsage = {
               promptTokens: u.input_tokens ?? 0,
               completionTokens: u.output_tokens ?? 0,
               totalTokens: u.total_tokens ?? 0,
+              ...(reasoningTokens ? { reasoningTokens } : {}),
               estimatedCost: this.estimateCost(
                 u.input_tokens ?? 0,
                 u.output_tokens ?? 0,
@@ -357,7 +378,11 @@ export class OpenAIAdapter extends BaseLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: "stop",
+        finishReason: responseStatus === "incomplete"
+          ? "length"
+          : responseStatus === "failed"
+          ? "error"
+          : "stop",
         options,
       });
       yield finalChunk;
@@ -449,6 +474,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
     const params = {
       model: this.config.model,
       messages,
+      store: false,
       // Reasoning models (o1, o3) don't support temperature
       ...(isReasoningOnly ? {} : {
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
@@ -477,10 +503,14 @@ export class OpenAIAdapter extends BaseLLMAdapter
   private buildUsageFromCompletion(
     usage: OpenAI.Completions.CompletionUsage | undefined,
   ): TokenUsage {
+    const reasoningTokens =
+      (usage as { completion_tokens_details?: { reasoning_tokens?: number } })
+        ?.completion_tokens_details?.reasoning_tokens;
     return {
       promptTokens: usage?.prompt_tokens ?? 0,
       completionTokens: usage?.completion_tokens ?? 0,
       totalTokens: usage?.total_tokens ?? 0,
+      ...(reasoningTokens ? { reasoningTokens } : {}),
       estimatedCost: this.estimateCost(
         usage?.prompt_tokens ?? 0,
         usage?.completion_tokens ?? 0,

@@ -104,7 +104,7 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
       );
     }
 
-    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
+    const apiVersion = this.config.apiVersion || "2024-10-21";
     const url = `${endpoint}/openai/deployments?api-version=${apiVersion}`;
 
     const response = await fetch(url, {
@@ -249,22 +249,29 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
         );
       }
 
-      const lastFinishReason = yield* this.processStreamEvents(
+      const streamResult = yield* this.processStreamEvents(
         apiResponse,
         state,
         options,
       );
 
-      const usage = this.buildStreamUsage(
-        request.prompt,
-        state.accumulatedText,
-      );
+      const usage = streamResult.usage
+        ? {
+          promptTokens: streamResult.usage.prompt_tokens ?? 0,
+          completionTokens: streamResult.usage.completion_tokens ?? 0,
+          totalTokens: streamResult.usage.total_tokens ?? 0,
+          estimatedCost: this.estimateCost(
+            streamResult.usage.prompt_tokens ?? 0,
+            streamResult.usage.completion_tokens ?? 0,
+          ),
+        }
+        : this.buildStreamUsage(request.prompt, state.accumulatedText);
 
       const { finalChunk, result } = finalizeStream({
         state,
         model: this.getDeploymentName(),
         usage,
-        finishReason: this.mapFinishReason(lastFinishReason),
+        finishReason: this.mapFinishReason(streamResult.finishReason),
         options,
       });
 
@@ -325,7 +332,7 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
     }
 
     const deploymentName = this.getDeploymentName();
-    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
+    const apiVersion = this.config.apiVersion || "2024-10-21";
 
     return `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
   }
@@ -373,6 +380,7 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
 
     if (stream) {
       payload["stream"] = true;
+      payload["stream_options"] = { include_usage: true };
     }
 
     return payload;
@@ -422,9 +430,25 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
     response: Response,
     state: StreamState,
     options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, string | undefined, undefined> {
+  ): AsyncGenerator<
+    StreamChunk,
+    {
+      finishReason: string | undefined;
+      usage: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      } | undefined;
+    },
+    undefined
+  > {
     const reader = getStreamReader(response);
     let lastFinishReason: string | undefined;
+    let lastUsage: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    } | undefined;
 
     for await (const event of parseSSEStream(reader)) {
       if (event.done) break;
@@ -435,6 +459,11 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
             delta?: { content?: string };
             finish_reason?: string;
           }>;
+          usage?: {
+            prompt_tokens?: number;
+            completion_tokens?: number;
+            total_tokens?: number;
+          };
         };
 
         const content = data.choices?.[0]?.delta?.content || "";
@@ -445,13 +474,17 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
         if (data.choices?.[0]?.finish_reason) {
           lastFinishReason = data.choices[0].finish_reason;
         }
+
+        if (data.usage) {
+          lastUsage = data.usage;
+        }
       } catch {
         // Skip malformed JSON chunks
         continue;
       }
     }
 
-    return lastFinishReason;
+    return { finishReason: lastFinishReason, usage: lastUsage };
   }
 
   /**

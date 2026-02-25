@@ -183,6 +183,94 @@ describe("PricingService", () => {
     });
   });
 
+  describe("estimateCostWithCacheSync", () => {
+    it("should match estimateCostSync when no cache tokens", () => {
+      const regular = PricingService.estimateCostSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000,
+        1000,
+      );
+      const withCache = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000,
+        1000,
+      );
+
+      assertEquals(withCache, regular);
+    });
+
+    it("should add 25% surcharge for cache creation tokens", () => {
+      // Anthropic claude-sonnet-4-5: input = $0.003/1K
+      // 1000 regular input + 1000 cache creation + 1000 output
+      const cost = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000, // promptTokens: $0.003
+        1000, // completionTokens: $0.015
+        1000, // cacheCreationTokens: $0.003 * 1.25 = $0.00375
+      );
+
+      // $0.003 + $0.015 + $0.00375 = $0.02175
+      assertEquals(cost, 0.02175);
+    });
+
+    it("should apply 90% discount for cache read tokens", () => {
+      // Anthropic claude-sonnet-4-5: input = $0.003/1K
+      // 1000 regular input + 1000 cache read + 1000 output
+      const cost = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000, // promptTokens: $0.003
+        1000, // completionTokens: $0.015
+        undefined,
+        1000, // cacheReadTokens: $0.003 * 0.10 = $0.0003
+      );
+
+      // $0.003 + $0.015 + $0.0003 = $0.0183
+      assertEquals(cost, 0.0183);
+    });
+
+    it("should handle both cache creation and read tokens", () => {
+      // 1000 regular input + 1000 cache creation + 1000 cache read + 1000 output
+      const cost = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000, // $0.003
+        1000, // $0.015
+        1000, // $0.003 * 1.25 = $0.00375
+        1000, // $0.003 * 0.10 = $0.0003
+      );
+
+      // $0.003 + $0.015 + $0.00375 + $0.0003 = $0.02205
+      assertEquals(cost, 0.02205);
+    });
+
+    it("should save money with cache reads vs regular input", () => {
+      // Scenario: 5000 tokens as regular input
+      const regularCost = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        5000, // all as regular input
+        1000,
+      );
+
+      // Scenario: 1000 regular + 4000 from cache
+      const cachedCost = PricingService.estimateCostWithCacheSync(
+        "anthropic",
+        "claude-sonnet-4-5-20250929",
+        1000, // only 1000 as regular input
+        1000,
+        undefined,
+        4000, // 4000 from cache at 90% discount
+      );
+
+      // Cached should be cheaper
+      assertEquals(cachedCost < regularCost, true);
+    });
+  });
+
   describe("API pricing registration", () => {
     it("should register API pricing and use it", async () => {
       // Register some API pricing

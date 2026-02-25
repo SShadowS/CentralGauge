@@ -257,6 +257,31 @@ export class PricingService {
   }
 
   /**
+   * Estimate cost with cache-aware pricing (Anthropic prompt caching).
+   * Cache reads are 90% cheaper than regular input (billed at input * 0.10).
+   * Cache creation has a 25% surcharge (billed at input * 1.25).
+   */
+  static estimateCostWithCacheSync(
+    provider: string,
+    model: string,
+    promptTokens: number,
+    completionTokens: number,
+    cacheCreationTokens?: number,
+    cacheReadTokens?: number,
+  ): number {
+    const pricing = this.getPriceSync(provider, model);
+    const inputCost = (promptTokens / 1000) * pricing.input;
+    const outputCost = (completionTokens / 1000) * pricing.output;
+    const cacheCreationCost = cacheCreationTokens
+      ? (cacheCreationTokens / 1000) * pricing.input * 1.25
+      : 0;
+    const cacheReadCost = cacheReadTokens
+      ? (cacheReadTokens / 1000) * pricing.input * 0.10
+      : 0;
+    return inputCost + outputCost + cacheCreationCost + cacheReadCost;
+  }
+
+  /**
    * Register API-fetched pricing (e.g., from OpenRouter discovery)
    */
   static registerApiPricing(
