@@ -22,8 +22,8 @@ benchmark:
 # Container settings
 container:
   provider: bccontainer            # Container provider (mock, bccontainer, docker)
-  name: Cronus27                   # Container name
-  bcVersion: "24.0"               # Business Central version
+  name: Cronus28                   # Container name
+  bcVersion: "28.0"               # Business Central version
   memoryLimit: 8G                  # Container memory limit
   credentials:
     username: sshadows             # Container authentication username
