@@ -15,8 +15,18 @@ import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
 import { LiteLLMService } from "../../src/llm/litellm-service.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
 import type { CacheStats, DiscoveryResult } from "../../src/llm/mod.ts";
+import type { LLMRequest } from "../../src/llm/types.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
+
+/** Result of checking model accessibility */
+interface ModelCheckResult {
+  provider: string;
+  model: string;
+  accessible: boolean;
+  latencyMs: number;
+  error?: string;
+}
 
 /** Display aliases grouped by provider */
 function displayAliasesByProvider(): void {
@@ -408,6 +418,153 @@ async function handleModelsList(testSpecs?: string[]): Promise<void> {
   }
 }
 
+/**
+ * Check if a model is actually callable by making a minimal API request.
+ * Unlike isHealthy() which swallows errors, this captures the error message.
+ */
+async function checkModelAccess(
+  provider: string,
+  model: string,
+  apiKey?: string,
+): Promise<ModelCheckResult> {
+  const config = { provider, model, apiKey, maxTokens: 5 };
+  const adapter = LLMAdapterRegistry.create(provider, config);
+
+  const testRequest: LLMRequest = {
+    prompt: "Say OK",
+    temperature: 0,
+    maxTokens: 5,
+  };
+
+  const start = Date.now();
+  try {
+    await adapter.generateCode(testRequest, {
+      taskId: "access-check",
+      attempt: 1,
+      description: "Model access check",
+    });
+    return { provider, model, accessible: true, latencyMs: Date.now() - start };
+  } catch (error) {
+    return {
+      provider,
+      model,
+      accessible: false,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Resolve API key for a provider from environment
+ */
+function getApiKeyForProvider(provider: string): string | undefined {
+  const apiKeyEnvMap: Record<string, string> = {
+    openai: "OPENAI_API_KEY",
+    anthropic: "ANTHROPIC_API_KEY",
+    gemini: "GOOGLE_API_KEY",
+    "azure-openai": "AZURE_OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+  };
+  const envKey = apiKeyEnvMap[provider];
+  return envKey ? Deno.env.get(envKey) : undefined;
+}
+
+/**
+ * Check one or more models and display results
+ */
+async function checkModels(
+  modelSpecs: string[],
+  defaultProvider?: string,
+): Promise<void> {
+  await EnvLoader.loadEnvironment();
+
+  // Resolve model specs to provider/model pairs
+  const modelsToCheck: Array<{ provider: string; model: string }> = [];
+
+  for (const spec of modelSpecs) {
+    // If a default provider is given and spec has no slash, prefix it
+    const fullSpec = defaultProvider && !spec.includes("/")
+      ? `${defaultProvider}/${spec}`
+      : spec;
+
+    try {
+      const { provider, model } = parseProviderAndModel(fullSpec);
+      modelsToCheck.push({ provider, model });
+    } catch (error) {
+      console.log(
+        `${colors.red("[ERROR]")} Cannot resolve "${spec}": ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  if (modelsToCheck.length === 0) {
+    console.log("No models to check.");
+    return;
+  }
+
+  console.log(
+    `${colors.cyan("[Checking]")} ${modelsToCheck.length} model${
+      modelsToCheck.length > 1 ? "s" : ""
+    }...\n`,
+  );
+
+  // Check models sequentially (to avoid rate limiting and show progress)
+  const results: ModelCheckResult[] = [];
+  for (const { provider, model } of modelsToCheck) {
+    const label = `${provider}/${model}`;
+    const pending = `   ${colors.dim("...")} ${label}`;
+    // Write pending indicator (overwritten by result)
+    if (Deno.stdout.isTerminal()) {
+      await Deno.stdout.write(new TextEncoder().encode(`\r${pending}`));
+    }
+
+    const apiKey = getApiKeyForProvider(provider);
+    const result = await checkModelAccess(provider, model, apiKey);
+    results.push(result);
+
+    // Clear line and show result
+    if (Deno.stdout.isTerminal()) {
+      await Deno.stdout.write(
+        new TextEncoder().encode(`\r${" ".repeat(pending.length)}\r`),
+      );
+    }
+    displaySingleCheckResult(result);
+  }
+
+  // Summary
+  const passed = results.filter((r) => r.accessible).length;
+  const failed = results.length - passed;
+  console.log(
+    `\n${colors.bold("Summary:")} ${colors.green(`${passed} accessible`)}, ${
+      colors.red(`${failed} denied`)
+    } out of ${results.length} checked`,
+  );
+}
+
+/**
+ * Display a single check result line
+ */
+function displaySingleCheckResult(result: ModelCheckResult): void {
+  const label = `${result.provider}/${result.model}`;
+  const latency = colors.dim(`(${result.latencyMs}ms)`);
+
+  if (result.accessible) {
+    console.log(`   ${colors.green("[OK]")} ${label} ${latency}`);
+  } else {
+    console.log(`   ${colors.red("[DENIED]")} ${label} ${latency}`);
+    if (result.error) {
+      // Show a concise error - truncate very long messages
+      const shortError = result.error.length > 120
+        ? result.error.substring(0, 120) + "..."
+        : result.error;
+      console.log(`           ${colors.dim(shortError)}`);
+    }
+  }
+}
+
 export function registerModelsCommand(cli: Command): void {
   cli.command("models [...specs]", "List supported models and test parsing")
     .option(
@@ -426,11 +583,68 @@ export function registerModelsCommand(cli: Command): void {
       "--cache-stats",
       "Display model discovery cache statistics",
     )
+    .option(
+      "--check",
+      "Check if models are actually callable (makes a tiny API request per model)",
+    )
     .action(async (options, ...specs: string[]) => {
       // Handle cache stats
       if (options.cacheStats) {
         const stats = LLMAdapterRegistry.getModelCacheStats();
         displayCacheStats(stats);
+        return;
+      }
+
+      // Handle --check mode
+      if (options.check) {
+        if (specs.length > 0) {
+          // Check specific model specs
+          await checkModels(specs, options.provider);
+        } else if (options.provider) {
+          // Check all live models for a provider
+          await EnvLoader.loadEnvironment();
+          const apiKey = getApiKeyForProvider(options.provider);
+          const result = await LLMAdapterRegistry.discoverModels(
+            options.provider,
+            apiKey
+              ? { provider: options.provider, model: "", apiKey }
+              : undefined,
+            { forceRefresh: options.refresh ?? false },
+          );
+
+          if (!result.success || result.models.length === 0) {
+            console.log(
+              `${
+                colors.red("[ERROR]")
+              } Could not discover models for ${options.provider}`,
+            );
+            if (result.error) console.log(colors.dim(result.error));
+            return;
+          }
+
+          console.log(
+            `${
+              colors.cyan("[Discovered]")
+            } ${result.models.length} models for ${options.provider}, checking access...\n`,
+          );
+          await checkModels(result.models, options.provider);
+        } else {
+          console.log(
+            "Usage: models --check <model-specs...>",
+          );
+          console.log(
+            "       models -p <provider> --check  (checks all discovered models)",
+          );
+          console.log(
+            "\nExamples:",
+          );
+          console.log(
+            "   centralgauge models --check sonnet gpt-4o openai/gpt-5.3-codex",
+          );
+          console.log(
+            "   centralgauge models -p openai --check",
+          );
+        }
         return;
       }
 
