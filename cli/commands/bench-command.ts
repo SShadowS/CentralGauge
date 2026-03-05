@@ -4,6 +4,7 @@
  */
 
 import { Command } from "@cliffy/command";
+import { DEFAULT_CONTAINER_NAME } from "../../src/constants.ts";
 import * as colors from "@std/fmt/colors";
 import type {
   CLIPromptOverrides,
@@ -51,7 +52,7 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--container <name:string>",
       "BC container name (for agent mode)",
-      { default: "Cronus27" },
+      { default: DEFAULT_CONTAINER_NAME },
     )
     .option(
       "--containers <names:string[]>",

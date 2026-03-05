@@ -343,14 +343,14 @@ Integration tests use real containers (when available):
 ```typescript
 // tests/integration/bc-container-real.test.ts
 
-const hasContainer = await checkContainerExists("Cronus27");
+const hasContainer = await checkContainerExists("Cronus28");
 
 Deno.test({
   name: "compiles AL code in real container",
   ignore: !hasContainer,
   fn: async () => {
     const provider = ContainerProviderRegistry.create("bccontainer");
-    const result = await provider.compile("Cronus27", testProjectPath);
+    const result = await provider.compile("Cronus28", testProjectPath);
     assertEquals(result.success, true);
   },
 });

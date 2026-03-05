@@ -91,7 +91,7 @@ interface ContainerCredentials {
 # .centralgauge.yml
 container:
   provider: bccontainer
-  name: Cronus27
+  name: Cronus28
   bcVersion: "27.0"
   memoryLimit: 8G
   credentials:
@@ -111,7 +111,7 @@ Install-Module -Name bccontainerhelper -Force
 
 # Create a container
 $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
-New-BcContainer -containerName Cronus27 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
+New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
 ```
 
 ### Operations
@@ -120,16 +120,16 @@ New-BcContainer -containerName Cronus27 -credential $cred -artifactUrl (Get-BCAr
 const provider = ContainerProviderRegistry.create("bccontainer");
 
 // Check status
-const status = await provider.status("Cronus27");
+const status = await provider.status("Cronus28");
 console.log(status.isRunning, status.health);
 
 // Compile AL project
-const compileResult = await provider.compile("Cronus27", "U:/Git/MyProject");
+const compileResult = await provider.compile("Cronus28", "U:/Git/MyProject");
 console.log(compileResult.success, compileResult.errors);
 
 // Run tests
 const testResult = await provider.runTests(
-  "Cronus27",
+  "Cronus28",
   "12345678-1234-1234-1234-123456789012",
 );
 console.log(testResult.passedTests, testResult.failedTests);
@@ -143,7 +143,7 @@ Set container credentials:
 const provider = ContainerProviderRegistry.create(
   "bccontainer",
 ) as BcContainerProvider;
-provider.setCredentials("Cronus27", {
+provider.setCredentials("Cronus28", {
   username: "admin",
   password: "admin",
 });
@@ -268,10 +268,10 @@ interface ContainerStatus {
 
 ```powershell
 # Compile
-Compile-AppInBcContainer -containerName Cronus27 -appProjectFolder $ProjectPath
+Compile-AppInBcContainer -containerName Cronus28 -appProjectFolder $ProjectPath
 
 # Run tests
-Run-TestsInBcContainer -containerName Cronus27 -testCodeunitId $CodeunitId
+Run-TestsInBcContainer -containerName Cronus28 -testCodeunitId $CodeunitId
 ```
 
 ## Test Execution Workflow
@@ -404,7 +404,7 @@ Providers throw `ContainerError` for container-specific errors:
 import { ContainerError } from "../src/errors.ts";
 
 try {
-  await provider.compile("Cronus27", projectPath);
+  await provider.compile("Cronus28", projectPath);
 } catch (error) {
   if (error instanceof ContainerError) {
     console.log(`Container: ${error.containerName}`);

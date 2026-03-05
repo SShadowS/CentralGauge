@@ -35,10 +35,10 @@ describe("AgentBenchmarkOptions", () => {
       agents: ["test-agent"],
       tasks: ["tasks/**/*.yml"],
       outputDir: "results",
-      containerName: "Cronus27",
+      containerName: "Cronus28",
     };
     assertExists(options.containerName);
-    assertEquals(options.containerName, "Cronus27");
+    assertEquals(options.containerName, "Cronus28");
   });
 
   it("should support sandbox option", () => {
@@ -46,7 +46,7 @@ describe("AgentBenchmarkOptions", () => {
       agents: ["test-agent"],
       tasks: ["tasks/**/*.yml"],
       outputDir: "results",
-      containerName: "Cronus27",
+      containerName: "Cronus28",
       sandbox: true,
     };
     assertEquals(options.sandbox, true);
@@ -57,7 +57,7 @@ describe("AgentBenchmarkOptions", () => {
       agents: ["test-agent"],
       tasks: ["tasks/**/*.yml"],
       outputDir: "results",
-      containerName: "Cronus27",
+      containerName: "Cronus28",
       verbose: true,
     };
     assertEquals(options.verbose, true);
@@ -108,7 +108,7 @@ describe("CLI option to AgentBenchmarkOptions mapping", () => {
       agents: ["universal-test"],
       tasks: ["tasks/**/*.yml"],
       output: "results/",
-      container: "Cronus27",
+      container: "Cronus28",
       sandbox: true,
       debug: false,
     };
@@ -130,7 +130,7 @@ describe("CLI option to AgentBenchmarkOptions mapping", () => {
       agents: ["universal-test"],
       tasks: ["tasks/**/*.yml"],
       output: "results/",
-      container: "Cronus27",
+      container: "Cronus28",
       sandbox: false,
       debug: true,
     };
@@ -152,7 +152,7 @@ describe("CLI option to AgentBenchmarkOptions mapping", () => {
       agents: ["universal-test"],
       tasks: ["tasks/**/*.yml"],
       output: "results/",
-      container: "Cronus27",
+      container: "Cronus28",
       // sandbox not specified
       debug: false,
     };

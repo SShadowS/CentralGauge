@@ -126,7 +126,7 @@ $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlai
 
 # Create BC27 container with test toolkit
 New-BcContainer `
-    -containerName Cronus27 `
+    -containerName Cronus28 `
     -credential $cred `
     -artifactUrl (Get-BCArtifactUrl -country us -version 27) `
     -includeTestToolkit
@@ -139,7 +139,7 @@ Verify the container is running:
 ```powershell
 docker ps
 # CONTAINER ID   IMAGE                    STATUS         NAMES
-# abc123...      mcr.microsoft.com/...    Up 2 hours     Cronus27
+# abc123...      mcr.microsoft.com/...    Up 2 hours     Cronus28
 ```
 
 ## Step 7: Configure CentralGauge
@@ -155,7 +155,7 @@ This creates `.centralgauge.yml` with sensible defaults. Edit it to match your c
 ```yaml
 container:
   provider: bccontainer
-  name: Cronus27
+  name: Cronus28
   credentials:
     username: admin
     password: admin
@@ -190,7 +190,7 @@ Ensure your container is running:
 
 ```powershell
 docker ps
-docker start Cronus27
+docker start Cronus28
 ```
 
 ### "API key not set" Errors

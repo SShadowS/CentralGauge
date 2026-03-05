@@ -62,7 +62,7 @@ llm:
 
 container:
   provider: bccontainer
-  name: Cronus27
+  name: Cronus28
   bcVersion: "27.0"
 
 # Sources:
@@ -132,7 +132,7 @@ benchmark:
 # Container settings
 container:
   provider: bccontainer
-  name: Cronus27
+  name: Cronus28
   bcVersion: "27.0"
   credentials:
     username: admin

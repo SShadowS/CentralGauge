@@ -27,9 +27,9 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## Local BC Container
 
-- Container name: `Cronus27`
+- Container name: `Cronus28`
 - Credentials: `sshadows` / `1234`
-- Health check URL: `http://Cronus27/BC/?tenant=default` (check if login page loads to verify container is up)
+- Health check URL: `http://Cronus28/BC/?tenant=default` (check if login page loads to verify container is up)
 
 ## Project Structure
 
@@ -143,7 +143,7 @@ deno task start bench --agents universal-test --tasks "tasks/**/*.yml"
 deno task start bench --agents agent1 agent2 --output results
 
 # With sandbox mode (isolated Windows containers)
-deno task start bench --agents universal-test --sandbox --container Cronus27
+deno task start bench --agents universal-test --sandbox --container Cronus28
 
 # With debug output for failure details
 deno task start bench --agents universal-test --debug

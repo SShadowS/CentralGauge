@@ -25,7 +25,7 @@ function createConfig(
     totalRuns: 1,
     attempts: 2,
     temperature: 0.1,
-    containerName: "Cronus27",
+    containerName: "Cronus28",
     ...overrides,
   };
 }
@@ -51,7 +51,7 @@ function createMockContext(
     llmProvider: "mock",
     llmModel: "model-a",
     variantId: "model-a",
-    containerName: "Cronus27",
+    containerName: "Cronus28",
     containerProvider: "mock",
     temperature: 0.1,
     maxTokens: 4000,

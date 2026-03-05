@@ -13,7 +13,7 @@ function createConfig(): DashboardConfig {
     totalRuns: 1,
     attempts: 2,
     temperature: 0.1,
-    containerName: "Cronus27",
+    containerName: "Cronus28",
   };
 }
 

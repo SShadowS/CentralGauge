@@ -6,6 +6,7 @@
  */
 
 import { join } from "@std/path";
+import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
 import { ensureDir } from "@std/fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { Logger } from "../logger/mod.ts";
@@ -76,7 +77,7 @@ export class AgentTaskExecutor {
 
     // Configure container credentials from environment
     const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") ||
-      "Cronus27";
+      DEFAULT_CONTAINER_NAME;
     const username = Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME") || "admin";
     const password = Deno.env.get("CENTRALGAUGE_CONTAINER_PASSWORD") || "admin";
     this.containerProvider.setCredentials(containerName, {

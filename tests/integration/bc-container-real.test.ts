@@ -1,8 +1,8 @@
 /**
- * Integration tests for real Business Central container (Cronus27)
+ * Integration tests for real Business Central container (Cronus28)
  *
  * Prerequisites:
- * - BC container "Cronus27" must be running
+ * - BC container "Cronus28" must be running
  * - bccontainerhelper PowerShell module installed
  * - Windows only
  *
@@ -14,7 +14,7 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
-const CONTAINER_NAME = "Cronus27";
+const CONTAINER_NAME = "Cronus28";
 const isWindows = Deno.build.os === "windows";
 
 // Skip all tests if not on Windows

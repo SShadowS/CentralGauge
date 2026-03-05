@@ -256,7 +256,7 @@ Run agents in isolated Windows containers:
 deno task bench \
   --agents default \
   --tasks tasks/easy/*.yml \
-  --container Cronus27 \
+  --container Cronus28 \
   --sandbox
 ```
 

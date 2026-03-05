@@ -312,7 +312,7 @@ const result = await executor.executeTask({
   taskManifest: manifest,
   llmProvider: "anthropic",
   llmModel: "claude-sonnet-4-20250514",
-  containerName: "Cronus27",
+  containerName: "Cronus28",
   attemptLimit: 2,
 });
 
@@ -357,7 +357,7 @@ const { results, summary } = await orchestrator.runParallel(
   manifests,
   variants,
   {
-    containerName: "Cronus27",
+    containerName: "Cronus28",
     attemptLimit: 2,
   },
 );
@@ -379,7 +379,7 @@ const taskManifest = await loadTaskManifest(
 const executor = new AgentTaskExecutor();
 const result = await executor.execute(agentConfig, taskManifest, {
   projectDir: "/path/to/workspace",
-  containerName: "Cronus27",
+  containerName: "Cronus28",
   containerProvider: "bccontainer",
 });
 

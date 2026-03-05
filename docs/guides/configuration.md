@@ -50,7 +50,7 @@ benchmark:
 # Container settings
 container:
   provider: bccontainer # Container provider (mock, bccontainer, docker)
-  name: Cronus27 # Container name
+  name: Cronus28 # Container name
   bcVersion: "24.0" # Business Central version
   memoryLimit: 8G # Container memory limit
   credentials:
@@ -144,7 +144,7 @@ CENTRALGAUGE_OUTPUT_DIR=results
 
 ```bash
 CENTRALGAUGE_CONTAINER_PROVIDER=bccontainer
-CENTRALGAUGE_CONTAINER_NAME=Cronus27
+CENTRALGAUGE_CONTAINER_NAME=Cronus28
 CENTRALGAUGE_CONTAINER_USERNAME=admin
 CENTRALGAUGE_CONTAINER_PASSWORD=admin
 ```
@@ -201,7 +201,7 @@ The default and recommended provider for Windows:
 ```yaml
 container:
   provider: bccontainer
-  name: Cronus27
+  name: Cronus28
   bcVersion: "27.0"
   credentials:
     username: admin

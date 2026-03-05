@@ -6,6 +6,7 @@
  */
 
 import { basename, join } from "@std/path";
+import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
 import { ensureDir } from "@std/fs";
 import { Logger } from "../logger/mod.ts";
 
@@ -122,7 +123,7 @@ export class VerificationEngine {
     testFilePath: string,
     debug?: boolean,
   ): Promise<VerificationResult> {
-    const containerName = "Cronus27";
+    const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") || DEFAULT_CONTAINER_NAME;
 
     try {
       // Check for prereq apps based on task ID

@@ -64,6 +64,9 @@ export const DEFAULT_RETRY_DELAY_MS = 1000;
 /** Container ready check interval */
 export const CONTAINER_READY_WAIT_MS = 5000;
 
+/** Default BC container name */
+export const DEFAULT_CONTAINER_NAME = "Cronus28";
+
 // =============================================================================
 // AL App ID Ranges
 // =============================================================================

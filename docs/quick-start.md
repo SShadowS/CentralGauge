@@ -5,7 +5,7 @@ This guide gets you running your first benchmark in under 5 minutes (assuming yo
 ## Prerequisites
 
 - Deno installed
-- BC container running (e.g., `Cronus27`)
+- BC container running (e.g., `Cronus28`)
 - At least one LLM API key configured in `.env`
 
 ## Your First Benchmark
@@ -192,7 +192,7 @@ Test autonomous agents instead of single API calls:
 deno task bench \
   --agents default \
   --tasks "tasks/easy/*.yml" \
-  --container Cronus27
+  --container Cronus28
 ```
 
 ## Next Steps

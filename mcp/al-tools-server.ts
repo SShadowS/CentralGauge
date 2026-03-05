@@ -57,7 +57,7 @@ interface Tool {
 // =============================================================================
 
 const containerProvider = new BcContainerProvider();
-const DEFAULT_CONTAINER = "Cronus27";
+const DEFAULT_CONTAINER = "Cronus28";
 
 // Initialize credentials from environment variables
 const containerUsername = Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME");

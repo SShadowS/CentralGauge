@@ -135,9 +135,9 @@ Deno.test("buildParallelOptions", async (t) => {
       outputDir: "./results",
     };
 
-    const result = buildParallelOptions(options, "Cronus27", "bccontainer");
+    const result = buildParallelOptions(options, "Cronus28", "bccontainer");
 
-    assertEquals(result.containerName, "Cronus27");
+    assertEquals(result.containerName, "Cronus28");
     assertEquals(result.containerProvider, "bccontainer");
     assertEquals(result.attemptLimit, 2);
     assertEquals(result.temperature, 0.1); // default

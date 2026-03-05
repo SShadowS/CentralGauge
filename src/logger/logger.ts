@@ -128,8 +128,8 @@ export class Logger {
    * @example
    * ```ts
    * const log = Logger.create("container:bc");
-   * log.info("Container ready", { name: "Cronus27" });
-   * // Output: [container:bc] Container ready (name=Cronus27)
+   * log.info("Container ready", { name: "Cronus28" });
+   * // Output: [container:bc] Container ready (name=Cronus28)
    * ```
    */
   static create(namespace: string): Logger {

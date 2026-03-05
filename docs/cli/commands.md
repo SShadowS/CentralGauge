@@ -47,7 +47,7 @@ centralgauge bench [options]
 | `--list-presets`       | boolean  | false          | List available benchmark presets           |
 | `-l, --llms`           | string[] | -              | LLM models to test                         |
 | `--agents`             | string[] | -              | Agent configurations to use                |
-| `--container`          | string   | Cronus27       | BC container name                          |
+| `--container`          | string   | Cronus28       | BC container name                          |
 | `-s, --sandbox`        | boolean  | false          | Run agents in isolated containers          |
 | `-t, --tasks`          | string[] | tasks/**/*.yml | Task file patterns                         |
 | `-a, --attempts`       | number   | 2              | Number of attempts per task                |
@@ -85,10 +85,10 @@ centralgauge bench --llms sonnet,gpt-4o --tasks "tasks/easy/*.yml"
 centralgauge bench --llms "opus@temp=0.1,opus@temp=0.5"
 
 # Agent benchmark
-centralgauge bench --agents default --tasks "tasks/**/*.yml" --container Cronus27
+centralgauge bench --agents default --tasks "tasks/**/*.yml" --container Cronus28
 
 # With sandbox
-centralgauge bench --agents default --sandbox --container Cronus27
+centralgauge bench --agents default --sandbox --container Cronus28
 
 # Retry failed tasks
 centralgauge bench --llms sonnet --retry results/benchmark-results-*.json

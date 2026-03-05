@@ -89,10 +89,10 @@ centralgauge bench --agents <agent-ids> --tasks <patterns> --container <name>
 
 ```bash
 # Single agent
-centralgauge bench --agents default --tasks "tasks/easy/*.yml" --container Cronus27
+centralgauge bench --agents default --tasks "tasks/easy/*.yml" --container Cronus28
 
 # Multiple agents
-centralgauge bench --agents default,minimal --tasks "tasks/**/*.yml" --container Cronus27
+centralgauge bench --agents default,minimal --tasks "tasks/**/*.yml" --container Cronus28
 ```
 
 ### Sandbox Mode
@@ -100,7 +100,7 @@ centralgauge bench --agents default,minimal --tasks "tasks/**/*.yml" --container
 Run agents in isolated containers:
 
 ```bash
-centralgauge bench --agents default --sandbox --container Cronus27
+centralgauge bench --agents default --sandbox --container Cronus28
 ```
 
 ## Options
@@ -118,7 +118,7 @@ centralgauge bench --agents default --sandbox --container Cronus27
 | Option          | Type     | Default  | Description          |
 | --------------- | -------- | -------- | -------------------- |
 | `--agents`      | string[] | -        | Agent configurations |
-| `--container`   | string   | Cronus27 | BC container name    |
+| `--container`   | string   | Cronus28 | BC container name    |
 | `-s, --sandbox` | boolean  | false    | Run in sandbox       |
 
 ### Task Options
@@ -336,7 +336,7 @@ centralgauge bench \
 centralgauge bench \
   --agents default,optimized \
   --tasks "tasks/easy/*.yml" \
-  --container Cronus27 \
+  --container Cronus28 \
   --output results/agent-comparison
 ```
 

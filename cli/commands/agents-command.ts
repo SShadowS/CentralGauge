@@ -7,6 +7,7 @@
  */
 
 import { Command } from "@cliffy/command";
+import { DEFAULT_CONTAINER_NAME } from "../../src/constants.ts";
 import * as colors from "@std/fmt/colors";
 import { expandGlob } from "@std/fs";
 import { join } from "@std/path";
@@ -452,7 +453,7 @@ export function registerAgentsCommand(cli: Command): void {
       default: ["tasks/**/*.yml"],
     })
     .option("-c, --container <name:string>", "BC container name", {
-      default: "Cronus27",
+      default: DEFAULT_CONTAINER_NAME,
     })
     .option("-p, --project-dir <dir:string>", "Project directory for execution")
     .option("-v, --verbose", "Enable verbose output")

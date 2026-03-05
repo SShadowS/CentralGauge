@@ -8,6 +8,7 @@ import { parse as parseYaml } from "@std/yaml";
 import type { PromptInjectionConfig } from "../prompts/mod.ts";
 import {
   DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_CONTAINER_NAME,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
 } from "../constants.ts";
@@ -277,7 +278,7 @@ export class ConfigManager {
       },
       container: {
         provider: "mock",
-        name: "Cronus27",
+        name: DEFAULT_CONTAINER_NAME,
         bcVersion: "24.0",
         memoryLimit: "8G",
         credentials: {
@@ -639,7 +640,7 @@ benchmark:
 # Container settings
 container:
   provider: bccontainer            # Container provider (mock, bccontainer, docker)
-  name: Cronus27                   # Container name
+  name: Cronus28                   # Container name
   bcVersion: "24.0"               # Business Central version
   memoryLimit: 8G                  # Container memory limit
   credentials:

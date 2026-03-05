@@ -199,7 +199,7 @@ const executor = new AgentTaskExecutor();
 
 const result = await executor.execute(agentConfig, taskManifest, {
   projectDir: "/path/to/workspace",
-  containerName: "Cronus27",
+  containerName: "Cronus28",
   containerProvider: "bccontainer",
   debug: true,
   sandbox: false,
@@ -271,7 +271,7 @@ Compiles AL code in a project directory:
 // Tool input
 {
   projectDir: "/path/to/project",
-  containerName: "Cronus27"
+  containerName: "Cronus28"
 }
 
 // Tool output (success)
@@ -291,7 +291,7 @@ Compiles and runs tests:
   projectDir: "/path/to/project",
   testFile: "/path/to/test.al",
   testCodeunitId: 80001,
-  containerName: "Cronus27"
+  containerName: "Cronus28"
 }
 
 // Tool output
@@ -307,7 +307,7 @@ Verifies a task by ID:
 {
   projectDir: "/path/to/project",
   taskId: "CG-AL-E001",
-  containerName: "Cronus27"
+  containerName: "Cronus28"
 }
 ```
 
@@ -358,7 +358,7 @@ sandbox:
 deno task bench \
   --agents my-agent \
   --tasks tasks/easy/*.yml \
-  --container Cronus27 \
+  --container Cronus28 \
   --sandbox
 ```
 
@@ -441,13 +441,13 @@ type FailurePhase =
 
 ```bash
 # Single agent
-deno task bench --agents default --tasks tasks/easy/*.yml --container Cronus27
+deno task bench --agents default --tasks tasks/easy/*.yml --container Cronus28
 
 # Multiple agents for comparison
-deno task bench --agents default,minimal --tasks tasks/easy/*.yml --container Cronus27
+deno task bench --agents default,minimal --tasks tasks/easy/*.yml --container Cronus28
 
 # With sandbox mode
-deno task bench --agents default --tasks tasks/easy/*.yml --container Cronus27 --sandbox
+deno task bench --agents default --tasks tasks/easy/*.yml --container Cronus28 --sandbox
 
 # With debug output
 deno task bench --agents default --tasks tasks/easy/*.yml --debug
@@ -459,7 +459,7 @@ deno task bench --agents default --tasks tasks/easy/*.yml --debug
 [CentralGauge] Starting agent benchmark...
 [Info] Agents: default
 [Info] Tasks: tasks/easy/CG-AL-E001-basic-table.yml
-[Info] Container: Cronus27
+[Info] Container: Cronus28
 
 [Task] CG-AL-E001: Running with 1 agent(s)
 [default] Starting...
