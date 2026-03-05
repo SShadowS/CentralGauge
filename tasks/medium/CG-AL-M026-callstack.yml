@@ -1,0 +1,35 @@
+id: CG-AL-M026
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Callstack Inspector" with ID 70126.
+
+  1. Procedure "GetCurrentCallstack" that returns Text.
+     Return the current callstack string using SessionInformation.Callstack.
+
+  2. Procedure "GetCallstackFromNested" that returns Text.
+     Call a local procedure "InnerProcedure" which calls another local procedure
+     "DeepProcedure" which returns SessionInformation.Callstack.
+     Return the callstack captured at the deepest level.
+
+  3. Procedure "GetCallstackLineCount" that returns Integer.
+     Get the current callstack and count the number of lines by counting
+     line break characters (carriage return / line feed pairs or line feeds).
+
+  4. Procedure "CallstackContainsProcedure" that takes Text parameter ProcedureName
+     and returns Boolean.
+     Get the current callstack and return whether it contains the specified procedure name.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, session, procedure, debugging]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M026.Test.al
+  testCodeunitId: 80026
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

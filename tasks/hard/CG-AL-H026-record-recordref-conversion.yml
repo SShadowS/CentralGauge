@@ -1,0 +1,40 @@
+id: CG-AL-H026
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Record Converter" with ID 70226 that converts
+  between Record and RecordRef types. The existing "CG Test Record" table
+  (ID 69225) is available.
+
+  1. Procedure "RecordToRecordRef" that takes Record "CG Test Record" parameter SourceRecord,
+     returns RecordRef.
+     Assign the Record directly to a RecordRef variable and return it.
+
+  2. Procedure "RecordRefToRecord" that takes RecordRef parameter SourceRef,
+     returns Record "CG Test Record".
+     Assign the RecordRef directly to a Record variable and return it.
+     The RecordRef must be opened on table 69225.
+
+  3. Procedure "PassRecordAsRecordRef" that takes Record "CG Test Record" parameter SourceRecord,
+     returns Text.
+     Call a local procedure that accepts RecordRef as a parameter, passing the Record
+     variable directly. The local procedure should return the table name from the RecordRef.
+
+  4. Procedure "RoundTripConversion" that takes Record "CG Test Record" parameter SourceRecord,
+     returns Record "CG Test Record".
+     Convert Record to RecordRef, then convert that RecordRef back to Record,
+     and return the result. All field values should be preserved.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [record, recordref, codeunit, procedure, type-conversion]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H026.Test.al
+  testCodeunitId: 80126
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

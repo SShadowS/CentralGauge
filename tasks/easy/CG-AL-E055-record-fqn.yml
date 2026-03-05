@@ -1,0 +1,31 @@
+id: CG-AL-E055
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Record FQN Helper" with ID 70055.
+
+  1. Procedure "GetCustomerFQN" that returns Text.
+     Declare a Customer record variable and return its FullyQualifiedName property.
+
+  2. Procedure "GetItemFQN" that returns Text.
+     Declare an Item record variable and return its FullyQualifiedName property.
+
+  3. Procedure "GetTableFQN" that takes Integer parameter TableId and returns Text.
+     Open a RecordRef for the given table ID and return its FullyQualifiedName.
+
+  4. Procedure "ContainsNamespace" that takes Text parameter FQNValue and returns Boolean.
+     Return true if the FQN string contains a dot character.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, record, procedure]
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E055.Test.al
+  testCodeunitId: 80055
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

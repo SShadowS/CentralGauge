@@ -1,0 +1,31 @@
+id: CG-AL-E054
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Sequential Guid Generator" with ID 70054.
+
+  1. Procedure "GenerateSequentialGuid" that returns Guid.
+     Return a new sequential GUID using the built-in CreateSequentialGuid method.
+
+  2. Procedure "GenerateMultipleGuids" that takes Integer parameter Count and returns List of [Guid].
+     Generate the specified number of sequential GUIDs and return them in a list.
+
+  3. Procedure "IsSequentialGuid" that takes Guid parameter GuidValue and returns Boolean.
+     Return true if the GUID is not empty (not equal to the default empty GUID '00000000-0000-0000-0000-000000000000').
+
+  4. Procedure "CompareGuids" that takes Guid parameters Guid1 and Guid2, returns Boolean.
+     Return true if the two GUIDs are not equal to each other (i.e., they are different).
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, guid, procedure]
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E054.Test.al
+  testCodeunitId: 80054
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

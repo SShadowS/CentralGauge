@@ -1,0 +1,39 @@
+id: CG-AL-M024
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG JSON Path Selector" with ID 70124.
+
+  1. Procedure "SelectAllNames" that returns List of [Text].
+     Build a JsonArray containing three JsonObjects representing employees:
+     {"name": "Alice", "department": "Engineering", "salary": 85000},
+     {"name": "Bob", "department": "Marketing", "salary": 72000},
+     {"name": "Charlie", "department": "Engineering", "salary": 91000}.
+     Extract all name values into the returned list.
+
+  2. Procedure "SelectByIndex" that takes Integer parameter Index and returns Text.
+     Using the same employee JsonArray, return the name of the employee at the
+     given zero-based index. Return empty text if index is out of range.
+
+  3. Procedure "CountMatchingTokens" that takes Text parameter Department and returns Integer.
+     Using the same employee JsonArray, count how many employees belong to the
+     specified department.
+
+  4. Procedure "SelectNestedValues" that returns Decimal.
+     Build a JsonObject with structure:
+     {"orders": [{"id": 1, "amount": 150.50}, {"id": 2, "amount": 299.99}, {"id": 3, "amount": 75.00}]}.
+     Extract all amount values from the nested orders array and return their sum.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, json, procedure]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M024.Test.al
+  testCodeunitId: 80024
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

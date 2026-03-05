@@ -1,0 +1,37 @@
+id: CG-AL-M025
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Bulk Data Manager" with ID 70125 that uses
+  the Record.Truncate method.
+
+  1. Procedure "InsertRecords" that takes Integer parameter Count.
+     Insert the specified number of records into the existing "CG Bulk Test" table (ID 69030).
+     Each record should have a Description like 'Record N' and Amount set to N * 10.
+
+  2. Procedure "TruncateAll" that removes all records from the "CG Bulk Test" table
+     using the Truncate method.
+
+  3. Procedure "GetRecordCount" that returns Integer.
+     Return the current count of records in the "CG Bulk Test" table.
+
+  4. Procedure "InsertAndTruncate" that takes Integer parameter Count and returns Integer.
+     Insert the specified number of records, then truncate the table, then return the
+     record count.
+
+  5. Procedure "TruncateWithRecordRef" that takes Integer parameter TableId.
+     Open the specified table using RecordRef and call Truncate on it.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [codeunit, record, procedure, bulk-operations]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M025.Test.al
+  testCodeunitId: 80025
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

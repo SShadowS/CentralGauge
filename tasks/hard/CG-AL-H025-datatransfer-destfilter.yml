@@ -1,0 +1,40 @@
+id: CG-AL-H025
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Data Transfer Engine" with ID 70225 that uses
+  the DataTransfer type with AddDestinationFilter for selective bulk data operations.
+
+  1. Procedure "TransferAllData" that copies all records from
+     the existing "CG Transfer Source" table (ID 69040) to the existing
+     "CG Transfer Dest" table (ID 69041).
+     Use DataTransfer. Map Code, Description, Amount, and Category fields by field number.
+
+  2. Procedure "TransferWithSourceFilter" that takes Code[20] parameter CategoryFilter.
+     Copy only records from "CG Transfer Source" where Category matches the filter value
+     to "CG Transfer Dest". Use DataTransfer.AddSourceFilter on the Category field.
+
+  3. Procedure "TransferWithDestinationFilter" that takes Code[20] parameter DestCategoryFilter
+     and Text[100] parameter NewDescription.
+     Use DataTransfer with AddDestinationFilter to update only records in
+     "CG Transfer Dest" where Category matches DestCategoryFilter.
+     Set the Description field to NewDescription using AddConstantValue.
+
+  4. Procedure "TransferWithConstantValue" that takes Decimal parameter ConstantAmount.
+     Copy all records from "CG Transfer Source" to "CG Transfer Dest",
+     but override the Amount field with the constant value using AddConstantValue.
+     Map other fields (Code, Description, Category) normally.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [datatransfer, codeunit, procedure, bulk-operations]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H025.Test.al
+  testCodeunitId: 80125
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,46 @@
+id: CG-AL-H024
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Named Field Accessor" with ID 70224 that uses
+  RecordRef and FieldRef field access by name. The existing "CG Test Record" table
+  (ID 69225) is available for testing.
+
+  1. Procedure "GetFieldByName" that takes RecordRef parameter RecRef and Text parameter FieldName,
+     returns Text.
+     Find the field by name on the RecordRef and return its formatted value.
+     Return empty text if the field is not found.
+
+  2. Procedure "FieldExistsByName" that takes RecordRef parameter RecRef and Text parameter FieldName,
+     returns Boolean.
+     Return true if a field with the given name exists on the RecordRef.
+
+  3. Procedure "SetFieldByName" that takes var RecordRef parameter RecRef, Text parameter FieldName,
+     and Variant parameter NewValue.
+     Find the field by name and set its value from the Variant parameter.
+
+  4. Procedure "CopyFieldsByName" that takes RecordRef parameter SourceRecRef,
+     var RecordRef parameter DestRecRef, and List of [Text] parameter FieldNames.
+     For each field name in the list, copy the value from source to destination.
+
+  5. Procedure "GetAllFieldNames" that takes RecordRef parameter RecRef,
+     returns List of [Text].
+     Return a list of all field names in the record.
+
+  6. Procedure "BuildFieldMap" that takes RecordRef parameter RecRef,
+     returns Dictionary of [Text, Text].
+     Return a dictionary mapping field names to their formatted values.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, codeunit, procedure]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H024.Test.al
+  testCodeunitId: 80124
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
