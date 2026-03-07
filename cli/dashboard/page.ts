@@ -45,7 +45,9 @@ ${DASHBOARD_CSS}
       <span id="progress-eta"></span>
       <span id="progress-cells">0 / 0</span>
       <span id="progress-llm">LLM: 0</span>
-      <span id="progress-queue">Queue: 0</span>
+      <span id="progress-compile">Compile: 0/3</span>
+      <span id="progress-test">Test: 0/1</span>
+      <span id="progress-pending">Pending: 0</span>
       <span id="progress-cost">$0.00</span>
     </div>
   </div>
@@ -466,7 +468,9 @@ const DASHBOARD_JS = `
     $('progress-text').textContent = pct.toFixed(0) + '%';
     $('progress-cells').textContent = p.completedCells + ' / ' + p.totalCells;
     $('progress-llm').textContent = 'LLM: ' + p.activeLLMCalls;
-    $('progress-queue').textContent = 'Queue: ' + p.compileQueueLength;
+    $('progress-compile').textContent = 'Compile: ' + (p.activeCompilations || 0) + '/' + (p.maxCompilations || 3);
+    $('progress-test').textContent = 'Test: ' + (p.activeTests || 0) + '/' + (p.maxTestSlots || 1);
+    $('progress-pending').textContent = 'Pending: ' + (p.pendingInQueue !== undefined ? p.pendingInQueue : p.compileQueueLength);
     $('progress-cost').textContent = '$' + (p.totalCost || 0).toFixed(2);
 
     if (p.estimatedRemainingMs && p.estimatedRemainingMs > 0) {

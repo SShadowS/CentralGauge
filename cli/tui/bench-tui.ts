@@ -22,6 +22,11 @@ export interface BenchTuiState {
   totalTasks: number;
   activeLLMCalls: number;
   compileQueueLength: number;
+  activeCompilations: number;
+  maxCompilations: number;
+  activeTests: number;
+  maxTestSlots: number;
+  pendingInQueue: number;
   estimatedTimeRemaining?: number | undefined;
   elapsedTime: number;
   modelStats: Map<string, { total: number; passed: number }>;
@@ -167,7 +172,11 @@ export function formatStatusLine(state: BenchTuiState): string {
     completedTasks,
     totalTasks,
     activeLLMCalls,
-    compileQueueLength,
+    activeCompilations,
+    maxCompilations,
+    activeTests,
+    maxTestSlots,
+    pendingInQueue,
     estimatedTimeRemaining,
     elapsedTime,
     modelStats,
@@ -184,9 +193,11 @@ export function formatStatusLine(state: BenchTuiState): string {
   // Elapsed time
   parts.push(formatDuration(elapsedTime));
 
-  // Active work
+  // Pipeline breakdown
   parts.push(`LLM: ${activeLLMCalls}`);
-  parts.push(`Q: ${compileQueueLength}`);
+  parts.push(`Compile: ${activeCompilations}/${maxCompilations}`);
+  parts.push(`Test: ${activeTests}/${maxTestSlots}`);
+  parts.push(`Pending: ${pendingInQueue}`);
 
   // Model pass rates (only show models with results)
   const modelParts: string[] = [];
@@ -234,6 +245,11 @@ export function createInitialState(): BenchTuiState {
     totalTasks: 0,
     activeLLMCalls: 0,
     compileQueueLength: 0,
+    activeCompilations: 0,
+    maxCompilations: 3,
+    activeTests: 0,
+    maxTestSlots: 1,
+    pendingInQueue: 0,
     elapsedTime: 0,
     modelStats: new Map(),
   };
@@ -362,14 +378,7 @@ export class BenchTui {
 
   constructor() {
     this.startTime = Date.now();
-    this.state = {
-      completedTasks: 0,
-      totalTasks: 0,
-      activeLLMCalls: 0,
-      compileQueueLength: 0,
-      elapsedTime: 0,
-      modelStats: new Map(),
-    };
+    this.state = createInitialState();
 
     // Calculate visible rows for log area (terminal height minus status bar)
     const { rows } = Deno.consoleSize();
@@ -485,6 +494,12 @@ export class BenchTui {
     this.state.totalTasks = progress.totalTasks;
     this.state.activeLLMCalls = progress.activeLLMCalls;
     this.state.compileQueueLength = progress.compileQueueLength;
+    this.state.activeCompilations = progress.activeCompilations ?? 0;
+    this.state.maxCompilations = progress.maxCompilations ?? 3;
+    this.state.activeTests = progress.activeTests ?? 0;
+    this.state.maxTestSlots = progress.maxTestSlots ?? 1;
+    this.state.pendingInQueue = progress.pendingInQueue ??
+      progress.compileQueueLength;
     this.state.estimatedTimeRemaining = progress.estimatedTimeRemaining;
     this.state.elapsedTime = Date.now() - this.startTime;
 

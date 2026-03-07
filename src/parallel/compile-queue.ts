@@ -670,6 +670,9 @@ export class CompileQueue implements CompileWorkQueue {
       avgProcessTime: this.processedCount > 0
         ? this.totalProcessTime / this.processedCount
         : 0,
+      maxCompilations: this.compileSemaphore.maxCount(),
+      activeTests: this.testMutex.isLocked() ? 1 : 0,
+      maxTestSlots: 1,
     };
   }
 

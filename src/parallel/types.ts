@@ -489,6 +489,15 @@ export interface QueueStats {
 
   /** Average processing time in ms */
   avgProcessTime: number;
+
+  /** Maximum concurrent compilations */
+  maxCompilations: number;
+
+  /** Number of tests actively running (0 or 1 per queue, 0..N for pool) */
+  activeTests: number;
+
+  /** Maximum concurrent test slots */
+  maxTestSlots: number;
 }
 
 // =============================================================================
@@ -567,6 +576,21 @@ export interface BenchmarkProgress {
 
   /** Elapsed time in ms */
   elapsedTime: number;
+
+  /** Items actively compiling */
+  activeCompilations?: number;
+
+  /** Max compile concurrency */
+  maxCompilations?: number;
+
+  /** Items actively running tests */
+  activeTests?: number;
+
+  /** Max test concurrency */
+  maxTestSlots?: number;
+
+  /** Items waiting (not yet compiling) */
+  pendingInQueue?: number;
 }
 
 // =============================================================================

@@ -74,6 +74,10 @@ export class Semaphore {
     return this.current;
   }
 
+  maxCount(): number {
+    return this.maxConcurrency;
+  }
+
   isIdle(): boolean {
     return this.current === 0 && this.waiters.length === 0;
   }

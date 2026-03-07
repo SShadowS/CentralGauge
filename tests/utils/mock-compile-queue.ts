@@ -9,6 +9,7 @@
 import type {
   CompileWorkItem,
   CompileWorkResult,
+  QueueStats,
 } from "../../src/parallel/types.ts";
 import type {
   CompilationResult,
@@ -281,6 +282,25 @@ export class MockCompileQueue {
   clear(): void {
     this.recordCall("clear");
     this._length = 0;
+  }
+
+  /**
+   * Get queue statistics
+   */
+  getStats(): QueueStats {
+    return {
+      pending: this._length,
+      processing: this._isProcessing,
+      activeCompilations: 0,
+      testRunning: false,
+      activeItems: 0,
+      processed: 0,
+      avgWaitTime: 0,
+      avgProcessTime: 0,
+      maxCompilations: 3,
+      activeTests: 0,
+      maxTestSlots: 1,
+    };
   }
 
   /**

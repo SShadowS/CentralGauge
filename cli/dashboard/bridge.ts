@@ -197,8 +197,17 @@ export class DashboardEventBridge {
   private onProgress(
     progress: import("../../src/parallel/types.ts").BenchmarkProgress,
   ): void {
-    // We use our own progress calculation from cells, but also forward
-    // orchestrator-level info like active LLM calls and compile queue
+    // Store authoritative pipeline stats from orchestrator so that
+    // subsequent broadcastProgress() calls (from cell updates) use
+    // real semaphore/mutex occupancy instead of cell-state counts.
+    this.state.updatePipelineStats({
+      activeCompilations: progress.activeCompilations,
+      maxCompilations: progress.maxCompilations,
+      activeTests: progress.activeTests,
+      maxTestSlots: progress.maxTestSlots,
+      pendingInQueue: progress.pendingInQueue,
+    });
+
     const dashProgress = this.state.getProgress();
     dashProgress.activeLLMCalls = progress.activeLLMCalls;
     dashProgress.compileQueueLength = progress.compileQueueLength;

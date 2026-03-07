@@ -35,6 +35,15 @@ export class DashboardStateManager {
   private config: DashboardConfig;
   private totalCost = 0;
 
+  // Pipeline stats from orchestrator (authoritative source)
+  private pipelineStats = {
+    activeCompilations: 0,
+    maxCompilations: 3,
+    activeTests: 0,
+    maxTestSlots: 1,
+    pendingInQueue: 0,
+  };
+
   constructor(config: DashboardConfig) {
     this.config = config;
     this.taskIds = [...config.taskIds];
@@ -137,12 +146,39 @@ export class DashboardStateManager {
   }
 
   /**
+   * Update pipeline stats from orchestrator (authoritative values)
+   */
+  updatePipelineStats(stats: {
+    activeCompilations?: number | undefined;
+    maxCompilations?: number | undefined;
+    activeTests?: number | undefined;
+    maxTestSlots?: number | undefined;
+    pendingInQueue?: number | undefined;
+  }): void {
+    if (stats.activeCompilations !== undefined) {
+      this.pipelineStats.activeCompilations = stats.activeCompilations;
+    }
+    if (stats.maxCompilations !== undefined) {
+      this.pipelineStats.maxCompilations = stats.maxCompilations;
+    }
+    if (stats.activeTests !== undefined) {
+      this.pipelineStats.activeTests = stats.activeTests;
+    }
+    if (stats.maxTestSlots !== undefined) {
+      this.pipelineStats.maxTestSlots = stats.maxTestSlots;
+    }
+    if (stats.pendingInQueue !== undefined) {
+      this.pipelineStats.pendingInQueue = stats.pendingInQueue;
+    }
+  }
+
+  /**
    * Build a progress snapshot
    */
   getProgress(): DashboardProgress {
     let completedCells = 0;
     let activeLLM = 0;
-    let compiling = 0;
+    let inPipeline = 0;
 
     for (const cell of this.cells.values()) {
       if (
@@ -153,7 +189,7 @@ export class DashboardStateManager {
       } else if (cell.state === "llm") {
         activeLLM++;
       } else if (cell.state === "compiling" || cell.state === "testing") {
-        compiling++;
+        inPipeline++;
       }
     }
 
@@ -162,11 +198,17 @@ export class DashboardStateManager {
     const rate = completedCells > 0 ? elapsed / completedCells : 0;
     const remaining = totalCells - completedCells;
 
+    // Use authoritative pipeline stats from orchestrator
     const progress: DashboardProgress = {
       totalCells,
       completedCells,
       activeLLMCalls: activeLLM,
-      compileQueueLength: compiling,
+      compileQueueLength: inPipeline,
+      activeCompilations: this.pipelineStats.activeCompilations,
+      maxCompilations: this.pipelineStats.maxCompilations,
+      activeTests: this.pipelineStats.activeTests,
+      maxTestSlots: this.pipelineStats.maxTestSlots,
+      pendingInQueue: this.pipelineStats.pendingInQueue,
       elapsedMs: elapsed,
       startTime: this.startTime,
       totalCost: this.totalCost,

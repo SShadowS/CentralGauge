@@ -53,6 +53,11 @@ export interface DashboardProgress {
   completedCells: number;
   activeLLMCalls: number;
   compileQueueLength: number;
+  activeCompilations?: number;
+  maxCompilations?: number;
+  activeTests?: number;
+  maxTestSlots?: number;
+  pendingInQueue?: number;
   elapsedMs: number;
   estimatedRemainingMs?: number;
   startTime: number;

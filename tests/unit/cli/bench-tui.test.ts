@@ -509,39 +509,51 @@ Deno.test("formatStatusLine - formats initial state", () => {
   const state = createInitialState();
   const line = formatStatusLine(state);
 
-  assertEquals(line, "0% (0/0) | 0s | LLM: 0 | Q: 0");
+  assertEquals(
+    line,
+    "0% (0/0) | 0s | LLM: 0 | Compile: 0/3 | Test: 0/1 | Pending: 0",
+  );
 });
 
 Deno.test("formatStatusLine - formats progress percentage", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 5,
     totalTasks: 10,
     activeLLMCalls: 2,
     compileQueueLength: 1,
+    activeCompilations: 1,
+    pendingInQueue: 3,
     elapsedTime: 30000,
-    modelStats: new Map(),
   };
   const line = formatStatusLine(state);
 
-  assertEquals(line, "50% (5/10) | 30s | LLM: 2 | Q: 1");
+  assertEquals(
+    line,
+    "50% (5/10) | 30s | LLM: 2 | Compile: 1/3 | Test: 0/1 | Pending: 3",
+  );
 });
 
 Deno.test("formatStatusLine - formats 100% completion", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 10,
     totalTasks: 10,
     activeLLMCalls: 0,
     compileQueueLength: 0,
     elapsedTime: 120000,
-    modelStats: new Map(),
   };
   const line = formatStatusLine(state);
 
-  assertEquals(line, "100% (10/10) | 2m 0s | LLM: 0 | Q: 0");
+  assertEquals(
+    line,
+    "100% (10/10) | 2m 0s | LLM: 0 | Compile: 0/3 | Test: 0/1 | Pending: 0",
+  );
 });
 
 Deno.test("formatStatusLine - includes model stats", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 2,
     totalTasks: 4,
     activeLLMCalls: 1,
@@ -553,15 +565,22 @@ Deno.test("formatStatusLine - includes model stats", () => {
   };
   const line = formatStatusLine(state);
 
-  assertEquals(line, "50% (2/4) | 1m 0s | LLM: 1 | Q: 0 | sonnet: 1/2");
+  assertEquals(
+    line,
+    "50% (2/4) | 1m 0s | LLM: 1 | Compile: 0/3 | Test: 0/1 | Pending: 0 | sonnet: 1/2",
+  );
 });
 
 Deno.test("formatStatusLine - formats multiple model stats", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 4,
     totalTasks: 8,
     activeLLMCalls: 2,
     compileQueueLength: 1,
+    activeCompilations: 2,
+    activeTests: 1,
+    pendingInQueue: 5,
     elapsedTime: 90000,
     modelStats: new Map([
       ["sonnet", { total: 2, passed: 2 }],
@@ -572,12 +591,13 @@ Deno.test("formatStatusLine - formats multiple model stats", () => {
 
   assertEquals(
     line,
-    "50% (4/8) | 1m 30s | LLM: 2 | Q: 1 | sonnet: 2/2 gpt-4o: 1/2",
+    "50% (4/8) | 1m 30s | LLM: 2 | Compile: 2/3 | Test: 1/1 | Pending: 5 | sonnet: 2/2 gpt-4o: 1/2",
   );
 });
 
 Deno.test("formatStatusLine - extracts short model name from path", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 1,
     totalTasks: 2,
     activeLLMCalls: 0,
@@ -590,11 +610,15 @@ Deno.test("formatStatusLine - extracts short model name from path", () => {
   const line = formatStatusLine(state);
 
   // Should extract "claude-sonnet" from "anthropic/claude-sonnet"
-  assertEquals(line, "50% (1/2) | 10s | LLM: 0 | Q: 0 | claude-sonnet: 1/1");
+  assertEquals(
+    line,
+    "50% (1/2) | 10s | LLM: 0 | Compile: 0/3 | Test: 0/1 | Pending: 0 | claude-sonnet: 1/1",
+  );
 });
 
 Deno.test("formatStatusLine - strips version suffix from model name", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 1,
     totalTasks: 2,
     activeLLMCalls: 0,
@@ -607,54 +631,63 @@ Deno.test("formatStatusLine - strips version suffix from model name", () => {
   const line = formatStatusLine(state);
 
   // Should extract "gpt-4o" from "openai/gpt-4o@2024-05-13"
-  assertEquals(line, "50% (1/2) | 10s | LLM: 0 | Q: 0 | gpt-4o: 0/1");
+  assertEquals(
+    line,
+    "50% (1/2) | 10s | LLM: 0 | Compile: 0/3 | Test: 0/1 | Pending: 0 | gpt-4o: 0/1",
+  );
 });
 
 Deno.test("formatStatusLine - includes ETA when provided", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 5,
     totalTasks: 10,
     activeLLMCalls: 1,
     compileQueueLength: 0,
     elapsedTime: 60000,
     estimatedTimeRemaining: 90000,
-    modelStats: new Map(),
   };
   const line = formatStatusLine(state);
 
   // ETA now includes both duration and end time
   assertMatch(
     line,
-    /50% \(5\/10\) \| 1m 0s \| LLM: 1 \| Q: 0 \| ETA: 1m 30s \(~\d{2}:\d{2}\)/,
+    /50% \(5\/10\) \| 1m 0s \| LLM: 1 \| Compile: 0\/3 \| Test: 0\/1 \| Pending: 0 \| ETA: 1m 30s \(~\d{2}:\d{2}\)/,
   );
 });
 
 Deno.test("formatStatusLine - omits ETA when zero", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 10,
     totalTasks: 10,
     activeLLMCalls: 0,
     compileQueueLength: 0,
     elapsedTime: 120000,
     estimatedTimeRemaining: 0,
-    modelStats: new Map(),
   };
   const line = formatStatusLine(state);
 
-  assertEquals(line, "100% (10/10) | 2m 0s | LLM: 0 | Q: 0");
+  assertEquals(
+    line,
+    "100% (10/10) | 2m 0s | LLM: 0 | Compile: 0/3 | Test: 0/1 | Pending: 0",
+  );
 });
 
 Deno.test("formatStatusLine - omits ETA when undefined", () => {
   const state: BenchTuiState = {
+    ...createInitialState(),
     completedTasks: 5,
     totalTasks: 10,
     activeLLMCalls: 1,
     compileQueueLength: 0,
     elapsedTime: 60000,
     estimatedTimeRemaining: undefined,
-    modelStats: new Map(),
   };
   const line = formatStatusLine(state);
 
-  assertEquals(line, "50% (5/10) | 1m 0s | LLM: 1 | Q: 0");
+  assertEquals(
+    line,
+    "50% (5/10) | 1m 0s | LLM: 1 | Compile: 0/3 | Test: 0/1 | Pending: 0",
+  );
 });

@@ -85,6 +85,9 @@ export class CompileQueuePool implements CompileWorkQueue {
       avgProcessTime: allStats.length > 0
         ? allStats.reduce((s, q) => s + q.avgProcessTime, 0) / allStats.length
         : 0,
+      maxCompilations: allStats.reduce((s, q) => s + q.maxCompilations, 0),
+      activeTests: allStats.reduce((s, q) => s + q.activeTests, 0),
+      maxTestSlots: allStats.length,
     };
   }
 

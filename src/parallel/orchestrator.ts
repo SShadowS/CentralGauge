@@ -821,6 +821,8 @@ export class ParallelBenchmarkOrchestrator {
     const remaining = this.totalTasks - this.completedTasks;
     const estimatedRemaining = avgTimePerTask * remaining;
 
+    const queueStats = this.compileQueue?.getStats();
+
     const progress: BenchmarkProgress = {
       totalTasks: this.totalTasks,
       completedTasks: this.completedTasks,
@@ -830,6 +832,11 @@ export class ParallelBenchmarkOrchestrator {
       estimatedTimeRemaining: estimatedRemaining,
       startTime: this.startTime,
       elapsedTime: elapsed,
+      activeCompilations: queueStats?.activeCompilations ?? 0,
+      maxCompilations: queueStats?.maxCompilations ?? 3,
+      activeTests: queueStats?.activeTests ?? 0,
+      maxTestSlots: queueStats?.maxTestSlots ?? 1,
+      pendingInQueue: queueStats?.pending ?? 0,
     };
 
     this.emit({ type: "progress", progress });
