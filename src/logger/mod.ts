@@ -38,3 +38,4 @@ export { Logger } from "./logger.ts";
 export { ConsoleTransport } from "./transports/console.ts";
 export type { ConsoleTransportOptions } from "./transports/console.ts";
 export { NullTransport } from "./transports/null.ts";
+export { FileTransport } from "./transports/file.ts";
