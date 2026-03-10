@@ -27,11 +27,12 @@ import { CostTracker } from "./cost-tracker.ts";
 import { BcContainerProvider } from "../container/bc-container-provider.ts";
 import type { TestResult } from "../container/types.ts";
 import { buildUniversalPromptSync, preloadTemplate } from "./prompt-builder.ts";
-import { McpServerManager } from "./mcp-manager.ts";
+import { McpServerManager, resolveAlLspPlugin } from "./mcp-manager.ts";
 import type {
   ApiMessageWithUsage,
   QueryOptions,
   SDKAssistantMessage,
+  SdkPluginConfig,
   SDKResultMessage,
   SDKUserMessage,
   ToolResultBlock,
@@ -233,6 +234,13 @@ export class AgentTaskExecutor {
     // Build MCP server configuration
     const mcpServers = McpServerManager.buildServersConfig(agentConfig);
 
+    // Resolve plugins (LSP, etc.)
+    // Auto-resolve AL LSP plugin when LSP is in allowedTools
+    const plugins = this.resolvePlugins(agentConfig);
+
+    // Resolve setting sources (default to ['project'] if not specified)
+    const settingSources = agentConfig.settingSources ?? ["project"];
+
     // Create SDK query options
     const queryOptions: QueryOptions = {
       model: agentConfig.model,
@@ -243,6 +251,8 @@ export class AgentTaskExecutor {
       systemPrompt,
       permissionMode: "bypassPermissions" as const,
       allowDangerouslySkipPermissions: true,
+      ...(plugins && { plugins }),
+      settingSources,
     };
 
     return { taskWorkingDir, queryOptions, tracker, executionId };
@@ -622,6 +632,32 @@ export class AgentTaskExecutor {
       result.append = config.append;
     }
     return result;
+  }
+
+  /**
+   * Resolve SDK plugins for the agent.
+   * Auto-discovers AL LSP plugin when LSP is in allowedTools.
+   */
+  private resolvePlugins(
+    agentConfig: ResolvedAgentConfig,
+  ): SdkPluginConfig[] | undefined {
+    // Start with explicitly configured plugins
+    const plugins: SdkPluginConfig[] = [...(agentConfig.plugins ?? [])];
+
+    // Auto-resolve AL LSP plugin when LSP is in allowedTools
+    if (agentConfig.allowedTools?.includes("LSP")) {
+      const alLsp = resolveAlLspPlugin();
+      if (alLsp) {
+        plugins.push(alLsp);
+        log.info("AL LSP plugin resolved", { path: alLsp.path });
+      } else {
+        log.warn(
+          "LSP in allowedTools but AL LSP plugin not found in cache",
+        );
+      }
+    }
+
+    return plugins.length > 0 ? plugins : undefined;
   }
 
   /** Cached universal template for reuse */

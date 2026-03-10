@@ -99,6 +99,19 @@ export interface ApiMessageWithUsage {
 }
 
 // =============================================================================
+// Plugin Types
+// =============================================================================
+
+/**
+ * SDK plugin configuration for loading plugins by path.
+ * Used to make LSP tools available to agents.
+ */
+export interface SdkPluginConfig {
+  type: "local";
+  path: string;
+}
+
+// =============================================================================
 // Query Options
 // =============================================================================
 
@@ -123,4 +136,8 @@ export interface QueryOptions {
     };
   permissionMode: "bypassPermissions";
   allowDangerouslySkipPermissions: boolean;
+  /** SDK plugins to load (e.g., LSP language servers) */
+  plugins?: SdkPluginConfig[];
+  /** What settings to load: 'user' (~/.claude/) and/or 'project' (cwd) */
+  settingSources?: ("user" | "project")[];
 }
