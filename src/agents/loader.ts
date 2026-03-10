@@ -137,6 +137,10 @@ export function resolveAgentInheritance(
     },
     // Merge allowed tools (child adds to parent)
     allowedTools: config.allowedTools ?? parent.allowedTools,
+    // Merge plugins (child overrides parent)
+    ...(config.plugins ?? parent.plugins
+      ? { plugins: config.plugins ?? parent.plugins }
+      : {}),
     // Merge setting sources if child specifies (default to ['project'])
     settingSources: config.settingSources ?? parent.settingSources ??
       ["project"],

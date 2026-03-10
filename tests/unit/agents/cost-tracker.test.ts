@@ -458,6 +458,60 @@ describe("CostTracker", () => {
     });
   });
 
+  describe("getCurrentTurnNumber", () => {
+    it("should return 1 before any turns", () => {
+      assertEquals(tracker.getCurrentTurnNumber(), 1);
+    });
+
+    it("should return 2 after first turn completes", () => {
+      tracker.startTurn();
+      tracker.endTurn();
+      assertEquals(tracker.getCurrentTurnNumber(), 2);
+    });
+
+    it("should return correct number mid-turn", () => {
+      tracker.startTurn();
+      tracker.endTurn();
+      tracker.startTurn();
+      // Mid-second turn, should be 2
+      assertEquals(tracker.getCurrentTurnNumber(), 2);
+    });
+  });
+
+  describe("getToolCallCounts", () => {
+    it("should aggregate tool call counts by name", () => {
+      tracker.startTurn();
+      tracker.recordToolCall({
+        name: "Read",
+        input: {},
+        duration: 10,
+        success: true,
+      });
+      tracker.recordToolCall({
+        name: "Read",
+        input: {},
+        duration: 15,
+        success: true,
+      });
+      tracker.recordToolCall({
+        name: "mcp__al-tools__al_compile",
+        input: {},
+        duration: 100,
+        success: true,
+      });
+      tracker.endTurn();
+
+      const counts = tracker.getToolCallCounts();
+      assertEquals(counts["Read"], 2);
+      assertEquals(counts["mcp__al-tools__al_compile"], 1);
+    });
+
+    it("should return empty object when no tool calls", () => {
+      const counts = tracker.getToolCallCounts();
+      assertEquals(counts, {});
+    });
+  });
+
   describe("getTurns", () => {
     it("should return copy of turns array", () => {
       tracker.startTurn();

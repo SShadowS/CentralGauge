@@ -24,6 +24,7 @@ allowedTools:
   - Grep # Search file contents
   - Bash # Run shell commands
   - Skill # Use skills from .claude/skills/
+  - LSP # AL language server code intelligence
 
 # MCP servers for AL compilation and testing
 # Note: The path is relative to cwd (CentralGauge root)
@@ -61,6 +62,9 @@ systemPrompt:
 limits:
   maxCompileAttempts: 15
   timeoutMs: 300000
+  maxBudgetUsd: 2.00
+  maxRetries: 1
+  retryBaseDelayMs: 5000
 
 tags:
   - baseline

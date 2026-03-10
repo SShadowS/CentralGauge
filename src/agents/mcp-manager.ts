@@ -6,8 +6,10 @@
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
+import { homedir } from "node:os";
 import { StateError } from "../errors.ts";
 import type { ResolvedAgentConfig } from "./types.ts";
+import type { SdkPluginConfig } from "./sdk-types.ts";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("agent:mcp");
@@ -147,5 +149,39 @@ export class McpServerManager {
     }
 
     return Object.keys(servers).length > 0 ? servers : undefined;
+  }
+}
+
+// =============================================================================
+// Plugin Resolution
+// =============================================================================
+
+const AL_LSP_PLUGIN_CACHE = join(
+  homedir(),
+  ".claude",
+  "plugins",
+  "cache",
+  "claude-code-lsps",
+  "al-language-server-go-windows",
+);
+
+/**
+ * Resolve the installed AL LSP plugin, or undefined if not installed.
+ *
+ * Discovers the AL language server plugin from the Claude Code plugins cache.
+ * This enables LSP tools (documentSymbol, hover, etc.) for agents working
+ * with AL code.
+ */
+export function resolveAlLspPlugin(): SdkPluginConfig | undefined {
+  try {
+    const versions = Array.from(Deno.readDirSync(AL_LSP_PLUGIN_CACHE))
+      .filter((entry) => entry.isDirectory)
+      .map((entry) => entry.name);
+    if (versions.length === 0) return undefined;
+    // Pick latest version (lexicographic sort — semver-safe for same digit count)
+    const latest = versions.sort().at(-1)!;
+    return { type: "local", path: join(AL_LSP_PLUGIN_CACHE, latest) };
+  } catch {
+    return undefined; // Plugin not installed
   }
 }

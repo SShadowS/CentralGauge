@@ -513,6 +513,37 @@ allowedTools: [Read]
       // Base config without inheritance doesn't get default settingSources
       assertEquals(resolved.settingSources, undefined);
     });
+
+    it("should merge retry config from parent and child", () => {
+      const configs = new Map<string, AgentConfig>();
+      configs.set("parent", {
+        id: "parent",
+        name: "Parent",
+        model: "sonnet",
+        maxTurns: 50,
+        allowedTools: ["Read"],
+        limits: {
+          maxRetries: 3,
+          retryBaseDelayMs: 5000,
+        },
+      });
+      configs.set("child", {
+        id: "child",
+        name: "Child",
+        model: "sonnet",
+        maxTurns: 50,
+        allowedTools: ["Read"],
+        extends: "parent",
+        limits: {
+          maxRetries: 1,
+        },
+      });
+
+      const resolved = resolveAgentInheritance("child", configs);
+      assertEquals(resolved.limits?.maxRetries, 1);
+      // retryBaseDelayMs comes from parent via spread merge
+      assertEquals(resolved.limits?.retryBaseDelayMs, 5000);
+    });
   });
 
   describe("validateAgentConfig", () => {

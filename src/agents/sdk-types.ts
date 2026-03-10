@@ -140,4 +140,6 @@ export interface QueryOptions {
   plugins?: SdkPluginConfig[];
   /** What settings to load: 'user' (~/.claude/) and/or 'project' (cwd) */
   settingSources?: ("user" | "project")[];
+  /** Maximum budget in USD — SDK terminates execution when exceeded */
+  maxBudgetUsd?: number;
 }

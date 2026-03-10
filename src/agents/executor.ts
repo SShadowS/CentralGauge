@@ -47,6 +47,9 @@ import {
   SandboxExecutor,
   shouldUseSandbox,
 } from "./sandbox-executor.ts";
+import { getRetryDelayMs, isAgentRetryableError } from "./retry.ts";
+import { stageAgentWorkspace } from "./workspace-staging.ts";
+import type { StagedWorkspace } from "./workspace-staging.ts";
 
 /**
  * Result of execution preparation
@@ -56,6 +59,7 @@ interface ExecutionPrepResult {
   queryOptions: QueryOptions;
   tracker: CostTracker;
   executionId: string;
+  staged: StagedWorkspace;
 }
 
 export class AgentTaskExecutor {
@@ -225,8 +229,8 @@ export class AgentTaskExecutor {
     );
     await ensureDir(taskWorkingDir);
 
-    // Copy CLAUDE.md and .claude directory if they exist in base dir
-    await this.copyAgentContext(baseWorkingDir, taskWorkingDir);
+    // Stage CLAUDE.md and .claude directory via symlinks (with copy fallback)
+    const staged = await stageAgentWorkspace(baseWorkingDir, taskWorkingDir);
 
     // Resolve system prompt
     const systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
@@ -253,9 +257,12 @@ export class AgentTaskExecutor {
       allowDangerouslySkipPermissions: true,
       ...(plugins && { plugins }),
       settingSources,
+      ...(agentConfig.limits?.maxBudgetUsd != null && {
+        maxBudgetUsd: agentConfig.limits.maxBudgetUsd,
+      }),
     };
 
-    return { taskWorkingDir, queryOptions, tracker, executionId };
+    return { taskWorkingDir, queryOptions, tracker, executionId, staged };
   }
 
   /**
@@ -338,6 +345,10 @@ export class AgentTaskExecutor {
     if (failureDetails !== undefined) {
       result.failureDetails = failureDetails;
     }
+    const toolCallCounts = tracker.getToolCallCounts();
+    if (Object.keys(toolCallCounts).length > 0) {
+      result.toolCallCounts = toolCallCounts;
+    }
     return result;
   }
 
@@ -402,15 +413,94 @@ export class AgentTaskExecutor {
     }
 
     // Phase 1: Setup execution environment
-    const { taskWorkingDir, queryOptions, tracker, executionId } = await this
-      .prepareExecution(agentConfig, task, options);
+    const { taskWorkingDir, queryOptions, tracker, executionId, staged } =
+      await this.prepareExecution(agentConfig, task, options);
 
     if (options.debug) {
       this.logQueryConfig(queryOptions);
     }
 
-    // Track parsed result across try/catch
+    // Retry loop: only wraps the query() call, not setup
+    const maxRetries = agentConfig.limits?.maxRetries ?? 0;
+    const retryBaseDelayMs = agentConfig.limits?.retryBaseDelayMs ?? 5000;
+
+    try {
+      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+        try {
+          // Reset tracker for retry attempts (keep working dir)
+          if (attempt > 1) {
+            tracker.reset();
+            this.resetToolTimings();
+            log.info("Retrying agent execution", {
+              task: task.id,
+              attempt,
+              maxRetries,
+            });
+          }
+
+          return await this.executeQuery(
+            agentConfig,
+            task,
+            options,
+            queryOptions,
+            tracker,
+            executionId,
+            startTime,
+            taskWorkingDir,
+          );
+        } catch (error: unknown) {
+          const isLast = attempt >= maxRetries + 1;
+          if (!isAgentRetryableError(error) || isLast) {
+            if (attempt > 1) {
+              log.error("Agent failed after retries", {
+                task: task.id,
+                attempts: attempt,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+            throw error;
+          }
+          const delayMs = getRetryDelayMs(attempt, retryBaseDelayMs);
+          log.warn("Transient error, retrying", {
+            task: task.id,
+            attempt,
+            maxRetries,
+            delayMs,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+      throw new Error("Retry loop exhausted"); // Unreachable
+    } finally {
+      try {
+        await staged.cleanup();
+      } catch (cleanupErr) {
+        log.warn("Workspace cleanup failed", {
+          error: cleanupErr instanceof Error
+            ? cleanupErr.message
+            : String(cleanupErr),
+        });
+      }
+    }
+  }
+
+  /**
+   * Execute the query loop (extracted for retry support)
+   */
+  private async executeQuery(
+    agentConfig: ResolvedAgentConfig,
+    task: TaskManifest,
+    options: AgentExecutionOptions,
+    queryOptions: QueryOptions,
+    tracker: CostTracker,
+    executionId: string,
+    startTime: number,
+    taskWorkingDir: string,
+  ): Promise<AgentExecutionResult> {
     let latestParsedResult: ParsedTaskResult | undefined;
+    let sdkCostUsd: number | undefined;
+    let sdkDurationMs: number | undefined;
 
     try {
       const prompt = this.buildTaskPrompt(task, taskWorkingDir, agentConfig);
@@ -430,8 +520,20 @@ export class AgentTaskExecutor {
         }
 
         if (msg.type === "assistant") {
+          const assistantMsg = msg as SDKAssistantMessage;
+
+          // Real-time progress: log turn and tool calls
+          const turnNum = tracker.getCurrentTurnNumber();
+          log.info(`Turn ${turnNum}`, { task: task.id });
+          for (const block of assistantMsg.message.content) {
+            if (block.type === "tool_use") {
+              const toolBlock = block as ToolUseBlock;
+              log.info(`  tool: ${toolBlock.name}`, { task: task.id });
+            }
+          }
+
           this.processAssistantMessage(
-            msg as SDKAssistantMessage,
+            assistantMsg,
             tracker,
             options.debug,
           );
@@ -460,10 +562,14 @@ export class AgentTaskExecutor {
 
         if (msg.type === "result") {
           const resultMsg = msg as SDKResultMessage;
+          sdkCostUsd = resultMsg.total_cost_usd;
+          sdkDurationMs = resultMsg.duration_ms;
           // Don't trust SDK success - we determine success based on tool results
           // (compilation successful or all tests passed, depending on requiresTests)
           if (resultMsg.subtype === "error_max_turns") {
             terminationReason = "max_turns";
+          } else if (resultMsg.subtype === "error_max_budget_usd") {
+            terminationReason = "max_budget";
           } else if (!success) {
             // Agent finished but we didn't detect success from tool results
             terminationReason = "error";
@@ -484,15 +590,11 @@ export class AgentTaskExecutor {
 
       tracker.endTurn();
 
-      // Note: When requiresTests=true, the agent runs tests via al_verify_task
-      // and success is only set when "All tests passed" is returned.
-      // No post-loop verification needed as tests run during agent execution.
-
       if (options.debug) {
         this.logToolTimingSummary();
       }
 
-      return this.buildExecutionResult(
+      const result = this.buildExecutionResult(
         task,
         agentConfig,
         executionId,
@@ -504,13 +606,16 @@ export class AgentTaskExecutor {
         undefined, // testResult - captured during agent execution
         latestParsedResult,
       );
+      if (sdkCostUsd !== undefined) result.sdkCostUsd = sdkCostUsd;
+      if (sdkDurationMs !== undefined) result.sdkDurationMs = sdkDurationMs;
+      return result;
     } catch (error) {
       tracker.endTurn();
       if (options.debug) {
         log.error("Executor error", { error: String(error) });
         this.logToolTimingSummary();
       }
-      return this.buildExecutionResult(
+      const result = this.buildExecutionResult(
         task,
         agentConfig,
         executionId,
@@ -522,6 +627,9 @@ export class AgentTaskExecutor {
         undefined, // testResult
         latestParsedResult,
       );
+      if (sdkCostUsd !== undefined) result.sdkCostUsd = sdkCostUsd;
+      if (sdkDurationMs !== undefined) result.sdkDurationMs = sdkDurationMs;
+      return result;
     }
   }
 

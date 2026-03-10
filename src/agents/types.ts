@@ -8,6 +8,7 @@
 
 import type { TokenUsage } from "../llm/types.ts";
 import type { TestResult } from "../container/types.ts";
+import type { SdkPluginConfig } from "./sdk-types.ts";
 
 // =============================================================================
 // Agent Configuration Types
@@ -41,6 +42,12 @@ export interface AgentLimits {
   maxCompileAttempts?: number;
   /** Overall timeout in milliseconds */
   timeoutMs?: number;
+  /** Maximum budget in USD for SDK-level cost enforcement */
+  maxBudgetUsd?: number;
+  /** Maximum retry attempts for transient errors (default: 0 = no retry) */
+  maxRetries?: number;
+  /** Base delay between retries in ms, scales linearly (default: 5000) */
+  retryBaseDelayMs?: number;
 }
 
 /**
@@ -112,6 +119,9 @@ export interface AgentConfig {
 
   /** Tags for filtering/grouping */
   tags?: string[];
+
+  /** SDK plugins to load (e.g., LSP language servers) */
+  plugins?: SdkPluginConfig[];
 }
 
 // =============================================================================
@@ -191,6 +201,7 @@ export type TerminationReason =
   | "success" // Task completed successfully
   | "max_turns" // Reached maximum turns limit
   | "max_tokens" // Reached token budget limit
+  | "max_budget" // Reached SDK budget limit (maxBudgetUsd)
   | "max_compile_attempts" // Reached compilation attempt limit
   | "test_failure" // Tests failed during verification
   | "timeout" // Execution timed out
@@ -352,6 +363,15 @@ export interface AgentExecutionResult {
 
   /** Detailed failure information (only set when success=false) */
   failureDetails?: DetailedFailureReason;
+
+  /** Aggregated tool call counts by tool name (e.g., { Read: 5, Write: 2 }) */
+  toolCallCounts?: Record<string, number>;
+
+  /** Authoritative cost from SDK result message (USD) */
+  sdkCostUsd?: number;
+
+  /** Authoritative duration from SDK result message (ms) */
+  sdkDurationMs?: number;
 }
 
 // =============================================================================

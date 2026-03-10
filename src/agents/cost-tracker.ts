@@ -175,6 +175,32 @@ export class CostTracker {
   }
 
   /**
+   * Get the current turn number (1-indexed)
+   */
+  getCurrentTurnNumber(): number {
+    return this._turns.length + 1;
+  }
+
+  /**
+   * Get aggregated tool call counts across all turns
+   */
+  getToolCallCounts(): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const turn of this._turns) {
+      for (const call of turn.toolCalls) {
+        counts[call.name] = (counts[call.name] ?? 0) + 1;
+      }
+    }
+    // Include current turn if in progress
+    if (this._currentTurn) {
+      for (const call of this._currentTurn.toolCalls ?? []) {
+        counts[call.name] = (counts[call.name] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }
+
+  /**
    * Check if compile attempt limit is reached
    */
   isCompileLimitReached(limit: number): boolean {
