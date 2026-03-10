@@ -85,3 +85,19 @@ Deno.test("AgentExecutionResult SDK cost fields", async (t) => {
     assertEquals(result.toolCallCounts?.["Read"], 5);
   });
 });
+
+Deno.test("AgentExecutionResult sessionId field", async (t) => {
+  await t.step("sessionId field exists on type", () => {
+    const result: Partial<AgentExecutionResult> = {
+      sessionId: "abc-123-session",
+    };
+    assertEquals(result.sessionId, "abc-123-session");
+  });
+
+  await t.step("sessionId is optional", () => {
+    const result: Partial<AgentExecutionResult> = {
+      success: true,
+    };
+    assertEquals(result.sessionId, undefined);
+  });
+});

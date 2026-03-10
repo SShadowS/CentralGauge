@@ -372,6 +372,9 @@ export interface AgentExecutionResult {
 
   /** Authoritative duration from SDK result message (ms) */
   sdkDurationMs?: number;
+
+  /** SDK session ID for debugging/correlation with Claude backend logs */
+  sessionId?: string;
 }
 
 // =============================================================================

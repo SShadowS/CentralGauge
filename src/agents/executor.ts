@@ -48,6 +48,7 @@ import {
   shouldUseSandbox,
 } from "./sandbox-executor.ts";
 import { getRetryDelayMs, isAgentRetryableError } from "./retry.ts";
+import { FileTransport } from "../logger/transports/file.ts";
 import { stageAgentWorkspace } from "./workspace-staging.ts";
 import type { StagedWorkspace } from "./workspace-staging.ts";
 
@@ -424,6 +425,10 @@ export class AgentTaskExecutor {
     const maxRetries = agentConfig.limits?.maxRetries ?? 0;
     const retryBaseDelayMs = agentConfig.limits?.retryBaseDelayMs ?? 5000;
 
+    // Per-execution log file for post-mortem analysis
+    const logFilePath = join(taskWorkingDir, "execution.jsonl");
+    const fileTransport = new FileTransport(logFilePath);
+
     try {
       for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
         try {
@@ -447,6 +452,7 @@ export class AgentTaskExecutor {
             executionId,
             startTime,
             taskWorkingDir,
+            fileTransport,
           );
         } catch (error: unknown) {
           const isLast = attempt >= maxRetries + 1;
@@ -474,6 +480,11 @@ export class AgentTaskExecutor {
       throw new Error("Retry loop exhausted"); // Unreachable
     } finally {
       try {
+        await fileTransport.flush();
+      } catch {
+        // Best-effort flush
+      }
+      try {
         await staged.cleanup();
       } catch (cleanupErr) {
         log.warn("Workspace cleanup failed", {
@@ -497,10 +508,28 @@ export class AgentTaskExecutor {
     executionId: string,
     startTime: number,
     taskWorkingDir: string,
+    fileTransport: FileTransport,
   ): Promise<AgentExecutionResult> {
     let latestParsedResult: ParsedTaskResult | undefined;
     let sdkCostUsd: number | undefined;
     let sdkDurationMs: number | undefined;
+    let sessionId: string | undefined;
+
+    // Log execution start metadata
+    fileTransport.write({
+      level: "info",
+      timestamp: new Date(),
+      namespace: "agent:execution",
+      message: "Execution started",
+      data: {
+        taskId: task.id,
+        agentId: agentConfig.id,
+        executionId,
+        model: agentConfig.model,
+        maxTurns: agentConfig.maxTurns,
+        maxBudgetUsd: agentConfig.limits?.maxBudgetUsd,
+      },
+    });
 
     try {
       const prompt = this.buildTaskPrompt(task, taskWorkingDir, agentConfig);
@@ -522,15 +551,34 @@ export class AgentTaskExecutor {
         if (msg.type === "assistant") {
           const assistantMsg = msg as SDKAssistantMessage;
 
+          // Capture session ID from first message
+          if (!sessionId) {
+            sessionId = assistantMsg.session_id;
+            if (sessionId) {
+              log.debug("SDK session", { sessionId });
+            }
+          }
+
           // Real-time progress: log turn and tool calls
           const turnNum = tracker.getCurrentTurnNumber();
           log.info(`Turn ${turnNum}`, { task: task.id });
+          const turnTools: string[] = [];
           for (const block of assistantMsg.message.content) {
             if (block.type === "tool_use") {
               const toolBlock = block as ToolUseBlock;
               log.info(`  tool: ${toolBlock.name}`, { task: task.id });
+              turnTools.push(toolBlock.name);
             }
           }
+
+          // Log turn to per-execution file
+          fileTransport.write({
+            level: "info",
+            timestamp: new Date(),
+            namespace: "agent:turn",
+            message: `Turn ${turnNum}`,
+            data: { taskId: task.id, tools: turnTools },
+          });
 
           this.processAssistantMessage(
             assistantMsg,
@@ -564,6 +612,9 @@ export class AgentTaskExecutor {
           const resultMsg = msg as SDKResultMessage;
           sdkCostUsd = resultMsg.total_cost_usd;
           sdkDurationMs = resultMsg.duration_ms;
+          if (!sessionId) {
+            sessionId = resultMsg.session_id;
+          }
           // Don't trust SDK success - we determine success based on tool results
           // (compilation successful or all tests passed, depending on requiresTests)
           if (resultMsg.subtype === "error_max_turns") {
@@ -608,6 +659,22 @@ export class AgentTaskExecutor {
       );
       if (sdkCostUsd !== undefined) result.sdkCostUsd = sdkCostUsd;
       if (sdkDurationMs !== undefined) result.sdkDurationMs = sdkDurationMs;
+      if (sessionId !== undefined) result.sessionId = sessionId;
+      fileTransport.write({
+        level: "info",
+        timestamp: new Date(),
+        namespace: "agent:execution",
+        message: "Execution completed",
+        data: {
+          success: result.success,
+          terminationReason: result.terminationReason,
+          turns: result.metrics.turns,
+          duration: result.duration,
+          sdkCostUsd: result.sdkCostUsd,
+          sessionId: result.sessionId,
+        },
+      });
+      await fileTransport.flush();
       return result;
     } catch (error) {
       tracker.endTurn();
@@ -629,6 +696,23 @@ export class AgentTaskExecutor {
       );
       if (sdkCostUsd !== undefined) result.sdkCostUsd = sdkCostUsd;
       if (sdkDurationMs !== undefined) result.sdkDurationMs = sdkDurationMs;
+      if (sessionId !== undefined) result.sessionId = sessionId;
+      fileTransport.write({
+        level: "error",
+        timestamp: new Date(),
+        namespace: "agent:execution",
+        message: "Execution failed",
+        data: {
+          success: false,
+          terminationReason: result.terminationReason,
+          turns: result.metrics.turns,
+          duration: result.duration,
+          error: error instanceof Error ? error.message : String(error),
+          sdkCostUsd: result.sdkCostUsd,
+          sessionId: result.sessionId,
+        },
+      });
+      await fileTransport.flush();
       return result;
     }
   }
