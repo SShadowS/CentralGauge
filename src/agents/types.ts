@@ -403,6 +403,9 @@ export interface AgentExecutionOptions {
   /** Run agent in sandbox container (overrides agent config) */
   sandbox?: boolean;
 
+  /** Container assignment instruction to append to system prompt (for parallel container mode) */
+  containerInstruction?: string;
+
   /** MCP HTTP server port for sandbox mode */
   mcpHttpPort?: number;
 }

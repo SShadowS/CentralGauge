@@ -1,6 +1,7 @@
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import type { QueryOptions } from "../../../src/agents/sdk-types.ts";
 import type {
+  AgentExecutionOptions,
   AgentExecutionResult,
   AgentLimits,
   TerminationReason,
@@ -99,5 +100,28 @@ Deno.test("AgentExecutionResult sessionId field", async (t) => {
       success: true,
     };
     assertEquals(result.sessionId, undefined);
+  });
+});
+
+Deno.test("AgentExecutionOptions containerInstruction", async (t) => {
+  await t.step("supports optional containerInstruction", () => {
+    const options: AgentExecutionOptions = {
+      projectDir: "/workspace",
+      containerName: "Cronus29",
+      containerProvider: "bccontainer",
+      containerInstruction:
+        'You MUST use containerName: "Cronus29" for ALL MCP tool calls that accept a containerName parameter (al_compile, al_test, al_verify, al_verify_task). Do not use the default container.',
+    };
+    assertExists(options.containerInstruction);
+    assert(options.containerInstruction!.includes("Cronus29"));
+  });
+
+  await t.step("containerInstruction is optional", () => {
+    const options: AgentExecutionOptions = {
+      projectDir: "/workspace",
+      containerName: "Cronus28",
+      containerProvider: "bccontainer",
+    };
+    assertEquals(options.containerInstruction, undefined);
   });
 });
