@@ -25,6 +25,7 @@ interface AgentBenchmarkOptions {
   stream?: boolean;
   tui?: boolean;
   containerName: string;
+  containerNames?: string[];
   sandbox?: boolean;
   verbose?: boolean;
 }
@@ -71,6 +72,20 @@ describe("AgentBenchmarkOptions", () => {
       containerName: "CustomContainer",
     };
     assertEquals(options.containerName, "CustomContainer");
+  });
+
+  it("should support optional containerNames for parallel execution", () => {
+    const options: AgentBenchmarkOptions = {
+      agents: ["agent-a", "agent-b"],
+      tasks: ["tasks/**/*.yml"],
+      outputDir: "results",
+      containerName: "Cronus28",
+      containerNames: ["Cronus28", "Cronus29"],
+    };
+    assertExists(options.containerNames);
+    assertEquals(options.containerNames!.length, 2);
+    assertEquals(options.containerNames![0], "Cronus28");
+    assertEquals(options.containerNames![1], "Cronus29");
   });
 });
 

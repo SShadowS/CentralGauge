@@ -14,6 +14,8 @@ export interface AgentBenchmarkOptions {
   stream?: boolean;
   tui?: boolean;
   containerName: string;
+  /** Per-agent container names for parallel execution (1:1 with agents array) */
+  containerNames?: string[];
   /** Run agents in isolated Windows containers */
   sandbox?: boolean;
   /** Show detailed failure output */
