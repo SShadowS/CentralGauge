@@ -117,7 +117,9 @@ Deno.test("stageAgentWorkspace", async (t) => {
   await t.step(
     "non-existent sourceDir returns empty staged",
     async () => {
-      const nonExistentDir = `${Deno.env.get("TEMP") || "/tmp"}/stage-nonexistent-${Date.now()}`;
+      const nonExistentDir = `${
+        Deno.env.get("TEMP") || "/tmp"
+      }/stage-nonexistent-${Date.now()}`;
 
       const staged = await stageAgentWorkspace(
         nonExistentDir,
