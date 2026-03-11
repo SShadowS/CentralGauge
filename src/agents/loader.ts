@@ -6,7 +6,7 @@
 
 import { exists, walk } from "@std/fs";
 import { parse } from "@std/yaml";
-import { basename, extname } from "@std/path";
+import { basename, extname, resolve } from "@std/path";
 import { ResourceNotFoundError, ValidationError } from "../errors.ts";
 import type {
   AgentConfig,
@@ -69,6 +69,35 @@ export async function loadAgentConfigs(
   ) {
     try {
       const config = await loadAgentConfig(entry.path);
+
+      // Convention: check for companion folder derived from filename
+      const stem = basename(entry.path, extname(entry.path));
+      const companionDir = resolve(directory, stem);
+      try {
+        const stat = await Deno.stat(companionDir);
+        if (stat.isDirectory) {
+          if (config.workingDir) {
+            log.warn(
+              "Companion folder overrides explicit workingDir",
+              {
+                agentId: config.id,
+                companionDir,
+                workingDir: config.workingDir,
+              },
+            );
+          }
+          config.workingDir = companionDir;
+        }
+      } catch (err) {
+        if (!(err instanceof Deno.errors.NotFound)) {
+          log.warn("Unexpected error checking companion folder", {
+            agentId: config.id,
+            companionDir,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
       configs.set(config.id, config);
     } catch (error) {
       log.warn("Failed to load agent config", {

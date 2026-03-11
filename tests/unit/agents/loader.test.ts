@@ -252,6 +252,88 @@ allowedTools: [Read]
     });
   });
 
+  describe("loadAgentConfigs companion folder", () => {
+    it("should set workingDir when companion folder exists", async () => {
+      const configPath = join(tempDir, "my-agent.yml");
+      await Deno.writeTextFile(
+        configPath,
+        `id: my-agent\nname: My Agent\nmodel: test\nmaxTurns: 10\nallowedTools:\n  - Read\n`,
+      );
+
+      // Create companion folder
+      const companionDir = join(tempDir, "my-agent");
+      await Deno.mkdir(companionDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(companionDir, "CLAUDE.md"),
+        "# My Agent Rules",
+      );
+
+      const configs = await loadAgentConfigs(tempDir);
+      const config = configs.get("my-agent");
+
+      assertExists(config);
+      assertExists(config!.workingDir);
+      assertEquals(config!.workingDir!.endsWith("my-agent"), true);
+    });
+
+    it("should not set workingDir when no companion folder exists", async () => {
+      const configPath = join(tempDir, "solo-agent.yml");
+      await Deno.writeTextFile(
+        configPath,
+        `id: solo-agent\nname: Solo\nmodel: test\nmaxTurns: 10\nallowedTools:\n  - Read\n`,
+      );
+
+      const configs = await loadAgentConfigs(tempDir);
+      const config = configs.get("solo-agent");
+
+      assertExists(config);
+      assertEquals(config!.workingDir, undefined);
+    });
+
+    it("should use filename stem not config.id for companion folder", async () => {
+      // YAML filename is "custom-name.yml" but config id is "different-id"
+      const configPath = join(tempDir, "custom-name.yml");
+      await Deno.writeTextFile(
+        configPath,
+        `id: different-id\nname: Custom\nmodel: test\nmaxTurns: 10\nallowedTools:\n  - Read\n`,
+      );
+
+      // Companion folder matches filename stem, NOT config.id
+      const companionDir = join(tempDir, "custom-name");
+      await Deno.mkdir(companionDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(companionDir, "CLAUDE.md"),
+        "# Custom Rules",
+      );
+
+      const configs = await loadAgentConfigs(tempDir);
+      const config = configs.get("different-id");
+
+      assertExists(config);
+      assertExists(config!.workingDir);
+      // workingDir should end with "custom-name" (filename stem), not "different-id"
+      assertEquals(config!.workingDir!.endsWith("custom-name"), true);
+    });
+
+    it("should override explicit workingDir with companion folder", async () => {
+      const configPath = join(tempDir, "override-agent.yml");
+      await Deno.writeTextFile(
+        configPath,
+        `id: override-agent\nname: Override\nmodel: test\nmaxTurns: 10\nworkingDir: some/other/path\nallowedTools:\n  - Read\n`,
+      );
+
+      // Create companion folder
+      const companionDir = join(tempDir, "override-agent");
+      await Deno.mkdir(companionDir, { recursive: true });
+
+      const configs = await loadAgentConfigs(tempDir);
+      const config = configs.get("override-agent");
+
+      assertExists(config);
+      assertEquals(config!.workingDir!.endsWith("override-agent"), true);
+    });
+  });
+
   describe("resolveAgentInheritance", () => {
     it("should return config as-is when no extends", () => {
       const configs = new Map<string, AgentConfig>();
