@@ -11,13 +11,122 @@ import { SplashScreen } from "../../../src/utils/splash-screen.ts";
 import { loadTaskManifest } from "../../../src/tasks/loader.ts";
 import { AgentRegistry } from "../../../src/agents/registry.ts";
 import { AgentTaskExecutor } from "../../../src/agents/executor.ts";
-import type { AgentExecutionResult } from "../../../src/agents/types.ts";
+import type {
+  AgentExecutionResult,
+  ResolvedAgentConfig,
+} from "../../../src/agents/types.ts";
+import type { TaskManifest } from "../../../src/tasks/interfaces.ts";
 import { formatFailureReason } from "../../../src/agents/failure-parser.ts";
 import { formatDurationMs, log } from "../../helpers/mod.ts";
 import { BenchTui } from "../../tui/bench-tui.ts";
 import type { AgentBenchmarkOptions } from "./types.ts";
 import { displayMultiRunSummary } from "./results-writer.ts";
 import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
+
+/**
+ * Result from a single agent pipeline execution
+ */
+interface PipelineResult {
+  results: Array<{
+    agentId: string;
+    taskId: string;
+    result: AgentExecutionResult;
+  }>;
+  passRates: Map<string, { total: number; passed: number }>;
+}
+
+/**
+ * Run a single agent through all tasks sequentially.
+ * Used for parallel mode — each agent gets its own executor and container.
+ */
+async function runAgentPipeline(
+  agentConfig: ResolvedAgentConfig,
+  taskManifests: TaskManifest[],
+  options: {
+    containerName: string;
+    containerInstruction?: string;
+    debug?: boolean | undefined;
+    sandbox?: boolean | undefined;
+    verbose?: boolean | undefined;
+  },
+  output: (line: string) => void,
+  onTaskComplete?: (agentId: string, success: boolean) => void,
+): Promise<PipelineResult> {
+  const executor = new AgentTaskExecutor();
+  const results: PipelineResult["results"] = [];
+  const passRates = new Map<string, { total: number; passed: number }>();
+
+  for (const task of taskManifests) {
+    const projectDir = join(
+      Deno.cwd(),
+      "workspaces",
+      `${agentConfig.id}_${task.id}_${Date.now()}`,
+    );
+
+    output(`[${agentConfig.id}] Starting ${task.id}...`);
+
+    try {
+      const result = await executor.execute(agentConfig, task, {
+        projectDir,
+        containerName: options.containerName,
+        containerProvider: "bccontainer",
+        debug: options.debug ?? false,
+        sandbox: options.sandbox ?? false,
+        ...(options.containerInstruction && {
+          containerInstruction: options.containerInstruction,
+        }),
+      });
+
+      results.push({
+        agentId: agentConfig.id,
+        taskId: task.id,
+        result,
+      });
+
+      const status = result.success ? "pass" : "fail";
+      const testResult = result.testResult;
+      const testInfo = testResult
+        ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
+        : "";
+
+      output(
+        `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
+          result.metrics.estimatedCost.toFixed(4)
+        }`,
+      );
+
+      if (!result.success && result.failureDetails && options.verbose) {
+        output(formatFailureReason(result.failureDetails, true));
+      }
+
+      // Track pass rates
+      if (!passRates.has(agentConfig.id)) {
+        passRates.set(agentConfig.id, { total: 0, passed: 0 });
+      }
+      const stats = passRates.get(agentConfig.id)!;
+      stats.total++;
+      if (result.success) stats.passed++;
+
+      onTaskComplete?.(agentConfig.id, result.success);
+    } catch (error) {
+      output(
+        `[FAIL] ${agentConfig.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      onTaskComplete?.(agentConfig.id, false);
+    }
+  }
+
+  return { results, passRates };
+}
+
+/**
+ * Build the container assignment instruction for prompt injection.
+ */
+function buildContainerInstruction(containerName: string): string {
+  return `## Container Assignment\n\nYou MUST use containerName: "${containerName}" for ALL MCP tool calls that accept a containerName parameter (al_compile, al_test, al_verify, al_verify_task). Do not use the default container.`;
+}
 
 /**
  * Run benchmark using agent configurations
@@ -39,7 +148,13 @@ export async function executeAgentBenchmark(
   log.summary("Starting CentralGauge benchmark (agent mode)...");
   log.info(`Agents: ${options.agents.join(", ")}`);
   log.info(`Tasks: ${options.tasks.join(", ")}`);
-  log.info(`Container: ${options.containerName}`);
+  if (options.containerNames && options.containerNames.length > 1) {
+    log.info(
+      `Containers: ${options.containerNames.join(", ")} (parallel mode)`,
+    );
+  } else {
+    log.info(`Container: ${options.containerName}`);
+  }
   log.info(`Output: ${options.outputDir}`);
   if (options.sandbox) {
     log.info("Sandbox: enabled (isolated Windows containers)");
@@ -63,7 +178,7 @@ export async function executeAgentBenchmark(
   log.task(`Loaded ${agentConfigs.length} agent(s)`);
 
   // Load task manifests
-  const taskManifests = [];
+  const taskManifests: TaskManifest[] = [];
   for (const taskPattern of options.tasks) {
     for await (const entry of expandGlob(taskPattern)) {
       if (entry.isFile && entry.name.endsWith(".yml")) {
@@ -92,8 +207,6 @@ export async function executeAgentBenchmark(
   let lastTotalDuration = 0;
   let lastTotalCost = 0;
 
-  const executor = new AgentTaskExecutor();
-
   for (let runIndex = 1; runIndex <= totalRuns; runIndex++) {
     if (totalRuns > 1) {
       console.log("");
@@ -115,7 +228,9 @@ export async function executeAgentBenchmark(
         statusLines: [
           `Agents: ${options.agents.join(", ")}`,
           `Tasks: ${taskManifests.length} task(s)`,
-          `Container: ${options.containerName}`,
+          options.containerNames && options.containerNames.length > 1
+            ? `Containers: ${options.containerNames.join(", ")} (parallel)`
+            : `Container: ${options.containerName}`,
         ],
       })
       : null;
@@ -135,107 +250,173 @@ export async function executeAgentBenchmark(
       }
     };
 
+    // Determine execution mode: parallel (containerNames) or sequential
+    const isParallel = options.containerNames &&
+      options.containerNames.length > 1;
+
     const allResults: Array<{
       agentId: string;
       taskId: string;
       result: AgentExecutionResult;
     }> = [];
 
-    // Track agent stats for TUI
     const agentPassRates = new Map<
       string,
       { total: number; passed: number }
     >();
 
     try {
-      for (const task of taskManifests) {
+      if (isParallel) {
+        // Parallel mode: one pipeline per agent, each with its own container
+        // Note: parallel mode uses agent-major order (each agent runs all tasks),
+        // while sequential mode uses task-major order (each task runs all agents).
+        // This is intentional — parallel pipelines are independent.
         output(
-          `[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`,
+          `[Parallel] Running ${agentConfigs.length} agents on ${
+            options.containerNames!.length
+          } containers`,
         );
 
-        for (const agentConfig of agentConfigs) {
-          // Create a unique workspace for this agent+task (outside results/ to avoid polluting reports)
-          const projectDir = join(
-            Deno.cwd(),
-            "workspaces",
-            `${agentConfig.id}_${task.id}_${Date.now()}`,
+        const pipelines = agentConfigs.map((agentConfig, index) => {
+          const containerName = options.containerNames![index]!;
+          const containerInstruction =
+            buildContainerInstruction(containerName);
+
+          output(
+            `[${agentConfig.id}] Assigned container: ${containerName}`,
           );
 
-          output(`[${agentConfig.id}] Starting...`);
+          return runAgentPipeline(
+            agentConfig,
+            taskManifests,
+            {
+              containerName,
+              containerInstruction,
+              debug: options.debug,
+              sandbox: options.sandbox,
+              verbose: options.verbose,
+            },
+            output,
+            (agentId, success) => {
+              if (tuiSetup) {
+                tuiSetup.tui.updateModelStats(agentId, success);
+              }
+              completedTasks++;
+              if (tuiSetup) {
+                const elapsed = Date.now() - startTime;
+                const avgTimePerTask = elapsed / completedTasks;
+                const remaining = totalTasks - completedTasks;
+                tuiSetup.tui.updateProgress({
+                  completedTasks,
+                  totalTasks,
+                  activeLLMCalls: remaining > 0 ? agentConfigs.length : 0,
+                  compileQueueLength: 0,
+                  estimatedTimeRemaining: remaining * avgTimePerTask,
+                  errors: [],
+                  startTime: new Date(startTime),
+                  elapsedTime: elapsed,
+                });
+              }
+            },
+          );
+        });
 
-          try {
-            const result = await executor.execute(agentConfig, task, {
-              projectDir,
-              containerName: options.containerName,
-              containerProvider: "bccontainer",
-              debug: options.debug ?? false,
-              sandbox: options.sandbox ?? false,
-            });
+        const pipelineResults = await Promise.all(pipelines);
 
-            allResults.push({
-              agentId: agentConfig.id,
-              taskId: task.id,
-              result,
-            });
-
-            const status = result.success ? "pass" : "fail";
-            const testResult = result.testResult;
-            const testInfo = testResult
-              ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
-              : "";
-
-            output(
-              `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
-                result.metrics.estimatedCost.toFixed(4)
-              }`,
-            );
-
-            // Show failure details when verbose is enabled
-            if (!result.success && result.failureDetails && options.verbose) {
-              output(formatFailureReason(result.failureDetails, true));
-            }
-
-            // Update TUI model stats
-            if (tuiSetup) {
-              tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
-            }
-
-            // Track for summary
-            if (!agentPassRates.has(agentConfig.id)) {
-              agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
-            }
-            const stats = agentPassRates.get(agentConfig.id)!;
-            stats.total++;
-            if (result.success) stats.passed++;
-          } catch (error) {
-            output(
-              `[FAIL] ${agentConfig.id}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
+        // Merge results from all pipelines
+        for (const pipeline of pipelineResults) {
+          allResults.push(...pipeline.results);
+          for (const [agentId, stats] of pipeline.passRates) {
+            agentPassRates.set(agentId, stats);
           }
+        }
+      } else {
+        // Sequential mode: original behavior (task-major order)
+        const executor = new AgentTaskExecutor();
 
-          // Update TUI progress
-          completedTasks++;
-          if (tuiSetup) {
-            const elapsed = Date.now() - startTime;
-            const avgTimePerTask = elapsed / completedTasks;
-            const remaining = totalTasks - completedTasks;
-            tuiSetup.tui.updateProgress({
-              completedTasks,
-              totalTasks,
-              activeLLMCalls: remaining > 0 ? 1 : 0,
-              compileQueueLength: 0,
-              estimatedTimeRemaining: remaining * avgTimePerTask,
-              errors: [],
-              startTime: new Date(startTime),
-              elapsedTime: elapsed,
-            });
+        for (const task of taskManifests) {
+          output(
+            `[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`,
+          );
+
+          for (const agentConfig of agentConfigs) {
+            const projectDir = join(
+              Deno.cwd(),
+              "workspaces",
+              `${agentConfig.id}_${task.id}_${Date.now()}`,
+            );
+
+            output(`[${agentConfig.id}] Starting...`);
+
+            try {
+              const result = await executor.execute(agentConfig, task, {
+                projectDir,
+                containerName: options.containerName,
+                containerProvider: "bccontainer",
+                debug: options.debug ?? false,
+                sandbox: options.sandbox ?? false,
+              });
+
+              allResults.push({
+                agentId: agentConfig.id,
+                taskId: task.id,
+                result,
+              });
+
+              const status = result.success ? "pass" : "fail";
+              const testResult = result.testResult;
+              const testInfo = testResult
+                ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
+                : "";
+
+              output(
+                `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
+                  result.metrics.estimatedCost.toFixed(4)
+                }`,
+              );
+
+              if (!result.success && result.failureDetails && options.verbose) {
+                output(formatFailureReason(result.failureDetails, true));
+              }
+
+              if (tuiSetup) {
+                tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
+              }
+
+              if (!agentPassRates.has(agentConfig.id)) {
+                agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
+              }
+              const stats = agentPassRates.get(agentConfig.id)!;
+              stats.total++;
+              if (result.success) stats.passed++;
+            } catch (error) {
+              output(
+                `[FAIL] ${agentConfig.id}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+
+            completedTasks++;
+            if (tuiSetup) {
+              const elapsed = Date.now() - startTime;
+              const avgTimePerTask = elapsed / completedTasks;
+              const remaining = totalTasks - completedTasks;
+              tuiSetup.tui.updateProgress({
+                completedTasks,
+                totalTasks,
+                activeLLMCalls: remaining > 0 ? 1 : 0,
+                compileQueueLength: 0,
+                estimatedTimeRemaining: remaining * avgTimePerTask,
+                errors: [],
+                startTime: new Date(startTime),
+                elapsedTime: elapsed,
+              });
+            }
           }
         }
       }
     } finally {
-      // Destroy TUI before printing summary
       if (tuiSetup) {
         tuiSetup.restore();
         tuiSetup.tui.destroy();
