@@ -234,7 +234,21 @@ export class AgentTaskExecutor {
     const staged = await stageAgentWorkspace(baseWorkingDir, taskWorkingDir);
 
     // Resolve system prompt
-    const systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
+    let systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
+
+    // Inject container instruction if provided (for parallel container mode)
+    if (options.containerInstruction) {
+      if (typeof systemPrompt === "string") {
+        systemPrompt = systemPrompt + "\n\n" + options.containerInstruction;
+      } else {
+        // Preset object — append to existing append field
+        systemPrompt = {
+          ...systemPrompt,
+          append: (systemPrompt.append ?? "") + "\n\n" +
+            options.containerInstruction,
+        };
+      }
+    }
 
     // Build MCP server configuration
     const mcpServers = McpServerManager.buildServersConfig(agentConfig);
