@@ -14,15 +14,15 @@
 
 ## File Structure
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `cli/commands/bench/types.ts` | Modify | Add `containerNames?: string[]` to `AgentBenchmarkOptions` |
-| `cli/commands/bench-command.ts` | Modify | Wire `options.containers` to agent path, validate count |
-| `cli/commands/bench/agent-executor.ts` | Modify | Parallel pipeline execution when `containerNames` provided |
-| `src/agents/types.ts` | Modify | Add `containerInstruction?: string` to `AgentExecutionOptions` |
-| `src/agents/executor.ts` | Modify | Append container instruction to system prompt |
-| `tests/unit/cli/bench-agents.test.ts` | Modify | Test `containerNames` field and validation |
-| `tests/unit/agents/executor-options.test.ts` | Modify | Test container instruction in execution options |
+| File                                         | Action | Purpose                                                        |
+| -------------------------------------------- | ------ | -------------------------------------------------------------- |
+| `cli/commands/bench/types.ts`                | Modify | Add `containerNames?: string[]` to `AgentBenchmarkOptions`     |
+| `cli/commands/bench-command.ts`              | Modify | Wire `options.containers` to agent path, validate count        |
+| `cli/commands/bench/agent-executor.ts`       | Modify | Parallel pipeline execution when `containerNames` provided     |
+| `src/agents/types.ts`                        | Modify | Add `containerInstruction?: string` to `AgentExecutionOptions` |
+| `src/agents/executor.ts`                     | Modify | Append container instruction to system prompt                  |
+| `tests/unit/cli/bench-agents.test.ts`        | Modify | Test `containerNames` field and validation                     |
+| `tests/unit/agents/executor-options.test.ts` | Modify | Test container instruction in execution options                |
 
 ---
 
@@ -31,6 +31,7 @@
 ### Task 1: Add `containerNames` to `AgentBenchmarkOptions`
 
 **Files:**
+
 - Modify: `cli/commands/bench/types.ts:9-25`
 - Modify: `tests/unit/cli/bench-agents.test.ts:20-30`
 
@@ -47,7 +48,7 @@ interface AgentBenchmarkOptions {
   stream?: boolean;
   tui?: boolean;
   containerName: string;
-  containerNames?: string[];  // ADD THIS
+  containerNames?: string[]; // ADD THIS
   sandbox?: boolean;
   verbose?: boolean;
 }
@@ -56,19 +57,19 @@ interface AgentBenchmarkOptions {
 Then add this test after the existing "should support sandbox option" test:
 
 ```typescript
-  it("should support optional containerNames for parallel execution", () => {
-    const options: AgentBenchmarkOptions = {
-      agents: ["agent-a", "agent-b"],
-      tasks: ["tasks/**/*.yml"],
-      outputDir: "results",
-      containerName: "Cronus28",
-      containerNames: ["Cronus28", "Cronus29"],
-    };
-    assertExists(options.containerNames);
-    assertEquals(options.containerNames!.length, 2);
-    assertEquals(options.containerNames![0], "Cronus28");
-    assertEquals(options.containerNames![1], "Cronus29");
-  });
+it("should support optional containerNames for parallel execution", () => {
+  const options: AgentBenchmarkOptions = {
+    agents: ["agent-a", "agent-b"],
+    tasks: ["tasks/**/*.yml"],
+    outputDir: "results",
+    containerName: "Cronus28",
+    containerNames: ["Cronus28", "Cronus29"],
+  };
+  assertExists(options.containerNames);
+  assertEquals(options.containerNames!.length, 2);
+  assertEquals(options.containerNames![0], "Cronus28");
+  assertEquals(options.containerNames![1], "Cronus29");
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -117,6 +118,7 @@ git commit -m "feat: add containerNames to AgentBenchmarkOptions"
 ### Task 2: Wire `options.containers` to agent benchmark path
 
 **Files:**
+
 - Modify: `cli/commands/bench-command.ts:270-286`
 
 - [ ] **Step 1: Update agent benchmark options construction**
@@ -124,42 +126,42 @@ git commit -m "feat: add containerNames to AgentBenchmarkOptions"
 In `cli/commands/bench-command.ts`, find the agent benchmark options block (~line 270-283). Update it to pass `containerNames` when `options.containers` is provided and validate the count:
 
 ```typescript
-      // Handle agent-based execution
-      if (options.agents && options.agents.length > 0) {
-        // Validate --containers count matches --agents count
-        if (options.containers && options.containers.length > 0) {
-          if (options.containers.length !== options.agents.length) {
-            log.fail(
-              `--containers count (${options.containers.length}) must match --agents count (${options.agents.length})`,
-            );
-            Deno.exit(1);
-          }
-          if (options.container !== DEFAULT_CONTAINER_NAME) {
-            log.warn(
-              "--containers overrides --container in agent mode",
-            );
-          }
-        }
+// Handle agent-based execution
+if (options.agents && options.agents.length > 0) {
+  // Validate --containers count matches --agents count
+  if (options.containers && options.containers.length > 0) {
+    if (options.containers.length !== options.agents.length) {
+      log.fail(
+        `--containers count (${options.containers.length}) must match --agents count (${options.agents.length})`,
+      );
+      Deno.exit(1);
+    }
+    if (options.container !== DEFAULT_CONTAINER_NAME) {
+      log.warn(
+        "--containers overrides --container in agent mode",
+      );
+    }
+  }
 
-        const agentBenchOptions: AgentBenchmarkOptions = {
-          agents: options.agents,
-          tasks: [...options.tasks],
-          outputDir: options.output,
-          debug: options.debug,
-          stream: options.stream,
-          tui: options.tui,
-          containerName: options.container,
-          ...(options.containers && options.containers.length > 0 && {
-            containerNames: options.containers,
-          }),
-          sandbox: options.sandbox ?? false,
-          verbose: options.debug ?? false,
-          noNotify: !options.notify,
-          runs,
-        };
-        await executeAgentBenchmark(agentBenchOptions, options.quiet);
-        Deno.exit(0);
-      }
+  const agentBenchOptions: AgentBenchmarkOptions = {
+    agents: options.agents,
+    tasks: [...options.tasks],
+    outputDir: options.output,
+    debug: options.debug,
+    stream: options.stream,
+    tui: options.tui,
+    containerName: options.container,
+    ...(options.containers && options.containers.length > 0 && {
+      containerNames: options.containers,
+    }),
+    sandbox: options.sandbox ?? false,
+    verbose: options.debug ?? false,
+    noNotify: !options.notify,
+    runs,
+  };
+  await executeAgentBenchmark(agentBenchOptions, options.quiet);
+  Deno.exit(0);
+}
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -177,6 +179,7 @@ git commit -m "feat: wire --containers to agent benchmark path with validation"
 ### Task 3: Add `containerInstruction` to `AgentExecutionOptions`
 
 **Files:**
+
 - Modify: `src/agents/types.ts:387-408`
 - Modify: `tests/unit/agents/executor-options.test.ts`
 
@@ -195,7 +198,8 @@ Deno.test("AgentExecutionOptions", async (t) => {
       projectDir: "/workspace",
       containerName: "Cronus29",
       containerProvider: "bccontainer",
-      containerInstruction: 'You MUST use containerName: "Cronus29" for ALL MCP tool calls that accept a containerName parameter (al_compile, al_test, al_verify, al_verify_task). Do not use the default container.',
+      containerInstruction:
+        'You MUST use containerName: "Cronus29" for ALL MCP tool calls that accept a containerName parameter (al_compile, al_test, al_verify, al_verify_task). Do not use the default container.',
     };
     assertExists(options.containerInstruction);
     assert(options.containerInstruction!.includes("Cronus29"));
@@ -215,8 +219,8 @@ Expected: FAIL — `containerInstruction` does not exist on type
 In `src/agents/types.ts`, add after the `sandbox?: boolean` field:
 
 ```typescript
-  /** Container assignment instruction to append to system prompt (for parallel container mode) */
-  containerInstruction?: string;
+/** Container assignment instruction to append to system prompt (for parallel container mode) */
+containerInstruction?: string;
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -238,6 +242,7 @@ git commit -m "feat: add containerInstruction to AgentExecutionOptions"
 ### Task 4: Inject container instruction into system prompt
 
 **Files:**
+
 - Modify: `src/agents/executor.ts:220-267` (the `prepareExecution` method)
 
 - [ ] **Step 1: Modify `prepareExecution` to inject container instruction**
@@ -245,21 +250,22 @@ git commit -m "feat: add containerInstruction to AgentExecutionOptions"
 In `src/agents/executor.ts`, find the `prepareExecution` method. After `resolveSystemPrompt()` is called (line 237) and before the `queryOptions` are built (line 250), add the container instruction injection:
 
 ```typescript
-    // Resolve system prompt
-    let systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
+// Resolve system prompt
+let systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
 
-    // Inject container instruction if provided (for parallel container mode)
-    if (options.containerInstruction) {
-      if (typeof systemPrompt === "string") {
-        systemPrompt = systemPrompt + "\n\n" + options.containerInstruction;
-      } else {
-        // Preset object — append to existing append field
-        systemPrompt = {
-          ...systemPrompt,
-          append: (systemPrompt.append ?? "") + "\n\n" + options.containerInstruction,
-        };
-      }
-    }
+// Inject container instruction if provided (for parallel container mode)
+if (options.containerInstruction) {
+  if (typeof systemPrompt === "string") {
+    systemPrompt = systemPrompt + "\n\n" + options.containerInstruction;
+  } else {
+    // Preset object — append to existing append field
+    systemPrompt = {
+      ...systemPrompt,
+      append: (systemPrompt.append ?? "") + "\n\n" +
+        options.containerInstruction,
+    };
+  }
+}
 ```
 
 Note: the existing `const systemPrompt` on line 237 must become `let systemPrompt` for this to work.
@@ -285,6 +291,7 @@ git commit -m "feat: inject container instruction into agent system prompt"
 This is the main task. The `executeAgentBenchmark` function in `agent-executor.ts` currently runs a sequential nested loop. When `containerNames` is provided with N > 1 entries, we split into concurrent pipelines.
 
 **Files:**
+
 - Modify: `cli/commands/bench/agent-executor.ts`
 
 **Important scope note:** The execution code lives inside a `for (let runIndex = 1; runIndex <= totalRuns; runIndex++)` loop (line 97). The replacement in Step 3 targets only the **body** of this loop — specifically lines 95 (`const executor`) and lines 138-243 (from `const allResults` through the `try/finally` block). The `for runIndex` loop itself and everything after it (summary stats, result saving) MUST be preserved.
@@ -418,6 +425,7 @@ function buildContainerInstruction(containerName: string): string {
 - [ ] **Step 3: Replace the inner loop body with pipeline dispatch**
 
 In `executeAgentBenchmark`, **inside** the `for runIndex` loop, replace:
+
 - Line 95: `const executor = new AgentTaskExecutor();`
 - Lines 138-243: from `const allResults` through the end of `} finally { ... }` (TUI destroy)
 
@@ -426,171 +434,173 @@ Keep everything else in the `for runIndex` loop intact (startTime, totalTasks, c
 Replace with:
 
 ```typescript
-    // Determine execution mode: parallel (containerNames) or sequential
-    const isParallel = options.containerNames && options.containerNames.length > 1;
+// Determine execution mode: parallel (containerNames) or sequential
+const isParallel = options.containerNames && options.containerNames.length > 1;
 
-    const allResults: Array<{
-      agentId: string;
-      taskId: string;
-      result: AgentExecutionResult;
-    }> = [];
+const allResults: Array<{
+  agentId: string;
+  taskId: string;
+  result: AgentExecutionResult;
+}> = [];
 
-    const agentPassRates = new Map<
-      string,
-      { total: number; passed: number }
-    >();
+const agentPassRates = new Map<
+  string,
+  { total: number; passed: number }
+>();
 
-    try {
-      if (isParallel) {
-        // Parallel mode: one pipeline per agent, each with its own container
-        output(
-          `[Parallel] Running ${agentConfigs.length} agents on ${options.containerNames!.length} containers`,
-        );
+try {
+  if (isParallel) {
+    // Parallel mode: one pipeline per agent, each with its own container
+    output(
+      `[Parallel] Running ${agentConfigs.length} agents on ${
+        options.containerNames!.length
+      } containers`,
+    );
 
-        const pipelines = agentConfigs.map((agentConfig, index) => {
-          const containerName = options.containerNames![index]!;
-          const containerInstruction = buildContainerInstruction(containerName);
+    const pipelines = agentConfigs.map((agentConfig, index) => {
+      const containerName = options.containerNames![index]!;
+      const containerInstruction = buildContainerInstruction(containerName);
 
-          output(
-            `[${agentConfig.id}] Assigned container: ${containerName}`,
-          );
+      output(
+        `[${agentConfig.id}] Assigned container: ${containerName}`,
+      );
 
-          return runAgentPipeline(
-            agentConfig,
-            taskManifests,
-            {
-              containerName,
-              containerInstruction,
-              debug: options.debug,
-              sandbox: options.sandbox,
-              verbose: options.verbose,
-            },
-            output,
-            (agentId, success) => {
-              if (tuiSetup) {
-                tuiSetup.tui.updateModelStats(agentId, success);
-              }
-              completedTasks++;
-              if (tuiSetup) {
-                const elapsed = Date.now() - startTime;
-                const avgTimePerTask = elapsed / completedTasks;
-                const remaining = totalTasks - completedTasks;
-                tuiSetup.tui.updateProgress({
-                  completedTasks,
-                  totalTasks,
-                  activeLLMCalls: remaining > 0 ? agentConfigs.length : 0,
-                  compileQueueLength: 0,
-                  estimatedTimeRemaining: remaining * avgTimePerTask,
-                  errors: [],
-                  startTime: new Date(startTime),
-                  elapsedTime: elapsed,
-                });
-              }
-            },
-          );
-        });
-
-        const pipelineResults = await Promise.all(pipelines);
-
-        // Merge results from all pipelines
-        for (const pipeline of pipelineResults) {
-          allResults.push(...pipeline.results);
-          for (const [agentId, stats] of pipeline.passRates) {
-            agentPassRates.set(agentId, stats);
+      return runAgentPipeline(
+        agentConfig,
+        taskManifests,
+        {
+          containerName,
+          containerInstruction,
+          debug: options.debug,
+          sandbox: options.sandbox,
+          verbose: options.verbose,
+        },
+        output,
+        (agentId, success) => {
+          if (tuiSetup) {
+            tuiSetup.tui.updateModelStats(agentId, success);
           }
-        }
-      } else {
-        // Sequential mode: original behavior
-        const executor = new AgentTaskExecutor();
-
-        for (const task of taskManifests) {
-          output(
-            `[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`,
-          );
-
-          for (const agentConfig of agentConfigs) {
-            const projectDir = join(
-              Deno.cwd(),
-              "workspaces",
-              `${agentConfig.id}_${task.id}_${Date.now()}`,
-            );
-
-            output(`[${agentConfig.id}] Starting...`);
-
-            try {
-              const result = await executor.execute(agentConfig, task, {
-                projectDir,
-                containerName: options.containerName,
-                containerProvider: "bccontainer",
-                debug: options.debug ?? false,
-                sandbox: options.sandbox ?? false,
-              });
-
-              allResults.push({
-                agentId: agentConfig.id,
-                taskId: task.id,
-                result,
-              });
-
-              const status = result.success ? "pass" : "fail";
-              const testResult = result.testResult;
-              const testInfo = testResult
-                ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
-                : "";
-
-              output(
-                `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
-                  result.metrics.estimatedCost.toFixed(4)
-                }`,
-              );
-
-              if (!result.success && result.failureDetails && options.verbose) {
-                output(formatFailureReason(result.failureDetails, true));
-              }
-
-              if (tuiSetup) {
-                tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
-              }
-
-              if (!agentPassRates.has(agentConfig.id)) {
-                agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
-              }
-              const stats = agentPassRates.get(agentConfig.id)!;
-              stats.total++;
-              if (result.success) stats.passed++;
-            } catch (error) {
-              output(
-                `[FAIL] ${agentConfig.id}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
-            }
-
-            completedTasks++;
-            if (tuiSetup) {
-              const elapsed = Date.now() - startTime;
-              const avgTimePerTask = elapsed / completedTasks;
-              const remaining = totalTasks - completedTasks;
-              tuiSetup.tui.updateProgress({
-                completedTasks,
-                totalTasks,
-                activeLLMCalls: remaining > 0 ? 1 : 0,
-                compileQueueLength: 0,
-                estimatedTimeRemaining: remaining * avgTimePerTask,
-                errors: [],
-                startTime: new Date(startTime),
-                elapsedTime: elapsed,
-              });
-            }
+          completedTasks++;
+          if (tuiSetup) {
+            const elapsed = Date.now() - startTime;
+            const avgTimePerTask = elapsed / completedTasks;
+            const remaining = totalTasks - completedTasks;
+            tuiSetup.tui.updateProgress({
+              completedTasks,
+              totalTasks,
+              activeLLMCalls: remaining > 0 ? agentConfigs.length : 0,
+              compileQueueLength: 0,
+              estimatedTimeRemaining: remaining * avgTimePerTask,
+              errors: [],
+              startTime: new Date(startTime),
+              elapsedTime: elapsed,
+            });
           }
-        }
-      }
-    } finally {
-      if (tuiSetup) {
-        tuiSetup.restore();
-        tuiSetup.tui.destroy();
+        },
+      );
+    });
+
+    const pipelineResults = await Promise.all(pipelines);
+
+    // Merge results from all pipelines
+    for (const pipeline of pipelineResults) {
+      allResults.push(...pipeline.results);
+      for (const [agentId, stats] of pipeline.passRates) {
+        agentPassRates.set(agentId, stats);
       }
     }
+  } else {
+    // Sequential mode: original behavior
+    const executor = new AgentTaskExecutor();
+
+    for (const task of taskManifests) {
+      output(
+        `[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`,
+      );
+
+      for (const agentConfig of agentConfigs) {
+        const projectDir = join(
+          Deno.cwd(),
+          "workspaces",
+          `${agentConfig.id}_${task.id}_${Date.now()}`,
+        );
+
+        output(`[${agentConfig.id}] Starting...`);
+
+        try {
+          const result = await executor.execute(agentConfig, task, {
+            projectDir,
+            containerName: options.containerName,
+            containerProvider: "bccontainer",
+            debug: options.debug ?? false,
+            sandbox: options.sandbox ?? false,
+          });
+
+          allResults.push({
+            agentId: agentConfig.id,
+            taskId: task.id,
+            result,
+          });
+
+          const status = result.success ? "pass" : "fail";
+          const testResult = result.testResult;
+          const testInfo = testResult
+            ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
+            : "";
+
+          output(
+            `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
+              result.metrics.estimatedCost.toFixed(4)
+            }`,
+          );
+
+          if (!result.success && result.failureDetails && options.verbose) {
+            output(formatFailureReason(result.failureDetails, true));
+          }
+
+          if (tuiSetup) {
+            tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
+          }
+
+          if (!agentPassRates.has(agentConfig.id)) {
+            agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
+          }
+          const stats = agentPassRates.get(agentConfig.id)!;
+          stats.total++;
+          if (result.success) stats.passed++;
+        } catch (error) {
+          output(
+            `[FAIL] ${agentConfig.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+
+        completedTasks++;
+        if (tuiSetup) {
+          const elapsed = Date.now() - startTime;
+          const avgTimePerTask = elapsed / completedTasks;
+          const remaining = totalTasks - completedTasks;
+          tuiSetup.tui.updateProgress({
+            completedTasks,
+            totalTasks,
+            activeLLMCalls: remaining > 0 ? 1 : 0,
+            compileQueueLength: 0,
+            estimatedTimeRemaining: remaining * avgTimePerTask,
+            errors: [],
+            startTime: new Date(startTime),
+            elapsedTime: elapsed,
+          });
+        }
+      }
+    }
+  }
+} finally {
+  if (tuiSetup) {
+    tuiSetup.restore();
+    tuiSetup.tui.destroy();
+  }
+}
 ```
 
 - [ ] **Step 4: Update the container display in startup logging**
@@ -598,23 +608,23 @@ Replace with:
 Near line 42, update the container log line to show multiple containers when applicable:
 
 ```typescript
-  if (options.containerNames && options.containerNames.length > 1) {
-    log.info(`Containers: ${options.containerNames.join(", ")} (parallel mode)`);
-  } else {
-    log.info(`Container: ${options.containerName}`);
-  }
+if (options.containerNames && options.containerNames.length > 1) {
+  log.info(`Containers: ${options.containerNames.join(", ")} (parallel mode)`);
+} else {
+  log.info(`Container: ${options.containerName}`);
+}
 ```
 
 Also update the TUI status line (~line 118):
 
 ```typescript
-        statusLines: [
-          `Agents: ${options.agents.join(", ")}`,
-          `Tasks: ${taskManifests.length} task(s)`,
-          options.containerNames && options.containerNames.length > 1
-            ? `Containers: ${options.containerNames.join(", ")} (parallel)`
-            : `Container: ${options.containerName}`,
-        ],
+statusLines: [
+  `Agents: ${options.agents.join(", ")}`,
+  `Tasks: ${taskManifests.length} task(s)`,
+  options.containerNames && options.containerNames.length > 1
+    ? `Containers: ${options.containerNames.join(", ")} (parallel)`
+    : `Container: ${options.containerName}`,
+],
 ```
 
 - [ ] **Step 5: Verify it compiles**

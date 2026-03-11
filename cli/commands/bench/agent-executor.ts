@@ -279,8 +279,7 @@ export async function executeAgentBenchmark(
 
         const pipelines = agentConfigs.map((agentConfig, index) => {
           const containerName = options.containerNames![index]!;
-          const containerInstruction =
-            buildContainerInstruction(containerName);
+          const containerInstruction = buildContainerInstruction(containerName);
 
           output(
             `[${agentConfig.id}] Assigned container: ${containerName}`,

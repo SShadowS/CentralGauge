@@ -12,14 +12,14 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|----------------|
-| `src/agents/types.ts` | Add `sessionId?: string` to `AgentExecutionResult` |
-| `src/agents/executor.ts` | Capture `session_id` from SDK messages, wire up per-execution FileTransport via scoped Logger |
-| `src/logger/transports/file.ts` | **NEW** — JSONL file transport implementing `Transport` interface |
-| `src/logger/mod.ts` | Export `FileTransport` |
-| `tests/unit/agents/executor-options.test.ts` | Add sessionId type tests |
-| `tests/unit/logger/file-transport.test.ts` | **NEW** — Tests for FileTransport |
+| File                                         | Responsibility                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `src/agents/types.ts`                        | Add `sessionId?: string` to `AgentExecutionResult`                                            |
+| `src/agents/executor.ts`                     | Capture `session_id` from SDK messages, wire up per-execution FileTransport via scoped Logger |
+| `src/logger/transports/file.ts`              | **NEW** — JSONL file transport implementing `Transport` interface                             |
+| `src/logger/mod.ts`                          | Export `FileTransport`                                                                        |
+| `tests/unit/agents/executor-options.test.ts` | Add sessionId type tests                                                                      |
+| `tests/unit/logger/file-transport.test.ts`   | **NEW** — Tests for FileTransport                                                             |
 
 ---
 
@@ -28,6 +28,7 @@
 ### Task 1: Add `sessionId` to AgentExecutionResult type
 
 **Files:**
+
 - Modify: `src/agents/types.ts` (AgentExecutionResult interface)
 - Test: `tests/unit/agents/executor-options.test.ts` (append to existing file)
 
@@ -63,8 +64,8 @@ Expected: Compile error — `sessionId` does not exist on `AgentExecutionResult`
 In `src/agents/types.ts`, add after `sdkDurationMs` (line ~374):
 
 ```typescript
-  /** SDK session ID for debugging/correlation with Claude backend logs */
-  sessionId?: string;
+/** SDK session ID for debugging/correlation with Claude backend logs */
+sessionId?: string;
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -86,6 +87,7 @@ git commit -m "feat(agents): add sessionId field to AgentExecutionResult"
 ### Task 2: Capture session_id from SDK messages in executor
 
 **Files:**
+
 - Modify: `src/agents/executor.ts` (executeQuery method)
 
 Session ID capture is a straightforward inline change in the executor's message loop. The SDK message types (`SDKAssistantMessage`, `SDKUserMessage`, `SDKResultMessage`) all carry `session_id: string`. We capture it from the first assistant message received (which is always the first SDK message in the loop). This is verified by integration tests (agent execution against real SDK) rather than isolated unit tests, since the message loop is private and tightly coupled to the SDK.
@@ -148,6 +150,7 @@ git commit -m "feat(agents): capture session_id from SDK messages for debugging"
 ### Task 3: Create FileTransport
 
 **Files:**
+
 - Create: `src/logger/transports/file.ts`
 - Test: `tests/unit/logger/file-transport.test.ts`
 
@@ -321,6 +324,7 @@ git commit -m "feat(logger): add FileTransport for JSONL log output"
 ### Task 4: Export FileTransport from logger module
 
 **Files:**
+
 - Modify: `src/logger/mod.ts`
 
 - [ ] **Step 1: Add export to mod.ts**
@@ -346,6 +350,7 @@ git commit -m "feat(logger): export FileTransport from module"
 ### Task 5: Wire up per-execution FileTransport in executor
 
 **Files:**
+
 - Modify: `src/agents/executor.ts` (execute method and executeQuery method)
 
 The executor creates a unique `taskWorkingDir` at `.tasks/{taskId}-{executionId}/`. We create a FileTransport writing to `{taskWorkingDir}/execution.jsonl` and add it to the global Logger's transports for the duration of `executeQuery()`. This way, ALL existing `log.*()` calls throughout the executor are automatically captured — no log call site changes needed. The transport is added before `executeQuery()` and removed + flushed in a `finally` block.
