@@ -1,7 +1,7 @@
 /**
  * Workspace Staging for Agent Execution
  *
- * Stages agent context files (.claude/ and CLAUDE.md) into the task
+ * Stages all files and directories from an agent's workspace into the task
  * working directory using symlinks where possible, with copy fallback.
  * Provides automatic cleanup after execution.
  */
@@ -25,12 +25,13 @@ export interface StagedWorkspace {
 }
 
 /**
- * Stage agent context files into the target working directory.
+ * Stage all files and directories from sourceDir into targetDir.
  *
- * - `.claude/` directory: junction symlink (works without admin on Windows)
- * - `CLAUDE.md`: file symlink with copy fallback
+ * Directories are linked via junction symlink (copy fallback).
+ * Files are linked via file symlink (copy fallback).
+ * Existing entries in targetDir are backed up with .bak suffix.
  *
- * @param sourceDir - Directory containing agent's .claude/ and CLAUDE.md
+ * @param sourceDir - Agent workspace directory containing config files
  * @param targetDir - Task working directory to stage into
  */
 export async function stageAgentWorkspace(
@@ -40,62 +41,53 @@ export async function stageAgentWorkspace(
   const stagedPaths: string[] = [];
   const backedUpPaths: Array<{ backup: string; original: string }> = [];
 
-  // Stage .claude/ directory
-  const claudeDirSource = join(sourceDir, ".claude");
-  const claudeDirTarget = join(targetDir, ".claude");
+  if (!await exists(sourceDir)) {
+    return { stagedPaths, backedUpPaths, async cleanup() {} };
+  }
 
-  if (await exists(claudeDirSource)) {
-    if (await exists(claudeDirTarget)) {
-      const backupPath = join(targetDir, ".claude.bak");
+  for await (const entry of Deno.readDir(sourceDir)) {
+    const sourcePath = join(sourceDir, entry.name);
+    const targetPath = join(targetDir, entry.name);
+
+    // Backup existing entry if present
+    if (await exists(targetPath)) {
+      const backupPath = join(targetDir, `${entry.name}.bak`);
       try {
         await Deno.remove(backupPath, { recursive: true });
       } catch {
         // Backup didn't exist
       }
-      await Deno.rename(claudeDirTarget, backupPath);
-      backedUpPaths.push({ backup: backupPath, original: claudeDirTarget });
-      log.debug("Backed up existing .claude/", { backupPath });
+      await Deno.rename(targetPath, backupPath);
+      backedUpPaths.push({ backup: backupPath, original: targetPath });
+      log.debug("Backed up existing entry", { name: entry.name });
     }
-    try {
-      await Deno.symlink(claudeDirSource, claudeDirTarget, {
-        type: "junction",
-      });
-      stagedPaths.push(claudeDirTarget);
-      log.debug("Staged .claude/ via junction", {
-        source: claudeDirSource,
-      });
-    } catch {
-      // Junction failed — fall back to copy
-      await copyDir(claudeDirSource, claudeDirTarget);
-      stagedPaths.push(claudeDirTarget);
-      log.debug("Staged .claude/ via copy (junction failed)");
-    }
-  }
 
-  // Stage CLAUDE.md
-  const claudeMdSource = join(sourceDir, "CLAUDE.md");
-  const claudeMdTarget = join(targetDir, "CLAUDE.md");
-
-  if (await exists(claudeMdSource)) {
-    if (await exists(claudeMdTarget)) {
-      const backupPath = join(targetDir, "CLAUDE.md.bak");
+    if (entry.isDirectory) {
+      // Directories: junction symlink with copy fallback
       try {
-        await Deno.remove(backupPath);
+        await Deno.symlink(sourcePath, targetPath, { type: "junction" });
+        stagedPaths.push(targetPath);
+        log.debug("Staged directory via junction", { name: entry.name });
       } catch {
-        // Backup didn't exist
+        await copyDir(sourcePath, targetPath);
+        stagedPaths.push(targetPath);
+        log.debug("Staged directory via copy (junction failed)", {
+          name: entry.name,
+        });
       }
-      await Deno.rename(claudeMdTarget, backupPath);
-      backedUpPaths.push({ backup: backupPath, original: claudeMdTarget });
-    }
-    try {
-      await Deno.symlink(claudeMdSource, claudeMdTarget, { type: "file" });
-      stagedPaths.push(claudeMdTarget);
-      log.debug("Staged CLAUDE.md via symlink");
-    } catch {
-      // File symlink needs Developer Mode on Windows — fall back to copy
-      await Deno.copyFile(claudeMdSource, claudeMdTarget);
-      stagedPaths.push(claudeMdTarget);
-      log.debug("Staged CLAUDE.md via copy (symlink failed)");
+    } else {
+      // Files: file symlink with copy fallback
+      try {
+        await Deno.symlink(sourcePath, targetPath, { type: "file" });
+        stagedPaths.push(targetPath);
+        log.debug("Staged file via symlink", { name: entry.name });
+      } catch {
+        await Deno.copyFile(sourcePath, targetPath);
+        stagedPaths.push(targetPath);
+        log.debug("Staged file via copy (symlink failed)", {
+          name: entry.name,
+        });
+      }
     }
   }
 
