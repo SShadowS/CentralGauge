@@ -268,6 +268,21 @@ export function registerBenchCommand(cli: Command): void {
 
       // Handle agent-based execution
       if (options.agents && options.agents.length > 0) {
+        // Validate --containers count matches --agents count
+        if (options.containers && options.containers.length > 0) {
+          if (options.containers.length !== options.agents.length) {
+            log.fail(
+              `--containers count (${options.containers.length}) must match --agents count (${options.agents.length})`,
+            );
+            Deno.exit(1);
+          }
+          if (options.container !== DEFAULT_CONTAINER_NAME) {
+            log.warn(
+              "--containers overrides --container in agent mode",
+            );
+          }
+        }
+
         const agentBenchOptions: AgentBenchmarkOptions = {
           agents: options.agents,
           tasks: [...options.tasks],
@@ -276,6 +291,9 @@ export function registerBenchCommand(cli: Command): void {
           stream: options.stream,
           tui: options.tui,
           containerName: options.container,
+          ...(options.containers && options.containers.length > 0 && {
+            containerNames: options.containers,
+          }),
           sandbox: options.sandbox ?? false,
           verbose: options.debug ?? false,
           noNotify: !options.notify,
