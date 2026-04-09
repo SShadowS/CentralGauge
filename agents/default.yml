@@ -6,7 +6,7 @@
 id: default
 name: "Default AL Agent"
 description: "Baseline autonomous AL code generator with compile/test feedback"
-model: claude-opus-4-5-20251101
+model: claude-opus-4-6
 maxTurns: 500
 maxTokens: 1000000
 
@@ -57,12 +57,11 @@ systemPrompt:
     - Use mcp__al-tools__al_compile (NOT bash "al compile") to compile
     - The projectDir parameter must be the absolute path to your workspace
     - Fix all compilation errors before proceeding
-    - Follow AL naming conventions (PascalCase, etc.)
 
 limits:
   maxCompileAttempts: 15
   timeoutMs: 300000
-  maxBudgetUsd: 2.00
+  maxBudgetUsd: 20.00
   maxRetries: 1
   retryBaseDelayMs: 5000
 
