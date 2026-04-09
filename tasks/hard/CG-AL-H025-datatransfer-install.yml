@@ -1,0 +1,29 @@
+id: CG-AL-H025
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Data Transfer Installer" with ID 70225 and
+  Subtype = Install.
+
+  In the OnInstallAppPerCompany trigger, use the DataTransfer data type to
+  bulk-copy all records from the existing "CG Transfer Source" table (ID 69040)
+  to the existing "CG Transfer Dest" table (ID 69041). Both tables share the
+  same field structure: Code (Code[20], field 1), Description (Text[100], field 2),
+  Amount (Decimal, field 3), Category (Code[20], field 4), Enabled (Boolean, field 5).
+
+  First delete all existing records from the destination table. Then use
+  DataTransfer.SetTables to specify source and destination, AddFieldValue to map
+  each of the five fields from source to destination, and CopyRows to perform
+  the bulk insert.
+metadata:
+  category: advanced-patterns
+  tags: [datatransfer, install, codeunit, bulk-operations]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H025.Test.al
+  testCodeunitId: 80125
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
