@@ -159,19 +159,17 @@ export class PricingService {
       };
     }
 
-    // Check API cache first (if this provider fetches from API)
-    if (providerConfig.fetchFromApi) {
-      const cached = this.apiCache.get(provider);
-      if (cached && cached.expiresAt > Date.now()) {
-        const apiPricing = cached.models[model];
-        if (apiPricing) {
-          return {
-            pricing: apiPricing,
-            source: "api",
-            provider,
-            model,
-          };
-        }
+    // Check API cache first (includes LiteLLM and provider-fetched pricing)
+    const cached = this.apiCache.get(provider);
+    if (cached && cached.expiresAt > Date.now()) {
+      const apiPricing = cached.models[model];
+      if (apiPricing) {
+        return {
+          pricing: apiPricing,
+          source: "api",
+          provider,
+          model,
+        };
       }
     }
 
@@ -208,14 +206,12 @@ export class PricingService {
       return FALLBACK_PRICING;
     }
 
-    // Check API cache
-    if (providerConfig.fetchFromApi) {
-      const cached = this.apiCache.get(provider);
-      if (cached && cached.expiresAt > Date.now()) {
-        const apiPricing = cached.models[model];
-        if (apiPricing) {
-          return apiPricing;
-        }
+    // Check API cache (includes LiteLLM and provider-fetched pricing)
+    const cached = this.apiCache.get(provider);
+    if (cached && cached.expiresAt > Date.now()) {
+      const apiPricing = cached.models[model];
+      if (apiPricing) {
+        return apiPricing;
       }
     }
 

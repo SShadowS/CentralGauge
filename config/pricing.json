@@ -77,7 +77,9 @@
         "deepseek/deepseek-coder": { "input": 0.00014, "output": 0.00028 },
         "qwen/qwen-2.5-72b-instruct": { "input": 0.0009, "output": 0.0009 },
         "mistralai/mistral-large": { "input": 0.008, "output": 0.024 },
-        "mistralai/codestral-latest": { "input": 0.001, "output": 0.003 }
+        "mistralai/codestral-latest": { "input": 0.001, "output": 0.003 },
+        "qwen/qwen3.5-plus-02-15": { "input": 0.00026, "output": 0.00156 },
+        "x-ai/grok-code-fast-1": { "input": 0.0002, "output": 0.0015 }
       },
       "default": { "input": 0.005, "output": 0.015 }
     },

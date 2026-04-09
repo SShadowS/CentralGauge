@@ -12,6 +12,7 @@ import { ConfigManager } from "../../../src/config/config.ts";
 import { ModelPresetRegistry } from "../../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+import { LiteLLMService } from "../../../src/llm/litellm-service.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import {
   ModelValidationError,
@@ -908,8 +909,15 @@ async function validateModels(
  * Display pricing summary for all model variants being used
  */
 async function displayPricingSummary(variants: ModelVariant[]): Promise<void> {
-  // Initialize pricing service
+  // Initialize pricing service and warm LiteLLM cache for accurate pricing
   await PricingService.initialize();
+  await LiteLLMService.warmCache();
+
+  // Register LiteLLM pricing into PricingService so getPrice() finds them
+  const litellmByProvider = LiteLLMService.getAllPricingByProvider();
+  for (const [provider, models] of Object.entries(litellmByProvider)) {
+    PricingService.registerApiPricing(provider, models);
+  }
 
   const pricingEntries: Array<{
     display: string;
