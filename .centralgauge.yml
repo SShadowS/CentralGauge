@@ -3,35 +3,35 @@
 
 # Default models for different scenarios
 defaultModels:
-  benchmark: [sonnet, gpt-4o]      # Models for production benchmarks
-  development: [mock]              # Models for development/testing
-  comparison: [flagship]           # Models for side-by-side comparison
+  benchmark: [sonnet, gpt-4o] # Models for production benchmarks
+  development: [mock] # Models for development/testing
+  comparison: [flagship] # Models for side-by-side comparison
 
 # LLM provider settings
 llm:
-  temperature: 0.1                 # Lower = more deterministic
-  maxTokens: 64000                 # Maximum response length (high for thinking budgets)
-  timeout: 30000                   # Request timeout in milliseconds
+  temperature: 0.1 # Lower = more deterministic
+  maxTokens: 64000 # Maximum response length (high for thinking budgets)
+  timeout: 30000 # Request timeout in milliseconds
 
 # Benchmark execution settings
 benchmark:
-  attempts: 2                      # Number of attempts per task
-  outputDir: results               # Directory for benchmark results
-  templateDir: templates           # Directory for prompt templates
+  attempts: 2 # Number of attempts per task
+  outputDir: results # Directory for benchmark results
+  templateDir: templates # Directory for prompt templates
 
 # Container settings
 container:
-  provider: bccontainer            # Container provider (mock, bccontainer, docker)
-  name: Cronus28                   # Container name
-  bcVersion: "28.0"               # Business Central version
-  memoryLimit: 8G                  # Container memory limit
+  provider: bccontainer # Container provider (mock, bccontainer, docker)
+  name: Cronus28 # Container name
+  bcVersion: "28.0" # Business Central version
+  memoryLimit: 8G # Container memory limit
   credentials:
-    username: sshadows             # Container authentication username
-    password: "1234"               # Container authentication password
+    username: sshadows # Container authentication username
+    password: "1234" # Container authentication password
 
 # Logging settings (console output)
 logging:
-  level: info                        # Log level: debug, info, warn, error
+  level: info # Log level: debug, info, warn, error
 
 # Environment variable overrides (optional)
 # These will be set during execution

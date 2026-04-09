@@ -26,7 +26,7 @@ Host Machine                           Docker Container (Sandbox)
               |
               v
 +---------------------------+
-| BC Container (Cronus27)   |
+| BC Container (Cronus28)   |
 | - AL Compiler             |
 | - Test Runner             |
 +---------------------------+

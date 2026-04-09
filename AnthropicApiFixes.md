@@ -24,6 +24,7 @@ Adapter: `src/llm/anthropic-adapter.ts`
 ### 1. Prompt Caching - DONE
 
 System prompt is now sent as a content block array with `cache_control` for server-side caching (`anthropic-adapter.ts:331-340`):
+
 ```typescript
 system: [{
   type: "text" as const,
@@ -55,6 +56,7 @@ system: [{
 The Message Batches API is ideal for a benchmarking tool that runs many tasks across many models. Submit all tasks at once, get results asynchronously, pay 50% less. The parallel orchestrator could batch non-interactive tasks.
 
 **Files to change:**
+
 - `src/llm/anthropic-adapter.ts` - add batch submission method
 - `src/parallel/` - integrate batch mode into orchestrator
 - `src/llm/types.ts` - add batch-related types
@@ -73,12 +75,12 @@ Newer features like the token counting API (pre-flight validation of prompt size
 
 ## Priority Order
 
-| # | Issue | Status | Impact | Effort |
-|---|-------|--------|--------|--------|
-| 1 | Prompt caching | **Done** | Up to 90% savings on cached tokens | Low |
-| 4 | Cache token tracking | **Done** | Accurate cost reporting | Low |
-| 5 | Cheaper health check | **Done** | Minor token savings | Low |
-| 7 | Cache-aware cost estimation | **Done** | Accurate cost with cache pricing | Low |
-| 2 | Batch API | Deferred | 50% cost savings for benchmarks | High |
-| 3 | Model discovery via SDK | Deferred | Code cleanup | Low |
-| 6 | Beta header support | Deferred | Enables new features | Low |
+| # | Issue                       | Status   | Impact                             | Effort |
+| - | --------------------------- | -------- | ---------------------------------- | ------ |
+| 1 | Prompt caching              | **Done** | Up to 90% savings on cached tokens | Low    |
+| 4 | Cache token tracking        | **Done** | Accurate cost reporting            | Low    |
+| 5 | Cheaper health check        | **Done** | Minor token savings                | Low    |
+| 7 | Cache-aware cost estimation | **Done** | Accurate cost with cache pricing   | Low    |
+| 2 | Batch API                   | Deferred | 50% cost savings for benchmarks    | High   |
+| 3 | Model discovery via SDK     | Deferred | Code cleanup                       | Low    |
+| 6 | Beta header support         | Deferred | Enables new features               | Low    |

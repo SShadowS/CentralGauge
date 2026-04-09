@@ -995,9 +995,9 @@ function generateDualAxisChart(
     svg +=
       `<rect x="${x}" y="${y}" width="${band.bandwidth}" height="${barH}" fill="${
         getModelColor(d.idx)
-      }" opacity="0.75" rx="2" stroke="var(--cg-chart-axis)" stroke-opacity="0.15"><title>${escapeHtml(d.name)}: ${
-        d.passRate.toFixed(1)
-      }% pass rate</title></rect>`;
+      }" opacity="0.75" rx="2" stroke="var(--cg-chart-axis)" stroke-opacity="0.15"><title>${
+        escapeHtml(d.name)
+      }: ${d.passRate.toFixed(1)}% pass rate</title></rect>`;
   }
 
   // Top 3 pass rate labels

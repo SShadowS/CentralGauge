@@ -34,6 +34,7 @@ Added `store: false` to `buildRequestParams()` (line 462). All three API paths (
 ### 4. Reasoning Token Tracking - DONE
 
 `TokenUsage` extended with `reasoningTokens` field (`types.ts:62`). Extracted in:
+
 - Chat Completions: `buildUsageFromCompletion()` (line 503) via `completion_tokens_details.reasoning_tokens`
 - Responses API non-streaming: `callProviderResponses()` (line 243) via `output_tokens_details.reasoning_tokens`
 - Responses API streaming: `streamProviderResponses()` (line 349) via `output_tokens_details.reasoning_tokens`
@@ -49,6 +50,7 @@ Default API version updated from `2024-02-15-preview` to `2024-10-21` (GA stable
 ### 9. Codex Model Detection - DONE
 
 All three codex-checking methods now use word-boundary regex `/\bcodex\b/.test(model)`:
+
 - `isResponsesOnlyModel()` (line 87)
 - `isReasoningOnlyModel()` (line 107)
 - `getReasoningEffort()` (line 125)
@@ -81,15 +83,15 @@ OpenAI supports `response_format: { type: "json_schema", ... }` for guaranteed s
 
 ## Priority Order
 
-| # | Issue | Status | Impact | Effort |
-|---|-------|--------|--------|--------|
-| 1 | Responses API finish reason | **Done** | Fixes truncation detection | Low |
-| 3 | `store: false` on Chat Completions | **Done** | Data retention/privacy | Low |
-| 4 | Reasoning token tracking | **Done** | Accurate cost reporting for o1/o3/codex | Low |
-| 7 | Azure streaming token usage | **Done** | Accurate metrics | Low |
-| 8 | Azure API version update | **Done** | Access newer features | Low |
-| 9 | Codex model detection | **Done** | Future-proofing | Low |
-| 2 | Batch API | Deferred | 50% cost savings for benchmarks | High |
-| 5 | Predicted outputs | Deferred | Faster second attempts | Medium |
-| 6 | Azure adapter to SDK | Deferred | Eliminate ~200 lines of manual HTTP | Medium |
-| 10 | Structured outputs | Deferred | More reliable code extraction | Medium |
+| #  | Issue                              | Status   | Impact                                  | Effort |
+| -- | ---------------------------------- | -------- | --------------------------------------- | ------ |
+| 1  | Responses API finish reason        | **Done** | Fixes truncation detection              | Low    |
+| 3  | `store: false` on Chat Completions | **Done** | Data retention/privacy                  | Low    |
+| 4  | Reasoning token tracking           | **Done** | Accurate cost reporting for o1/o3/codex | Low    |
+| 7  | Azure streaming token usage        | **Done** | Accurate metrics                        | Low    |
+| 8  | Azure API version update           | **Done** | Access newer features                   | Low    |
+| 9  | Codex model detection              | **Done** | Future-proofing                         | Low    |
+| 2  | Batch API                          | Deferred | 50% cost savings for benchmarks         | High   |
+| 5  | Predicted outputs                  | Deferred | Faster second attempts                  | Medium |
+| 6  | Azure adapter to SDK               | Deferred | Eliminate ~200 lines of manual HTTP     | Medium |
+| 10 | Structured outputs                 | Deferred | More reliable code extraction           | Medium |

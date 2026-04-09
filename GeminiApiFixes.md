@@ -68,13 +68,13 @@ Gemini supports `responseMimeType: "application/json"` with `responseSchema` for
 
 ## Priority Order
 
-| # | Issue | Status | Impact | Effort |
-|---|-------|--------|--------|--------|
-| 1 | Thinking budget support | **Done** | Enables Gemini 2.5 thinking | Low |
-| 4 | Thinking token tracking | **Done** | Accurate cost reporting | Low |
-| 8 | Abort signal handling | **Done** | Stream cancellation support | Low |
-| 2 | Context caching | Deferred | Up to 75% savings on cached tokens | Medium |
-| 3 | Model discovery via SDK | Deferred | Security (key in URL) + code cleanup | Low |
-| 5 | Safety settings | Deferred | Reduce false content_filter results | Low |
-| 6 | Token count fallback | Deferred | Better metrics accuracy | Low |
-| 7 | Structured output | Deferred | More reliable code extraction | Medium |
+| # | Issue                   | Status   | Impact                               | Effort |
+| - | ----------------------- | -------- | ------------------------------------ | ------ |
+| 1 | Thinking budget support | **Done** | Enables Gemini 2.5 thinking          | Low    |
+| 4 | Thinking token tracking | **Done** | Accurate cost reporting              | Low    |
+| 8 | Abort signal handling   | **Done** | Stream cancellation support          | Low    |
+| 2 | Context caching         | Deferred | Up to 75% savings on cached tokens   | Medium |
+| 3 | Model discovery via SDK | Deferred | Security (key in URL) + code cleanup | Low    |
+| 5 | Safety settings         | Deferred | Reduce false content_filter results  | Low    |
+| 6 | Token count fallback    | Deferred | Better metrics accuracy              | Low    |
+| 7 | Structured output       | Deferred | More reliable code extraction        | Medium |

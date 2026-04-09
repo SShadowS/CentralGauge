@@ -123,7 +123,8 @@ export class VerificationEngine {
     testFilePath: string,
     debug?: boolean,
   ): Promise<VerificationResult> {
-    const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") || DEFAULT_CONTAINER_NAME;
+    const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") ||
+      DEFAULT_CONTAINER_NAME;
 
     try {
       // Check for prereq apps based on task ID
