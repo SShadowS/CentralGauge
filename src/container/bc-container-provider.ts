@@ -497,28 +497,32 @@ export class BcContainerProvider implements ContainerProvider {
     // Use the host path - bccontainerhelper will translate it to container path internally
     const escapedHostPath = sharedAppPath.replace(/\\/g, "\\\\");
 
-    // Parse app name/publisher/version from filename pattern: Publisher_Name_Version.app
+    // Parse app name/publisher from filename pattern: Publisher_Name_Version.app
     const fileNameParts = appFileName.replace(".app", "").split("_");
     const publisher = fileNameParts[0] || "";
     const appName = fileNameParts.slice(1, -1).join("_") || "";
-    const version = fileNameParts[fileNameParts.length - 1] || "";
 
     const script = `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
+      $bcContainerHelperConfig.usePwshForBc24 = $false
 
-      # Check if exact same version is already published - skip if so
-      $existingApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" -and $_.Version -eq "${version}" }
-      if ($existingApp) {
-        Write-Host "App already published with same version, skipping: $($existingApp.Name) v${version}"
-        Write-Host "PUBLISH_SUCCESS"
-        exit 0
-      }
-
-      # Unpublish any existing different version first
+      # Unpublish any existing version first (always force-republish to pick up schema changes)
       $oldApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
       if ($oldApp) {
+        # First remove all non-prereq CentralGauge apps (benchmark apps that may depend on this prereq)
+        $nonPrereqApps = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
+          $_.Publisher -eq "CentralGauge" -and $_.Name -notlike "*Prereq*"
+        })
+        foreach ($dep in $nonPrereqApps) {
+          try {
+            Write-Host "Removing dependent app: $($dep.Name) v$($dep.Version)"
+            Unpublish-BcContainerApp -containerName "${containerName}" -appName $dep.Name -publisher $dep.Publisher -version $dep.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
+          } catch { }
+        }
+
         Write-Host "Unpublishing existing app: $($oldApp.Name) v$($oldApp.Version)"
-        Unpublish-BcContainerApp -containerName "${containerName}" -appName $oldApp.Name -publisher $oldApp.Publisher -version $oldApp.Version -uninstall -ErrorAction SilentlyContinue
+        Unpublish-BcContainerApp -containerName "${containerName}" -appName $oldApp.Name -publisher $oldApp.Publisher -version $oldApp.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
       }
 
       # Publish the new app using the host path (bccontainerhelper translates it)

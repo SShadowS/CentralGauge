@@ -64,7 +64,7 @@ export function buildPublishScript(
       foreach ($app in $conflictApps) {
         try {
           Write-Output "CLEANUP:Removing $($app.Name) by $($app.Publisher)"
-          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -ErrorAction SilentlyContinue
+          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
         } catch { }
       }
 
@@ -171,6 +171,8 @@ export function buildTestScript(
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
+      $bcContainerHelperConfig.usePwshForBc24 = $false
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
