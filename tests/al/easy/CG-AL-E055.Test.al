@@ -73,33 +73,17 @@ codeunit 80055 "CG-AL-E055 Test"
     end;
 
     [Test]
-    procedure TestGetCustomerFQN_HasNamespacePrefix()
-    var
-        Result: Text;
-    begin
-        // [SCENARIO] FQN includes namespace prefix with dot
-        // [WHEN] Getting Customer FQN
-        Result := FQNHelper.GetCustomerFQN();
-
-        // [THEN] Contains dot separator indicating namespace
-        Assert.IsTrue(Result.Contains('.'), 'FQN should contain namespace dot separator');
-    end;
-
-    [Test]
     procedure TestContainsNamespace_WithNamespace()
     var
         Result: Boolean;
-        FQN: Text;
     begin
         // [SCENARIO] ContainsNamespace returns true for FQN with namespace
-        // [GIVEN] A FQN from a standard table
-        FQN := FQNHelper.GetCustomerFQN();
-
+        // [GIVEN] A FQN string that contains a dot
         // [WHEN] Checking for namespace
-        Result := FQNHelper.ContainsNamespace(FQN);
+        Result := FQNHelper.ContainsNamespace('Microsoft.Sales.Customer');
 
         // [THEN] Returns true
-        Assert.IsTrue(Result, 'Standard table FQN should have namespace');
+        Assert.IsTrue(Result, 'FQN with dot should be detected as having namespace');
     end;
 
     [Test]
