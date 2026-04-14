@@ -172,7 +172,7 @@ export function buildTestScript(
   return `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
       # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      $bcContainerHelperConfig.usePwshForBc24 = $true
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)

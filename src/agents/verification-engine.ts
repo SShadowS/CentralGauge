@@ -6,7 +6,10 @@
  */
 
 import { basename, join } from "@std/path";
-import { DEFAULT_CONTAINER_NAME } from "../constants.ts";
+import {
+  DEFAULT_CONTAINER_NAME,
+  TEST_TOOLKIT_DEPENDENCIES,
+} from "../constants.ts";
 import { ensureDir } from "@std/fs";
 import { Logger } from "../logger/mod.ts";
 
@@ -35,29 +38,8 @@ export interface VerificationResult {
   testResult?: TestResult;
 }
 
-/**
- * BC Test Toolkit dependencies required for test execution
- */
-const TEST_TOOLKIT_DEPS = [
-  {
-    id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-    name: "Library Assert",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-  {
-    id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-    name: "Any",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-  {
-    id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-    name: "Tests-TestLibraries",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-];
+/** Local alias for centralized test toolkit dependencies */
+const TEST_TOOLKIT_DEPS = TEST_TOOLKIT_DEPENDENCIES;
 
 /**
  * Handles compilation and test verification for AL projects.

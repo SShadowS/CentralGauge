@@ -14,6 +14,7 @@
 import { basename, dirname, fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
+import { TEST_TOOLKIT_DEPENDENCIES } from "../src/constants.ts";
 
 /** Get the CentralGauge project root from the script location */
 function getProjectRoot(): string {
@@ -355,27 +356,8 @@ interface AppJson {
   [key: string]: unknown;
 }
 
-/** Test Toolkit dependencies required for running AL tests */
-const TEST_TOOLKIT_DEPS = [
-  {
-    id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-    name: "Library Assert",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-  {
-    id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-    name: "Any",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-  {
-    id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-    name: "Tests-TestLibraries",
-    publisher: "Microsoft",
-    version: "27.0.0.0",
-  },
-];
+/** Local alias for centralized test toolkit dependencies */
+const TEST_TOOLKIT_DEPS = TEST_TOOLKIT_DEPENDENCIES;
 
 /**
  * Add Test Toolkit dependencies to app.json if not already present.

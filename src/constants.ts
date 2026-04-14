@@ -68,6 +68,44 @@ export const CONTAINER_READY_WAIT_MS = 5000;
 export const DEFAULT_CONTAINER_NAME = "Cronus28";
 
 // =============================================================================
+// BC Platform & App Manifest Versions
+// =============================================================================
+
+/** BC platform version for app.json manifests */
+export const BC_PLATFORM_VERSION = "28.0.0.0";
+
+/** BC application version for app.json manifests */
+export const BC_APPLICATION_VERSION = "28.0.0.0";
+
+/** AL runtime version for app.json manifests */
+export const BC_RUNTIME_VERSION = "17.0";
+
+/**
+ * Test Toolkit dependencies required for running AL tests.
+ * These are Microsoft-published apps that must be present in the BC container.
+ */
+export const TEST_TOOLKIT_DEPENDENCIES = [
+  {
+    id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+    name: "Library Assert",
+    publisher: "Microsoft",
+    version: BC_PLATFORM_VERSION,
+  },
+  {
+    id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+    name: "Any",
+    publisher: "Microsoft",
+    version: BC_PLATFORM_VERSION,
+  },
+  {
+    id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+    name: "Tests-TestLibraries",
+    publisher: "Microsoft",
+    version: BC_PLATFORM_VERSION,
+  },
+] as const;
+
+// =============================================================================
 // AL App ID Ranges
 // =============================================================================
 

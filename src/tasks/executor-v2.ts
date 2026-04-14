@@ -17,6 +17,12 @@ import { ContainerProviderRegistry } from "../container/registry.ts";
 import { ConfigManager } from "../config/config.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  BC_APPLICATION_VERSION,
+  BC_PLATFORM_VERSION,
+  BC_RUNTIME_VERSION,
+  TEST_TOOLKIT_DEPENDENCIES,
+} from "../constants.ts";
 import type { LLMAdapter } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import { Logger } from "../logger/mod.ts";
@@ -289,8 +295,9 @@ export class TaskExecutorV2 {
       name: `CentralGauge_${context.manifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: "27.0.0.0",
-      runtime: "11.0",
+      platform: BC_PLATFORM_VERSION,
+      runtime: BC_RUNTIME_VERSION,
+      application: BC_APPLICATION_VERSION,
       idRanges: [{ from: 70000, to: 89999 }],
     };
 
@@ -301,20 +308,9 @@ export class TaskExecutorV2 {
 
     // Add test toolkit dependencies if testApp is specified
     if (hasTestApp) {
-      appJson["dependencies"] = [
-        {
-          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-          name: "Library Assert",
-          publisher: "Microsoft",
-          version: "27.0.0.0",
-        },
-        {
-          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-          name: "Tests-TestLibraries",
-          publisher: "Microsoft",
-          version: "27.0.0.0",
-        },
-      ];
+      appJson["dependencies"] = TEST_TOOLKIT_DEPENDENCIES.filter(
+        (d) => d.name !== "Any",
+      );
     }
 
     await Deno.writeTextFile(
