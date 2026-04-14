@@ -76,6 +76,22 @@ export class BcContainerProvider implements ContainerProvider {
   // Container credentials (configured per container)
   private credentialsCache: Map<string, ContainerCredentials> = new Map();
 
+  // Compiler cache: when enabled, uses a persistent cache folder to avoid
+  // re-downloading artifacts on every run, and a deterministic folder name
+  // to prevent GUID folder accumulation.
+  private _compilerCacheEnabled = true;
+  private static readonly COMPILER_CACHE_DIR =
+    "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
+
+  /**
+   * Enable or disable the persistent compiler cache.
+   * When enabled (default), uses a cache folder so subsequent runs skip artifact downloads,
+   * and uses a deterministic folder name to avoid GUID folder accumulation.
+   */
+  setCompilerCacheEnabled(enabled: boolean): void {
+    this._compilerCacheEnabled = enabled;
+  }
+
   /**
    * Configure credentials for a container
    */
@@ -351,11 +367,15 @@ export class BcContainerProvider implements ContainerProvider {
 
     log.info(`Creating compiler folder for ${containerName}...`);
 
+    const cacheParams = this._compilerCacheEnabled
+      ? ` -containerName "CentralGauge-${containerName}" -cacheFolder "${BcContainerProvider.COMPILER_CACHE_DIR}"`
+      : "";
+
     const script = `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
-      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit
+      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl${cacheParams}
       Write-Output "COMPILER_FOLDER:$compilerFolder"
     `;
 
@@ -505,7 +525,7 @@ export class BcContainerProvider implements ContainerProvider {
     const script = `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
       # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      $bcContainerHelperConfig.usePwshForBc24 = $true
 
       # Unpublish any existing version first (always force-republish to pick up schema changes)
       $oldApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
@@ -813,10 +833,19 @@ export class BcContainerProvider implements ContainerProvider {
 
   /**
    * Clean up compiler folders to free disk space.
-   * Removes all cached compiler folders from this session.
+   * When compiler cache is enabled, keeps the folders for reuse across runs.
+   * Removes all cached compiler folders from this session otherwise.
    */
   async cleanupCompilerFolders(): Promise<void> {
     if (this.compilerFolderCache.size === 0) {
+      return;
+    }
+
+    if (this._compilerCacheEnabled) {
+      log.info(
+        `Keeping ${this.compilerFolderCache.size} compiler folder(s) for cache reuse`,
+      );
+      this.compilerFolderCache.clear();
       return;
     }
 

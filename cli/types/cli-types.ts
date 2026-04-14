@@ -32,6 +32,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   runs?: number;
   /** Multiple BC containers for parallel compilation/testing */
   containers?: string[];
+  /** Disable persistent compiler cache (re-downloads artifacts each run) */
+  noCompilerCache?: boolean;
 }
 
 /**

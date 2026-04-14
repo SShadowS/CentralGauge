@@ -89,6 +89,10 @@ export function registerBenchCommand(cli: Command): void {
       { default: "auto" },
     )
     .option(
+      "--no-compiler-cache",
+      "Disable persistent compiler cache (re-downloads artifacts each run)",
+    )
+    .option(
       "--max-concurrency <number>",
       "Maximum concurrent LLM calls (parallel mode only)",
       { default: 10 },
@@ -390,6 +394,7 @@ export function registerBenchCommand(cli: Command): void {
         stream: options.stream,
         noNotify: !options.notify,
         runs,
+        noCompilerCache: !options.compilerCache,
       };
       if (options.containers) {
         benchOptions.containers = options.containers;

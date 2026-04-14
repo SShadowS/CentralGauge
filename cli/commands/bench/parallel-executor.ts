@@ -186,12 +186,17 @@ export async function executeParallelBenchmark(
     let wasExisting: boolean;
     let containerNames: string[] | undefined;
 
+    const setupOpts = options.noCompilerCache
+      ? { noCompilerCache: true as const }
+      : {};
+
     if (options.containers && options.containers.length > 0) {
       // Multi-container mode
       const result = await setupContainers(
         options.containers,
         containerProviderName,
         containerConfig,
+        setupOpts,
       );
       containerProvider = result.containerProvider;
       containerNames = result.containerNames;
@@ -207,6 +212,7 @@ export async function executeParallelBenchmark(
       const result = await setupContainer(
         containerProviderName,
         containerConfig,
+        setupOpts,
       );
       containerProvider = result.containerProvider;
       primaryContainerName = result.containerName;

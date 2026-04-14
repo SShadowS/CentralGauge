@@ -42,6 +42,7 @@ export interface ContainerSetupResult {
 export async function setupContainer(
   containerProviderName: string | undefined,
   containerConfig: ContainerAppConfig,
+  options?: { noCompilerCache?: boolean },
 ): Promise<ContainerSetupResult> {
   const containerName = containerConfig.name || "centralgauge-benchmark";
 
@@ -60,6 +61,14 @@ export async function setupContainer(
         username: containerConfig.credentials.username || "admin",
         password: containerConfig.credentials.password || "admin",
       });
+  }
+
+  // Configure compiler cache
+  if (
+    options?.noCompilerCache &&
+    "setCompilerCacheEnabled" in containerProvider
+  ) {
+    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
   }
 
   // Check if container already exists and is healthy
@@ -134,6 +143,7 @@ export async function setupContainers(
   containerNames: string[],
   containerProviderName: string | undefined,
   containerConfig: ContainerAppConfig,
+  options?: { noCompilerCache?: boolean },
 ): Promise<MultiContainerSetupResult> {
   // Resolve provider once (singleton per type)
   const containerProvider =
@@ -142,6 +152,14 @@ export async function setupContainers(
         ? ContainerProviderRegistry.create(containerConfig.provider)
         : await ContainerProviderRegistry.getDefault())
       : ContainerProviderRegistry.create(containerProviderName);
+
+  // Configure compiler cache
+  if (
+    options?.noCompilerCache &&
+    "setCompilerCacheEnabled" in containerProvider
+  ) {
+    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
+  }
 
   for (const name of containerNames) {
     // Set credentials for each container
