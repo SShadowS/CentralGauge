@@ -30,7 +30,7 @@ agents/
         └── my-linter.sh
 ```
 
-**Important principle:** The agent folder contains only things that define *how* the agent works (its toolbox). Never task content. The task YAML defines *what* to solve and is identical across agents. The benchmark measures the workbench, not the problem.
+**Important principle:** The agent folder contains only things that define _how_ the agent works (its toolbox). Never task content. The task YAML defines _what_ to solve and is identical across agents. The benchmark measures the workbench, not the problem.
 
 ## Resolution Order
 
@@ -47,10 +47,12 @@ When both the convention folder and explicit `workingDir` exist, the convention 
 ## Convention Folder Detection
 
 Detection happens at **load time** in `loadAgentConfigs()` (`src/agents/loader.ts`), not during resolution. This is because:
+
 - `loadAgentConfigs()` iterates YAML files in the directory and has access to the file path
 - `resolveAgentInheritance()` is a pure function operating on in-memory configs — no filesystem access
 
 After loading each config from `entry.path`:
+
 1. Derive `stem` from filename: `basename(entry.path, extname(entry.path))` → e.g., `"foo"` from `"foo.yml"`
 2. Check if `join(directory, stem)` exists as a directory
 3. If it does, set `config.workingDir` to the resolved absolute path
@@ -61,20 +63,23 @@ After loading each config from `entry.path`:
 ### Current
 
 `stageAgentWorkspace` stages exactly two items with hardcoded logic:
+
 - `.claude/` → junction symlink (copy fallback)
 - `CLAUDE.md` → file symlink (copy fallback)
 
 ### New
 
 `stageAgentWorkspace` iterates all entries in the source directory:
+
 - **Directories** (`.claude/`, `.tools/`, etc.) → junction symlink, copy fallback
 - **Files** (`CLAUDE.md`, `AGENTS.md`, `.mcp.json`, etc.) → file symlink, copy fallback
 
 Same backup/restore pattern as today — existing files in the target get `.bak` suffix, restored on cleanup.
 
 **Edge cases:**
+
 - **Empty agent folder**: Valid. Iterates zero entries, stages nothing. Intentional no-op workbench.
-- **Name collisions with task content**: The agent writes task files (`.al`, `app.json`) *after* staging. Agent-written content naturally overwrites staged content. The convention is to never put task-related files in the agent folder.
+- **Name collisions with task content**: The agent writes task files (`.al`, `app.json`) _after_ staging. Agent-written content naturally overwrites staged content. The convention is to never put task-related files in the agent folder.
 - **Nested symlinks in source**: `Deno.readDir()` enumerates entries regardless of type. If the source contains symlinks, they're staged the same way (as files or directories). No special handling needed.
 
 ### Signature
@@ -98,9 +103,9 @@ Unchanged. `staged.cleanup()` is called in the executor's `finally` block. It re
 
 ## Changes
 
-| File | Change |
-|------|--------|
-| `src/agents/workspace-staging.ts` | Generalize to iterate all entries in source directory instead of hardcoded `.claude/` + `CLAUDE.md` |
-| `src/agents/loader.ts` | In `loadAgentConfigs()`, after loading each config, check for companion folder derived from filename stem and set `workingDir` |
+| File                              | Change                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `src/agents/workspace-staging.ts` | Generalize to iterate all entries in source directory instead of hardcoded `.claude/` + `CLAUDE.md`                            |
+| `src/agents/loader.ts`            | In `loadAgentConfigs()`, after loading each config, check for companion folder derived from filename stem and set `workingDir` |
 
 No new files. No changes to `executor.ts`, `types.ts`, `registry.ts`, agent YAML schema, or task execution.
