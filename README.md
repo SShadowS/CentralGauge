@@ -2,6 +2,8 @@
 
 > **Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code**
 
+**Live results:** https://ai.sshadows.dk/
+
 > [!IMPORTANT]
 > Currently only pre-made containers are supported. Create a BC27 container with TestToolkit installed before running benchmarks:
 >
