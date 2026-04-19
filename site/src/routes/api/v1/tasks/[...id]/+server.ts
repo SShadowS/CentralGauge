@@ -43,10 +43,18 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
        JOIN runs ON runs.id = r.run_id
        JOIN models m ON m.id = runs.model_id
        WHERE r.task_id = ?
+         AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)
        GROUP BY m.id
        ORDER BY avg_score DESC, m.slug ASC`,
       [params.id!],
     );
+
+    let manifest: unknown;
+    try {
+      manifest = JSON.parse(task.manifest_json);
+    } catch {
+      throw new ApiError(500, 'manifest_corrupt', `Task '${task.id}' has corrupt manifest`);
+    }
 
     return cachedJson(request, {
       id: task.id,
@@ -56,7 +64,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       category: task.category_slug
         ? { slug: task.category_slug, name: task.category_name! }
         : null,
-      manifest: JSON.parse(task.manifest_json),
+      manifest,
       solved_by: solvedBy.map((r) => {
         const runsTotal = +(r.runs_total ?? 0);
         return {
@@ -65,7 +73,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
           attempt_1_passed: r.attempt_1_passed === null ? null : +(r.attempt_1_passed),
           attempt_2_passed: r.attempt_2_passed === null ? null : +(r.attempt_2_passed),
           runs_total: runsTotal,
-          avg_score: runsTotal === 0 ? null : +(r.avg_score ?? 0),
+          avg_score: r.avg_score === null ? null : +(r.avg_score),
         };
       }),
     });

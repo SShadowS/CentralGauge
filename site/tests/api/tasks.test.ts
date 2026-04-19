@@ -105,14 +105,18 @@ describe('GET /api/v1/tasks', () => {
       `https://x/api/v1/tasks?limit=1&cursor=${encodeURIComponent(body1.next_cursor!)}`,
     );
     expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as { data: Array<{ id: string }> };
+    const body2 = (await res2.json()) as { data: Array<{ id: string }>; next_cursor: string | null };
     expect(body2.data).toHaveLength(1);
     expect(body2.data[0].id).not.toBe(body1.data[0].id);
+    expect(body2.data[0].id).toBe('hard/b');
+    expect(body2.next_cursor).toBeNull();
   });
 
   it('rejects invalid limit', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks?limit=0');
-    expect(res.status).toBe(400);
+    for (const val of ['0', '101', '-1', 'abc']) {
+      const res = await SELF.fetch(`https://x/api/v1/tasks?limit=${val}`);
+      expect(res.status, `limit=${val} should 400`).toBe(400);
+    }
   });
 });
 
