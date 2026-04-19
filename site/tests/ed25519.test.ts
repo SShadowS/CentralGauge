@@ -33,4 +33,23 @@ describe('ed25519', () => {
     const signature = await sign(message, privateKey);
     expect(signature.byteLength).toBe(64);
   });
+
+  it('verify returns false on malformed inputs (does not throw)', async () => {
+    const { publicKey } = await generateKeypair();
+    const message = new TextEncoder().encode('hello');
+    const truncatedSig = new Uint8Array(32); // valid sigs are 64 bytes
+    expect(await verify(truncatedSig, message, publicKey)).toBe(false);
+
+    const validSig = await sign(message, (await generateKeypair()).privateKey);
+    const truncatedKey = new Uint8Array(16); // valid keys are 32 bytes
+    expect(await verify(validSig, message, truncatedKey)).toBe(false);
+  });
+
+  it('signing the same message twice with the same key yields identical bytes (deterministic)', async () => {
+    const { privateKey } = await generateKeypair();
+    const message = new TextEncoder().encode('repeat me');
+    const sig1 = await sign(message, privateKey);
+    const sig2 = await sign(message, privateKey);
+    expect(sig1).toEqual(sig2);
+  });
 });
