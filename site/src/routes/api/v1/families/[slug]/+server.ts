@@ -14,8 +14,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     if (!fam) throw new ApiError(404, 'family_not_found', `No family '${params.slug}'`);
 
     const trajectory = await getAll<{
-      slug: string; display_name: string; api_model_id: string; generation: string | null;
-      avg_score: number | null; run_count: number; last_run_at: string | null;
+      slug: string; display_name: string; api_model_id: string; generation: number | null;
+      avg_score: number | null; run_count: number | string; last_run_at: string | null;
       avg_cost_usd: number | null;
     }>(
       env.DB,
@@ -40,18 +40,21 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       slug: fam.slug,
       display_name: fam.display_name,
       vendor: fam.vendor,
-      trajectory: trajectory.map((t) => ({
-        model: {
-          slug: t.slug,
-          display_name: t.display_name,
-          api_model_id: t.api_model_id,
-          generation: t.generation,
-        },
-        avg_score: +(t.avg_score ?? 0),
-        run_count: +(t.run_count ?? 0),
-        last_run_at: t.last_run_at,
-        avg_cost_usd: +(t.avg_cost_usd ?? 0),
-      })),
+      trajectory: trajectory.map((t) => {
+        const runCount = +(t.run_count ?? 0);
+        return {
+          model: {
+            slug: t.slug,
+            display_name: t.display_name,
+            api_model_id: t.api_model_id,
+            generation: t.generation,
+          },
+          avg_score: runCount === 0 ? null : +(t.avg_score ?? 0),
+          run_count: runCount,
+          last_run_at: t.last_run_at,
+          avg_cost_usd: runCount === 0 ? null : +(t.avg_cost_usd ?? 0),
+        };
+      }),
     });
   } catch (err) {
     return errorResponse(err);

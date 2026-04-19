@@ -75,4 +75,25 @@ describe('GET /api/v1/families/:slug', () => {
     const res = await SELF.fetch('https://x/api/v1/families/nonexistent');
     expect(res.status).toBe(404);
   });
+
+  it('emits null avg_score and avg_cost_usd for a model with no runs', async () => {
+    // Add a model to the claude family that has no runs at all.
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (4,1,'sonnet-future','claude-sonnet-future','Sonnet Future',50)`
+    ).run();
+
+    const res = await SELF.fetch('https://x/api/v1/families/claude');
+    const body = await res.json() as {
+      trajectory: Array<{
+        model: { slug: string };
+        avg_score: number | null;
+        avg_cost_usd: number | null;
+        run_count: number;
+      }>;
+    };
+    const future = body.trajectory.find((t) => t.model.slug === 'sonnet-future')!;
+    expect(future.run_count).toBe(0);
+    expect(future.avg_score).toBeNull();
+    expect(future.avg_cost_usd).toBeNull();
+  });
 });
