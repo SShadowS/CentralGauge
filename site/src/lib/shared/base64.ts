@@ -6,6 +6,10 @@ export function bytesToB64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Decode standard base64 (RFC 4648 §4) — NOT the URL-safe variant.
+ * Inputs containing `-` or `_` are rejected. Use a separate helper if URL-safe is ever needed.
+ */
 export function b64ToBytes(b64: string): Uint8Array {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
     throw new Error('b64ToBytes: invalid base64 characters');
