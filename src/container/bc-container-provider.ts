@@ -76,6 +76,10 @@ export class BcContainerProvider implements ContainerProvider {
   // Container credentials (configured per container)
   private credentialsCache: Map<string, ContainerCredentials> = new Map();
 
+  // Serializes all compiler folder creation (shared cache folder cannot be
+  // written concurrently by multiple New-BcCompilerFolder calls).
+  private static compilerFolderQueue: Promise<void> = Promise.resolve();
+
   // Compiler cache: when enabled, uses a persistent cache folder to avoid
   // re-downloading artifacts on every run, and a deterministic folder name
   // to prevent GUID folder accumulation.
@@ -347,7 +351,8 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Get or create a compiler folder for the container (cached for performance)
+   * Get or create a compiler folder for the container (cached for performance).
+   * Concurrent calls for the same container are deduped to avoid file-lock races.
    */
   private async getOrCreateCompilerFolder(
     containerName: string,
@@ -365,6 +370,33 @@ export class BcContainerProvider implements ContainerProvider {
       }
     }
 
+    // Serialize: all compiler folder creation shares a cache folder on disk,
+    // so only one New-BcCompilerFolder can run at a time across all containers.
+    const promise = BcContainerProvider.compilerFolderQueue.then(() =>
+      this.createCompilerFolder(containerName)
+    );
+    BcContainerProvider.compilerFolderQueue = promise.then(() => {}).catch(
+      () => {},
+    );
+    return await promise;
+  }
+
+  /**
+   * Create a compiler folder unless another queued call already created it.
+   */
+  private async createCompilerFolder(containerName: string): Promise<string> {
+    // Re-check cache inside the serialized queue — a preceding queued call
+    // for the same container may have already created it.
+    const cached = this.compilerFolderCache.get(containerName);
+    if (cached) {
+      try {
+        await Deno.stat(cached);
+        return cached;
+      } catch {
+        this.compilerFolderCache.delete(containerName);
+      }
+    }
+
     log.info(`Creating compiler folder for ${containerName}...`);
 
     const cacheParams = this._compilerCacheEnabled
@@ -375,7 +407,7 @@ export class BcContainerProvider implements ContainerProvider {
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
-      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl${cacheParams}
+      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit${cacheParams}
       Write-Output "COMPILER_FOLDER:$compilerFolder"
     `;
 
@@ -394,6 +426,17 @@ export class BcContainerProvider implements ContainerProvider {
 
     log.info(`Compiler folder ready: ${compilerFolder}`);
     return compilerFolder;
+  }
+
+  /**
+   * Pre-create compiler folders for all given containers at startup.
+   * Runs serialized to avoid cache races, but happens before any work
+   * is enqueued so compile queue timeouts are not affected.
+   */
+  async warmupCompilerFolders(containerNames: string[]): Promise<void> {
+    for (const name of containerNames) {
+      await this.getOrCreateCompilerFolder(name);
+    }
   }
 
   /**
@@ -904,5 +947,43 @@ export class BcContainerProvider implements ContainerProvider {
     this.compilerFolderCache.clear();
 
     return { removed, failed };
+  }
+
+  /**
+   * Clear all compiler folders on startup so they are recreated fresh.
+   * Removes both CentralGauge-specific output folders and the shared
+   * artifact cache to ensure a clean slate every run.
+   */
+  static async clearCompilerCache(): Promise<void> {
+    const compilerDir = "C:\\ProgramData\\BcContainerHelper\\compiler";
+
+    // Remove CentralGauge-specific compiler output folders
+    try {
+      for await (const entry of Deno.readDir(compilerDir)) {
+        if (entry.isDirectory && entry.name.startsWith("CentralGauge-")) {
+          const folderPath = `${compilerDir}\\${entry.name}`;
+          try {
+            await Deno.remove(folderPath, { recursive: true });
+            log.info(`Cleared compiler folder: ${entry.name}`);
+          } catch {
+            log.warn(`Failed to clear compiler folder: ${entry.name}`);
+          }
+        }
+      }
+    } catch (error) {
+      // NotFound is expected (directory doesn't exist yet), warn on anything else
+      if (error instanceof Deno.errors.NotFound) return;
+      log.warn(`Could not enumerate compiler directory: ${error}`);
+    }
+
+    // Purge the shared artifact cache
+    try {
+      await Deno.remove(BcContainerProvider.COMPILER_CACHE_DIR, {
+        recursive: true,
+      });
+      log.info("Cleared compiler cache directory");
+    } catch {
+      // cache directory doesn't exist — nothing to clear
+    }
   }
 }

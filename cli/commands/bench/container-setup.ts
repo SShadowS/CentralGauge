@@ -6,7 +6,7 @@
 import type { ContainerConfig } from "../../../src/container/types.ts";
 import type { ContainerProvider } from "../../../src/container/interface.ts";
 import {
-  type BcContainerProvider,
+  BcContainerProvider,
   ContainerProviderRegistry,
 } from "../../../src/container/mod.ts";
 import { log } from "../../helpers/mod.ts";
@@ -45,6 +45,9 @@ export async function setupContainer(
   options?: { noCompilerCache?: boolean },
 ): Promise<ContainerSetupResult> {
   const containerName = containerConfig.name || "centralgauge-benchmark";
+
+  // Clear all compiler folders so they are recreated fresh
+  await BcContainerProvider.clearCompilerCache();
 
   // Resolve container provider
   const containerProvider =
@@ -98,6 +101,12 @@ export async function setupContainer(
 
   if (containerReady) {
     log.container(`Using existing: ${containerName}`);
+    // Pre-create compiler folder before any work is enqueued
+    if ("warmupCompilerFolders" in containerProvider) {
+      await (containerProvider as BcContainerProvider).warmupCompilerFolders([
+        containerName,
+      ]);
+    }
   } else {
     log.container("Setting up...");
     const setupConfig: ContainerConfig = {
@@ -145,6 +154,9 @@ export async function setupContainers(
   containerConfig: ContainerAppConfig,
   options?: { noCompilerCache?: boolean },
 ): Promise<MultiContainerSetupResult> {
+  // Clear all compiler folders so they are recreated fresh
+  await BcContainerProvider.clearCompilerCache();
+
   // Resolve provider once (singleton per type)
   const containerProvider =
     !containerProviderName || containerProviderName === "auto"
@@ -186,6 +198,13 @@ export async function setupContainers(
         `Container "${name}" is not running. Multi-container mode requires all containers to be pre-existing and healthy.`,
       );
     }
+  }
+
+  // Pre-create compiler folders for all containers before any work is enqueued
+  if ("warmupCompilerFolders" in containerProvider) {
+    await (containerProvider as BcContainerProvider).warmupCompilerFolders(
+      containerNames,
+    );
   }
 
   return { containerProvider, containerNames };
