@@ -2,8 +2,8 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 
 const MAX_BUFFERED = 100;
 
-interface BroadcastEvent {
-  type: string;
+export interface BroadcastEvent {
+  type: 'run_finalized' | 'task_set_promoted' | 'shortcoming_added' | 'ping';
   ts: string;
   [k: string]: unknown;
 }
@@ -39,7 +39,8 @@ export class LeaderboardBroadcaster {
         this.recent = this.recent.slice(-MAX_BUFFERED);
       }
 
-      // Fan out to all connected clients
+      // Fire-and-forget fanout: Response returns before clients receive the event.
+      // Delivery is best-effort; dead clients are pruned on their next write failure.
       this.fanout(ev);
 
       return Response.json({ ok: true, clients: this.clients.size });
@@ -85,31 +86,28 @@ export class LeaderboardBroadcaster {
     return new Response('Not Found', { status: 404 });
   }
 
+  private formatFrame(ev: BroadcastEvent): Uint8Array {
+    return this.encoder.encode(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`);
+  }
+
   private async writeEvent(
     writer: WritableStreamDefaultWriter<Uint8Array>,
     ev: BroadcastEvent,
   ): Promise<void> {
-    const frame = `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`;
     try {
-      await writer.write(this.encoder.encode(frame));
+      await writer.write(this.formatFrame(ev));
     } catch {
       // Writer is closed/errored — will be cleaned up in fanout
     }
   }
 
   private fanout(ev: BroadcastEvent): void {
-    const dead: WritableStreamDefaultWriter<Uint8Array>[] = [];
+    const frame = this.formatFrame(ev);
     for (const writer of this.clients) {
-      const frame = `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`;
-      const chunk = this.encoder.encode(frame);
-      // Fire-and-forget; track dead writers
-      writer.write(chunk).catch(() => {
-        dead.push(writer);
+      writer.write(frame).catch(() => {
+        this.clients.delete(writer);
+        writer.close().catch(() => {});
       });
-    }
-    // Remove dead writers after loop
-    for (const w of dead) {
-      this.clients.delete(w);
     }
   }
 }

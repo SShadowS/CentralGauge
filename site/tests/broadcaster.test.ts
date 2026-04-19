@@ -14,6 +14,13 @@ describe('LeaderboardBroadcaster', () => {
     expect(ok).toBe(true);
   });
 
+  it('exports BroadcastEvent with expected type literals', async () => {
+    // Smoke: broadcastEvent compiles with all three known event types
+    await broadcastEvent(env, { type: 'run_finalized', ts: '2026-04-19T00:00:00Z' });
+    await broadcastEvent(env, { type: 'task_set_promoted', ts: '2026-04-19T00:00:00Z' });
+    await broadcastEvent(env, { type: 'shortcoming_added', ts: '2026-04-19T00:00:00Z' });
+  });
+
   it('returns buffered events via /recent for reconnecting clients', async () => {
     const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
     const stub = env.LEADERBOARD_BROADCASTER.get(id);

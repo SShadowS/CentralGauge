@@ -9,7 +9,9 @@
     "preview": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run",
+    "test": "vitest run && vitest run --config vitest.broadcaster.config.ts",
+    "test:broadcaster": "vitest run --config vitest.broadcaster.config.ts",
+    "test:main": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {

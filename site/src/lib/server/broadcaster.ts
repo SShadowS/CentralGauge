@@ -1,8 +1,5 @@
-export interface BroadcastEvent {
-  type: 'run_finalized' | 'task_set_promoted' | 'shortcoming_added';
-  ts: string;
-  [k: string]: unknown;
-}
+export type { BroadcastEvent } from '../../do/leaderboard-broadcaster';
+import type { BroadcastEvent } from '../../do/leaderboard-broadcaster';
 
 export async function broadcastEvent(
   env: { LEADERBOARD_BROADCASTER: DurableObjectNamespace },
