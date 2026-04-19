@@ -98,16 +98,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       throw new ApiError(404, 'model_not_found', `unknown model slugs: ${missingSlugs.join(', ')}`);
     }
 
-    // Conflict check: any existing snapshots for this pricing_version + model?
-    for (const rate of rates) {
-      const modelId = modelMap.get(rate.model_slug)!;
-      const existing = await db
-        .prepare(`SELECT id FROM cost_snapshots WHERE pricing_version = ? AND model_id = ?`)
-        .bind(pricingVersion, modelId)
-        .first<{ id: number }>();
-      if (existing) {
-        throw new ApiError(409, 'duplicate', `pricing_version '${pricingVersion}' already has a snapshot for model '${rate.model_slug}'`);
-      }
+    // Conflict check: single IN query instead of N round-trips
+    const modelIds = rates.map(r => modelMap.get(r.model_slug)!);
+    const idPlaceholders = modelIds.map(() => '?').join(',');
+    const conflictRows = await db
+      .prepare(`SELECT model_id FROM cost_snapshots WHERE pricing_version = ? AND model_id IN (${idPlaceholders})`)
+      .bind(pricingVersion, ...modelIds)
+      .all<{ model_id: number }>();
+    if (conflictRows.results.length > 0) {
+      const idToSlug = new Map<number, string>(modelRows.results.map(r => [r.id, r.slug]));
+      const conflictSlugs = conflictRows.results.map(r => idToSlug.get(r.model_id) ?? String(r.model_id));
+      throw new ApiError(409, 'duplicate', `pricing_version '${pricingVersion}' already has snapshots for: ${conflictSlugs.join(', ')}`);
     }
 
     // Build atomic batch
@@ -115,8 +116,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
     if (closePrevious) {
       ops.push({
-        sql: `UPDATE cost_snapshots SET effective_until = ? WHERE effective_until IS NULL AND pricing_version != ?`,
-        params: [effectiveFrom, pricingVersion]
+        sql: `UPDATE cost_snapshots SET effective_until = ? WHERE effective_until IS NULL AND pricing_version != ? AND model_id IN (${idPlaceholders})`,
+        params: [effectiveFrom, pricingVersion, ...modelIds]
       });
     }
 

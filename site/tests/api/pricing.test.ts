@@ -96,6 +96,8 @@ describe('POST /api/v1/pricing', () => {
     );
 
     expect(res.status).toBe(200);
+    const body = await res.json<{ pricing_version: string; effective_from: string; inserted: number }>();
+    expect(body.inserted).toBe(2);
 
     // v2026-03 rows should still be open
     const oldRows = await env.DB.prepare(
@@ -185,5 +187,72 @@ describe('POST /api/v1/pricing', () => {
     expect(res.status).toBe(400);
     const body = await res.json<{ code: string }>();
     expect(body.code).toBe('bad_request');
+  });
+
+  it('close_previous scopes only to upserted models, leaves others open', async () => {
+    const { keyId, keypair } = await registerMachineKey('admin-machine', 'admin');
+
+    // POST v2026-04 with close_previous: true but ONLY rates for sonnet-4.7
+    const res = await buildPricingPost(
+      {
+        pricing_version: 'v2026-04',
+        effective_from: '2026-04-01T00:00:00Z',
+        close_previous: true,
+        rates: [
+          { model_slug: 'sonnet-4.7', input_per_mtoken: 3, output_per_mtoken: 15 }
+        ]
+      },
+      keyId,
+      keypair
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json<{ inserted: number }>();
+    expect(body.inserted).toBe(1);
+
+    // sonnet-4.7's v2026-03 row should be closed
+    const closedRow = await env.DB.prepare(
+      `SELECT effective_until FROM cost_snapshots WHERE pricing_version = 'v2026-03' AND model_id = 2`
+    ).first<{ effective_until: string | null }>();
+    expect(closedRow?.effective_until).toBe('2026-04-01T00:00:00Z');
+
+    // sonnet-4.6's v2026-03 row should still be open (not in the rates array)
+    const openRow = await env.DB.prepare(
+      `SELECT effective_until FROM cost_snapshots WHERE pricing_version = 'v2026-03' AND model_id = 1`
+    ).first<{ effective_until: string | null }>();
+    expect(openRow?.effective_until).toBeNull();
+  });
+
+  it('missing signature block returns 400 missing_signature', async () => {
+    const res = await SELF.fetch('http://x/api/v1/pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        payload: {
+          pricing_version: 'v2026-04',
+          effective_from: '2026-04-01T00:00:00Z',
+          rates: [{ model_slug: 'sonnet-4.6', input_per_mtoken: 3, output_per_mtoken: 15 }]
+        }
+      })
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('missing_signature');
+  });
+
+  it('non-object payload returns 400 bad_payload', async () => {
+    const res = await SELF.fetch('http://x/api/v1/pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        signature: { alg: 'Ed25519', key_id: 1, signed_at: '2026-04-01T00:00:00Z', value: 'stub' },
+        payload: 'not an object'
+      })
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('bad_payload');
   });
 });
