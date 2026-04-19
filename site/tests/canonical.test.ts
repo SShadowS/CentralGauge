@@ -30,4 +30,18 @@ describe('canonicalJSON', () => {
   it('rejects undefined values', () => {
     expect(() => canonicalJSON({ x: undefined as unknown as number })).toThrow();
   });
+
+  it('throws on circular references instead of overflowing the stack', () => {
+    const a: Record<string, unknown> = {};
+    a.self = a;
+    expect(() => canonicalJSON(a)).toThrow(/cycle detected/);
+
+    const arr: unknown[] = [];
+    arr.push(arr);
+    expect(() => canonicalJSON(arr)).toThrow(/cycle detected/);
+  });
+
+  it('throws on top-level undefined', () => {
+    expect(() => canonicalJSON(undefined)).toThrow(/unsupported type undefined/);
+  });
 });

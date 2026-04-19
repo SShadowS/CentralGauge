@@ -3,12 +3,13 @@
  * - Keys sorted alphabetically at every depth
  * - No whitespace
  * - Rejects NaN, Infinity, undefined (would serialize ambiguously)
+ * - Detects and rejects circular references
  */
 export function canonicalJSON(value: unknown): string {
-  return serialize(value);
+  return serialize(value, new WeakSet());
 }
 
-function serialize(v: unknown): string {
+function serialize(v: unknown, seen: WeakSet<object>): string {
   if (v === null) return 'null';
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (typeof v === 'number') {
@@ -19,10 +20,14 @@ function serialize(v: unknown): string {
   }
   if (typeof v === 'string') return JSON.stringify(v);
   if (Array.isArray(v)) {
-    return '[' + v.map(serialize).join(',') + ']';
+    if (seen.has(v)) throw new Error('canonicalJSON: cycle detected');
+    seen.add(v);
+    return '[' + v.map((x) => serialize(x, seen)).join(',') + ']';
   }
   if (typeof v === 'object') {
     const obj = v as Record<string, unknown>;
+    if (seen.has(obj)) throw new Error('canonicalJSON: cycle detected');
+    seen.add(obj);
     const keys = Object.keys(obj).sort();
     const parts: string[] = [];
     for (const k of keys) {
@@ -30,7 +35,7 @@ function serialize(v: unknown): string {
       if (val === undefined) {
         throw new Error(`canonicalJSON: undefined value at key "${k}"`);
       }
-      parts.push(JSON.stringify(k) + ':' + serialize(val));
+      parts.push(JSON.stringify(k) + ':' + serialize(val, seen));
     }
     return '{' + parts.join(',') + '}';
   }
