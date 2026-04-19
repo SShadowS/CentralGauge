@@ -1,0 +1,23 @@
+import { describe, it, expect } from 'vitest';
+import { sha256Hex, hexToBytes, bytesToHex } from '../src/lib/shared/hash';
+
+describe('hash helpers', () => {
+  it('sha256Hex returns known vector for "abc"', async () => {
+    const h = await sha256Hex('abc');
+    expect(h).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
+  it('sha256Hex handles Uint8Array input', async () => {
+    const h = await sha256Hex(new Uint8Array([97, 98, 99])); // "abc"
+    expect(h).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
+  it('hex<->bytes round trips', () => {
+    const bytes = new Uint8Array([0x00, 0xff, 0xab, 0xcd]);
+    expect(hexToBytes(bytesToHex(bytes))).toEqual(bytes);
+  });
+
+  it('hexToBytes rejects odd-length strings', () => {
+    expect(() => hexToBytes('abc')).toThrow();
+  });
+});
