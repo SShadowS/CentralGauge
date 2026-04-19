@@ -9,6 +9,7 @@ declare global {
         BLOBS: R2Bucket;
         CACHE: KVNamespace;
         LEADERBOARD_BROADCASTER: DurableObjectNamespace;
+      TEST_MIGRATIONS?: unknown;
       };
       context: { waitUntil(promise: Promise<unknown>): void };
       caches: CacheStorage & { default: Cache };
