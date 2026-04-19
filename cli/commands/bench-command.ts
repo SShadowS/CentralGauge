@@ -94,13 +94,11 @@ export function registerBenchCommand(cli: Command): void {
     )
     .option(
       "--max-concurrency <number>",
-      "Maximum concurrent LLM calls (parallel mode only)",
-      { default: 10 },
+      "Maximum concurrent LLM calls (auto: taskConcurrency × variants × 2, floor 10)",
     )
     .option(
       "--task-concurrency <number>",
-      "Maximum concurrent tasks (default: 3, set to 1 for serial)",
-      { default: 3 },
+      "Maximum concurrent tasks (auto: ceil(containers × 2 / variants), floor 3; set to 1 for serial)",
     )
     .option(
       "-f, --format <format:string>",
@@ -385,17 +383,22 @@ export function registerBenchCommand(cli: Command): void {
         debugOutputDir: options.debugOutput,
         debugLogLevel: options.debugLevel as "basic" | "detailed" | "verbose",
         sequential: false, // Always parallel now
-        maxConcurrency: typeof options.maxConcurrency === "number"
-          ? options.maxConcurrency
-          : parseInt(String(options.maxConcurrency), 10),
-        taskConcurrency: typeof options.taskConcurrency === "number"
-          ? options.taskConcurrency
-          : parseInt(String(options.taskConcurrency), 10),
         stream: options.stream,
         noNotify: !options.notify,
         runs,
         noCompilerCache: !options.compilerCache,
       };
+      if (options.maxConcurrency !== undefined) {
+        benchOptions.maxConcurrency = typeof options.maxConcurrency === "number"
+          ? options.maxConcurrency
+          : parseInt(String(options.maxConcurrency), 10);
+      }
+      if (options.taskConcurrency !== undefined) {
+        benchOptions.taskConcurrency =
+          typeof options.taskConcurrency === "number"
+            ? options.taskConcurrency
+            : parseInt(String(options.taskConcurrency), 10);
+      }
       if (options.containers) {
         benchOptions.containers = options.containers;
       }

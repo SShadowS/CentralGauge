@@ -46,6 +46,7 @@ import {
   setupContainer,
   setupContainers,
 } from "./container-setup.ts";
+import { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 import {
   displayBenchmarkSummary,
   displayFormattedOutput,
@@ -122,8 +123,6 @@ export async function executeParallelBenchmark(
   log.info(`Models: ${options.llms.join(", ")}`);
   log.info(`Tasks: ${options.tasks.join(", ")}`);
   log.info(`Attempts: ${options.attempts}`);
-  log.info(`Max Concurrency: ${options.maxConcurrency ?? 10}`);
-  log.info(`Task Concurrency: ${options.taskConcurrency ?? 3}`);
   log.info(`Output: ${options.outputDir}`);
 
   let dashboard: DashboardServer | null = null;
@@ -227,6 +226,24 @@ export async function executeParallelBenchmark(
       >["summary"]["stats"]
       | undefined;
 
+    // Resolve concurrency defaults now that container and variant counts are known.
+    const containerCount = containerNames?.length ?? 1;
+    const concurrency = computeConcurrencyDefaults({
+      userTaskConcurrency: options.taskConcurrency,
+      userMaxConcurrency: options.maxConcurrency,
+      containerCount,
+      variantCount: variants.length,
+    });
+
+    const taskHint = concurrency.autoTaskConcurrency
+      ? ` (auto: ${containerCount} container(s) × 2 ÷ ${variants.length} variant(s), floor 3)`
+      : " (user-specified)";
+    const maxHint = concurrency.autoMaxConcurrency
+      ? ` (auto: ${concurrency.taskConcurrency} × ${variants.length} × 2, floor 10)`
+      : " (user-specified)";
+    log.info(`Task Concurrency: ${concurrency.taskConcurrency}${taskHint}`);
+    log.info(`Max Concurrency: ${concurrency.maxConcurrency}${maxHint}`);
+
     // Build parallel options (shared across runs)
     const parallelOptions = buildParallelOptions(
       options,
@@ -267,8 +284,8 @@ export async function executeParallelBenchmark(
 
       // Create fresh orchestrator per run
       const config = createDefaultConfig();
-      config.maxGlobalConcurrency = options.maxConcurrency ?? 10;
-      config.taskConcurrency = options.taskConcurrency ?? 3;
+      config.maxGlobalConcurrency = concurrency.maxConcurrency;
+      config.taskConcurrency = concurrency.taskConcurrency;
       if (containerNames) {
         config.containerNames = containerNames;
       }

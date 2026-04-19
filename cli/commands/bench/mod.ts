@@ -50,3 +50,10 @@ export {
   executeParallelBenchmark,
   toHashResult,
 } from "./parallel-executor.ts";
+
+// Concurrency defaults
+export type {
+  ConcurrencyDefaults,
+  ConcurrencyInputs,
+} from "./concurrency-defaults.ts";
+export { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
