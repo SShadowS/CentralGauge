@@ -2,12 +2,19 @@ import type { RequestHandler } from './$types';
 import { ApiError, errorResponse } from '$lib/server/errors';
 import { cachedJson } from '$lib/server/cache';
 import { bytesToB64 } from '$lib/shared/base64';
+import { getFirst } from '$lib/server/db';
 
 interface SignatureRow {
+  id: string;
   ingest_signature: string;
   ingest_signed_at: string;
   ingest_public_key_id: number;
   ingest_signed_payload: ArrayBuffer;
+}
+
+interface MachineKeyRow {
+  machine_id: string;
+  scope: string;
 }
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
@@ -17,7 +24,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
   try {
     const run = await db
       .prepare(
-        `SELECT ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload
+        `SELECT id, ingest_signature, ingest_signed_at, ingest_public_key_id, ingest_signed_payload
          FROM runs WHERE id = ?`,
       )
       .bind(params.id)
@@ -25,16 +32,25 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
 
     if (!run) throw new ApiError(404, 'not_found', `Run ${params.id} not found`);
 
+    const key = await getFirst<MachineKeyRow>(
+      db,
+      `SELECT machine_id, scope FROM machine_keys WHERE id = ?`,
+      [run.ingest_public_key_id],
+    );
+
     const payloadBytes = new Uint8Array(run.ingest_signed_payload);
 
-    const body = {
-      ingest_signature: run.ingest_signature,
-      ingest_signed_at: run.ingest_signed_at,
-      ingest_public_key_id: run.ingest_public_key_id,
+    return cachedJson(request, {
+      run_id: run.id,
+      signature: {
+        alg: 'Ed25519',
+        key_id: run.ingest_public_key_id,
+        value: run.ingest_signature,
+        signed_at: run.ingest_signed_at,
+      },
+      signer: key ? { machine_id: key.machine_id, scope: key.scope } : null,
       signed_payload_base64: bytesToB64(payloadBytes),
-    };
-
-    return cachedJson(request, body, { cacheControl: 'public, s-maxage=3600, stale-while-revalidate=86400' });
+    }, { cacheControl: 'public, s-maxage=3600, stale-while-revalidate=86400' });
   } catch (err) {
     return errorResponse(err);
   }

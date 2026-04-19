@@ -10,17 +10,14 @@ import { getAll } from '$lib/server/db';
 interface RunRow {
   id: string;
   task_set_hash: string;
-  model_id: number;
   settings_hash: string;
   machine_id: string;
   started_at: string;
   completed_at: string | null;
   status: string;
   tier: string;
-  pricing_version: string;
-  reproduction_bundle_r2_key: string | null;
-  ingest_signed_at: string;
-  ingest_public_key_id: number;
+  model_slug: string;
+  model_display: string;
 }
 
 interface CursorState {
@@ -33,52 +30,65 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   const db = platform.env.DB;
 
   try {
-    const limitParam = url.searchParams.get('limit');
-    const limit = Math.min(Math.max(1, parseInt(limitParam ?? '50', 10) || 50), 200);
-    const status = url.searchParams.get('status');
+    const limitRaw = url.searchParams.get('limit');
+    const limit = limitRaw ? parseInt(limitRaw, 10) : 50;
+    if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
+      throw new ApiError(400, 'invalid_limit', 'limit must be between 1 and 100');
+    }
     const modelSlug = url.searchParams.get('model');
+    const tier = url.searchParams.get('tier');
+    const taskSet = url.searchParams.get('task_set');
+    const since = url.searchParams.get('since');
     const cursor = decodeCursor<CursorState>(url.searchParams.get('cursor'));
 
-    const conditions: string[] = [];
+    const wheres: string[] = [];
     const params: (string | number | null)[] = [];
 
-    if (status) {
-      conditions.push(`r.status = ?`);
-      params.push(status);
-    }
-    if (modelSlug) {
-      conditions.push(`m.slug = ?`);
-      params.push(modelSlug);
-    }
+    if (modelSlug) { wheres.push(`m.slug = ?`);              params.push(modelSlug); }
+    if (tier)      { wheres.push(`runs.tier = ?`);            params.push(tier); }
+    if (taskSet)   { wheres.push(`runs.task_set_hash = ?`);   params.push(taskSet); }
+    if (since)     { wheres.push(`runs.started_at >= ?`);     params.push(since); }
     if (cursor) {
-      conditions.push(`(r.started_at < ? OR (r.started_at = ? AND r.id < ?))`);
+      wheres.push(`(runs.started_at < ? OR (runs.started_at = ? AND runs.id < ?))`);
       params.push(cursor.started_at, cursor.started_at, cursor.id);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
     const sql = `
-      SELECT r.id, r.task_set_hash, r.model_id, r.settings_hash, r.machine_id,
-             r.started_at, r.completed_at, r.status, r.tier, r.pricing_version,
-             r.reproduction_bundle_r2_key, r.ingest_signed_at, r.ingest_public_key_id,
-             m.slug AS model_slug
-      FROM runs r
-      JOIN models m ON m.id = r.model_id
+      SELECT runs.id, runs.task_set_hash, runs.settings_hash, runs.machine_id,
+             runs.started_at, runs.completed_at, runs.status, runs.tier,
+             m.slug AS model_slug, m.display_name AS model_display
+      FROM runs
+      JOIN models m ON m.id = runs.model_id
       ${where}
-      ORDER BY r.started_at DESC, r.id DESC
+      ORDER BY runs.started_at DESC, runs.id DESC
       LIMIT ?
     `;
     params.push(limit + 1);
 
-    const rows = await getAll<RunRow & { model_slug: string }>(db, sql, params);
+    const page = await getAll<RunRow>(db, sql, params);
 
     let next_cursor: string | null = null;
-    if (rows.length > limit) {
-      rows.pop();
-      const last = rows[rows.length - 1];
+    if (page.length > limit) {
+      page.pop();
+      const last = page[page.length - 1];
       next_cursor = encodeCursor({ started_at: last.started_at, id: last.id });
     }
 
-    const body = { data: rows, next_cursor };
+    const body = {
+      data: page.map((r) => ({
+        id: r.id,
+        task_set_hash: r.task_set_hash,
+        settings_hash: r.settings_hash,
+        machine_id: r.machine_id,
+        started_at: r.started_at,
+        completed_at: r.completed_at,
+        status: r.status,
+        tier: r.tier,
+        model: { slug: r.model_slug, display_name: r.model_display },
+      })),
+      next_cursor,
+    };
     return cachedJson(request, body, { cacheControl: 'public, s-maxage=10, stale-while-revalidate=60' });
   } catch (err) {
     return errorResponse(err);

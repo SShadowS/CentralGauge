@@ -27,9 +27,10 @@ export const GET: RequestHandler = async ({ params, platform }) => {
     return new Response(obj.body, {
       status: 200,
       headers: {
-        'content-type': 'application/gzip',
+        'content-type': 'application/x-tar',
         'content-disposition': `attachment; filename="reproduce-${params.id}.tar.gz"`,
-        'cache-control': 'private, no-store',
+        'cache-control': 'public, max-age=31536000, immutable',
+        'x-api-version': '1',
       },
     });
   } catch (err) {
