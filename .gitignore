@@ -25,6 +25,7 @@ mkdocs-build/
 site/.svelte-kit/
 site/build/
 site/.wrangler/
+site/.dev.vars
 
 # Git worktrees (isolated workspaces created by claude code)
 worktrees/
