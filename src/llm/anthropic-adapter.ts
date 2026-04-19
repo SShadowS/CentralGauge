@@ -30,6 +30,19 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
+// Models that reject the `temperature` parameter. Starting with Claude Opus 4.7,
+// Anthropic returns 400 "temperature is deprecated for this model" for any value
+// other than the default. Match exact IDs and dated variants (e.g. "...-20260415").
+const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
+  "claude-opus-4-7",
+];
+
+function modelRejectsTemperature(model: string): boolean {
+  return TEMPERATURE_LOCKED_MODELS.some(
+    (id) => model === id || model.startsWith(id + "-"),
+  );
+}
+
 export class AnthropicAdapter extends BaseLLMAdapter
   implements DiscoverableAdapter {
   readonly name = "anthropic";
@@ -306,7 +319,10 @@ export class AnthropicAdapter extends BaseLLMAdapter
       ? this.config.thinkingBudget
       : undefined;
 
-    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
+    const skipTemperature = modelRejectsTemperature(this.config.model);
+
+    // When thinking is enabled, temperature must be 1 (Anthropic requirement).
+    // For temperature-locked models (Opus 4.7+), we omit the field entirely.
     const temperature = thinkingBudget !== undefined
       ? 1
       : (request.temperature ?? this.config.temperature ?? 0.1);
@@ -353,7 +369,7 @@ export class AnthropicAdapter extends BaseLLMAdapter
         budget_tokens: thinkingBudget,
       };
       // Temperature cannot be set when thinking is enabled
-    } else {
+    } else if (!skipTemperature) {
       params.temperature = temperature;
     }
 
