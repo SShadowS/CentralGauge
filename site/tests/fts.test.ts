@@ -1,5 +1,5 @@
 import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -18,33 +18,99 @@ beforeEach(async () => {
   ]);
 });
 
+afterEach(async () => {
+  // Clean up results after each test so tests don't bleed into each other.
+  // FTS triggers will handle cascading the delete from results_fts.
+  await env.DB.prepare(`DELETE FROM results`).run();
+});
+
 describe('FTS5 over failures', () => {
   it('indexes compile errors and finds them by error code', async () => {
-    await env.DB.prepare(
+    const insertResult = await env.DB.prepare(
       `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json, failure_reasons_json)
-       VALUES ('run1','easy/task-1',1,0,0,0,?,?)`
+       VALUES ('run1','easy/task-fts1',1,0,0,0,?,?) RETURNING id`
     ).bind(
       JSON.stringify([{ code: 'AL0132', message: 'session token missing', file: 'x.al', line: 5, column: 1 }]),
       JSON.stringify(['compile_failed'])
-    ).run();
+    ).first<{ id: number }>();
+
+    const insertedId = insertResult!.id;
 
     const res = await env.DB.prepare(
       `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
-    ).bind('AL0132').all();
+    ).bind('AL0132').all<{ rowid: number }>();
 
-    expect(res.results.length).toBeGreaterThan(0);
+    expect(res.results.length).toBe(1);
+    expect(res.results[0].rowid).toBe(insertedId);
   });
 
   it('finds rows by failure reason text', async () => {
-    await env.DB.prepare(
+    const insertResult = await env.DB.prepare(
       `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json, failure_reasons_json)
-       VALUES ('run1','easy/task-2',1,0,0,0,'[]',?)`
-    ).bind(JSON.stringify(['test_timeout'])).run();
+       VALUES ('run1','easy/task-fts2',1,0,0,0,'[]',?) RETURNING id`
+    ).bind(JSON.stringify(['test_timeout'])).first<{ id: number }>();
+
+    const insertedId = insertResult!.id;
 
     const res = await env.DB.prepare(
       `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
-    ).bind('timeout').all();
+    ).bind('timeout').all<{ rowid: number }>();
 
-    expect(res.results.length).toBeGreaterThan(0);
+    expect(res.results.length).toBe(1);
+    expect(res.results[0].rowid).toBe(insertedId);
+  });
+
+  it('UPDATE path: old error code is removed, new error code is searchable', async () => {
+    const insertResult = await env.DB.prepare(
+      `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json, failure_reasons_json)
+       VALUES ('run1','easy/task-fts3',1,0,0,0,?,?) RETURNING id`
+    ).bind(
+      JSON.stringify([{ code: 'AL1000', message: 'old error', file: 'x.al', line: 1, column: 1 }]),
+      JSON.stringify(['compile_failed'])
+    ).first<{ id: number }>();
+
+    const insertedId = insertResult!.id;
+
+    // Update the compile error to a different code
+    await env.DB.prepare(
+      `UPDATE results SET compile_errors_json = ? WHERE id = ?`
+    ).bind(
+      JSON.stringify([{ code: 'AL2000', message: 'new error', file: 'x.al', line: 1, column: 1 }]),
+      insertedId
+    ).run();
+
+    const oldRes = await env.DB.prepare(
+      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
+    ).bind('AL1000').all<{ rowid: number }>();
+
+    const newRes = await env.DB.prepare(
+      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
+    ).bind('AL2000').all<{ rowid: number }>();
+
+    expect(oldRes.results.length).toBe(0);
+    expect(newRes.results.length).toBe(1);
+    expect(newRes.results[0].rowid).toBe(insertedId);
+  });
+
+  it('NULL failure_reasons_json does not break INSERT and compile errors are still indexed', async () => {
+    // failure_reasons_json is nullable — omit it to trigger the NULL path
+    const insertResult = await env.DB.prepare(
+      `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json)
+       VALUES ('run1','easy/task-fts4',1,0,0,0,?) RETURNING id`
+    ).bind(
+      JSON.stringify([{ code: 'AL0132', message: 'null path test', file: 'y.al', line: 2, column: 1 }])
+    ).first<{ id: number }>();
+
+    // The INSERT must have succeeded (not rolled back by a json_each throw)
+    expect(insertResult).not.toBeNull();
+    const insertedId = insertResult!.id;
+
+    // The compile_errors path must still work independently of failure_reasons being NULL
+    const res = await env.DB.prepare(
+      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
+    ).bind('AL0132').all<{ rowid: number }>();
+
+    const matchingRow = res.results.find((r) => r.rowid === insertedId);
+    expect(matchingRow).toBeDefined();
   });
 });
