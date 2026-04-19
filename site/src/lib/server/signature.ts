@@ -68,8 +68,11 @@ export async function verifySignedRequest(
     throw new ApiError(401, 'bad_signature', 'signature verification failed');
   }
 
-  await db.prepare(`UPDATE machine_keys SET last_used_at = ? WHERE id = ?`)
-    .bind(new Date().toISOString(), keyRow.id).run();
+  // Best-effort telemetry; never fail an authenticated request because of it.
+  try {
+    await db.prepare(`UPDATE machine_keys SET last_used_at = ? WHERE id = ?`)
+      .bind(new Date().toISOString(), keyRow.id).run();
+  } catch { /* swallow */ }
 
   return { key_id: keyRow.id, machine_id: keyRow.machine_id, scope: keyRow.scope };
 }
