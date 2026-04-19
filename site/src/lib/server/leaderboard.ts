@@ -35,9 +35,9 @@ export function cacheKeyFor(q: LeaderboardQuery): string {
     'leaderboard',
     q.set,
     q.tier,
-    q.difficulty ?? '',
-    q.family ?? '',
-    q.since ?? '',
+    encodeURIComponent(q.difficulty ?? ''),
+    encodeURIComponent(q.family ?? ''),
+    encodeURIComponent(q.since ?? ''),
     q.limit,
   ].join(':');
 }
@@ -87,7 +87,6 @@ export async function computeLeaderboard(
       AVG(
         (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
       ) AS avg_cost_usd,
-      SUM(CASE WHEN runs.tier = 'verified' THEN 1 ELSE 0 END) AS verified_task_rows,
       MAX(runs.started_at) AS last_run_at
     FROM runs
     JOIN models m ON m.id = runs.model_id
@@ -104,30 +103,24 @@ export async function computeLeaderboard(
   type Row = {
     model_slug: string; model_display: string; model_api: string; family_slug: string;
     run_count: number; tasks_attempted: number; tasks_passed: number;
-    avg_score: number; avg_cost_usd: number; verified_task_rows: number; last_run_at: string;
+    avg_score: number; avg_cost_usd: number; last_run_at: string;
   };
 
   const rows = await getAll<Row>(db, sql, [...params, q.limit]);
 
-  // Second query: verified *run* count per model (distinct runs, not task rows)
+  // Second query: verified *run* count per model (distinct runs, not task rows).
+  // Joins models so we can key directly on slug — no third lookup needed.
   const verifiedSql = `
-    SELECT runs.model_id AS model_id, COUNT(DISTINCT runs.id) AS verified_runs
+    SELECT m.slug AS model_slug, COUNT(DISTINCT runs.id) AS verified_runs
     FROM runs
+    JOIN models m ON m.id = runs.model_id
     ${q.set === 'current' ? `WHERE runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1) AND ` : 'WHERE '}runs.tier = 'verified'
-    GROUP BY runs.model_id
+    GROUP BY m.slug
   `;
-  const verified = await getAll<{ model_id: number; verified_runs: number }>(db, verifiedSql, []);
-
-  // Map model_id -> slug via second lookup
-  const modelIdToSlug = await getAll<{ id: number; slug: string }>(
-    db, `SELECT id, slug FROM models`, []
+  const verified = await getAll<{ model_slug: string; verified_runs: number }>(db, verifiedSql, []);
+  const verifiedByModelSlug = new Map<string, number>(
+    verified.map((v) => [v.model_slug, +(v.verified_runs ?? 0)]),
   );
-  const idToSlug = new Map(modelIdToSlug.map(m => [m.id, m.slug]));
-  const verifiedByModelSlug = new Map<string, number>();
-  for (const v of verified) {
-    const slug = idToSlug.get(v.model_id);
-    if (slug) verifiedByModelSlug.set(slug, v.verified_runs);
-  }
 
   return rows.map((r, idx) => ({
     rank: idx + 1,
