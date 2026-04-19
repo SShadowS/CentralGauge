@@ -131,6 +131,10 @@ describe('POST /api/v1/shortcomings/batch', () => {
       .first<{ first_seen: string; last_seen: string }>();
     expect(secondRow?.first_seen).toBe(firstRow?.first_seen);
     expect(secondRow?.last_seen >= (firstRow?.last_seen ?? '')).toBe(true);
+
+    // Second call: occurrences inserted = 0 (duplicate ignored)
+    const body2 = await r2.json<{ upserted: number; occurrences: number }>();
+    expect(body2.occurrences).toBe(0);
   });
 
   it('rejects non-verifier scope (ingest key gets 403)', async () => {
@@ -155,5 +159,104 @@ describe('POST /api/v1/shortcomings/batch', () => {
     expect(res.status).toBe(404);
     const body = await res.json<{ code: string }>();
     expect(body.code).toBe('model_not_found');
+  });
+
+  it('accepts empty shortcomings array with counts of 0', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(200);
+    const body = await res.json<{ upserted: number; occurrences: number }>();
+    expect(body.upserted).toBe(0);
+    expect(body.occurrences).toBe(0);
+  });
+
+  it('rejects malformed JSON body with 400', async () => {
+    const res = await SELF.fetch(
+      new Request('http://x/api/v1/shortcomings/batch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{{bad json'
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('bad_request');
+  });
+
+  it('rejects shortcoming missing incorrect_pattern_sha256 with 400', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    // Construct without incorrect_pattern_sha256 to avoid canonicalJSON rejecting undefined
+    const bad: Record<string, unknown> = {
+      al_concept: SAMPLE_SHORTCOMING.al_concept,
+      concept: SAMPLE_SHORTCOMING.concept,
+      description: SAMPLE_SHORTCOMING.description,
+      correct_pattern: SAMPLE_SHORTCOMING.correct_pattern,
+      error_codes: SAMPLE_SHORTCOMING.error_codes,
+      occurrences: SAMPLE_SHORTCOMING.occurrences
+      // incorrect_pattern_sha256 intentionally omitted
+    };
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [bad] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe('bad_payload');
+    expect(body.error).toContain('shortcomings[0].incorrect_pattern_sha256');
+  });
+
+  it('rejects shortcoming with non-hex incorrect_pattern_sha256 with 400', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const bad = { ...SAMPLE_SHORTCOMING, incorrect_pattern_sha256: 'not-a-sha256' };
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [bad] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe('bad_payload');
+    expect(body.error).toContain('shortcomings[0].incorrect_pattern_sha256');
+  });
+
+  it('rejects shortcoming with error_codes: null with 400', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const bad = { ...SAMPLE_SHORTCOMING, error_codes: null };
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [bad] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe('bad_payload');
+    expect(body.error).toContain('shortcomings[0].error_codes');
+  });
+
+  it('rejects occurrence with string result_id with 400', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const bad = {
+      ...SAMPLE_SHORTCOMING,
+      occurrences: [{ result_id: '100', task_id: 'easy/a', error_code: null }]
+    };
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [bad] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe('bad_payload');
+    expect(body.error).toContain('shortcomings[0].occurrences[0].result_id');
+  });
+
+  it('rejects occurrence with negative result_id with 400', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const bad = {
+      ...SAMPLE_SHORTCOMING,
+      occurrences: [{ result_id: -5, task_id: 'easy/a', error_code: null }]
+    };
+    const payload = { model_slug: 'sonnet-4.7', shortcomings: [bad] };
+
+    const res = await SELF.fetch(await shortcomingsBatchRequest(payload, keyId, keypair));
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string; error: string }>();
+    expect(body.code).toBe('bad_payload');
+    expect(body.error).toContain('shortcomings[0].occurrences[0].result_id');
   });
 });
