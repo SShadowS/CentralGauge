@@ -18,8 +18,17 @@ medium-test/
 final-test/
 full-benchmark-test/
 
-# Generated documentation (MkDocs output goes to gh-pages branch, not here)
-site/
+# MkDocs local build output (deployed to gh-pages branch via CI, not committed)
+mkdocs-build/
+
+# SvelteKit scoreboard build artifacts (source lives in site/, build outputs are local-only)
+site/.svelte-kit/
+site/build/
+site/.wrangler/
+
+# Git worktrees (isolated workspaces created by claude code)
+worktrees/
+.worktrees/
 
 # Logs
 *.log
