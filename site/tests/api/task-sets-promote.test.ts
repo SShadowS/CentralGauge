@@ -51,10 +51,13 @@ describe('POST /api/v1/task-sets/:hash/current', () => {
     expect(tsNew?.is_current).toBe(1);
     expect(tsOld?.is_current).toBe(0);
 
-    // Verify ingest_event was emitted
-    const event = await env.DB.prepare(`SELECT event, machine_id FROM ingest_events WHERE event = 'task_set_promoted'`).first<{ event: string; machine_id: string }>();
-    expect(event?.event).toBe('task_set_promoted');
-    expect(event?.machine_id).toBe('admin-machine');
+    // Verify ingest_event was emitted with key_id in audit details
+    const evtRow = await env.DB.prepare(`SELECT event, machine_id, details_json FROM ingest_events WHERE event = 'task_set_promoted'`).first<{ event: string; machine_id: string; details_json: string }>();
+    expect(evtRow?.event).toBe('task_set_promoted');
+    expect(evtRow?.machine_id).toBe('admin-machine');
+    const details = JSON.parse(evtRow!.details_json);
+    expect(details.hash).toBe('ts-new');
+    expect(details.key_id).toBe(keyId);
   });
 
   it('invalidates leaderboard KV cache', async () => {

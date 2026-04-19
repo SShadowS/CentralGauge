@@ -10,16 +10,22 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
   const hash = params.hash;
 
   try {
-    const body = (await request.json()) as {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      throw new ApiError(400, 'bad_request', 'request body must be valid JSON');
+    }
+    const envelope = body as {
       payload: Record<string, unknown>;
       signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
     };
-    if (!body.signature) throw new ApiError(400, 'missing_signature', 'signature block required');
-    if (!body.payload || typeof body.payload !== 'object') {
+    if (!envelope.signature) throw new ApiError(400, 'missing_signature', 'signature block required');
+    if (!envelope.payload || typeof envelope.payload !== 'object') {
       throw new ApiError(400, 'bad_payload', 'payload object required');
     }
 
-    const verified = await verifySignedRequest(db, body, 'admin');
+    const verified = await verifySignedRequest(db, envelope, 'admin');
 
     const row = await db
       .prepare(`SELECT hash, is_current FROM task_sets WHERE hash = ?`)
@@ -30,10 +36,11 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
 
     // Idempotent no-op: already current, skip DB write and KV invalidation
     if (row.is_current === 1) {
-      return jsonResponse({ hash, is_current: true, changed: false }, 200);
+      return jsonResponse({ hash, is_current: true, changed: false }, 200, { 'Cache-Control': 'no-store' });
     }
 
-    // Atomic promotion: clear old current, set new current, emit event
+    // Last-writer-wins under concurrent admin promotion; D1 serialises writes so
+    // `is_current = 1` on exactly one row is always preserved.
     await runBatch(db, [
       { sql: `UPDATE task_sets SET is_current = 0 WHERE is_current = 1`, params: [] },
       { sql: `UPDATE task_sets SET is_current = 1 WHERE hash = ?`, params: [hash] },
@@ -43,18 +50,24 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
           'task_set_promoted',
           verified.machine_id,
           new Date().toISOString(),
-          JSON.stringify({ hash })
+          JSON.stringify({ hash, key_id: verified.key_id })
         ]
       }
     ]);
 
     // Invalidate leaderboard KV cache. Best-effort: DB is the source of truth.
     try {
-      const listed = await cache.list({ prefix: 'leaderboard:' });
-      await Promise.all(listed.keys.map((k) => cache.delete(k.name)));
-    } catch { /* swallow — stale KV entries will expire naturally */ }
+      let cursor: string | undefined = undefined;
+      do {
+        const opts: KVNamespaceListOptions = { prefix: 'leaderboard:' };
+        if (cursor) opts.cursor = cursor;
+        const listed: KVNamespaceListResult<unknown, string> = await cache.list(opts);
+        await Promise.all(listed.keys.map((k: KVNamespaceListKey<unknown, string>) => cache.delete(k.name)));
+        cursor = listed.list_complete ? undefined : listed.cursor;
+      } while (cursor);
+    } catch { /* best-effort — DB is source of truth */ }
 
-    return jsonResponse({ hash, is_current: true, changed: true }, 200);
+    return jsonResponse({ hash, is_current: true, changed: true }, 200, { 'Cache-Control': 'no-store' });
   } catch (err) {
     return errorResponse(err);
   }
