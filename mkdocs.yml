@@ -4,6 +4,7 @@ site_url: https://sshadows.github.io/CentralGauge/
 repo_url: https://github.com/SShadowS/CentralGauge
 repo_name: SShadowS/CentralGauge
 edit_uri: edit/master/docs/
+site_dir: mkdocs-build
 
 theme:
   name: material
