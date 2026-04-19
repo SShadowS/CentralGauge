@@ -44,3 +44,7 @@ export async function findMissingBlobs(bucket: R2Bucket, hashes: string[]): Prom
 export function blobKey(sha256: string): string {
   return `blobs/${sha256}`;
 }
+
+export function blobHashFromKey(key: string): string {
+  return key.replace(/^blobs\//, '');
+}

@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { blobHashFromKey } from '$lib/server/ingest';
 import type { FinalizeResponse } from '$lib/shared/types';
 
 const LEADERBOARD_CACHE_KEYS = ['leaderboard:current', 'leaderboard:all'];
@@ -34,11 +35,9 @@ export const POST: RequestHandler = async ({ params, platform }) => {
       if (r.code_r2_key) requiredKeys.add(r.code_r2_key);
     }
 
-    const missing: string[] = [];
-    for (const k of requiredKeys) {
-      const exists = await blobs.head(k);
-      if (!exists) missing.push(k.replace(/^blobs\//, ''));
-    }
+    const keys = [...requiredKeys];
+    const heads = await Promise.all(keys.map(k => blobs.head(k)));
+    const missing = keys.filter((_, i) => heads[i] === null).map(blobHashFromKey);
 
     if (missing.length > 0) {
       throw new ApiError(409, 'blobs_missing', `${missing.length} required blobs not yet uploaded`, { missing });
@@ -48,11 +47,13 @@ export const POST: RequestHandler = async ({ params, platform }) => {
     await db.batch([
       db.prepare(`UPDATE runs SET status = 'completed', completed_at = ? WHERE id = ?`).bind(now, runId),
       db.prepare(`INSERT INTO ingest_events(run_id, event, machine_id, ts, details_json) VALUES (?,?,?,?,?)`)
-        .bind(runId, 'finalized', run.machine_id, now, JSON.stringify({}))
+        .bind(runId, 'finalized', run.machine_id, now, JSON.stringify({ blob_count: keys.length }))
     ]);
 
-    // Cache invalidation (non-blocking)
-    await Promise.all(LEADERBOARD_CACHE_KEYS.map(k => cache.delete(k)));
+    // Best-effort cache invalidation; never fail a committed finalize on transient KV errors.
+    try {
+      await Promise.all(LEADERBOARD_CACHE_KEYS.map(k => cache.delete(k)));
+    } catch { /* swallow */ }
 
     return jsonResponse({ run_id: runId, status: 'completed', finalized_at: now } satisfies FinalizeResponse, 200);
   } catch (err) {

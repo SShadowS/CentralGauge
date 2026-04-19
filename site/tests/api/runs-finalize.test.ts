@@ -80,6 +80,18 @@ describe('POST /api/v1/runs/:id/finalize', () => {
     expect(r2.status).toBe(200);
   });
 
+  it('lists every missing blob across bundle, transcript, and code keys', async () => {
+    const { runId, transcriptSha, codeSha, bundleSha, bundleBody } = await ingestAndUploadBlobs();
+    // Upload only the bundle; transcript and code remain absent.
+    await SELF.fetch(`http://x/api/v1/blobs/${bundleSha}`, { method: 'PUT', body: bundleBody });
+
+    const res = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
+    expect(res.status).toBe(409);
+    const err = await res.json<{ code: string; details: { missing: string[] } }>();
+    expect(err.code).toBe('blobs_missing');
+    expect(err.details.missing.sort()).toEqual([codeSha, transcriptSha].sort());
+  });
+
   it('returns 404 on unknown run_id', async () => {
     const res = await SELF.fetch('http://x/api/v1/runs/does-not-exist/finalize', { method: 'POST' });
     expect(res.status).toBe(404);
