@@ -110,7 +110,7 @@ describe('FTS5 over failures', () => {
       `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
     ).bind('AL0132').all<{ rowid: number }>();
 
-    const matchingRow = res.results.find((r) => r.rowid === insertedId);
+    const matchingRow = res.results.find((r: { rowid: number }) => r.rowid === insertedId);
     expect(matchingRow).toBeDefined();
   });
 });
