@@ -13,13 +13,17 @@ export async function seedMinimalRefData() {
   ]);
 }
 
-export async function registerIngestKey(machineId = 'test-machine') {
+export async function registerMachineKey(machineId = 'test-machine', scope: 'ingest' | 'verifier' | 'admin' = 'ingest') {
   const { generateKeypair } = await import('../../src/lib/shared/ed25519');
   const keypair = await generateKeypair();
   const res = await env.DB.prepare(
     `INSERT INTO machine_keys(machine_id, public_key, scope, created_at) VALUES (?,?,?,?)`
-  ).bind(machineId, keypair.publicKey, 'ingest', new Date().toISOString()).run();
+  ).bind(machineId, keypair.publicKey, scope, new Date().toISOString()).run();
   return { keyId: res.meta!.last_row_id!, keypair };
+}
+
+export async function registerIngestKey(machineId = 'test-machine') {
+  return registerMachineKey(machineId, 'ingest');
 }
 
 export function makeRunPayload(overrides: Partial<SignedRunPayload['payload']> = {}): SignedRunPayload['payload'] {
