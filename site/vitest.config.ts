@@ -1,8 +1,14 @@
 import { defineWorkersConfig, readD1Migrations } from '@cloudflare/vitest-pool-workers/config';
+import path from 'path';
 
 export default defineWorkersConfig(async () => {
   const migrations = await readD1Migrations('./migrations');
   return {
+    resolve: {
+      alias: {
+        $lib: path.resolve('./src/lib')
+      }
+    },
     test: {
       setupFiles: ['./tests/setup.ts'],
       poolOptions: {
