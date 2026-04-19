@@ -52,3 +52,24 @@ describe('PUT /api/v1/blobs/:sha256', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /api/v1/blobs/:sha256', () => {
+  it('returns the exact bytes previously uploaded', async () => {
+    const body = new TextEncoder().encode('roundtrip payload');
+    const hash = await sha256Hex(body);
+
+    const put = await SELF.fetch(`http://x/api/v1/blobs/${hash}`, { method: 'PUT', body });
+    expect(put.status).toBe(201);
+
+    const get = await SELF.fetch(`http://x/api/v1/blobs/${hash}`);
+    expect(get.status).toBe(200);
+    expect(get.headers.get('content-type')).toBe('application/octet-stream');
+    const bytes = new Uint8Array(await get.arrayBuffer());
+    expect(bytes).toEqual(body);
+  });
+
+  it('returns 404 for unknown blob', async () => {
+    const res = await SELF.fetch(`http://x/api/v1/blobs/${'0'.repeat(64)}`);
+    expect(res.status).toBe(404);
+  });
+});
