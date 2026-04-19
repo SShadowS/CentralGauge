@@ -4,6 +4,86 @@ import { settingsHash, payloadBlobHashes, findMissingBlobs } from '$lib/server/i
 import { canonicalJSON } from '$lib/shared/canonical';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import type { SignedRunPayload, IngestResponse } from '$lib/shared/types';
+import { cachedJson, encodeCursor, decodeCursor } from '$lib/server/cache';
+import { getAll } from '$lib/server/db';
+
+interface RunRow {
+  id: string;
+  task_set_hash: string;
+  model_id: number;
+  settings_hash: string;
+  machine_id: string;
+  started_at: string;
+  completed_at: string | null;
+  status: string;
+  tier: string;
+  pricing_version: string;
+  reproduction_bundle_r2_key: string | null;
+  ingest_signed_at: string;
+  ingest_public_key_id: number;
+}
+
+interface CursorState {
+  started_at: string;
+  id: string;
+}
+
+export const GET: RequestHandler = async ({ request, url, platform }) => {
+  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  const db = platform.env.DB;
+
+  try {
+    const limitParam = url.searchParams.get('limit');
+    const limit = Math.min(Math.max(1, parseInt(limitParam ?? '50', 10) || 50), 200);
+    const status = url.searchParams.get('status');
+    const modelSlug = url.searchParams.get('model');
+    const cursor = decodeCursor<CursorState>(url.searchParams.get('cursor'));
+
+    const conditions: string[] = [];
+    const params: (string | number | null)[] = [];
+
+    if (status) {
+      conditions.push(`r.status = ?`);
+      params.push(status);
+    }
+    if (modelSlug) {
+      conditions.push(`m.slug = ?`);
+      params.push(modelSlug);
+    }
+    if (cursor) {
+      conditions.push(`(r.started_at < ? OR (r.started_at = ? AND r.id < ?))`);
+      params.push(cursor.started_at, cursor.started_at, cursor.id);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `
+      SELECT r.id, r.task_set_hash, r.model_id, r.settings_hash, r.machine_id,
+             r.started_at, r.completed_at, r.status, r.tier, r.pricing_version,
+             r.reproduction_bundle_r2_key, r.ingest_signed_at, r.ingest_public_key_id,
+             m.slug AS model_slug
+      FROM runs r
+      JOIN models m ON m.id = r.model_id
+      ${where}
+      ORDER BY r.started_at DESC, r.id DESC
+      LIMIT ?
+    `;
+    params.push(limit + 1);
+
+    const rows = await getAll<RunRow & { model_slug: string }>(db, sql, params);
+
+    let next_cursor: string | null = null;
+    if (rows.length > limit) {
+      rows.pop();
+      const last = rows[rows.length - 1];
+      next_cursor = encodeCursor({ started_at: last.started_at, id: last.id });
+    }
+
+    const body = { data: rows, next_cursor };
+    return cachedJson(request, body, { cacheControl: 'public, s-maxage=10, stale-while-revalidate=60' });
+  } catch (err) {
+    return errorResponse(err);
+  }
+};
 
 export const POST: RequestHandler = async ({ request, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
