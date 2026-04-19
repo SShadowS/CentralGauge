@@ -11,17 +11,23 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     const now = Date.now();
     const since24h = new Date(now - 24 * 3600 * 1000).toISOString();
 
+    // `machine_keys.UNIQUE(machine_id, public_key)` allows multiple keys per machine
+    // (e.g., one active, one revoked). Status should reflect the ACTIVE-key state:
+    // last_used_at is the MAX over non-revoked keys; a machine counts as "revoked"
+    // only when every key it has is revoked (no active keys remain).
     const rows = await getAll<{
       machine_id: string;
-      last_used_at: string | null;
-      revoked_at: string | null;
+      active_last_used_at: string | null;
+      active_keys: number | string;
+      revoked_keys: number | string;
       verified_24h: number | string;
       rejected_24h: number | string;
     }>(
       env.DB,
       `SELECT k.machine_id,
-              MAX(k.last_used_at) AS last_used_at,
-              MAX(k.revoked_at) AS revoked_at,
+              MAX(CASE WHEN k.revoked_at IS NULL THEN k.last_used_at END) AS active_last_used_at,
+              SUM(CASE WHEN k.revoked_at IS NULL THEN 1 ELSE 0 END) AS active_keys,
+              SUM(CASE WHEN k.revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked_keys,
               (SELECT COUNT(*) FROM ingest_events e
                  WHERE e.machine_id = k.machine_id
                    AND e.event = 'signature_verified'
@@ -36,18 +42,24 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     );
 
     const machines = rows.map((r) => {
-      const lagMs = r.last_used_at ? now - Date.parse(r.last_used_at) : Number.POSITIVE_INFINITY;
-      const lagSeconds = Number.isFinite(lagMs) ? Math.floor(lagMs / 1000) : null;
-      const status = r.revoked_at
+      const activeKeys = +r.active_keys;
+      const revokedKeys = +r.revoked_keys;
+      const lagMs = r.active_last_used_at
+        ? now - Date.parse(r.active_last_used_at)
+        : Number.POSITIVE_INFINITY;
+      // Clamp negative lag (clock skew / future timestamps) to 0 so operators don't
+      // see nonsensical "-42 seconds ago" rows.
+      const lagSeconds = Number.isFinite(lagMs) ? Math.max(0, Math.floor(lagMs / 1000)) : null;
+      const status = activeKeys === 0 && revokedKeys > 0
         ? 'revoked'
-        : !r.last_used_at
+        : !r.active_last_used_at
           ? 'never_used'
           : lagSeconds! > STALE_SECONDS
             ? 'stale'
             : 'healthy';
       return {
         machine_id: r.machine_id,
-        last_used_at: r.last_used_at,
+        last_used_at: r.active_last_used_at,
         lag_seconds: lagSeconds,
         status,
         verified_24h: +r.verified_24h,

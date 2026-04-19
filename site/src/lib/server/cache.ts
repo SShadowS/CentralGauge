@@ -17,13 +17,30 @@ export async function cachedJson(
   body: unknown,
   opts: CachedJsonOptions = {},
 ): Promise<Response> {
+  const cacheControl = opts.cacheControl ?? 'public, s-maxage=60, stale-while-revalidate=600';
+  // `no-store` is a hard "do not cache anywhere" signal; emitting an ETag would
+  // invite conditional-request 304s from intermediaries. Skip the ETag path entirely.
+  const noStore = /\bno-store\b/.test(cacheControl);
+
+  if (noStore) {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': cacheControl,
+        'x-api-version': 'v1',
+        ...opts.extraHeaders,
+      },
+    });
+  }
+
   const etagHex = await computeEtag(body);
   const etag = `"${etagHex}"`;
   const ifNoneMatch = req.headers.get('if-none-match');
 
   const headers: Record<string, string> = {
     'etag': etag,
-    'cache-control': opts.cacheControl ?? 'public, s-maxage=60, stale-while-revalidate=600',
+    'cache-control': cacheControl,
     'x-api-version': 'v1',
     ...opts.extraHeaders,
   };
