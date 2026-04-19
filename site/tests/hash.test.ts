@@ -20,4 +20,19 @@ describe('hash helpers', () => {
   it('hexToBytes rejects odd-length strings', () => {
     expect(() => hexToBytes('abc')).toThrow();
   });
+
+  it('hexToBytes rejects partial-valid input like "0g"', () => {
+    expect(() => hexToBytes('0g')).toThrow(/invalid hex/);
+    expect(() => hexToBytes('a1z9')).toThrow(/invalid hex/);
+  });
+
+  it('hexToBytes accepts uppercase hex (interop)', () => {
+    expect(hexToBytes('ABCD')).toEqual(new Uint8Array([0xab, 0xcd]));
+    expect(hexToBytes('FF00')).toEqual(new Uint8Array([0xff, 0x00]));
+  });
+
+  it('sha256Hex of empty string returns the canonical empty digest', async () => {
+    const h = await sha256Hex('');
+    expect(h).toBe('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+  });
 });
