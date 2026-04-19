@@ -27,7 +27,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const aggregate = await getFirst<{
       run_count: number | string;
       tasks_attempted: number | string;
-      tasks_passed: number | string;
+      tasks_passed: number | string | null;
       avg_score: number | string | null;
       avg_cost_usd: number | string | null;
     }>(
@@ -88,7 +88,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       aggregates: {
         run_count: runCount,
         tasks_attempted: +(aggregate?.tasks_attempted ?? 0),
-        tasks_passed: +(aggregate?.tasks_passed ?? 0),
+        tasks_passed: runCount === 0 ? null : +(aggregate?.tasks_passed ?? 0),
         avg_score: runCount === 0 ? null : Number((+(avgScore ?? 0)).toFixed(6)),
         avg_cost_usd: runCount === 0 ? null : Number((+(avgCostUsd ?? 0)).toFixed(6)),
       },

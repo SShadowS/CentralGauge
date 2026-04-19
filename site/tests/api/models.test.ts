@@ -113,6 +113,32 @@ describe('GET /api/v1/models/:slug', () => {
     const res = await SELF.fetch('https://x/api/v1/models/nonexistent');
     expect(res.status).toBe(404);
   });
+
+  it('emits null aggregates for a model with no runs', async () => {
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (2,1,'sonnet-future','claude-sonnet-future','Sonnet Future',50)`,
+    ).run();
+    const res = await SELF.fetch('https://x/api/v1/models/sonnet-future');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      aggregates: {
+        run_count: number;
+        tasks_attempted: number;
+        tasks_passed: number | null;
+        avg_score: number | null;
+        avg_cost_usd: number | null;
+      };
+      consistency_score: number;
+      recent_runs: Array<unknown>;
+    };
+    expect(body.aggregates.run_count).toBe(0);
+    expect(body.aggregates.tasks_attempted).toBe(0);
+    expect(body.aggregates.tasks_passed).toBeNull();
+    expect(body.aggregates.avg_score).toBeNull();
+    expect(body.aggregates.avg_cost_usd).toBeNull();
+    expect(body.recent_runs).toHaveLength(0);
+    expect(body.consistency_score).toBe(1);
+  });
 });
 
 describe('GET /api/v1/models/:slug/limitations', () => {
