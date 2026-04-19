@@ -28,7 +28,7 @@ export default defineWorkersConfig(async () => {
           }
         }
       },
-      include: ['tests/broadcaster.test.ts']
+      include: ['tests/broadcaster.test.ts', 'tests/api/events-live.test.ts']
     }
   };
 });
