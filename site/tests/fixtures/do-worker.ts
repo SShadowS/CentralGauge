@@ -9,6 +9,7 @@ export default {
     env: { LEADERBOARD_BROADCASTER: DurableObjectNamespace },
   ): Promise<Response> {
     const url = new URL(request.url);
+    // NOTE: mirrors +server.ts route logic — update both on change.
     if (url.pathname === '/api/v1/events/live' && request.method === 'GET') {
       const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
       const stub = env.LEADERBOARD_BROADCASTER.get(id);

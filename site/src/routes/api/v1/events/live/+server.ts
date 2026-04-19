@@ -1,9 +1,8 @@
 import type { RequestHandler } from './$types';
+import { errorResponse, ApiError } from '$lib/server/errors';
 
 export const GET: RequestHandler = async ({ request, platform }) => {
-  if (!platform) {
-    return new Response('no_platform', { status: 500 });
-  }
+  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
   const env = platform.env;
   const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
   const stub = env.LEADERBOARD_BROADCASTER.get(id);
