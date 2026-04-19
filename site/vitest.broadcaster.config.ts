@@ -13,6 +13,13 @@ export default defineWorkersConfig(async () => {
       setupFiles: ['./tests/setup.ts'],
       poolOptions: {
         workers: {
+          // Use DO-exporting entrypoint so miniflare resolves LeaderboardBroadcaster
+          main: './tests/fixtures/do-worker.ts',
+          // singleWorker + isolatedStorage:false avoids per-test DO teardown and
+          // the associated EBUSY errors on Windows when miniflare tries to unlink
+          // the SQLite WAL files after each test suite
+          singleWorker: true,
+          isolatedStorage: false,
           wrangler: { configPath: './wrangler.toml' },
           miniflare: {
             compatibilityDate: '2026-04-17',
@@ -21,8 +28,7 @@ export default defineWorkersConfig(async () => {
           }
         }
       },
-      include: ['tests/**/*.test.ts'],
-      exclude: ['tests/broadcaster.test.ts']
+      include: ['tests/broadcaster.test.ts']
     }
   };
 });

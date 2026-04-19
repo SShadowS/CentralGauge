@@ -26,6 +26,7 @@ site/.svelte-kit/
 site/build/
 site/.wrangler/
 site/.dev.vars
+site/.miniflare-broadcaster/
 
 # Git worktrees (isolated workspaces created by claude code)
 worktrees/
