@@ -1,0 +1,2 @@
+# Copy to .dev.vars and fill in for local dev
+# (these are NOT required for most tests — miniflare handles bindings)
