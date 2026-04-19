@@ -40,7 +40,31 @@ describe('cachedJson', () => {
     const res = await cachedJson(req, body);
     expect(res.status).toBe(304);
     expect(res.headers.get('etag')).toBe(etag);
+    // 304 must have a null body per Fetch spec; constructing Response('', {status:304}) throws.
+    expect(res.body).toBeNull();
     expect(await res.text()).toBe('');
+  });
+
+  it('returns 304 for weak validator (W/"...")', async () => {
+    const body = { hello: 'world' };
+    const etag = `"${await computeEtag(body)}"`;
+    const req = new Request('https://x/', { headers: { 'if-none-match': `W/${etag}` } });
+    const res = await cachedJson(req, body);
+    expect(res.status).toBe(304);
+  });
+
+  it('returns 304 for wildcard If-None-Match: *', async () => {
+    const req = new Request('https://x/', { headers: { 'if-none-match': '*' } });
+    const res = await cachedJson(req, { whatever: true });
+    expect(res.status).toBe(304);
+  });
+
+  it('returns 304 when one entry of a comma-separated list matches', async () => {
+    const body = { hello: 'world' };
+    const etag = `"${await computeEtag(body)}"`;
+    const req = new Request('https://x/', { headers: { 'if-none-match': `"deadbeef", ${etag}, "other"` } });
+    const res = await cachedJson(req, body);
+    expect(res.status).toBe(304);
   });
 
   it('allows overriding cache control', async () => {

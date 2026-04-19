@@ -28,8 +28,9 @@ export async function cachedJson(
     ...opts.extraHeaders,
   };
 
-  if (ifNoneMatch && ifNoneMatch === etag) {
-    return new Response('', { status: 304, headers });
+  if (ifNoneMatch && matchesEtag(ifNoneMatch, etag)) {
+    // 304 is a null-body status per Fetch spec; passing '' throws in workerd/undici.
+    return new Response(null, { status: 304, headers });
   }
 
   return new Response(JSON.stringify(body), {
@@ -39,6 +40,15 @@ export async function cachedJson(
       ...headers,
     },
   });
+}
+
+function matchesEtag(ifNoneMatch: string, etag: string): boolean {
+  if (ifNoneMatch === '*') return true;
+  for (const raw of ifNoneMatch.split(',')) {
+    const tag = raw.trim().replace(/^W\//, '');
+    if (tag === etag) return true;
+  }
+  return false;
 }
 
 export function encodeCursor(value: unknown): string {
