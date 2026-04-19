@@ -21,7 +21,16 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 
     const compressed = objectKey.endsWith('.zst');
     const bytes = new Uint8Array(await obj.arrayBuffer());
-    const plain = compressed ? decompress(bytes) : bytes;
+    let plain: Uint8Array;
+    if (compressed) {
+      try {
+        plain = decompress(bytes);
+      } catch {
+        throw new ApiError(422, 'corrupt_blob', 'Transcript data could not be decompressed');
+      }
+    } else {
+      plain = bytes;
+    }
 
     return new Response(plain, {
       status: 200,

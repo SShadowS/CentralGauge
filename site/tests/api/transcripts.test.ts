@@ -13,7 +13,10 @@ beforeAll(async () => {
   await env.BLOBS.put('transcripts/abc.txt', enc.encode('Hello, this is the transcript content.\nLine 2.'));
   await env.BLOBS.put('transcripts/cached.txt', enc.encode('cache me'));
   // Warm up: trigger the lazy route-module load so subsequent requests run cleanly.
-  await SELF.fetch('https://x/api/v1/transcripts/__warmup__').then((r) => r.body?.cancel());
+  await SELF.fetch('https://x/api/v1/transcripts/__warmup__').then(async (r) => {
+    await r.body?.cancel();
+  });
+  // TODO Task 32 (E2E): add .zst decompression happy-path and corrupt-blob tests.
 });
 
 // R2 storage is per-test isolated by @cloudflare/vitest-pool-workers; no manual cleanup needed.
@@ -49,6 +52,17 @@ describe('GET /api/v1/transcripts/:key', () => {
     } else {
       await res.body?.cancel();
     }
+  });
+
+  it('returns 422 corrupt_blob for a .zst key with non-zstd content', async () => {
+    // Seed a blob at a .zst key whose content is not valid zstd — exercises the
+    // decompress() failure branch without needing the zstd toolchain.
+    const enc = new TextEncoder();
+    await env.BLOBS.put('transcripts/garbage.txt.zst', enc.encode('not actually zstd-compressed'));
+    const res = await SELF.fetch('https://x/api/v1/transcripts/garbage.txt.zst');
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('corrupt_blob');
   });
 
   it('sets cache-control immutable on hit', async () => {
