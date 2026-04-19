@@ -65,20 +65,29 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (typeof agreement_score !== 'number' || !Number.isFinite(agreement_score) || agreement_score < 0 || agreement_score > 1) {
       throw new ApiError(400, 'invalid_agreement', 'agreement_score must be a finite number in [0, 1]');
     }
+    if (notesRaw !== undefined && notesRaw !== null && typeof notesRaw !== 'string') {
+      throw new ApiError(400, 'bad_payload', 'notes must be a string or absent');
+    }
     const notes: string | null = typeof notesRaw === 'string' ? notesRaw : null;
+
+    // Note: this endpoint does not prevent a single operator from signing both the
+    // original run ingest and the verification attestation. Verifier identity is
+    // trust-on-first-use — the attack surface is an operator who controls both an
+    // ingest-scoped key and a verifier-scoped key. P1 accepts this trust boundary;
+    // P2+ may add attestation-chain audits to detect same-operator self-verify.
 
     // Step 5: Fetch both runs
     const origRun = await db
       .prepare(`SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`)
       .bind(original_run_id)
       .first<RunRow>();
-    if (!origRun) throw new ApiError(404, 'original_not_found', `run ${original_run_id} not found`);
+    if (!origRun) throw new ApiError(404, 'original_run_not_found', `run ${original_run_id} not found`);
 
     const verifRun = await db
       .prepare(`SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`)
       .bind(verifier_run_id)
       .first<RunRow>();
-    if (!verifRun) throw new ApiError(404, 'verifier_not_found', `run ${verifier_run_id} not found`);
+    if (!verifRun) throw new ApiError(404, 'verifier_run_not_found', `run ${verifier_run_id} not found`);
 
     // Step 6: Grouping check — task_set_hash, model_id, and settings_hash must match
     if (
@@ -138,7 +147,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // Step 10: Invalidate leaderboard KV only on promotion — non-promotion doesn't change standings
     if (promoted) {
       try {
-        let cursor: string | undefined;
+        let cursor: string | undefined = undefined;
         do {
           const opts: KVNamespaceListOptions = { prefix: 'leaderboard:' };
           if (cursor) opts.cursor = cursor;

@@ -18,7 +18,7 @@ export function errorResponse(err: unknown): Response {
     const body: ApiErrorBody = { error: err.message, code: err.code, details: err.details };
     return new Response(JSON.stringify(body), {
       status: err.status,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
   }
 
@@ -26,7 +26,7 @@ export function errorResponse(err: unknown): Response {
   const body: ApiErrorBody = { error: message, code: 'internal_error' };
   return new Response(JSON.stringify(body), {
     status: 500,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
 }
 

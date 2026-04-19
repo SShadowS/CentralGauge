@@ -52,16 +52,17 @@ async function buildVerifyRequest(
 
 describe('POST /api/v1/verify', () => {
   it('promotes original run when agreement_score >= 0.9 with matching grouping', async () => {
-    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
-    await ingestRun('run-orig-1', 'ingest-machine', keyId, keypair);
-    await ingestRun('run-verif-1', 'ingest-machine', keyId, keypair);
+    const { keyId: ingestKeyId, keypair: ingestKeypair } = await registerIngestKey('ingest-machine');
+    const { keyId: verifierKeyId, keypair: verifierKeypair } = await registerMachineKey('verifier-machine', 'verifier');
+    await ingestRun('run-orig-1', 'ingest-machine', ingestKeyId, ingestKeypair);
+    await ingestRun('run-verif-1', 'ingest-machine', ingestKeyId, ingestKeypair);
 
     const req = await buildVerifyRequest({
       original_run_id: 'run-orig-1',
       verifier_run_id: 'run-verif-1',
       agreement_score: 0.95,
       notes: 'all good'
-    }, keyId, keypair);
+    }, verifierKeyId, verifierKeypair);
     const res = await SELF.fetch(req);
 
     expect(res.status).toBe(200);
@@ -82,7 +83,7 @@ describe('POST /api/v1/verify', () => {
     expect(verifRow?.agreement_score).toBe(0.95);
     expect(verifRow?.notes).toBe('all good');
 
-    // run_promoted ingest_event should exist
+    // run_promoted ingest_event should exist — key_id must be the VERIFIER's key_id, not the ingest key_id
     const evtRow = await env.DB.prepare(
       `SELECT event, machine_id, details_json FROM ingest_events WHERE event = 'run_promoted'`
     ).first<{ event: string; machine_id: string; details_json: string }>();
@@ -92,19 +93,20 @@ describe('POST /api/v1/verify', () => {
     expect(details.original_run_id).toBe('run-orig-1');
     expect(details.verifier_run_id).toBe('run-verif-1');
     expect(details.agreement_score).toBe(0.95);
-    expect(details.key_id).toBe(keyId);
+    expect(details.key_id).toBe(verifierKeyId);
   });
 
   it('does NOT promote when agreement_score < 0.9 but still records the verification', async () => {
-    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
-    await ingestRun('run-orig-2', 'ingest-machine', keyId, keypair);
-    await ingestRun('run-verif-2', 'ingest-machine', keyId, keypair);
+    const { keyId: ingestKeyId, keypair: ingestKeypair } = await registerIngestKey('ingest-machine');
+    const { keyId: verifierKeyId, keypair: verifierKeypair } = await registerMachineKey('verifier-machine', 'verifier');
+    await ingestRun('run-orig-2', 'ingest-machine', ingestKeyId, ingestKeypair);
+    await ingestRun('run-verif-2', 'ingest-machine', ingestKeyId, ingestKeypair);
 
     const req = await buildVerifyRequest({
       original_run_id: 'run-orig-2',
       verifier_run_id: 'run-verif-2',
       agreement_score: 0.75
-    }, keyId, keypair);
+    }, verifierKeyId, verifierKeypair);
     const res = await SELF.fetch(req);
 
     expect(res.status).toBe(200);
@@ -213,6 +215,15 @@ describe('POST /api/v1/verify', () => {
     }, keyId, keypair);
     await SELF.fetch(req1);
 
+    // Capture verified_at after first post
+    const row1 = await env.DB.prepare(
+      `SELECT verified_at FROM run_verifications WHERE original_run_id = 'run-orig-5' AND verifier_run_id = 'run-verif-5'`
+    ).first<{ verified_at: string }>();
+    const firstVerifiedAt = row1!.verified_at;
+
+    // Small delay to guarantee a distinct timestamp
+    await new Promise((r) => setTimeout(r, 10));
+
     // Second post with score 0.95 (promotion should happen now)
     const req2 = await buildVerifyRequest({
       original_run_id: 'run-orig-5',
@@ -230,8 +241,74 @@ describe('POST /api/v1/verify', () => {
 
     // Score should reflect the SECOND post
     const verifRow = await env.DB.prepare(
-      `SELECT agreement_score FROM run_verifications WHERE original_run_id = 'run-orig-5' AND verifier_run_id = 'run-verif-5'`
-    ).first<{ agreement_score: number }>();
+      `SELECT agreement_score, verified_at FROM run_verifications WHERE original_run_id = 'run-orig-5' AND verifier_run_id = 'run-verif-5'`
+    ).first<{ agreement_score: number; verified_at: string }>();
     expect(verifRow?.agreement_score).toBe(0.95);
+
+    // verified_at should have advanced (ISO 8601 lexicographic comparison)
+    expect(verifRow!.verified_at > firstVerifiedAt).toBe(true);
+  });
+
+  it('returns cache-control: no-store on error responses', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    await ingestRun('run-same-cc', 'ingest-machine', keyId, keypair);
+
+    // Trigger same_run 400 error path
+    const req = await buildVerifyRequest({
+      original_run_id: 'run-same-cc',
+      verifier_run_id: 'run-same-cc',
+      agreement_score: 1.0
+    }, keyId, keypair);
+    const res = await SELF.fetch(req);
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+
+  it('rejects malformed JSON body with 400 bad_request', async () => {
+    const res = await SELF.fetch('http://x/api/v1/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not json'
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('bad_request');
+  });
+
+  it('rejects notes as a number with 400 bad_payload', async () => {
+    const { keyId: ingestKeyId, keypair: ingestKeypair } = await registerIngestKey('ingest-machine');
+    const { keyId: verifierKeyId, keypair: verifierKeypair } = await registerMachineKey('verifier-machine', 'verifier');
+    await ingestRun('run-orig-6', 'ingest-machine', ingestKeyId, ingestKeypair);
+    await ingestRun('run-verif-6', 'ingest-machine', ingestKeyId, ingestKeypair);
+
+    const req = await buildVerifyRequest({
+      original_run_id: 'run-orig-6',
+      verifier_run_id: 'run-verif-6',
+      agreement_score: 0.95,
+      notes: 123
+    }, verifierKeyId, verifierKeypair);
+    const res = await SELF.fetch(req);
+
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('bad_payload');
+  });
+
+  it('returns verifier_run_not_found when verifier run does not exist', async () => {
+    const { keyId: ingestKeyId, keypair: ingestKeypair } = await registerIngestKey('ingest-machine');
+    const { keyId: verifierKeyId, keypair: verifierKeypair } = await registerMachineKey('verifier-machine', 'verifier');
+    await ingestRun('run-orig-7', 'ingest-machine', ingestKeyId, ingestKeypair);
+
+    const req = await buildVerifyRequest({
+      original_run_id: 'run-orig-7',
+      verifier_run_id: 'run-nonexistent',
+      agreement_score: 0.95
+    }, verifierKeyId, verifierKeypair);
+    const res = await SELF.fetch(req);
+
+    expect(res.status).toBe(404);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('verifier_run_not_found');
   });
 });
