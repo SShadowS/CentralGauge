@@ -10,9 +10,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     if (!q) throw new ApiError(400, 'missing_query', 'q is required');
     if (q.length > 200) throw new ApiError(400, 'query_too_long', 'q must be \u2264 200 chars');
 
-    // FTS5 MATCH is sensitive to quotes; we wrap the query as a phrase when multi-word
-    // to treat spaces as AND without the user needing MATCH syntax.
-    const matchExpr = q.includes(' ') ? q.split(/\s+/).map(t => `"${t.replace(/"/g, '')}"`).join(' ') : q;
+    // FTS5 operators (NEAR, *, ^, column filters) are injectable via raw user input.
+    // Wrap every token in double-quotes unconditionally — even single-word queries —
+    // so the value is interpreted as a literal phrase, never as MATCH syntax.
+    const matchExpr = q
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((t) => `"${t.replace(/"/g, '')}"`)
+      .join(' ');
 
     const rows = await getAll<{
       result_id: number; run_id: string; task_id: string;

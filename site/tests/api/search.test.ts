@@ -50,4 +50,22 @@ describe('GET /api/v1/search', () => {
     const res = await SELF.fetch(`https://x/api/v1/search?q=${'a'.repeat(300)}`);
     expect(res.status).toBe(400);
   });
+
+  it('treats single-word FTS5 operators as literals (no injection)', async () => {
+    // `NEAR(foo)` is valid FTS5 syntax; without phrase-wrapping the parser would
+    // interpret it as a proximity operator. We expect the handler to quote it as
+    // a literal and return 200 with zero results (or a non-syntax-error response).
+    const res = await SELF.fetch('https://x/api/v1/search?q=NEAR(foo)');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<unknown> };
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  it('treats single-word wildcard as literal', async () => {
+    const res = await SELF.fetch('https://x/api/v1/search?q=foo*');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<unknown> };
+    // Seed has no literal "foo*" token; wildcard must be quoted away and return no matches.
+    expect(body.data.length).toBe(0);
+  });
 });

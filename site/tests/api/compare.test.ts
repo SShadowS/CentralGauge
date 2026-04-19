@@ -53,4 +53,30 @@ describe('GET /api/v1/compare', () => {
     const res = await SELF.fetch('https://x/api/v1/compare?models=sonnet-4.7,nonexistent');
     expect(res.status).toBe(404);
   });
+
+  it('dedupes repeated model slugs and rejects when fewer than 2 distinct remain', async () => {
+    const res = await SELF.fetch('https://x/api/v1/compare?models=sonnet-4.7,sonnet-4.7');
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('too_few_models');
+  });
+
+  it('emits null (not 0) for models with no result rows on a given task', async () => {
+    // Add a second task_id that only model 1 has results for, so model 2 produces
+    // no rows for that task_id under GROUP BY. The compare response must represent
+    // model 2's absence as null, not as a zero score.
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('r1','easy/only-sonnet',1,1,1.0,1)`,
+    ).run();
+    const res = await SELF.fetch('https://x/api/v1/compare?models=sonnet-4.7,gpt-4o');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { tasks: Array<{ task_id: string; scores: Record<string, number | null> }> };
+    const onlySonnet = body.tasks.find((t) => t.task_id === 'easy/only-sonnet');
+    expect(onlySonnet).toBeDefined();
+    expect(onlySonnet!.scores['sonnet-4.7']).toBe(1.0);
+    // gpt-4o must not appear as 0 or NaN — either absent key or explicit null is acceptable,
+    // but if present it must be null, never a number.
+    const gptScore = onlySonnet!.scores['gpt-4o'];
+    if (gptScore !== undefined) expect(gptScore).toBeNull();
+  });
 });
