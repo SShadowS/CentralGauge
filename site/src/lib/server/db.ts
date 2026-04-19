@@ -25,6 +25,7 @@ export interface BatchStatement {
   params: SqlParams;
 }
 
+// D1 batch() is atomic per-replica. Cross-replica consistency is eventual.
 export async function runBatch(
   db: D1Database,
   statements: BatchStatement[]
@@ -39,7 +40,7 @@ export async function insertAndReturnId(
   params: SqlParams
 ): Promise<number> {
   const res = await db.prepare(sql).bind(...params).run();
-  if (!res.meta?.last_row_id) {
+  if (res.meta?.last_row_id == null) {
     throw new Error('insertAndReturnId: no last_row_id in result meta');
   }
   return res.meta.last_row_id;
