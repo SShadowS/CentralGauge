@@ -89,9 +89,14 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       } catch {
         throw new ApiError(500, 'result_corrupt', `compile_errors_json corrupt for result ${r.id}`);
       }
-      const failure_reasons = r.failure_reasons_json
-        ? (JSON.parse(r.failure_reasons_json) as Array<unknown>)
-        : null;
+      let failure_reasons: Array<unknown> | null = null;
+      if (r.failure_reasons_json) {
+        try {
+          failure_reasons = JSON.parse(r.failure_reasons_json) as Array<unknown>;
+        } catch {
+          throw new ApiError(500, 'result_corrupt', `failure_reasons_json corrupt for result ${r.id}`);
+        }
+      }
       return {
         id: r.id,
         task_id: r.task_id,

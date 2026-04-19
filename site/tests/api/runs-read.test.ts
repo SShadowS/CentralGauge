@@ -133,6 +133,35 @@ describe('GET /api/v1/runs', () => {
     expect(body.data).toHaveLength(0);
   });
 
+  it('filters by task_set', async () => {
+    const res = await SELF.fetch('https://x/api/v1/runs?task_set=ts');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    expect(body.data).toHaveLength(2);
+
+    const miss = await SELF.fetch('https://x/api/v1/runs?task_set=nonexistent');
+    const missBody = (await miss.json()) as { data: Array<Record<string, unknown>> };
+    expect(missBody.data).toHaveLength(0);
+  });
+
+  it('filters by since (ISO-8601) — returns only runs at or after the cutoff', async () => {
+    // r1=2026-04-01, r2=2026-04-02 — cutoff 2026-04-02 should include only r2
+    const res = await SELF.fetch('https://x/api/v1/runs?since=2026-04-02T00:00:00Z');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].id).toBe('r2');
+  });
+
+  for (const bad of ['lol', '', 'not-a-date', '   ']) {
+    it(`returns 400 for since=${JSON.stringify(bad)}`, async () => {
+      const res = await SELF.fetch(`https://x/api/v1/runs?since=${encodeURIComponent(bad)}`);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe('invalid_since');
+    });
+  }
+
   it('paginates with limit', async () => {
     const res = await SELF.fetch('https://x/api/v1/runs?limit=1');
     expect(res.status).toBe(200);
@@ -210,6 +239,14 @@ describe('GET /api/v1/runs/:id', () => {
   it('returns 404 for unknown run', async () => {
     const res = await SELF.fetch('https://x/api/v1/runs/does-not-exist');
     expect(res.status).toBe(404);
+  });
+
+  it('returns 500 result_corrupt when failure_reasons_json is malformed', async () => {
+    await env.DB.prepare(`UPDATE results SET failure_reasons_json = '{bad json' WHERE run_id = 'r1'`).run();
+    const res = await SELF.fetch('https://x/api/v1/runs/r1');
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe('result_corrupt');
   });
 });
 

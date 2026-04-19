@@ -39,6 +39,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const tier = url.searchParams.get('tier');
     const taskSet = url.searchParams.get('task_set');
     const since = url.searchParams.get('since');
+    if (since !== null && (since.trim() === '' || Number.isNaN(Date.parse(since)))) {
+      throw new ApiError(400, 'invalid_since', '`since` must be an ISO-8601 timestamp');
+    }
     const cursor = decodeCursor<CursorState>(url.searchParams.get('cursor'));
 
     const wheres: string[] = [];
