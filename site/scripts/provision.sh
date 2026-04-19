@@ -32,6 +32,14 @@ echo "Creating KV namespace: $KV_NAME"
 KV_OUT=$(npx wrangler kv namespace create "$KV_NAME" 2>&1 || true)
 KV_ID=$(echo "$KV_OUT" | grep -oE 'id = "[0-9a-f]{32}"' | cut -d'"' -f2)
 
+if [[ -z "$D1_ID" || -z "$KV_ID" ]]; then
+  echo "ERROR: Failed to extract resource IDs from wrangler output." >&2
+  echo "  D1_OUT: $D1_OUT" >&2
+  echo "  KV_OUT: $KV_OUT" >&2
+  echo "Wrangler may have changed its output format, or the resource creation failed (auth?)." >&2
+  exit 1
+fi
+
 echo "Creating R2 bucket: $R2_NAME"
 npx wrangler r2 bucket create "$R2_NAME" || true
 
