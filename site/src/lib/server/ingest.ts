@@ -37,12 +37,8 @@ export function payloadBlobHashes(payload: {
  * Given a list of sha256 hashes, return the subset that is NOT already in R2.
  */
 export async function findMissingBlobs(bucket: R2Bucket, hashes: string[]): Promise<string[]> {
-  const missing: string[] = [];
-  for (const h of hashes) {
-    const obj = await bucket.head(blobKey(h));
-    if (!obj) missing.push(h);
-  }
-  return missing;
+  const heads = await Promise.all(hashes.map(h => bucket.head(blobKey(h))));
+  return hashes.filter((_, i) => heads[i] === null);
 }
 
 export function blobKey(sha256: string): string {
