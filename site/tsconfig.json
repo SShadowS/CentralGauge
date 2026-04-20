@@ -2,7 +2,7 @@
   "extends": "./.svelte-kit/tsconfig.json",
   "compilerOptions": {
     "allowJs": true,
-    "checkJs": true,
+    "checkJs": false,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -11,6 +11,11 @@
     "strict": true,
     "moduleResolution": "bundler",
     "target": "ES2022",
-    "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers"]
-  }
+    "types": ["@cloudflare/vitest-pool-workers/types"]
+  },
+  "exclude": [
+    ".svelte-kit/output/**",
+    ".svelte-kit/cloudflare/**",
+    "scripts/**"
+  ]
 }

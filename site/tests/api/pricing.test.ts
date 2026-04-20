@@ -2,6 +2,7 @@ import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey } from '../fixtures/ingest-helpers';
+import type { Keypair } from '../../src/lib/shared/ed25519';
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -28,7 +29,7 @@ beforeEach(async () => {
 async function buildPricingPost(
   payload: Record<string, unknown>,
   keyId: number,
-  keypair: { privateKey: ArrayBuffer; publicKey: ArrayBuffer }
+  keypair: Keypair
 ) {
   const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
   return SELF.fetch('http://x/api/v1/pricing', {

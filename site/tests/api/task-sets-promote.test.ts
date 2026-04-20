@@ -2,6 +2,7 @@ import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey, registerIngestKey } from '../fixtures/ingest-helpers';
+import type { Keypair } from '../../src/lib/shared/ed25519';
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -34,7 +35,7 @@ beforeEach(async () => {
   ]);
 });
 
-async function promoteRequest(hash: string, keyId: number, keypair: { privateKey: ArrayBuffer; publicKey: ArrayBuffer }) {
+async function promoteRequest(hash: string, keyId: number, keypair: Keypair) {
   const { signedRequest } = await createSignedPayload({}, keyId, undefined, keypair);
   return new Request(`https://x/api/v1/task-sets/${hash}/current`, {
     method: 'POST',

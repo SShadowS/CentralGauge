@@ -57,7 +57,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       category: r.category_slug ? { slug: r.category_slug, name: r.category_name! } : null,
     }));
     const next_cursor = hasMore
-      ? encodeCursor<TaskCursor>({ id: page[page.length - 1].id })
+      ? encodeCursor({ id: page[page.length - 1].id } satisfies TaskCursor)
       : null;
 
     return cachedJson(request, { data, next_cursor });

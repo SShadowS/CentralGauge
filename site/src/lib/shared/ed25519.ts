@@ -1,8 +1,8 @@
 import * as ed from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
 
-// @noble/ed25519 requires sha512 injection in non-Node runtimes.
-ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
+// @noble/ed25519 v3 ships a WebCrypto-backed `sha512Async` by default, so the
+// async API we use here (getPublicKeyAsync / signAsync / verifyAsync) works in
+// workerd, Node, and browsers without injecting a sync hash.
 
 export interface Keypair {
   privateKey: Uint8Array; // 32 bytes
@@ -10,9 +10,8 @@ export interface Keypair {
 }
 
 export async function generateKeypair(): Promise<Keypair> {
-  const privateKey = ed.utils.randomPrivateKey();
-  const publicKey = await ed.getPublicKeyAsync(privateKey);
-  return { privateKey, publicKey };
+  const { secretKey, publicKey } = await ed.keygenAsync();
+  return { privateKey: secretKey, publicKey };
 }
 
 export async function sign(

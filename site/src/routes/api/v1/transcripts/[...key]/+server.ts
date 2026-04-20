@@ -91,7 +91,7 @@ export const GET: RequestHandler = async ({ params, platform }) => {
       plain = bytes;
     }
 
-    return new Response(plain, {
+    return new Response(plain as BodyInit, {
       status: 200,
       headers: {
         'content-type': 'text/plain; charset=utf-8',

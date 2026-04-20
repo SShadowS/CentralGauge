@@ -15,21 +15,21 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.14.7",
-    "@cloudflare/workers-types": "^4.20260401.0",
-    "@sveltejs/adapter-cloudflare": "^4.7.0",
-    "@sveltejs/kit": "^2.7.0",
+    "@cloudflare/vitest-pool-workers": "^0.14.8",
+    "@sveltejs/adapter-cloudflare": "^7.2.8",
+    "@sveltejs/kit": "^2.57.1",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@types/node": "^25.6.0",
     "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
-    "typescript": "^5.5.0",
+    "svelte-check": "^4.4.6",
+    "typescript": "^6.0.3",
     "vite": "^8.0.9",
     "vitest": "^4.1.4",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.84.0"
   },
   "dependencies": {
-    "@noble/ed25519": "^2.1.0",
-    "@noble/hashes": "^1.6.0",
+    "@noble/ed25519": "^3.1.0",
+    "@noble/hashes": "^2.2.0",
     "fzstd": "^0.1.1"
   }
 }

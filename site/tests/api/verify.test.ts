@@ -2,6 +2,7 @@ import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { seedMinimalRefData, registerMachineKey, registerIngestKey, makeRunPayload } from '../fixtures/ingest-helpers';
+import type { Keypair } from '../../src/lib/shared/ed25519';
 import { resetDb } from '../utils/reset-db';
 
 beforeAll(async () => {
@@ -16,7 +17,7 @@ beforeEach(async () => {
 /**
  * Ingest a run via the real POST /api/v1/runs route and return the run_id and settings_hash.
  */
-async function ingestRun(runId: string, machineId: string, keyId: number, keypair: { privateKey: ArrayBuffer; publicKey: ArrayBuffer }) {
+async function ingestRun(runId: string, machineId: string, keyId: number, keypair: Keypair) {
   const payload = makeRunPayload({ machine_id: machineId });
   const { signedRequest } = await createSignedPayload(payload as unknown as Record<string, unknown>, keyId, undefined, keypair);
   signedRequest.run_id = runId;
@@ -36,7 +37,7 @@ async function ingestRun(runId: string, machineId: string, keyId: number, keypai
 async function buildVerifyRequest(
   payload: Record<string, unknown>,
   keyId: number,
-  keypair: { privateKey: ArrayBuffer; publicKey: ArrayBuffer }
+  keypair: Keypair
 ) {
   const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
   return new Request('http://x/api/v1/verify', {

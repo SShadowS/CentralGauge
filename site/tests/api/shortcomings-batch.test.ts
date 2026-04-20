@@ -3,6 +3,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey, registerIngestKey, seedMinimalRefData } from '../fixtures/ingest-helpers';
 import { resetDb } from '../utils/reset-db';
+import type { Keypair } from '../../src/lib/shared/ed25519';
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -54,7 +55,7 @@ const SAMPLE_SHORTCOMING = {
 async function shortcomingsBatchRequest(
   payload: Record<string, unknown>,
   keyId: number,
-  keypair: { privateKey: ArrayBuffer; publicKey: ArrayBuffer }
+  keypair: Keypair
 ) {
   const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
   return new Request('http://x/api/v1/shortcomings/batch', {
@@ -143,7 +144,7 @@ describe('POST /api/v1/shortcomings/batch', () => {
       .bind('interfaces')
       .first<{ first_seen: string; last_seen: string }>();
     expect(secondRow?.first_seen).toBe(firstRow?.first_seen);
-    expect(secondRow?.last_seen >= (firstRow?.last_seen ?? '')).toBe(true);
+    expect((secondRow?.last_seen ?? '') >= (firstRow?.last_seen ?? '')).toBe(true);
 
     // Second call: occurrences inserted = 0 (duplicate ignored)
     const body2 = await r2.json<{ upserted: number; occurrences: number }>();

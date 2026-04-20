@@ -27,6 +27,7 @@ site/build/
 site/.wrangler/
 site/.dev.vars
 site/.miniflare-broadcaster/
+site/worker-configuration.d.ts
 
 # Git worktrees (isolated workspaces created by claude code)
 worktrees/
