@@ -2,11 +2,11 @@
  * Canonical JSON: stable serialization for cryptographic signing.
  * - Keys sorted alphabetically at every depth
  * - No whitespace
- * - Rejects NaN, Infinity, undefined
+ * - Rejects NaN, Infinity, undefined (would serialize ambiguously)
  * - Detects and rejects circular references
  *
- * Imported from both the Deno CLI (src/ingest/canonical.ts re-export)
- * and the Cloudflare Worker (site/src/lib/shared/canonical.ts re-export).
+ * Used on both the Deno CLI and Cloudflare Worker sides to guarantee
+ * byte-identical output for signing and verification.
  */
 export function canonicalJSON(value: unknown): string {
   return serialize(value, new WeakSet());
