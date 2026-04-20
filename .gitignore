@@ -24,7 +24,7 @@ mkdocs-build/
 # SvelteKit scoreboard build artifacts (source lives in site/, build outputs are local-only)
 site/.svelte-kit/
 site/build/
-site/.wrangler/
+.wrangler/
 site/.dev.vars
 site/.miniflare-broadcaster/
 site/worker-configuration.d.ts
