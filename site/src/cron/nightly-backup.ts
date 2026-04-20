@@ -49,7 +49,13 @@ export async function runNightlyBackup(
   ).all<{ name: string }>();
 
   const lines: string[] = [];
+  // Row-data-only dump. Restore contract: apply `site/migrations/*.sql` first
+  // (wrangler d1 migrations apply), then execute this file. FK enforcement is
+  // deferred so the alphabetical emission order doesn't trip FK constraints
+  // at COMMIT time.
   lines.push(`-- CentralGauge D1 backup ${now.toISOString()}`);
+  lines.push('BEGIN TRANSACTION;');
+  lines.push('PRAGMA defer_foreign_keys = ON;');
 
   for (const t of tables.results) {
     const rows = await env.DB
@@ -63,6 +69,8 @@ export async function runNightlyBackup(
       );
     }
   }
+
+  lines.push('COMMIT;');
 
   const yyyy = now.getUTCFullYear();
   const mm = String(now.getUTCMonth() + 1).padStart(2, '0');

@@ -21,6 +21,21 @@ describe('nightly backup cron', () => {
     const text = await obj!.text();
     expect(text).toContain('INSERT INTO model_families');
     expect(text).toContain("'test'");
+    expect(text.startsWith('-- CentralGauge D1 backup ')).toBe(true);
+    expect(text).toContain('BEGIN TRANSACTION;\nPRAGMA defer_foreign_keys = ON;');
+    expect(text.trimEnd().endsWith('COMMIT;')).toBe(true);
+  });
+
+  it('escapes single quotes in TEXT columns', async () => {
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO model_families(id,slug,vendor,display_name) VALUES (98,'quote-test','v',?)`
+    ).bind("O'Brien & Co").run();
+
+    const key = await runNightlyBackup(env, new Date('2026-04-17T02:00:00Z'));
+    const obj = await env.BLOBS.get(key);
+    const text = await obj!.text();
+
+    expect(text).toContain("'O''Brien & Co'");
   });
 
   it('excludes FTS virtual + shadow tables from the dump', async () => {

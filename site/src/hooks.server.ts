@@ -21,7 +21,16 @@ export async function scheduled(
   env: ScheduledEnv,
   ctx: ExecutionContext
 ): Promise<void> {
-  ctx.waitUntil(runNightlyBackup(env));
+  ctx.waitUntil(
+    runNightlyBackup(env).catch((err) => {
+      console.error(JSON.stringify({
+        ts: new Date().toISOString(),
+        level: 'error',
+        msg: 'nightly_backup_failed',
+        err: err instanceof Error ? err.message : String(err)
+      }));
+    })
+  );
 }
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
