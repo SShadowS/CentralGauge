@@ -40,6 +40,13 @@ tag = "v1"
 # Windows that would EBUSY the .svelte-kit build directory after tests.
 new_classes = ["LeaderboardBroadcaster"]
 
+# Cron trigger: nightly D1 -> R2 backup at 02:00 UTC. The handler is the
+# `scheduled` named export in `src/hooks.server.ts`.
+# Intentionally NOT mirrored under [env.preview] — preview deployments stay
+# clean (no scheduled writes to the preview R2 bucket).
+[triggers]
+crons = ["0 2 * * *"]
+
 # Separate environment for previews (PR deploys)
 [env.preview]
 name = "centralgauge-preview"

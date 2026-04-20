@@ -1,7 +1,28 @@
 import type { Handle } from '@sveltejs/kit';
 import { isRateLimited } from '$lib/server/rate-limit';
+import { runNightlyBackup } from './cron/nightly-backup';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
+
+interface ScheduledEnv {
+  DB: D1Database;
+  BLOBS: R2Bucket;
+}
+
+/**
+ * Cloudflare cron entrypoint. Wired to the `[triggers].crons` block in
+ * `wrangler.toml`; see `src/cron/nightly-backup.ts` for the actual dump.
+ *
+ * `ctx.waitUntil` keeps the worker alive past the synchronous return so the
+ * R2 PUT can finish even if it outlives the cron tick.
+ */
+export async function scheduled(
+  _controller: ScheduledController,
+  env: ScheduledEnv,
+  ctx: ExecutionContext
+): Promise<void> {
+  ctx.waitUntil(runNightlyBackup(env));
+}
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
