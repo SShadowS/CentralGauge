@@ -17,7 +17,12 @@ export async function cachedJson(
   body: unknown,
   opts: CachedJsonOptions = {},
 ): Promise<Response> {
-  const cacheControl = opts.cacheControl ?? 'public, s-maxage=60, stale-while-revalidate=600';
+  // Default to `private` so the @sveltejs/adapter-cloudflare wrapper does not
+  // store this response in `caches.default`. That cache is keyed on URL only
+  // (ignoring query string nuances, Accept, and any DB-state invalidation we
+  // do for KV), so any public cache lifetime here causes stale or cross-variant
+  // responses for dynamic API endpoints. Client ETag/304 is preserved below.
+  const cacheControl = opts.cacheControl ?? 'private, max-age=60';
   // `no-store` is a hard "do not cache anywhere" signal; emitting an ETag would
   // invite conditional-request 304s from intermediaries. Skip the ETag path entirely.
   const noStore = /\bno-store\b/.test(cacheControl);

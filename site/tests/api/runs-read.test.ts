@@ -1,17 +1,9 @@
 import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { resetDb } from '../utils/reset-db';
 
 async function seed(): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM results`),
-    env.DB.prepare(`DELETE FROM runs`),
-    env.DB.prepare(`DELETE FROM models`),
-    env.DB.prepare(`DELETE FROM model_families`),
-    env.DB.prepare(`DELETE FROM task_sets`),
-    env.DB.prepare(`DELETE FROM settings_profiles`),
-    env.DB.prepare(`DELETE FROM cost_snapshots`),
-    env.DB.prepare(`DELETE FROM machine_keys`),
-  ]);
+  await resetDb();
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,
@@ -243,7 +235,13 @@ describe('GET /api/v1/runs/:id', () => {
 
   it('returns 500 result_corrupt when failure_reasons_json is malformed', async () => {
     await env.DB.prepare(`UPDATE results SET failure_reasons_json = '{bad json' WHERE run_id = 'r1'`).run();
-    const res = await SELF.fetch('https://x/api/v1/runs/r1');
+    // `runs/[id]` is `public, s-maxage=30` and the adapter-cloudflare wrapper
+    // caches in `caches.default` keyed by URL only. A prior `it` block has
+    // populated that cache with a valid 200 response, so we bypass the edge
+    // cache to exercise the corrupt-DB path.
+    const res = await SELF.fetch('https://x/api/v1/runs/r1', {
+      headers: { 'cache-control': 'no-cache' },
+    });
     expect(res.status).toBe(500);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe('result_corrupt');

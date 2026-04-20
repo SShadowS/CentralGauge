@@ -4,14 +4,12 @@ import { createSignedPayload } from '../fixtures/keys';
 import { seedMinimalRefData, registerIngestKey, makeRunPayload } from '../fixtures/ingest-helpers';
 import { sha256Hex } from '../../src/lib/shared/hash';
 import { cacheKeyFor } from '../../src/lib/server/leaderboard';
+import { resetDb } from '../utils/reset-db';
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 
 beforeEach(async () => {
-  await env.DB.prepare(`DELETE FROM results`).run();
-  await env.DB.prepare(`DELETE FROM runs`).run();
-  await env.DB.prepare(`DELETE FROM settings_profiles`).run();
-  await env.DB.prepare(`DELETE FROM machine_keys`).run();
+  await resetDb();
   await seedMinimalRefData();
 
   // Reset the LeaderboardBroadcaster DO buffer between tests via the
