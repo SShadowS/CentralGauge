@@ -1,0 +1,25 @@
+{
+  "task_set": {
+    "created_at": "2026-04-17T09:00:00Z",
+    "tasks": [
+      {
+        "task_id": "easy/alpha",
+        "content_hash": "ch-alpha",
+        "difficulty": "easy",
+        "category_slug": "easy",
+        "manifest": { "id": "easy/alpha", "goal": "Add a function" }
+      }
+    ]
+  },
+  "transcript_plain": "TEST TRANSCRIPT: compiled ok, 3/3 tests passed.\n",
+  "code_plain": "page 50000 CustomerListTest { }\n",
+  "bundle_plain": "TEST REPRODUCTION BUNDLE\n",
+  "run": {
+    "started_at": "2026-04-17T10:00:00Z",
+    "completed_at": "2026-04-17T10:05:00Z",
+    "machine_id": "rig",
+    "score": 100,
+    "tokens_in": 1000,
+    "tokens_out": 500
+  }
+}
