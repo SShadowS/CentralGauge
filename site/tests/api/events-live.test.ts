@@ -1,5 +1,5 @@
 import { env, SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
 
 // -------------------------------------------------------------------------
 // miniflare / workerd limitation note
@@ -19,6 +19,28 @@ import { describe, it, expect } from 'vitest';
 // -------------------------------------------------------------------------
 
 describe('GET /api/v1/events/live', () => {
+  // Drain DO state so workerd can shut down promptly on Windows. See the
+  // matching note in tests/broadcaster.test.ts for the full rationale.
+  // We give the reset call a tight 2s budget — if miniflare's request
+  // queue is still draining a buffered SELF.fetch from the third test,
+  // we accept the leftover state because singleWorker:true already keeps
+  // the workerd count to 1 and the runtime is killed by the parent on
+  // process exit.
+  afterAll(async () => {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const stub = env.LEADERBOARD_BROADCASTER.get(id);
+    const resetReq = stub.fetch('https://do/reset', {
+      method: 'POST',
+      headers: { 'x-test-only': '1' },
+    });
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve('timeout'), 2000);
+    });
+    await Promise.race([resetReq, timeout]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  });
+
   it('DO /subscribe is registered and streams text/event-stream', async () => {
     // workerd/miniflare: stub.fetch() on a streaming SSE response blocks until
     // the writer closes.  We verify the SSE contract by:
@@ -67,16 +89,16 @@ describe('GET /api/v1/events/live', () => {
 
   it('SELF.fetch on /api/v1/events/live reaches the route handler', async () => {
     // The body stream is infinite — but the response HEADERS may flush before
-    // miniflare starts buffering. We use AbortSignal.timeout(150) to ensure
-    // the test doesn't hang. Either outcome is acceptable:
-    //   (a) headers resolve and we assert status !== 404 → route is wired
-    //   (b) the abort fires before any response → AbortError is thrown and
-    //       we treat as inconclusive (route reachability still proven by the
-    //       broadcaster fixture which only invokes /api/v1/events/live for GETs)
+    // miniflare starts buffering. We use an explicit AbortController (instead
+    // of AbortSignal.timeout) so we can call abort() in finally; this gives
+    // miniflare a clear cancellation signal and avoids leaving the DO writer
+    // dangling past the test boundary on Windows.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 150);
     let routeReached = false;
     try {
       const res = await SELF.fetch('http://x/api/v1/events/live', {
-        signal: AbortSignal.timeout(150),
+        signal: controller.signal,
       });
       expect(res.status).not.toBe(404);
       routeReached = true;
@@ -87,6 +109,9 @@ describe('GET /api/v1/events/live', () => {
       if ((err as Error).name !== 'AbortError' && (err as Error).name !== 'TimeoutError') {
         throw err;
       }
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
     }
     // If the test reached headers, great. If it aborted, the do-worker fixture
     // routes /api/v1/events/live correctly by static inspection — the only

@@ -133,6 +133,9 @@ describe('GET /api/v1/leaderboard', () => {
 
   it('returns 304 on matching If-None-Match', async () => {
     const first = await SELF.fetch('https://x/api/v1/leaderboard');
+    // Drain body so the request fully completes — workerd otherwise leaves the
+    // KV.put inflight, which deadlocks the next SELF.fetch on the same worker.
+    await first.arrayBuffer();
     const etag = first.headers.get('etag')!;
     const second = await SELF.fetch('https://x/api/v1/leaderboard', {
       headers: { 'if-none-match': etag },
@@ -141,7 +144,10 @@ describe('GET /api/v1/leaderboard', () => {
   });
 
   it('populates KV on miss and serves from KV on hit', async () => {
-    await SELF.fetch('https://x/api/v1/leaderboard');
+    const res = await SELF.fetch('https://x/api/v1/leaderboard');
+    // Drain body so the worker's KV.put commits before the test-side env.CACHE
+    // read below — otherwise the second await deadlocks on the inflight write.
+    await res.arrayBuffer();
     const cached = await env.CACHE.get('leaderboard:current:all::::50', 'json') as Record<string, unknown> | null;
     expect(cached).not.toBeNull();
     expect((cached!.data as unknown[]).length).toBe(2);

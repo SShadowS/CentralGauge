@@ -14,10 +14,17 @@ export default defineWorkersConfig(async () => {
       poolOptions: {
         workers: {
           // Use DO-exporting entrypoint so miniflare resolves LeaderboardBroadcaster
+          // and so workerd does NOT open .svelte-kit/cloudflare/_worker.js
+          // (which would EBUSY any subsequent `npm run build` on Windows).
           main: './tests/fixtures/do-worker.ts',
-          // singleWorker + isolatedStorage:false avoids per-test DO teardown and
-          // the associated EBUSY errors on Windows when miniflare tries to unlink
-          // the SQLite WAL files after each test suite
+          // singleWorker reuses one runtime across all test files. On Windows
+          // the per-file workerd children spawned in the default mode are not
+          // always reaped on vitest exit, leaving stale workerd.exe processes
+          // that hold file handles. singleWorker keeps the count to ~1 and
+          // ties its lifetime to the parent vitest process. The DO is
+          // in-memory only (no state.storage writes), so isolatedStorage:false
+          // is also safe: there is no per-test SQLite state that must be
+          // partitioned.
           singleWorker: true,
           isolatedStorage: false,
           wrangler: { configPath: './wrangler.toml' },

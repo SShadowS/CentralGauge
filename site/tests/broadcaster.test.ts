@@ -1,8 +1,21 @@
 import { env } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { afterAll, describe, it, expect } from 'vitest';
 import { broadcastEvent } from '../src/lib/server/broadcaster';
 
 describe('LeaderboardBroadcaster', () => {
+  // Drain DO state so workerd can shut down promptly on Windows. Without
+  // this the test runtime can hold open SSE writers + buffered events past
+  // vitest exit, delaying workerd termination by ~10s and occasionally
+  // leaving stale workerd.exe processes that hold _worker.js open.
+  afterAll(async () => {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const stub = env.LEADERBOARD_BROADCASTER.get(id);
+    await stub.fetch('https://do/reset', {
+      method: 'POST',
+      headers: { 'x-test-only': '1' },
+    });
+  });
+
   it('accepts events via broadcastEvent (returns true)', async () => {
     const ok = await broadcastEvent(env, {
       type: 'run_finalized',

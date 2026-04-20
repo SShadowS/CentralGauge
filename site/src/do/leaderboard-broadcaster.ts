@@ -83,7 +83,30 @@ export class LeaderboardBroadcaster {
       });
     }
 
+    // TEST-ONLY: gated reset endpoint. Closes all open SSE writers and clears
+    // the buffer so vitest can shut down workerd cleanly on Windows. Gated
+    // behind the `x-test-only: 1` header so it can never be invoked in
+    // production via the public route surface.
+    if (path === '/reset' && request.method === 'POST') {
+      if (request.headers.get('x-test-only') !== '1') {
+        return new Response('Forbidden', { status: 403 });
+      }
+      await this.closeAllClients();
+      this.recent = [];
+      return Response.json({ ok: true });
+    }
+
     return new Response('Not Found', { status: 404 });
+  }
+
+  // TEST-ONLY helper: invoked by /reset to drain in-memory state so the DO
+  // doesn't keep workerd processes alive past test exit on Windows.
+  private async closeAllClients(): Promise<void> {
+    const writers = Array.from(this.clients);
+    this.clients.clear();
+    await Promise.all(
+      writers.map((w) => w.close().catch(() => {})),
+    );
   }
 
   private formatFrame(ev: BroadcastEvent): Uint8Array {

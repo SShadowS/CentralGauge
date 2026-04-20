@@ -31,7 +31,11 @@ class_name = "LeaderboardBroadcaster"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["LeaderboardBroadcaster"]
+# LeaderboardBroadcaster is in-memory only (Set<WritableStreamDefaultWriter>
+# + recent BroadcastEvent[]). It never writes to state.storage, so we use
+# new_classes — this avoids miniflare allocating a per-class SQLite WAL on
+# Windows that would EBUSY the .svelte-kit build directory after tests.
+new_classes = ["LeaderboardBroadcaster"]
 
 # Separate environment for previews (PR deploys)
 [env.preview]
