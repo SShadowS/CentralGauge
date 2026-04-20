@@ -34,30 +34,42 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     );
 
     const accept = request.headers.get('accept') ?? '';
+    // Content-negotiated endpoint: the @sveltejs/adapter-cloudflare wrapper
+    // caches responses in `caches.default` keyed by URL only and does not
+    // honor `Vary: Accept`, so public cacheability here would let a JSON
+    // response served first poison a later `Accept: text/markdown` request.
+    // Scope the cache to the browser (private) to keep content negotiation
+    // correct at the CDN boundary.
+    const cacheControl = 'private, max-age=60';
     if (accept.toLowerCase().includes('text/markdown')) {
       const md = renderMarkdown(model.display_name, rows);
       return new Response(md, {
         status: 200,
         headers: {
           'content-type': 'text/markdown; charset=utf-8',
-          'cache-control': 'public, s-maxage=60, stale-while-revalidate=600',
+          'cache-control': cacheControl,
+          'vary': 'Accept',
           'x-api-version': 'v1',
         },
       });
     }
 
-    return cachedJson(request, {
-      data: rows.map((r) => ({
-        al_concept: r.al_concept,
-        concept: r.concept,
-        description: r.description,
-        correct_pattern: r.correct_pattern,
-        error_codes: JSON.parse(r.error_codes_json) as string[],
-        first_seen: r.first_seen,
-        last_seen: r.last_seen,
-        occurrence_count: +(r.occurrence_count ?? 0),
-      })),
-    });
+    return cachedJson(
+      request,
+      {
+        data: rows.map((r) => ({
+          al_concept: r.al_concept,
+          concept: r.concept,
+          description: r.description,
+          correct_pattern: r.correct_pattern,
+          error_codes: JSON.parse(r.error_codes_json) as string[],
+          first_seen: r.first_seen,
+          last_seen: r.last_seen,
+          occurrence_count: +(r.occurrence_count ?? 0),
+        })),
+      },
+      { cacheControl, extraHeaders: { vary: 'Accept' } },
+    );
   } catch (err) {
     return errorResponse(err);
   }

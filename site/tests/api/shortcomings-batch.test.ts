@@ -2,18 +2,14 @@ import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey, registerIngestKey, seedMinimalRefData } from '../fixtures/ingest-helpers';
+import { resetDb } from '../utils/reset-db';
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
 beforeEach(async () => {
-  await env.DB.prepare(`DELETE FROM shortcoming_occurrences`).run();
-  await env.DB.prepare(`DELETE FROM shortcomings`).run();
-  await env.DB.prepare(`DELETE FROM results`).run();
-  await env.DB.prepare(`DELETE FROM runs`).run();
-  await env.DB.prepare(`DELETE FROM settings_profiles`).run();
-  await env.DB.prepare(`DELETE FROM machine_keys`).run();
+  await resetDb();
   await seedMinimalRefData();
 
   // Insert a placeholder machine key so the runs FK resolves (id assigned by DB)

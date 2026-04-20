@@ -1,19 +1,9 @@
 import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { resetDb } from '../utils/reset-db';
 
 async function seed(): Promise<void> {
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM shortcoming_occurrences`),
-    env.DB.prepare(`DELETE FROM shortcomings`),
-    env.DB.prepare(`DELETE FROM results`),
-    env.DB.prepare(`DELETE FROM runs`),
-    env.DB.prepare(`DELETE FROM models`),
-    env.DB.prepare(`DELETE FROM model_families`),
-    env.DB.prepare(`DELETE FROM task_sets`),
-    env.DB.prepare(`DELETE FROM settings_profiles`),
-    env.DB.prepare(`DELETE FROM cost_snapshots`),
-    env.DB.prepare(`DELETE FROM machine_keys`),
-  ]);
+  await resetDb();
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,

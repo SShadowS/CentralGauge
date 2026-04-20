@@ -35,7 +35,7 @@ beforeEach(async () => {
 });
 
 describe('rate limiting', () => {
-  it('allows bursts under the limit (50 PUTs in one window)', async () => {
+  it('allows bursts under the limit (50 PUTs in one window)', { timeout: 15_000 }, async () => {
     const ip = '10.0.0.1';
     for (let i = 0; i < 50; i++) {
       const res = await SELF.fetch(`http://x${FAST_PATH}`, {

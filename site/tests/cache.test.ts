@@ -28,7 +28,10 @@ describe('cachedJson', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(res.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
-    expect(res.headers.get('cache-control')).toContain('s-maxage=60');
+    // Default is `private, max-age=60` so the adapter-cloudflare wrapper
+    // (caches.default, URL-only keying, no Vary: Accept support) does not
+    // cross-contaminate dynamic API responses between requests.
+    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
     expect(res.headers.get('x-api-version')).toBe('v1');
     expect(await res.json()).toEqual({ hello: 'world' });
   });

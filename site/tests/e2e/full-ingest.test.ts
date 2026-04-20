@@ -4,6 +4,7 @@ import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey } from '../fixtures/ingest-helpers';
 import { sha256Hex } from '../../src/lib/shared/hash';
 import { canonicalJSON } from '../../src/lib/shared/canonical';
+import { resetDb } from '../utils/reset-db';
 import fixture from './fixtures/run.json';
 
 beforeAll(async () => {
@@ -11,20 +12,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  // Wipe data tables in dependency-safe order (results -> runs -> tasks -> task_sets, etc.)
-  await env.DB.batch([
-    env.DB.prepare(`DELETE FROM ingest_events`),
-    env.DB.prepare(`DELETE FROM results`),
-    env.DB.prepare(`DELETE FROM runs`),
-    env.DB.prepare(`DELETE FROM settings_profiles`),
-    env.DB.prepare(`DELETE FROM tasks`),
-    env.DB.prepare(`DELETE FROM task_sets`),
-    env.DB.prepare(`DELETE FROM task_categories`),
-    env.DB.prepare(`DELETE FROM cost_snapshots`),
-    env.DB.prepare(`DELETE FROM models`),
-    env.DB.prepare(`DELETE FROM model_families`),
-    env.DB.prepare(`DELETE FROM machine_keys`)
-  ]);
+  await resetDb();
 
   // Seed reference data: model family + model + cost snapshot.
   // task_categories and tasks are inserted by the task-set POST below.
