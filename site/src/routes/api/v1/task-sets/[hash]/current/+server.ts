@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { broadcastEvent } from '$lib/server/broadcaster';
 import { runBatch } from '$lib/server/db';
 
 export const POST: RequestHandler = async ({ request, platform, params }) => {
@@ -66,6 +67,17 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
         cursor = listed.list_complete ? undefined : listed.cursor;
       } while (cursor);
     } catch { /* best-effort — DB is source of truth */ }
+
+    // Best-effort SSE broadcast for live UI updates. A DO outage must not
+    // fail an already-committed promotion. The idempotent no-op path above
+    // intentionally does NOT broadcast — only real promotions emit events.
+    try {
+      await broadcastEvent(platform.env, {
+        type: 'task_set_promoted',
+        hash,
+        ts: new Date().toISOString()
+      });
+    } catch { /* swallow */ }
 
     return jsonResponse({ hash, is_current: true, changed: true }, 200, { 'Cache-Control': 'no-store' });
   } catch (err) {

@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { broadcastEvent } from '$lib/server/broadcaster';
 
 interface ShortcomingOccurrence {
   result_id: number;
@@ -188,6 +189,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           }
         }
       }
+    }
+
+    // Best-effort SSE broadcast: surfaces newly recorded shortcomings on the
+    // live dashboard. Skip on empty batches — the event is meaningless when
+    // nothing changed. Wrapped in try/catch so a DO outage cannot fail a
+    // committed write.
+    if (upserted > 0) {
+      try {
+        await broadcastEvent(platform.env, {
+          type: 'shortcoming_added',
+          model_slug: modelSlug,
+          count: upserted,
+          ts: new Date().toISOString()
+        });
+      } catch { /* swallow */ }
     }
 
     return jsonResponse({ upserted, occurrences }, 200, { 'Cache-Control': 'no-store' });

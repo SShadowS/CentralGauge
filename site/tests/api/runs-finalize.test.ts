@@ -12,6 +12,18 @@ beforeEach(async () => {
   await env.DB.prepare(`DELETE FROM settings_profiles`).run();
   await env.DB.prepare(`DELETE FROM machine_keys`).run();
   await seedMinimalRefData();
+
+  // Reset the LeaderboardBroadcaster DO buffer between tests via the
+  // gated test-only proxy route. Going through SELF.fetch (rather than
+  // touching env.LEADERBOARD_BROADCASTER directly) avoids requiring the
+  // worker entrypoint to re-export the DO class — that workaround
+  // poisoned vite's module graph and broke back-to-back `vitest run`
+  // invocations in the same shell.
+  const reset = await SELF.fetch('http://x/api/v1/__test__/events/reset', {
+    method: 'POST',
+    headers: { 'x-test-only': '1' }
+  });
+  await reset.arrayBuffer();
 });
 
 async function ingestAndUploadBlobs() {
@@ -107,5 +119,28 @@ describe('POST /api/v1/runs/:id/finalize', () => {
 
     const cached = await env.CACHE.get('leaderboard:current');
     expect(cached).toBeNull();
+  });
+
+  it('broadcasts run_finalized after completion', async () => {
+    const { runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
+    for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
+      const r = await SELF.fetch(`http://x/api/v1/blobs/${sha}`, { method: 'PUT', body });
+      await r.arrayBuffer(); // drain so the next SELF.fetch can reuse the worker
+    }
+    const fin = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
+    expect(fin.status).toBe(200);
+    await fin.arrayBuffer(); // drain so the broadcast call commits
+
+    const recentRes = await SELF.fetch('http://x/api/v1/__test__/events/recent?limit=10', {
+      headers: { 'x-test-only': '1' }
+    });
+    const recent = await recentRes.json() as { events: Array<Record<string, unknown>> };
+    const ev = recent.events.find((e) => e.type === 'run_finalized' && e.run_id === runId);
+    expect(ev).toBeDefined();
+    expect(ev!.model_slug).toBe('sonnet-4.7');
+    expect(ev!.tier).toBe('claimed');
+    expect(typeof ev!.score).toBe('number');
+    expect(ev!.score).toBe(100); // makeRunPayload defaults to score=100
+    expect(typeof ev!.ts).toBe('string');
   });
 });

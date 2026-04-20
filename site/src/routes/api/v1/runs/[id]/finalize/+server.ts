@@ -1,5 +1,6 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { broadcastEvent } from '$lib/server/broadcaster';
 import { blobHashFromKey } from '$lib/server/ingest';
 import type { FinalizeResponse } from '$lib/shared/types';
 
@@ -13,13 +14,29 @@ export const POST: RequestHandler = async ({ params, platform }) => {
   const runId = params.id!;
 
   try {
+    // Pull model_slug + tier alongside the row so a successful transition can
+    // emit a `run_finalized` SSE event without an extra round-trip.
     const run = await db.prepare(
-      `SELECT id, status, reproduction_bundle_r2_key, machine_id FROM runs WHERE id = ?`
-    ).bind(runId).first<{ id: string; status: string; reproduction_bundle_r2_key: string | null; machine_id: string }>();
+      `SELECT runs.id, runs.status, runs.reproduction_bundle_r2_key, runs.machine_id,
+              runs.tier, models.slug AS model_slug
+         FROM runs
+         JOIN models ON models.id = runs.model_id
+        WHERE runs.id = ?`
+    ).bind(runId).first<{
+      id: string;
+      status: string;
+      reproduction_bundle_r2_key: string | null;
+      machine_id: string;
+      tier: string;
+      model_slug: string;
+    }>();
 
     if (!run) throw new ApiError(404, 'not_found', `run ${runId} not found`);
 
     if (run.status === 'completed') {
+      // Idempotent no-op: the run was already finalized by a prior request.
+      // Do NOT broadcast here — only real transitions emit events, otherwise
+      // the SSE stream would replay duplicates on every retry.
       return jsonResponse({ run_id: runId, status: 'completed', finalized_at: new Date().toISOString() } satisfies FinalizeResponse, 200);
     }
 
@@ -53,6 +70,24 @@ export const POST: RequestHandler = async ({ params, platform }) => {
     // Best-effort cache invalidation; never fail a committed finalize on transient KV errors.
     try {
       await Promise.all(LEADERBOARD_CACHE_KEYS.map(k => cache.delete(k)));
+    } catch { /* swallow */ }
+
+    // Best-effort SSE broadcast: a DO outage must not fail an already-committed
+    // finalize. The event drives the live leaderboard UI; subscribers that miss
+    // it will catch up on next page load via the read endpoints.
+    try {
+      const avgRow = await db
+        .prepare(`SELECT AVG(score) AS avg_score FROM results WHERE run_id = ?`)
+        .bind(runId)
+        .first<{ avg_score: number | null }>();
+      await broadcastEvent(platform.env, {
+        type: 'run_finalized',
+        run_id: runId,
+        model_slug: run.model_slug,
+        tier: run.tier,
+        score: avgRow?.avg_score ?? 0,
+        ts: now
+      });
     } catch { /* swallow */ }
 
     return jsonResponse({ run_id: runId, status: 'completed', finalized_at: now } satisfies FinalizeResponse, 200);

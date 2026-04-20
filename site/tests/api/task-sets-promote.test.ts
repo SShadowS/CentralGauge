@@ -14,6 +14,15 @@ beforeEach(async () => {
   await env.DB.prepare(`DELETE FROM task_sets`).run();
   await env.DB.prepare(`DELETE FROM machine_keys`).run();
 
+  // Reset SSE broadcaster buffer between tests via the gated test-only
+  // proxy route. See runs-finalize.test.ts for the rationale on why we
+  // route through SELF.fetch instead of touching the DO binding directly.
+  const reset = await SELF.fetch('http://x/api/v1/__test__/events/reset', {
+    method: 'POST',
+    headers: { 'x-test-only': '1' }
+  });
+  await reset.arrayBuffer();
+
   // Seed: ts-old is current, ts-new is not
   await env.DB.batch([
     env.DB.prepare(
@@ -102,5 +111,27 @@ describe('POST /api/v1/task-sets/:hash/current', () => {
     // No ingest_event should have been emitted for the no-op
     const count = await env.DB.prepare(`SELECT COUNT(*) as n FROM ingest_events WHERE event = 'task_set_promoted'`).first<{ n: number }>();
     expect(count?.n).toBe(0);
+
+    // No SSE event either: the no-op path must not broadcast.
+    const recentRes = await SELF.fetch('http://x/api/v1/__test__/events/recent?limit=10', {
+      headers: { 'x-test-only': '1' }
+    });
+    const recent = await recentRes.json() as { events: Array<Record<string, unknown>> };
+    expect(recent.events.some((e) => e.type === 'task_set_promoted')).toBe(false);
+  });
+
+  it('broadcasts task_set_promoted on a real promotion', async () => {
+    const { keyId, keypair } = await registerMachineKey('admin-machine', 'admin');
+    const res = await SELF.fetch(await promoteRequest('ts-new', keyId, keypair));
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+
+    const recentRes = await SELF.fetch('http://x/api/v1/__test__/events/recent?limit=10', {
+      headers: { 'x-test-only': '1' }
+    });
+    const recent = await recentRes.json() as { events: Array<Record<string, unknown>> };
+    const ev = recent.events.find((e) => e.type === 'task_set_promoted' && e.hash === 'ts-new');
+    expect(ev).toBeDefined();
+    expect(typeof ev!.ts).toBe('string');
   });
 });

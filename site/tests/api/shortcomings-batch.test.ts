@@ -36,6 +36,13 @@ beforeEach(async () => {
     `INSERT INTO results(id,run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed)
      VALUES (100,'run-1','easy/a',1,0,0,0,0,0)`
   ).run();
+
+  // Reset SSE broadcaster buffer (see task-sets-promote.test.ts for rationale).
+  const reset = await SELF.fetch('http://x/api/v1/__test__/events/reset', {
+    method: 'POST',
+    headers: { 'x-test-only': '1' }
+  });
+  await reset.arrayBuffer();
 });
 
 const SAMPLE_SHORTCOMING = {
@@ -91,6 +98,16 @@ describe('POST /api/v1/shortcomings/batch', () => {
       .bind('easy/a')
       .first<{ task_id: string }>();
     expect(occ?.task_id).toBe('easy/a');
+
+    // Verify SSE broadcast was emitted with model_slug + count
+    const recentRes = await SELF.fetch('http://x/api/v1/__test__/events/recent?limit=10', {
+      headers: { 'x-test-only': '1' }
+    });
+    const recent = await recentRes.json() as { events: Array<Record<string, unknown>> };
+    const ev = recent.events.find((e) => e.type === 'shortcoming_added');
+    expect(ev).toBeDefined();
+    expect(ev!.model_slug).toBe('sonnet-4.7');
+    expect(ev!.count).toBe(1);
   });
 
   it('is idempotent — second call updates last_seen without duplicating', async () => {
@@ -161,7 +178,7 @@ describe('POST /api/v1/shortcomings/batch', () => {
     expect(body.code).toBe('model_not_found');
   });
 
-  it('accepts empty shortcomings array with counts of 0', async () => {
+  it('accepts empty shortcomings array with counts of 0 and does not broadcast', async () => {
     const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
     const payload = { model_slug: 'sonnet-4.7', shortcomings: [] };
 
@@ -170,6 +187,13 @@ describe('POST /api/v1/shortcomings/batch', () => {
     const body = await res.json<{ upserted: number; occurrences: number }>();
     expect(body.upserted).toBe(0);
     expect(body.occurrences).toBe(0);
+
+    // Empty batch must not broadcast: nothing changed.
+    const recentRes = await SELF.fetch('http://x/api/v1/__test__/events/recent?limit=10', {
+      headers: { 'x-test-only': '1' }
+    });
+    const recent = await recentRes.json() as { events: Array<Record<string, unknown>> };
+    expect(recent.events.some((e) => e.type === 'shortcoming_added')).toBe(false);
   });
 
   it('rejects malformed JSON body with 400', async () => {
