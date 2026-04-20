@@ -1,10 +1,9 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { broadcastEvent } from '$lib/server/broadcaster';
+import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { blobHashFromKey } from '$lib/server/ingest';
 import type { FinalizeResponse } from '$lib/shared/types';
-
-const LEADERBOARD_CACHE_KEYS = ['leaderboard:current', 'leaderboard:all'];
 
 export const POST: RequestHandler = async ({ params, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
@@ -68,8 +67,10 @@ export const POST: RequestHandler = async ({ params, platform }) => {
     ]);
 
     // Best-effort cache invalidation; never fail a committed finalize on transient KV errors.
+    // Leaderboard keys embed scope/taskset/hash/difficulty/harness/limit (see cacheKeyFor),
+    // so we prefix-list and delete every live entry instead of guessing literals.
     try {
-      await Promise.all(LEADERBOARD_CACHE_KEYS.map(k => cache.delete(k)));
+      await invalidateLeaderboardKv(cache);
     } catch { /* swallow */ }
 
     // Best-effort SSE broadcast: a DO outage must not fail an already-committed

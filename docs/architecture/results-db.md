@@ -5,7 +5,8 @@
 ## What P1 delivers
 
 - D1 schema (migrations `0001_core.sql`, `0002_fts.sql`)
-- R2 layout: `transcripts/`, `code/`, `shortcomings/`, `reproductions/`, `backups/`
+- R2 layout: `blobs/`, `shortcomings/`, `reproductions/`, `backups/`
+  (`transcripts/` and `code/` prefixes are reserved; see "R2 layout" below)
 - KV leaderboard cache invalidated on finalize / task-set promotion
 - Ed25519-signed ingest (scope hierarchy: ingest < verifier < admin)
 - Full public read surface: leaderboard, families, models, tasks, runs,
@@ -47,10 +48,18 @@
 
 ## R2 layout
 
+All ingest content (transcripts, generated code, reproduction bundle bytes) is
+content-addressed under a single `blobs/<sha>` prefix. The `blobKey()` helper in
+`site/src/lib/server/ingest.ts` is the sole key builder used by the ingest path,
+`PUT /api/v1/blobs/:sha256`, and `POST /api/v1/runs/:id/finalize`. Design-spec
+line 354 (`transcripts/<sha256>.txt.zst`) is intentionally not implemented as
+written — canonical storage is `blobs/<sha>`.
+
 | Prefix | Contents | Writer |
 |---|---|---|
-| `transcripts/` | LLM transcript blobs (sha256-keyed) | `PUT /api/v1/blobs/:sha256` during ingest |
-| `code/` | Generated AL source archives | `PUT /api/v1/blobs/:sha256` during ingest |
+| `blobs/` | All content-addressed ingest bytes (transcripts, generated code, reproduction-bundle bodies), sha256-keyed | `PUT /api/v1/blobs/:sha256` during ingest |
+| `transcripts/` | *Reserved.* Intended for curated / admin-uploaded transcripts in a later phase; nothing in P1 writes here. The read endpoint (`GET /api/v1/transcripts/<key>`) intentionally falls back to `blobs/<sha>` when the caller-supplied key looks like a bare sha256, so ingested transcripts are readable via this route. | (reserved) |
+| `code/` | *Reserved.* Generated AL source is currently stored under `blobs/<sha>`; the `code/` prefix is held for a future curated-archive use case. | (reserved) |
 | `shortcomings/` | Incorrect-pattern snippets attached to a shortcoming row | `POST /api/v1/shortcomings/batch` |
 | `reproductions/` | Reproduction tarballs (one per run) | Bench, finalized at `POST /api/v1/runs/:id/finalize` |
 | `backups/` | Nightly `d1-YYYYMMDD.sql` text dumps of every non-FTS user table | `scheduled` cron in `src/hooks.server.ts` |

@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { runBatch } from '$lib/server/db';
 
 const PROMOTION_THRESHOLD = 0.9;
@@ -147,14 +148,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // Step 10: Invalidate leaderboard KV only on promotion — non-promotion doesn't change standings
     if (promoted) {
       try {
-        let cursor: string | undefined = undefined;
-        do {
-          const opts: KVNamespaceListOptions = { prefix: 'leaderboard:' };
-          if (cursor) opts.cursor = cursor;
-          const listed: KVNamespaceListResult<unknown, string> = await cache.list(opts);
-          await Promise.all(listed.keys.map((k: KVNamespaceListKey<unknown, string>) => cache.delete(k.name)));
-          cursor = listed.list_complete ? undefined : listed.cursor;
-        } while (cursor);
+        await invalidateLeaderboardKv(cache);
       } catch { /* best-effort — DB is source of truth */ }
     }
 

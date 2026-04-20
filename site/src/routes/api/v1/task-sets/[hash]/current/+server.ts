@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { broadcastEvent } from '$lib/server/broadcaster';
+import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { runBatch } from '$lib/server/db';
 
 export const POST: RequestHandler = async ({ request, platform, params }) => {
@@ -58,14 +59,7 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
 
     // Invalidate leaderboard KV cache. Best-effort: DB is the source of truth.
     try {
-      let cursor: string | undefined = undefined;
-      do {
-        const opts: KVNamespaceListOptions = { prefix: 'leaderboard:' };
-        if (cursor) opts.cursor = cursor;
-        const listed: KVNamespaceListResult<unknown, string> = await cache.list(opts);
-        await Promise.all(listed.keys.map((k: KVNamespaceListKey<unknown, string>) => cache.delete(k.name)));
-        cursor = listed.list_complete ? undefined : listed.cursor;
-      } while (cursor);
+      await invalidateLeaderboardKv(cache);
     } catch { /* best-effort — DB is source of truth */ }
 
     // Best-effort SSE broadcast for live UI updates. A DO outage must not
