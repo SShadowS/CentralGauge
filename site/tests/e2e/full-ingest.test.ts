@@ -144,6 +144,7 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
       undefined,
       ingestKeypair
     );
+    // run_id is outside the signed canonical payload, so reassignment is safe
     runReq.run_id = 'e2e-run-1';
 
     const runRes = await SELF.fetch('http://x/api/v1/runs', {
@@ -170,13 +171,6 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
       expect(blobRes.status).toBe(201);
       await blobRes.arrayBuffer();
     }
-
-    // Seed the transcript at the public transcripts/ R2 prefix as well.
-    // The transcripts read endpoint serves objects from R2 key
-    // `transcripts/<key>`, while the run row's transcript_r2_key points to
-    // `blobs/<sha>` (the content-addressed blob). The decoupling lets the
-    // operator move/rename transcripts independently of the run record.
-    await env.BLOBS.put(`transcripts/${transcriptSha}.txt`, transcriptBytes);
 
     // ---------- 7. POST /api/v1/runs/:id/finalize ----------
     const finRes = await SELF.fetch(`http://x/api/v1/runs/${runBody.run_id}/finalize`, {
@@ -213,8 +207,13 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
     expect(detail.tier).toBe('claimed');
     expect(detail.model.slug).toBe('sonnet-4.7');
     expect(detail.results).toHaveLength(1);
-    // 1000 * 3.0 + 500 * 15.0 = 10500 / 1e6 = 0.0105
-    expect(detail.results[0].cost_usd).toBeCloseTo(0.0105, 6);
+    // Mirror the cost_snapshots row seeded above (input_per_mtoken=3.0,
+    // output_per_mtoken=15.0). If those rates change, this assertion will
+    // name the right file.
+    const inputPerMtoken = 3.0;
+    const outputPerMtoken = 15.0;
+    const expectedCost = (fixture.run.tokens_in * inputPerMtoken + fixture.run.tokens_out * outputPerMtoken) / 1_000_000;
+    expect(detail.results[0].cost_usd).toBeCloseTo(expectedCost, 6);
     expect(detail.results[0].passed).toBe(true);
 
     // ---------- 10. GET /api/v1/runs/:id/signature ----------
@@ -251,6 +250,9 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
     expect(task.solved_by[0].avg_score).toBeCloseTo(100, 5);
 
     // ---------- 12. GET /api/v1/transcripts/<sha>.txt ----------
+    // Proves the transcripts route falls through to blobs/<sha> when the
+    // curated transcripts/<sha>.txt prefix is absent — i.e. the real end-to-end
+    // ingest (PUT /blobs/<sha>) -> read (GET /transcripts/<sha>.txt) path.
     const trRes = await SELF.fetch(`http://x/api/v1/transcripts/${transcriptSha}.txt`);
     expect(trRes.status).toBe(200);
     expect(await trRes.text()).toBe(fixture.transcript_plain);
