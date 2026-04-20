@@ -12,8 +12,15 @@ beforeEach(async () => {
 });
 
 describe('POST /api/v1/admin/keys', () => {
+  // Local helper — collapses the repetitive `payload as unknown as Record<...>`
+  // cast + positional-arg boilerplate that otherwise appears ~10x in this file.
+  let adminKeyId: number;
+  let adminKp: Awaited<ReturnType<typeof generateKeypair>>;
+  const signAsAdmin = (p: object) =>
+    createSignedPayload(p as Record<string, unknown>, adminKeyId, undefined, adminKp);
+
   it('registers a new machine key when caller has admin scope', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
 
     const newKp = await generateKeypair();
     const payload = {
@@ -21,12 +28,7 @@ describe('POST /api/v1/admin/keys', () => {
       public_key_base64: bytesToB64(newKp.publicKey),
       scope: 'ingest' as const
     };
-    const { signedRequest } = await createSignedPayload(
-      payload as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin(payload);
 
     const res = await SELF.fetch('http://x/api/v1/admin/keys', {
       method: 'POST',
@@ -47,7 +49,7 @@ describe('POST /api/v1/admin/keys', () => {
   });
 
   it('returns 409 on duplicate (machine_id, public_key)', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
 
     const newKp = await generateKeypair();
     const payload = {
@@ -55,12 +57,7 @@ describe('POST /api/v1/admin/keys', () => {
       public_key_base64: bytesToB64(newKp.publicKey),
       scope: 'ingest' as const
     };
-    const { signedRequest } = await createSignedPayload(
-      payload as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin(payload);
 
     const r1 = await SELF.fetch('http://x/api/v1/admin/keys', {
       method: 'POST',
@@ -71,12 +68,7 @@ describe('POST /api/v1/admin/keys', () => {
     await r1.arrayBuffer();
 
     // Re-sign (signed_at differs) but same payload contents — UNIQUE constraint should trip
-    const { signedRequest: signed2 } = await createSignedPayload(
-      payload as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest: signed2 } = await signAsAdmin(payload);
     const r2 = await SELF.fetch('http://x/api/v1/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -114,7 +106,7 @@ describe('POST /api/v1/admin/keys', () => {
   });
 
   it('rejects invalid scope', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
 
     const newKp = await generateKeypair();
     const payload = {
@@ -122,12 +114,7 @@ describe('POST /api/v1/admin/keys', () => {
       public_key_base64: bytesToB64(newKp.publicKey),
       scope: 'super-user'
     };
-    const { signedRequest } = await createSignedPayload(
-      payload as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin(payload);
     const res = await SELF.fetch('http://x/api/v1/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -139,19 +126,14 @@ describe('POST /api/v1/admin/keys', () => {
   });
 
   it('rejects malformed public key (wrong length)', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
 
     const payload = {
       machine_id: 'x',
       public_key_base64: bytesToB64(new Uint8Array(16)), // 16 bytes, not 32
       scope: 'ingest' as const
     };
-    const { signedRequest } = await createSignedPayload(
-      payload as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin(payload);
     const res = await SELF.fetch('http://x/api/v1/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -161,19 +143,30 @@ describe('POST /api/v1/admin/keys', () => {
     const body = await res.json<{ code: string }>();
     expect(body.code).toBe('invalid_public_key');
   });
+
+  it('rejects a body that is not an envelope shape (bare string)', async () => {
+    const res = await SELF.fetch('http://x/api/v1/admin/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify('not an envelope')
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe('bad_envelope');
+  });
 });
 
 describe('DELETE /api/v1/admin/keys/:id', () => {
+  let adminKeyId: number;
+  let adminKp: Awaited<ReturnType<typeof generateKeypair>>;
+  const signAsAdmin = (p: object) =>
+    createSignedPayload(p as Record<string, unknown>, adminKeyId, undefined, adminKp);
+
   it('revokes a key when caller has admin scope', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
     const { keyId: targetId } = await registerMachineKey('victim', 'ingest');
 
-    const { signedRequest } = await createSignedPayload(
-      { key_id: targetId } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin({ key_id: targetId });
 
     const res = await SELF.fetch(`http://x/api/v1/admin/keys/${targetId}`, {
       method: 'DELETE',
@@ -193,15 +186,10 @@ describe('DELETE /api/v1/admin/keys/:id', () => {
   });
 
   it('is idempotent: second revoke returns changed=false', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
     const { keyId: targetId } = await registerMachineKey('victim2', 'ingest');
 
-    const { signedRequest: req1 } = await createSignedPayload(
-      { key_id: targetId } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest: req1 } = await signAsAdmin({ key_id: targetId });
     const r1 = await SELF.fetch(`http://x/api/v1/admin/keys/${targetId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -211,12 +199,7 @@ describe('DELETE /api/v1/admin/keys/:id', () => {
     const b1 = await r1.json<{ changed: boolean }>();
     expect(b1.changed).toBe(true);
 
-    const { signedRequest: req2 } = await createSignedPayload(
-      { key_id: targetId } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest: req2 } = await signAsAdmin({ key_id: targetId });
     const r2 = await SELF.fetch(`http://x/api/v1/admin/keys/${targetId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -228,13 +211,8 @@ describe('DELETE /api/v1/admin/keys/:id', () => {
   });
 
   it('returns 404 on unknown id', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
-    const { signedRequest } = await createSignedPayload(
-      { key_id: 999999 } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
+    const { signedRequest } = await signAsAdmin({ key_id: 999999 });
     const res = await SELF.fetch('http://x/api/v1/admin/keys/999999', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -246,13 +224,8 @@ describe('DELETE /api/v1/admin/keys/:id', () => {
   });
 
   it('rejects non-positive id', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
-    const { signedRequest } = await createSignedPayload(
-      { key_id: 0 } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
+    const { signedRequest } = await signAsAdmin({ key_id: 0 });
     const res = await SELF.fetch('http://x/api/v1/admin/keys/0', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
@@ -264,15 +237,10 @@ describe('DELETE /api/v1/admin/keys/:id', () => {
   });
 
   it('rejects payload key_id mismatching URL id', async () => {
-    const { keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin');
+    ({ keyId: adminKeyId, keypair: adminKp } = await registerMachineKey('root', 'admin'));
     const { keyId: targetId } = await registerMachineKey('victim3', 'ingest');
 
-    const { signedRequest } = await createSignedPayload(
-      { key_id: targetId + 100 } as unknown as Record<string, unknown>,
-      adminKeyId,
-      undefined,
-      adminKp
-    );
+    const { signedRequest } = await signAsAdmin({ key_id: targetId + 100 });
     const res = await SELF.fetch(`http://x/api/v1/admin/keys/${targetId}`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },

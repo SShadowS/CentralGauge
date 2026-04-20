@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
+import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { b64ToBytes } from '$lib/shared/base64';
 import type { Scope } from '$lib/shared/types';
@@ -10,12 +10,6 @@ interface RegisterKeyPayload {
   scope: Scope;
 }
 
-interface SignedAdminRequest {
-  version: number;
-  signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
-  payload: Record<string, unknown>;
-}
-
 const ALLOWED_SCOPES: ReadonlySet<Scope> = new Set<Scope>(['ingest', 'verifier', 'admin']);
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -23,14 +17,30 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   const db = platform.env.DB;
 
   try {
-    const signed = (await request.json()) as SignedAdminRequest;
-    if (signed.version !== 1) {
+    // Narrow shape guard BEFORE any field access so a body like `null`, `42`,
+    // or `"x"` yields a 400 `bad_envelope` rather than a TypeError → 500.
+    const signed = (await request.json()) as unknown;
+    if (
+      typeof signed !== 'object' || signed === null ||
+      typeof (signed as { signature?: unknown }).signature !== 'object' ||
+      (signed as { signature: unknown }).signature === null ||
+      typeof (signed as { payload?: unknown }).payload !== 'object' ||
+      (signed as { payload: unknown }).payload === null
+    ) {
+      throw new ApiError(
+        400,
+        'bad_envelope',
+        'request body must be a signed envelope with {signature, payload}'
+      );
+    }
+    const envelope = signed as SignedAdminRequest;
+    if (envelope.version !== 1) {
       throw new ApiError(400, 'bad_version', 'only version 1 supported');
     }
 
-    await verifySignedRequest(db, signed, 'admin');
+    await verifySignedRequest(db, envelope, 'admin');
 
-    const p = signed.payload as unknown as RegisterKeyPayload;
+    const p = envelope.payload as unknown as RegisterKeyPayload;
     if (typeof p.machine_id !== 'string' || p.machine_id.length === 0) {
       throw new ApiError(400, 'invalid_machine_id', 'machine_id is required');
     }

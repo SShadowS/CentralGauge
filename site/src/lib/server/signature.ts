@@ -6,9 +6,18 @@ import { ApiError } from './errors';
 
 const SKEW_LIMIT_MS = 10 * 60 * 1000;
 
-interface SignedRequest {
+export interface SignedRequest {
   signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
   payload: Record<string, unknown>;
+}
+
+/**
+ * Envelope shape for admin-scoped mutations. Identical to SignedRequest but
+ * carries an explicit `version` field so admin endpoints can reject bodies
+ * produced by older/newer clients before touching the signature.
+ */
+export interface SignedAdminRequest extends SignedRequest {
+  version: number;
 }
 
 export interface VerifiedKey {

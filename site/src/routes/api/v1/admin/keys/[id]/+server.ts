@@ -1,13 +1,7 @@
 import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
+import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { getFirst } from '$lib/server/db';
-
-interface SignedAdminRequest {
-  version: number;
-  signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
-  payload: Record<string, unknown>;
-}
 
 export const DELETE: RequestHandler = async ({ params, request, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
@@ -20,16 +14,32 @@ export const DELETE: RequestHandler = async ({ params, request, platform }) => {
       throw new ApiError(400, 'invalid_id', `id must be a positive integer (got "${idStr}")`);
     }
 
-    const signed = (await request.json()) as SignedAdminRequest;
-    if (signed.version !== 1) {
+    // Narrow shape guard BEFORE any field access so a body like `null`, `42`,
+    // or `"x"` yields a 400 `bad_envelope` rather than a TypeError → 500.
+    const signed = (await request.json()) as unknown;
+    if (
+      typeof signed !== 'object' || signed === null ||
+      typeof (signed as { signature?: unknown }).signature !== 'object' ||
+      (signed as { signature: unknown }).signature === null ||
+      typeof (signed as { payload?: unknown }).payload !== 'object' ||
+      (signed as { payload: unknown }).payload === null
+    ) {
+      throw new ApiError(
+        400,
+        'bad_envelope',
+        'request body must be a signed envelope with {signature, payload}'
+      );
+    }
+    const envelope = signed as SignedAdminRequest;
+    if (envelope.version !== 1) {
       throw new ApiError(400, 'bad_version', 'only version 1 supported');
     }
 
-    await verifySignedRequest(db, signed, 'admin');
+    await verifySignedRequest(db, envelope, 'admin');
 
     // Defense-in-depth: payload.key_id must match URL id so that a leaked admin
     // signature for one key can't be replayed against a different key id.
-    const payloadKeyId = signed.payload?.key_id;
+    const payloadKeyId = envelope.payload.key_id;
     if (typeof payloadKeyId !== 'number' || payloadKeyId !== parsedId) {
       throw new ApiError(
         400,

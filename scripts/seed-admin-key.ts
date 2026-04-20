@@ -21,9 +21,9 @@
  *   - The script forwards the operator-supplied <machine-id> verbatim into the
  *     SQL string. Because the only callers are repo maintainers running this
  *     locally to bootstrap a fresh D1 database, that surface is acceptable —
- *     but we still validate that machine_id contains no SQL meta-characters
- *     (single quotes, backslashes, newlines, NULs) to prevent accidental
- *     corruption of the INSERT statement.
+ *     but we still validate machine_id against a positive allowlist
+ *     (A-Z a-z 0-9 . _ -) so the INSERT statement can't be corrupted and so
+ *     the rule is forward-compatible with any future network-facing reuse.
  *   - The public key is encoded as a hex BLOB literal (`x'...'`), which D1
  *     accepts and which is not subject to quote-escaping.
  *   - Run this against PRODUCTION (`--remote`) — if you want a local seed,
@@ -41,14 +41,9 @@ function usage(): never {
 }
 
 function validateMachineId(machineId: string): void {
-  if (machineId.length === 0 || machineId.length > 128) {
-    throw new Error("machine-id must be 1..128 chars");
-  }
-  // Disallow anything that could break the SQL string literal we build below.
-  if (/['"`\\\r\n\0;]/.test(machineId)) {
-    throw new Error(
-      "machine-id contains forbidden characters (quotes, backslashes, newlines, NULs, semicolons)",
-    );
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(machineId)) {
+    console.error("machine_id must be 1-128 chars, only A-Z a-z 0-9 . _ -");
+    Deno.exit(2);
   }
 }
 
@@ -85,7 +80,6 @@ async function main(): Promise<number> {
   console.error(`[INFO] seeding admin key into D1 database '${dbName}'`);
   console.error(`[INFO] machine_id = ${machineId}`);
   console.error(`[INFO] public key = ${pubB64} (32 bytes)`);
-  console.error(`[INFO] running: npx wrangler d1 execute ${dbName} --remote --command "<sql>"`);
 
   const cmd = new Deno.Command("npx", {
     args: [
