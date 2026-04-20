@@ -44,7 +44,7 @@ export default defineWorkersConfig(async () => {
           miniflare: {
             compatibilityDate: '2026-04-17',
             compatibilityFlags: ['nodejs_compat'],
-            bindings: { TEST_MIGRATIONS: migrations },
+            bindings: { TEST_MIGRATIONS: migrations, LOG_LEVEL: 'silent' },
             // Override the DO binding to resolve via a sidecar worker.
             // The SvelteKit-built _worker.js does not re-export the
             // LeaderboardBroadcaster class at the top level, so leaving the
