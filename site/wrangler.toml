@@ -2,6 +2,7 @@ name = "centralgauge"
 main = ".svelte-kit/cloudflare/_worker.js"
 compatibility_date = "2026-04-17"
 compatibility_flags = ["nodejs_compat"]
+account_id = "22c8fbe790464b492d9b178cc0f9255b"
 
 [vars]
 LOG_LEVEL = "info"
@@ -14,7 +15,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "centralgauge"
-database_id = "PLACEHOLDER_D1_ID"
+database_id = "46b61074-4d6b-4ec7-84cf-b0fddb0d034f"
 migrations_dir = "migrations"
 
 # R2 bucket for content-addressed blobs
@@ -25,7 +26,7 @@ bucket_name = "centralgauge-blobs"
 # KV namespace for leaderboard cache
 [[kv_namespaces]]
 binding = "CACHE"
-id = "PLACEHOLDER_KV_ID"
+id = "4cb7accbc2884bc6bab9a4de1fff134b"
 
 # Durable Object for SSE fan-out
 [[durable_objects.bindings]]
@@ -35,10 +36,12 @@ class_name = "LeaderboardBroadcaster"
 [[migrations]]
 tag = "v1"
 # LeaderboardBroadcaster is in-memory only (Set<WritableStreamDefaultWriter>
-# + recent BroadcastEvent[]). It never writes to state.storage, so we use
-# new_classes — this avoids miniflare allocating a per-class SQLite WAL on
-# Windows that would EBUSY the .svelte-kit build directory after tests.
-new_classes = ["LeaderboardBroadcaster"]
+# + recent BroadcastEvent[]) and never writes to state.storage. On the
+# Cloudflare free plan, however, all new DO classes MUST be declared with
+# `new_sqlite_classes` — `new_classes` (KV-backed storage) requires the
+# Workers Paid plan. We pay the SQLite-WAL cost locally in exchange for
+# being deployable without a billing tier bump.
+new_sqlite_classes = ["LeaderboardBroadcaster"]
 
 # Cron trigger: nightly D1 -> R2 backup at 02:00 UTC. The handler is the
 # `scheduled` named export in `src/hooks.server.ts`.
@@ -51,10 +54,15 @@ crons = ["0 2 * * *"]
 [env.preview]
 name = "centralgauge-preview"
 
+# `vars` does not inherit from the top-level `[vars]` section, so every
+# environment that needs them must repeat the declarations explicitly.
+[env.preview.vars]
+LOG_LEVEL = "debug"
+
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "centralgauge-preview"
-database_id = "PLACEHOLDER_PREVIEW_D1_ID"
+database_id = "e719e2e6-8fb0-4c65-823d-a7e00cc14a84"
 migrations_dir = "migrations"
 
 [[env.preview.r2_buckets]]
@@ -63,7 +71,7 @@ bucket_name = "centralgauge-blobs-preview"
 
 [[env.preview.kv_namespaces]]
 binding = "CACHE"
-id = "PLACEHOLDER_PREVIEW_KV_ID"
+id = "ffcdc2d7b2164cbe9f5d58c5c74a4ddf"
 
 [[env.preview.durable_objects.bindings]]
 name = "LEADERBOARD_BROADCASTER"

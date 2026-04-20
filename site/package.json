@@ -4,13 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
+    "dev": "wrangler types && vite dev",
+    "build": "wrangler types && vite build && node scripts/wrap-worker-exports.mjs",
     "preview": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run && vitest run --config vitest.broadcaster.config.ts",
+    "check": "wrangler types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run && vitest run --config vitest.broadcaster.config.ts && vitest run --config vitest.build.config.ts",
     "test:broadcaster": "vitest run --config vitest.broadcaster.config.ts",
+    "test:build": "vitest run --config vitest.build.config.ts",
     "test:main": "vitest run",
     "test:watch": "vitest"
   },
