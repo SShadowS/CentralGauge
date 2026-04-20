@@ -1,0 +1,35 @@
+{
+  "name": "centralgauge-site",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run && vitest run --config vitest.broadcaster.config.ts",
+    "test:broadcaster": "vitest run --config vitest.broadcaster.config.ts",
+    "test:main": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.0",
+    "@cloudflare/workers-types": "^4.20260401.0",
+    "@sveltejs/adapter-cloudflare": "^4.7.0",
+    "@sveltejs/kit": "^2.7.0",
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^3.80.0"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.1.0",
+    "@noble/hashes": "^1.6.0",
+    "fzstd": "^0.1.1"
+  }
+}

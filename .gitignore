@@ -25,6 +25,8 @@ mkdocs-build/
 site/.svelte-kit/
 site/build/
 site/.wrangler/
+site/.dev.vars
+site/.miniflare-broadcaster/
 
 # Git worktrees (isolated workspaces created by claude code)
 worktrees/
@@ -84,7 +86,10 @@ tests/al/dependencies/*/.alpackages/
 tests/al/dependencies/*/output/
 
 # Local debug files and scripts
-scripts/
+scripts/*
+# ...except checked-in operational tooling:
+!scripts/generate-machine-key.ts
+!scripts/seed-admin-key.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
