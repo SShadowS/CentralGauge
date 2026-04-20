@@ -2,42 +2,82 @@
 /**
  * seed-admin-key.ts
  *
- * Seed the very first admin key directly into a D1 database via
+ * Seed a machine key directly into a D1 database via
  * `npx wrangler d1 execute --remote`.
  *
- * Once at least one admin key exists you should NEVER run this script again.
- * Use POST /api/v1/admin/keys (signed by an existing admin key) instead.
+ * Intended for bootstrapping a fresh environment. Once at least one admin
+ * key exists, rotate and add new keys via POST /api/v1/admin/keys (signed
+ * by the existing admin key) instead.
  *
  * Usage:
- *   deno run -A scripts/seed-admin-key.ts <db-name> <machine-id> <public-key-base64>
+ *   deno run -A scripts/seed-admin-key.ts \
+ *     <db-name> <machine-id> <public-key-base64> \
+ *     [--scope admin|ingest|verifier] [--env preview|production]
  *
  * Example:
  *   deno run -A scripts/seed-admin-key.ts \
- *     centralgauge \
- *     ops-laptop \
- *     RBu0...PUg=
+ *     centralgauge-preview preview-ingest RBu0...PUg= \
+ *     --scope ingest --env preview
  *
  * Security notes:
- *   - The script forwards the operator-supplied <machine-id> verbatim into the
- *     SQL string. Because the only callers are repo maintainers running this
- *     locally to bootstrap a fresh D1 database, that surface is acceptable —
- *     but we still validate machine_id against a positive allowlist
- *     (A-Z a-z 0-9 . _ -) so the INSERT statement can't be corrupted and so
- *     the rule is forward-compatible with any future network-facing reuse.
+ *   - The operator-supplied <machine-id> is forwarded verbatim into the
+ *     SQL string, but validated against a positive allowlist
+ *     (A-Z a-z 0-9 . _ -) so the INSERT statement cannot be corrupted.
+ *   - Scope is whitelisted against the three server-side values.
  *   - The public key is encoded as a hex BLOB literal (`x'...'`), which D1
- *     accepts and which is not subject to quote-escaping.
- *   - Run this against PRODUCTION (`--remote`) — if you want a local seed,
- *     change `--remote` to `--local` by editing this script.
+ *     accepts and which is immune to quote-escaping issues.
+ *   - `--remote` is always passed to wrangler. For local D1 testing, run
+ *     `wrangler d1 execute ... --local` manually.
  */
 
 import { decodeBase64 } from "jsr:@std/encoding@^1.0.5/base64";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 
+type Scope = "admin" | "ingest" | "verifier";
+
+interface CliArgs {
+  dbName: string;
+  machineId: string;
+  pubB64: string;
+  scope: Scope;
+  env: string | null;
+}
+
 function usage(): never {
   console.error(
-    "usage: seed-admin-key.ts <db-name> <machine-id> <public-key-base64>",
+    "usage: seed-admin-key.ts <db-name> <machine-id> <public-key-base64> " +
+      "[--scope admin|ingest|verifier] [--env preview|production]",
   );
   Deno.exit(2);
+}
+
+function parseArgs(argv: string[]): CliArgs {
+  const positional: string[] = [];
+  let scope: Scope = "admin";
+  let env: string | null = null;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--scope") {
+      const v = argv[++i];
+      if (v !== "admin" && v !== "ingest" && v !== "verifier") {
+        console.error(`[FAIL] --scope must be admin|ingest|verifier (got '${v}')`);
+        Deno.exit(2);
+      }
+      scope = v;
+    } else if (arg === "--env") {
+      env = argv[++i] ?? usage();
+    } else if (arg.startsWith("--")) {
+      console.error(`[FAIL] unknown flag '${arg}'`);
+      usage();
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  const [dbName, machineId, pubB64] = positional;
+  if (!dbName || !machineId || !pubB64) usage();
+  return { dbName, machineId, pubB64, scope, env };
 }
 
 function validateMachineId(machineId: string): void {
@@ -48,14 +88,12 @@ function validateMachineId(machineId: string): void {
 }
 
 async function main(): Promise<number> {
-  const [dbName, machineId, pubB64] = Deno.args;
-  if (!dbName || !machineId || !pubB64) usage();
-
-  validateMachineId(machineId);
+  const args = parseArgs(Deno.args);
+  validateMachineId(args.machineId);
 
   let pubBytes: Uint8Array;
   try {
-    pubBytes = decodeBase64(pubB64);
+    pubBytes = decodeBase64(args.pubB64);
   } catch (err) {
     console.error(
       `[FAIL] public-key-base64 is not valid base64: ${
@@ -75,29 +113,37 @@ async function main(): Promise<number> {
   const createdAt = new Date().toISOString();
   const sql =
     `INSERT INTO machine_keys(machine_id, public_key, scope, created_at) ` +
-    `VALUES ('${machineId}', x'${hex}', 'admin', '${createdAt}');`;
+    `VALUES ('${args.machineId}', x'${hex}', '${args.scope}', '${createdAt}');`;
 
-  console.error(`[INFO] seeding admin key into D1 database '${dbName}'`);
-  console.error(`[INFO] machine_id = ${machineId}`);
-  console.error(`[INFO] public key = ${pubB64} (32 bytes)`);
+  console.error(
+    `[INFO] seeding ${args.scope} key into D1 database '${args.dbName}'` +
+      (args.env ? ` (env=${args.env})` : ""),
+  );
+  console.error(`[INFO] machine_id = ${args.machineId}`);
+  console.error(`[INFO] public key = ${args.pubB64} (32 bytes)`);
+
+  const wranglerArgs = [
+    "wrangler",
+    "d1",
+    "execute",
+    args.dbName,
+    "--remote",
+    "--command",
+    sql,
+  ];
+  if (args.env) {
+    wranglerArgs.push("--env", args.env);
+  }
 
   const cmd = new Deno.Command("npx", {
-    args: [
-      "wrangler",
-      "d1",
-      "execute",
-      dbName,
-      "--remote",
-      "--command",
-      sql,
-    ],
+    args: wranglerArgs,
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
   });
   const { code } = await cmd.output();
   if (code === 0) {
-    console.error(`[OK] admin key seeded successfully`);
+    console.error(`[OK] ${args.scope} key seeded successfully`);
   } else {
     console.error(`[FAIL] wrangler exited with code ${code}`);
   }

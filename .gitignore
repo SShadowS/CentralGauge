@@ -91,6 +91,7 @@ scripts/*
 # ...except checked-in operational tooling:
 !scripts/generate-machine-key.ts
 !scripts/seed-admin-key.ts
+!scripts/smoke-ingest.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
