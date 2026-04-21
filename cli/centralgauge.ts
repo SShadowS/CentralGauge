@@ -20,6 +20,7 @@ import {
   registerCompileTestCommands,
   registerConfigCommands,
   registerContainerCommands,
+  registerIngestCommand,
   registerModelsCommand,
   registerReportCommand,
   registerReportDbCommand,
@@ -98,6 +99,7 @@ registerReportDbCommand(cliAny);
 registerVerifyCommand(cliAny);
 registerContainerCommands(cliAny);
 registerCompileTestCommands(cliAny);
+registerIngestCommand(cliAny);
 registerModelsCommand(cliAny);
 registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
