@@ -2,10 +2,11 @@ import type { RequestHandler } from './$types';
 import { sha256Hex } from '$lib/shared/hash';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { blobKey } from '$lib/server/ingest';
+import { verifyBlobAuth } from '$lib/server/blob-auth';
 
 const HEX64 = /^[a-f0-9]{64}$/;
 
-export const PUT: RequestHandler = async ({ params, request, platform }) => {
+export const PUT: RequestHandler = async ({ params, request, platform, url }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
   const key = params.sha256!;
   if (!HEX64.test(key)) {
@@ -19,11 +20,11 @@ export const PUT: RequestHandler = async ({ params, request, platform }) => {
       throw new ApiError(400, 'hash_mismatch', `body sha256 ${actualHash} does not match key ${key}`);
     }
 
+    await verifyBlobAuth(platform.env.DB, request.headers, 'PUT', url.pathname, key, 'ingest');
+
     const r2Key = blobKey(key);
     const existing = await platform.env.BLOBS.head(r2Key);
-    if (existing) {
-      return jsonResponse({ sha256: key, status: 'exists' }, 200);
-    }
+    if (existing) return jsonResponse({ sha256: key, status: 'exists' }, 200);
 
     await platform.env.BLOBS.put(r2Key, body);
     return jsonResponse({ sha256: key, status: 'created' }, 201);

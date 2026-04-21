@@ -1,6 +1,9 @@
-import { env } from 'cloudflare:test';
+import { env, SELF } from 'cloudflare:test';
+import * as ed from '@noble/ed25519';
 import { createSignedPayload } from './keys';
+import { canonicalJSON } from '../../src/lib/shared/canonical';
 import type { SignedRunPayload } from '../../src/lib/shared/types';
+import type { Keypair } from '../../src/lib/shared/ed25519';
 
 export async function seedMinimalRefData() {
   await env.DB.batch([
@@ -24,6 +27,30 @@ export async function registerMachineKey(machineId = 'test-machine', scope: 'ing
 
 export async function registerIngestKey(machineId = 'test-machine') {
   return registerMachineKey(machineId, 'ingest');
+}
+
+export async function signedBlobPut(
+  path: string,
+  body: Uint8Array<ArrayBuffer>,
+  keyId: number,
+  keypair: Keypair,
+): Promise<Response> {
+  const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', body)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const signedAt = new Date().toISOString();
+  const canonical = canonicalJSON({ method: 'PUT', path, body_sha256: hash, signed_at: signedAt });
+  const sig = await ed.signAsync(new TextEncoder().encode(canonical), keypair.privateKey);
+  const sigB64 = btoa(String.fromCharCode(...sig));
+  return SELF.fetch(`https://x${path}`, {
+    method: 'PUT',
+    headers: {
+      'X-CG-Signature': sigB64,
+      'X-CG-Key-Id': String(keyId),
+      'X-CG-Signed-At': signedAt,
+    },
+    body,
+  });
 }
 
 export function makeRunPayload(overrides: Partial<SignedRunPayload['payload']> = {}): SignedRunPayload['payload'] {

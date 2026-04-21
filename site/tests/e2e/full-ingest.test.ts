@@ -1,7 +1,7 @@
 import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
-import { registerMachineKey } from '../fixtures/ingest-helpers';
+import { registerMachineKey, signedBlobPut } from '../fixtures/ingest-helpers';
 import { sha256Hex } from '../../src/lib/shared/hash';
 import { canonicalJSON } from '../../src/lib/shared/canonical';
 import { resetDb } from '../utils/reset-db';
@@ -41,6 +41,7 @@ beforeEach(async () => {
 });
 
 describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
+  // 30 s: 14 endpoints end-to-end including 3 signed blob PUTs in a shared worker pool.
   it('round-trips a run through every endpoint', async () => {
     // ---------- 1. Register an ingest key + admin key ----------
     const { keyId: ingestKeyId, keypair: ingestKeypair } = await registerMachineKey('rig', 'ingest');
@@ -151,11 +152,7 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
       [codeSha, codeBytes],
       [bundleSha, bundleBytes]
     ] as const) {
-      const blobRes = await SELF.fetch(`http://x/api/v1/blobs/${sha}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body
-      });
+      const blobRes = await signedBlobPut(`/api/v1/blobs/${sha}`, body, ingestKeyId, ingestKeypair);
       expect(blobRes.status).toBe(201);
       await blobRes.arrayBuffer();
     }
@@ -275,5 +272,5 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
       (e) => e.type === 'task_set_promoted' && e.hash === taskSetHash
     );
     expect(promotedEv).toBeDefined();
-  });
+  }, 30_000);
 });
