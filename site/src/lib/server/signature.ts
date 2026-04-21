@@ -86,7 +86,7 @@ export async function verifySignedRequest(
   return { key_id: keyRow.id, machine_id: keyRow.machine_id, scope: keyRow.scope };
 }
 
-function hasScope(have: Scope, want: Scope): boolean {
+export function hasScope(have: Scope, want: Scope): boolean {
   // admin > verifier > ingest (admin can do everything)
   const rank = { ingest: 1, verifier: 2, admin: 3 } as const;
   return rank[have] >= rank[want];
