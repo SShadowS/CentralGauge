@@ -26,6 +26,7 @@ import {
   registerReportDbCommand,
   registerRulesCommand,
   registerStatsCommands,
+  registerSyncCatalogCommand,
   registerVerifyCommand,
 } from "./commands/mod.ts";
 
@@ -103,6 +104,7 @@ registerIngestCommand(cliAny);
 registerModelsCommand(cliAny);
 registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
+registerSyncCatalogCommand(cliAny);
 registerRulesCommand(cliAny);
 
 // Parse and execute
