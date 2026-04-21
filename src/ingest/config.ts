@@ -16,10 +16,18 @@ export async function loadIngestConfig(
   cwd: string,
   flags: IngestCliFlags,
 ): Promise<IngestConfig> {
-  const fileConf = await loadYaml(`${cwd}/.centralgauge.yml`) ??
-    await loadYaml(`${homeDir()}/.centralgauge.yml`) ?? {};
-  const top = fileConf as Record<string, unknown>;
-  const ingest = (top["ingest"] as Record<string, unknown> | undefined) ?? {};
+  const cwdConf = (await loadYaml(`${cwd}/.centralgauge.yml`)) as
+    | Record<string, unknown>
+    | null;
+  const homeConf = (await loadYaml(`${homeDir()}/.centralgauge.yml`)) as
+    | Record<string, unknown>
+    | null;
+  const cwdIngest =
+    (cwdConf?.["ingest"] as Record<string, unknown> | undefined) ?? {};
+  const homeIngest =
+    (homeConf?.["ingest"] as Record<string, unknown> | undefined) ?? {};
+  // cwd overrides home per field; sections missing from cwd fall through to home.
+  const ingest: Record<string, unknown> = { ...homeIngest, ...cwdIngest };
 
   const url = flags.url ??
     Deno.env.get(`${ENV_PREFIX}INGEST_URL`) ??
