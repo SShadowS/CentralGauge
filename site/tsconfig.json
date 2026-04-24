@@ -10,6 +10,7 @@
     "sourceMap": true,
     "strict": true,
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
     "target": "ES2022",
     "types": ["@cloudflare/vitest-pool-workers/types"]
   },

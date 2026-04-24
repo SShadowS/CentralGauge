@@ -22,10 +22,14 @@ import type {
   AgentBenchmarkOptions,
   ExtendedBenchmarkOptions,
 } from "./bench/mod.ts";
+import type { ModelVariant } from "../../src/llm/variant-types.ts";
 import {
+  assembleBenchResultsForVariant,
   executeAgentBenchmark,
   executeParallelBenchmark,
+  readGitSha,
 } from "./bench/mod.ts";
+import { ingestRun } from "../../src/ingest/mod.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -171,6 +175,16 @@ export function registerBenchCommand(cli: Command): void {
       "--runs <number:integer>",
       "Run the full benchmark N times for pass@k analysis",
       { default: 1 },
+    )
+    .option(
+      "--no-ingest",
+      "Skip ingestion to the scoreboard API after the run completes",
+      { default: false },
+    )
+    .option(
+      "-y, --yes",
+      "Non-interactive; auto-accept API-fetched pricing during ingest",
+      { default: false },
     )
     .action(async (options) => {
       // Handle --list-presets
@@ -450,6 +464,19 @@ export function registerBenchCommand(cli: Command): void {
         options.tui ?? false,
       );
 
+      // Ingest to scoreboard unless --no-ingest
+      if (
+        options.ingest !== false &&
+        result.resultFilePaths && result.resultFilePaths.length > 0 &&
+        result.variants && result.variants.length > 0
+      ) {
+        await ingestBenchResults(
+          result.resultFilePaths,
+          result.variants,
+          options.yes ?? false,
+        );
+      }
+
       // If dashboard is running, keep process alive for result review
       if (result.dashboardUrl) {
         console.log(
@@ -558,4 +585,79 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
   }
 
   return cliOptions;
+}
+
+/**
+ * Ingest bench results to the scoreboard API. One ingestRun call per
+ * (results file × variant). Transient failures print a replay hint but
+ * do not fail the bench run; fatal failures abort.
+ */
+async function ingestBenchResults(
+  resultFilePaths: string[],
+  variants: ModelVariant[],
+  yes: boolean,
+): Promise<void> {
+  const cwd = Deno.cwd();
+  const pricingVersion = todayPricingVersion();
+  const centralgaugeSha = await readGitSha(cwd);
+
+  console.log(
+    colors.gray(
+      `[INFO] Ingesting ${resultFilePaths.length} result file(s) × ${variants.length} variant(s) to scoreboard`,
+    ),
+  );
+
+  for (const filePath of resultFilePaths) {
+    for (const variant of variants) {
+      const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
+        { pricingVersion };
+      if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
+      const br = await assembleBenchResultsForVariant(
+        filePath,
+        variant,
+        assembleOpts,
+      );
+      if (!br) continue;
+
+      const outcome = await ingestRun(br, {
+        cwd,
+        catalogDir: `${cwd}/site/catalog`,
+        tasksDir: `${cwd}/tasks`,
+        interactive: !yes,
+        flags: {},
+      });
+
+      if (outcome.kind === "retryable-failure") {
+        console.warn(
+          colors.yellow(
+            `[WARN] Ingest failed transiently for ${variant.variantId}: ${outcome.lastError.message}`,
+          ),
+        );
+        console.warn(
+          colors.gray(`       Replay: centralgauge ingest ${filePath}`),
+        );
+      } else if (outcome.kind === "fatal-failure") {
+        console.error(
+          colors.red(
+            `[FAIL] Ingest rejected for ${variant.variantId}: ${outcome.code} ${outcome.message}`,
+          ),
+        );
+        throw new Error(`ingest rejected: ${outcome.code}`);
+      } else {
+        console.log(
+          colors.green(
+            `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${outcome.bytesUploaded} bytes)`,
+          ),
+        );
+      }
+    }
+  }
+}
+
+function todayPricingVersion(): string {
+  const d = new Date();
+  const yyyy = d.getUTCFullYear();
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }

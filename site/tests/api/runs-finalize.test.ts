@@ -1,7 +1,7 @@
 import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
-import { seedMinimalRefData, registerIngestKey, makeRunPayload } from '../fixtures/ingest-helpers';
+import { seedMinimalRefData, registerIngestKey, makeRunPayload, signedBlobPut } from '../fixtures/ingest-helpers';
 import { sha256Hex } from '../../src/lib/shared/hash';
 import { cacheKeyFor } from '../../src/lib/server/leaderboard';
 import { resetDb } from '../utils/reset-db';
@@ -49,7 +49,7 @@ async function ingestAndUploadBlobs() {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(signedRequest)
   });
 
-  return { runId: signedRequest.run_id, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody };
+  return { keyId, keypair, runId: signedRequest.run_id, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody };
 }
 
 describe('POST /api/v1/runs/:id/finalize', () => {
@@ -63,10 +63,10 @@ describe('POST /api/v1/runs/:id/finalize', () => {
   });
 
   it('marks run completed when all blobs present', async () => {
-    const { runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
+    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
 
     for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
-      await SELF.fetch(`http://x/api/v1/blobs/${sha}`, { method: 'PUT', body });
+      await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
     }
 
     const res = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
@@ -80,9 +80,9 @@ describe('POST /api/v1/runs/:id/finalize', () => {
   });
 
   it('is idempotent on double-finalize', async () => {
-    const { runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
+    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
     for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
-      await SELF.fetch(`http://x/api/v1/blobs/${sha}`, { method: 'PUT', body });
+      await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
     }
 
     const r1 = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
@@ -92,9 +92,9 @@ describe('POST /api/v1/runs/:id/finalize', () => {
   });
 
   it('lists every missing blob across bundle, transcript, and code keys', async () => {
-    const { runId, transcriptSha, codeSha, bundleSha, bundleBody } = await ingestAndUploadBlobs();
+    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, bundleBody } = await ingestAndUploadBlobs();
     // Upload only the bundle; transcript and code remain absent.
-    await SELF.fetch(`http://x/api/v1/blobs/${bundleSha}`, { method: 'PUT', body: bundleBody });
+    await signedBlobPut(`/api/v1/blobs/${bundleSha}`, bundleBody, keyId, keypair);
 
     const res = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
     expect(res.status).toBe(409);
@@ -125,9 +125,9 @@ describe('POST /api/v1/runs/:id/finalize', () => {
     expect(realKey).toBe('leaderboard:current:all::::50');
     await env.CACHE.put(realKey, JSON.stringify({ stale: true }));
 
-    const { runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
+    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
     for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
-      await SELF.fetch(`http://x/api/v1/blobs/${sha}`, { method: 'PUT', body });
+      await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
     }
     const fin = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
     await fin.arrayBuffer(); // drain so best-effort KV invalidation commits
@@ -137,9 +137,9 @@ describe('POST /api/v1/runs/:id/finalize', () => {
   });
 
   it('broadcasts run_finalized after completion', async () => {
-    const { runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
+    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
     for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
-      const r = await SELF.fetch(`http://x/api/v1/blobs/${sha}`, { method: 'PUT', body });
+      const r = await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
       await r.arrayBuffer(); // drain so the next SELF.fetch can reuse the worker
     }
     const fin = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });

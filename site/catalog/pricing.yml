@@ -1,0 +1,8 @@
+# Pricing snapshots (cost_snapshots rows in D1).
+#
+# Intentionally empty at seed time: the first `centralgauge bench` run for a
+# given model registers its pricing interactively (the ingestRun() flow
+# prompts for rates via OpenRouter or manual entry and writes back here via
+# `sync-catalog --apply`). Seeding guessed numbers up-front would poison the
+# leaderboard cost column.
+[]

@@ -1,0 +1,12 @@
+# CentralGauge model families. Seeded into production D1 via
+# `deno task start sync-catalog --apply`. Already pre-seeded into the prod DB
+# during Task 8.1; this file keeps the source of truth in git.
+- slug: claude
+  vendor: Anthropic
+  display_name: Claude
+- slug: gpt
+  vendor: OpenAI
+  display_name: GPT
+- slug: gemini
+  vendor: Google
+  display_name: Gemini

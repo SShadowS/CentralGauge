@@ -20,11 +20,13 @@ import {
   registerCompileTestCommands,
   registerConfigCommands,
   registerContainerCommands,
+  registerIngestCommand,
   registerModelsCommand,
   registerReportCommand,
   registerReportDbCommand,
   registerRulesCommand,
   registerStatsCommands,
+  registerSyncCatalogCommand,
   registerVerifyCommand,
 } from "./commands/mod.ts";
 
@@ -98,9 +100,11 @@ registerReportDbCommand(cliAny);
 registerVerifyCommand(cliAny);
 registerContainerCommands(cliAny);
 registerCompileTestCommands(cliAny);
+registerIngestCommand(cliAny);
 registerModelsCommand(cliAny);
 registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
+registerSyncCatalogCommand(cliAny);
 registerRulesCommand(cliAny);
 
 // Parse and execute

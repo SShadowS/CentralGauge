@@ -85,7 +85,11 @@ export async function executeParallelBenchmark(
   outputFormat: OutputFormat = "verbose",
   jsonEvents = false,
   tuiMode = false,
-): Promise<{ dashboardUrl?: string | undefined }> {
+): Promise<{
+  dashboardUrl?: string | undefined;
+  resultFilePaths?: string[];
+  variants?: ModelVariant[];
+}> {
   // Always load environment variables (API keys needed for model validation)
   await EnvLoader.loadEnvironment();
 
@@ -513,7 +517,11 @@ export async function executeParallelBenchmark(
       await debugLogger.finalize();
     }
 
-    return dashboard ? { dashboardUrl: dashboard.url } : {};
+    return {
+      ...(dashboard ? { dashboardUrl: dashboard.url } : {}),
+      resultFilePaths,
+      variants,
+    };
   } catch (error) {
     // Check if this is a critical infrastructure error
     if (CriticalError.isCriticalError(error)) {
