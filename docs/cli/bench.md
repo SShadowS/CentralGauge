@@ -182,6 +182,23 @@ centralgauge bench --agents default --sandbox --container Cronus28
 
 Knowledge files are prepended to the system prompt to provide model-specific guidance. When knowledge is provided without a custom `--run-label`, the run is automatically labeled with "(guided)" suffix for easy comparison in reports.
 
+### Ingestion Options
+
+| Option        | Type    | Default | Description                                  |
+| ------------- | ------- | ------- | -------------------------------------------- |
+| `--no-ingest` | boolean | false   | Skip POSTing the run to the scoreboard API   |
+| `-y, --yes`   | boolean | false   | Non-interactive; auto-accept fetched pricing |
+
+When a bench finishes, each (run × model-variant) result is signed with your
+ingest key and POSTed to the scoreboard API for public display. The first time
+a model appears, you are prompted to register its pricing (either by fetching
+from OpenRouter or entering rates manually). Use `-y` to auto-accept fetched
+pricing without prompts, or `--no-ingest` to skip the upload entirely (you can
+replay later with [`centralgauge ingest`](./commands.md#ingest)).
+
+Ingest credentials are read from `~/.centralgauge.yml` — see
+[Ingest configuration](./config.md#ingest-configuration) for setup.
+
 ## Output Formats
 
 ### verbose (default)

@@ -15,19 +15,21 @@ These options are available for all commands:
 
 ## Commands Overview
 
-| Command          | Description                            |
-| ---------------- | -------------------------------------- |
-| `bench`          | Run benchmark evaluation               |
-| `report`         | Generate reports from results          |
-| `report-from-db` | Generate reports from stats database   |
-| `verify`         | Analyze and fix failing benchmarks     |
-| `rules`          | Generate rules from model shortcomings |
-| `models`         | List and test model resolution         |
-| `config`         | Configuration management               |
-| `stats-*`        | Historical statistics commands         |
-| `container`      | Container management                   |
-| `compile`        | Compile AL code                        |
-| `test`           | Run AL tests                           |
+| Command          | Description                                              |
+| ---------------- | -------------------------------------------------------- |
+| `bench`          | Run benchmark evaluation                                 |
+| `ingest`         | Replay a saved results file to the scoreboard API        |
+| `sync-catalog`   | Reconcile `site/catalog/*.yml` with production D1 tables |
+| `report`         | Generate reports from results                            |
+| `report-from-db` | Generate reports from stats database                     |
+| `verify`         | Analyze and fix failing benchmarks                       |
+| `rules`          | Generate rules from model shortcomings                   |
+| `models`         | List and test model resolution                           |
+| `config`         | Configuration management                                 |
+| `stats-*`        | Historical statistics commands                           |
+| `container`      | Container management                                     |
+| `compile`        | Compile AL code                                          |
+| `test`           | Run AL tests                                             |
 
 ## bench
 
@@ -41,39 +43,42 @@ centralgauge bench [options]
 
 ### Options
 
-| Option                 | Type     | Default        | Description                                |
-| ---------------------- | -------- | -------------- | ------------------------------------------ |
-| `--preset`             | string   | -              | Load benchmark preset from config          |
-| `--list-presets`       | boolean  | false          | List available benchmark presets           |
-| `-l, --llms`           | string[] | -              | LLM models to test                         |
-| `--agents`             | string[] | -              | Agent configurations to use                |
-| `--container`          | string   | Cronus28       | BC container name                          |
-| `-s, --sandbox`        | boolean  | false          | Run agents in isolated containers          |
-| `-t, --tasks`          | string[] | tasks/**/*.yml | Task file patterns                         |
-| `-a, --attempts`       | number   | 2              | Number of attempts per task                |
-| `-o, --output`         | string   | results/       | Output directory                           |
-| `--temperature`        | number   | 0.1            | LLM temperature                            |
-| `--max-tokens`         | number   | 4000           | Maximum tokens per request                 |
-| `--debug`              | boolean  | false          | Enable debug logging                       |
-| `--debug-output`       | string   | debug/         | Debug output directory                     |
-| `--debug-level`        | string   | basic          | Debug log level                            |
-| `--container-provider` | string   | auto           | Container provider                         |
-| `--sequential`         | boolean  | false          | Disable parallel execution                 |
-| `--max-concurrency`    | number   | 10             | Max concurrent LLM calls                   |
-| `-f, --format`         | string   | verbose        | Output format                              |
-| `--system-prompt`      | string   | -              | Override system prompt                     |
-| `--prompt-prefix`      | string   | -              | Prefix for user prompt                     |
-| `--prompt-suffix`      | string   | -              | Suffix for user prompt                     |
-| `--prompt-stage`       | string   | both           | Apply overrides to stage                   |
-| `--prompt-provider`    | string   | -              | Apply overrides to provider                |
-| `--knowledge`          | string[] | -              | Markdown files to inject as knowledge bank |
-| `--knowledge-dir`      | string   | -              | Directory of .md files to inject           |
-| `--run-label`          | string   | auto           | Custom label for this run                  |
-| `--no-continuation`    | boolean  | false          | Disable continuation                       |
-| `--stream`             | boolean  | false          | Enable streaming mode                      |
-| `--json-events`        | boolean  | false          | Output JSON lines                          |
-| `--tui`                | boolean  | false          | Enable TUI mode                            |
-| `--retry`              | string   | -              | Retry from previous results                |
+| Option                 | Type     | Default        | Description                                  |
+| ---------------------- | -------- | -------------- | -------------------------------------------- |
+| `--preset`             | string   | -              | Load benchmark preset from config            |
+| `--list-presets`       | boolean  | false          | List available benchmark presets             |
+| `-l, --llms`           | string[] | -              | LLM models to test                           |
+| `--agents`             | string[] | -              | Agent configurations to use                  |
+| `--container`          | string   | Cronus28       | BC container name                            |
+| `-s, --sandbox`        | boolean  | false          | Run agents in isolated containers            |
+| `-t, --tasks`          | string[] | tasks/**/*.yml | Task file patterns                           |
+| `-a, --attempts`       | number   | 2              | Number of attempts per task                  |
+| `-o, --output`         | string   | results/       | Output directory                             |
+| `--temperature`        | number   | 0.1            | LLM temperature                              |
+| `--max-tokens`         | number   | 4000           | Maximum tokens per request                   |
+| `--debug`              | boolean  | false          | Enable debug logging                         |
+| `--debug-output`       | string   | debug/         | Debug output directory                       |
+| `--debug-level`        | string   | basic          | Debug log level                              |
+| `--container-provider` | string   | auto           | Container provider                           |
+| `--sequential`         | boolean  | false          | Disable parallel execution                   |
+| `--max-concurrency`    | number   | 10             | Max concurrent LLM calls                     |
+| `-f, --format`         | string   | verbose        | Output format                                |
+| `--system-prompt`      | string   | -              | Override system prompt                       |
+| `--prompt-prefix`      | string   | -              | Prefix for user prompt                       |
+| `--prompt-suffix`      | string   | -              | Suffix for user prompt                       |
+| `--prompt-stage`       | string   | both           | Apply overrides to stage                     |
+| `--prompt-provider`    | string   | -              | Apply overrides to provider                  |
+| `--knowledge`          | string[] | -              | Markdown files to inject as knowledge bank   |
+| `--knowledge-dir`      | string   | -              | Directory of .md files to inject             |
+| `--run-label`          | string   | auto           | Custom label for this run                    |
+| `--no-continuation`    | boolean  | false          | Disable continuation                         |
+| `--stream`             | boolean  | false          | Enable streaming mode                        |
+| `--json-events`        | boolean  | false          | Output JSON lines                            |
+| `--tui`                | boolean  | false          | Enable TUI mode                              |
+| `--retry`              | string   | -              | Retry from previous results                  |
+| `--runs`               | number   | 1              | Run the full benchmark N times (pass@k)      |
+| `--no-ingest`          | boolean  | false          | Skip ingest to scoreboard API                |
+| `-y, --yes`            | boolean  | false          | Non-interactive; auto-accept fetched pricing |
 
 ### Examples
 
@@ -110,6 +115,90 @@ centralgauge bench --preset flagship-compare
 
 # Override preset values with CLI args
 centralgauge bench --preset quick-test --attempts 2
+```
+
+## ingest
+
+Replay a saved benchmark results file to the scoreboard API.
+
+After a local `bench` run finishes, its results are auto-ingested unless
+`--no-ingest` was passed. Use `ingest` to replay a saved file after the
+fact (for example, because the network dropped mid-run or the machine
+was offline).
+
+### Usage
+
+```bash
+centralgauge ingest <path> [options]
+```
+
+### Arguments
+
+| Argument | Description                                       |
+| -------- | ------------------------------------------------- |
+| `path`   | Path to the saved `benchmark-results-*.json` file |
+
+### Options
+
+| Option             | Type    | Default | Description                                  |
+| ------------------ | ------- | ------- | -------------------------------------------- |
+| `--url`            | string  | -       | Override ingest URL                          |
+| `--key-path`       | string  | -       | Override ingest private key path             |
+| `--key-id`         | number  | -       | Override ingest key id                       |
+| `--machine-id`     | string  | -       | Override machine id                          |
+| `--admin-key-path` | string  | -       | Admin key path for catalog writes            |
+| `--admin-key-id`   | number  | -       | Admin key id for catalog writes              |
+| `--dry-run`        | boolean | false   | Parse + validate only, do not POST           |
+| `-y, --yes`        | boolean | false   | Non-interactive; auto-accept fetched pricing |
+
+Credentials default to `~/.centralgauge.yml` (see [config](./config.md)).
+
+### Examples
+
+```bash
+# Ingest a saved run (uses ~/.centralgauge.yml)
+centralgauge ingest results/benchmark-results-1776819080051.json
+
+# Dry-run (no POST)
+centralgauge ingest results/run.json --dry-run
+
+# Non-interactive (auto-accept OpenRouter pricing)
+centralgauge ingest results/run.json --yes
+```
+
+## sync-catalog
+
+Reconcile `site/catalog/*.yml` with the production D1 catalog tables.
+POSTs each model + pricing row through the signed admin API.
+
+### Usage
+
+```bash
+centralgauge sync-catalog [options]
+```
+
+### Options
+
+| Option             | Type    | Default | Description                             |
+| ------------------ | ------- | ------- | --------------------------------------- |
+| `--apply`          | boolean | false   | Actually POST rows (default is dry-run) |
+| `--url`            | string  | -       | Override ingest URL                     |
+| `--key-path`       | string  | -       | Override ingest key path                |
+| `--key-id`         | number  | -       | Override ingest key id                  |
+| `--machine-id`     | string  | -       | Override machine id                     |
+| `--admin-key-path` | string  | -       | Admin key path (required to write)      |
+| `--admin-key-id`   | number  | -       | Admin key id (required to write)        |
+
+Families are seeded via D1 SQL at deploy time; `sync-catalog` skips them.
+
+### Examples
+
+```bash
+# Preview (no writes)
+centralgauge sync-catalog
+
+# Apply to production
+centralgauge sync-catalog --apply
 ```
 
 ## report

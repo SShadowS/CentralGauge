@@ -151,7 +151,39 @@ variantProfiles:
     config:
       temperature: 0.1
       maxTokens: 4000
+
+# Ingest credentials (usually kept only in ~/.centralgauge.yml, never committed)
+ingest:
+  url: https://centralgauge.sshadows.workers.dev
+  key_path: ~/.centralgauge/keys/production-ingest.ed25519
+  key_id: 1
+  machine_id: production-ingest
+  admin_key_path: ~/.centralgauge/keys/production-admin.ed25519
+  admin_key_id: 2
 ```
+
+### Ingest Configuration
+
+The `ingest:` block holds the credentials used by `bench` (auto-ingest),
+`centralgauge ingest`, and `centralgauge sync-catalog` to POST to the
+scoreboard API.
+
+| Field            | Required              | Description                                             |
+| ---------------- | --------------------- | ------------------------------------------------------- |
+| `url`            | yes                   | Scoreboard worker URL                                   |
+| `key_path`       | yes                   | Path to 32-byte Ed25519 private-key file (ingest scope) |
+| `key_id`         | yes                   | `machine_keys.id` assigned at seed time                 |
+| `machine_id`     | yes                   | Human-readable label stored with each run               |
+| `admin_key_path` | only for sync-catalog | Admin-scope private key for catalog writes              |
+| `admin_key_id`   | only for sync-catalog | Admin-scope key id                                      |
+
+Keep the `ingest:` block in `~/.centralgauge.yml` (home directory) so secrets
+never land in the repo. The project-root `.centralgauge.yml` is for shared
+defaults only — it is committed to git. Fields from the home file fall
+through into the merged config whenever the cwd file does not override them.
+
+See the [Production Ingest guide](../guides/production-ingest.md) for the
+full setup walkthrough (key generation, admin seeding, first-bench flow).
 
 ## Environment Variables
 
