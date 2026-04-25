@@ -8,8 +8,10 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## Memory
 
-- Current year is 2025, use this for up-to-date result searches and context
-- Don't reference old/deprecated model names in code (e.g., avoid claude-3.5, gpt-4, gemini-1.5). Use current model aliases like sonnet, gpt-4o, gemini instead.
+- Current year is 2026; today's date is the source of truth for "recent" model releases.
+- Don't hardcode model IDs in code. Use the catalog (`site/catalog/models.yml`) or
+  `deno task start models -p <provider> --live` to discover current names.
+  Verify availability with `deno task start models <slug> --check` before running benchmarks.
 
 ## Technology Stack
 
@@ -27,20 +29,22 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## Local BC Container
 
-- Container name: `Cronus28`
+- Available containers: `Cronus28`, `Cronus281`, `Cronus282`, `Cronus283`
+  (use `--containers Cronus28,Cronus281` for parallel compile/test)
 - Credentials: `sshadows` / `1234`
 - Health check URL: `http://Cronus28/BC/?tenant=default` (check if login page loads to verify container is up)
 
 ## Project Structure
 
-| Directory | Purpose                                                                     |
-| --------- | --------------------------------------------------------------------------- |
-| `cli/`    | CLI commands (Cliffy), helpers, TUI                                         |
-| `src/`    | Core library (LLM adapters, container providers, task execution)            |
-| `tests/`  | Unit and integration tests mirroring `src/` structure                       |
-| `tasks/`  | Task YAML definitions organized by difficulty (`easy/`, `medium/`, `hard/`) |
-| `mcp/`    | MCP server for AL tools                                                     |
-| `docs/`   | Architecture documentation                                                  |
+| Directory | Purpose                                                                      |
+| --------- | ---------------------------------------------------------------------------- |
+| `cli/`    | CLI commands (Cliffy), helpers, TUI                                          |
+| `src/`    | Core library (LLM adapters, container providers, task execution)             |
+| `tests/`  | Unit and integration tests mirroring `src/` structure                        |
+| `tasks/`  | Task YAML definitions organized by difficulty (`easy/`, `medium/`, `hard/`)  |
+| `mcp/`    | MCP server for AL tools                                                      |
+| `docs/`   | Architecture documentation                                                   |
+| `site/`   | SvelteKit Cloudflare Worker scoreboard (D1 + R2) — see Ingest Pipeline below |
 
 Key modules in `src/`:
 
@@ -50,7 +54,20 @@ Key modules in `src/`:
 - `parallel/` - Parallel execution orchestration
 - `config/` - Configuration loading and merging
 - `rules/` - Markdown rules generation from shortcomings
+- `ingest/` - Bench → scoreboard payload, Ed25519 signing, R2 blob upload
 - `errors.ts` - Structured error hierarchy
+
+## Ingest Pipeline & Site
+
+Bench results auto-ingest to the production scoreboard at
+`https://centralgauge.sshadows.workers.dev` (Cloudflare Worker + D1 + R2).
+Disable with `--no-ingest`.
+
+- `site/` — SvelteKit Worker. D1 schema in `site/migrations/`, API under `/api/v1/*`
+- `src/ingest/` — payload builder, Ed25519 signer, R2 blob uploader, HTTP client w/ backoff
+- `centralgauge ingest <results-file>` — manually replay a saved run
+- `centralgauge sync-catalog --apply` — reconcile `site/catalog/*.yml` ↔ D1 catalog tables
+- Config (URL, keys, machine_id) merged from `.centralgauge.yml` (cwd + home)
 
 ## Code Style
 
@@ -89,14 +106,16 @@ export { TaskExecutor } from "./executor.ts";
 
 Detailed pattern documentation lives in `.claude/rules/`:
 
-| Pattern          | Rule File             | Key Concepts                                                           |
-| ---------------- | --------------------- | ---------------------------------------------------------------------- |
-| Error Handling   | `error-handling.md`   | `CentralGaugeError` hierarchy, `isRetryableError()`, `getRetryDelay()` |
-| Registry Pattern | `registry-pattern.md` | LLM/container registries, pooling, auto-detection                      |
-| Testing Patterns | `testing-patterns.md` | Mock factories, `MockEnv`, `EventCollector`                            |
-| Async Generators | `async-generators.md` | Return value handling, manual iteration                                |
-| Prereq Apps      | `prereq-apps.md`      | Task dependencies, ID ranges                                           |
-| Docker Sandbox   | `docker-sandbox.md`   | Container isolation, MCP HTTP transport, workspace mapping             |
+| Pattern           | Rule File                  | Key Concepts                                                           |
+| ----------------- | -------------------------- | ---------------------------------------------------------------------- |
+| Error Handling    | `error-handling.md`        | `CentralGaugeError` hierarchy, `isRetryableError()`, `getRetryDelay()` |
+| Registry Pattern  | `registry-pattern.md`      | LLM/container registries, pooling, auto-detection                      |
+| Testing Patterns  | `testing-patterns.md`      | Mock factories, `MockEnv`, `EventCollector`                            |
+| Async Generators  | `async-generators.md`      | Return value handling, manual iteration                                |
+| Prereq Apps       | `prereq-apps.md`           | Task dependencies, ID ranges                                           |
+| Docker Sandbox    | `docker-sandbox.md`        | Container isolation, MCP HTTP transport, workspace mapping             |
+| MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                |
+| Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures      |
 
 ### Configuration Hierarchy
 
@@ -127,8 +146,15 @@ function isSuccess(r: Result): r is SuccessResult {
 ### LLM Benchmarks
 
 ```bash
-# Run with specific models
-deno task start bench --llms sonnet gpt-4o --tasks "tasks/easy/*.yml"
+# Run with specific models (comma-separated)
+deno task start bench --llms sonnet,gpt-4o --tasks "tasks/easy/*.yml"
+
+# Reusable presets (defined in .centralgauge.yml under benchmarkPresets:)
+deno task start bench --list-presets
+deno task start bench --preset flagship-2026-q2
+
+# Verify a model is callable before benching
+deno task start models openai/gpt-5.5 --check
 ```
 
 ### Agent Benchmarks
@@ -328,6 +354,7 @@ deno fmt
 When modifying public interfaces, run the `documentation-engineer` agent to update `docs/`:
 
 **Trigger documentation updates when:**
+
 - Adding, removing, or changing CLI commands (options, arguments, flags)
 - Changing public API interfaces or types
 - Modifying configuration options or file formats
