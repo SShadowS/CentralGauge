@@ -44,7 +44,7 @@ export async function assembleBenchResultsForVariant(
   }
 
   const slug = `${variant.provider}/${variant.model}`;
-  const family_slug = inferFamilyFromProvider(variant.provider);
+  const family_slug = inferFamilyFromProvider(variant.provider, variant.model);
   const settings: Record<string, unknown> = {};
   if (variant.config.temperature !== undefined) {
     settings["temperature"] = variant.config.temperature;
@@ -126,10 +126,16 @@ function computeRunTimeRange(
   };
 }
 
-function inferFamilyFromProvider(provider: string): string {
+function inferFamilyFromProvider(provider: string, model: string): string {
   if (provider === "anthropic") return "claude";
   if (provider === "openai") return "gpt";
   if (provider === "google" || provider === "gemini") return "gemini";
+  // openrouter routes to the underlying vendor (model = "<vendor>/<id>", e.g.
+  // "deepseek/deepseek-v4-pro" → family "deepseek").
+  if (provider === "openrouter") {
+    const vendor = model.split("/")[0];
+    if (vendor) return vendor;
+  }
   return provider;
 }
 

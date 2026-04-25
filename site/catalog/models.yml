@@ -47,3 +47,10 @@
   display_name: Gemini 2.0 Flash
   generation: 2
   released_at: "2025-02-05"
+
+- slug: openrouter/deepseek/deepseek-v4-pro
+  api_model_id: deepseek/deepseek-v4-pro
+  family: deepseek
+  display_name: DeepSeek V4 Pro
+  generation: 4
+  released_at: "2026-04-24"

@@ -1,8 +1,16 @@
 # Pricing snapshots (cost_snapshots rows in D1).
 #
-# Intentionally empty at seed time: the first `centralgauge bench` run for a
-# given model registers its pricing interactively (the ingestRun() flow
-# prompts for rates via OpenRouter or manual entry and writes back here via
-# `sync-catalog --apply`). Seeding guessed numbers up-front would poison the
-# leaderboard cost column.
-[]
+# Most entries are written automatically by the first `centralgauge bench` run
+# for a given model — the ingestRun() flow fetches rates from a pricing API
+# (or prompts manually) and appends here via `sync-catalog --apply`. Manual
+# pre-seeding is fine when a model needs to skip the interactive prompt.
+- pricing_version: "2026-04-24"
+  model_slug: openrouter/deepseek/deepseek-v4-pro
+  effective_from: "2026-04-24T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 1.74
+  output_per_mtoken: 3.48
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: manual
+  fetched_at: "2026-04-24T00:00:00.000Z"

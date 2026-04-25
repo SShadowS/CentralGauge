@@ -177,10 +177,14 @@ async function postAdmin(
 }
 
 function inferFamily(slug: string): string {
-  const prefix = slug.split("/")[0] ?? slug;
+  const parts = slug.split("/");
+  const prefix = parts[0] ?? slug;
   if (prefix === "anthropic") return "claude";
   if (prefix === "openai") return "gpt";
   if (prefix === "google" || prefix === "gemini") return "gemini";
+  // openrouter routes to an underlying vendor's family (e.g.,
+  // openrouter/deepseek/deepseek-v4-pro → deepseek).
+  if (prefix === "openrouter" && parts.length >= 2 && parts[1]) return parts[1];
   return prefix;
 }
 

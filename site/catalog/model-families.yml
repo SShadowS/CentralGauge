@@ -10,3 +10,6 @@
 - slug: gemini
   vendor: Google
   display_name: Gemini
+- slug: deepseek
+  vendor: DeepSeek
+  display_name: DeepSeek
