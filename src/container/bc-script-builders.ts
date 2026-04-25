@@ -14,7 +14,7 @@ export function buildCompileScript(
   outputDir: string,
 ): string {
   return `
-      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@6.1.11 sentinel=2026-04-25-A"
+      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@6.1.11 sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
       Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
@@ -173,12 +173,15 @@ export function buildTestScript(
   // Prereqs are already published by publishApp() - just publish main app and run tests
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
-      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.11 sentinel=2026-04-25-A"
+      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.11 usePwshForBc24=False sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
       Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
-      # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
-      $bcContainerHelperConfig.usePwshForBc24 = $true
+      # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
+      # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
+      # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
+      # disappears and Publish-BcContainerApp fails. Verified by direct repro.
+      $bcContainerHelperConfig.usePwshForBc24 = $false
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)

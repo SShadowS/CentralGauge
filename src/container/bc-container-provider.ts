@@ -573,12 +573,15 @@ export class BcContainerProvider implements ContainerProvider {
     const appName = fileNameParts.slice(1, -1).join("_") || "";
 
     const script = `
-      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.11 sentinel=2026-04-25-A"
+      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.11 usePwshForBc24=False sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
       Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
-      # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
-      $bcContainerHelperConfig.usePwshForBc24 = $true
+      # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
+      # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
+      # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
+      # disappears and Publish-BcContainerApp fails. Verified by direct repro.
+      $bcContainerHelperConfig.usePwshForBc24 = $false
 
       # Unpublish any existing version first (always force-republish to pick up schema changes)
       $oldApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
