@@ -31,6 +31,20 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
+// Models that reject the `temperature` parameter unless it equals the default.
+// Starting with GPT-5.5, OpenAI returns 400 "Only the default (1) value is
+// supported" for any custom temperature. Match exact IDs, dated variants
+// (e.g. "gpt-5.5-2026-04-23"), and sub-variants (e.g. "gpt-5.5-pro").
+const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
+  "gpt-5.5",
+];
+
+function modelRejectsTemperature(model: string): boolean {
+  return TEMPERATURE_LOCKED_MODELS.some(
+    (id) => model === id || model.startsWith(id + "-"),
+  );
+}
+
 export class OpenAIAdapter extends BaseLLMAdapter
   implements DiscoverableAdapter {
   readonly name = "openai";
@@ -469,14 +483,17 @@ export class OpenAIAdapter extends BaseLLMAdapter
     const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
     const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
     const isReasoningOnly = this.isReasoningOnlyModel(this.config.model);
+    const skipTemperature = isReasoningOnly ||
+      modelRejectsTemperature(this.config.model);
     const reasoningEffort = this.getReasoningEffort();
 
     const params = {
       model: this.config.model,
       messages,
       store: false,
-      // Reasoning models (o1, o3) don't support temperature
-      ...(isReasoningOnly ? {} : {
+      // Reasoning models (o1, o3) and temperature-locked models (GPT-5.5+)
+      // don't support a custom temperature parameter.
+      ...(skipTemperature ? {} : {
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
       }),
       ...(usesNewTokenParam
