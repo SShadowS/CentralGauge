@@ -14,7 +14,7 @@ export function buildCompileScript(
   outputDir: string,
 ): string {
   return `
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
 
       try {
         $result = Compile-AppWithBcCompilerFolder \`
@@ -170,7 +170,7 @@ export function buildTestScript(
   // Prereqs are already published by publishApp() - just publish main app and run tests
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
       # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
       $bcContainerHelperConfig.usePwshForBc24 = $true
 

@@ -14,7 +14,8 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
 
-const CONTAINER_NAME = "Cronus28";
+const CONTAINER_NAME = Deno.env.get("CENTRALGAUGE_TEST_CONTAINER") ??
+  "Cronus28";
 const isWindows = Deno.build.os === "windows";
 
 // Skip all tests if not on Windows
@@ -581,5 +582,85 @@ Deno.test({
     console.log("Installed apps:", result.output);
     // Should find some apps (Base Application, System Application, etc.)
     assert(result.output.length > 0, "Should list installed apps");
+  },
+});
+
+// ============================================================================
+// bccontainerhelper Version-Pin Regression Tests
+//
+// Guard against the 6.1.12 PSSession regression: BC v28+ containers lose the
+// NAV admin module mid-task, so Get-BcContainerServerConfiguration fails with
+// "Get-NavServerInstance not recognized" — which surfaces as PUBLISH_FAILED
+// for every benchmark task. Provider pins to 6.1.11 in-source.
+// ============================================================================
+
+Deno.test({
+  name: "Provider source pins every bccontainerhelper Import/Install to 6.1.11",
+  // Static check — runs everywhere, no container needed. Scans the whole
+  // src/container directory so any new file with embedded PowerShell scripts
+  // gets caught automatically (e.g. bc-script-builders.ts).
+  async fn() {
+    const containerDirUrl = new URL("../../src/container/", import.meta.url);
+    const containerDirPath = decodeURIComponent(
+      containerDirUrl.pathname.replace(/^\/([A-Za-z]:\/)/, "$1"),
+    );
+    const allMatches: { file: string; line: string }[] = [];
+
+    for await (const entry of Deno.readDir(containerDirPath)) {
+      if (!entry.isFile || !entry.name.endsWith(".ts")) continue;
+      const src = await Deno.readTextFile(`${containerDirPath}${entry.name}`);
+      const re = /(Import-Module|Install-Module)\s+bccontainerhelper[^\n]*/g;
+      for (const m of src.matchAll(re)) {
+        allMatches.push({ file: entry.name, line: m[0] });
+      }
+    }
+
+    assert(
+      allMatches.length > 0,
+      "expected at least one bccontainerhelper Import/Install site",
+    );
+
+    const unpinned = allMatches.filter(
+      ({ line }) => !line.includes("-RequiredVersion 6.1.11"),
+    );
+
+    assertEquals(
+      unpinned,
+      [],
+      `bccontainerhelper version pin missing on ${unpinned.length} line(s):\n${
+        unpinned.map((u) => `  ${u.file}: ${u.line}`).join("\n")
+      }`,
+    );
+  },
+});
+
+Deno.test({
+  name:
+    `BC Container: Get-NavServerInstance resolves via PSSession (regression for bccontainerhelper 6.1.12)`,
+  ...testOptions,
+  async fn() {
+    const { BcContainerProvider } = await import(
+      "../../src/container/bc-container-provider.ts"
+    );
+    const provider = new BcContainerProvider();
+
+    // executeCommand goes through the same Import-Module + Invoke-ScriptInBcContainer
+    // chain that Publish-BcContainerApp uses internally. If the version pin is
+    // dropped (or upstream re-breaks), this throws or returns empty output.
+    const { output, exitCode } = await provider.executeCommand(
+      CONTAINER_NAME,
+      "Get-NavServerInstance | Select-Object -First 1 -ExpandProperty ServerInstance",
+    );
+
+    console.log("ServerInstance output:", output.trim());
+    assertEquals(exitCode, 0, `executeCommand failed with exit ${exitCode}`);
+    assert(
+      !output.includes("not recognized as a name of a cmdlet"),
+      "Get-NavServerInstance went missing — bccontainerhelper PSSession regression returned",
+    );
+    assert(
+      output.trim().length > 0,
+      "expected a non-empty ServerInstance name (e.g. 'BC')",
+    );
   },
 });
