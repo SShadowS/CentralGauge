@@ -102,7 +102,7 @@ export function registerBenchCommand(cli: Command): void {
     )
     .option(
       "--task-concurrency <number>",
-      "Maximum concurrent tasks (auto: ceil(containers × 2 / variants), floor 3; set to 1 for serial)",
+      "Maximum concurrent tasks (auto: max(containers × 2, ceil(containers × 2 / variants)); set to 1 for serial)",
     )
     .option(
       "-f, --format <format:string>",

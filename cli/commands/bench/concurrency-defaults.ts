@@ -32,10 +32,14 @@ export interface ConcurrencyDefaults {
 /**
  * Compute task/LLM concurrency defaults.
  *
- * Task concurrency: `max(3, ceil(containers × 2 / variants))`
+ * Task concurrency: `max(containers × 2, ceil(containers × 2 / variants))`
  *   Each container has 1 test slot (hard limit via testMutex) and 3 compile
- *   slots. Targeting ~2 pipelines per container keeps the test mutex warm
- *   without queueing LLM output that cannot be tested any faster.
+ *   slots. Target ~2 pipelines per container so the test mutex always has a
+ *   ready item — one in-flight, one waiting. The previous formula with a
+ *   floor of 3 capped throughput below the design target whenever there were
+ *   enough variants to make `ceil(containers × 2 / variants)` small (e.g.,
+ *   4 containers × 5 variants gave `taskConcurrency = 3`, leaving ≥1 testMutex
+ *   idle most of the time). Floor is now `containers × 2` directly.
  *
  * Max concurrency: `max(10, taskConcurrency × variants × 2)`
  *   The ×2 covers the two-attempt pipeline (initial + repair) so every
@@ -51,7 +55,7 @@ export function computeConcurrencyDefaults(
   const autoMaxConcurrency = input.userMaxConcurrency === undefined;
 
   const taskConcurrency = autoTaskConcurrency
-    ? Math.max(3, Math.ceil((containers * 2) / variants))
+    ? Math.max(containers * 2, Math.ceil((containers * 2) / variants))
     : input.userTaskConcurrency as number;
 
   const maxConcurrency = autoMaxConcurrency
