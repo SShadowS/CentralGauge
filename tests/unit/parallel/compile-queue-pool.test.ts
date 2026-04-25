@@ -153,4 +153,71 @@ describe({
       assertEquals(typeof pool.getStats, "function");
     });
   });
+
+  describe("getSnapshot", () => {
+    it("returns one queue snapshot per container with totals", () => {
+      const pool = new CompileQueuePool(mockProvider, [
+        "Cronus28",
+        "Cronus281",
+        "Cronus282",
+        "Cronus283",
+      ]);
+
+      const snap = pool.getPoolSnapshot();
+
+      assertEquals(snap.schemaVersion, 1);
+      assertEquals(snap.queues.length, 4);
+      assertEquals(
+        snap.queues.map((q: { containerName: string }) => q.containerName),
+        ["Cronus28", "Cronus281", "Cronus282", "Cronus283"],
+      );
+      assertEquals(snap.totals.pending, 0);
+      assertEquals(snap.totals.activeCompilations, 0);
+      assertEquals(snap.totals.activeTests, 0);
+      assertEquals(snap.imbalanceScore, 0);
+      assertEquals(snap.recentRouting, []);
+      assert(snap.generatedAt > 0);
+    });
+
+    it("logs routing decisions on enqueue and drains them in newest-first order", async () => {
+      const pool = new CompileQueuePool(mockProvider, ["c1", "c2"]);
+
+      await pool.enqueue(createMockCompileWorkItem({ id: "wi-1" }));
+      await pool.enqueue(createMockCompileWorkItem({ id: "wi-2" }));
+      await pool.enqueue(createMockCompileWorkItem({ id: "wi-3" }));
+      await pool.drain();
+
+      const snap = pool.getPoolSnapshot();
+      assertEquals(snap.recentRouting.length, 3);
+      // Newest-first
+      assertEquals(snap.recentRouting[0]!.workItemId, "wi-3");
+      assertEquals(snap.recentRouting[2]!.workItemId, "wi-1");
+
+      // Each entry captures the full pool depth at decision time
+      for (const r of snap.recentRouting) {
+        assertEquals(Object.keys(r.poolDepthsAtRouting).sort(), ["c1", "c2"]);
+        assert(r.routedAt > 0);
+        assert(r.routedTo === "c1" || r.routedTo === "c2");
+      }
+    });
+
+    it("imbalanceScore stays 0 when all queues empty", () => {
+      const pool = new CompileQueuePool(mockProvider, ["c1", "c2", "c3"]);
+      const snap = pool.getPoolSnapshot();
+      assertEquals(snap.imbalanceScore, 0);
+    });
+
+    it("totals.activeTests tracks individual queue testActive flags", () => {
+      const pool = new CompileQueuePool(mockProvider, ["c1", "c2"]);
+      const snap = pool.getPoolSnapshot();
+      // No work in flight → 0 active tests
+      assertEquals(snap.totals.activeTests, 0);
+      assertEquals(
+        snap.queues.every((q: { testActive: boolean }) =>
+          q.testActive === false
+        ),
+        true,
+      );
+    });
+  });
 });

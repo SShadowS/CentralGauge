@@ -342,7 +342,41 @@ export async function executeParallelBenchmark(
       if (dashboard) {
         dashboard.bridge.setRun(runIndex);
         orchestrator.on((event) => dashboard!.bridge.handleEvent(event));
+        // Attach pool snapshot source so the dashboard gets live container
+        // metrics (pool-snapshot SSE event at 1Hz). The pool isn't constructed
+        // until runParallel() builds it — attach lazily on first event.
+        let attached = false;
+        orchestrator.on(() => {
+          if (attached) return;
+          const snap = orchestrator.getPoolSnapshot();
+          if (!snap) return;
+          dashboard!.bridge.attachPool({
+            getPoolSnapshot: () => orchestrator.getPoolSnapshot()!,
+          });
+          attached = true;
+        });
       }
+
+      // JSON-events parity: emit pool-snapshot lines at 1Hz so headless/CI
+      // consumers see the same observability data the dashboard does.
+      let jsonPoolTicker: number | null = null;
+      if (jsonEvents) {
+        const tick = () => {
+          const snap = orchestrator.getPoolSnapshot();
+          if (snap) {
+            console.log(
+              JSON.stringify({ type: "pool-snapshot", snapshot: snap }),
+            );
+          }
+        };
+        jsonPoolTicker = setInterval(tick, 1000);
+      }
+      const stopJsonPoolTicker = () => {
+        if (jsonPoolTicker !== null) {
+          clearInterval(jsonPoolTicker);
+          jsonPoolTicker = null;
+        }
+      };
 
       // Run parallel benchmark with interactive retry loop
       let allResults = [...previousResults];
@@ -474,6 +508,9 @@ export async function executeParallelBenchmark(
         taskManifests.length,
         outputFormat,
       );
+
+      // Stop the per-run JSON pool ticker before next iteration / shutdown
+      stopJsonPoolTicker();
     }
 
     // Cleanup container(s)

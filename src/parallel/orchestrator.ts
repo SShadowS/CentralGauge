@@ -845,6 +845,14 @@ export class ParallelBenchmarkOrchestrator {
   /**
    * Get current aggregator for partial results
    */
+  /**
+   * Live observability snapshot from the underlying compile queue/pool.
+   * Returns null only before the first runParallel() call (pool not yet built).
+   */
+  getPoolSnapshot() {
+    return this.compileQueue?.getPoolSnapshot() ?? null;
+  }
+
   get results(): ResultAggregator {
     return this.aggregator;
   }

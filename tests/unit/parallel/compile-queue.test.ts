@@ -568,6 +568,90 @@ describe({
   });
 });
 
+describe({
+  name: "CompileQueue.getSnapshot",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  let mockProvider: MockContainerProvider;
+
+  beforeEach(() => {
+    mockProvider = createMockContainerProvider();
+  });
+
+  afterEach(() => {
+    mockProvider.reset();
+  });
+
+  it("returns the right shape on a fresh queue", () => {
+    const queue = new CompileQueue(mockProvider, "Cronus28");
+    const snap = queue.getSnapshot();
+
+    assertEquals(snap.containerName, "Cronus28");
+    assertEquals(snap.pending, 0);
+    assertEquals(snap.activeCompilations, 0);
+    assertEquals(snap.maxCompilations, 3); // default semaphore
+    assertEquals(snap.testActive, false);
+    assertEquals(snap.active, []);
+    assertEquals(snap.recentlyCompleted, []);
+    assertEquals(snap.throughput.completedLastMinute, 0);
+    assertEquals(snap.throughput.avgCompileMs, 0);
+    assertEquals(snap.throughput.avgTestMs, 0);
+    assertEquals(snap.throughput.p95TestMs, 0);
+    assertEquals(snap.health.lastActivityAt, -1);
+    assertEquals(snap.health.consecutiveFailures, 0);
+  });
+
+  it("populates recentlyCompleted + throughput after work drains", async () => {
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      compileConcurrency: 1,
+    });
+
+    // Two work items — both will complete via the mock provider's success path.
+    const items = [
+      createMockCompileWorkItem({
+        id: "wi-1",
+        context: createMockTaskExecutionContext({
+          manifest: createMockTaskManifest({ id: "CG-AL-T001" }),
+          variantId: "anthropic/claude-opus-4-7",
+        }),
+      }),
+      createMockCompileWorkItem({
+        id: "wi-2",
+        context: createMockTaskExecutionContext({
+          manifest: createMockTaskManifest({ id: "CG-AL-T002" }),
+          variantId: "openai/gpt-5",
+        }),
+      }),
+    ];
+
+    await Promise.all(items.map((wi) => queue.enqueue(wi)));
+    await queue.drain();
+
+    const snap = queue.getSnapshot();
+
+    // No work in flight, queue empty
+    assertEquals(snap.pending, 0);
+    assertEquals(snap.active, []);
+
+    // Both items recorded, newest first
+    assertEquals(snap.recentlyCompleted.length, 2);
+    const ids = snap.recentlyCompleted.map((c) => c.workItemId);
+    assert(ids.includes("wi-1"));
+    assert(ids.includes("wi-2"));
+
+    // Throughput numbers populated
+    assertEquals(snap.throughput.completedLastMinute, 2);
+    assert(
+      snap.throughput.avgCompileMs >= 0,
+      "avgCompileMs should be a number",
+    );
+
+    // Health touched
+    assert(snap.health.lastActivityAt > 0, "lastActivityAt should be set");
+  });
+});
+
 describe("QueueFullError", () => {
   it("should have correct name and properties", () => {
     const error = new QueueFullError("Queue is full", 10);

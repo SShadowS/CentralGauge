@@ -111,4 +111,8 @@ export type SSEEvent =
   | { type: "progress"; progress: DashboardProgress }
   | { type: "model-stats"; stats: DashboardModelStats[] }
   | { type: "cost-point"; point: CostPoint }
+  | {
+    type: "pool-snapshot";
+    snapshot: import("../../src/parallel/observability.ts").PoolSnapshot;
+  }
   | { type: "benchmark-complete" };

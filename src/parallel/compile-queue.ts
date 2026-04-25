@@ -25,8 +25,23 @@ import {
 } from "../constants.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
 import type { CompileWorkQueue } from "./compile-queue-pool.ts";
+import {
+  type ActiveItem,
+  CircularBuffer,
+  type CompletedItem,
+  imbalanceScore,
+  mean,
+  percentile95,
+  type PoolSnapshot,
+  type QueueSnapshot,
+} from "./observability.ts";
 
 const log = Logger.create("compile");
+
+/** How long to retain completed items for throughput stats (ms). */
+const HISTORY_WINDOW_MS = 60_000;
+/** Hard cap on completed-history retained per queue. */
+const HISTORY_MAX_ITEMS = 200;
 
 /**
  * Critical error that should abort the entire benchmark run.
@@ -190,12 +205,21 @@ export class CompileQueue implements CompileWorkQueue {
   private activeItems = 0;
   private dispatching = false;
   private containerProvider: ContainerProvider;
-  private containerName: string;
+  /** Name of the BC container this queue operates against. */
+  public readonly containerName: string;
 
   // Stats tracking
   private processedCount = 0;
   private totalWaitTime = 0;
   private totalProcessTime = 0;
+
+  // Observability state (live snapshot for dashboard)
+  private activeWorkItems = new Map<string, ActiveItem>();
+  private completedHistory = new CircularBuffer<CompletedItem>(
+    HISTORY_MAX_ITEMS,
+  );
+  private lastActivityAt = -1;
+  private consecutiveFailures = 0;
 
   // Configuration
   private maxQueueSize: number;
@@ -312,6 +336,22 @@ export class CompileQueue implements CompileWorkQueue {
     releaseCompile: () => void,
   ): Promise<void> {
     const startTime = Date.now();
+    const workItemId = entry.item.id;
+    const taskId = entry.item.context.manifest.id;
+    const variantId = entry.item.context.variantId;
+
+    // Track as in-flight, starting in compile phase
+    this.activeWorkItems.set(workItemId, {
+      workItemId,
+      taskId,
+      variantId,
+      phase: "compile",
+      phaseStartedAt: startTime,
+    });
+
+    let compileDurationMs = 0;
+    let testDurationMs: number | undefined;
+    let succeeded = false;
 
     // Create temporary project
     let projectDir: string | undefined;
@@ -319,17 +359,28 @@ export class CompileQueue implements CompileWorkQueue {
       projectDir = await this.createTempProject(entry.item);
     } catch (error) {
       releaseCompile();
+      this.recordCompleted(
+        workItemId,
+        taskId,
+        variantId,
+        startTime,
+        compileDurationMs,
+        testDurationMs,
+        false,
+      );
       entry.reject(CriticalError.wrapIfCritical(error));
       return;
     }
 
     try {
       // --- Phase 1: Compile (parallel, under semaphore) ---
+      const compileStart = Date.now();
       const compilePhaseResult = await this.executeCompilePhase(
         entry.item,
         projectDir,
         startTime,
       );
+      compileDurationMs = Date.now() - compileStart;
       releaseCompile(); // Free compile slot immediately
 
       // --- Phase 2: Test (serial, under test mutex) ---
@@ -338,6 +389,14 @@ export class CompileQueue implements CompileWorkQueue {
         entry.item.context.manifest.expected.testApp
       ) {
         const releaseTest = await this.testMutex.acquire();
+        // Transition to test phase for snapshot visibility
+        this.activeWorkItems.set(workItemId, {
+          workItemId,
+          taskId,
+          variantId,
+          phase: "test",
+          phaseStartedAt: Date.now(),
+        });
         try {
           const testPhase = await this.executeTestPhase(
             entry.item,
@@ -346,6 +405,7 @@ export class CompileQueue implements CompileWorkQueue {
           );
           compilePhaseResult.testResult = testPhase.testResult;
           compilePhaseResult.testDuration = testPhase.testDuration;
+          testDurationMs = testPhase.testDuration;
         } finally {
           releaseTest();
         }
@@ -354,13 +414,55 @@ export class CompileQueue implements CompileWorkQueue {
       compilePhaseResult.duration = Date.now() - startTime;
       this.processedCount++;
       this.totalProcessTime += compilePhaseResult.duration;
+      succeeded = compilePhaseResult.compilationResult.success &&
+        (compilePhaseResult.testResult?.success ?? true);
       entry.resolve(compilePhaseResult);
     } catch (error) {
       this.processedCount++;
       this.totalProcessTime += Date.now() - startTime;
       entry.reject(error instanceof Error ? error : new Error(String(error)));
     } finally {
+      this.recordCompleted(
+        workItemId,
+        taskId,
+        variantId,
+        startTime,
+        compileDurationMs,
+        testDurationMs,
+        succeeded,
+      );
       await this.cleanupTempProject(projectDir);
+    }
+  }
+
+  /** Snapshot housekeeping when a pipeline finishes (success or failure). */
+  private recordCompleted(
+    workItemId: string,
+    taskId: string,
+    variantId: string,
+    startedAt: number,
+    compileDurationMs: number,
+    testDurationMs: number | undefined,
+    success: boolean,
+  ): void {
+    this.activeWorkItems.delete(workItemId);
+    const completedAt = Date.now();
+    const completedItem: CompletedItem = {
+      workItemId,
+      taskId,
+      variantId,
+      success,
+      totalDurationMs: completedAt - startedAt,
+      compileDurationMs,
+      ...(testDurationMs !== undefined ? { testDurationMs } : {}),
+      completedAt,
+    };
+    this.completedHistory.push(completedItem);
+    this.lastActivityAt = completedAt;
+    if (success) {
+      this.consecutiveFailures = 0;
+    } else {
+      this.consecutiveFailures++;
     }
   }
 
@@ -646,6 +748,66 @@ export class CompileQueue implements CompileWorkQueue {
   getPosition(itemId: string): number {
     const idx = this.queue.findIndex((e) => e.item.id === itemId);
     return idx === -1 ? -1 : idx + 1; // 1-based position
+  }
+
+  /**
+   * Live observability snapshot — see `src/parallel/observability.ts`.
+   * Pure read of current state; safe to call at any frequency.
+   */
+  getSnapshot(): QueueSnapshot {
+    const now = Date.now();
+    const cutoff = now - HISTORY_WINDOW_MS;
+
+    const all = this.completedHistory.toArray(); // newest-first
+    const recentlyCompleted = all.filter((c) => c.completedAt >= cutoff);
+
+    const compileTimes = recentlyCompleted
+      .map((c) => c.compileDurationMs)
+      .filter((v) => v > 0);
+    const testTimes = recentlyCompleted
+      .map((c) => c.testDurationMs)
+      .filter((v): v is number => typeof v === "number" && v > 0);
+
+    return {
+      containerName: this.containerName,
+      pending: this.queue.length,
+      activeCompilations: this.compileSemaphore.activeCount(),
+      maxCompilations: this.compileSemaphore.maxCount(),
+      testActive: this.testMutex.isLocked(),
+      active: Array.from(this.activeWorkItems.values()),
+      recentlyCompleted,
+      throughput: {
+        completedLastMinute: recentlyCompleted.length,
+        avgCompileMs: mean(compileTimes),
+        avgTestMs: mean(testTimes),
+        p95TestMs: percentile95(testTimes),
+      },
+      health: {
+        lastActivityAt: this.lastActivityAt,
+        consecutiveFailures: this.consecutiveFailures,
+      },
+    };
+  }
+
+  /**
+   * Single-queue pool snapshot wrapper — lets a one-container run share the
+   * dashboard schema with multi-container runs. There's no routing log because
+   * routing is trivial (only one destination).
+   */
+  getPoolSnapshot(): PoolSnapshot {
+    const q = this.getSnapshot();
+    return {
+      schemaVersion: 1,
+      generatedAt: Date.now(),
+      queues: [q],
+      totals: {
+        pending: q.pending,
+        activeCompilations: q.activeCompilations,
+        activeTests: q.testActive ? 1 : 0,
+      },
+      imbalanceScore: imbalanceScore([q.pending]),
+      recentRouting: [],
+    };
   }
 
   /**

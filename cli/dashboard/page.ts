@@ -52,6 +52,16 @@ ${DASHBOARD_CSS}
     </div>
   </div>
 
+  <!-- Container pool live view (rendered when first pool-snapshot arrives) -->
+  <div class="container-section" id="container-section" style="display:none">
+    <h2>Containers <span class="muted" id="container-imbalance"></span></h2>
+    <div class="container-grid" id="container-grid"></div>
+    <details class="routing-log-wrap">
+      <summary>Recent routing decisions</summary>
+      <div class="routing-log" id="routing-log"></div>
+    </details>
+  </div>
+
   <!-- Model summary cards -->
   <div class="model-cards" id="model-cards"></div>
 
@@ -183,6 +193,76 @@ body {
 .pass-rate.none { color: #9ca3af; }
 
 /* Chart */
+/* Containers section (live pool snapshot) */
+.container-section {
+  background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem;
+  padding: 1.25rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.container-section h2 { font-size: 1rem; color: #374151; margin-bottom: 0.75rem; }
+.container-section .muted { font-weight: 400; color: #6b7280; font-size: 0.85rem; margin-left: 0.5rem; }
+.container-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.container-card {
+  border: 1px solid #e5e7eb; border-radius: 0.4rem; padding: 0.75rem;
+  font-size: 0.8rem; background: #fafafa;
+}
+.container-card .name {
+  font-weight: 600; font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85rem; color: #111827;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.container-card .health-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #22c55e;
+}
+.container-card .health-dot.stale { background: #f59e0b; }
+.container-card .health-dot.failing { background: #ef4444; }
+.container-card .row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 0.4rem; color: #4b5563;
+}
+.container-card .compile-bar {
+  display: inline-flex; gap: 2px; vertical-align: middle;
+}
+.container-card .compile-bar .slot {
+  width: 8px; height: 12px; background: #e5e7eb; border-radius: 1px;
+}
+.container-card .compile-bar .slot.active { background: #3b82f6; }
+.container-card .test-indicator {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+}
+.container-card .test-indicator .dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #d1d5db;
+}
+.container-card .test-indicator.active .dot { background: #f59e0b; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.container-card .active-task {
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.7rem;
+  color: #6b7280; margin-top: 0.25rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.container-card .sparkline {
+  margin-top: 0.4rem;
+  display: block; width: 100%; height: 20px;
+}
+.routing-log-wrap { margin-top: 0.75rem; font-size: 0.75rem; color: #6b7280; }
+.routing-log-wrap summary { cursor: pointer; }
+.routing-log {
+  margin-top: 0.5rem; max-height: 160px; overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.7rem;
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 0.3rem;
+  padding: 0.5rem;
+}
+.routing-log .entry {
+  padding: 0.15rem 0; border-bottom: 1px dashed #e5e7eb;
+  display: grid; grid-template-columns: 5.5rem 1fr 1fr; gap: 0.5rem;
+}
+.routing-log .entry:last-child { border-bottom: none; }
+.routing-log .entry .target { color: #2563eb; font-weight: 500; }
+
 .chart-section {
   background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem;
   padding: 1.25rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
@@ -432,10 +512,125 @@ const DASHBOARD_JS = `
         state.costHistory.push(event.point);
         break;
 
+      case 'pool-snapshot':
+        renderPoolSnapshot(event.snapshot);
+        break;
+
       case 'benchmark-complete':
         state.isRunning = false;
         renderComplete();
         break;
+    }
+  }
+
+  // ==================== Pool / Containers ====================
+
+  // Sparkline history per container — last N pending depths.
+  const SPARK_LEN = 60;
+  const sparkHistory = Object.create(null);
+
+  function pushSparkPoint(name, value) {
+    const arr = sparkHistory[name] || (sparkHistory[name] = []);
+    arr.push(value);
+    if (arr.length > SPARK_LEN) arr.shift();
+  }
+
+  function sparklineSvg(values, width, height) {
+    if (values.length === 0) return '';
+    const max = Math.max(1, ...values);
+    const step = width / Math.max(1, SPARK_LEN - 1);
+    const pts = values.map((v, i) =>
+      (i * step).toFixed(1) + ',' + (height - (v / max) * (height - 2)).toFixed(1)
+    ).join(' ');
+    return '<svg class="sparkline" viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none">' +
+      '<polyline fill="none" stroke="#3b82f6" stroke-width="1.2" points="' + pts + '" />' +
+      '</svg>';
+  }
+
+  function fmtMs(ms) {
+    if (!ms || ms < 1) return '–';
+    if (ms < 1000) return Math.round(ms) + 'ms';
+    return (ms / 1000).toFixed(1) + 's';
+  }
+
+  function ageMs(ts) {
+    if (!ts || ts < 0) return Infinity;
+    return Date.now() - ts;
+  }
+
+  function healthClass(q) {
+    if (q.health.consecutiveFailures >= 3) return 'failing';
+    if (ageMs(q.health.lastActivityAt) > 60000 && q.health.lastActivityAt > 0) return 'stale';
+    return '';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[c]);
+  }
+
+  function renderPoolSnapshot(snap) {
+    const section = $('container-section');
+    if (!section) return;
+    section.style.display = '';
+
+    // Imbalance label
+    $('container-imbalance').textContent =
+      'imbalance ' + snap.imbalanceScore.toFixed(2) +
+      ' · ' + snap.totals.activeTests + '/' + snap.queues.length + ' tests · ' +
+      snap.totals.activeCompilations + ' compiling · ' +
+      snap.totals.pending + ' pending';
+
+    // Per-container cards
+    const grid = $('container-grid');
+    grid.innerHTML = snap.queues.map(q => {
+      pushSparkPoint(q.containerName, q.pending);
+      const slots = [];
+      for (let i = 0; i < q.maxCompilations; i++) {
+        slots.push('<span class="slot' + (i < q.activeCompilations ? ' active' : '') + '"></span>');
+      }
+      const activeTask = q.active.length > 0
+        ? (q.active[0].phase + ' · ' + q.active[0].taskId + ' / ' + q.active[0].variantId)
+        : '';
+      const t = q.throughput;
+      const throughputLine = t.completedLastMinute > 0
+        ? (t.completedLastMinute + '/min · compile ' + fmtMs(t.avgCompileMs) +
+           ' · test ' + fmtMs(t.avgTestMs) + ' (p95 ' + fmtMs(t.p95TestMs) + ')')
+        : 'idle';
+      return (
+        '<div class="container-card">' +
+          '<div class="name"><span>' + escapeHtml(q.containerName) + '</span>' +
+          '<span class="health-dot ' + healthClass(q) + '"></span></div>' +
+          '<div class="row"><span>compile</span><span class="compile-bar">' + slots.join('') +
+          '</span></div>' +
+          '<div class="row"><span>test</span>' +
+          '<span class="test-indicator' + (q.testActive ? ' active' : '') + '">' +
+          '<span class="dot"></span>' + (q.testActive ? 'running' : 'idle') + '</span></div>' +
+          '<div class="row"><span>pending</span><span>' + q.pending + '</span></div>' +
+          (activeTask ? '<div class="active-task">' + escapeHtml(activeTask) + '</div>' : '') +
+          '<div class="row"><span>throughput</span><span>' + escapeHtml(throughputLine) + '</span></div>' +
+          sparklineSvg(sparkHistory[q.containerName] || [], 220, 20) +
+        '</div>'
+      );
+    }).join('');
+
+    // Routing log
+    const log = $('routing-log');
+    if (snap.recentRouting.length === 0) {
+      log.innerHTML = '<em>No routing decisions yet</em>';
+    } else {
+      log.innerHTML = snap.recentRouting.map(r => {
+        const ts = new Date(r.routedAt).toLocaleTimeString();
+        const depths = Object.entries(r.poolDepthsAtRouting)
+          .map(([k, v]) => k + '=' + v).join(', ');
+        return '<div class="entry">' +
+          '<span>' + ts + '</span>' +
+          '<span class="target">→ ' + escapeHtml(r.routedTo) + '</span>' +
+          '<span title="' + escapeHtml(r.taskId + ' / ' + r.variantId) + '">' +
+          escapeHtml(depths) + '</span>' +
+          '</div>';
+      }).join('');
     }
   }
 

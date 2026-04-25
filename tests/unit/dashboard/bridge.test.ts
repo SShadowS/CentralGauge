@@ -340,4 +340,81 @@ Deno.test("DashboardEventBridge", async (t) => {
       assertEquals(progressEvent.progress.compileQueueLength, 2);
     }
   });
+
+  await t.step(
+    "attachPool emits pool-snapshot at ~1Hz and caches latest",
+    async () => {
+      const { bridge, events } = setupBridge();
+      let calls = 0;
+      const snap = {
+        schemaVersion: 1 as const,
+        generatedAt: 0,
+        queues: [],
+        totals: { pending: 0, activeCompilations: 0, activeTests: 0 },
+        imbalanceScore: 0,
+        recentRouting: [],
+      };
+      bridge.attachPool({
+        getPoolSnapshot: () => {
+          calls++;
+          return { ...snap, generatedAt: calls };
+        },
+      });
+
+      // Wait long enough for at least 2 ticks (interval = 1000ms)
+      await new Promise((r) => setTimeout(r, 2300));
+      bridge.detachPool();
+
+      const poolEvents = events.filter((e) => e.type === "pool-snapshot");
+      if (poolEvents.length < 2) {
+        throw new Error(
+          `expected ≥2 pool-snapshot events, got ${poolEvents.length}`,
+        );
+      }
+      // Latest cached snapshot is non-null and matches the most recent call
+      const cached = bridge.getLatestPoolSnapshot();
+      assertExists(cached);
+      assertEquals(cached.generatedAt, calls);
+    },
+  );
+
+  await t.step("detachPool stops the ticker", async () => {
+    const { bridge, events } = setupBridge();
+    bridge.attachPool({
+      getPoolSnapshot: () => ({
+        schemaVersion: 1 as const,
+        generatedAt: Date.now(),
+        queues: [],
+        totals: { pending: 0, activeCompilations: 0, activeTests: 0 },
+        imbalanceScore: 0,
+        recentRouting: [],
+      }),
+    });
+    await new Promise((r) => setTimeout(r, 1100));
+    bridge.detachPool();
+    const beforeCount = events.filter((e) => e.type === "pool-snapshot").length;
+    await new Promise((r) => setTimeout(r, 1100));
+    const afterCount = events.filter((e) => e.type === "pool-snapshot").length;
+    assertEquals(beforeCount, afterCount, "no further ticks after detach");
+  });
+
+  await t.step("markComplete also detaches pool", async () => {
+    const { bridge, events } = setupBridge();
+    bridge.attachPool({
+      getPoolSnapshot: () => ({
+        schemaVersion: 1 as const,
+        generatedAt: Date.now(),
+        queues: [],
+        totals: { pending: 0, activeCompilations: 0, activeTests: 0 },
+        imbalanceScore: 0,
+        recentRouting: [],
+      }),
+    });
+    await new Promise((r) => setTimeout(r, 1100));
+    bridge.markComplete();
+    const beforeCount = events.filter((e) => e.type === "pool-snapshot").length;
+    await new Promise((r) => setTimeout(r, 1100));
+    const afterCount = events.filter((e) => e.type === "pool-snapshot").length;
+    assertEquals(beforeCount, afterCount);
+  });
 });

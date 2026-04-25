@@ -4,8 +4,17 @@
  */
 
 import type { ParallelExecutionEvent } from "../../src/parallel/types.ts";
+import type { PoolSnapshot } from "../../src/parallel/observability.ts";
 import type { SSEEvent } from "./types.ts";
 import { cellKey, DashboardStateManager } from "./state.ts";
+
+/** Tick interval for the pool-snapshot emitter (ms). */
+const POOL_SNAPSHOT_INTERVAL_MS = 1000;
+
+/** Source of pool snapshots — implemented by CompileQueuePool and CompileQueue. */
+export interface PoolSnapshotSource {
+  getPoolSnapshot(): PoolSnapshot;
+}
 
 /**
  * Bridges the orchestrator event stream to the dashboard state manager
@@ -17,12 +26,49 @@ export class DashboardEventBridge {
   private currentRun = 1;
   private cumulativeCost = 0;
 
+  // Pool-snapshot emitter state
+  private poolTicker: number | null = null;
+  private latestPoolSnapshot: PoolSnapshot | null = null;
+
   constructor(
     state: DashboardStateManager,
     broadcast: (event: SSEEvent) => void,
   ) {
     this.state = state;
     this.broadcast = broadcast;
+  }
+
+  /**
+   * Attach a pool snapshot source and start a 1Hz emitter that broadcasts
+   * `pool-snapshot` SSE events. Caches the latest snapshot so newly-connected
+   * browsers can be replayed via `getLatestPoolSnapshot()`.
+   *
+   * Idempotent: calling again replaces the source and resets the ticker.
+   */
+  attachPool(source: PoolSnapshotSource): void {
+    this.detachPool();
+    this.poolTicker = setInterval(() => {
+      const snap = source.getPoolSnapshot();
+      this.latestPoolSnapshot = snap;
+      this.broadcast({ type: "pool-snapshot", snapshot: snap });
+    }, POOL_SNAPSHOT_INTERVAL_MS);
+  }
+
+  /** Stop the pool-snapshot emitter. Safe to call when none is attached. */
+  detachPool(): void {
+    if (this.poolTicker !== null) {
+      clearInterval(this.poolTicker);
+      this.poolTicker = null;
+    }
+  }
+
+  /**
+   * Returns the most recently captured snapshot, or null if none yet.
+   * Used by the SSE server to replay state to newly-connected browsers
+   * before they start receiving live ticks.
+   */
+  getLatestPoolSnapshot(): PoolSnapshot | null {
+    return this.latestPoolSnapshot;
   }
 
   /**
@@ -88,9 +134,11 @@ export class DashboardEventBridge {
   }
 
   /**
-   * Mark the benchmark as complete and broadcast
+   * Mark the benchmark as complete and broadcast.
+   * Also stops the pool-snapshot emitter so it doesn't keep ticking after the run.
    */
   markComplete(): void {
+    this.detachPool();
     this.state.markComplete();
     this.broadcast({ type: "benchmark-complete" });
   }

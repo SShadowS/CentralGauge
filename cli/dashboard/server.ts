@@ -163,13 +163,37 @@ export class DashboardServer {
   }
 
   /**
-   * Set up an SSE connection
+   * Set up an SSE connection.
+   *
+   * Replay-on-connect: before adding the new client to the broadcast set,
+   * we send the latest cached state (full state + latest pool snapshot) so
+   * the browser doesn't sit blank waiting for the next live event.
    */
   private handleSSE(): Response {
     const clients = this.clients;
+    const stateManager = this.stateManager;
+    const bridge = this._bridge;
 
     const stream = new ReadableStream({
       start(controller) {
+        // Replay current state immediately so newly-connected tabs aren't blank
+        const enc = new TextEncoder();
+        const send = (event: SSEEvent) => {
+          try {
+            controller.enqueue(
+              enc.encode(`data: ${JSON.stringify(event)}\n\n`),
+            );
+          } catch {
+            // Stream already closed — fall through; client won't be added
+          }
+        };
+
+        send({ type: "full-state", state: stateManager.getFullState() });
+        const latestPool = bridge.getLatestPoolSnapshot();
+        if (latestPool) {
+          send({ type: "pool-snapshot", snapshot: latestPool });
+        }
+
         clients.add(controller);
       },
       cancel() {
