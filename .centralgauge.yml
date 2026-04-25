@@ -78,20 +78,26 @@ logging:
 #     accessToken: "o.xxxxx"              # Or use PUSHBULLET_ACCESS_TOKEN env var
 
 # Benchmark presets - save complex benchmark configurations as reusable presets
-# Run with: deno task start bench --preset my-comparison
+# Run with: deno task start bench --preset <name>
 # List presets: deno task start bench --list-presets
-# benchmarkPresets:
-#   my-comparison:
-#     description: "Compare 2025 models with thinking"
-#     llms:
-#       - "opus@thinking=50000"
-#       - "gpt-5@reasoning=high"
-#       - "sonnet"
-#       - "openrouter/deepseek/deepseek-v3.2"
-#     stream: true
-#     attempts: 2
-#   quick-test:
-#     description: "Fast smoke test with mock model"
-#     llms: [mock]
-#     tasks: ["tasks/easy/*.yml"]
-#     attempts: 1
+benchmarkPresets:
+  flagship-2026-q2:
+    description: "Current flagship models across providers (2026-04)"
+    llms:
+      - "anthropic/claude-opus-4-7"
+      - "anthropic/claude-opus-4-6"
+      - "openai/gpt-5.3-codex"
+      - "openai/gpt-5.5"
+      - "openrouter/deepseek/deepseek-v4-pro"
+    containers:
+      - Cronus28
+      - Cronus281
+    runs: 3
+    stream: true
+    debug: true
+
+  quick-test:
+    description: "Fast smoke test with mock model"
+    llms: [mock]
+    tasks: ["tasks/easy/*.yml"]
+    attempts: 1
