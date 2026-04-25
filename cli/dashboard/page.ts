@@ -417,6 +417,29 @@ body.dark .completion-banner { background: #064e3b; border-color: #10b981; }
 body.dark .completion-banner h2 { color: #34d399; }
 body.dark .completion-banner p { color: #d1d5db; }
 
+/* Containers section — dark mode */
+body.dark .container-section { background: #1f2937; border-color: #374151; }
+body.dark .container-section h2 { color: #f3f4f6; }
+body.dark .container-section .muted { color: #9ca3af; }
+body.dark .container-card { background: #111827; border-color: #374151; }
+body.dark .container-card .name { color: #f3f4f6; }
+body.dark .container-card .row { color: #9ca3af; }
+body.dark .container-card .compile-bar .slot { background: #374151; }
+body.dark .container-card .compile-bar .slot.active { background: #60a5fa; }
+body.dark .container-card .test-indicator .dot { background: #4b5563; }
+body.dark .container-card .test-indicator.active .dot { background: #fbbf24; }
+body.dark .container-card .active-task { color: #9ca3af; }
+body.dark .container-card .health-dot { background: #10b981; }
+body.dark .container-card .health-dot.stale { background: #f59e0b; }
+body.dark .container-card .health-dot.failing { background: #ef4444; }
+body.dark .routing-log-wrap { color: #9ca3af; }
+body.dark .routing-log {
+  background: #111827; border-color: #374151; color: #d1d5db;
+}
+body.dark .routing-log .entry { border-bottom-color: #374151; }
+body.dark .routing-log .entry .target { color: #60a5fa; }
+body.dark .container-card .sparkline polyline { stroke: #60a5fa; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .dashboard { padding: 0.75rem; }
