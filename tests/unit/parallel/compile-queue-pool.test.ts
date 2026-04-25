@@ -219,5 +219,70 @@ describe({
         true,
       );
     });
+
+    it("routing decisions include poolLoadsAtRouting", async () => {
+      const pool = new CompileQueuePool(mockProvider, ["c1", "c2"]);
+      await pool.enqueue(createMockCompileWorkItem({ id: "wi-1" }));
+      await pool.drain();
+
+      const snap = pool.getPoolSnapshot();
+      const r = snap.recentRouting[0]!;
+      assertEquals(Object.keys(r.poolLoadsAtRouting).sort(), ["c1", "c2"]);
+      assertEquals(typeof r.poolLoadsAtRouting["c1"], "number");
+      assertEquals(typeof r.poolLoadsAtRouting["c2"], "number");
+    });
+  });
+
+  describe("load-balanced routing", () => {
+    it("fans out a burst of zero-load enqueues across the pool", async () => {
+      // 4 containers, 4 enqueues fired before any can drain. With strict
+      // length-only routing all 4 would land on c1 (length=0 wins ties).
+      // With load-aware + rotor, work spreads to a different container each
+      // time so no single container hoards a burst.
+      const pool = new CompileQueuePool(mockProvider, [
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+      ]);
+
+      // Don't await — fire all enqueues simultaneously so each routing
+      // decision sees the others' freshly-added load.
+      const promises = [0, 1, 2, 3].map((i) =>
+        pool.enqueue(createMockCompileWorkItem({ id: "wi-" + i }))
+      );
+      await Promise.all(promises);
+      await pool.drain();
+
+      const snap = pool.getPoolSnapshot();
+      const targets = snap.recentRouting.map(
+        (r: { routedTo: string }) => r.routedTo,
+      ).sort();
+      // Each container saw exactly one route — perfect distribution.
+      assertEquals(targets, ["c1", "c2", "c3", "c4"]);
+    });
+
+    it("rotor breaks ties so consecutive empty-pool enqueues hit different queues", () => {
+      const pool = new CompileQueuePool(mockProvider, [
+        "c1",
+        "c2",
+        "c3",
+      ]);
+
+      // Three sequential enqueues into an empty pool — without the rotor
+      // they would all go to c1. With the rotor they cycle.
+      pool.enqueue(createMockCompileWorkItem({ id: "wi-a" })).catch(() => {});
+      pool.enqueue(createMockCompileWorkItem({ id: "wi-b" })).catch(() => {});
+      pool.enqueue(createMockCompileWorkItem({ id: "wi-c" })).catch(() => {});
+
+      const snap = pool.getPoolSnapshot();
+      const targets = snap.recentRouting.map(
+        (r: { routedTo: string }) => r.routedTo,
+      );
+      // Newest-first: routing log shows c3, c2, c1 (rotor advanced 0,1,2).
+      // What matters is they are all DIFFERENT.
+      const unique = new Set(targets);
+      assertEquals(unique.size, 3, `expected fan-out, got ${targets}`);
+    });
   });
 });

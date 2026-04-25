@@ -622,13 +622,16 @@ const DASHBOARD_JS = `
     } else {
       log.innerHTML = snap.recentRouting.map(r => {
         const ts = new Date(r.routedAt).toLocaleTimeString();
-        const depths = Object.entries(r.poolDepthsAtRouting)
+        // Prefer the load view (pending+active) over plain depths because
+        // that's what the router actually minimized.
+        const loadSource = r.poolLoadsAtRouting || r.poolDepthsAtRouting;
+        const loads = Object.entries(loadSource)
           .map(([k, v]) => k + '=' + v).join(', ');
         return '<div class="entry">' +
           '<span>' + ts + '</span>' +
           '<span class="target">→ ' + escapeHtml(r.routedTo) + '</span>' +
           '<span title="' + escapeHtml(r.taskId + ' / ' + r.variantId) + '">' +
-          escapeHtml(depths) + '</span>' +
+          escapeHtml(loads) + '</span>' +
           '</div>';
       }).join('');
     }

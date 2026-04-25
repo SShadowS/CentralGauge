@@ -46,6 +46,12 @@ export class CompileQueuePool implements CompileWorkQueue {
   private routingLog = new CircularBuffer<RoutingDecision>(
     ROUTING_LOG_CAPACITY,
   );
+  /**
+   * Tie-breaker rotor: when multiple queues share the minimum load, we start
+   * scanning from this index so successive ties spread across the pool
+   * instead of always picking queues[0].
+   */
+  private routingRotor = 0;
 
   constructor(
     containerProvider: ContainerProvider,
@@ -64,17 +70,45 @@ export class CompileQueuePool implements CompileWorkQueue {
     );
   }
 
-  /** Route to the queue with fewest pending items */
+  /**
+   * Route to the queue with the smallest total load (pending + items in
+   * flight). Ties are broken by a rotating start index so a long stream
+   * of zero-load enqueues fans out across the pool instead of hammering
+   * `queues[0]` repeatedly.
+   *
+   * Why `length + active` not just `length`:
+   *   When all queues are draining and pending falls to 0, plain
+   *   `length`-routing keeps picking the first queue even while its
+   *   testMutex is busy and other containers sit idle. Including
+   *   in-flight items captures the real load.
+   */
   enqueue(item: CompileWorkItem): Promise<CompileWorkResult> {
-    const target = this.queues.reduce((best, q) =>
-      q.length < best.length ? q : best
-    );
+    const n = this.queues.length;
+    let target = this.queues[this.routingRotor % n]!;
+    let bestLoad = target.load;
+
+    // Scan starting from rotor + 1 so ties go to a different queue
+    // each time enqueue is called.
+    for (let i = 1; i < n; i++) {
+      const idx = (this.routingRotor + i) % n;
+      const q = this.queues[idx]!;
+      if (q.load < bestLoad) {
+        target = q;
+        bestLoad = q.load;
+      }
+    }
+
+    // Advance the rotor regardless of who won so successive routing
+    // decisions don't share the same starting point.
+    this.routingRotor = (this.routingRotor + 1) % n;
 
     // Record the routing decision before enqueue so the snapshot reflects
     // depths AT decision time, not after the new item lands.
     const poolDepthsAtRouting: Record<string, number> = {};
+    const poolLoadsAtRouting: Record<string, number> = {};
     for (const q of this.queues) {
       poolDepthsAtRouting[q.containerName] = q.length;
+      poolLoadsAtRouting[q.containerName] = q.load;
     }
     this.routingLog.push({
       workItemId: item.id,
@@ -83,6 +117,7 @@ export class CompileQueuePool implements CompileWorkQueue {
       routedTo: target.containerName,
       queueDepthAtRouting: target.length,
       poolDepthsAtRouting,
+      poolLoadsAtRouting,
       routedAt: Date.now(),
     });
 

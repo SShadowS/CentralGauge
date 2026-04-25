@@ -85,6 +85,9 @@ export interface RoutingDecision {
   queueDepthAtRouting: number;
   /** Pending depths of ALL queues at routing time, by container name. */
   poolDepthsAtRouting: Record<string, number>;
+  /** Load (pending + active) of ALL queues at routing time. The pool routes
+   *  by minimum load, so the chosen queue is the one with the lowest entry. */
+  poolLoadsAtRouting: Record<string, number>;
   routedAt: number;
 }
 

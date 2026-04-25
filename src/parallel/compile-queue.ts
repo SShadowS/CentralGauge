@@ -208,6 +208,16 @@ export class CompileQueue implements CompileWorkQueue {
   /** Name of the BC container this queue operates against. */
   public readonly containerName: string;
 
+  /**
+   * Total load on this queue: items pending + items currently in flight
+   * (compile or test phase). Used by `CompileQueuePool` for load-balanced
+   * routing so a busy queue isn't picked "because pending=0" while all
+   * its slots are still occupied.
+   */
+  get load(): number {
+    return this.queue.length + this.activeItems;
+  }
+
   // Stats tracking
   private processedCount = 0;
   private totalWaitTime = 0;
