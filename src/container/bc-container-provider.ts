@@ -1,6 +1,13 @@
 /**
  * Real Business Central Container Provider using bccontainerhelper PowerShell module
  * This provider integrates with Windows bccontainerhelper for real AL compilation and testing
+ *
+ * NOTE: All bccontainerhelper Import-Module/Install-Module calls are pinned to
+ * version 6.1.11. Version 6.1.12 introduced a regression where the PSSession
+ * opened into a BC v28+ container does not auto-load the NAV admin module, so
+ * `Get-NavServerInstance` (used internally by Publish-BcContainerApp) fails
+ * intermittently as sessions are recycled mid-task. Bump deliberately after
+ * verifying the regression is fixed upstream.
  */
 
 import type { ContainerProvider } from "./interface.ts";
@@ -169,8 +176,8 @@ export class BcContainerProvider implements ContainerProvider {
     if (isModuleMissing(checkModule.output)) {
       log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
-        Install-Module bccontainerhelper -Force -AllowClobber -Scope CurrentUser
-        Import-Module bccontainerhelper
+        Install-Module bccontainerhelper -RequiredVersion 6.1.11 -Force -AllowClobber -Scope CurrentUser
+        Import-Module bccontainerhelper -RequiredVersion 6.1.11
         Write-Output "MODULE_INSTALLED"
       `);
 
@@ -185,7 +192,7 @@ export class BcContainerProvider implements ContainerProvider {
 
     // Remove existing container if it exists
     await this.executePowerShell(`
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
       if (Get-BcContainer -containerName "${config.name}" -ErrorAction SilentlyContinue) {
         Write-Output "Removing existing container: ${config.name}"
         Remove-BcContainer -containerName "${config.name}"
@@ -194,7 +201,7 @@ export class BcContainerProvider implements ContainerProvider {
 
     // Create new container
     const setupScript = `
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
 
       Write-Output "Creating Business Central container: ${config.name}"
       New-BcContainer \`
@@ -228,7 +235,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Starting container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       Start-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} started"
     `;
@@ -250,7 +257,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Stopping container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       Stop-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} stopped"
     `;
@@ -272,7 +279,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Removing container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       Remove-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} removed"
     `;
@@ -292,7 +299,7 @@ export class BcContainerProvider implements ContainerProvider {
 
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
 
       # Check if container exists using Get-BcContainers (plural)
       $containers = Get-BcContainers
@@ -404,7 +411,7 @@ export class BcContainerProvider implements ContainerProvider {
       : "";
 
     const script = `
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
       $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit${cacheParams}
@@ -566,7 +573,7 @@ export class BcContainerProvider implements ContainerProvider {
     const appName = fileNameParts.slice(1, -1).join("_") || "";
 
     const script = `
-      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
       # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
       $bcContainerHelperConfig.usePwshForBc24 = $true
 
@@ -807,7 +814,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       Copy-ToNavContainer -containerName "${containerName}" -localPath "${localPath}" -containerPath "${containerPath}"
       Write-Output "Copied ${localPath} to ${containerName}:${containerPath}"
     `;
@@ -830,7 +837,7 @@ export class BcContainerProvider implements ContainerProvider {
     localPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       Copy-FromNavContainer -containerName "${containerName}" -containerPath "${containerPath}" -localPath "${localPath}"
       Write-Output "Copied ${containerName}:${containerPath} to ${localPath}"
     `;
@@ -852,7 +859,7 @@ export class BcContainerProvider implements ContainerProvider {
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
     const script = `
-      Import-Module bccontainerhelper
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11
       $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock { ${command} }
       Write-Output $result
     `;
@@ -863,7 +870,7 @@ export class BcContainerProvider implements ContainerProvider {
   async isHealthy(containerName: string): Promise<boolean> {
     try {
       const script = `
-        Import-Module bccontainerhelper -WarningAction SilentlyContinue
+        Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;
