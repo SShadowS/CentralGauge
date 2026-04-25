@@ -573,6 +573,7 @@ export class BcContainerProvider implements ContainerProvider {
     const appName = fileNameParts.slice(1, -1).join("_") || "";
 
     const script = `
+      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.11 sentinel=2026-04-25-A"
       Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
       # Use Windows PowerShell inside container — pwsh sessions lose Nav management module state
       $bcContainerHelperConfig.usePwshForBc24 = $true
