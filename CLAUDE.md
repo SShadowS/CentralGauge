@@ -34,6 +34,16 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 - Credentials: `sshadows` / `1234`
 - Health check URL: `http://Cronus28/BC/?tenant=default` (check if login page loads to verify container is up)
 
+## bccontainerhelper config quirks
+
+- Pinned to **6.1.11** in `bc-container-provider.ts` + `bc-script-builders.ts`
+  (6.1.12+ disables PSSession for BC v28+ by default — breaks publish flow).
+- `$bcContainerHelperConfig.usePwshForBc24 = $false` is REQUIRED in the bench's
+  PowerShell scripts. With `$true`, the cached PSSession loses
+  `Get-NavServerInstance` after any `Unpublish-BcContainerApp`, and the next
+  `Publish-BcContainerApp` crashes. Don't flip without reproducing the
+  multi-unpublish test sequence.
+
 ## Project Structure
 
 | Directory | Purpose                                                                      |
@@ -69,6 +79,22 @@ Disable with `--no-ingest`.
 - `centralgauge sync-catalog --apply` — reconcile `site/catalog/*.yml` ↔ D1 catalog tables
 - Config (URL, keys, machine_id) merged from `.centralgauge.yml` (cwd + home)
 - `centralgauge doctor ingest [--llms <list>] [--repair]` — verify config + keys + connectivity + bench-aware catalog state in one signed round-trip. Bench runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to disable.
+
+### Wrangler / admin API
+
+- Set `CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b` AND
+  `CLOUDFLARE_API_TOKEN` (scope `Account.D1:Edit`) for non-interactive shells.
+  `wrangler login` doesn't propagate reliably to subshells.
+- `/api/v1/admin/*` rate-limits at ~10 req/min — `sync-catalog --apply` for
+  7+ rows hits 429; retry after ~60 s pause.
+- `task_sets.is_current = 1` is required for leaderboard visibility. Admin
+  task-sets endpoint accepts `set_current: true` to flip it atomically.
+- Leaderboard `avg_score` is **per-attempt** (averages all `results` rows);
+  local bench summary's "Score" column is **per-task** (final score). They
+  diverge — same data, different metric.
+- `pricing_version` is today UTC `YYYY-MM-DD`. Pre-seed in
+  `site/catalog/pricing.yml` + `sync-catalog --apply` to skip the bench's
+  interactive pricing prompt for new models.
 
 ## Code Style
 
@@ -227,6 +253,15 @@ deno task test        # Full test suite
 - Do NOT run `deno test` directly — it lacks the required permissions (`--allow-all`) for filesystem and environment access
 - Do NOT use `--parallel` — some tests share static state (e.g. `PricingService`) which causes false positives under parallel execution
 - After any code change, run `deno check`, `deno lint`, and `deno fmt` as well
+
+### Worker tests (`site/`)
+
+Vitest runs against the built `.svelte-kit/output/` bundle, **not** source.
+After editing `site/src/routes/**/*.ts`, run `cd site && npm run build` before
+`npm test` or you'll be debugging stale code.
+
+Do NOT run `deno fmt` on `site/` files — it converts quote style which
+conflicts with site's own prettier config.
 
 ## Writing Task Specifications (YAML)
 
