@@ -529,6 +529,36 @@ export function registerBenchCommand(cli: Command): void {
         result.resultFilePaths && result.resultFilePaths.length > 0 &&
         result.variants && result.variants.length > 0
       ) {
+        // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
+        // If credentials revoked or worker went down mid-bench, save results to disk and skip ingest.
+        if (benchPrecheckEnabled && options.ingest !== false) {
+          const recheck = await runDoctor({
+            section: ingestSection,
+            levels: ["B", "C"],
+          });
+          if (!recheck.ok) {
+            console.warn(
+              colors.yellow(
+                "[WARN] pre-ingest re-check failed; skipping auto-ingest.",
+              ),
+            );
+            console.warn(formatReportToTerminal(recheck));
+            console.warn(
+              colors.gray(
+                `       Results saved to ${
+                  (result.resultFilePaths ?? []).join(", ")
+                }.`,
+              ),
+            );
+            console.warn(
+              colors.gray(
+                "       Replay later: deno task start ingest <path> --yes",
+              ),
+            );
+            return; // exit cleanly, results on disk
+          }
+        }
+
         await ingestBenchResults(
           result.resultFilePaths,
           result.variants,
