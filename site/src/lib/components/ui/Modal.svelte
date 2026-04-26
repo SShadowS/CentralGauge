@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { useId } from '$lib/client/use-id';
+
   interface Props { open: boolean; title: string; children: Snippet; onclose?: () => void; }
   let { open = $bindable(false), title, children, onclose }: Props = $props();
+
+  const titleId = useId();
 
   function handleEsc(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
@@ -15,8 +19,8 @@
 
 {#if open}
   <div class="backdrop" role="presentation" onclick={() => { open = false; onclose?.(); }}></div>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-    <header><h2 id="modal-title">{title}</h2></header>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+    <header><h2 id={titleId}>{title}</h2></header>
     <div class="body">{@render children()}</div>
   </div>
 {/if}
