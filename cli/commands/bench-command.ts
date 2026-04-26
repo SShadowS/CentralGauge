@@ -23,6 +23,7 @@ import type {
   ExtendedBenchmarkOptions,
 } from "./bench/mod.ts";
 import type { ModelVariant } from "../../src/llm/variant-types.ts";
+import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import {
   assembleBenchResultsForVariant,
   executeAgentBenchmark,
@@ -30,6 +31,12 @@ import {
   readGitSha,
 } from "./bench/mod.ts";
 import { ingestRun } from "../../src/ingest/mod.ts";
+import {
+  formatReportToTerminal,
+  ingestSection,
+  runDoctor,
+  type VariantProbe,
+} from "../../src/doctor/mod.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -450,6 +457,58 @@ export function registerBenchCommand(cli: Command): void {
         }
         if (promptOverrides.provider) {
           console.log(`   Provider: ${promptOverrides.provider}`);
+        }
+      }
+
+      // Optional ingest precheck (env-flag-gated; T22 will flip to default-on).
+      // Runs AFTER variants resolution and BEFORE any LLM call.
+      const benchPrecheckEnabled =
+        Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
+      if (benchPrecheckEnabled && options.ingest !== false) {
+        const appConfig = await ConfigManager.loadConfig();
+        const variants: ModelVariant[] = ModelPresetRegistry
+          .resolveWithVariants(
+            benchOptions.llms,
+            appConfig,
+          );
+        if (variants.length > 0) {
+          const probes: VariantProbe[] = variants.map((v) => ({
+            slug: `${v.provider}/${v.model}`,
+            api_model_id: v.model,
+            family_slug: v.provider === "anthropic"
+              ? "claude"
+              : v.provider === "openai"
+              ? "gpt"
+              : v.provider === "google" || v.provider === "gemini"
+              ? "gemini"
+              : v.provider === "openrouter"
+              ? v.model.split("/")[0] ?? v.provider
+              : v.provider,
+          }));
+          const today = new Date();
+          const pricingVersion = `${today.getUTCFullYear()}-${
+            String(today.getUTCMonth() + 1).padStart(2, "0")
+          }-${String(today.getUTCDate()).padStart(2, "0")}`;
+
+          const report = await runDoctor({
+            section: ingestSection,
+            variants: probes,
+            pricingVersion,
+          });
+          if (!report.ok) {
+            console.error(formatReportToTerminal(report));
+            console.error(
+              colors.red(
+                "\n[FAIL] ingest precheck failed — bench aborted before any LLM calls.",
+              ),
+            );
+            console.error(
+              colors.gray(
+                "       Fix above or pass --no-ingest to skip ingest entirely.",
+              ),
+            );
+            Deno.exit(1);
+          }
         }
       }
 
