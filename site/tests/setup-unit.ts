@@ -22,6 +22,13 @@ vi.mock('@testing-library/svelte', async () => {
 
   // Only these prop names are treated as Snippet slots; everything else
   // (variant, size, label, type, …) must remain a plain string.
+  //
+  // SNIPPET_PROPS lists prop names that auto-convert from string to snippet.
+  // When introducing atoms with new snippet-typed prop names (e.g. `prefix`,
+  // `suffix`, `panels`, `title`), add the prop name here.
+  //
+  // Limitation: parameterized snippets (e.g. Snippet<[string]>) cannot be
+  // auto-converted — pass real snippets via createRawSnippet in those tests.
   const SNIPPET_PROPS = new Set(['children', 'header', 'footer']);
 
   const toSnippet = (value: unknown) => {
