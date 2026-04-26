@@ -31,7 +31,23 @@ export async function runDoctor(opts: RunDoctorOptions): Promise<DoctorReport> {
 
   const checks: CheckResult[] = [];
   for (const check of filteredChecks) {
-    const result = await runOne(check, ctx);
+    const failedDep = (check.requires ?? []).find((depId) => {
+      const dep = ctx.previousResults.get(depId);
+      return dep && dep.status === "failed";
+    });
+
+    let result: CheckResult;
+    if (failedDep) {
+      result = {
+        id: check.id,
+        level: check.level,
+        status: "skipped",
+        message: `skipped: dependency '${failedDep}' failed`,
+        durationMs: 0,
+      };
+    } else {
+      result = await runOne(check, ctx);
+    }
     checks.push(result);
     ctx.previousResults.set(result.id, result);
   }
