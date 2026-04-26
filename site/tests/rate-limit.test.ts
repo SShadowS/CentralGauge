@@ -1,5 +1,5 @@
-import { env, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { SELF } from 'cloudflare:test';
+import { describe, it, expect } from 'vitest';
 
 // Choose a target endpoint that:
 //   1. Is a write method (so the rate-limit middleware actually fires).
@@ -18,21 +18,10 @@ import { describe, it, expect, beforeEach } from 'vitest';
 // to text/plain, which would never reach our rate limiter.
 const FAST_PATH = '/api/v1/blobs/not-a-real-sha';
 
-async function clearRateLimitKeys() {
-  // Within a single test file, KV storage persists across tests
-  // (isolatedStorage isolates per file, not per test). Wipe rl: keys in
-  // beforeEach so each test starts with a clean window.
-  let cursor: string | undefined;
-  do {
-    const list = await env.CACHE.list({ prefix: 'rl:', cursor });
-    await Promise.all(list.keys.map((k) => env.CACHE.delete(k.name)));
-    cursor = list.list_complete ? undefined : list.cursor;
-  } while (cursor);
-}
-
-beforeEach(async () => {
-  await clearRateLimitKeys();
-});
+// Each `it()` uses a unique IP so the platform RL binding's per-key counter
+// starts fresh — no inter-test cleanup required (and indeed not possible:
+// the binding has no inspect/reset surface). Tests within one IP also do not
+// need isolation because limits are designed to be cumulative.
 
 describe('rate limiting', () => {
   it('allows bursts under the limit (50 PUTs in one window)', { timeout: 15_000 }, async () => {

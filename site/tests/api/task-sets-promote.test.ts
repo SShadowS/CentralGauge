@@ -70,20 +70,6 @@ describe('POST /api/v1/task-sets/:hash/current', () => {
     expect(details.key_id).toBe(keyId);
   });
 
-  it('invalidates leaderboard KV cache', async () => {
-    // Prime a leaderboard cache entry
-    await env.CACHE.put('leaderboard:current:all::::50', JSON.stringify({ stale: true }));
-    const before = await env.CACHE.get('leaderboard:current:all::::50');
-    expect(before).not.toBeNull();
-
-    const { keyId, keypair } = await registerMachineKey('admin-machine', 'admin');
-    const res = await SELF.fetch(await promoteRequest('ts-new', keyId, keypair));
-    expect(res.status).toBe(200);
-
-    const after = await env.CACHE.get('leaderboard:current:all::::50');
-    expect(after).toBeNull();
-  });
-
   it('returns 403 for non-admin (ingest) scope', async () => {
     const { keyId, keypair } = await registerIngestKey('ingest-machine');
     const res = await SELF.fetch(await promoteRequest('ts-new', keyId, keypair));

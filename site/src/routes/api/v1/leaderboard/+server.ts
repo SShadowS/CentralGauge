@@ -1,20 +1,44 @@
 import type { RequestHandler } from './$types';
 import { cachedJson } from '$lib/server/cache';
 import {
-  cacheKeyFor,
   computeLeaderboard,
   type LeaderboardQuery,
   type LeaderboardResponse,
 } from '$lib/server/leaderboard';
 import { ApiError, errorResponse } from '$lib/server/errors';
 
+const CACHE_TTL_SECONDS = 60;
+
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
     const q = parseQuery(url);
 
-    const key = cacheKeyFor(q);
-    let payload = await env.CACHE.get(key, 'json') as LeaderboardResponse | null;
+    // Cache API replaces the previous KV-backed cache. Cache API is per-colo
+    // (not global) but has no daily put quota, which makes it the right tier
+    // for a 60s-TTL public read cache. Cross-colo staleness is bounded by TTL.
+    //
+    // We deliberately use a NAMED cache (`caches.open(...)`) rather than
+    // `caches.default`. The adapter-cloudflare runtime also reads/writes
+    // `caches.default` keyed on request URL; if we stored our payload there,
+    // the adapter would later serve our raw stored response *instead of*
+    // invoking the handler — bypassing ETag negotiation done by `cachedJson`.
+    // A named cache is invisible to the adapter.
+    //
+    // The cache key is a synthetic GET Request derived from the public URL —
+    // dropping headers/cookies so identical query strings collide regardless
+    // of conditional-request headers (If-None-Match etc.). ETag-based 304s
+    // are still produced by `cachedJson` for the *outgoing* response.
+    const cache = await platform!.caches.open('cg-leaderboard');
+    const cacheUrl = new URL(url.toString());
+    const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+
+    let payload: LeaderboardResponse | null = null;
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      payload = (await cached.json()) as LeaderboardResponse;
+    }
+
     if (!payload) {
       const rows = await computeLeaderboard(env.DB, q);
       payload = {
@@ -23,7 +47,19 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         generated_at: new Date().toISOString(),
         filters: q,
       };
-      await env.CACHE.put(key, JSON.stringify(payload), { expirationTtl: 60 });
+      // The stored Response carries `public, s-maxage=...` so caches.default
+      // accepts it. The *user-facing* response is built separately by
+      // `cachedJson` and stays `private`. We await inline (instead of
+      // ctx.waitUntil) so the next request — and tests — observe the entry
+      // immediately. Cache API writes are fast (<<1ms locally; single-digit
+      // ms at the edge) so the cold-path penalty is negligible.
+      const storeRes = new Response(JSON.stringify(payload), {
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': `public, s-maxage=${CACHE_TTL_SECONDS}`,
+        },
+      });
+      await cache.put(cacheKey, storeRes);
     }
     return cachedJson(request, payload);
   } catch (err) {

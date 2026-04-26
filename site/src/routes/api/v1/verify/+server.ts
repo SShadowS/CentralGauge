@@ -1,7 +1,6 @@
 import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { runBatch } from '$lib/server/db';
 
 const PROMOTION_THRESHOLD = 0.9;
@@ -17,7 +16,6 @@ interface RunRow {
 export const POST: RequestHandler = async ({ request, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
   const db = platform.env.DB;
-  const cache = platform.env.CACHE;
 
   try {
     // Step 1: Parse JSON body in its own try/catch
@@ -145,12 +143,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // Step 9: Execute batch atomically
     await runBatch(db, ops);
 
-    // Step 10: Invalidate leaderboard KV only on promotion — non-promotion doesn't change standings
-    if (promoted) {
-      try {
-        await invalidateLeaderboardKv(cache);
-      } catch { /* best-effort — DB is source of truth */ }
-    }
+    // Step 10: Leaderboard cache (Cache API) is per-colo and cannot be
+    // invalidated cross-region. Promotion-driven freshness is bounded by the
+    // 60s read-cache TTL.
 
     // Step 11: Return response
     return jsonResponse(

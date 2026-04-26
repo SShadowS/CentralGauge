@@ -2,13 +2,11 @@ import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { broadcastEvent } from '$lib/server/broadcaster';
-import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { runBatch } from '$lib/server/db';
 
 export const POST: RequestHandler = async ({ request, platform, params }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
   const db = platform.env.DB;
-  const cache = platform.env.CACHE;
   const hash = params.hash;
 
   try {
@@ -36,7 +34,7 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
 
     if (!row) throw new ApiError(404, 'task_set_not_found', `task set ${hash} not found`);
 
-    // Idempotent no-op: already current, skip DB write and KV invalidation
+    // Idempotent no-op: already current, skip DB write
     if (row.is_current === 1) {
       return jsonResponse({ hash, is_current: true, changed: false }, 200, { 'Cache-Control': 'no-store' });
     }
@@ -57,10 +55,10 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
       }
     ]);
 
-    // Invalidate leaderboard KV cache. Best-effort: DB is the source of truth.
-    try {
-      await invalidateLeaderboardKv(cache);
-    } catch { /* best-effort — DB is source of truth */ }
+    // Leaderboard cache (Cache API) is per-colo and cannot be enumerated or
+    // purged cross-region. Stale entries clear within the configured TTL
+    // (~60s). DB remains source of truth; the SSE broadcast below drives any
+    // live UI updates between commit and TTL expiry.
 
     // Best-effort SSE broadcast for live UI updates. A DO outage must not
     // fail an already-committed promotion. The idempotent no-op path above

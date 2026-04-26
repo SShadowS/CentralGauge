@@ -89,28 +89,10 @@ export function decodeCursor<T>(cursor: string | null | undefined): T | null {
   }
 }
 
-/**
- * Delete every KV entry under the `leaderboard:` prefix.
- *
- * The leaderboard cache key is produced by {@link cacheKeyFor} and embeds scope,
- * taskset, taskset-hash, difficulty, harness, and limit — e.g.
- * `leaderboard:current:all::::50`. Writers that mutate leaderboard inputs
- * (finalize, task-set promotion, verify-promotion) must invalidate *all* such
- * keys, not a fixed literal set.
- *
- * KV list is paginated; loop with `cursor` until `list_complete`.
- * Callers should invoke inside a best-effort try/catch — D1 is the source of
- * truth, so transient KV failures must not fail a committed write.
- */
-export async function invalidateLeaderboardKv(cache: KVNamespace): Promise<void> {
-  let cursor: string | undefined = undefined;
-  do {
-    const opts: KVNamespaceListOptions = { prefix: 'leaderboard:' };
-    if (cursor) opts.cursor = cursor;
-    const listed: KVNamespaceListResult<unknown, string> = await cache.list(opts);
-    await Promise.all(
-      listed.keys.map((k: KVNamespaceListKey<unknown, string>) => cache.delete(k.name)),
-    );
-    cursor = listed.list_complete ? undefined : listed.cursor;
-  } while (cursor);
-}
+// Note: `invalidateLeaderboardKv` was removed when the leaderboard cache moved
+// to Cache API (`caches.default`). Cache API entries are per-colo and cannot
+// be enumerated or purged across regions, so the previous "list-and-delete on
+// every relevant write" pattern is no longer expressible. Writers now rely on
+// the 60s TTL for eventual consistency. If sharper invalidation is ever
+// required, look at Cache Tags (paid) or a versioned cache-key (e.g. encode
+// `task_set_version` into the request URL so a bump invalidates by miss).

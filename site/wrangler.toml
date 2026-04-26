@@ -23,10 +23,24 @@ migrations_dir = "migrations"
 binding = "BLOBS"
 bucket_name = "centralgauge-blobs"
 
-# KV namespace for leaderboard cache
+# KV namespace for leaderboard cache.
+# NOTE: Leaderboard read cache moved to Cache API (caches.default) and the
+# rate limiter moved to the [[unsafe.bindings]] ratelimit binding below to
+# avoid the 1000-puts/day free-tier KV write quota. The CACHE namespace is
+# retained for any residual incidental use; remove once fully unused.
 [[kv_namespaces]]
 binding = "CACHE"
 id = "4cb7accbc2884bc6bab9a4de1fff134b"
+
+# Workers Rate Limiting binding (free tier, atomic, sliding-window). Replaces
+# the previous KV-backed rate limiter so write-method API requests no longer
+# burn a KV put each. namespace_id is a worker-local identifier; pick any
+# unused integer (Cloudflare uses it to scope counters per binding).
+[[unsafe.bindings]]
+name = "RL"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
 
 # Durable Object for SSE fan-out
 [[durable_objects.bindings]]
@@ -72,6 +86,12 @@ bucket_name = "centralgauge-blobs-preview"
 [[env.preview.kv_namespaces]]
 binding = "CACHE"
 id = "ffcdc2d7b2164cbe9f5d58c5c74a4ddf"
+
+[[env.preview.unsafe.bindings]]
+name = "RL"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
 
 [[env.preview.durable_objects.bindings]]
 name = "LEADERBOARD_BROADCASTER"

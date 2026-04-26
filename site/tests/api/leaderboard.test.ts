@@ -64,9 +64,11 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await seed();
-  // Clear KV between tests so regeneration path is exercised deterministically
-  const keys = await env.CACHE.list({ prefix: 'leaderboard:' });
-  for (const k of keys.keys) await env.CACHE.delete(k.name);
+  // Cache API entries live in the worker process's caches.default and persist
+  // across tests within the same file (vitest-pool-workers isolates per file).
+  // The leaderboard route keys cache entries by URL, so each test's first
+  // request to a unique URL is a guaranteed miss → recompute. The dedicated
+  // "populates Cache API on miss" test below double-fetches a fresh URL.
 });
 
 describe('GET /api/v1/leaderboard', () => {
@@ -74,10 +76,10 @@ describe('GET /api/v1/leaderboard', () => {
     const res = await SELF.fetch('https://x/api/v1/leaderboard');
     expect(res.status).toBe(200);
     expect(res.headers.get('etag')).toMatch(/^"[0-9a-f]{64}"$/);
-    // `private` + KV: CDN edge caching (s-maxage) was removed because the
-    // adapter-cloudflare wrapper caches responses in caches.default by URL
-    // only. Leaderboard relies on explicit KV caching (see test below), so
-    // client-side max-age is sufficient here.
+    // Outgoing response stays `private, max-age=60` so the CDN does not
+    // double-cache responses keyed only by URL (which would defeat ETag
+    // negotiation). The internal Cache API entry has its own `s-maxage` and
+    // is asserted separately below.
     expect(res.headers.get('cache-control')).toContain('max-age=60');
 
     const body = await res.json() as { data: Array<Record<string, unknown>>; next_cursor: string | null };
@@ -126,25 +128,34 @@ describe('GET /api/v1/leaderboard', () => {
   });
 
   it('returns 304 on matching If-None-Match', async () => {
-    const first = await SELF.fetch('https://x/api/v1/leaderboard');
+    const first = await SELF.fetch('https://x/api/v1/leaderboard?test=etag');
     // Drain body so the request fully completes — workerd otherwise leaves the
-    // KV.put inflight, which deadlocks the next SELF.fetch on the same worker.
+    // Cache API put (via ctx.waitUntil) inflight, which can deadlock the next
+    // SELF.fetch on the same worker.
     await first.arrayBuffer();
     const etag = first.headers.get('etag')!;
-    const second = await SELF.fetch('https://x/api/v1/leaderboard', {
+    const second = await SELF.fetch('https://x/api/v1/leaderboard?test=etag', {
       headers: { 'if-none-match': etag },
     });
     expect(second.status).toBe(304);
   });
 
-  it('populates KV on miss and serves from KV on hit', async () => {
-    const res = await SELF.fetch('https://x/api/v1/leaderboard');
-    // Drain body so the worker's KV.put commits before the test-side env.CACHE
-    // read below — otherwise the second await deadlocks on the inflight write.
+  it('populates Cache API on miss and serves from cache on hit', async () => {
+    // Use a unique URL so the cache miss path is deterministic across reruns.
+    const url = 'https://x/api/v1/leaderboard?test=cache-miss';
+    const res = await SELF.fetch(url);
+    expect(res.status).toBe(200);
+    // Drain body so the inline cache.put commits before the next read.
     await res.arrayBuffer();
-    const cached = await env.CACHE.get('leaderboard:current:all::::50', 'json') as Record<string, unknown> | null;
-    expect(cached).not.toBeNull();
-    expect((cached!.data as unknown[]).length).toBe(2);
+
+    // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
+    // a synthetic GET request URL — reproduce both here to verify the write.
+    const cacheKey = new Request(url, { method: 'GET' });
+    const cache = await caches.open('cg-leaderboard');
+    const cached = await cache.match(cacheKey);
+    expect(cached).toBeDefined();
+    const body = (await cached!.json()) as { data: unknown[] };
+    expect(body.data.length).toBe(2);
   });
 
   it('rejects limit > 100', async () => {

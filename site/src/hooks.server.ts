@@ -1,5 +1,5 @@
 import type { Handle } from '@sveltejs/kit';
-import { isRateLimited } from '$lib/server/rate-limit';
+import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
 import { runNightlyBackup } from './cron/nightly-backup';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
@@ -51,35 +51,40 @@ export const handle: Handle = async ({ event, resolve }) => {
   const shouldLimit = WRITE_METHODS.has(method) && path.startsWith('/api/');
 
   if (shouldLimit) {
-    try {
-      const result = await isRateLimited(event.platform.env.CACHE, ip);
-      if (result.limited) {
-        const res = new Response(
-          JSON.stringify({ error: { code: 'rate_limited', message: 'Too many requests' } }),
-          {
-            status: 429,
-            headers: {
-              'content-type': 'application/json',
-              'cache-control': 'no-store',
-              'retry-after': String(result.retry_after),
-              'x-ratelimit-remaining': String(result.remaining)
+    // The RL binding is provisioned via [[unsafe.bindings]] in wrangler.toml.
+    // It is not yet emitted by `wrangler types`, so we narrow it locally.
+    const rl = (event.platform.env as unknown as { RL?: RateLimitBinding }).RL;
+    if (rl) {
+      try {
+        const result = await isRateLimited(rl, ip);
+        if (result.limited) {
+          const res = new Response(
+            JSON.stringify({ error: { code: 'rate_limited', message: 'Too many requests' } }),
+            {
+              status: 429,
+              headers: {
+                'content-type': 'application/json',
+                'cache-control': 'no-store',
+                'retry-after': String(result.retry_after),
+                'x-ratelimit-remaining': String(result.remaining)
+              }
             }
-          }
-        );
-        logRequest(event.platform.env, { method, path, status: 429, ip, dur_ms: Date.now() - startNs });
-        return res;
-      }
-    } catch (err) {
-      // Best-effort: if KV is down we let the request through rather
-      // than taking the whole API offline. Log the error so it surfaces.
-      const env = event.platform.env as { LOG_LEVEL?: string };
-      if (env.LOG_LEVEL !== 'silent') {
-        console.error(JSON.stringify({
-          ts: new Date().toISOString(),
-          level: 'error',
-          msg: 'rate_limit_kv_error',
-          err: err instanceof Error ? err.message : String(err)
-        }));
+          );
+          logRequest(event.platform.env, { method, path, status: 429, ip, dur_ms: Date.now() - startNs });
+          return res;
+        }
+      } catch (err) {
+        // Best-effort: if the binding throws we let the request through
+        // rather than taking the whole API offline. Log the error so it surfaces.
+        const env = event.platform.env as { LOG_LEVEL?: string };
+        if (env.LOG_LEVEL !== 'silent') {
+          console.error(JSON.stringify({
+            ts: new Date().toISOString(),
+            level: 'error',
+            msg: 'rate_limit_binding_error',
+            err: err instanceof Error ? err.message : String(err)
+          }));
+        }
       }
     }
   }

@@ -30,18 +30,6 @@ export interface LeaderboardResponse {
   filters: LeaderboardQuery;
 }
 
-export function cacheKeyFor(q: LeaderboardQuery): string {
-  return [
-    'leaderboard',
-    q.set,
-    q.tier,
-    encodeURIComponent(q.difficulty ?? ''),
-    encodeURIComponent(q.family ?? ''),
-    encodeURIComponent(q.since ?? ''),
-    q.limit,
-  ].join(':');
-}
-
 export async function computeLeaderboard(
   db: D1Database,
   q: LeaderboardQuery,

@@ -3,7 +3,6 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { seedMinimalRefData, registerIngestKey, makeRunPayload, signedBlobPut } from '../fixtures/ingest-helpers';
 import { sha256Hex } from '../../src/lib/shared/hash';
-import { cacheKeyFor } from '../../src/lib/server/leaderboard';
 import { resetDb } from '../utils/reset-db';
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
@@ -106,34 +105,6 @@ describe('POST /api/v1/runs/:id/finalize', () => {
   it('returns 404 on unknown run_id', async () => {
     const res = await SELF.fetch('http://x/api/v1/runs/does-not-exist/finalize', { method: 'POST' });
     expect(res.status).toBe(404);
-  });
-
-  it('invalidates leaderboard KV cache on success', async () => {
-    // Seed a key in the real cacheKeyFor(...) format — not a hand-rolled literal.
-    // The route must prefix-list `leaderboard:` and delete every entry, otherwise
-    // stale leaderboard JSON lingers until the 60s TTL expires.
-    const realKey = cacheKeyFor({
-      set: 'current',
-      tier: 'all',
-      difficulty: null,
-      family: null,
-      since: null,
-      limit: 50,
-      cursor: null,
-    });
-    // Sanity: matches the documented shape leaderboard:<set>:<tier>:<diff>:<family>:<since>:<limit>.
-    expect(realKey).toBe('leaderboard:current:all::::50');
-    await env.CACHE.put(realKey, JSON.stringify({ stale: true }));
-
-    const { keyId, keypair, runId, transcriptSha, codeSha, bundleSha, transcriptBody, codeBody, bundleBody } = await ingestAndUploadBlobs();
-    for (const [sha, body] of [[transcriptSha, transcriptBody], [codeSha, codeBody], [bundleSha, bundleBody]] as const) {
-      await signedBlobPut(`/api/v1/blobs/${sha}`, body, keyId, keypair);
-    }
-    const fin = await SELF.fetch(`http://x/api/v1/runs/${runId}/finalize`, { method: 'POST' });
-    await fin.arrayBuffer(); // drain so best-effort KV invalidation commits
-
-    const cached = await env.CACHE.get(realKey);
-    expect(cached).toBeNull();
   });
 
   it('broadcasts run_finalized after completion', async () => {

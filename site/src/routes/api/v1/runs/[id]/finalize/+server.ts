@@ -1,7 +1,6 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { broadcastEvent } from '$lib/server/broadcaster';
-import { invalidateLeaderboardKv } from '$lib/server/cache';
 import { blobHashFromKey } from '$lib/server/ingest';
 import type { FinalizeResponse } from '$lib/shared/types';
 
@@ -9,7 +8,6 @@ export const POST: RequestHandler = async ({ params, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
   const db = platform.env.DB;
   const blobs = platform.env.BLOBS;
-  const cache = platform.env.CACHE;
   const runId = params.id!;
 
   try {
@@ -66,12 +64,10 @@ export const POST: RequestHandler = async ({ params, platform }) => {
         .bind(runId, 'finalized', run.machine_id, now, JSON.stringify({ blob_count: keys.length }))
     ]);
 
-    // Best-effort cache invalidation; never fail a committed finalize on transient KV errors.
-    // Leaderboard keys embed scope/taskset/hash/difficulty/harness/limit (see cacheKeyFor),
-    // so we prefix-list and delete every live entry instead of guessing literals.
-    try {
-      await invalidateLeaderboardKv(cache);
-    } catch { /* swallow */ }
+    // Leaderboard cache (Cache API) is per-colo and cannot be enumerated or
+    // purged cross-region. Stale entries clear within the configured TTL
+    // (~60s). DB remains source of truth, so the SSE broadcast below is what
+    // drives live UI updates between commit and TTL expiry.
 
     // Best-effort SSE broadcast: a DO outage must not fail an already-committed
     // finalize. The event drives the live leaderboard UI; subscribers that miss

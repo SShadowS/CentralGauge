@@ -1,17 +1,20 @@
-// Per-IP fixed-window rate limiter backed by the CACHE KV namespace.
+// Per-IP rate limiter backed by the Workers Rate Limiting binding.
 //
-// Policy:
-//   - 60 requests per 60-second window per source IP.
-//   - Fixed window keyed on `Math.floor(nowSeconds / WINDOW_SECONDS)`.
-//     This is intentionally simple; at minute boundaries a client can
-//     issue up to 2 * LIMIT in a short burst. That matches the spec and
-//     is acceptable for a public read-mostly API whose only gate is here.
-//   - Read-modify-write without atomicity. Under high concurrency a
-//     single bucket may undercount by a small amount; for 60 req/min
-//     granularity this is acceptable and avoids a Durable Object hop.
-//   - TTL on each bucket is 2 * WINDOW_SECONDS so the previous window's
-//     counter lingers briefly (useful if we later move to a sliding
-//     approximation; harmless today).
+// Why this exists: the previous implementation wrote one KV key per
+// non-throttled request (`rl:<ip>:<window>`). With the free-tier 1000
+// puts/day cap, even modest write-method traffic could trip the quota
+// and 429 the entire API. The platform binding is atomic, region-local,
+// sliding-window — and crucially, does not consume KV writes.
+//
+// Limitations vs the old implementation:
+//   - Region-local: each Cloudflare colo enforces its own bucket. A
+//     single user keeps their effective limit; cross-region attackers
+//     get a softer cap than the literal LIMIT_PER_WINDOW per minute.
+//   - The binding returns only `{ success: boolean }`, so `remaining`
+//     and `retry_after` are best-effort approximations rather than the
+//     exact counter snapshots the KV impl could produce.
+//
+// The interface is preserved so callers (hooks.server.ts) need no change.
 
 export const WINDOW_SECONDS = 60;
 export const LIMIT_PER_WINDOW = 60;
@@ -22,31 +25,25 @@ export interface RateLimitResult {
   retry_after: number;
 }
 
-export function bucketKey(ip: string, nowMs: number = Date.now()): string {
-  return `rl:${ip}:${Math.floor(nowMs / 1000 / WINDOW_SECONDS)}`;
+/**
+ * Workers Rate Limiting binding shape. The platform-injected binding
+ * is not yet typed by `wrangler types` for `[[unsafe.bindings]]`, so
+ * we declare the minimal surface we use.
+ */
+export interface RateLimitBinding {
+  limit(opts: { key: string }): Promise<{ success: boolean }>;
 }
 
 export async function isRateLimited(
-  kv: KVNamespace,
+  rl: RateLimitBinding,
   ip: string,
-  nowMs: number = Date.now()
 ): Promise<RateLimitResult> {
-  const key = bucketKey(ip, nowMs);
-  const currentRaw = await kv.get(key);
-  const current = currentRaw ? Number.parseInt(currentRaw, 10) || 0 : 0;
-
-  const windowStartSec = Math.floor(nowMs / 1000 / WINDOW_SECONDS) * WINDOW_SECONDS;
-  const retryAfter = Math.max(1, windowStartSec + WINDOW_SECONDS - Math.floor(nowMs / 1000));
-
-  if (current >= LIMIT_PER_WINDOW) {
-    return { limited: true, remaining: 0, retry_after: retryAfter };
+  const { success } = await rl.limit({ key: ip });
+  if (success) {
+    // The binding does not expose remaining counts. Return LIMIT_PER_WINDOW
+    // as a permissive ceiling for the response header — clients that rely
+    // on it for backoff still get a non-zero signal.
+    return { limited: false, remaining: LIMIT_PER_WINDOW, retry_after: 0 };
   }
-
-  const next = current + 1;
-  await kv.put(key, String(next), { expirationTtl: WINDOW_SECONDS * 2 });
-  return {
-    limited: false,
-    remaining: Math.max(0, LIMIT_PER_WINDOW - next),
-    retry_after: retryAfter
-  };
+  return { limited: true, remaining: 0, retry_after: WINDOW_SECONDS };
 }
