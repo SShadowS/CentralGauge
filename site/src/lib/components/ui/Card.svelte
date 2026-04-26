@@ -5,11 +5,18 @@
   let { variant = 'default', header, footer, children }: Props = $props();
 </script>
 
-<section class="card variant-{variant}">
-  {#if header}<header class="header">{@render header()}</header>{/if}
-  <div class="body">{@render children()}</div>
-  {#if footer}<footer class="footer">{@render footer()}</footer>{/if}
-</section>
+{#if header}
+  <section class="card variant-{variant}">
+    <header class="header">{@render header()}</header>
+    <div class="body">{@render children()}</div>
+    {#if footer}<footer class="footer">{@render footer()}</footer>{/if}
+  </section>
+{:else}
+  <div class="card variant-{variant}">
+    <div class="body">{@render children()}</div>
+    {#if footer}<footer class="footer">{@render footer()}</footer>{/if}
+  </div>
+{/if}
 
 <style>
   .card {
