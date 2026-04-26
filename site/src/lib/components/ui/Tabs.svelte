@@ -1,6 +1,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
+  /**
+   * Tab definition. `id` must be a CSS-identifier-safe string
+   * (alphanumeric, dash, underscore) — it is interpolated into element
+   * `id` and `aria-controls` attributes verbatim. Callers are responsible
+   * for sanitization.
+   */
   interface Tab { id: string; label: string; }
   interface Props {
     tabs: Tab[];
