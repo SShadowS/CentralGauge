@@ -26,6 +26,11 @@ describe('format', () => {
     it('shows < $0.001 for tiny values', () => {
       expect(formatCost(0.0001)).toBe('<$0.001');
     });
+    it('locks the strict-less-than boundary at 0.001', () => {
+      expect(formatCost(0.0009)).toBe('<$0.001');
+      expect(formatCost(0.001)).toBe('$0.001');
+      expect(formatCost(0.0011)).toBe('$0.001');
+    });
   });
 
   describe('formatDuration', () => {

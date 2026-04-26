@@ -8,6 +8,8 @@ export function formatScore(score: number): string {
   return score.toFixed(2);
 }
 
+// formatCost returns "<$0.001" only for usd strictly less than 0.001.
+// Exactly 0.001 renders as "$0.001" — the threshold is a strict floor.
 export function formatCost(usd: number): string {
   if (usd === 0) return '$0.00';
   if (usd < 0.001) return '<$0.001';
