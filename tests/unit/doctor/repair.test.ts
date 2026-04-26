@@ -1,6 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
-import { applyRepairs, type Repairer } from "../../../src/doctor/repair.ts";
+import {
+  applyRepairs,
+  markTaskSetCurrentRepairer,
+  type Repairer,
+} from "../../../src/doctor/repair.ts";
 import type { DoctorReport } from "../../../src/doctor/types.ts";
 
 const reportWithRepairableFailure: DoctorReport = {
@@ -96,5 +100,50 @@ describe("applyRepairs", () => {
     assertEquals(outcome.attempted.length, 1);
     assertEquals(outcome.attempted[0]!.ok, false);
     assertEquals(outcome.attempted[0]!.message?.includes("kaboom"), true);
+  });
+});
+
+describe("markTaskSetCurrentRepairer.matches", () => {
+  it("matches when task_set_known=true and task_set_current=false", () => {
+    const check = {
+      id: "catalog.bench",
+      level: "D" as const,
+      status: "failed" as const,
+      message: "task_set is_current=0",
+      remediation: { summary: "...", autoRepairable: true },
+      details: {
+        task_set_known: true,
+        task_set_current: false,
+        task_set_hash: "abc",
+      },
+      durationMs: 0,
+    };
+    assertEquals(markTaskSetCurrentRepairer.matches(check), true);
+  });
+
+  it("does not match when task_set_known=false", () => {
+    const check = {
+      id: "catalog.bench",
+      level: "D" as const,
+      status: "failed" as const,
+      message: "task_set unknown",
+      remediation: { summary: "...", autoRepairable: false },
+      details: { task_set_known: false, task_set_current: false },
+      durationMs: 0,
+    };
+    assertEquals(markTaskSetCurrentRepairer.matches(check), false);
+  });
+
+  it("does not match when task_set_current=true", () => {
+    const check = {
+      id: "catalog.bench",
+      level: "D" as const,
+      status: "failed" as const,
+      message: "ok",
+      remediation: { summary: "...", autoRepairable: true },
+      details: { task_set_known: true, task_set_current: true },
+      durationMs: 0,
+    };
+    assertEquals(markTaskSetCurrentRepairer.matches(check), false);
   });
 });

@@ -154,7 +154,7 @@ export const checkCatalogBench: Check = {
             "Investigate task_set hash; bench task tree may have drifted",
           autoRepairable: false,
         },
-      details: cat,
+      details: { ...cat, task_set_hash: ctx.taskSetHash },
       durationMs: 0,
     };
   },
