@@ -3,9 +3,11 @@
   type Variant = 'info' | 'success' | 'warning' | 'error';
   interface Props { variant?: Variant; children: Snippet; }
   let { variant = 'info', children }: Props = $props();
+  const role = $derived(variant === 'error' ? 'alert' : 'status');
+  const ariaLive = $derived(variant === 'error' ? 'assertive' : 'polite');
 </script>
 
-<div class="toast variant-{variant}" role="status" aria-live="polite">
+<div class="toast variant-{variant}" {role} aria-live={ariaLive}>
   {@render children()}
 </div>
 

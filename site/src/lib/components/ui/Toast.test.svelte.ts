@@ -8,4 +8,10 @@ describe('Toast', () => {
     const t = screen.getByRole('status');
     expect(t.textContent).toContain('Saved');
   });
+  it('renders role=alert with aria-live=assertive for error variant', () => {
+    render(Toast, { variant: 'error', children: 'failed' });
+    const t = screen.getByRole('alert');
+    expect(t.textContent).toContain('failed');
+    expect(t.getAttribute('aria-live')).toBe('assertive');
+  });
 });
