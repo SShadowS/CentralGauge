@@ -1,3 +1,9 @@
+<!--
+  Button is bimorphic by design.
+  - Without `href` → <button> (form-submitting capable, getByRole('button')).
+  - With `href`    → <a> styled identically (semantically a link, getByRole('link')).
+  Tests must use getByRole('link') for the href variant; do not expect role='button'.
+-->
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
