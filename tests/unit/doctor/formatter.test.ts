@@ -46,7 +46,7 @@ describe("formatReportToTerminal", () => {
   it("includes section header and timing", () => {
     const out = formatReportToTerminal(sampleReport, { color: false });
     assert(out.includes("[doctor: ingest]"));
-    assert(out.includes("ok"), "should mention each passing check status");
+    assert(out.includes("✓"), "should render passed glyph for passing checks");
   });
 
   it("renders passed/failed/skipped per check with id", () => {

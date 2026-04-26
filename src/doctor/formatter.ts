@@ -11,11 +11,14 @@ export interface FormatOptions {
   color?: boolean;
 }
 
+// Unicode geometric/dingbat glyphs — U+2713 ✓, U+2717 ✗, etc. — not emoji.
+// CLAUDE.md's "no emoji" rule targets ✅❌-style indicator emojis in log
+// lines; status glyphs in formatted reports are typography, not emoji.
 const STATUS_GLYPH: Record<CheckResult["status"], string> = {
-  passed: "ok",
-  failed: "x",
+  passed: "✓",
+  failed: "✗",
   warning: "!",
-  skipped: "-",
+  skipped: "·",
 };
 
 export function formatReportToTerminal(
