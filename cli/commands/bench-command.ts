@@ -323,6 +323,14 @@ export function registerBenchCommand(cli: Command): void {
           runs,
         };
         await executeAgentBenchmark(agentBenchOptions, options.quiet);
+        // Agent mode does not yet implement ingest. If the user asked for
+        // ingest (default), surface that loudly instead of exiting 0.
+        if (options.ingest !== false) {
+          log.fail(
+            "agent mode does not auto-ingest results. Pass --no-ingest to acknowledge, or use LLM mode.",
+          );
+          Deno.exit(1);
+        }
         Deno.exit(0);
       }
 
@@ -525,46 +533,58 @@ export function registerBenchCommand(cli: Command): void {
       );
 
       // Ingest to scoreboard unless --no-ingest
-      if (
-        options.ingest !== false &&
-        result.resultFilePaths && result.resultFilePaths.length > 0 &&
-        result.variants && result.variants.length > 0
-      ) {
-        // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
-        // If credentials revoked or worker went down mid-bench, save results to disk and skip ingest.
-        if (benchPrecheckEnabled && options.ingest !== false) {
-          const recheck = await runDoctor({
-            section: ingestSection,
-            levels: ["B", "C"],
-          });
-          if (!recheck.ok) {
-            console.warn(
-              colors.yellow(
-                "[WARN] pre-ingest re-check failed; skipping auto-ingest.",
-              ),
-            );
-            console.warn(formatReportToTerminal(recheck));
-            console.warn(
-              colors.gray(
-                `       Results saved to ${
-                  (result.resultFilePaths ?? []).join(", ")
-                }.`,
-              ),
-            );
-            console.warn(
-              colors.gray(
-                "       Replay later: deno task start ingest <path> --yes",
-              ),
-            );
-            return; // exit cleanly, results on disk
-          }
-        }
+      if (options.ingest !== false) {
+        const hasResults = result.resultFilePaths &&
+          result.resultFilePaths.length > 0 &&
+          result.variants && result.variants.length > 0;
 
-        await ingestBenchResults(
-          result.resultFilePaths,
-          result.variants,
-          options.yes ?? false,
-        );
+        if (!hasResults) {
+          // Empty-gate previously silently dropped; user invariant requires loud signal.
+          log.warn(
+            "ingest enabled but no result files produced; nothing to ingest.",
+          );
+        } else {
+          // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
+          // Per user invariant: if ingest was requested and prereq is unmet, fail loudly with non-zero exit.
+          if (benchPrecheckEnabled) {
+            const recheck = await runDoctor({
+              section: ingestSection,
+              levels: ["B", "C"],
+            });
+            if (!recheck.ok) {
+              console.error(formatReportToTerminal(recheck));
+              console.error(
+                colors.red(
+                  "\n[FAIL] pre-ingest re-check failed — auto-ingest aborted.",
+                ),
+              );
+              console.error(
+                colors.gray(
+                  `       Results saved to ${
+                    (result.resultFilePaths ?? []).join(", ")
+                  }.`,
+                ),
+              );
+              console.error(
+                colors.gray(
+                  "       Fix above and replay: deno task start ingest <path> --yes",
+                ),
+              );
+              console.error(
+                colors.gray(
+                  "       Or pass --no-ingest to skip ingest entirely.",
+                ),
+              );
+              Deno.exit(1);
+            }
+          }
+
+          await ingestBenchResults(
+            result.resultFilePaths!,
+            result.variants!,
+            options.yes ?? false,
+          );
+        }
       }
 
       // If dashboard is running, keep process alive for result review
@@ -697,6 +717,10 @@ async function ingestBenchResults(
     ),
   );
 
+  let attempted = 0;
+  let succeeded = 0;
+  let transient = 0;
+
   for (const filePath of resultFilePaths) {
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
@@ -707,8 +731,16 @@ async function ingestBenchResults(
         variant,
         assembleOpts,
       );
-      if (!br) continue;
+      if (!br) {
+        console.warn(
+          colors.yellow(
+            `[WARN] No results for variant ${variant.variantId} in ${filePath}; skipping.`,
+          ),
+        );
+        continue;
+      }
 
+      attempted++;
       const outcome = await ingestRun(br, {
         cwd,
         catalogDir: `${cwd}/site/catalog`,
@@ -718,6 +750,7 @@ async function ingestBenchResults(
       });
 
       if (outcome.kind === "retryable-failure") {
+        transient++;
         console.warn(
           colors.yellow(
             `[WARN] Ingest failed transiently for ${variant.variantId}: ${outcome.lastError.message}`,
@@ -734,6 +767,7 @@ async function ingestBenchResults(
         );
         throw new Error(`ingest rejected: ${outcome.code}`);
       } else {
+        succeeded++;
         console.log(
           colors.green(
             `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${outcome.bytesUploaded} bytes)`,
@@ -741,6 +775,15 @@ async function ingestBenchResults(
         );
       }
     }
+  }
+
+  // If every attempted (file × variant) pair failed transiently, fail loud.
+  // Per-pair transient is tolerable; 100% transient means the user thinks the
+  // run was ingested when nothing landed.
+  if (attempted > 0 && succeeded === 0 && transient === attempted) {
+    throw new Error(
+      `ingest failed: all ${attempted} (file × variant) pair(s) hit transient errors; replay required`,
+    );
   }
 }
 
