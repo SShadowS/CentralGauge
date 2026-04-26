@@ -1,34 +1,7 @@
+import type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow } from '$shared/api-types';
 import { getAll } from './db';
 
-export interface LeaderboardQuery {
-  set: 'current' | 'all';
-  tier: 'verified' | 'claimed' | 'all';
-  difficulty: 'easy' | 'medium' | 'hard' | null;
-  family: string | null;
-  since: string | null; // ISO date
-  limit: number;
-  cursor: { score: number; id: number } | null;
-}
-
-export interface LeaderboardRow {
-  rank: number;
-  model: { slug: string; display_name: string; api_model_id: string };
-  family_slug: string;
-  run_count: number;
-  tasks_attempted: number;
-  tasks_passed: number;
-  avg_score: number;
-  avg_cost_usd: number;
-  verified_runs: number;
-  last_run_at: string;
-}
-
-export interface LeaderboardResponse {
-  data: LeaderboardRow[];
-  next_cursor: string | null;
-  generated_at: string;
-  filters: LeaderboardQuery;
-}
+export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
 export async function computeLeaderboard(
   db: D1Database,
