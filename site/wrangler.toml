@@ -59,40 +59,5 @@ new_sqlite_classes = ["LeaderboardBroadcaster"]
 
 # Cron trigger: nightly D1 -> R2 backup at 02:00 UTC. The handler is the
 # `scheduled` named export in `src/hooks.server.ts`.
-# Intentionally NOT mirrored under [env.preview] — preview deployments stay
-# clean (no scheduled writes to the preview R2 bucket).
 [triggers]
 crons = ["0 2 * * *"]
-
-# Separate environment for previews (PR deploys)
-[env.preview]
-name = "centralgauge-preview"
-
-# `vars` does not inherit from the top-level `[vars]` section, so every
-# environment that needs them must repeat the declarations explicitly.
-[env.preview.vars]
-LOG_LEVEL = "debug"
-
-[[env.preview.d1_databases]]
-binding = "DB"
-database_name = "centralgauge-preview"
-database_id = "e719e2e6-8fb0-4c65-823d-a7e00cc14a84"
-migrations_dir = "migrations"
-
-[[env.preview.r2_buckets]]
-binding = "BLOBS"
-bucket_name = "centralgauge-blobs-preview"
-
-[[env.preview.kv_namespaces]]
-binding = "CACHE"
-id = "ffcdc2d7b2164cbe9f5d58c5c74a4ddf"
-
-[[env.preview.unsafe.bindings]]
-name = "RL"
-type = "ratelimit"
-namespace_id = "1001"
-simple = { limit = 60, period = 60 }
-
-[[env.preview.durable_objects.bindings]]
-name = "LEADERBOARD_BROADCASTER"
-class_name = "LeaderboardBroadcaster"

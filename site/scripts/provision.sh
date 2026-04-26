@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Provisions Cloudflare resources and writes their IDs into wrangler.toml.
-# Run once per environment (production, preview).
+# Run once for the production environment.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -13,14 +13,8 @@ if [[ "$ENV" == "production" ]]; then
   R2_NAME="centralgauge-blobs"
   DB_PLACEHOLDER="PLACEHOLDER_D1_ID"
   KV_PLACEHOLDER="PLACEHOLDER_KV_ID"
-elif [[ "$ENV" == "preview" ]]; then
-  DB_NAME="centralgauge-preview"
-  KV_NAME="centralgauge-cache-preview"
-  R2_NAME="centralgauge-blobs-preview"
-  DB_PLACEHOLDER="PLACEHOLDER_PREVIEW_D1_ID"
-  KV_PLACEHOLDER="PLACEHOLDER_PREVIEW_KV_ID"
 else
-  echo "Usage: $0 [production|preview]"
+  echo "Usage: $0 [production]"
   exit 1
 fi
 

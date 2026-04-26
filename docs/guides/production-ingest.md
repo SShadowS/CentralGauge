@@ -75,7 +75,7 @@ Flags:
 | Flag      | Default | Description                                   |
 | --------- | ------- | --------------------------------------------- |
 | `--scope` | `admin` | `admin`, `ingest`, or `verifier`              |
-| `--env`   | –       | Wrangler env (e.g. `preview`) — omit for prod |
+| `--env`   | –       | Wrangler env — omit for prod                  |
 
 The script echoes the `id` D1 assigned to the row — **copy it**. You'll
 configure `key_id` in the next step.

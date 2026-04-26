@@ -12,12 +12,12 @@
  * Usage:
  *   deno run -A scripts/seed-admin-key.ts \
  *     <db-name> <machine-id> <public-key-base64> \
- *     [--scope admin|ingest|verifier] [--env preview|production]
+ *     [--scope admin|ingest|verifier] [--env production]
  *
  * Example:
  *   deno run -A scripts/seed-admin-key.ts \
- *     centralgauge-preview preview-ingest RBu0...PUg= \
- *     --scope ingest --env preview
+ *     centralgauge prod-ingest RBu0...PUg= \
+ *     --scope ingest --env production
  *
  * Security notes:
  *   - The operator-supplied <machine-id> is forwarded verbatim into the
@@ -46,7 +46,7 @@ interface CliArgs {
 function usage(): never {
   console.error(
     "usage: seed-admin-key.ts <db-name> <machine-id> <public-key-base64> " +
-      "[--scope admin|ingest|verifier] [--env preview|production]",
+      "[--scope admin|ingest|verifier] [--env production]",
   );
   Deno.exit(2);
 }
