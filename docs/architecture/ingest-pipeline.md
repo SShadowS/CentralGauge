@@ -162,3 +162,10 @@ Use `-y`/`--yes` to auto-accept OpenRouter pricing without prompts.
 - [Production Ingest guide](../guides/production-ingest.md) — setup walkthrough
 - [`ingest` command](../cli/commands.md#ingest) — CLI reference
 - [`sync-catalog` command](../cli/commands.md#sync-catalog) — CLI reference
+
+## Health checks
+
+`centralgauge doctor ingest` validates the entire ingest pipeline before a
+bench commits to running. See
+`docs/superpowers/specs/2026-04-26-bench-ingest-doctor-design.md` for the full
+schema and check matrix.

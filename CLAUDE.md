@@ -68,6 +68,7 @@ Disable with `--no-ingest`.
 - `centralgauge ingest <results-file>` — manually replay a saved run
 - `centralgauge sync-catalog --apply` — reconcile `site/catalog/*.yml` ↔ D1 catalog tables
 - Config (URL, keys, machine_id) merged from `.centralgauge.yml` (cwd + home)
+- `centralgauge doctor ingest [--llms <list>] [--repair]` — verify config + keys + connectivity + bench-aware catalog state in one signed round-trip. Bench runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to disable.
 
 ## Code Style
 
