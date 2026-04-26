@@ -8,6 +8,7 @@ export { registerBenchCommand } from "./bench-command.ts";
 export { registerCompileTestCommands } from "./compile-test-command.ts";
 export { registerConfigCommands } from "./config-command.ts";
 export { registerContainerCommands } from "./container-command.ts";
+export { registerDoctorCommand } from "./doctor-command.ts";
 export { registerIngestCommand } from "./ingest-command.ts";
 export { registerModelsCommand } from "./models-command.ts";
 export { registerReportCommand } from "./report-command.ts";
