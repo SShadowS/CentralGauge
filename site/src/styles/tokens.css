@@ -83,6 +83,7 @@
   --filter-rail-w: 320px;
 }
 
+/* Dark tokens (1/2) — keep in sync with the @media (prefers-color-scheme) block below. */
 [data-theme="dark"] {
   --bg: #0a0a0a;
   --surface: #141414;
@@ -106,6 +107,7 @@
   --selection: #1a3a7d;
 }
 
+/* Dark tokens (2/2) — keep in sync with [data-theme="dark"] above. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0a0a0a;
