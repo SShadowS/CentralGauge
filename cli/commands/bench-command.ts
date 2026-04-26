@@ -460,10 +460,11 @@ export function registerBenchCommand(cli: Command): void {
         }
       }
 
-      // Optional ingest precheck (env-flag-gated; T22 will flip to default-on).
-      // Runs AFTER variants resolution and BEFORE any LLM call.
+      // Optional ingest precheck. Runs AFTER variants resolution and BEFORE any LLM call.
+      // Default: precheck on. Set CENTRALGAUGE_BENCH_PRECHECK=0 to disable
+      // (escape hatch only; --no-ingest is the supported way to skip ingest).
       const benchPrecheckEnabled =
-        Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
+        Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") !== "0";
       if (benchPrecheckEnabled && options.ingest !== false) {
         const appConfig = await ConfigManager.loadConfig();
         const variants: ModelVariant[] = ModelPresetRegistry
