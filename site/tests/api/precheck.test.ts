@@ -131,3 +131,190 @@ describe('POST /api/v1/precheck (auth-only)', () => {
     }
   });
 });
+
+describe('POST /api/v1/precheck — catalog probe', () => {
+  async function seedFamilyAndModel(
+    familyId: number,
+    familySlug: string,
+    vendor: string,
+    modelId: number,
+    modelSlug: string,
+    apiModelId: string,
+  ) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO model_families(id,slug,vendor,display_name) VALUES (?,?,?,?)`,
+      ).bind(familyId, familySlug, vendor, familySlug),
+      env.DB.prepare(
+        `INSERT OR IGNORE INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (?,?,?,?,?,?)`,
+      ).bind(modelId, familyId, modelSlug, apiModelId, modelSlug, 47),
+    ]);
+  }
+
+  it('returns missing_models for slugs not in the models table', async () => {
+    const { keyId, keypair } = await registerMachineKey('machine-A', 'ingest');
+    // Seed only one of the two requested variants.
+    await seedFamilyAndModel(
+      1,
+      'claude',
+      'anthropic',
+      1,
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7',
+    );
+
+    const body = await buildSignedPrecheck(
+      {
+        machine_id: 'machine-A',
+        variants: [
+          {
+            slug: 'anthropic/claude-opus-4-7',
+            api_model_id: 'claude-opus-4-7',
+            family_slug: 'claude',
+          },
+          { slug: 'openai/gpt-5', api_model_id: 'gpt-5', family_slug: 'openai' },
+        ],
+      },
+      keyId,
+      keypair,
+    );
+
+    const resp = await SELF.fetch('https://x/api/v1/precheck', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(resp.status).toBe(200);
+    const json = await resp.json<PrecheckResponse>();
+    expect(json.catalog).toBeDefined();
+    expect(json.catalog!.missing_models).toHaveLength(1);
+    expect(json.catalog!.missing_models[0].slug).toBe('openai/gpt-5');
+  });
+
+  it('returns missing_pricing for variants without cost_snapshots at pricing_version', async () => {
+    const { keyId, keypair } = await registerMachineKey('machine-A', 'ingest');
+    // Seed model row but NO cost_snapshots at the requested pricing_version.
+    await seedFamilyAndModel(
+      1,
+      'claude',
+      'anthropic',
+      1,
+      'anthropic/claude-opus-4-7',
+      'claude-opus-4-7',
+    );
+
+    const body = await buildSignedPrecheck(
+      {
+        machine_id: 'machine-A',
+        variants: [
+          {
+            slug: 'anthropic/claude-opus-4-7',
+            api_model_id: 'claude-opus-4-7',
+            family_slug: 'claude',
+          },
+        ],
+        pricing_version: '2026-04-26',
+      },
+      keyId,
+      keypair,
+    );
+
+    const resp = await SELF.fetch('https://x/api/v1/precheck', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(resp.status).toBe(200);
+    const json = await resp.json<PrecheckResponse>();
+    expect(json.catalog).toBeDefined();
+    expect(json.catalog!.missing_models).toHaveLength(0);
+    expect(json.catalog!.missing_pricing).toHaveLength(1);
+    expect(json.catalog!.missing_pricing[0].slug).toBe('anthropic/claude-opus-4-7');
+    expect(json.catalog!.missing_pricing[0].pricing_version).toBe('2026-04-26');
+  });
+
+  it('returns task_set_current=true when is_current=1', async () => {
+    const { keyId, keypair } = await registerMachineKey('machine-A', 'ingest');
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,?,?)`,
+    ).bind('abc', '2026-04-01T00:00:00Z', 1, 1).run();
+
+    const body = await buildSignedPrecheck(
+      {
+        machine_id: 'machine-A',
+        variants: [
+          {
+            slug: 'anthropic/claude-opus-4-7',
+            api_model_id: 'claude-opus-4-7',
+            family_slug: 'claude',
+          },
+        ],
+        task_set_hash: 'abc',
+      },
+      keyId,
+      keypair,
+    );
+
+    const resp = await SELF.fetch('https://x/api/v1/precheck', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(resp.status).toBe(200);
+    const json = await resp.json<PrecheckResponse>();
+    expect(json.catalog).toBeDefined();
+    expect(json.catalog!.task_set_known).toBe(true);
+    expect(json.catalog!.task_set_current).toBe(true);
+  });
+
+  it('returns task_set_known=false for unknown hash', async () => {
+    const { keyId, keypair } = await registerMachineKey('machine-A', 'ingest');
+
+    const body = await buildSignedPrecheck(
+      {
+        machine_id: 'machine-A',
+        variants: [
+          {
+            slug: 'anthropic/claude-opus-4-7',
+            api_model_id: 'claude-opus-4-7',
+            family_slug: 'claude',
+          },
+        ],
+        task_set_hash: 'zzz',
+      },
+      keyId,
+      keypair,
+    );
+
+    const resp = await SELF.fetch('https://x/api/v1/precheck', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(resp.status).toBe(200);
+    const json = await resp.json<PrecheckResponse>();
+    expect(json.catalog).toBeDefined();
+    expect(json.catalog!.task_set_known).toBe(false);
+    expect(json.catalog!.task_set_current).toBe(false);
+  });
+
+  it('does not include catalog field when no variants supplied', async () => {
+    const { keyId, keypair } = await registerMachineKey('machine-A', 'ingest');
+
+    // Auth-only request: no variants[].
+    const body = await buildSignedPrecheck(
+      { machine_id: 'machine-A' },
+      keyId,
+      keypair,
+    );
+
+    const resp = await SELF.fetch('https://x/api/v1/precheck', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    expect(resp.status).toBe(200);
+    const json = await resp.json<PrecheckResponse>();
+    expect(json.catalog).toBeUndefined();
+  });
+});
