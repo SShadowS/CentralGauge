@@ -95,6 +95,18 @@ Disable with `--no-ingest`.
 - `pricing_version` is today UTC `YYYY-MM-DD`. Pre-seed in
   `site/catalog/pricing.yml` + `sync-catalog --apply` to skip the bench's
   interactive pricing prompt for new models.
+- Workers KV free tier = **1000 puts/day**, account-wide. Bulk PUT API
+  does NOT amortize the quota — each key still counts as 1 write. For
+  high-write paths use **Cache API** (`caches.open('...')`, no daily
+  quota) or the **Workers Rate Limiting binding**
+  (`[[unsafe.bindings]] type=ratelimit`).
+- Use `caches.open('<name>')` (named cache), **not** `caches.default`,
+  for app-level read caches in the worker. `adapter-cloudflare` also
+  reads/writes `caches.default` keyed by URL — entries you put there
+  are served back on the next matching request *without invoking your
+  handler*, silently bypassing `cachedJson` ETag/304 negotiation.
+  `await cache.put(...)` inline (not `ctx.waitUntil`) so the next
+  request — and tests — observe the entry deterministically.
 
 ## Code Style
 
