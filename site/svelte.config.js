@@ -9,7 +9,13 @@ export default {
     }),
     alias: {
       '$lib': 'src/lib',
-      '$lib/*': 'src/lib/*'
-    }
+      '$lib/*': 'src/lib/*',
+      '$shared': 'src/lib/shared',
+      '$shared/*': 'src/lib/shared/*'
+    },
+    csrf: { checkOrigin: true },
+    inlineStyleThreshold: 4096,
+    output: { preloadStrategy: 'modulepreload' },
+    prerender: { entries: ['/about'] }
   }
 };
