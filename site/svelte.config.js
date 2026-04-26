@@ -16,6 +16,12 @@ export default {
     csrf: { checkOrigin: true },
     inlineStyleThreshold: 4096,
     output: { preloadStrategy: 'modulepreload' },
-    prerender: { entries: ['/about'] }
+    prerender: {
+      entries: ['/about'],
+      // Routes /leaderboard, /models, /tasks, /compare, /search land in P5.2-5.5.
+      // Until then, prerender crawl of /about would fail on Nav links to those
+      // routes. Warn instead of erroring so the placeholder route can still ship.
+      handleHttpError: 'warn'
+    }
   }
 };

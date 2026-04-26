@@ -112,7 +112,17 @@ function logRequest(env: unknown, entry: LogEntry) {
   // Gate on LOG_LEVEL so test runs (which set LOG_LEVEL='silent' in
   // vitest.config.ts bindings) stay quiet. Production sets LOG_LEVEL
   // in wrangler.toml; if unset, we still log by default.
-  const level = (env as { LOG_LEVEL?: string }).LOG_LEVEL;
+  //
+  // The Cloudflare adapter blocks `platform.env.<key>` reads during prerender
+  // (throws "Cannot access platform.env.LOG_LEVEL in a prerenderable route").
+  // We treat any throw as "skip logging" — prerender shouldn't emit per-request
+  // logs anyway.
+  let level: string | undefined;
+  try {
+    level = (env as { LOG_LEVEL?: string }).LOG_LEVEL;
+  } catch {
+    return;
+  }
   if (level === 'silent') return;
   console.log(JSON.stringify({
     ts: new Date().toISOString(),
