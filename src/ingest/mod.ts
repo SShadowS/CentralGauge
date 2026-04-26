@@ -169,6 +169,25 @@ export async function ingestRun(
     {},
   );
   if (runResp.status === 202 || runResp.status === 200) {
+    // The /runs POST inserts the row with status='running'; the worker uses
+    // a separate /finalize endpoint to flip to status='completed' once all
+    // referenced blobs are present in R2. Without this call the run shows
+    // up as "running" forever in the leaderboard.
+    const finalizeResp = await fetch(
+      `${config.url}/api/v1/runs/${br.runId}/finalize`,
+      { method: "POST" },
+    );
+    if (finalizeResp.status !== 200) {
+      const body = await finalizeResp.text().catch(() => "");
+      return {
+        kind: "retryable-failure",
+        attempts: 1,
+        lastError: new Error(
+          `finalize failed: ${finalizeResp.status} ${body}`,
+        ),
+        replayCommand: `centralgauge ingest <path>`,
+      };
+    }
     return { kind: "success", runId: br.runId, bytesUploaded };
   }
   if (runResp.status >= 500) {

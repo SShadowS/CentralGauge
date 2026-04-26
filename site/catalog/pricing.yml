@@ -14,3 +14,25 @@
   cache_write_per_mtoken: 0
   source: manual
   fetched_at: "2026-04-24T00:00:00.000Z"
+
+- pricing_version: "2026-04-26"
+  model_slug: anthropic/claude-opus-4-7
+  effective_from: "2026-04-26T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: manual
+  fetched_at: "2026-04-26T00:00:00.000Z"
+
+- pricing_version: "2026-04-26"
+  model_slug: anthropic/claude-opus-4-6
+  effective_from: "2026-04-26T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: manual
+  fetched_at: "2026-04-26T00:00:00.000Z"

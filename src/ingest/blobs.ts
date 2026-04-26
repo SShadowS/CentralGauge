@@ -27,7 +27,10 @@ export async function uploadBlob(
     keyId,
   );
   const fetchFn = opts.fetchFn ?? fetch;
-  const max = opts.maxAttempts ?? 3;
+  // 5 attempts × 4^attempt-1 backoff = up to ~5+ minutes worst case before
+  // giving up. Rate-limited workers usually clear within a few seconds; the
+  // larger ceiling tolerates short bursts of 429 without aborting an ingest.
+  const max = opts.maxAttempts ?? 5;
   const base = opts.backoffBaseMs ?? 1000;
 
   let lastError: Error | undefined;
@@ -50,6 +53,20 @@ export async function uploadBlob(
       continue;
     }
     if (resp.status === 200 || resp.status === 201) return;
+    // 429 is in the 4xx band but transient — back off and retry, optionally
+    // honoring the server's Retry-After hint.
+    if (resp.status === 429) {
+      const retryAfter = resp.headers.get("retry-after");
+      const hint = retryAfter ? Number(retryAfter) * 1000 : NaN;
+      const wait = Number.isFinite(hint) && hint > 0
+        ? hint
+        : base * Math.pow(4, attempt - 1);
+      lastError = new Error(
+        `blob upload failed: 429 ${await resp.text()}`,
+      );
+      if (attempt < max) await sleep(wait);
+      continue;
+    }
     if (resp.status >= 400 && resp.status < 500) {
       throw new Error(
         `blob upload failed: ${resp.status} ${await resp.text()}`,
