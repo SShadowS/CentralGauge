@@ -6,6 +6,7 @@ interface TaskSetUpsert {
   hash: string;
   created_at: string;
   task_count: number;
+  set_current?: boolean;
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -23,6 +24,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     await db.prepare(
       `INSERT OR IGNORE INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 0)`,
     ).bind(p.hash, p.created_at, p.task_count).run();
+    // Optional: atomically flip the current marker to this hash. Useful for
+    // ingest paths where a freshly created task_set should immediately be
+    // promoted as the leaderboard's "current" set.
+    if (p.set_current === true) {
+      await db.batch([
+        db.prepare(`UPDATE task_sets SET is_current = 0 WHERE is_current = 1`),
+        db.prepare(`UPDATE task_sets SET is_current = 1 WHERE hash = ?`).bind(p.hash),
+      ]);
+    }
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
     return errorResponse(err);
