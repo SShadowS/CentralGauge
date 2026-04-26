@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { useId } from '$lib/client/use-id';
+
   type InputType = 'text' | 'number' | 'search' | 'email' | 'url';
 
   interface Props {
@@ -23,7 +25,7 @@
     oninput,
   }: Props = $props();
 
-  const id = $derived(name ?? `input-${Math.random().toString(36).slice(2, 9)}`);
+  const id = $derived(name ?? useId());
   const errId = $derived(`${id}-err`);
 </script>
 
