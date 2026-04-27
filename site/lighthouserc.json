@@ -5,8 +5,8 @@
         "http://127.0.0.1:4173/leaderboard"
       ],
       "numberOfRuns": 3,
-      "startServerCommand": "npm run dev",
-      "startServerReadyPattern": "Local:",
+      "startServerCommand": "npm run build && npm run preview",
+      "startServerReadyPattern": "(http://[^\\s]+:4173)",
       "settings": {
         "preset": "desktop"
       }
