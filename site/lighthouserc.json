@@ -2,7 +2,11 @@
   "ci": {
     "collect": {
       "url": [
-        "http://127.0.0.1:4173/leaderboard"
+        "http://127.0.0.1:4173/leaderboard",
+        "http://127.0.0.1:4173/about",
+        "http://127.0.0.1:4173/models/sonnet-4-7",
+        "http://127.0.0.1:4173/runs/seeded-run-id-1",
+        "http://127.0.0.1:4173/runs/seeded-run-id-1/transcripts/CG-AL-E001/1"
       ],
       "numberOfRuns": 3,
       "startServerCommand": "npm run build && npm run preview",
