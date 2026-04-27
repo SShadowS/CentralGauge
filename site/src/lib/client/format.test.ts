@@ -6,6 +6,7 @@ import {
   formatTokens,
   formatRelativeTime,
   formatTaskRatio,
+  tierFromRow,
 } from './format';
 
 describe('format', () => {
@@ -89,6 +90,16 @@ describe('format', () => {
     it('formats N/M', () => {
       expect(formatTaskRatio(24, 24)).toBe('24/24');
       expect(formatTaskRatio(0, 24)).toBe('0/24');
+    });
+  });
+
+  describe('tierFromRow', () => {
+    it('verified when verified_runs > 0', () => {
+      expect(tierFromRow({ verified_runs: 1 })).toBe('verified');
+      expect(tierFromRow({ verified_runs: 100 })).toBe('verified');
+    });
+    it('claimed when verified_runs === 0', () => {
+      expect(tierFromRow({ verified_runs: 0 })).toBe('claimed');
     });
   });
 });

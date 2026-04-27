@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatScore, formatCost, formatRelativeTime, formatTaskRatio } from '$lib/client/format';
+  import { formatScore, formatCost, formatRelativeTime, formatTaskRatio, tierFromRow } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
   import ScoreCell from './ScoreCell.svelte';
   import CostCell from './CostCell.svelte';
@@ -60,7 +60,7 @@
               display_name={row.model.display_name}
               api_model_id={row.model.api_model_id}
               family_slug={row.family_slug}
-              tier={row.verified_runs > 0 ? 'verified' : 'claimed'}
+              tier={tierFromRow(row)}
             />
           </th>
           <td class="score"><ScoreCell score={row.avg_score} /></td>
