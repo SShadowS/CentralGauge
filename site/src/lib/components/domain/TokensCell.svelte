@@ -1,6 +1,6 @@
 <script lang="ts">
   import { formatTokens } from '$lib/client/format';
-  interface Props { in: number; out: number; }
-  let { in: tokensIn, out: tokensOut }: Props = $props();
+  interface Props { tokensIn: number; tokensOut: number; }
+  let { tokensIn, tokensOut }: Props = $props();
 </script>
 <span class="text-mono">{formatTokens(tokensIn)} / {formatTokens(tokensOut)}</span>
