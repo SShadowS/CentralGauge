@@ -2,6 +2,7 @@
   import '../styles/tokens.css';
   import '../styles/base.css';
   import '../styles/utilities.css';
+  import '../styles/print.css';
 
   import Nav from '$lib/components/layout/Nav.svelte';
   import Footer from '$lib/components/layout/Footer.svelte';
