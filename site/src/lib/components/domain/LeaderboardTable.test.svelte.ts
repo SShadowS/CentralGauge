@@ -30,8 +30,8 @@ describe('LeaderboardTable', () => {
       sort,
       onsort: (next: string) => { sort = next; },
     });
-    const scoreHeader = screen.getByRole('columnheader', { name: /score/i });
-    await fireEvent.click(scoreHeader);
+    const scoreBtn = screen.getByRole('button', { name: /score/i });
+    await fireEvent.click(scoreBtn);
     expect(sort).toBe('avg_score:asc');
   });
   it('uses tabular-nums on score cell', () => {

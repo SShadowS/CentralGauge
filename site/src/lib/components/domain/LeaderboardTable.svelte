@@ -33,20 +33,20 @@
     <thead>
       <tr>
         <th scope="col" class="rank">#</th>
-        <th scope="col" aria-sort={ariaSort('model')} onclick={() => clickSort('model')}>
-          <button type="button" class="hbtn">Model {#if sortField === 'model'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('model')}>
+          <button class="hbtn" onclick={() => clickSort('model')}>Model {#if sortField === 'model'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
-        <th scope="col" aria-sort={ariaSort('avg_score')} onclick={() => clickSort('avg_score')}>
-          <button type="button" class="hbtn">Score {#if sortField === 'avg_score'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('avg_score')}>
+          <button class="hbtn" onclick={() => clickSort('avg_score')}>Score {#if sortField === 'avg_score'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
-        <th scope="col" aria-sort={ariaSort('tasks_passed')} onclick={() => clickSort('tasks_passed')}>
-          <button type="button" class="hbtn">Tasks {#if sortField === 'tasks_passed'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('tasks_passed')}>
+          <button class="hbtn" onclick={() => clickSort('tasks_passed')}>Tasks {#if sortField === 'tasks_passed'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
-        <th scope="col" aria-sort={ariaSort('avg_cost_usd')} onclick={() => clickSort('avg_cost_usd')}>
-          <button type="button" class="hbtn">Cost {#if sortField === 'avg_cost_usd'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('avg_cost_usd')}>
+          <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost {#if sortField === 'avg_cost_usd'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
-        <th scope="col" aria-sort={ariaSort('last_run_at')} onclick={() => clickSort('last_run_at')}>
-          <button type="button" class="hbtn">Last seen {#if sortField === 'last_run_at'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('last_run_at')}>
+          <button class="hbtn" onclick={() => clickSort('last_run_at')}>Last seen {#if sortField === 'last_run_at'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
       </tr>
     </thead>
