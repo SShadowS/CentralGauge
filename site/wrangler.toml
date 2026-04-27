@@ -6,6 +6,7 @@ account_id = "22c8fbe790464b492d9b178cc0f9255b"
 
 [vars]
 LOG_LEVEL = "info"
+FLAG_PRINT_STYLESHEET = "on"
 
 [assets]
 directory = ".svelte-kit/cloudflare"
