@@ -1,0 +1,11 @@
+# Playwright
+test-results/
+playwright-report/
+.last-run.json
+
+# Lighthouse CI
+lhci-reports/
+.lighthouseci/
+
+# Bundle manifests
+build-manifests/
