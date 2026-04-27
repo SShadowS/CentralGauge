@@ -7,6 +7,9 @@
 
 interface Pair { name: string; fg: string; bg: string; min: number; }
 
+// NOTE: Color values below are duplicated from `src/styles/tokens.css`. If you
+// change a color in tokens.css, update the matching `fg`/`bg` entry here too.
+// (Full automation — parsing tokens.css — is overkill for ~15 pairs.)
 const lightPairs: Pair[] = [
   { name: 'body / bg',                fg: '#0a0a0a', bg: '#ffffff', min: 7   },
   { name: 'body-muted / bg',          fg: '#525252', bg: '#ffffff', min: 4.5 },
@@ -14,8 +17,11 @@ const lightPairs: Pair[] = [
   { name: 'accent / bg',              fg: '#0a4dff', bg: '#ffffff', min: 4.5 },
   { name: 'accent-fg / accent',       fg: '#ffffff', bg: '#0a4dff', min: 4.5 },
   { name: 'success / bg',             fg: '#0a7d3a', bg: '#ffffff', min: 4.5 },
+  { name: 'white / success',          fg: '#ffffff', bg: '#0a7d3a', min: 4.5 },
   { name: 'warning / bg',             fg: '#b45309', bg: '#ffffff', min: 4.5 },
+  { name: 'white / warning',          fg: '#ffffff', bg: '#b45309', min: 4.5 },
   { name: 'danger / bg',              fg: '#c2261c', bg: '#ffffff', min: 4.5 },
+  { name: 'white / danger',           fg: '#ffffff', bg: '#c2261c', min: 4.5 },
   { name: 'tier-verified / bg',       fg: '#0a7d3a', bg: '#ffffff', min: 4.5 },
 ];
 

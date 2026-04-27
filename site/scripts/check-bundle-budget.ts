@@ -26,12 +26,14 @@ const budgets: Budget[] = [
   { glob: 'nodes/*.js',        maxKbGz: 20 },
 ];
 
+const checked = new Set<string>();
 let failures: string[] = [];
 
 for (const b of budgets) {
   const matches = globSync(join(OUT, b.glob));
-  if (matches.length === 0) continue; // no files match; skip silently
   for (const path of matches) {
+    if (checked.has(path)) continue; // dedup against earlier specific budget
+    checked.add(path);
     const raw = readFileSync(path);
     const gz = gzipSync(raw);
     const kb = gz.length / 1024;
@@ -41,6 +43,11 @@ for (const b of budgets) {
       console.log(`OK ${relative(ROOT, path)}: ${kb.toFixed(1)} KB gz`);
     }
   }
+}
+
+if (checked.size === 0) {
+  console.error('No chunks found — did you run `npm run build` first?');
+  process.exit(1);
 }
 
 if (failures.length) {
