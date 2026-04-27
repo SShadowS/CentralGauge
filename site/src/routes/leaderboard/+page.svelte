@@ -11,9 +11,11 @@
 
   let { data } = $props();
 
-  let setVal = $state(data.filters.set);
-  let tierVerified = $state(data.filters.tier === 'verified' || data.filters.tier === 'all');
-  let tierClaimed   = $state(data.filters.tier === 'claimed'  || data.filters.tier === 'all');
+  const FILTER_KEYS = new Set(['set', 'tier', 'difficulty', 'family', 'since']);
+
+  let setVal = $derived(data.filters.set);
+  let tierVerified = $derived(data.filters.tier === 'verified' || data.filters.tier === 'all');
+  let tierClaimed = $derived(data.filters.tier === 'claimed' || data.filters.tier === 'all');
 
   function pushFilter(updates: Record<string, string | null>) {
     const sp = new URLSearchParams(page.url.searchParams);
@@ -24,10 +26,10 @@
     goto(`?${sp.toString()}`, { keepFocus: true, noScroll: true, invalidateAll: true });
   }
 
-  function applyTier() {
-    if (tierVerified && tierClaimed) pushFilter({ tier: null }); // === all
-    else if (tierVerified) pushFilter({ tier: 'verified' });
-    else if (tierClaimed)  pushFilter({ tier: 'claimed' });
+  function applyTier(v: boolean, c: boolean) {
+    if (v && c) pushFilter({ tier: null }); // both checked === all
+    else if (v) pushFilter({ tier: 'verified' });
+    else if (c) pushFilter({ tier: 'claimed' });
     else pushFilter({ tier: null });
   }
 
@@ -36,7 +38,7 @@
   }
 
   function clearAll() {
-    goto('/leaderboard', { keepFocus: true, noScroll: true });
+    goto('/leaderboard', { keepFocus: true, noScroll: true, invalidateAll: true });
   }
 </script>
 
@@ -58,21 +60,21 @@
   <FilterRail>
     <fieldset class="group">
       <legend>Set</legend>
-      <Radio label="Current" name="set" value="current" bind:group={setVal} onchange={() => pushFilter({ set: setVal })} />
-      <Radio label="All"     name="set" value="all"     bind:group={setVal} onchange={() => pushFilter({ set: setVal })} />
+      <Radio label="Current" name="set" value="current" group={setVal} onchange={() => pushFilter({ set: 'current' })} />
+      <Radio label="All"     name="set" value="all"     group={setVal} onchange={() => pushFilter({ set: 'all' })} />
     </fieldset>
 
     <fieldset class="group">
       <legend>Tier</legend>
-      <Checkbox label="Verified" bind:checked={tierVerified} onchange={applyTier} />
-      <Checkbox label="Claimed"  bind:checked={tierClaimed}  onchange={applyTier} />
+      <Checkbox label="Verified" checked={tierVerified} onchange={(e) => applyTier((e.target as HTMLInputElement).checked, tierClaimed)} />
+      <Checkbox label="Claimed"  checked={tierClaimed}  onchange={(e) => applyTier(tierVerified, (e.target as HTMLInputElement).checked)} />
     </fieldset>
   </FilterRail>
 
   <div class="results">
-    {#if page.url.searchParams.size > 0}
+    {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}
       <div class="chips">
-        {#each Array.from(page.url.searchParams.entries()) as [key, value]}
+        {#each Array.from(page.url.searchParams.entries()).filter(([k]) => FILTER_KEYS.has(k)) as [key, value]}
           <FilterChip label="{key}: {value}" onremove={() => pushFilter({ [key]: null })} />
         {/each}
         <button class="clear" onclick={clearAll}>Clear all</button>
