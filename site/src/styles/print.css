@@ -1,0 +1,60 @@
+/*
+ * Print stylesheet — gated by FLAG_PRINT_STYLESHEET=on (server flag).
+ * When the flag is on, +layout.svelte conditionally imports this file.
+ *
+ * Operators print runs / models pages; the print output prefers light
+ * theme, drops chrome, and shows link URLs after each link.
+ */
+
+@media print {
+  /* Force light surface for paper readability */
+  :root {
+    color-scheme: light;
+  }
+
+  /* Hide chrome */
+  nav,
+  footer,
+  .toc,
+  .filter-rail,
+  .skip,
+  .icon-btn,
+  button.fbtn,
+  .pager {
+    display: none !important;
+  }
+
+  /* Backgrounds eat ink — drop them */
+  body, main, table, thead, tbody {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Show link URLs after the link text */
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.8em;
+    color: #555;
+  }
+
+  /* Don't add URL annotation for in-page anchors / mailtos */
+  a[href^="#"]::after,
+  a[href^="javascript:"]::after,
+  a[href^="mailto:"]::after {
+    content: "";
+  }
+
+  /* Tables full width */
+  table { width: 100%; }
+
+  /* Avoid breaking sections across pages where possible */
+  section, table, figure { page-break-inside: avoid; }
+  h1, h2, h3 { page-break-after: avoid; }
+
+  /* Code blocks: no borders, plain mono */
+  pre, code {
+    background: white !important;
+    color: black !important;
+    border: none !important;
+  }
+}
