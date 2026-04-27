@@ -2,10 +2,9 @@
   import type { Snippet } from 'svelte';
 
   /**
-   * Tab definition. `id` must be a CSS-identifier-safe string
-   * (alphanumeric, dash, underscore) — it is interpolated into element
-   * `id` and `aria-controls` attributes verbatim. Callers are responsible
-   * for sanitization.
+   * Tab definition. `id` must be a CSS-identifier-safe string (alphanumeric,
+   * dash, underscore) — interpolated verbatim into element `id` and
+   * `aria-controls`. Callers are responsible for sanitization.
    */
   interface Tab { id: string; label: string; }
   interface Props {
@@ -16,6 +15,33 @@
   }
 
   let { tabs, active = $bindable(tabs[0]?.id ?? ''), onchange, children }: Props = $props();
+
+  function selectTab(id: string) {
+    active = id;
+    onchange?.(id);
+  }
+
+  function handleKeydown(e: KeyboardEvent, currentId: string) {
+    const idx = tabs.findIndex((t) => t.id === currentId);
+    if (idx === -1) return;
+    let nextIdx: number | null = null;
+    switch (e.key) {
+      case 'ArrowRight': nextIdx = (idx + 1) % tabs.length; break;
+      case 'ArrowLeft':  nextIdx = (idx - 1 + tabs.length) % tabs.length; break;
+      case 'Home':       nextIdx = 0; break;
+      case 'End':        nextIdx = tabs.length - 1; break;
+    }
+    if (nextIdx !== null) {
+      e.preventDefault();
+      const next = tabs[nextIdx];
+      selectTab(next.id);
+      // Move focus to the newly-active tab button so the next arrow keeps moving from there
+      queueMicrotask(() => {
+        const btn = document.getElementById(`tab-${next.id}`);
+        btn?.focus();
+      });
+    }
+  }
 </script>
 
 <div class="tabs">
@@ -29,7 +55,8 @@
         tabindex={active === tab.id ? 0 : -1}
         class="tab"
         class:active={active === tab.id}
-        onclick={() => { active = tab.id; onchange?.(tab.id); }}
+        onclick={() => selectTab(tab.id)}
+        onkeydown={(e) => handleKeydown(e, tab.id)}
       >
         {tab.label}
       </button>
