@@ -6,15 +6,15 @@
 </script>
 
 <div class="cell">
-  <span class="num">{formatScore(score)}</span>
+  <span class="num text-mono">{formatScore(score)}</span>
   <span class="bar" aria-hidden="true">
-    <span class="fill" style="width: {pct}%"></span>
+    <span class="fill" style:width="{pct}%"></span>
   </span>
 </div>
 
 <style>
   .cell { display: inline-flex; align-items: center; gap: var(--space-3); }
-  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; min-width: 40px; }
+  .num { min-width: 40px; }
   .bar { display: inline-block; width: 60px; height: 4px; background: var(--border); border-radius: var(--radius-1); overflow: hidden; }
   .fill { display: block; height: 100%; background: var(--accent); }
 </style>
