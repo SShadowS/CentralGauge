@@ -1,0 +1,59 @@
+name: Site CI
+
+on:
+  pull_request:
+    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+  push:
+    branches: [ master ]
+    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+
+defaults:
+  run:
+    working-directory: site
+
+jobs:
+  unit-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test:main
+      - run: npm run build
+      - run: npm run check:budget
+      - run: npm run check:contrast
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: unit-and-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npx playwright test
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: site/playwright-report/
+
+  lighthouse:
+    runs-on: ubuntu-latest
+    needs: unit-and-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:lhci
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lhci-reports
+          path: site/lhci-reports/
