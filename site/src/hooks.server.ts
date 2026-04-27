@@ -1,5 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
+import { resetIdCounter } from '$lib/client/use-id';
 import { runNightlyBackup } from './cron/nightly-backup';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
@@ -36,6 +37,12 @@ export async function scheduled(
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Reset the SSR id counter per request. Otherwise the long-lived Cloudflare
+  // Worker isolate's counter drifts across requests, producing SSR ids that
+  // don't match the client's fresh-start hydration counter. See
+  // $lib/client/use-id.ts for context.
+  resetIdCounter();
+
   const startNs = Date.now();
   const method = event.request.method;
   const path = event.url.pathname;
