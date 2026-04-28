@@ -1,17 +1,16 @@
 <script lang="ts">
-  import { Sun, Moon, Github } from '$lib/components/ui/icons';
+  import { Sun, Moon, Github, Command } from '$lib/components/ui/icons';
+  import KeyHint from '$lib/components/ui/KeyHint.svelte';
+  import { paletteBus } from '$lib/client/palette-bus.svelte';
   import { getTheme, cycleTheme, type Theme } from '$lib/client/theme';
   import { onMount } from 'svelte';
 
   let theme: Theme = $state('system');
 
-  onMount(() => {
-    theme = getTheme();
-  });
+  onMount(() => { theme = getTheme(); });
 
-  function toggle() {
-    theme = cycleTheme();
-  }
+  function toggleTheme() { theme = cycleTheme(); }
+  function openPalette() { paletteBus.openPalette(); }
 </script>
 
 <nav class="nav" aria-label="Primary">
@@ -25,8 +24,13 @@
       <li><a href="/search">Search</a></li>
     </ul>
     <div class="actions">
-      <button class="icon-btn" onclick={toggle} aria-label="Toggle theme (current: {theme})">
-        {#if theme === 'dark'}<Moon size={18} />{:else if theme === 'light'}<Sun size={18} />{:else}<Sun size={18} />{/if}
+      <button type="button" class="palette-btn" onclick={openPalette} aria-label="Open command palette (⌘K)">
+        <Command size={16} />
+        <span class="palette-label">Search…</span>
+        <KeyHint keys={['⌘', 'K']} />
+      </button>
+      <button class="icon-btn" onclick={toggleTheme} aria-label="Toggle theme (current: {theme})">
+        {#if theme === 'dark'}<Moon size={18} />{:else}<Sun size={18} />{/if}
       </button>
       <a class="icon-btn" href="https://github.com/SShadowS/CentralGauge" aria-label="GitHub repository">
         <Github size={18} />
@@ -80,6 +84,21 @@
     align-items: center;
     gap: var(--space-3);
   }
+  .palette-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    padding: var(--space-2) var(--space-4);
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--text-sm);
+  }
+  .palette-btn:hover { color: var(--text); border-color: var(--border-strong); }
+  .palette-label { color: var(--text-muted); }
   .icon-btn {
     background: transparent;
     border: 1px solid var(--border);
@@ -96,5 +115,6 @@
 
   @media (max-width: 768px) {
     .links { display: none; }
+    .palette-label { display: none; }
   }
 </style>
