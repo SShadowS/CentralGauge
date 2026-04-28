@@ -79,7 +79,6 @@ describe('passthroughLoader', () => {
     // @ts-expect-error - partial mock
     const out = await loader(event);
     expect(out).toEqual({ families: { rows: [1, 2] } });
-    // @ts-expect-error - 'data' is not present when resultKey is set
     expect(out.data).toBeUndefined();
   });
 });
