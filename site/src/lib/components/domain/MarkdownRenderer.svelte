@@ -5,17 +5,35 @@
 
   let html = $state('');
 
-  $effect(async () => {
-    const [markedMod, domPurifyMod] = await Promise.all([
-      import('marked'),
-      import('dompurify'),
-    ]);
-    const rawHtml = await markedMod.parse(source);
-    html = domPurifyMod.default.sanitize(rawHtml, {
-      // Allow code blocks + headings + links + lists. Drop scripts, iframes.
-      ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','strong','em','code','pre','ul','ol','li','blockquote','a','table','thead','tbody','tr','th','td','hr','b','i','br'],
-      ALLOWED_ATTR: ['href','title','class','id'],
-    });
+  $effect(() => {
+    let cancelled = false;
+    (async () => {
+      const [markedMod, domPurifyMod] = await Promise.all([
+        import('marked'),
+        import('dompurify'),
+      ]);
+      if (cancelled) return;
+      const rawHtml = await markedMod.parse(source);
+      if (cancelled) return;
+      // Hooks are global on the DOMPurify instance; remove first so re-renders
+      // don't stack the same hook.
+      domPurifyMod.default.removeHook('afterSanitizeAttributes');
+      domPurifyMod.default.addHook('afterSanitizeAttributes', (node) => {
+        if (node.tagName === 'A') {
+          const href = node.getAttribute('href') ?? '';
+          if (/^https?:\/\//i.test(href)) {
+            node.setAttribute('rel', 'noopener noreferrer');
+            node.setAttribute('target', '_blank');
+          }
+        }
+      });
+      html = domPurifyMod.default.sanitize(rawHtml, {
+        // Allow code blocks + headings + links + lists. Drop scripts, iframes.
+        ALLOWED_TAGS: ['h1','h2','h3','h4','h5','h6','p','strong','em','code','pre','ul','ol','li','blockquote','a','table','thead','tbody','tr','th','td','hr','b','i','br'],
+        ALLOWED_ATTR: ['href','title','class','id','rel','target'],
+      });
+    })();
+    return () => { cancelled = true; };
   });
 </script>
 

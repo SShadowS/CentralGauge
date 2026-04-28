@@ -19,4 +19,28 @@ describe('MarkdownRenderer', () => {
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('b')?.textContent).toBe('bold');
   });
+
+  it('adds rel="noopener noreferrer" and target="_blank" to absolute links', async () => {
+    const { container } = render(MarkdownRenderer, {
+      source: '[link](https://example.com)',
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const a = container.querySelector('a');
+    expect(a).not.toBeNull();
+    expect(a?.getAttribute('href')).toBe('https://example.com');
+    expect(a?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(a?.getAttribute('target')).toBe('_blank');
+  });
+
+  it('leaves in-page anchors untouched', async () => {
+    const { container } = render(MarkdownRenderer, {
+      source: '[jump](#section)',
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const a = container.querySelector('a');
+    expect(a).not.toBeNull();
+    expect(a?.getAttribute('href')).toBe('#section');
+    expect(a?.getAttribute('target')).toBeNull();
+    expect(a?.getAttribute('rel')).toBeNull();
+  });
 });
