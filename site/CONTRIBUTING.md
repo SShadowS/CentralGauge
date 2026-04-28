@@ -96,3 +96,46 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
   existing tokens via `var(--name)`. The contrast checker (`npm run
   check:contrast`) hard-codes 18 token pairings; if you change a color in
   `src/styles/tokens.css`, update the matching entry in the script too.
+
+## P5.2 implementation notes (learned during build-out)
+
+- **API/type drift is the #1 risk.** Plan declared `RunDetail`,
+  `RunSignature`, `RunsListItem` in `$shared/api-types.ts`, but the existing
+  `/api/v1/runs/:id`, `/.../signature`, and `/api/v1/runs` endpoints emitted
+  pre-P5.2 shapes. Pages typechecked (loaders cast `as RunDetail`) but
+  rendered `undefined` everywhere or crashed at runtime. Fix landed in five
+  commits at the end of P5.2 — but **always add an integration test that
+  round-trips an API response through the loader into the page** when adding
+  a new detail surface. The cast is a lie until the test proves otherwise.
+- **D1 aggregates for runs list:** `tasks_passed = COUNT(DISTINCT CASE WHEN
+  passed=1 THEN task_id END)` (any-attempt-passed) is the simplest
+  formulation that avoids correlated subqueries. The detail endpoint uses
+  strict last-attempt-passed semantics — they diverge intentionally.
+- **`canonicalJSON` (used by `cachedJson` for ETag) rejects `undefined`
+  values.** When omitting an optional field, use a conditional spread
+  (`...(value ? { field: value } : {})`) instead of `field: value ?? undefined`.
+- **`/api/v1/transcripts/:key` returns `text/plain`**, not JSON — loaders
+  must `await tRes.text()` and wrap in the `Transcript` shape themselves.
+- **Svelte 5 `{@const}` placement:** disallowed as a direct child of `<g>`
+  after `{/each}`. If the plan templates this, lift to script-level
+  `$derived` — math identical, output identical.
+- **`MarkdownRenderer` lazy-loads `marked` + `dompurify`** as a separate
+  chunk. Don't import them statically anywhere else or you defeat the
+  chunk-split. Allowlist is intentionally tight: no `script`/`iframe`/
+  event-handlers/`img`/`svg`. If user-authored markdown ever lands, add
+  `rel="noopener noreferrer"` to `<a target="_blank">` via DOMPurify
+  `addHook('afterSanitizeAttributes')`.
+- **`SignaturePanel` lazy-loads `@noble/ed25519`** only on Verify click —
+  do not move the import to the top of the file.
+- **Tabs `bind:active`** works because `Tabs.svelte` declares `active =
+  $bindable(...)`. The page passes a snippet with the `[string]` parameter
+  matching `Snippet<[string]>` — see `/runs/[id]/+page.svelte` for the
+  pattern.
+- **Print stylesheet** is unconditionally imported in `+layout.svelte`;
+  the `@media print` wrapper makes it inert outside print. The
+  `FLAG_PRINT_STYLESHEET` wrangler var is documentation-only — actual
+  print behavior is purely CSS-driven.
+- **E2E + LHCI fixture data:** the four new specs (`model-detail`,
+  `run-detail`, `transcript`, `print`) and three new LHCI URLs reference
+  `seeded-run-id-1` and `sonnet-4-7`. Local runs need a seeded D1; CI
+  needs to seed before `playwright test`. Not yet wired — track in P5.4.
