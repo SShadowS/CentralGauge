@@ -38,8 +38,8 @@ site/src/
   routes/                         # SvelteKit pages
     +layout.svelte                  # Nav + density + theme + RUM beacon
     +layout.server.ts               # flag loader, build sha, RUM token
-    +page.svelte                    # placeholder home (P5.5 cutover replaces)
-    leaderboard/                    # /leaderboard (P5.5 → renamed to /)
+    +page.svelte                    # leaderboard home (P5.5 cutover, commit f79bfc9)
+    leaderboard/+server.ts          # 302 → / (sunset 2026-05-30, P5.5)
     models/[slug]/                  # /models/:slug + /runs + /limitations
     runs/[id]/                      # /runs/:id + /transcripts + /signature
     families/[slug]/
@@ -103,8 +103,10 @@ site/src/
 The Durable Object accepts `/subscribe?routes=<comma-list>`. Each writer's
 route list is matched against `eventToRoutes(ev)` at fanout time. Default
 (no `routes` param) is `['*']` — receives everything. Five routes
-subscribe today (§8.5): `/leaderboard`, `/runs`, `/runs/<id>`,
-`/models/<slug>`, `/families/<slug>`.
+subscribe today (§8.5): `/`, `/runs`, `/runs/<id>`,
+`/models/<slug>`, `/families/<slug>`. Legacy `/leaderboard` SSE
+subscriptions are accepted via the `LEGACY_LEADERBOARD_ROUTES` alias
+(I1) until 2026-05-30 sunset.
 
 Wire format: `event: <type>\ndata: <JSON>\n\n` per RFC 6455 EventSource.
 
@@ -152,24 +154,32 @@ Promotion: edit `wrangler.toml [vars]` + `wrangler deploy`.
 | `density_toggle` | P5.4 | gates Nav DensityToggle button |
 | `rum_beacon` | P5.4 | gates Cloudflare Web Analytics `<script>` |
 
-## P5.5 cutover migration map
+## P5.5 cutover migration map (COMPLETED 2026-04-30)
 
-The following references must be updated atomically when the homepage
-cutover ships in P5.5. None are scope for P5.4; this map exists so the
-P5.5 plan author can see the impact at a glance.
+The following references were updated atomically as P5.5; see commit
+`f79bfc9` (Mini-phase B atomic cutover). The table is preserved for
+historical reference. The current architecture uses `/` as the
+leaderboard URL; the `/leaderboard` route is a 302 redirect with a
+30-day sunset (2026-05-30).
 
-| Surface | P5.4 value | P5.5 cutover value |
-|---------|-----------|--------------------|
-| Layout-server route | `/leaderboard` | `/` |
-| `<LiveStatus>` SSE subscription | `useEventSource(['/leaderboard'])` | `useEventSource(['/'])` plus rename the DO route map (`sse-routes.ts:eventToRoutes`) — `/leaderboard` becomes `/` for `run_finalized` event routing |
-| Lighthouse URL list | `127.0.0.1:4173/leaderboard` | `127.0.0.1:4173/` |
-| Nav active-route highlight | `pathname === '/leaderboard'` | `pathname === '/'` |
-| Robots meta | `<meta name="robots" content="noindex">` present | removed |
-| Sitemap presence | absent | `sitemap.xml` published |
-| Placeholder home | exists at `+page.svelte` | replaced by leaderboard markup; old `/leaderboard` route deleted |
+| Surface | Pre-P5.5 value | Post-P5.5 value (DONE) |
+|---------|---------------|------------------------|
+| Layout-server route | `/leaderboard` | `/` (commit `f79bfc9`) |
+| `<LiveStatus>` SSE subscription | `useEventSource(['/leaderboard'])` | `useEventSource(['/'])` plus DO route map (`sse-routes.ts:eventToRoutes`) maps `run_finalized` + `task_set_promoted` → `/` (commit `f79bfc9`) |
+| Lighthouse URL list | `127.0.0.1:4173/leaderboard` | `127.0.0.1:4173/` (commit `df6850c`) |
+| Nav active-route highlight | `pathname === '/leaderboard'` | `pathname === '/'` (commit `f79bfc9`) |
+| Robots meta | `<meta name="robots" content="noindex">` present | removed (commit `ab24b3d`) |
+| Sitemap presence | absent | `sitemap.xml` published via `static/robots.txt` + build-time `scripts/build-sitemap.ts` (commits `b6da131`, `c544be2`) |
+| Placeholder home | exists at `+page.svelte` | replaced by leaderboard markup; `/leaderboard/+server.ts` is now a 302 redirect (commit `f79bfc9`) |
+| Layout-level structured data | absent | `StructuredData.svelte` mounted in layout for site-wide JSON-LD (WebSite + Organization) (commit `0742d22`) |
+| Per-page canonical link | absent | `<link rel="canonical">` emitted on every page (commit `682c654`) |
 
-The `useEventSource(['/leaderboard'])` strings live across 5 files
-(Tasks C1-C5). A grep `grep -rn "'/leaderboard'" site/src/` scopes the
-P5.5 rename mechanically. Tag each call site with a TODO comment at
-P5.4 time so P5.5 grep finds them via `// TODO(P5.5)` instead of
-literal string-match alone.
+### P5.5 cutover — DONE
+
+Cutover landed 2026-04-30; the table above is preserved for historical
+reference. The current architecture uses `/` as the leaderboard URL.
+The `/leaderboard` route remains as a 302 redirect until the
+2026-05-30 sunset; the SSE `LEGACY_LEADERBOARD_ROUTES` alias accepts
+legacy subscriptions during the same window. Both will be removed by
+the sunset deadline; CI guard `tests/build/redirect-sunset.test.ts`
+fails 14 days before sunset to force operator attention.
