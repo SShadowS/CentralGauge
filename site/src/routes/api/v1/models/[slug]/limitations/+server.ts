@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { cachedJson } from '$lib/server/cache';
 import { getAll, getFirst } from '$lib/server/db';
 import { ApiError, errorResponse } from '$lib/server/errors';
+import { computeSeverity } from '$lib/server/severity';
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
@@ -22,11 +23,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       first_seen: string;
       last_seen: string;
       occurrence_count: number | string;
+      distinct_tasks: number | string;
     }>(
       env.DB,
       `SELECT s.al_concept, s.concept, s.description, s.correct_pattern,
               s.error_codes_json, s.first_seen, s.last_seen,
-              (SELECT COUNT(*) FROM shortcoming_occurrences so WHERE so.shortcoming_id = s.id) AS occurrence_count
+              (SELECT COUNT(*) FROM shortcoming_occurrences so WHERE so.shortcoming_id = s.id) AS occurrence_count,
+              (SELECT COUNT(DISTINCT so2.task_id) FROM shortcoming_occurrences so2 WHERE so2.shortcoming_id = s.id) AS distinct_tasks
        FROM shortcomings s
        WHERE s.model_id = ?
        ORDER BY s.al_concept`,
@@ -57,16 +60,21 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     return cachedJson(
       request,
       {
-        data: rows.map((r) => ({
-          al_concept: r.al_concept,
-          concept: r.concept,
-          description: r.description,
-          correct_pattern: r.correct_pattern,
-          error_codes: JSON.parse(r.error_codes_json) as string[],
-          first_seen: r.first_seen,
-          last_seen: r.last_seen,
-          occurrence_count: +(r.occurrence_count ?? 0),
-        })),
+        data: rows.map((r) => {
+          const occ = +(r.occurrence_count ?? 0);
+          const distinct = +(r.distinct_tasks ?? 0);
+          return {
+            al_concept: r.al_concept,
+            concept: r.concept,
+            description: r.description,
+            correct_pattern: r.correct_pattern,
+            error_codes: JSON.parse(r.error_codes_json) as string[],
+            first_seen: r.first_seen,
+            last_seen: r.last_seen,
+            occurrence_count: occ,
+            severity: computeSeverity(occ, distinct),
+          };
+        }),
       },
       { cacheControl, extraHeaders: { vary: 'Accept' } },
     );
