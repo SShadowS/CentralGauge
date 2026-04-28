@@ -1,9 +1,11 @@
 <script lang="ts">
   import { Sun, Moon, Github, Command } from '$lib/components/ui/icons';
   import KeyHint from '$lib/components/ui/KeyHint.svelte';
+  import DensityToggle from '$lib/components/domain/DensityToggle.svelte';
   import { paletteBus } from '$lib/client/palette-bus.svelte';
   import { getTheme, cycleTheme, type Theme } from '$lib/client/theme';
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
 
   let theme: Theme = $state('system');
 
@@ -11,6 +13,11 @@
 
   function toggleTheme() { theme = cycleTheme(); }
   function openPalette() { paletteBus.openPalette(); }
+
+  // Read flag from layout data via $page.data (LayoutServer load propagates).
+  const densityFlag = $derived(
+    (page.data?.flags as { density_toggle?: boolean } | undefined)?.density_toggle ?? false,
+  );
 </script>
 
 <nav class="nav" aria-label="Primary">
@@ -29,6 +36,9 @@
         <span class="palette-label">Search…</span>
         <KeyHint keys={['⌘', 'K']} />
       </button>
+      {#if densityFlag}
+        <DensityToggle />
+      {/if}
       <button class="icon-btn" onclick={toggleTheme} aria-label="Toggle theme (current: {theme})">
         {#if theme === 'dark'}<Moon size={18} />{:else}<Sun size={18} />{/if}
       </button>

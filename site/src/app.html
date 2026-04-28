@@ -16,6 +16,22 @@
         } catch (e) { /* localStorage may be unavailable in private mode */ }
       })();
     </script>
+    <script>
+      // No-flash density application — runs before any paint.
+      // Reads localStorage and writes <html data-density> so the rune
+      // store reads the correct initial value at construction (avoids
+      // the comfortable→compact flash and hydration mismatch).
+      // Intentionally NOT gated on the density_toggle flag — the
+      // attribute itself is benign when the toggle UI is hidden.
+      (function () {
+        try {
+          var d = localStorage.getItem('cg-density');
+          if (d === 'compact' || d === 'comfortable') {
+            document.documentElement.setAttribute('data-density', d);
+          }
+        } catch (e) { /* localStorage blocked — accept comfortable default */ }
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

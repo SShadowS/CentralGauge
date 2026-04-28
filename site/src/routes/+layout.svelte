@@ -9,6 +9,9 @@
   import SkipToContent from '$lib/components/layout/SkipToContent.svelte';
   import CommandPalette from '$lib/components/domain/CommandPalette.svelte';
   import { paletteBus } from '$lib/client/palette-bus.svelte';
+  import { densityBus } from '$lib/client/density-bus.svelte';
+  import { registerChord } from '$lib/client/keyboard';
+  import { onMount } from 'svelte';
 
   let { data, children } = $props();
 
@@ -17,6 +20,10 @@
    * from every page. Skipped when the user is typing into a text field
    * with an unmodified `K`, to avoid swallowing legitimate input — the
    * full chord (cmd OR ctrl + K) is required to fire.
+   *
+   * cmd-K stays as a hand-rolled handler — it can fire from inside text
+   * fields (palette is the input target) so it doesn't share the
+   * exclusion rules of cmd-shift-d.
    */
   function onKey(e: KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
@@ -24,6 +31,16 @@
       paletteBus.toggle();
     }
   }
+
+  // ⌘-Shift-D toggles density. Registered via the chord registry so the
+  // input-field exclusion rule is uniform. Note: ⌘-Shift-D / Ctrl-Shift-D
+  // also opens the bookmark dialog in Safari/Chrome/Firefox; the
+  // <DensityToggle> Nav button is the canonical fallback.
+  onMount(() => {
+    densityBus.init();
+    const off = registerChord({ key: 'd', meta: true, shift: true }, () => densityBus.toggle());
+    return () => off();
+  });
 </script>
 
 <svelte:window onkeydown={onKey} />
