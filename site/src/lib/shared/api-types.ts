@@ -198,3 +198,207 @@ export interface ModelLimitations {
   total: number;
   items: LimitationItem[];
 }
+
+// =============================================================================
+// Models index — GET /api/v1/models  (P5.3 extension)
+// =============================================================================
+//
+// The pre-P5.3 endpoint returned only catalog metadata
+// (slug, display_name, api_model_id, generation, family_slug). The /models
+// index page wants per-model aggregates without N+1 fetching, so the endpoint
+// is extended in Task A7 to add four optional aggregate fields.
+//
+// avg_score_all_runs is computed across ALL runs (any task set, any tier).
+// Leaderboard's avg_score is per-task-set-current-only (see leaderboard.ts)
+// and is intentionally different. The /models index uses all-time for
+// catalog discoverability (we want users to find a model with cool runs even
+// if those runs are on a non-current task set). Both numbers come from the
+// same `computeModelAggregates` helper (Task A0) — only the `taskSetCurrent`
+// option differs between callers.
+
+export interface ModelsIndexItem {
+  slug: string;
+  display_name: string;
+  api_model_id: string;
+  generation: number | null;
+  family_slug: string;
+  // Extension fields — null for catalog-only models with zero runs
+  run_count: number;
+  verified_runs: number;
+  avg_score_all_runs: number | null;
+  last_run_at: string | null;
+}
+
+export interface ModelsIndexResponse {
+  data: ModelsIndexItem[];
+}
+
+// =============================================================================
+// Families index — GET /api/v1/families
+// =============================================================================
+
+export interface FamiliesIndexItem {
+  slug: string;
+  display_name: string;
+  vendor: string;
+  model_count: number;
+  latest_avg_score: number | null;
+  latest_model_slug: string | null;
+}
+
+export interface FamiliesIndexResponse {
+  data: FamiliesIndexItem[];
+}
+
+// =============================================================================
+// Family detail (trajectory) — GET /api/v1/families/:slug
+// =============================================================================
+
+export interface FamilyTrajectoryItem {
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    generation: number | null;
+  };
+  avg_score: number | null;       // null for models with zero runs
+  run_count: number;
+  last_run_at: string | null;
+  avg_cost_usd: number | null;
+}
+
+export interface FamilyDetail {
+  slug: string;
+  display_name: string;
+  vendor: string;
+  trajectory: FamilyTrajectoryItem[];
+}
+
+// =============================================================================
+// Tasks index — GET /api/v1/tasks?cursor=&set=
+// =============================================================================
+
+export interface TaskCategory {
+  slug: string;
+  name: string;
+}
+
+export interface TasksIndexItem {
+  id: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  content_hash: string;
+  task_set_hash: string;
+  category: TaskCategory | null;
+}
+
+export interface TasksIndexResponse {
+  data: TasksIndexItem[];
+  next_cursor: string | null;
+}
+
+// =============================================================================
+// Per-task detail — GET /api/v1/tasks/:id
+// =============================================================================
+
+export interface TaskDetailSolvedBy {
+  model_slug: string;
+  model_display: string;
+  // 0 = failed, 1 = passed, null = no attempt logged. The API returns
+  // `MAX(CASE WHEN ...)` of `r.passed` (INTEGER NOT NULL with values 0|1),
+  // so the wire format is always 0|1|null — narrowed here for type safety.
+  attempt_1_passed: 0 | 1 | null;
+  attempt_2_passed: 0 | 1 | null;
+  runs_total: number;
+  avg_score: number | null;
+}
+
+export interface TaskDetail {
+  id: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  content_hash: string;
+  task_set_hash: string;
+  category: TaskCategory | null;
+  manifest: unknown;     // JSON-shape; renderer does narrow type-guards
+  solved_by: TaskDetailSolvedBy[];
+}
+
+// =============================================================================
+// Compare — GET /api/v1/compare?models=a,b,c
+// =============================================================================
+
+export interface CompareModel {
+  id: number;
+  slug: string;
+  display_name: string;
+}
+
+export interface CompareTaskRow {
+  task_id: string;
+  scores: Record<string, number | null>;   // keyed by model slug
+  divergent: boolean;                       // max-min > 0.01 across non-null values
+}
+
+export interface CompareResponse {
+  models: CompareModel[];
+  tasks: CompareTaskRow[];
+}
+
+// =============================================================================
+// Search — GET /api/v1/search?q=...
+// =============================================================================
+
+export interface SearchResultItem {
+  result_id: number;
+  run_id: string;
+  task_id: string;
+  model_slug: string;
+  compile_errors_text: string;
+  failure_reasons_text: string;
+  started_at: string;
+  snippet: string;       // contains <mark>…</mark> already-substituted by FTS5
+}
+
+export interface SearchResponse {
+  query: string;
+  data: SearchResultItem[];
+}
+
+// =============================================================================
+// Global shortcomings — GET /api/v1/shortcomings  (NEW endpoint, P5.3 Task A8)
+// =============================================================================
+
+export interface ShortcomingsIndexItem {
+  al_concept: string;
+  models_affected: number;        // distinct model count
+  occurrence_count: number;       // total occurrences across models
+  avg_severity: 'low' | 'medium' | 'high';
+  first_seen: string;             // earliest first_seen across all rows
+  last_seen: string;              // latest last_seen across all rows
+  example_run_id: string | null;
+  example_task_id: string | null;
+  affected_models: Array<{ slug: string; display_name: string; occurrences: number }>;
+}
+
+export interface ShortcomingsIndexResponse {
+  data: ShortcomingsIndexItem[];
+  generated_at: string;
+}
+
+// =============================================================================
+// cmd-K palette index — GET /api/v1/internal/search-index.json  (P5.3 Task A11)
+// =============================================================================
+
+export type PaletteEntryKind = 'model' | 'family' | 'task' | 'run' | 'page';
+
+export interface PaletteEntry {
+  kind: PaletteEntryKind;
+  id: string;            // unique within kind (slug, task_id, run_id, path)
+  label: string;         // user-facing display string
+  href: string;          // navigation target
+  hint?: string;         // optional secondary text (e.g. family name for a model)
+}
+
+export interface PaletteIndex {
+  generated_at: string;
+  entries: PaletteEntry[];
+}
