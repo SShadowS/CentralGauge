@@ -9,3 +9,8 @@ lhci-reports/
 
 # Bundle manifests
 build-manifests/
+
+# P5.5 — sitemap is generated at build time into static/ so SvelteKit's
+# asset manifest picks it up; not committed. See
+# docs/superpowers/plans/2026-04-30-p5-5-cutover.md
+static/sitemap.xml

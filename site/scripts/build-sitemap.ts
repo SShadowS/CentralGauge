@@ -77,11 +77,15 @@ const isMain =
   fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 
 if (isMain) {
-  // SvelteKit's adapter-cloudflare emits the worker bundle to
-  // `.svelte-kit/cloudflare/`; static files copied into that bundle are
-  // served by the [assets] binding. We write the sitemap there directly so
-  // the artifact is rebuilt every CI run and never committed (see I9).
-  const target = resolve(process.cwd(), '.svelte-kit/cloudflare/sitemap.xml');
+  // SvelteKit serves `static/` files at the corresponding URL path; the
+  // adapter copies them into `.svelte-kit/cloudflare/` AND records them in
+  // the worker's static-asset manifest. Writing to `static/sitemap.xml`
+  // therefore makes the file reachable both at runtime (via the [assets]
+  // binding) and in vitest-pool-workers tests (where the worker checks
+  // `manifest.assets.has('sitemap.xml')`). The artifact is gitignored —
+  // see `site/.gitignore` — so re-running the generator never produces a
+  // committed diff.
+  const target = resolve(process.cwd(), 'static/sitemap.xml');
   mkdirSync(dirname(target), { recursive: true });
   const xml = buildSitemap();
   writeFileSync(target, xml, 'utf8');
