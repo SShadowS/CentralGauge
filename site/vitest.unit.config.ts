@@ -15,6 +15,10 @@ export default defineConfig({
     alias: {
       $lib: path.resolve('./src/lib'),
       $shared: path.resolve('./src/lib/shared'),
+      // SvelteKit-virtual modules are unavailable in vitest; stub them out.
+      // Component code only ever calls `goto` (and friends are no-ops in
+      // jsdom anyway), so a tiny shim is sufficient.
+      '$app/navigation': path.resolve('./tests/mocks/app-navigation.ts'),
     },
   },
   test: {
