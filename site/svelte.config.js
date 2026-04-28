@@ -18,14 +18,10 @@ export default {
     output: { preloadStrategy: 'modulepreload' },
     prerender: {
       entries: ['/about'],
-      // 'warn' permits prerender crawl to skip 404s on Nav links not yet shipped:
-      //   - /models (index)            — P5.3
-      //   - /tasks (index + /:id)      — P5.3
-      //   - /compare                   — P5.3
-      //   - /search                    — P5.3
-      //   - /runs (index)              — P5.2 ships /runs/:id but not /runs index
-      // Switch to 'fail' once all Nav targets resolve (target: P5.4 polish).
-      handleHttpError: 'warn'
+      // P5.3 lands every Nav target — `/models`, `/runs`, `/tasks`,
+      // `/compare`, `/search`, `/families`, `/limitations`. Re-arm strict
+      // mode so any future broken Nav link fails CI.
+      handleHttpError: 'fail'
     }
   }
 };
