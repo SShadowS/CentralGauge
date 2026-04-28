@@ -1,20 +1,52 @@
 <script lang="ts">
+  import { invalidate } from '$app/navigation';
+  import { page } from '$app/state';
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import StatTile from '$lib/components/domain/StatTile.svelte';
   import TableOfContents from '$lib/components/domain/TableOfContents.svelte';
   import TierBadge from '$lib/components/domain/TierBadge.svelte';
   import FamilyBadge from '$lib/components/domain/FamilyBadge.svelte';
+  import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import TaskHistoryChart from '$lib/components/domain/TaskHistoryChart.svelte';
   import CostBarChart from '$lib/components/domain/CostBarChart.svelte';
   import FailureModesList from '$lib/components/domain/FailureModesList.svelte';
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { tierFromRow, formatScore, formatCost, formatDuration, formatTaskRatio } from '$lib/client/format';
+  import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   import type { RunsListItem } from '$shared/api-types';
 
   let { data } = $props();
 
   const m = $derived(data.model);
+
+  const modelRoute = $derived(`/models/${page.params.slug}`);
+
+  let sse: EventSourceHandle | null = $state(null);
+
+  $effect(() => {
+    if (!data.flags.sse_live_updates) return;
+    const handle = useEventSource([modelRoute]);
+    sse = handle;
+    const off = handle.on('run_finalized', (ev) => {
+      try {
+        const payload = JSON.parse(ev.data) as { model_slug?: string };
+        // task_set_promoted fans out to /models/* for every model; we want
+        // to invalidate only for our own slug under run_finalized too.
+        if (payload.model_slug === page.params.slug) {
+          void invalidate(`app:model:${page.params.slug}`);
+        }
+      } catch { /* ignore */ }
+    });
+    return () => { off(); handle.dispose(); sse = null; };
+  });
+
+  function reconnect() {
+    if (sse) {
+      sse.dispose();
+      sse = useEventSource([modelRoute]);
+    }
+  }
 
   const sparklineValues = $derived(m.history.slice(-30).map((p) => p.score));
   const tasksRatio = $derived(formatTaskRatio(m.aggregates.tasks_passed, m.aggregates.tasks_attempted));
@@ -70,6 +102,9 @@
     <TierBadge {tier} />
     <Button href="/compare?models={m.model.slug}" variant="secondary" size="sm">Compare</Button>
     <Button href="/api/v1/models/{m.model.slug}" variant="ghost" size="sm">JSON</Button>
+    {#if data.flags.sse_live_updates && sse}
+      <LiveStatus {sse} onReconnect={reconnect} />
+    {/if}
   </div>
   <p class="meta text-muted">
     <code class="text-mono">{m.model.api_model_id}</code>
