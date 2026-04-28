@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderOgPng } from './og-render';
 
-class FakeR2 implements R2Bucket {
+// Minimal R2Bucket stub. The renderer only calls `.get()` and `.put()`;
+// returning `as unknown as R2Bucket` keeps us to those two methods without
+// implementing every method on the real binding (multipart upload, etc).
+class FakeR2 {
   store = new Map<string, ArrayBuffer>();
   async get(key: string): Promise<R2ObjectBody | null> {
     const body = this.store.get(key);
@@ -9,7 +12,6 @@ class FakeR2 implements R2Bucket {
     return {
       body: new ReadableStream(),
       arrayBuffer: () => Promise.resolve(body),
-      // ... other R2ObjectBody shapes returned as no-ops; not exercised
     } as unknown as R2ObjectBody;
   }
   async put(key: string, body: ArrayBuffer | ReadableStream): Promise<R2Object> {
@@ -17,11 +19,11 @@ class FakeR2 implements R2Bucket {
     else throw new Error('FakeR2.put only handles ArrayBuffer in tests');
     return {} as R2Object;
   }
-  async head() { return null; }
-  async delete() {}
-  async list() { return { objects: [], truncated: false } as never; }
-  async createMultipartUpload(): Promise<R2MultipartUpload> { throw new Error('not impl'); }
-  async resumeMultipartUpload(): Promise<R2MultipartUpload> { throw new Error('not impl'); }
+
+  /** Cast to the R2Bucket binding shape for renderOgPng's `blobs` param. */
+  asBinding(): R2Bucket {
+    return this as unknown as R2Bucket;
+  }
 }
 
 // Stub the actual og module so the test doesn't pull in resvg-wasm.
@@ -53,7 +55,7 @@ describe('renderOgPng', () => {
 
   it('renders fresh on cache miss and stores under deterministic key', async () => {
     const out = await renderOgPng({
-      kind: 'index', blobs,
+      kind: 'index', blobs: blobs.asBinding(),
       payload: { kind: 'index', modelCount: 12, runCount: 87, lastRunAt: '2026-04-29T12:00:00Z' },
       taskSetHash: 'ts1',
     });
@@ -69,23 +71,23 @@ describe('renderOgPng', () => {
   it('serves from R2 on cache hit (no re-render)', async () => {
     // Pre-render once to learn the full cache key (includes payload hash)
     const payload = { kind: 'model' as const, displayName: 'Sonnet 4.7', familySlug: 'claude', avgScore: 0.81, runCount: 12 };
-    const first = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs, payload, taskSetHash: 'ts1' });
+    const first = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs: blobs.asBinding(), payload, taskSetHash: 'ts1' });
     expect(first.cacheHit).toBe(false);
 
     // Re-render same payload — should hit cache
-    const second = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs, payload, taskSetHash: 'ts1' });
+    const second = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs: blobs.asBinding(), payload, taskSetHash: 'ts1' });
     expect(second.cacheHit).toBe(true);
     expect(second.body.byteLength).toBe(first.body.byteLength);
   });
 
   it('cache key differs across kinds and slugs', async () => {
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
+      kind: 'model', slug: 'sonnet-4-7', blobs: blobs.asBinding(),
       payload: { kind: 'model', displayName: 'A', familySlug: 'claude', avgScore: 0, runCount: 0 },
       taskSetHash: 'ts1',
     });
     await renderOgPng({
-      kind: 'model', slug: 'gpt-5', blobs,
+      kind: 'model', slug: 'gpt-5', blobs: blobs.asBinding(),
       payload: { kind: 'model', displayName: 'B', familySlug: 'gpt', avgScore: 0, runCount: 0 },
       taskSetHash: 'ts1',
     });
@@ -97,12 +99,12 @@ describe('renderOgPng', () => {
 
   it('cache key differs when display-name changes (R5: payload-content invalidation)', async () => {
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
+      kind: 'model', slug: 'sonnet-4-7', blobs: blobs.asBinding(),
       payload: { kind: 'model', displayName: 'Old Name', familySlug: 'claude', avgScore: 0.5, runCount: 1 },
       taskSetHash: 'ts1',
     });
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
+      kind: 'model', slug: 'sonnet-4-7', blobs: blobs.asBinding(),
       payload: { kind: 'model', displayName: 'New Name', familySlug: 'claude', avgScore: 0.5, runCount: 1 },
       taskSetHash: 'ts1',
     });
@@ -111,7 +113,7 @@ describe('renderOgPng', () => {
 
   it('cacheControl is the SWR header', async () => {
     const out = await renderOgPng({
-      kind: 'index', blobs,
+      kind: 'index', blobs: blobs.asBinding(),
       payload: { kind: 'index', modelCount: 0, runCount: 0, lastRunAt: '2026-04-29T00:00:00Z' },
     });
     expect(out.cacheControl).toBe('public, max-age=60, stale-while-revalidate=86400');
