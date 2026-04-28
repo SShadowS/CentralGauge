@@ -1,0 +1,8 @@
+# CentralGauge robots.txt
+# Public crawlable site as of P5.5 cutover (2026-04-30).
+# /api/ paths are intentionally crawlable — they expose only read APIs;
+# the leaderboard/runs/models data is part of the public benchmark.
+User-agent: *
+Allow: /
+
+Sitemap: https://centralgauge.sshadows.workers.dev/sitemap.xml
