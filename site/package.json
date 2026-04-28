@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler types && vite dev",
     "build": "wrangler types && vite build && node scripts/wrap-worker-exports.mjs",
-    "preview": "wrangler dev",
+    "preview": "wrangler dev --port 4173",
     "deploy": "wrangler deploy",
     "check": "wrangler types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:budget": "tsx scripts/check-bundle-budget.ts",
