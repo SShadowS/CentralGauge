@@ -81,7 +81,26 @@
   --container-wide: 1536px;
   --nav-h: 56px;
   --filter-rail-w: 320px;
+
+  /* density (P5.4) — table row heights + cell padding + input heights */
+  --row-h-comfortable: 44px;
+  --row-h-compact: 32px;
 }
+
+/* Density mode — comfortable (default) is implicit */
+:root {
+  --row-h: var(--row-h-comfortable);
+  --cell-padding-y: var(--space-4);
+  --input-h: 36px;
+}
+
+[data-density="compact"] {
+  --row-h: var(--row-h-compact);
+  --cell-padding-y: var(--space-3);
+  --input-h: 28px;
+}
+
+/* Reduced motion still respected; density is non-animated. */
 
 /* Dark tokens (1/2) — keep in sync with the @media (prefers-color-scheme) block below. */
 [data-theme="dark"] {
