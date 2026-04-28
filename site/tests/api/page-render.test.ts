@@ -32,4 +32,24 @@ describe('GET /models/:...slug renders without crashing', () => {
     const html = await res.text();
     expect(html).toContain('Claude Opus');
   }, SSR_TIMEOUT_MS);
+
+  it('API endpoint returns ModelDetail with populated history when runs exist', async () => {
+    // The loader is now a passthrough; assert the API directly carries the
+    // populated fields (history non-empty, recent_runs as ModelHistoryPoint[])
+    // so the page's charts render with real data instead of the loader's
+    // pre-adapter empty defaults.
+    const res = await SELF.fetch('https://x/api/v1/models/sonnet-4-7');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      model: { slug: string; display_name: string; family_slug: string; added_at: string };
+      aggregates: { run_count: number };
+      history: Array<{ run_id: string; ts: string; score: number; cost_usd: number; tier: string }>;
+      recent_runs: Array<{ run_id: string; tier: string }>;
+    };
+    expect(body.model.slug).toBe('sonnet-4-7');
+    expect(body.aggregates.run_count).toBeGreaterThan(0);
+    expect(body.history.length).toBeGreaterThan(0);
+    expect(body.history[0].run_id).toMatch(/^run-/);
+    expect(body.recent_runs.length).toBeGreaterThan(0);
+  }, SSR_TIMEOUT_MS);
 });
