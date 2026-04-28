@@ -1,13 +1,15 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidate } from '$app/navigation';
   import { page } from '$app/state';
   import LeaderboardTable from '$lib/components/domain/LeaderboardTable.svelte';
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
   import StatusIndicator from '$lib/components/domain/StatusIndicator.svelte';
+  import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
   import Checkbox from '$lib/components/ui/Checkbox.svelte';
   import { formatRelativeTime } from '$lib/client/format';
+  import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
 
@@ -16,6 +18,40 @@
   let setVal = $derived(data.filters.set);
   let tierVerified = $derived(data.filters.tier === 'verified' || data.filters.tier === 'all');
   let tierClaimed = $derived(data.filters.tier === 'claimed' || data.filters.tier === 'all');
+
+  // SSE wiring. Only opens when the flag is on AND we're in the browser.
+  // Server-side $effect doesn't run, but the import of useEventSource itself
+  // is benign (browser-only EventSource ctor never invoked at SSR time).
+  let sse: EventSourceHandle | null = $state(null);
+
+  $effect(() => {
+    if (!data.flags.sse_live_updates) return;
+    const handle = useEventSource(['/leaderboard']);
+    sse = handle;
+    const offRun = handle.on('run_finalized', () => {
+      // Use invalidate (not invalidateAll) so other tracked deps don't churn.
+      void invalidate('app:leaderboard');
+    });
+    const offPromote = handle.on('task_set_promoted', () => {
+      void invalidate('app:leaderboard');
+    });
+    return () => {
+      offRun();
+      offPromote();
+      handle.dispose();
+      sse = null;
+    };
+  });
+
+  function reconnect() {
+    if (sse) {
+      sse.dispose();
+      const next = useEventSource(['/leaderboard']);
+      next.on('run_finalized', () => void invalidate('app:leaderboard'));
+      next.on('task_set_promoted', () => void invalidate('app:leaderboard'));
+      sse = next;
+    }
+  }
 
   function pushFilter(updates: Record<string, string | null>) {
     const sp = new URLSearchParams(page.url.searchParams);
@@ -52,7 +88,11 @@
   <p class="meta">
     {data.leaderboard.data.length} models · current task set
     · Updated {formatRelativeTime(data.leaderboard.generated_at)}
-    <StatusIndicator status="static" label="" />
+    {#if data.flags.sse_live_updates && sse}
+      <LiveStatus {sse} onReconnect={reconnect} />
+    {:else}
+      <StatusIndicator status="static" label="" />
+    {/if}
   </p>
 </div>
 
