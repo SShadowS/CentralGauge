@@ -1,8 +1,22 @@
 # CentralGauge site — changelog
 
+## P5.5 — Cutover (2026-04-30)
+
+- Move leaderboard from `/leaderboard` to `/` (homepage)
+- Replace placeholder `+page.svelte` with leaderboard markup
+- Remove `<meta name="robots" content="noindex">` — site is publicly indexable
+- Publish `static/robots.txt` (committed) + build-time `sitemap.xml` (9 public routes; emitted into `.svelte-kit/cloudflare/`, NOT committed — architect I9)
+- Layout-level JSON-LD structured data (WebSite + Organization)
+- Per-page `<link rel="canonical">` pointing at SITE_ROOT + pathname (query stripped)
+- 30-day 302 redirect at `/leaderboard?<query>` → `/?<query>` (sunset 2026-05-30)
+- 8 `useEventSource(['/leaderboard'])` occurrences (in 3 files) updated to `useEventSource(['/'])`
+- `eventToRoutes()` mapping updated: `/leaderboard` → `/` for `run_finalized` + `task_set_promoted`
+- Lighthouse URL list, 7 E2E specs, Nav link, doc references all updated
+- Cutover smoke spec `tests/e2e/cutover.spec.ts` (9 invariants)
+
 ## P5.4 — Live + polish (2026-04-29)
 
-- SSE per-route subscriptions on `/leaderboard`, `/runs`, `/runs/:id`, `/models/:slug`, `/families/:slug`
+- SSE per-route subscriptions on `/`, `/runs`, `/runs/:id`, `/models/:slug`, `/families/:slug`
 - Dynamic OG image generation (`@cf-wasm/og` + R2 cache): `/og/index.png`, `/og/models/:slug.png`, `/og/runs/:id.png`, `/og/families/:slug.png`
 - Density mode UI toggle (comfortable / compact) + `cmd-shift-d` keybind + localStorage persistence
 - Cloudflare Web Analytics RUM beacon (gated on `rum_beacon` flag)
@@ -30,6 +44,6 @@
 - Design tokens (light + dark)
 - 20 atoms (Button, Input, Modal, Tabs, etc.)
 - Layout chrome (Nav, Footer, SkipToContent, Breadcrumbs, FilterRail)
-- `/leaderboard` MVP with cursor pagination + filter + sort
+- `/leaderboard` MVP with cursor pagination + filter + sort (moved to `/` in P5.5)
 - Vitest worker pool + jsdom unit configs
 - Lighthouse CI + bundle budget script
