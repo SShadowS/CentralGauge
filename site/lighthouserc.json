@@ -4,9 +4,18 @@
       "url": [
         "http://127.0.0.1:4173/leaderboard",
         "http://127.0.0.1:4173/about",
+        "http://127.0.0.1:4173/models",
         "http://127.0.0.1:4173/models/sonnet-4-7",
+        "http://127.0.0.1:4173/runs",
         "http://127.0.0.1:4173/runs/seeded-run-id-1",
-        "http://127.0.0.1:4173/runs/seeded-run-id-1/transcripts/CG-AL-E001/1"
+        "http://127.0.0.1:4173/runs/seeded-run-id-1/transcripts/CG-AL-E001/1",
+        "http://127.0.0.1:4173/families",
+        "http://127.0.0.1:4173/families/claude",
+        "http://127.0.0.1:4173/tasks",
+        "http://127.0.0.1:4173/tasks/CG-AL-E001",
+        "http://127.0.0.1:4173/compare?models=sonnet-4-7,gpt-5",
+        "http://127.0.0.1:4173/search?q=AL0132",
+        "http://127.0.0.1:4173/limitations"
       ],
       "numberOfRuns": 3,
       "startServerCommand": "npm run build && npm run preview",
