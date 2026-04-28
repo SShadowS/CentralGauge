@@ -7,19 +7,26 @@ export default defineConfig(async () => {
   const migrations = await readD1Migrations('./migrations');
 
   // Inline the SvelteKit-built `hooks.server.js` as the sidecar worker's
-  // script. The file is the production-bundled DO class (LeaderboardBroadcaster)
-  // emitted by `npm run build`. The SvelteKit `_worker.js` does not re-export
-  // the DO class, so the binding is redirected to this sidecar via scriptName.
+  // script. This sidecar exists ONLY to host the LeaderboardBroadcaster
+  // Durable Object (the SvelteKit `_worker.js` doesn't re-export DO classes,
+  // so the binding is redirected here via `scriptName: 'do-script'`).
   //
-  // The script must be a self-contained module — miniflare's `script` (string)
-  // form forbids cross-chunk imports. This works only because hooks.server.ts
-  // never imports a `.svelte.ts` (rune) module, which would pull the Svelte 5
-  // server runtime chunk (`chunks/dev.js`) into hooks.server.js. See the
-  // header in `$lib/client/palette-bus.svelte.ts` for the architectural rule.
+  // Miniflare's `script` (string) form requires a self-contained module: it
+  // cannot resolve relative imports like `import "../chunks/foo.js"`. But
+  // SvelteKit's production build chunk-splits any module imported by both
+  // server entries and client components — so `hooks.server.js` ends up with
+  // imports such as `import { t as resetIdCounter } from "../chunks/use-id.js"`.
+  //
+  // The DO class itself doesn't use any of those chunked symbols (it only
+  // needs `LeaderboardBroadcaster`'s methods). The actual `handle` function
+  // — which DOES need `resetIdCounter` — runs in the MAIN test worker via
+  // `cloudflareTest`, where SvelteKit's normal bundle resolves the chunks.
+  // So we strip the chunk imports here to satisfy miniflare's loader; they
+  // are dead code inside the sidecar.
   const hooksScript = readFileSync(
     path.resolve('./.svelte-kit/output/server/entries/hooks.server.js'),
     'utf8'
-  );
+  ).replace(/^import\s+[^;]+from\s+["']\.\.\/chunks\/[^"']+["'];?\s*$/gm, '');
 
   return {
     resolve: {
