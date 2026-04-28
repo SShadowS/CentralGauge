@@ -6,6 +6,7 @@ account_id = "22c8fbe790464b492d9b178cc0f9255b"
 
 [vars]
 LOG_LEVEL = "info"
+SITE_BASE_URL = "https://centralgauge.sshadows.workers.dev"
 FLAG_PRINT_STYLESHEET = "on"
 FLAG_TRAJECTORY_CHARTS = "on"       # P5.3 carry — flag interface defined in P5.3 but env var never landed
 FLAG_CMD_K_PALETTE = "on"           # P5.4
