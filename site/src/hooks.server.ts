@@ -1,7 +1,6 @@
 import type { Handle } from '@sveltejs/kit';
 import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
 import { resetIdCounter } from '$lib/client/use-id';
-import { resetPaletteBus } from '$lib/client/palette-bus.svelte';
 import { runNightlyBackup } from './cron/nightly-backup';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
@@ -43,13 +42,6 @@ export const handle: Handle = async ({ event, resolve }) => {
   // don't match the client's fresh-start hydration counter. See
   // $lib/client/use-id.ts for context.
   resetIdCounter();
-
-  // Reset the cmd-K palette bus per SSR request. Otherwise the long-lived
-  // Cloudflare Worker isolate's module-scope state could leak between
-  // requests — e.g. a screenshot test opens the palette during SSR, the
-  // next user lands on the page with it already open. Same fix shape as
-  // resetIdCounter (commit 51f9be9).
-  resetPaletteBus();
 
   const startNs = Date.now();
   const method = event.request.method;
