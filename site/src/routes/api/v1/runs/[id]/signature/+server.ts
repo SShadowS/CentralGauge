@@ -15,6 +15,15 @@ interface SignatureRow {
 interface MachineKeyRow {
   machine_id: string;
   scope: string;
+  public_key: ArrayBuffer;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
 }
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
@@ -34,22 +43,24 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
 
     const key = await getFirst<MachineKeyRow>(
       db,
-      `SELECT machine_id, scope FROM machine_keys WHERE id = ?`,
+      `SELECT machine_id, scope, public_key FROM machine_keys WHERE id = ?`,
       [run.ingest_public_key_id],
     );
 
     const payloadBytes = new Uint8Array(run.ingest_signed_payload);
+    const publicKeyHex = key ? bytesToHex(new Uint8Array(key.public_key)) : '';
 
     return cachedJson(request, {
       run_id: run.id,
+      payload_b64: bytesToB64(payloadBytes),
       signature: {
         alg: 'Ed25519',
         key_id: run.ingest_public_key_id,
-        value: run.ingest_signature,
         signed_at: run.ingest_signed_at,
+        value_b64: run.ingest_signature,
       },
-      signer: key ? { machine_id: key.machine_id, scope: key.scope } : null,
-      signed_payload_base64: bytesToB64(payloadBytes),
+      public_key_hex: publicKeyHex,
+      machine_id: key?.machine_id ?? '',
     }, { cacheControl: 'public, s-maxage=3600, stale-while-revalidate=86400' });
   } catch (err) {
     return errorResponse(err);
