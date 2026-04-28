@@ -67,6 +67,12 @@ nav:
       - LLM Adapters: architecture/llm-adapters.md
       - Container Providers: architecture/containers.md
       - Agent System: architecture/agents.md
+  - Site:
+      - Architecture: site/architecture.md
+      - Design system: site/design-system.md
+      - Operations: site/operations.md
+  - Postmortems:
+      - Template: postmortems/_template.md
   - CLI Reference:
       - Commands: cli/commands.md
       - bench: cli/bench.md
