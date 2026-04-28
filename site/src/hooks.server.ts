@@ -1,6 +1,7 @@
 import type { Handle } from '@sveltejs/kit';
 import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
 import { resetIdCounter } from '$lib/client/use-id';
+import { isCanary } from '$lib/server/canary';
 import { runNightlyBackup } from './cron/nightly-backup';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
@@ -42,6 +43,11 @@ export const handle: Handle = async ({ event, resolve }) => {
   // don't match the client's fresh-start hydration counter. See
   // $lib/client/use-id.ts for context.
   resetIdCounter();
+
+  // Canary-mode flag for downstream loaders. Today only used by
+  // +layout.server.ts (loadFlags treats canary URLs as flags-on); future
+  // consumers can read event.locals.canary directly.
+  event.locals.canary = isCanary(event.url);
 
   // NB: paletteBus (cmd-K rune store at $lib/client/palette-bus.svelte) is
   // intentionally NOT imported here. The palette is mounted client-side
@@ -104,6 +110,12 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
 
   const response = await resolve(event);
+
+  // Surface canary-ness as a response header on every canary request.
+  if (event.locals.canary) {
+    response.headers.set('x-canary', '1');
+  }
+
   logRequest(event.platform.env, {
     method,
     path,

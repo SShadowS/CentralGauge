@@ -2,7 +2,10 @@
 
 declare global {
   namespace App {
-    interface Locals {}
+    interface Locals {
+      /** True when the current request URL starts with `/_canary/`. */
+      canary?: boolean;
+    }
     interface PageData {}
     interface PageState {}
     interface Platform {
