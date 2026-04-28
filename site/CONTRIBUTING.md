@@ -207,3 +207,39 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
   family, `sonnet-4-7`/`gpt-5` models, `CG-AL-E001` task, and at least
   one shortcoming whose snippet contains `AL0132`. Local runs need
   Playwright + seeded preview; CI needs the same wiring P5.2 deferred.
+
+## P5.4 implementation notes (learned during build-out)
+
+- TODO — fill in after P5.4 ships. Concrete things to capture:
+  - SSE: did the route-pattern filter correctly reduce DO fanout under load? Measure via `wrangler tail --format=json` during a benchmark sweep.
+  - OG: any failure modes from `@cf-wasm/og`'s WASM init on cold workers? Worker isolate startup may add 100-500 ms on first OG request.
+  - Density mode: any consumer components still hardcoded `height: 44px` instead of `var(--row-h)`? Audit + migrate.
+  - Visual regression: how often did baselines need updating from non-determinism (e.g., relative timestamps not fully masked)?
+  - RUM: does Cloudflare Web Analytics filter out `localhost`/`*.workers.dev` automatically, or are we polluting the dashboard with dev traffic?
+  - Canary route: does the iframe approach interfere with Lighthouse on `/_canary/<sha>/leaderboard`? Document the workaround if so.
+  - Bundle-budget cmd-K split: actual chunk size after Vite content-hash settled?
+  - KV write counter: any unexpected write paths surfaced by the assertion test?
+
+## Visual regression — updating baselines
+
+Visual regression baselines live in `site/tests/e2e/__screenshots__/`. They
+are PNGs committed to git (NOT git-LFS) per the in-repo size budget (≤ 5 MB
+total).
+
+To update baselines after intentional UI changes:
+
+1. Seed local D1: `npm run seed:e2e`
+2. Run preview server: `npm run preview` (port 4173, foreground)
+3. In a second terminal:
+   ```
+   CI=1 npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots
+   ```
+4. Inspect each updated PNG in `tests/e2e/__screenshots__/`. Confirm:
+   - The change reflects an intentional design decision
+   - No unexpected dimensional drift (rows still 44 px / 32 px)
+   - No regression in token application (colors match expected theme)
+5. Stage + commit only the snapshots that look correct
+6. Push, wait for CI green
+7. If CI's chromium renders pixel-different from local, that's an Ubuntu-vs-mac
+   font-rendering drift. Bump tolerance ONLY as a last resort; prefer to
+   capture baselines from an Ubuntu container locally.
