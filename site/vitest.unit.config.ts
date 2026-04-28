@@ -24,7 +24,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts', 'src/**/*.test.svelte.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.svelte.ts', 'scripts/**/*.test.ts'],
     setupFiles: ['./tests/setup-unit.ts'],
     globals: false,
   },
