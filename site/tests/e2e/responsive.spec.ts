@@ -7,7 +7,7 @@ const VIEWPORTS = [
   { name: 'wide', width: 1920, height: 1200 },
 ];
 
-const PAGES = ['/leaderboard', '/models', '/runs', '/about'];
+const PAGES = ['/', '/models', '/runs', '/about'];
 
 for (const vp of VIEWPORTS) {
   test.describe(`responsive @ ${vp.name}`, () => {
@@ -25,8 +25,8 @@ for (const vp of VIEWPORTS) {
       });
     }
 
-    test(`/leaderboard table is horizontally scrollable on mobile`, async ({ page }) => {
-      await page.goto('/leaderboard');
+    test(`/ table is horizontally scrollable on mobile`, async ({ page }) => {
+      await page.goto('/');
       const overflow = await page.locator('table').evaluate((el) => getComputedStyle(el).overflowX);
       // On mobile we expect either auto/scroll on the table OR its wrapper
       if (vp.name === 'mobile') {

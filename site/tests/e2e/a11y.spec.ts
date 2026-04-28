@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const PAGES = [
-  '/leaderboard', '/models', '/runs', '/families', '/tasks',
+  '/', '/models', '/runs', '/families', '/tasks',
   '/compare?models=sonnet-4-7,gpt-5', '/search?q=AL0132', '/limitations', '/about',
 ];
 

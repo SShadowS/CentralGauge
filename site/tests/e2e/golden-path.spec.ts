@@ -4,7 +4,7 @@ import { FIXTURE } from '../utils/seed-fixtures';
 test.describe('golden path', () => {
   test('land → sort → filter → drill-down → transcript → signature', async ({ page }) => {
     // 1. Land on leaderboard
-    await page.goto('/leaderboard');
+    await page.goto('/');
     await expect(page.getByRole('heading', { level: 1, name: /Leaderboard/ })).toBeVisible();
 
     // 2. Sort by score

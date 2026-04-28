@@ -1,15 +1,15 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('keyboard', () => {
-  test('Tab order on /leaderboard skips skip-link first', async ({ page }) => {
-    await page.goto('/leaderboard');
+  test('Tab order on / skips skip-link first', async ({ page }) => {
+    await page.goto('/');
     await page.keyboard.press('Tab');
     const focusedId = await page.evaluate(() => document.activeElement?.getAttribute('href'));
     expect(focusedId).toBe('#main');
   });
 
   test('sort headers activate on Enter', async ({ page }) => {
-    await page.goto('/leaderboard');
+    await page.goto('/');
     const scoreHeader = page.getByRole('button', { name: /Score/ });
     await scoreHeader.focus();
     await page.keyboard.press('Enter');
@@ -27,7 +27,7 @@ test.describe('keyboard', () => {
   });
 
   test('cmd-shift-d toggles density attribute on <html>', async ({ page }) => {
-    await page.goto('/leaderboard');
+    await page.goto('/');
     const initial = await page.locator('html').getAttribute('data-density');
     await page.keyboard.press('Meta+Shift+D');
     const after = await page.locator('html').getAttribute('data-density');
