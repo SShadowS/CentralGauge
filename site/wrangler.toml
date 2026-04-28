@@ -7,6 +7,12 @@ account_id = "22c8fbe790464b492d9b178cc0f9255b"
 [vars]
 LOG_LEVEL = "info"
 FLAG_PRINT_STYLESHEET = "on"
+FLAG_TRAJECTORY_CHARTS = "on"       # P5.3 carry — flag interface defined in P5.3 but env var never landed
+FLAG_CMD_K_PALETTE = "on"           # P5.4
+FLAG_SSE_LIVE_UPDATES = "on"        # P5.4
+FLAG_OG_DYNAMIC = "on"              # P5.4
+FLAG_DENSITY_TOGGLE = "on"          # P5.4
+FLAG_RUM_BEACON = "on"              # P5.4
 CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
 [assets]
