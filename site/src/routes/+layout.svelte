@@ -17,6 +17,9 @@
 
   let { data, children } = $props();
 
+  // Canonical = SITE_ROOT + pathname (NO query string). See design rationale.
+  const canonicalHref = $derived(`${SITE_ROOT}${page.url.pathname}`);
+
   // Track whether the palette has been needed at least once. Once true,
   // the {#await import(...)} block below runs; the resolved module
   // re-renders on every subsequent paletteBus.open transition without
@@ -58,7 +61,8 @@
 <svelte:window onkeydown={onKey} />
 
 <svelte:head>
-  <StructuredData pageUrl={page.url.href} />
+  <StructuredData pageUrl={canonicalHref} />
+  <link rel="canonical" href={canonicalHref} />
 
   {#if data.flags?.rum_beacon && data.cfWebAnalyticsToken}
     <script
