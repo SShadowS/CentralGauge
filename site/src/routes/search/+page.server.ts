@@ -3,7 +3,7 @@ import type { SearchResponse } from '$shared/api-types';
 import { error } from '@sveltejs/kit';
 import { passthroughLoader } from '$lib/server/loader-helpers';
 
-const inner = passthroughLoader<SearchResponse>({
+const inner = passthroughLoader<SearchResponse, 'results'>({
   depTag: (_p) => 'app:search', // overridden per-call below via depends() once q is known
   fetchPath: '/api/v1/search',
   forwardParams: ['q', 'cursor'],

@@ -141,7 +141,7 @@
   <FilterRail>
     <fieldset class="group">
       <legend>Model</legend>
-      <Input type="search" placeholder="slug…" value={modelVal} oninput={onModelInput} />
+      <Input label="Model slug" labelHidden type="search" placeholder="slug…" value={modelVal} oninput={onModelInput} />
     </fieldset>
 
     <fieldset class="group">

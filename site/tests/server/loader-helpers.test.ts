@@ -70,7 +70,10 @@ describe('passthroughLoader', () => {
 
   it('resultKey renames the response key (default is `data`)', async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ rows: [1, 2] }), { status: 200 }));
-    const loader = passthroughLoader<{ rows: number[] }>({
+    // Both generics must be specified explicitly: TS does not yet support
+    // partial type-arg inference, so passing only <TVal> would default
+    // TKey to the literal `'data'` and reject `resultKey: 'families'`.
+    const loader = passthroughLoader<{ rows: number[] }, 'families'>({
       depTag: 'app:families',
       fetchPath: '/api/v1/families',
       resultKey: 'families',
@@ -79,6 +82,8 @@ describe('passthroughLoader', () => {
     // @ts-expect-error - partial mock
     const out = await loader(event);
     expect(out).toEqual({ families: { rows: [1, 2] } });
-    expect(out.data).toBeUndefined();
+    // After B1 the return type is precisely {families: ...} so out.data
+    // would be a compile error — runtime cast keeps the original assertion.
+    expect((out as Record<string, unknown>).data).toBeUndefined();
   });
 });

@@ -75,7 +75,7 @@
     {/each}
     {#if data.requested.length < 4}
       <span class="add">
-        <Input type="search" placeholder="Add model slug…" value={addInput} oninput={(e) => (addInput = (e.target as HTMLInputElement).value)} onkeydown={onAddKey} />
+        <Input label="Model slug" labelHidden type="search" placeholder="Add model slug…" value={addInput} oninput={(e) => (addInput = (e.target as HTMLInputElement).value)} onkeydown={onAddKey} />
       </span>
     {/if}
   </div>

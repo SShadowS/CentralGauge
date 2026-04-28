@@ -1,13 +1,19 @@
 import type { ServerLoadEvent } from '@sveltejs/kit';
 import { error } from '@sveltejs/kit';
 
-interface PassthroughOpts {
+interface PassthroughOpts<TKey extends string = 'data'> {
   depTag: string | ((params: Record<string, string>) => string);
   fetchPath: string | ((url: URL, params: Record<string, string>) => string);
   /** When set, only these query params are forwarded to the API; otherwise all are. */
   forwardParams?: string[];
-  /** Key under which the parsed JSON is exposed to the page. Defaults to `'data'`. */
-  resultKey?: string;
+  /**
+   * Key under which the parsed JSON is exposed to the page. Defaults to `'data'`.
+   *
+   * Pass a string LITERAL (not a string variable) so TypeScript infers the
+   * literal type and the return type is `{[K in TKey]: TVal}`. If you pass a
+   * non-literal string, TKey widens to `string` and you lose the precise type.
+   */
+  resultKey?: TKey;
 }
 
 /**
@@ -22,22 +28,28 @@ interface PassthroughOpts {
  * from `./$types` — assignment is structurally compatible because the
  * generated type IS a specialization of `ServerLoadEvent`.
  *
- * The returned loader populates `[opts.resultKey ?? 'data']` with the parsed
- * JSON. Pages that want to expose filters or extra projections separately
- * should layer on top — e.g.
+ * Returns `Promise<{[K in TKey]: TVal}>` — precisely typed via TypeScript
+ * literal-type inference on the `resultKey` argument. Default `TKey = 'data'`.
  *
- * ```ts
- * import type { PageServerLoad } from './$types';
- * const inner = passthroughLoader<RunsListResponse>({ ..., resultKey: 'runs' });
- * export const load: PageServerLoad = async (event) => ({
- *   ...(await inner(event)),
- *   filters: { tier: event.url.searchParams.get('tier') ?? '' },
- * });
- * ```
+ * **Type-inference caveat:** TypeScript only infers `TKey` as a string literal
+ * when `resultKey` is passed as a string LITERAL at the call site. If a
+ * variable typed as `string` is passed, `TKey` widens to `string` and the
+ * return type degrades to `Record<string, TVal>` — same as plan v1 pre-fix.
+ * In practice every existing call site passes a literal (`'results'`,
+ * `'tasks'`, etc.); the literal-type inference is what lets us drop the
+ * 17 consumer-side casts.
+ *
+ * **Rare collision case:** if a future call site assigns `resultKey: 'data'`
+ * AND the page expects `data.<something else>`, the TKey default ('data')
+ * silently matches — no compile error, but the page sees an unexpected
+ * shape. Mitigation: always pass `resultKey` explicitly when not 'data'.
  */
-export function passthroughLoader<T>(opts: PassthroughOpts) {
-  const key = opts.resultKey ?? 'data';
-  return async (event: ServerLoadEvent): Promise<Record<string, T>> => {
+export function passthroughLoader<TVal, TKey extends string = 'data'>(
+  opts: PassthroughOpts<TKey>,
+) {
+  // Cast inside the helper — externally the return type is precise.
+  const key = (opts.resultKey ?? 'data') as TKey;
+  return async (event: ServerLoadEvent): Promise<{ [K in TKey]: TVal }> => {
     const { url, params, fetch, setHeaders, depends } = event;
     const tag = typeof opts.depTag === 'function' ? opts.depTag(params) : opts.depTag;
     depends(tag);
@@ -66,6 +78,6 @@ export function passthroughLoader<T>(opts: PassthroughOpts) {
     const apiCache = res.headers.get('cache-control');
     if (apiCache) setHeaders({ 'cache-control': apiCache });
 
-    return { [key]: (await res.json()) as T };
+    return { [key]: (await res.json()) as TVal } as { [K in TKey]: TVal };
   };
 }

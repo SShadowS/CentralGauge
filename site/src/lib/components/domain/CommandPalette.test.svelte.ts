@@ -20,7 +20,6 @@ const fakeIndex = {
 describe('CommandPalette', () => {
   beforeEach(() => {
     paletteBus.close();
-    // @ts-expect-error - jsdom stub
     global.fetch = vi.fn(async () => new Response(JSON.stringify(fakeIndex), { status: 200, headers: { 'content-type': 'application/json' } }));
   });
 
@@ -57,7 +56,6 @@ describe('CommandPalette', () => {
   it('rapid open/close does not leave loading=true', async () => {
     // Slow fetch so the close happens mid-flight
     let resolveFetch: (r: Response) => void = () => {};
-    // @ts-expect-error - jsdom stub
     global.fetch = vi.fn(() => new Promise<Response>((resolve) => { resolveFetch = resolve; }));
     render(CommandPalette);
     paletteBus.openPalette();

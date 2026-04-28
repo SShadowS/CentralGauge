@@ -2,7 +2,7 @@ import type { PageServerLoad } from './$types';
 import type { RunsListResponse } from '$shared/api-types';
 import { passthroughLoader } from '$lib/server/loader-helpers';
 
-const inner = passthroughLoader<RunsListResponse>({
+const inner = passthroughLoader<RunsListResponse, 'runs'>({
   depTag: 'app:runs',
   fetchPath: '/api/v1/runs',
   forwardParams: ['cursor', 'limit', 'tier', 'task_set', 'since', 'model'],

@@ -1,8 +1,10 @@
 <script lang="ts">
-  interface Props { size?: number; label?: string; }
-  let { size = 20, label }: Props = $props();
-  const ariaProps = $derived(label ? { 'aria-label': label, role: 'img' } : { 'aria-hidden': 'true' });
+  import IconBase from './IconBase.svelte';
+  let { size = 20, label }: { size?: number; label?: string } = $props();
 </script>
-<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" {...ariaProps}>
-  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-</svg>
+
+<IconBase {size} {label}>
+  {#snippet children()}
+    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+  {/snippet}
+</IconBase>
