@@ -18,6 +18,12 @@ interface RunRow {
   tier: string;
   model_slug: string;
   model_display: string;
+  family_slug: string;
+  tasks_attempted: number | null;
+  tasks_passed: number | null;
+  avg_score: number | null;
+  cost_usd: number | string | null;
+  duration_ms: number | null;
 }
 
 interface CursorState {
@@ -57,12 +63,37 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     }
 
     const where = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
+    // Aggregate subquery: per run, totals over v_results_with_cost rows.
+    //   - tasks_attempted = distinct task_id count
+    //   - tasks_passed    = distinct task_id where ANY attempt passed (simplification;
+    //     a stricter "last-attempt-passed" definition would require a window function
+    //     or correlated subquery — this aggregate is sufficient for list summaries)
+    //   - avg_score, cost_usd, duration_ms = sums/averages across all attempts
     const sql = `
       SELECT runs.id, runs.task_set_hash, runs.settings_hash, runs.machine_id,
              runs.started_at, runs.completed_at, runs.status, runs.tier,
-             m.slug AS model_slug, m.display_name AS model_display
+             m.slug AS model_slug, m.display_name AS model_display,
+             mf.slug AS family_slug,
+             COALESCE(agg.tasks_attempted, 0) AS tasks_attempted,
+             COALESCE(agg.tasks_passed, 0)    AS tasks_passed,
+             COALESCE(agg.avg_score, 0)       AS avg_score,
+             COALESCE(agg.cost_usd, 0)        AS cost_usd,
+             COALESCE(agg.duration_ms, 0)     AS duration_ms
       FROM runs
       JOIN models m ON m.id = runs.model_id
+      JOIN model_families mf ON mf.id = m.family_id
+      LEFT JOIN (
+        SELECT run_id,
+               COUNT(DISTINCT task_id)                                   AS tasks_attempted,
+               COUNT(DISTINCT CASE WHEN passed = 1 THEN task_id END)     AS tasks_passed,
+               AVG(score)                                                AS avg_score,
+               SUM(cost_usd)                                             AS cost_usd,
+               SUM(COALESCE(llm_duration_ms, 0)
+                 + COALESCE(compile_duration_ms, 0)
+                 + COALESCE(test_duration_ms, 0))                        AS duration_ms
+        FROM v_results_with_cost
+        GROUP BY run_id
+      ) agg ON agg.run_id = runs.id
       ${where}
       ORDER BY runs.started_at DESC, runs.id DESC
       LIMIT ?
@@ -81,16 +112,23 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const body = {
       data: page.map((r) => ({
         id: r.id,
-        task_set_hash: r.task_set_hash,
-        settings_hash: r.settings_hash,
-        machine_id: r.machine_id,
-        started_at: r.started_at,
-        completed_at: r.completed_at,
-        status: r.status,
+        model: {
+          slug: r.model_slug,
+          display_name: r.model_display,
+          family_slug: r.family_slug,
+        },
         tier: r.tier,
-        model: { slug: r.model_slug, display_name: r.model_display },
+        status: r.status,
+        tasks_attempted: r.tasks_attempted ?? 0,
+        tasks_passed: r.tasks_passed ?? 0,
+        avg_score: r.avg_score ?? 0,
+        cost_usd: r.cost_usd === null ? 0 : +r.cost_usd,
+        duration_ms: r.duration_ms ?? 0,
+        started_at: r.started_at,
+        ...(r.completed_at ? { completed_at: r.completed_at } : {}),
       })),
       next_cursor,
+      generated_at: new Date().toISOString(),
     };
     return cachedJson(request, body, { cacheControl: 'public, s-maxage=10, stale-while-revalidate=60' });
   } catch (err) {
