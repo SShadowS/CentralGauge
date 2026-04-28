@@ -185,7 +185,11 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
       status: string;
       tier: string;
       model: { slug: string };
-      results: Array<{ cost_usd: number | null; score: number; passed: boolean }>;
+      totals: { cost_usd: number; tasks_passed: number };
+      results: Array<{
+        task_id: string;
+        attempts: Array<{ score: number; passed: boolean }>;
+      }>;
     };
     expect(detail.id).toBe(runBody.run_id);
     expect(detail.status).toBe('completed');
@@ -193,29 +197,29 @@ describe('E2E: sign -> ingest -> upload -> finalize -> read', () => {
     expect(detail.model.slug).toBe('sonnet-4.7');
     expect(detail.results).toHaveLength(1);
     // Mirror the cost_snapshots row seeded above (input_per_mtoken=3.0,
-    // output_per_mtoken=15.0). If those rates change, this assertion will
-    // name the right file.
+    // output_per_mtoken=15.0). Cost is now in totals (sum across all attempts).
     const inputPerMtoken = 3.0;
     const outputPerMtoken = 15.0;
     const expectedCost = (fixture.run.tokens_in * inputPerMtoken + fixture.run.tokens_out * outputPerMtoken) / 1_000_000;
-    expect(detail.results[0].cost_usd).toBeCloseTo(expectedCost, 6);
-    expect(detail.results[0].passed).toBe(true);
+    expect(detail.totals.cost_usd).toBeCloseTo(expectedCost, 6);
+    expect(detail.results[0].attempts.at(-1)!.passed).toBe(true);
 
     // ---------- 10. GET /api/v1/runs/:id/signature ----------
     const sigRes = await SELF.fetch(`http://x/api/v1/runs/${runBody.run_id}/signature`);
     expect(sigRes.status).toBe(200);
     const sig = await sigRes.json() as {
       run_id: string;
-      signature: { alg: string; key_id: number };
-      signer: { machine_id: string; scope: string } | null;
-      signed_payload_base64: string;
+      signature: { alg: string; key_id: number; value_b64: string };
+      machine_id: string;
+      public_key_hex: string;
+      payload_b64: string;
     };
     expect(sig.run_id).toBe(runBody.run_id);
     expect(sig.signature.alg).toBe('Ed25519');
     expect(sig.signature.key_id).toBe(ingestKeyId);
-    expect(sig.signer?.machine_id).toBe('rig');
-    expect(sig.signer?.scope).toBe('ingest');
-    expect(sig.signed_payload_base64.length).toBeGreaterThan(0);
+    expect(sig.machine_id).toBe('rig');
+    expect(sig.public_key_hex.length).toBeGreaterThan(0);
+    expect(sig.payload_b64.length).toBeGreaterThan(0);
 
     // ---------- 11. GET /api/v1/tasks/easy/alpha ----------
     const taskRes = await SELF.fetch('http://x/api/v1/tasks/easy/alpha');

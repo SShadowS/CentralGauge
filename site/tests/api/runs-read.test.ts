@@ -73,9 +73,17 @@ async function seed(): Promise<void> {
     )
     .run();
 
-  // Insert a result for r1 (1000 tokens_in, 500 tokens_out → cost = (1000*3 + 500*15)/1e6)
+  // Seed a tasks row so the run-detail JOIN to `tasks` resolves difficulty.
   await env.DB.prepare(
-    `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tokens_in,tokens_out) VALUES ('r1','easy/a',1,1,1.0,1,1000,500)`,
+    `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts','easy/a','ch','easy','{}')`,
+  ).run();
+
+  // Insert a result for r1 (1000 tokens_in, 500 tokens_out → cost = (1000*3 + 500*15)/1e6)
+  // Seed transcript_r2_key + durations to exercise the per-attempt mapping.
+  await env.DB.prepare(
+    `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tokens_in,tokens_out,
+                         llm_duration_ms,compile_duration_ms,test_duration_ms,transcript_r2_key)
+     VALUES ('r1','easy/a',1,1,1.0,1,1000,500,100,200,300,'blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')`,
   ).run();
 
   // Seed R2 blob for reproduction download test
@@ -95,20 +103,45 @@ beforeEach(async () => {
 // ──────────────────────────────────────────────────────────
 
 describe('GET /api/v1/runs', () => {
-  it('returns paginated list of runs with nested model object', async () => {
+  it('returns paginated list of runs with nested model object + aggregates + generated_at', async () => {
     const res = await SELF.fetch('https://x/api/v1/runs');
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { data: Array<Record<string, unknown>>; next_cursor: string | null };
+    const body = (await res.json()) as {
+      data: Array<Record<string, unknown>>;
+      next_cursor: string | null;
+      generated_at: string;
+    };
     expect(body.data).toHaveLength(2);
     expect(body.next_cursor).toBeNull();
+    // generated_at is an ISO-8601 timestamp
+    expect(typeof body.generated_at).toBe('string');
+    expect(Number.isNaN(Date.parse(body.generated_at))).toBe(false);
     // DESC order — r2 started later, so it comes first
     expect(body.data[0].id).toBe('r2');
-    // model must be a nested object, not a flat field
+    // model must be a nested object with family_slug
     const model = body.data[0].model as Record<string, unknown>;
     expect(model.slug).toBe('sonnet-4.7');
     expect(model.display_name).toBe('Sonnet 4.7');
+    expect(model.family_slug).toBe('claude');
     // no top-level model_slug
     expect(body.data[0].model_slug).toBeUndefined();
+    // aggregates are present (numbers, never undefined)
+    // r2 has no results → all zeros; r1 has 1 result so check it instead
+    const r1 = body.data.find((r) => r.id === 'r1') as Record<string, unknown>;
+    expect(r1.tasks_attempted).toBe(1);
+    expect(r1.tasks_passed).toBe(1);
+    expect(r1.avg_score).toBeCloseTo(1.0, 6);
+    // cost = (1000*3 + 500*15)/1e6
+    expect(r1.cost_usd as number).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6, 6);
+    // duration sum = 100 + 200 + 300
+    expect(r1.duration_ms).toBe(600);
+    // r2 (no results) → zeros
+    const r2 = body.data.find((r) => r.id === 'r2') as Record<string, unknown>;
+    expect(r2.tasks_attempted).toBe(0);
+    expect(r2.tasks_passed).toBe(0);
+    expect(r2.avg_score).toBe(0);
+    expect(r2.cost_usd).toBe(0);
+    expect(r2.duration_ms).toBe(0);
   });
 
   it('filters by model slug', async () => {
@@ -196,36 +229,91 @@ describe('GET /api/v1/runs', () => {
 // ──────────────────────────────────────────────────────────
 
 describe('GET /api/v1/runs/:id', () => {
-  it('returns run detail with nested model, family_slug, and results', async () => {
+  it('returns run detail with nested model.family_slug, totals, settings, grouped results', async () => {
     const res = await SELF.fetch('https://x/api/v1/runs/r1');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       id: string;
       status: string;
       tier: string;
+      machine_id: string;
+      task_set_hash: string;
       pricing_version: string;
-      reproduction_bundle_r2_key: string | null;
-      ingest_public_key_id: number;
-      model: { slug: string; display_name: string; api_model_id: string };
-      family_slug: string;
-      results: Array<{ task_id: string; cost_usd: number | null; compile_errors: Array<unknown> }>;
+      model: { slug: string; display_name: string; api_model_id: string; family_slug: string };
+      settings: { temperature: number; max_attempts: number; max_tokens: number; prompt_version: string; bc_version: string };
+      totals: { avg_score: number; cost_usd: number; duration_ms: number; tasks_attempted: number; tasks_passed: number };
+      results: Array<{
+        task_id: string;
+        difficulty: string;
+        attempts: Array<{
+          attempt: number;
+          passed: boolean;
+          score: number;
+          compile_success: boolean;
+          compile_errors: Array<unknown>;
+          tests_total: number;
+          tests_passed: number;
+          duration_ms: number;
+          transcript_key: string;
+          code_key?: string;
+          failure_reasons: string[];
+        }>;
+      }>;
+      reproduction_bundle?: { sha256: string; size_bytes: number };
+      // legacy fields (must be undefined on the new shape)
+      family_slug?: unknown;
+      reproduction_bundle_r2_key?: unknown;
+      source?: unknown;
+      ingest_public_key_id?: unknown;
     };
     expect(body.id).toBe('r1');
     expect(body.status).toBe('completed');
-    // nested model object
+    expect(body.machine_id).toBe('rig');
+    expect(body.task_set_hash).toBe('ts');
+    expect(body.pricing_version).toBe('v1');
+    // model now contains family_slug; legacy top-level family_slug is gone.
     expect(body.model.slug).toBe('sonnet-4.7');
     expect(body.model.display_name).toBe('Sonnet 4.7');
     expect(body.model.api_model_id).toBe('claude-sonnet-4-7');
-    expect(body.family_slug).toBe('claude');
-    expect(body.ingest_public_key_id).toBe(1);
-    expect(body.pricing_version).toBe('v1');
-    expect(body.reproduction_bundle_r2_key).toBe('reproductions/r1.tar.zst');
+    expect(body.model.family_slug).toBe('claude');
+    expect(body.family_slug).toBeUndefined();
+    expect(body.reproduction_bundle_r2_key).toBeUndefined();
+    expect(body.source).toBeUndefined();
+    expect(body.ingest_public_key_id).toBeUndefined();
+    // settings come from settings_profiles JOIN
+    expect(body.settings.temperature).toBe(0.0);
+    expect(body.settings.max_attempts).toBe(2);
+    expect(body.settings.max_tokens).toBe(8192);
+    expect(body.settings.prompt_version).toBe('v1');
+    expect(body.settings.bc_version).toBe('Cronus28');
+    // totals
+    expect(body.totals.tasks_attempted).toBe(1);
+    expect(body.totals.tasks_passed).toBe(1);
+    expect(body.totals.avg_score).toBeCloseTo(1.0, 6);
+    expect(body.totals.cost_usd).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6, 6);
+    // duration sum = 100 + 200 + 300
+    expect(body.totals.duration_ms).toBe(600);
+    // results grouped by task with attempts[]
     expect(body.results).toHaveLength(1);
-    expect(body.results[0].task_id).toBe('easy/a');
-    // compile_errors should be parsed array, not raw JSON string
-    expect(Array.isArray(body.results[0].compile_errors)).toBe(true);
-    // cost = (1000 * 3 + 500 * 15) / 1e6
-    expect(body.results[0].cost_usd).toBeCloseTo((1000 * 3 + 500 * 15) / 1e6, 6);
+    const t = body.results[0];
+    expect(t.task_id).toBe('easy/a');
+    expect(t.difficulty).toBe('easy');
+    expect(t.attempts).toHaveLength(1);
+    const a = t.attempts[0];
+    expect(a.attempt).toBe(1);
+    expect(a.passed).toBe(true);
+    expect(a.score).toBeCloseTo(1.0, 6);
+    expect(a.compile_success).toBe(true);
+    expect(Array.isArray(a.compile_errors)).toBe(true);
+    expect(a.duration_ms).toBe(600);
+    // transcript_key passes through; we seeded blobs/<64 hex chars>
+    expect(a.transcript_key).toBe('blobs/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    expect(a.failure_reasons).toEqual([]);
+    // reproduction_bundle is derived from R2 head() — seeded blob has 4 bytes,
+    // key is 'reproductions/r1.tar.zst' (no sha prefix) so sha = 'r1' (path stem).
+    expect(body.reproduction_bundle).toBeDefined();
+    expect(body.reproduction_bundle!.size_bytes).toBe(4);
+    expect(body.reproduction_bundle!.sha256).toBe('r1');
   });
 
   it('returns 404 for unknown run', async () => {
@@ -253,27 +341,34 @@ describe('GET /api/v1/runs/:id', () => {
 // ──────────────────────────────────────────────────────────
 
 describe('GET /api/v1/runs/:id/signature', () => {
-  it('returns nested signature object, signer, run_id, and base64-encoded payload', async () => {
+  it('returns RunSignature shape with payload_b64, value_b64, public_key_hex, top-level machine_id', async () => {
     const res = await SELF.fetch('https://x/api/v1/runs/r1/signature');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       run_id: string;
-      signature: { alg: string; key_id: number; value: string; signed_at: string };
-      signer: { machine_id: string; scope: string } | null;
-      signed_payload_base64: string;
+      payload_b64: string;
+      signature: { alg: string; key_id: number; signed_at: string; value_b64: string };
+      public_key_hex: string;
+      machine_id: string;
+      // legacy fields (must be undefined on new shape)
+      signed_payload_base64?: unknown;
+      signer?: unknown;
     };
     expect(body.run_id).toBe('r1');
     expect(body.signature.alg).toBe('Ed25519');
     expect(body.signature.key_id).toBe(1);
-    expect(body.signature.value).toBe('sig-value');
+    expect(body.signature.value_b64).toBe('sig-value');
     expect(body.signature.signed_at).toBe('2026-04-01T00:00:00Z');
-    expect(body.signer).not.toBeNull();
-    expect(body.signer!.machine_id).toBe('rig');
-    expect(body.signer!.scope).toBe('ingest');
+    // top-level machine_id (was nested under `signer` in the old shape)
+    expect(body.machine_id).toBe('rig');
+    // seeded public_key is new Uint8Array([0]) → '00' lowercase hex
+    expect(body.public_key_hex).toBe('00');
     // {} in base64 is 'e30='
-    expect(body.signed_payload_base64).toBe('e30=');
-    // must be valid base64
-    expect(body.signed_payload_base64).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(body.payload_b64).toBe('e30=');
+    expect(body.payload_b64).toMatch(/^[A-Za-z0-9+/=]+$/);
+    // Legacy fields are gone.
+    expect(body.signed_payload_base64).toBeUndefined();
+    expect(body.signer).toBeUndefined();
   });
 
   it('returns 404 for unknown run', async () => {
