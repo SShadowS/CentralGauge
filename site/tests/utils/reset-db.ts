@@ -31,4 +31,10 @@ export async function resetDb(): Promise<void> {
   await Promise.all(
     cache.keys.map((k: KVNamespaceListKey<unknown, string>) => env.CACHE.delete(k.name)),
   );
+
+  // Note: named Cache API entries (caches.open('cg-...')) are not cleared
+  // here because miniflare's caches.open() in test setup operates on a
+  // different cache than the one inside the worker isolate. Tests that
+  // exercise cached endpoints should vary the request URL (e.g. `?_cb=N`)
+  // per assertion to bypass cache poisoning between tests.
 }
