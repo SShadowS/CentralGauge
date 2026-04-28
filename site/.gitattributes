@@ -1,0 +1,2 @@
+tests/e2e/__screenshots__/**/*.png binary
+tests/e2e/__screenshots__/**/*.png -text
