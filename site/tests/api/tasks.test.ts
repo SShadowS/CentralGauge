@@ -110,6 +110,42 @@ describe('GET /api/v1/tasks', () => {
   });
 });
 
+describe('GET /api/v1/tasks — filters', () => {
+  it('?difficulty=hard returns only hard tasks', async () => {
+    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=hard');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<{ difficulty: string }> };
+    for (const row of body.data) expect(row.difficulty).toBe('hard');
+  });
+
+  it('?category=schema-design returns only that category', async () => {
+    const res = await SELF.fetch('https://x/api/v1/tasks?category=schema-design');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<{ category: { slug: string } | null }> };
+    for (const row of body.data) {
+      expect(row.category).not.toBeNull();
+      expect(row.category!.slug).toBe('schema-design');
+    }
+  });
+
+  it('combines ?difficulty= and ?category=', async () => {
+    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=easy&category=schema-design');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<{ difficulty: string; category: { slug: string } | null }> };
+    for (const row of body.data) {
+      expect(row.difficulty).toBe('easy');
+      expect(row.category?.slug).toBe('schema-design');
+    }
+  });
+
+  it('rejects invalid difficulty with 400', async () => {
+    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=trivial');
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error?: string };
+    expect(body.error).toMatch(/invalid_difficulty/);
+  });
+});
+
 describe('GET /api/v1/tasks/:id', () => {
   it('returns task detail + solved-by matrix', async () => {
     const res = await SELF.fetch('https://x/api/v1/tasks/easy/a');

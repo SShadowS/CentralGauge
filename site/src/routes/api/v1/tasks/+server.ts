@@ -7,6 +7,8 @@ interface TaskCursor {
   id: string;
 }
 
+const VALID_DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
+
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
@@ -19,6 +21,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
       throw new ApiError(400, 'invalid_limit', 'limit must be between 1 and 100');
     }
+    const difficulty = url.searchParams.get('difficulty');
+    if (difficulty && !VALID_DIFFICULTIES.has(difficulty)) {
+      return new Response(
+        JSON.stringify({ error: 'invalid_difficulty' }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    const category = url.searchParams.get('category')?.trim() || null;
     const cursor = decodeCursor<TaskCursor>(url.searchParams.get('cursor'));
 
     const params: (string | number)[] = [];
@@ -28,6 +38,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     if (cursor) {
       wheres.push(`t.task_id > ?`);
       params.push(cursor.id);
+    }
+    if (difficulty) {
+      wheres.push(`t.difficulty = ?`);
+      params.push(difficulty);
+    }
+    if (category) {
+      wheres.push(`tc.slug = ?`);
+      params.push(category);
     }
 
     const sql = `
