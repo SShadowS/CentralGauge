@@ -2,6 +2,7 @@ import type { DurableObjectState } from '@cloudflare/workers-types';
 import { eventToRoutes, routePatternMatches } from '../lib/server/sse-routes';
 
 const MAX_BUFFERED = 100;
+const RECENT_STORAGE_KEY = 'recent';
 
 export interface BroadcastEvent {
   type: 'run_finalized' | 'task_set_promoted' | 'shortcoming_added' | 'ping';
@@ -19,15 +20,24 @@ export class LeaderboardBroadcaster {
   private clients: Set<ClientEntry>;
   private recent: BroadcastEvent[];
   private encoder: TextEncoder;
+  private restorePromise: Promise<void>;
 
   constructor(state: DurableObjectState) {
     this.state = state;
     this.clients = new Set();
     this.recent = [];
     this.encoder = new TextEncoder();
+    // Restore recent buffer on cold start. The promise gates fetch()
+    // until the first storage read completes; subsequent fetches see
+    // the resolved promise and don't pay the round-trip again.
+    this.restorePromise = this.state.storage
+      .get<BroadcastEvent[]>(RECENT_STORAGE_KEY)
+      .then((stored) => { if (stored) this.recent = stored; })
+      .catch(() => { /* fresh start */ });
   }
 
   async fetch(request: Request): Promise<Response> {
+    await this.restorePromise;
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -44,6 +54,11 @@ export class LeaderboardBroadcaster {
       if (this.recent.length > MAX_BUFFERED) {
         this.recent = this.recent.slice(-MAX_BUFFERED);
       }
+
+      // Persist (fire-and-forget; dropping a write is acceptable — the buffer
+      // is best-effort replay, not a transactional event log). Survives DO
+      // hibernation so fresh subscribers after a wake-up still see replay.
+      this.state.storage.put(RECENT_STORAGE_KEY, this.recent).catch(() => {});
 
       // Fire-and-forget fanout: Response returns before clients receive the event.
       // Delivery is best-effort; dead clients are pruned on their next write failure.
@@ -130,6 +145,7 @@ export class LeaderboardBroadcaster {
       }
       await this.closeAllClients();
       this.recent = [];
+      await this.state.storage.delete(RECENT_STORAGE_KEY);
       return Response.json({ ok: true });
     }
 

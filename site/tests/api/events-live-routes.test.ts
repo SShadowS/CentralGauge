@@ -1,6 +1,7 @@
-import { env } from 'cloudflare:test';
+import { env, runInDurableObject } from 'cloudflare:test';
 import { afterAll, describe, it, expect } from 'vitest';
 import { broadcastEvent } from '../../src/lib/server/broadcaster';
+import type { LeaderboardBroadcaster, BroadcastEvent } from '../../src/do/leaderboard-broadcaster';
 
 // -------------------------------------------------------------------------
 // miniflare/workerd buffers SSE response bodies, so stub.fetch() on
@@ -84,5 +85,49 @@ describe('LeaderboardBroadcaster route filtering', () => {
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
     const res = await stub.fetch('https://do/test-match');
     expect(res.status).toBe(403);
+  });
+
+  it('recent buffer is written to state.storage and survives in-memory wipe', async () => {
+    // `cloudflare:test`'s `env.X.get(id)` always returns a stub backed by the
+    // SAME singleton DO instance for a given id within a test run — there is
+    // no per-`get()` isolation, so the original two-stub pattern was a no-op
+    // (it asserted only that the *in-memory* `recent` survived within a
+    // single instance lifecycle, which is trivially true).
+    //
+    // miniflare/vitest-pool-workers does NOT simulate hibernation; we cannot
+    // force the constructor to re-run. Instead, we exercise the persistence
+    // path directly via `runInDurableObject`:
+    //   1. Broadcast → assert `state.storage.get('recent')` contains the event.
+    //   2. Wipe `instance.recent = []` (simulates the in-memory drop that
+    //      hibernation would cause) → assert storage is still intact.
+    //   3. Trust by static inspection that the constructor's
+    //      `state.storage.get(RECENT_STORAGE_KEY)` restore will repopulate
+    //      `recent` on the next cold start.
+    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const stub = env.LEADERBOARD_BROADCASTER.get(id);
+
+    await broadcastEvent(env, {
+      type: 'run_finalized',
+      ts: new Date().toISOString(),
+      run_id: 'r-persist-1',
+      model_slug: 'sonnet-4-7',
+      family_slug: 'claude',
+    });
+
+    // (1) Storage write happened.
+    await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (_instance, state) => {
+      const stored = await state.storage.get<BroadcastEvent[]>('recent');
+      expect(stored).toBeDefined();
+      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
+      expect(ids).toContain('r-persist-1');
+    });
+
+    // (2) Wipe in-memory `recent` (hibernation analogue) — storage stays.
+    await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (instance, state) => {
+      (instance as unknown as { recent: BroadcastEvent[] }).recent = [];
+      const stored = await state.storage.get<BroadcastEvent[]>('recent');
+      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
+      expect(ids).toContain('r-persist-1');
+    });
   });
 });
