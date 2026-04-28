@@ -49,10 +49,10 @@ afterEach(() => {
 
 describe('useEventSource', () => {
   it('opens an EventSource with route query param', () => {
-    const h = useEventSource(['/leaderboard']);
+    const h = useEventSource(['/']);
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0].url).toContain('routes=');
-    expect(FakeEventSource.instances[0].url).toContain(encodeURIComponent('/leaderboard'));
+    expect(FakeEventSource.instances[0].url).toContain('routes=%2F');
+    expect(FakeEventSource.instances[0].url).not.toContain('%2Fleaderboard');
     h.dispose();
   });
 
@@ -64,7 +64,7 @@ describe('useEventSource', () => {
   });
 
   it('on(type, handler) receives dispatched events', () => {
-    const h = useEventSource(['/leaderboard']);
+    const h = useEventSource(['/']);
     const handler = vi.fn();
     h.on('run_finalized', handler);
     FakeEventSource.instances[0].dispatch('run_finalized', { run_id: 'r-1', ts: 'now' });
@@ -73,7 +73,7 @@ describe('useEventSource', () => {
   });
 
   it('status transitions connecting → connected on open', () => {
-    const h = useEventSource(['/leaderboard']);
+    const h = useEventSource(['/']);
     expect(h.status).toBe('connecting');
     FakeEventSource.instances[0].onopen?.(new Event('open'));
     expect(h.status).toBe('connected');
@@ -81,7 +81,7 @@ describe('useEventSource', () => {
   });
 
   it('reconnects with exponential backoff on error', () => {
-    const h = useEventSource(['/leaderboard']);
+    const h = useEventSource(['/']);
     expect(FakeEventSource.instances).toHaveLength(1);
     FakeEventSource.instances[0].onerror?.(new Event('error'));
     expect(h.status).toBe('reconnecting');
@@ -101,7 +101,7 @@ describe('useEventSource', () => {
   });
 
   it('dispose closes the active EventSource and prevents future reconnects', () => {
-    const h = useEventSource(['/leaderboard']);
+    const h = useEventSource(['/']);
     const es = FakeEventSource.instances[0];
     h.dispose();
     expect(es.readyState).toBe(2);

@@ -10,7 +10,7 @@
  * Use inside `$effect`:
  *
  *   $effect(() => {
- *     const sse = useEventSource(['/leaderboard']);
+ *     const sse = useEventSource(['/']);
  *     const off = sse.on('run_finalized', () => invalidate('app:leaderboard'));
  *     return () => { off(); sse.dispose(); };
  *   });

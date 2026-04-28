@@ -24,7 +24,7 @@
   <div class="container">
     <a class="logo" href="/" aria-label="CentralGauge home">CentralGauge</a>
     <ul class="links">
-      <li><a href="/leaderboard">Leaderboard</a></li>
+      <li><a href="/">Leaderboard</a></li>
       <li><a href="/models">Models</a></li>
       <li><a href="/tasks">Tasks</a></li>
       <li><a href="/compare">Compare</a></li>

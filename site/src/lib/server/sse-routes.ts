@@ -1,10 +1,10 @@
 /**
  * SSE event-to-route-pattern mapping. The Durable Object pre-filters fanout
- * so a subscriber to `/leaderboard` doesn't receive `/models/sonnet-4-7`-only
+ * so a subscriber to `/` doesn't receive `/models/sonnet-4-7`-only
  * events.
  *
  * Pattern syntax:
- *   - Literal route ("/leaderboard", "/runs/r-001"): exact match
+ *   - Literal route ("/", "/runs/r-001"): exact match
  *   - Wildcard segment ("/models/*"): matches any single segment value
  *   - Star ("*"): matches everything (used by `ping` heartbeats)
  *
@@ -22,7 +22,7 @@ export function eventToRoutes(ev: BroadcastEvent): string[] {
       // Defensive: malformed event without identifiers fans out to nothing.
       // Avoids broadcasting noise to every client when the producer slipped.
       if (!runId && !modelSlug && !familySlug) return [];
-      const routes: string[] = ['/leaderboard', '/runs'];
+      const routes: string[] = ['/', '/runs'];
       if (runId) routes.push(`/runs/${runId}`);
       if (modelSlug) routes.push(`/models/${modelSlug}`);
       if (familySlug) routes.push(`/families/${familySlug}`);
@@ -34,7 +34,7 @@ export function eventToRoutes(ev: BroadcastEvent): string[] {
       // /tasks is intentionally absent: spec §8.5 subscriber list does
       // not include /tasks, so fanning out there is dead noise. Add
       // /tasks back if a future plan subscribes the page.
-      return ['/leaderboard', '/models/*'];
+      return ['/', '/models/*'];
     case 'shortcoming_added': {
       const modelSlug = (ev as { model_slug?: string }).model_slug;
       const routes = ['/limitations'];
@@ -50,14 +50,29 @@ export function eventToRoutes(ev: BroadcastEvent): string[] {
   }
 }
 
+// 14-day SSE alias for stale-tab support (sunset 2026-05-30 with the
+// /leaderboard +server.ts redirect). Treat an INCOMING subscription
+// pattern of `/leaderboard` as if it were `/` so a tab held across
+// cutover still receives events. Outgoing event routes are NOT aliased
+// (eventToRoutes() emits events tagged `/`, not `/leaderboard`).
+//
+// SUNSET 2026-05-30: when src/routes/leaderboard/+server.ts is deleted,
+// ALSO remove this alias.
+const LEGACY_LEADERBOARD_ROUTES = new Set(['/leaderboard']);
+const LEGACY_LEADERBOARD_TARGET = '/';
+
 /**
  * Returns true if the union of event routes and subscriber routes share at
  * least one match. Both sides may use literals, wildcard segments, or "*".
  */
 export function routePatternMatches(eventRoutes: string[], subscriberRoutes: string[]): boolean {
   if (eventRoutes.length === 0 || subscriberRoutes.length === 0) return false;
+  // Alias legacy `/leaderboard` subscriptions to `/` (unidirectional).
+  const aliasedSubscriberRoutes = subscriberRoutes.map((p) =>
+    LEGACY_LEADERBOARD_ROUTES.has(p) ? LEGACY_LEADERBOARD_TARGET : p
+  );
   for (const er of eventRoutes) {
-    for (const sr of subscriberRoutes) {
+    for (const sr of aliasedSubscriberRoutes) {
       if (matchOne(er, sr) || matchOne(sr, er)) return true;
     }
   }

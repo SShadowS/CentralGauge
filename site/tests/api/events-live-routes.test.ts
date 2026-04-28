@@ -43,7 +43,7 @@ describe('LeaderboardBroadcaster route filtering', () => {
     expect(events.some((e) => e.run_id === 'r-default-1')).toBe(true);
   });
 
-  it('subscriber listing /leaderboard receives a run_finalized event', async () => {
+  it('subscriber listing / receives a run_finalized event', async () => {
     await broadcastEvent(env, {
       type: 'run_finalized',
       ts: new Date().toISOString(),
@@ -51,7 +51,7 @@ describe('LeaderboardBroadcaster route filtering', () => {
       model_slug: 'sonnet-4-7',
       family_slug: 'claude',
     });
-    const events = await matchedFor('/leaderboard');
+    const events = await matchedFor('/');
     expect(events.some((e) => e.run_id === 'r-lb-1')).toBe(true);
   });
 

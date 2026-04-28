@@ -2,6 +2,12 @@ import type { PageServerLoad } from './$types';
 import type { LeaderboardResponse, LeaderboardQuery } from '$shared/api-types';
 import { error } from '@sveltejs/kit';
 
+// Explicit: this route MUST NOT be prerendered (dynamic per-request data,
+// SSE-tagged for live updates). SvelteKit's default for routes not in
+// `prerender.entries` is already "do not prerender", but be explicit so a
+// future routes-config sweep doesn't accidentally flip it.
+export const prerender = false;
+
 export const load: PageServerLoad = async ({ url, fetch, setHeaders, depends }) => {
   depends('app:leaderboard');
 
