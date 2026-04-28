@@ -11,6 +11,9 @@
   import { densityBus } from '$lib/client/density-bus.svelte';
   import { registerChord } from '$lib/client/keyboard';
   import { onMount } from 'svelte';
+  import StructuredData from '$lib/components/layout/StructuredData.svelte';
+  import { page } from '$app/state';
+  import { SITE_ROOT } from '$lib/shared/site';
 
   let { data, children } = $props();
 
@@ -55,6 +58,8 @@
 <svelte:window onkeydown={onKey} />
 
 <svelte:head>
+  <StructuredData pageUrl={page.url.href} />
+
   {#if data.flags?.rum_beacon && data.cfWebAnalyticsToken}
     <script
       async
