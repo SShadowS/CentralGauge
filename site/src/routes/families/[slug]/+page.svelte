@@ -1,11 +1,41 @@
 <script lang="ts">
+  import { invalidate } from '$app/navigation';
+  import { page } from '$app/state';
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import FamilyTrajectoryChart from '$lib/components/domain/FamilyTrajectoryChart.svelte';
   import ModelLink from '$lib/components/domain/ModelLink.svelte';
+  import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import { formatScore, formatCost, formatRelativeTime } from '$lib/client/format';
+  import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
   const f = $derived(data.family);
+
+  const familyRoute = $derived(`/families/${page.params.slug}`);
+
+  let sse: EventSourceHandle | null = $state(null);
+
+  $effect(() => {
+    if (!data.flags.sse_live_updates) return;
+    const handle = useEventSource([familyRoute]);
+    sse = handle;
+    const off = handle.on('run_finalized', (ev) => {
+      try {
+        const payload = JSON.parse(ev.data) as { family_slug?: string };
+        if (payload.family_slug === page.params.slug) {
+          void invalidate(`app:family:${page.params.slug}`);
+        }
+      } catch { /* ignore */ }
+    });
+    return () => { off(); handle.dispose(); sse = null; };
+  });
+
+  function reconnect() {
+    if (sse) {
+      sse.dispose();
+      sse = useEventSource([familyRoute]);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -23,6 +53,9 @@
   <h1>{f.display_name}</h1>
   <p class="meta text-muted">
     Vendor: {f.vendor} · {f.trajectory.length} {f.trajectory.length === 1 ? 'model' : 'models'}
+    {#if data.flags.sse_live_updates && sse}
+      <LiveStatus {sse} onReconnect={reconnect} />
+    {/if}
   </p>
 </header>
 
