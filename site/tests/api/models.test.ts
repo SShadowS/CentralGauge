@@ -131,6 +131,31 @@ describe('GET /api/v1/models/:slug', () => {
   });
 });
 
+describe('GET /api/v1/models — list aggregates', () => {
+  it('returns ModelsIndexItem[] with aggregates', async () => {
+    const res = await SELF.fetch('https://x/api/v1/models');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(Array.isArray(body.data)).toBe(true);
+    for (const row of body.data) {
+      expect(typeof row.slug).toBe('string');
+      expect(typeof row.display_name).toBe('string');
+      expect(typeof row.api_model_id).toBe('string');
+      expect(typeof row.family_slug).toBe('string');
+      expect(typeof row.run_count).toBe('number');
+      expect(typeof row.verified_runs).toBe('number');
+      // aggregates may be null when run_count == 0
+      if (row.run_count === 0) {
+        expect(row.avg_score_all_runs).toBeNull();
+        expect(row.last_run_at).toBeNull();
+      } else {
+        expect(typeof row.avg_score_all_runs).toBe('number');
+        expect(typeof row.last_run_at).toBe('string');
+      }
+    }
+  });
+});
+
 describe('GET /api/v1/models/:slug/limitations', () => {
   it('returns shortcomings as JSON', async () => {
     const res = await SELF.fetch('https://x/api/v1/models/sonnet-4.7/limitations');

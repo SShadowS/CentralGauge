@@ -10,10 +10,15 @@ export default defineConfig(async () => {
   // script. The file is the production-bundled DO class (LeaderboardBroadcaster)
   // emitted by `npm run build`. The SvelteKit `_worker.js` does not re-export
   // the DO class, so the binding is redirected to this sidecar via scriptName.
+  //
+  // Strip the `import "../chunks/dev.js";` line emitted by SvelteKit when any
+  // hooks-imported module uses Svelte runes (`$state`, etc.). The dev chunk
+  // contains development-only error helpers which we don't need at test time;
+  // miniflare's `script` (string) form forbids imports anyway.
   const hooksScript = readFileSync(
     path.resolve('./.svelte-kit/output/server/entries/hooks.server.js'),
     'utf8'
-  );
+  ).replace(/^import\s+["']\.\.\/chunks\/[^"']+["'];?\s*$/gm, '');
 
   return {
     resolve: {
