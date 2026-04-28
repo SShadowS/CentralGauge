@@ -23,6 +23,20 @@ export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends 
   const apiCache = tRes.headers.get('cache-control');
   if (apiCache) setHeaders({ 'cache-control': apiCache });
 
+  // The transcript endpoint returns text/plain (already decompressed) — read as text
+  // and wrap in the Transcript shape expected by the page component.
+  const text = await tRes.text();
+  const transcript: Transcript = {
+    key: attempt.transcript_key,
+    text,
+    size_bytes: new TextEncoder().encode(text).length,
+    meta: {
+      run_id: params.id,
+      task_id: params.taskId,
+      attempt: attemptNum,
+    },
+  };
+
   return {
     runId: params.id,
     taskId: params.taskId,
@@ -30,6 +44,6 @@ export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends 
     passed: attempt.passed,
     score: attempt.score,
     model: run.model,
-    transcript: (await tRes.json()) as Transcript,
+    transcript,
   };
 };
