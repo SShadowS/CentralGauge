@@ -59,7 +59,12 @@ export default defineConfig(async () => {
     test: {
       setupFiles: ['./tests/setup.ts'],
       include: ['tests/**/*.test.ts'],
-      exclude: ['tests/broadcaster.test.ts', 'tests/api/events-live.test.ts', 'tests/build/**']
+      exclude: [
+        'tests/broadcaster.test.ts',
+        'tests/api/events-live.test.ts',
+        'tests/api/events-live-routes.test.ts',
+        'tests/build/**'
+      ]
     }
   };
 });

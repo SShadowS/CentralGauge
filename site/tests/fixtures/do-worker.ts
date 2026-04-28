@@ -13,8 +13,12 @@ export default {
     if (url.pathname === '/api/v1/events/live' && request.method === 'GET') {
       const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
       const stub = env.LEADERBOARD_BROADCASTER.get(id);
+      const routes = url.searchParams.get('routes');
+      const target = routes
+        ? `https://do/subscribe?routes=${encodeURIComponent(routes)}`
+        : 'https://do/subscribe';
       return stub.fetch(
-        new Request('https://do/subscribe', {
+        new Request(target, {
           method: 'GET',
           signal: request.signal,
         }),
