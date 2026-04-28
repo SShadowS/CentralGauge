@@ -48,13 +48,13 @@ async function seed(): Promise<void> {
     .run();
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r1','easy/a',1,1,1.0,1,3,3,1000,500),('r1','hard/b',1,0,0.0,1,3,0,1500,200)`,
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms,compile_duration_ms,test_duration_ms) VALUES ('r1','easy/a',1,1,1.0,1,3,3,1000,500,100,200,300),('r1','hard/b',1,0,0.0,1,3,0,1500,200,200,400,600)`,
     ),
     env.DB.prepare(
-      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r2','easy/a',1,1,0.8,1,3,2,500,100)`,
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms,compile_duration_ms,test_duration_ms) VALUES ('r2','easy/a',1,1,0.8,1,3,2,500,100,50,100,150)`,
     ),
     env.DB.prepare(
-      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r3','easy/a',1,1,0.6,1,3,2,500,100)`,
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms,compile_duration_ms,test_duration_ms) VALUES ('r3','easy/a',1,1,0.6,1,3,2,500,100,80,160,240)`,
     ),
   ]);
 }
@@ -100,5 +100,32 @@ describe('computeModelAggregates', () => {
       // Filtered run_count must be ≤ unfiltered (current task set is a subset)
       expect(c.run_count).toBeLessThanOrEqual(a.run_count);
     }
+  });
+
+  it('omits latency_p50_ms by default (null)', async () => {
+    const out = await computeModelAggregates(env.DB, { modelIds: [1] });
+    expect(out.get(1)?.latency_p50_ms).toBeNull();
+  });
+
+  it('computes latency_p50_ms when includeLatencyP50 is set', async () => {
+    const out = await computeModelAggregates(env.DB, {
+      modelIds: [1],
+      includeLatencyP50: true,
+    });
+    // model 1 has three results across r1+r2 (taskSetCurrent off) with totals
+    // [600 (100+200+300), 1200 (200+400+600), 300 (50+100+150)] → sorted
+    // [300, 600, 1200] → median 600.
+    expect(out.get(1)?.latency_p50_ms).toBe(600);
+  });
+
+  it('latency_p50_ms median of even-length set averages two middle values', async () => {
+    // Restrict to current task set (model 1 has only r1's two results: 600, 1200)
+    const out = await computeModelAggregates(env.DB, {
+      modelIds: [1],
+      taskSetCurrent: true,
+      includeLatencyP50: true,
+    });
+    // [600, 1200] → (600 + 1200) / 2 = 900
+    expect(out.get(1)?.latency_p50_ms).toBe(900);
   });
 });
