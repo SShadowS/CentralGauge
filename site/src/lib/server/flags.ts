@@ -13,6 +13,8 @@ export interface Flags {
   og_dynamic: boolean;
   trajectory_charts: boolean;
   print_stylesheet: boolean;
+  density_toggle: boolean;     // NEW (P5.4)
+  rum_beacon: boolean;          // NEW (P5.4)
 }
 
 const DEFAULTS: Flags = {
@@ -21,6 +23,8 @@ const DEFAULTS: Flags = {
   og_dynamic: false,
   trajectory_charts: false,
   print_stylesheet: false,
+  density_toggle: false,
+  rum_beacon: false,
 };
 
 export function loadFlags(env: Record<string, string | undefined>, isCanary: boolean): Flags {
@@ -31,6 +35,8 @@ export function loadFlags(env: Record<string, string | undefined>, isCanary: boo
       og_dynamic: true,
       trajectory_charts: true,
       print_stylesheet: true,
+      density_toggle: true,
+      rum_beacon: true,
     };
   }
 

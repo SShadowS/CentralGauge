@@ -35,4 +35,20 @@ describe('loadFlags', () => {
     );
     expect(flags.print_stylesheet).toBe(false);
   });
+
+  it('density_toggle defaults to false and respects FLAG_DENSITY_TOGGLE', () => {
+    expect(loadFlags({}, false).density_toggle).toBe(false);
+    expect(loadFlags({ FLAG_DENSITY_TOGGLE: 'on' }, false).density_toggle).toBe(true);
+  });
+
+  it('rum_beacon defaults to false and respects FLAG_RUM_BEACON', () => {
+    expect(loadFlags({}, false).rum_beacon).toBe(false);
+    expect(loadFlags({ FLAG_RUM_BEACON: 'on' }, false).rum_beacon).toBe(true);
+  });
+
+  it('canary mode flips both new flags on', () => {
+    const f = loadFlags({}, true);
+    expect(f.density_toggle).toBe(true);
+    expect(f.rum_beacon).toBe(true);
+  });
 });
