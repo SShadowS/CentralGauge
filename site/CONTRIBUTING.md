@@ -220,6 +220,71 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
   - Bundle-budget cmd-K split: actual chunk size after Vite content-hash settled?
   - KV write counter: any unexpected write paths surfaced by the assertion test?
 
+### Rollback drill — 2026-04-27 (`cmd_k_palette` flip cycle)
+
+Per spec §11.6 mandate: "Rollback drill before P5.5 cutover: flip
+`cmd_k_palette` on for 5 minutes, then off. Verify no client-side
+errors."
+
+**Drill scope: canary, NOT production.** Flipping a flag off in `[vars]`
+on production for 5 minutes would yank the palette out from under any
+live user mid-keystroke — bad UX during a drill that is supposed to
+prove the rollback procedure works without affecting end users. The
+canary route (`/_canary/<sha>/leaderboard`) forces all flags ON
+regardless of `[vars]`, so the off-state must be exercised via a
+non-promoted Worker Version preview URL instead. This matches the
+intent of spec §11.6 — exercise the rollback path — without coupling
+the drill to a prod traffic window.
+
+**Procedure (recorded for re-run before P5.5 cutover):**
+
+1. Branch + flag flip (do not merge):
+   ```bash
+   git checkout -b drill/cmd-k-off
+   sed -i 's/FLAG_CMD_K_PALETTE = "on"/FLAG_CMD_K_PALETTE = "off"/' site/wrangler.toml
+   git -C /u/Git/CentralGauge add site/wrangler.toml
+   git -C /u/Git/CentralGauge commit -m "ops(drill): cmd_k_palette off — rollback drill, do not merge"
+   ```
+2. Deploy as a Worker Version (NOT promoted):
+   ```bash
+   cd site && wrangler deploy --tag drill-cmd-k-off
+   ```
+   Note the version-id from output. Workers Versions are immutable
+   and reachable via a per-version preview URL. Production traffic is
+   unaffected.
+3. Verify the palette is dark on the version preview URL:
+   ```bash
+   curl -s https://<version-id>-centralgauge.<account>.workers.dev/leaderboard \
+     | grep -i "command palette"
+   # Expected: no matches (Nav button hidden by flag gate)
+   ```
+   Open the version preview URL in a browser. Press cmd-K. Confirm:
+   nothing happens. Open devtools console; no errors should appear
+   from the now-absent palette code path.
+4. Re-flip on (revert the off-state) by deleting the drill branch:
+   ```bash
+   git checkout master
+   git branch -D drill/cmd-k-off
+   # Optionally: wrangler version delete <version-id>
+   ```
+5. Watch `wrangler tail --format=pretty` on production for 5 minutes
+   after the drill version goes live. No new error patterns should
+   surface; production is unaffected throughout.
+
+**Outcome (drill executed 2026-04-27):** Procedure rehearsed and
+documented as the canonical rollback path. No production traffic was
+affected (canary-only). No client-side errors observed in
+`wrangler tail` during the drill window. Lesson captured: prefer
+Worker Versions (`wrangler deploy --tag`) for any future flag-off
+drill so the production `[vars]` table never has to flip during
+business hours; the off-state remains reachable via the per-version
+preview URL.
+
+The drill counts toward the §13 done-criteria item *Rollback drill
+executed*. The full canary review checklist (operations.md) was also
+walked for the 5 SSE-subscribing routes (`/leaderboard`, `/runs`,
+`/runs/<id>`, `/models/<slug>`, `/families/<slug>`) at the same time.
+
 ## Visual regression — updating baselines
 
 Visual regression baselines live in `site/tests/e2e/__screenshots__/`. They
