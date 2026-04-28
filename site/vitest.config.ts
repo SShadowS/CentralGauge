@@ -44,6 +44,8 @@ export default defineConfig(async () => {
             TEST_MIGRATIONS: migrations,
             LOG_LEVEL: 'silent',
             FLAG_OG_DYNAMIC: 'on',
+            FLAG_RUM_BEACON: 'on',
+            CF_WEB_ANALYTICS_TOKEN: 'test-token',
           },
           durableObjects: {
             LEADERBOARD_BROADCASTER: { className: 'LeaderboardBroadcaster', scriptName: 'do-script' }

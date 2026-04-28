@@ -14,10 +14,21 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
   const isCanary = url.pathname.startsWith('/_canary/');
   const flags: Flags = loadFlags(env, isCanary);
 
+  // RUM beacon token. `null` during prerender (the `building` guard keeps env
+  // empty above) so the layout's `<svelte:head>` skips emitting the script in
+  // baked HTML. At runtime we read `env.CF_WEB_ANALYTICS_TOKEN` — a `wrangler
+  // secret put` value at deploy time, or the empty-string `[vars]` placeholder
+  // in dev. Empty string is falsy so the emit guard suppresses the script
+  // until a real token is set.
+  const cfWebAnalyticsToken: string | null = building
+    ? null
+    : (env.CF_WEB_ANALYTICS_TOKEN ?? null);
+
   return {
     flags,
     serverTime: new Date().toISOString(),
     buildSha: env.CENTRALGAUGE_BUILD_SHA ?? 'dev',
     buildAt: env.CENTRALGAUGE_BUILD_AT ?? '',
+    cfWebAnalyticsToken,
   };
 };

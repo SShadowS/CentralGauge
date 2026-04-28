@@ -45,6 +45,17 @@
 
 <svelte:window onkeydown={onKey} />
 
+<svelte:head>
+  {#if data.flags?.rum_beacon && data.cfWebAnalyticsToken}
+    <script
+      async
+      defer
+      src="https://static.cloudflareinsights.com/beacon.min.js"
+      data-cf-beacon={`{"token":"${data.cfWebAnalyticsToken}"}`}
+    ></script>
+  {/if}
+</svelte:head>
+
 <SkipToContent />
 <Nav />
 <main id="main">
