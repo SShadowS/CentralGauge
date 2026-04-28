@@ -139,3 +139,71 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
   `run-detail`, `transcript`, `print`) and three new LHCI URLs reference
   `seeded-run-id-1` and `sonnet-4-7`. Local runs need a seeded D1; CI
   needs to seed before `playwright test`. Not yet wired — track in P5.4.
+
+## P5.3 implementation notes (learned during build-out)
+
+- **`prerender.handleHttpError = 'fail'` flip exposed an unrelated /about
+  500.** With `'warn'`, the layout-server flag-loader's `platform.env`
+  reads on a prerendered route silently fell through — Cloudflare's
+  adapter installs a getter that throws `Cannot access platform.env.<KEY>
+  in a prerenderable route`, but `'warn'` muted it. Flipping to `'fail'`
+  surfaced the real bug. Fix: gate on `import { building } from
+  '$app/environment'` in `+layout.server.ts` and return an empty `env`
+  during prerender — flags resolve to defaults at build time, runtime
+  requests still see real env vars. **Lesson:** `'warn'` is debt — it
+  hides bugs, not just routes. The flip is a forcing function for
+  prerender hygiene, not just a Nav-completeness check.
+- **`$app/navigation` is unresolvable in vitest.** SvelteKit injects it
+  at build time; jsdom unit tests can't see it. The `CommandPalette`
+  component imports `goto` for keyboard-Enter navigation, which broke
+  the test runner with "Failed to resolve import \"$app/navigation\"".
+  Fix: stub the module via vitest `resolve.alias` →
+  `tests/mocks/app-navigation.ts` exporting no-op `goto`/`invalidate`/etc.
+  Listed all functions a future component might need so we don't
+  re-discover this. Keep the alias in `vitest.unit.config.ts` only —
+  the Cloudflare-pool config in `vitest.config.ts` runs against the
+  built bundle which has the real module.
+- **The `nodes/*-CommandPalette*.js` budget glob currently matches zero
+  chunks.** `+layout.svelte` imports `CommandPalette` synchronously, so
+  Vite folds it into the layout chunk (`nodes/0.*.js`) instead of
+  emitting a separate lazy chunk. The wildcard `nodes/*.js` ≤ 20 KB gz
+  cap still enforces the layout-chunk size (3.8 KB gz observed,
+  including the palette). To make the 6 KB cap actually fire, the
+  palette would need a `await import('$lib/.../CommandPalette.svelte')`
+  in layout — deferred to P5.4 if the layout chunk grows past budget.
+- **Svelte 5 a11y rule: `role="searchbox"` is redundant on `<input
+  type="search">`** — the implicit role already matches. Plan template
+  had it; svelte-check fails the build. Removed; tests use
+  `getByRole('searchbox')` and still match via the implicit role.
+- **`paletteBus` import path: `$lib/client/palette-bus.svelte`, NOT
+  `palette-bus`.** The `.svelte.ts` extension is part of Svelte 5's
+  rune-module convention and must be on the import specifier. The
+  upstream plan dropped the suffix — hand-fixed in CommandPalette,
+  Nav, and +layout. Existing palette-bus test already used the right
+  form.
+- **Two `$effect` blocks in CommandPalette is intentional.** Effect 1
+  (lazy-load + AbortController) returns a teardown that aborts the
+  in-flight fetch; Effect 2 (focus + reset) runs on every open
+  transition. Combining them into one effect leaks the AbortController
+  on rapid re-opens (closing-then-opening within one microtask) — the
+  teardown from the first invocation never runs because the dep set
+  hasn't changed in a way that re-triggers the effect. The split also
+  makes the test for "rapid open/close does not leave loading=true"
+  observably pass.
+- **`offsetMap` as a script-level `$derived.by` (not an IIFE in the
+  template)** is required by Svelte 5 — IIFEs in `{#each}` re-evaluate
+  on every render with no cache, eating CPU on long lists. The
+  `Map<PaletteEntry, number>` is rebuilt only when `grouped` itself
+  changes.
+- **Bundle-budget loop dedup quirk.** The script's `for (b of budgets)`
+  uses `checked.add(path)` to skip files already counted by an earlier,
+  more-specific budget. **Order matters** — the per-chunk
+  `nodes/*-CommandPalette*.js` cap MUST come before the wildcard
+  `nodes/*.js` or the wildcard claims the file first and the tighter
+  cap is ignored.
+- **E2E specs reference seeded data.** Same caveat as P5.2: the new
+  specs (`models-index`, `runs-index`, `families`, `tasks`, `compare`,
+  `search`, `limitations`, `cmd-k`) assume a seeded D1 with `claude`
+  family, `sonnet-4-7`/`gpt-5` models, `CG-AL-E001` task, and at least
+  one shortcoming whose snippet contains `AL0132`. Local runs need
+  Playwright + seeded preview; CI needs the same wiring P5.2 deferred.
