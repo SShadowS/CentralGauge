@@ -58,7 +58,7 @@ warning banner. All flags are forced ON in canary mode regardless of
 
 Canary review checklist:
 
-- [ ] Open `/_canary/<sha>/leaderboard` — banner visible, table renders, sort works
+- [ ] Open `/_canary/<sha>/` — banner visible, leaderboard table renders, sort works (P5.5: leaderboard now at `/`; do NOT review `/_canary/<sha>/leaderboard` — that path 302s out of canary scope, see architect C6)
 - [ ] Open `/_canary/<sha>/runs/<id>` — tabs work, signature panel verifies
 - [ ] Cmd-K opens palette (flag forced on in canary)
 - [ ] Cmd-shift-d toggles density (visible row-height change)
@@ -108,7 +108,7 @@ Public post-mortem for any user-visible incident under
 
 1. Open the Web Analytics dashboard
 2. Filter to `centralgauge.sshadows.workers.dev`, last 7 days
-3. Note p75 LCP per top-5 routes (`/leaderboard`, `/models`, `/runs`, `/about`, `/compare`)
+3. Note p75 LCP per top-5 routes (`/`, `/models`, `/runs`, `/about`, `/compare`)
 4. If p75 LCP > 1.5 s on any route, file an issue tagged `perf-regression`
 5. If p75 TTFB > 100 ms on any route, file an issue tagged `cache-regression`
 
@@ -227,18 +227,18 @@ write back to Cache API or R2 before merge.
 | Visual-regression baseline PNGs (5 pages × 2 themes × 2 densities = 20) | deferred to first CI capture | Baselines are captured from an Ubuntu runner to avoid Windows-vs-Linux font-rendering drift; Task G2 spec exists, screenshots committed by CI on first green run |
 | `wrangler tail --format=pretty` for 1 hour post-flip clean | deferred to runtime | Operator-monitored after the actual `wrangler deploy`. `wrangler deploy --dry-run` has been validated; the post-flip watch belongs in the deploy operator's runbook and is not gateable from a local CI run |
 | `wrangler secret put CF_WEB_ANALYTICS_TOKEN` set | deferred to runtime | The token is rotated via runtime secret (operator action — see "Set / rotate the RUM token" section). The placeholder in `[vars]` is overwritten at runtime; flipping `FLAG_RUM_BEACON = "off"` disables the beacon entirely without rotating the token |
-| Production deploy live + verified curl probes | deferred to runtime | Operator action post-merge: `cd site && wrangler deploy` then run the §13 verification probes (`/og/index.png`, `/api/v1/events/live?routes=…`, `/leaderboard cloudflareinsights` grep) |
+| Production deploy live + verified curl probes | deferred to runtime | Operator action post-merge: `cd site && wrangler deploy` then run the §13 verification probes (`/og/index.png`, `/api/v1/events/live?routes=…`, `/ cloudflareinsights` grep) |
 | LCP / INP / CLS / FCP / TTFB p75 thresholds met in RUM | deferred to first weekly RUM review post-deploy (P6 cadence) | Spec §9.2 thresholds are field-measured — not enforceable at build time. First review per `RUM review cadence` section above |
 
 ### Pushed to P5.5 cutover (out of P5.4 scope)
 
 | Criterion | Plan |
 |-----------|------|
-| Rename `/leaderboard` → `/`, retire placeholder `+page.svelte` | P5.5 |
-| Remove `<meta name="robots" content="noindex">` from layout | P5.5 |
-| Publish `sitemap.xml` + `robots.txt` | P5.5 |
-| Atomic single-deploy cutover | P5.5 |
-| Final canary review walking the cut-over surfaces | P5.5 |
+| Rename `/leaderboard` → `/`, retire placeholder `+page.svelte` | DONE 2026-04-30 (commit `f79bfc9`) |
+| Remove `<meta name="robots" content="noindex">` from layout | DONE 2026-04-30 (commit `ab24b3d`) |
+| Publish `sitemap.xml` + `robots.txt` | DONE 2026-04-30 (commits `b6da131`, `c544be2`) |
+| Atomic single-deploy cutover | DONE 2026-04-30 (commit `f79bfc9`) |
+| Final canary review walking the cut-over surfaces | DONE 2026-04-30 (canary review against `/_canary/<sha>/`) |
 
 ### Pushed to P6 / later (out of P5.4 scope)
 
@@ -253,3 +253,121 @@ write back to Cache API or R2 before merge.
 P5.4 is closed when the deferred-to-CI rows turn green on the master
 post-merge build. P5.5 cutover plan author should confirm this ledger
 before cutting that branch.
+
+## P5.5 cutover — post-deploy notes (2026-04-30)
+
+The atomic cutover landed 2026-04-30 (commit `f79bfc9`). This section
+documents transients, post-deploy verification, and the sunset
+checklist. Reference plan: `docs/superpowers/plans/2026-04-30-p5-5-cutover.md`.
+
+### Post-cutover verification
+
+After `wrangler deploy` lands the cutover:
+
+1. `curl -sI https://centralgauge.sshadows.workers.dev/` → 200
+2. `curl -sI https://centralgauge.sshadows.workers.dev/leaderboard` → 302; `Location: /`
+3. `curl https://centralgauge.sshadows.workers.dev/sitemap.xml | head -10` → XML with 9 routes including `<loc>https://centralgauge.sshadows.workers.dev/</loc>`
+4. `curl https://centralgauge.sshadows.workers.dev/robots.txt` → `User-agent: *` / `Allow: /` / `Sitemap: ...`
+5. `curl https://centralgauge.sshadows.workers.dev/ | grep -c 'application/ld+json'` → 2
+6. `curl https://centralgauge.sshadows.workers.dev/ | grep -i robots` → no `noindex` (only beacon-related directives if any)
+7. `curl https://centralgauge.sshadows.workers.dev/ | grep canonical` → `<link rel="canonical" href="https://centralgauge.sshadows.workers.dev/" />`
+
+### Cloudflare worker swap window (architect R1)
+
+Cloudflare's worker version-swap is atomic per request but not
+instantaneous globally — the propagation window across data centers
+is ~30-60 s. During that window, some requests hit the new worker
+(302 on `/leaderboard`, leaderboard on `/`) and some hit the old
+(placeholder on `/`, leaderboard on `/leaderboard`). Internal links
+(Nav, anchor tags) work either way (the old worker's Nav still points
+at `/leaderboard`, the new at `/`); SSE clients on the old worker
+receive `/leaderboard`-tagged events and the I1 alias on the new
+worker accepts the legacy subscription. No user-visible breakage
+during the window; document for completeness.
+
+### SSE stale-tab transient
+
+Tabs held open across the cutover deploy keep the OLD
+`routes=%2Fleaderboard` query in their EventSource URL. After the
+worker reload they reconnect (3-attempt backoff in `useEventSource`),
+but the new `eventToRoutes()` doesn't map any event to `/leaderboard`.
+Result: the stale tab's `<LiveStatus>` shows "live" but no
+invalidations fire. The user's first navigation (e.g. clicking a sort
+header) triggers a fresh page load that opens a new EventSource with
+`routes=%2F`. No action needed — documented for completeness.
+
+### Durable-Object recent-buffer staleness (architect R3)
+
+`LeaderboardBroadcaster.recent[]` retains pre-cutover `BroadcastEvent`
+records that are tagged `routes: ['/leaderboard']`. Post-cutover, when
+a fresh `EventSource('/...?routes=%2F')` connects, the DO's replay
+logic emits these legacy-tagged events, but `routePatternMatches()`
+with the I1 alias is intentionally unidirectional (incoming
+`/leaderboard` → `/`, NOT outgoing). Result: legacy-tagged events
+DON'T replay to new subscribers tagged `/`. Acceptable given the
+14-day SSE alias from I1 and the buffer's natural decay (size cap or
+TTL).
+
+### Cache invalidation transient (architect R4)
+
+The `caches.default` adapter cache may serve old `/leaderboard` HTML
+for ≤ 60 s post-deploy from some colos (s-maxage from the
+`+page.server.ts` setHeaders). After expiry, the URL hits the 302
+redirect handler. Likewise, any pre-cutover `/` (placeholder)
+responses cached in `caches.default` may persist ≤ 60 s — colo cache
+hits serve the old placeholder HTML while the worker has already
+swung to the leaderboard. Acceptable: a 60-second transient is the
+smallest possible footprint of the cutover. Document user-visible
+weirdness in `docs/postmortems/` if reported.
+
+> **Optional first-deploy mitigation (out of scope, deferred to
+> post-cutover review):** the new `/` route's first deploy could ship
+> `Cache-Control: no-store` to bypass `caches.default` until the
+> cutover settles, then revert to the normal s-maxage in a follow-up.
+> Not needed unless RUM shows a measurable spike in stale-cache
+> reports.
+
+### RUM week-1 baseline (architect R5)
+
+Cloudflare Web Analytics history per-route on `/leaderboard` is
+preserved (the route still serves a 302 for 30 days; the data point
+is recorded). Post-cutover, RUM data on `/` replaces what was
+previously captured for the placeholder. Week-1 post-deploy
+establishes a NEW baseline for `/`; week-over-week comparison against
+pre-cutover `/leaderboard` is apples-to-oranges. Document the
+discontinuity in any week-1 report; don't flag the gap as a
+regression.
+
+### Canary noindex preserved (architect R6)
+
+`_canary/[sha]/[...path]/+page.svelte` retains `<meta name="robots"
+content="noindex">` so canary pages never get indexed even after the
+global noindex removal. The canary route's noindex is independent of
+the layout-level meta — it lives at the route level. Verified by
+`tests/api/canary-noindex.test.ts` (P5.4); re-verified as part of
+P5.5 D4.
+
+### SSE alias sunset checklist (DUE 2026-05-30)
+
+The SSE I1 alias and the `/leaderboard` 302 redirect are both
+time-bounded resources scheduled for deletion on 2026-05-30. The CI
+guard `tests/build/redirect-sunset.test.ts` fails 14 days BEFORE
+sunset (2026-05-16) to force operator attention.
+
+Deliverables:
+
+- [ ] Delete `site/src/routes/leaderboard/+server.ts` (the 302 redirect)
+- [ ] Delete the `LEGACY_LEADERBOARD_ROUTES` alias from `site/src/lib/server/sse-routes.ts` (architect I1 — sunset alongside the redirect)
+- [ ] Delete `site/tests/api/leaderboard-redirect.test.ts` (becomes meaningless)
+- [ ] Delete `site/tests/build/redirect-sunset.test.ts` itself once it has served its purpose
+- [ ] Update `site/CHANGELOG.md` with a sunset entry
+
+### Canary redirect-aware proxy (deferred to P6)
+
+The canary proxy is NOT redirect-aware: a 302 emitted by the inner
+worker (e.g. for `/leaderboard`) drops the reviewer out of canary
+scope. Architect C6 notes this; the post-P5.5 follow-up is to make
+the canary proxy rewrite `Location: /foo` → `Location:
+/_canary/<sha>/foo` so 302s stay scoped. Until then, do NOT review
+redirected URLs through canary; review the destination path directly
+(see Canary review checklist above for the post-cutover entry).
