@@ -1,16 +1,25 @@
 import { ImageResponse } from '@cf-wasm/og';
+import { read } from '$app/server';
 
-// Vendored fonts. Vite's `?url` suffix returns a string URL; we fetch each
-// URL once at module-init time, cache the resulting ArrayBuffer promise,
-// and `await` it inside renderOgPng. Vite has NO `?arraybuffer` suffix
-// (built-ins are ?raw, ?inline, ?url, ?worker, ?sharedworker, ?no-inline);
-// fetching the ?url at startup is the simplest correct alternative — no
-// custom plugin, no base64 decode, no extra dep.
+// Vendored fonts. Vite's `?url` suffix returns a string URL; SvelteKit's
+// `$app/server` `read()` then resolves that URL to a Response from the
+// adapter's static asset map. This works in production (Cloudflare
+// Workers ASSETS binding), in `vite preview`, and in vitest-pool-workers.
+//
+// We tried plain module-init `fetch(url).then(r => r.arrayBuffer())`:
+// works in dev and prod CDN, but fails in the worker pool tests because
+// the URL `/_app/immutable/assets/inter-400.<hash>.ttf` is relative —
+// fetch in a worker isolate without a base URL throws "Invalid URL".
+// `read()` doesn't need a base URL; it goes through the adapter.
+//
+// Vite has NO `?arraybuffer` suffix (built-ins are ?raw, ?inline, ?url,
+// ?worker, ?sharedworker, ?no-inline) — `?url` + `read()` is the
+// simplest correct alternative. No custom plugin, no base64 decode.
 //
 // Lifetime: the promise resolves on the FIRST OG request per worker
 // isolate. Subsequent requests in the same isolate reuse the resolved
 // ArrayBuffer (the promise is already settled). Cold-start cost: one
-// extra fetch per isolate, ~1-5 ms for asset-served bytes.
+// extra read per isolate, ~1-5 ms.
 import inter400Url from './fonts/inter-400.ttf?url';
 import inter600Url from './fonts/inter-600.ttf?url';
 
@@ -24,14 +33,8 @@ let fontsPromise: Promise<Array<{
 function getFonts() {
   if (!fontsPromise) {
     fontsPromise = Promise.all([
-      fetch(inter400Url).then((r) => {
-        if (!r.ok) throw new Error(`Failed to fetch inter-400.ttf: ${r.status}`);
-        return r.arrayBuffer();
-      }),
-      fetch(inter600Url).then((r) => {
-        if (!r.ok) throw new Error(`Failed to fetch inter-600.ttf: ${r.status}`);
-        return r.arrayBuffer();
-      }),
+      read(inter400Url).arrayBuffer(),
+      read(inter600Url).arrayBuffer(),
     ]).then(([d400, d600]) => [
       { name: 'Inter', data: d400, weight: 400 as const, style: 'normal' as const },
       { name: 'Inter', data: d600, weight: 600 as const, style: 'normal' as const },

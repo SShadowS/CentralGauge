@@ -19,6 +19,7 @@ export default defineConfig({
       // Component code only ever calls `goto` (and friends are no-ops in
       // jsdom anyway), so a tiny shim is sufficient.
       '$app/navigation': path.resolve('./tests/mocks/app-navigation.ts'),
+      '$app/server': path.resolve('./tests/mocks/app-server.ts'),
     },
   },
   test: {

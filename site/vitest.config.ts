@@ -40,7 +40,11 @@ export default defineConfig(async () => {
         miniflare: {
           compatibilityDate: '2026-04-17',
           compatibilityFlags: ['nodejs_compat'],
-          bindings: { TEST_MIGRATIONS: migrations, LOG_LEVEL: 'silent' },
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            LOG_LEVEL: 'silent',
+            FLAG_OG_DYNAMIC: 'on',
+          },
           durableObjects: {
             LEADERBOARD_BROADCASTER: { className: 'LeaderboardBroadcaster', scriptName: 'do-script' }
           },

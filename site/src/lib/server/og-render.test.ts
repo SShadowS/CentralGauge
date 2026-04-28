@@ -37,17 +37,15 @@ vi.mock('@cf-wasm/og', () => ({
 
 // Stub font ?url imports — Vitest unit env doesn't serve assets, and we
 // don't actually exercise rendering here (ImageResponse is mocked above).
-vi.mock('./fonts/inter-400.ttf?url', () => ({ default: 'data:font/ttf;base64,AAAA' }));
-vi.mock('./fonts/inter-600.ttf?url', () => ({ default: 'data:font/ttf;base64,AAAA' }));
+vi.mock('./fonts/inter-400.ttf?url', () => ({ default: '/_app/immutable/assets/inter-400.ttf' }));
+vi.mock('./fonts/inter-600.ttf?url', () => ({ default: '/_app/immutable/assets/inter-600.ttf' }));
 
-// Stub global fetch for the font URLs so getFonts() resolves quickly.
-// `data:` URLs are valid in modern fetch; jsdom's fetch handles them.
-beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(async () => ({
-    ok: true,
+// Stub `$app/server` — read(url) returns a Response-like with arrayBuffer().
+vi.mock('$app/server', () => ({
+  read: () => ({
     arrayBuffer: async () => new ArrayBuffer(8),
-  })));
-});
+  }),
+}));
 
 describe('renderOgPng', () => {
   let blobs: FakeR2;
