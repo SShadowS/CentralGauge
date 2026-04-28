@@ -29,6 +29,12 @@
       tasks_passed: m.aggregates.tasks_passed,
       avg_score: r.score,
       cost_usd: r.cost_usd,
+      // Placeholder: ModelHistoryPoint (the shape returned by /api/v1/models/:slug
+      // for recent_runs) doesn't carry per-run duration. Adding it would require
+      // aggregating COALESCE(llm_duration_ms,0)+COALESCE(compile_duration_ms,0)
+      // +COALESCE(test_duration_ms,0) from the results table per run, plus
+      // extending ModelHistoryPoint with duration_ms?. Out of scope for P5.2 polish;
+      // tracked for a future endpoint pass.
       duration_ms: 0,
       started_at: r.ts,
       completed_at: r.ts,
