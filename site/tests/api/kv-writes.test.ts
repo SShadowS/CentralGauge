@@ -14,6 +14,19 @@ describe('KV write counter — refactor invariant (CLAUDE.md memory)', () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await seedSmokeData({ runCount: 5 });
+
+    // WASM cold-init warmup (P6 Task E1 — companion to og-images.test.ts):
+    // vitest-pool-workers gives each test FILE its own worker isolate,
+    // so the og-images warmup does NOT carry over. The lone OG case
+    // below ("does not write to KV") would be the first @cf-wasm/og
+    // render in this isolate, paying the ~600ms WASM cold-init plus
+    // render time — and timing out the default 5000ms test timeout
+    // under parallel CI load. We pre-warm here BEFORE wrapping CACHE.put
+    // so the warmup's R2 write doesn't pollute the putCount counter.
+    // Warm via /og/runs/run-0001.png so the warmup's R2 cache key is
+    // disjoint from the index.png cache key the test asserts against.
+    await SELF.fetch('http://x/og/runs/run-0001.png');
+
     // Wrap CACHE.put with a counter
     originalPut = env.CACHE.put.bind(env.CACHE);
     env.CACHE.put = async (...args: Parameters<typeof originalPut>) => {

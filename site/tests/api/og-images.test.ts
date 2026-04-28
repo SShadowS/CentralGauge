@@ -8,6 +8,27 @@ describe('OG image endpoints', () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await resetDb();
     await seedSmokeData({ runCount: 3 });
+
+    // WASM cold-init invariant (P6 Task E1): @cf-wasm/og pays a ~600ms
+    // one-time cost on the first render in a fresh isolate. Under
+    // parallel test load, the first OG test case occasionally races
+    // with the cache-miss / cache-hit pair below — the second case
+    // arrives before the cache `put` resolves, and we observe two
+    // misses instead of miss/hit. Pre-rendering a throwaway image here
+    // amortizes the WASM cost across all subsequent test cases in the
+    // same isolate. Any /og/* endpoint that actually invokes
+    // renderOgPng() triggers the same WASM init path; 404s from
+    // model-slug-not-found short-circuit BEFORE rendering and do NOT
+    // warm WASM.
+    //
+    // We warm via /og/runs/run-0001.png because:
+    //   1. seedSmokeData with runCount=3 always creates run-0001.
+    //   2. The 'run' og kind has its own R2 cache key, so warming this
+    //      route does NOT pollute the index/family/model caches that
+    //      subsequent test cases assert miss/hit on.
+    //   3. The lone run test case below uses run-0000, so even the run
+    //      cache key namespace stays untouched for that assertion.
+    await SELF.fetch('http://x/og/runs/run-0001.png');
   });
 
   afterAll(async () => {

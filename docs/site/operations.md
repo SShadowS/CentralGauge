@@ -430,3 +430,71 @@ Expected response: `{"tasks_referenced": 38, "tasks_in_catalog": 38, "drift": fa
 
    Expected `drift: false`, `drift_count: 0`.
 
+### Daily catalog-drift CI probe
+
+A dedicated GitHub Actions workflow (`.github/workflows/catalog-drift.yml`)
+runs at 04:00 UTC daily. It sets `CI_PROD_PROBE=1` and runs
+`npx vitest run --config vitest.build.config.ts tests/build/catalog-drift-invariant.test.ts`.
+On failure, the operator follows the remediation runbook above.
+
+The probe is gated by `CI_PROD_PROBE=1` so local dev and ordinary PR
+runs don't depend on production reachability. Trigger the workflow
+manually via "Run workflow" in the GitHub Actions UI when verifying a
+freshly-applied sync-catalog.
+
+## Visual-regression baseline capture (one-time, Ubuntu CI)
+
+The P5.4 `tests/e2e/visual-regression.spec.ts` captures PNG snapshots of
+public pages and diffs against committed baselines. Local Windows and CI
+Ubuntu render fonts differently — committing local Windows PNGs creates
+a baseline that Ubuntu CI fails against on every PR.
+
+**The first baseline must be captured on Ubuntu CI.** P6 Task E3 stages
+the playbook here; execute when ready (after IconBase + Phase B
+component-system migrations land, so the canonical reference set
+already reflects the current SVG output).
+
+### One-time capture
+
+1. Confirm the visual-regression spec is configured for `chromium`:
+
+   ```bash
+   cd /u/Git/CentralGauge/site && grep -n "chromium" tests/e2e/visual-regression.spec.ts
+   ```
+
+2. Add a manual GitHub Actions workflow (`.github/workflows/visual-regression-baseline.yml`):
+
+   ```yaml
+   name: Capture visual-regression baseline (manual)
+   on:
+     workflow_dispatch:
+
+   jobs:
+     capture:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: actions/setup-node@v4
+           with: { node-version: 20 }
+         - run: cd site && npm ci
+         - run: cd site && npx playwright install --with-deps chromium
+         - name: Capture baseline
+           run: cd site && npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots
+         - name: Upload artifacts
+           uses: actions/upload-artifact@v4
+           with:
+             name: visual-regression-baselines
+             path: site/tests/e2e/visual-regression.spec.ts-snapshots/
+   ```
+
+3. Run the workflow via the GitHub UI ("Run workflow" button).
+
+4. Download the artifact, commit the PNGs to
+   `site/tests/e2e/visual-regression.spec.ts-snapshots/`, open a PR
+   titled `chore(site): visual-regression baseline (Ubuntu CI capture)`.
+
+5. Subsequent CI runs compare against the committed baselines. Local
+   development uses `--update-snapshots` only when an intentional UI
+   change is being baselined — and the new baseline must be re-captured
+   on Ubuntu CI before merging.
+
