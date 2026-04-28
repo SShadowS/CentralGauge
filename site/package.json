@@ -18,7 +18,9 @@
     "test:unit": "vitest run --config vitest.unit.config.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:lhci": "lhci autorun"
+    "test:e2e:ci": "npm run build && npm run seed:e2e && playwright test",
+    "test:lhci": "lhci autorun",
+    "seed:e2e": "tsx scripts/seed-e2e.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
