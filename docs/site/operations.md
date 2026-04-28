@@ -371,3 +371,62 @@ the canary proxy rewrite `Location: /foo` → `Location:
 /_canary/<sha>/foo` so 302s stay scoped. Until then, do NOT review
 redirected URLs through canary; review the destination path directly
 (see Canary review checklist above for the post-cutover entry).
+
+## Catalog drift remediation (P6 A4/A5/A6)
+
+### Symptom
+
+`/tasks` and `/tasks/<id>` render 0 rows (or 404) despite results existing.
+
+### Cause
+
+The `tasks` D1 table is empty while `results.task_id` references rows.
+This happens when `centralgauge sync-catalog --apply` is missed after a
+new task-set is ingested.
+
+### Detection
+
+The `/api/v1/health/catalog-drift` endpoint (P6 Task A5) returns
+`{ tasks_referenced: N, tasks_in_catalog: M, drift: bool, drift_count: N - M, generated_at: ISO }`.
+The daily cron at 03:00 UTC (P6 Task A6 — inline, no HTTP indirection)
+writes a `catalog_health` row when `drift_count > 0`.
+
+To check manually:
+
+```bash
+curl -s 'https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift'
+```
+
+Expected response: `{"tasks_referenced": 38, "tasks_in_catalog": 38, "drift": false, "drift_count": 0, ...}`.
+
+### Remediation runbook
+
+1. Pre-check (idempotency): every catalog admin endpoint
+   (`/api/v1/admin/catalog/{models,pricing,task-sets}`) implements
+   `INSERT ... ON CONFLICT ... DO UPDATE`, so re-running the sync
+   against a partially-populated catalog is safe.
+2. Dry-run the sync first (no writes):
+
+   ```bash
+   cd /u/Git/CentralGauge && deno task start sync-catalog
+   ```
+
+   The CLI prints the rows it WOULD upsert. Verify the output looks
+   sane (no surprise deletions; row counts match the local catalog
+   YAML).
+3. Apply:
+
+   ```bash
+   cd /u/Git/CentralGauge && deno task start sync-catalog --apply
+   ```
+
+   Note: admin endpoints rate-limit at ~10 req/min — the CLI handles
+   the inevitable 429 with a ~60s pause and retry.
+4. Verify drift is clean post-apply:
+
+   ```bash
+   curl -s 'https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift'
+   ```
+
+   Expected `drift: false`, `drift_count: 0`.
+

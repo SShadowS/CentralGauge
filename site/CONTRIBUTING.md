@@ -389,3 +389,27 @@ To update baselines after intentional UI changes:
 7. If CI's chromium renders pixel-different from local, that's an Ubuntu-vs-mac
    font-rendering drift. Bump tolerance ONLY as a last resort; prefer to
    capture baselines from an Ubuntu container locally.
+
+## /leaderboard redirect sunset (2026-05-30)
+
+The P5.5 cutover left a 302 redirect at `src/routes/leaderboard/+server.ts`
+to preserve external bookmarks for 30 days. Sunset deadline: **2026-05-30**.
+
+CI guard: `tests/build/redirect-sunset.test.ts` fails 14 days BEFORE sunset
+(2026-05-16) if the redirect file still exists. The build pool that runs
+this test is wired into `.github/workflows/site-ci.yml` via the
+`npm run test:build` step (P6 A3). When the guard fires:
+
+1. Open a PR titled `chore(site): retire /leaderboard 302 redirect (sunset)`
+2. Delete `site/src/routes/leaderboard/+server.ts`
+3. Delete `site/tests/api/leaderboard-redirect.test.ts` (the test of the redirect itself)
+4. Delete `site/tests/build/redirect-sunset.test.ts` (this guard, having served its purpose)
+5. Verify the build passes: `cd site && npm run build && npm run test:main && npm run test:build`
+6. Land + deploy.
+
+If the sunset window must be extended (an undocumented external system
+still depends on `/leaderboard`):
+
+1. Edit `tests/build/redirect-sunset.test.ts` and bump `SUNSET_ISO`.
+2. Update `docs/site/operations.md` to reflect the new deadline.
+3. Land — the guard re-arms.

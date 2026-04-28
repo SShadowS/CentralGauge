@@ -66,7 +66,8 @@ tag = "v1"
 # being deployable without a billing tier bump.
 new_sqlite_classes = ["LeaderboardBroadcaster"]
 
-# Cron trigger: nightly D1 -> R2 backup at 02:00 UTC. The handler is the
-# `scheduled` named export in `src/hooks.server.ts`.
+# Cron triggers (handler: `scheduled` named export in `src/hooks.server.ts`):
+#   "0 2 * * *" — nightly D1 -> R2 backup
+#   "0 3 * * *" — daily catalog-drift probe (P6 A6, +1h after backup)
 [triggers]
-crons = ["0 2 * * *"]
+crons = ["0 2 * * *", "0 3 * * *"]

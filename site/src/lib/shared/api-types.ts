@@ -352,10 +352,10 @@ export interface SearchResultItem {
   run_id: string;
   task_id: string;
   model_slug: string;
-  compile_errors_text: string;
-  failure_reasons_text: string;
   started_at: string;
-  snippet: string;       // contains <mark>…</mark> already-substituted by FTS5
+  // contains <mark>…</mark> already-substituted (application-side highlighting in P6 A2);
+  // null when no snippet text is available (e.g. row has no compile errors / failure reasons).
+  snippet: string | null;
 }
 
 export interface SearchResponse {

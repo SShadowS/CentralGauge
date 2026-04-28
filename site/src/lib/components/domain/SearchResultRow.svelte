@@ -10,8 +10,12 @@
    * `snippet()` function emits `<mark>` and plain text for our tokenizer
    * config, but we still strip anything else as defense-in-depth so a
    * malicious failure_reasons string can never inject markup.
+   *
+   * Returns '' when snippet is null (P6 A1 hotfix — null arises when the
+   * row has no compile-error / failure-reason text to derive a snippet from).
    */
-  function sanitizeSnippet(s: string): string {
+  function sanitizeSnippet(s: string | null | undefined): string {
+    if (s === null || s === undefined) return '';
     return s.replace(/<(?!\/?mark>)[^>]*>/g, '');
   }
 

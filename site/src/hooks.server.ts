@@ -3,6 +3,7 @@ import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
 import { resetIdCounter } from '$lib/client/use-id';
 import { isCanary } from '$lib/server/canary';
 import { runNightlyBackup } from './cron/nightly-backup';
+import { runDailyDriftProbe } from './cron/catalog-drift';
 
 export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
 
@@ -13,26 +14,45 @@ interface ScheduledEnv {
 
 /**
  * Cloudflare cron entrypoint. Wired to the `[triggers].crons` block in
- * `wrangler.toml`; see `src/cron/nightly-backup.ts` for the actual dump.
+ * `wrangler.toml`. Branches by `controller.cron`:
+ *   - `0 2 * * *` → nightly D1 -> R2 backup (src/cron/nightly-backup.ts)
+ *   - `0 3 * * *` → daily catalog-drift probe (src/cron/catalog-drift.ts, P6 A6)
  *
- * `ctx.waitUntil` keeps the worker alive past the synchronous return so the
- * R2 PUT can finish even if it outlives the cron tick.
+ * Both run inline (no HTTP self-fetch), no shared secret. `ctx.waitUntil`
+ * keeps the worker alive past the synchronous return so the work can finish
+ * even if it outlives the cron tick.
  */
 export async function scheduled(
-  _controller: ScheduledController,
+  controller: ScheduledController,
   env: ScheduledEnv,
   ctx: ExecutionContext
 ): Promise<void> {
-  ctx.waitUntil(
-    runNightlyBackup(env).catch((err) => {
-      console.error(JSON.stringify({
-        ts: new Date().toISOString(),
-        level: 'error',
-        msg: 'nightly_backup_failed',
-        err: err instanceof Error ? err.message : String(err)
-      }));
-    })
-  );
+  if (controller.cron === '0 2 * * *') {
+    ctx.waitUntil(
+      runNightlyBackup(env).catch((err) => {
+        console.error(JSON.stringify({
+          ts: new Date().toISOString(),
+          level: 'error',
+          msg: 'nightly_backup_failed',
+          err: err instanceof Error ? err.message : String(err)
+        }));
+      })
+    );
+    return;
+  }
+  if (controller.cron === '0 3 * * *') {
+    ctx.waitUntil(
+      runDailyDriftProbe(env).catch((err) => {
+        console.error(JSON.stringify({
+          ts: new Date().toISOString(),
+          level: 'error',
+          msg: 'catalog_drift_probe_failed',
+          err: err instanceof Error ? err.message : String(err)
+        }));
+      })
+    );
+    return;
+  }
 }
 
 const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
