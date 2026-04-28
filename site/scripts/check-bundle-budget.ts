@@ -22,10 +22,11 @@ const budgets: Budget[] = [
   // root layout/page chunks (initial route shell)
   { glob: 'nodes/0.*.js',      maxKbGz: 20 },
   { glob: 'nodes/1.*.js',      maxKbGz: 20 },
-  // cmd-K palette lazy chunk (CommandPalette + fuzzy + palette-bus). Listed
-  // BEFORE the wildcard nodes/*.js so the dedupe in the loop picks the
-  // tighter per-chunk cap. Spec target: ≤ 6 KB gz.
-  { glob: 'nodes/*-CommandPalette*.js', maxKbGz: 6 },
+  // cmd-K palette lazy chunk (P5.4 split). Spec target: ≤ 6 KB gz.
+  // Forced chunk name via vite.config.ts manualChunks + chunkFileNames.
+  { glob: 'chunks/cmd-k-*.js', maxKbGz: 6 },
+  // useEventSource client hook chunk (~1.5 KB gz observed). Cap at 2.
+  { glob: 'chunks/use-event-source-*.js', maxKbGz: 2 },
   // all per-page chunks individually capped
   { glob: 'nodes/*.js',        maxKbGz: 20 },
 ];
