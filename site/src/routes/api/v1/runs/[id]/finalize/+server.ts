@@ -11,13 +11,17 @@ export const POST: RequestHandler = async ({ params, platform }) => {
   const runId = params.id!;
 
   try {
-    // Pull model_slug + tier alongside the row so a successful transition can
-    // emit a `run_finalized` SSE event without an extra round-trip.
+    // Pull model_slug + family_slug + tier alongside the row so a successful
+    // transition can emit a `run_finalized` SSE event without an extra
+    // round-trip. family_slug is LEFT JOINed because not every model is
+    // assigned to a family yet — null is acceptable and stripped by the
+    // conditional spread below (canonicalJSON rejects explicit undefined).
     const run = await db.prepare(
       `SELECT runs.id, runs.status, runs.reproduction_bundle_r2_key, runs.machine_id,
-              runs.tier, models.slug AS model_slug
+              runs.tier, models.slug AS model_slug, model_families.slug AS family_slug
          FROM runs
          JOIN models ON models.id = runs.model_id
+         LEFT JOIN model_families ON model_families.id = models.family_id
         WHERE runs.id = ?`
     ).bind(runId).first<{
       id: string;
@@ -26,6 +30,7 @@ export const POST: RequestHandler = async ({ params, platform }) => {
       machine_id: string;
       tier: string;
       model_slug: string;
+      family_slug: string | null;
     }>();
 
     if (!run) throw new ApiError(404, 'not_found', `run ${runId} not found`);
@@ -81,6 +86,10 @@ export const POST: RequestHandler = async ({ params, platform }) => {
         type: 'run_finalized',
         run_id: runId,
         model_slug: run.model_slug,
+        // Conditional spread: canonicalJSON rejects undefined, so only include
+        // family_slug when the model is assigned to a family. Required by the
+        // /families/<slug> subscriber filter (DO matchesClient).
+        ...(run.family_slug ? { family_slug: run.family_slug } : {}),
         tier: run.tier,
         score: avgRow?.avg_score ?? 0,
         ts: now

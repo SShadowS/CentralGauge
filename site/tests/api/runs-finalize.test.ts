@@ -128,5 +128,9 @@ describe('POST /api/v1/runs/:id/finalize', () => {
     expect(typeof ev!.score).toBe('number');
     expect(ev!.score).toBe(100); // makeRunPayload defaults to score=100
     expect(typeof ev!.ts).toBe('string');
+    // family_slug is required for the /families/<slug> SSE subscriber filter
+    // (see src/lib/server/sse-routes.ts eventToRoutes). seedMinimalRefData
+    // assigns sonnet-4.7 to family_id=1 (slug=claude).
+    expect(ev!.family_slug).toBe('claude');
   });
 });
