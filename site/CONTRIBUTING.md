@@ -137,7 +137,7 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
   print behavior is purely CSS-driven.
 - **E2E + LHCI fixture data:** the four new specs (`model-detail`,
   `run-detail`, `transcript`, `print`) and three new LHCI URLs reference
-  `seeded-run-id-1` and `sonnet-4-7`. Local runs need a seeded D1; CI
+  `run-0000` and `sonnet-4-7`. Local runs need a seeded D1; CI
   needs to seed before `playwright test`. Not yet wired — track in P5.4.
 
 ## P5.3 implementation notes (learned during build-out)
