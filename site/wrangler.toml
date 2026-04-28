@@ -58,12 +58,13 @@ class_name = "LeaderboardBroadcaster"
 
 [[migrations]]
 tag = "v1"
-# LeaderboardBroadcaster is in-memory only (Set<WritableStreamDefaultWriter>
-# + recent BroadcastEvent[]) and never writes to state.storage. On the
-# Cloudflare free plan, however, all new DO classes MUST be declared with
+# LeaderboardBroadcaster persists subscribers + recent BroadcastEvents
+# via SQLite (state.storage). P5.4 added durable subscriber tracking so
+# that DO-isolate restarts don't sever client SSE streams. On the
+# Cloudflare free plan, all new DO classes MUST be declared with
 # `new_sqlite_classes` — `new_classes` (KV-backed storage) requires the
-# Workers Paid plan. We pay the SQLite-WAL cost locally in exchange for
-# being deployable without a billing tier bump.
+# Workers Paid plan. We pay the SQLite-WAL cost in exchange for being
+# deployable without a billing tier bump.
 new_sqlite_classes = ["LeaderboardBroadcaster"]
 
 # Cron triggers (handler: `scheduled` named export in `src/hooks.server.ts`):

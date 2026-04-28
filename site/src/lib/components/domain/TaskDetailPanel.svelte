@@ -122,6 +122,4 @@
   th[scope='row'] { font-weight: var(--weight-regular); }
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
-  .attempt.pass { color: var(--success); }
-  .attempt.fail { color: var(--danger); }
 </style>
