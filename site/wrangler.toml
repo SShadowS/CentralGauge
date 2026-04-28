@@ -7,6 +7,7 @@ account_id = "22c8fbe790464b492d9b178cc0f9255b"
 [vars]
 LOG_LEVEL = "info"
 FLAG_PRINT_STYLESHEET = "on"
+CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
 [assets]
 directory = ".svelte-kit/cloudflare"
