@@ -285,6 +285,87 @@ executed*. The full canary review checklist (operations.md) was also
 walked for the 5 SSE-subscribing routes (`/leaderboard`, `/runs`,
 `/runs/<id>`, `/models/<slug>`, `/families/<slug>`) at the same time.
 
+## P5.5 implementation notes (learned during cutover)
+
+The cutover ran 2026-04-30 (atomic commit `f79bfc9`). Reference plan:
+`docs/superpowers/plans/2026-04-30-p5-5-cutover.md`.
+
+### Lessons
+
+- **Atomic-cutover pattern: single squashed commit for B1-B7.** The
+  Mini-phase B mechanical edits (`+page.svelte` swap, layout-server
+  route change, Nav `pathname` check, useEventSource literals,
+  `eventToRoutes()` map, Lighthouse URL list, redirect handler)
+  cannot be split across commits without introducing an intermediate
+  broken state where the homepage and the SSE subscriber disagree on
+  which route owns the leaderboard. Squash B1-B7 into one commit; CI
+  green only after the full cutover lands.
+- **302 vs 301 for time-bounded redirects.** `/leaderboard` → `/`
+  uses **302 Found**, NOT 301 Moved Permanently. The redirect has a
+  hard sunset (2026-05-30); 301s are aggressively cached by browsers
+  and intermediaries (sometimes indefinitely). A 302 keeps cache TTL
+  short so post-sunset reverts (deleting the redirect handler)
+  propagate cleanly. Use 301 only when the destination is permanent.
+- **Reminder-window pattern for date-bounded resources.** The
+  `tests/build/redirect-sunset.test.ts` guard fails 14 days BEFORE
+  the 2026-05-30 sunset (i.e. 2026-05-16) — NOT after. Failing AFTER
+  a sunset means the resource has already overstayed its welcome and
+  the operator is reactive; failing BEFORE forces proactive
+  cleanup while there's still time. Mirror this pattern for any
+  future time-bounded resource.
+- **Sitemap to `static/`, NOT `.svelte-kit/cloudflare/`.** Initial
+  attempt placed the build-time-emitted `sitemap.xml` directly in
+  `.svelte-kit/cloudflare/` (the worker output dir). Wrangler's
+  `[assets]` binding only serves files reachable through its
+  manifest, which is generated at build time from `static/`.
+  Resolution: `scripts/build-sitemap.ts` writes to `static/sitemap.xml`,
+  gitignored. The build copies `static/` → `.svelte-kit/cloudflare/`
+  as part of `npm run build`. Reachability via the worker manifest is
+  the test that matters — assert with a worker-pool fetch test.
+- **JSON-LD `</` escape (XSS hardening).** The `jsonLd()` helper
+  must escape `<` to `<` (and `>` to `>`) before serializing
+  into the `<script type="application/ld+json">` tag. Without this,
+  a model name or run id containing `</script>` (unlikely but
+  possible from user-controlled data) breaks out of the tag and
+  injects HTML. Use `JSON.stringify(...).replace(/</g, '\\u003c')`
+  pattern. Asserted by `StructuredData.test.svelte.ts`.
+- **Trailing-slash consistency between sitemap, canonical, and
+  structured data.** The sitemap's `<loc>` for the homepage,
+  `<link rel="canonical">` for `/`, and the JSON-LD `WebSite.url`
+  must all agree on whether trailing slashes are present. We chose
+  no trailing slash (`https://centralgauge.sshadows.workers.dev/`
+  with the trailing `/` is the homepage convention; everything else
+  has no trailing slash). Cloudflare normalizes redirects on this
+  axis; mismatches cause subtle SEO de-duplication issues. Assert
+  via cutover smoke (`tests/e2e/cutover.spec.ts`).
+
+### Sunset checklist (post-cutover)
+
+- The `/leaderboard` 302 redirect (`site/src/routes/leaderboard/+server.ts`) MUST be deleted by **2026-05-30**. The CI guard `site/tests/build/redirect-sunset.test.ts` enforces this — fails 14 days BEFORE sunset (2026-05-16) to force operator attention.
+- ALSO delete the `LEGACY_LEADERBOARD_ROUTES` alias from `site/src/lib/server/sse-routes.ts` (architect I1 — its only purpose was the SSE stale-tab support during the sunset window).
+- When deleting, also remove:
+  - `tests/api/leaderboard-redirect.test.ts` (becomes meaningless)
+  - The `redirect-sunset.test.ts` file itself once it's served its purpose
+
+### Sitemap maintenance
+
+The sitemap (`.svelte-kit/cloudflare/sitemap.xml`) is generated at build time by `npx tsx scripts/build-sitemap.ts` and is **not committed** (architect I9). To add a new public route:
+
+1. Edit `site/scripts/build-sitemap.ts` — add the path to `SITEMAP_ROUTES` (alphabetized).
+2. Run `npm run build` locally — verify `.svelte-kit/cloudflare/sitemap.xml` contains the new route.
+3. Run `npx vitest run --config vitest.build.config.ts scripts/build-sitemap.test.ts` — the deterministic snapshot test catches schema drift.
+4. Commit ONLY the script change (the artifact is gitignored).
+
+CI catches drift through the unit test — there is no separate `git diff` guard.
+
+### Structured data evolution
+
+The layout-level WebSite + Organization JSON-LD (`StructuredData.svelte`) covers every page. Per-page schemas (Article / Dataset / SoftwareApplication for /runs/:id, /models/:slug, /tasks/:id) are deferred to P6.
+
+### Visual-regression baselines regenerated post-cutover
+
+`tests/e2e/__screenshots__/visual-regression.spec.ts/home-*.png` (4 PNGs) were regenerated post-cutover via `playwright test --update-snapshots`. The pre-cutover screenshot directory contained only `.gitkeep` (no committed baselines). The post-cutover DOM differs from any conceivable `/leaderboard` baseline due to (a) JSON-LD `<script>` tags added in C2 and (b) `<link rel="canonical">` added in C3, so a `git mv` rename would not have worked even if pre-cutover PNGs had existed.
+
 ## Visual regression — updating baselines
 
 Visual regression baselines live in `site/tests/e2e/__screenshots__/`. They
