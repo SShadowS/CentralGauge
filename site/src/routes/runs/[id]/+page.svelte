@@ -1,19 +1,68 @@
 <script lang="ts">
+  import { invalidate } from '$app/navigation';
+  import { page } from '$app/state';
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import Tabs from '$lib/components/ui/Tabs.svelte';
   import StatTile from '$lib/components/domain/StatTile.svelte';
   import TierBadge from '$lib/components/domain/TierBadge.svelte';
   import RunStatusBadge from '$lib/components/domain/RunStatusBadge.svelte';
   import ModelLink from '$lib/components/domain/ModelLink.svelte';
+  import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import PerTaskResultsTable from '$lib/components/domain/PerTaskResultsTable.svelte';
   import SettingsPanel from '$lib/components/domain/SettingsPanel.svelte';
   import SignaturePanel from '$lib/components/domain/SignaturePanel.svelte';
   import ReproductionBlock from '$lib/components/domain/ReproductionBlock.svelte';
   import { formatScore, formatCost, formatDuration, formatTaskRatio } from '$lib/client/format';
+  import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   import type { RunSignature } from '$shared/api-types';
 
   let { data } = $props();
   const r = $derived(data.run);
+
+  // §8.5 — only subscribe when the run is pending/running. Most runs are
+  // already completed by the time a user lands; opening an SSE for a
+  // completed run is wasteful. Connection latches off when run completes.
+  const isLive = $derived(
+    data.flags.sse_live_updates && (data.run.status === 'pending' || data.run.status === 'running'),
+  );
+  const runRoute = $derived(`/runs/${page.params.id}`);
+
+  let sse: EventSourceHandle | null = $state(null);
+
+  $effect(() => {
+    if (!isLive) return;
+    const handle = useEventSource([runRoute]);
+    sse = handle;
+    const offRunFinalized = handle.on('run_finalized', (ev) => {
+      try {
+        const payload = JSON.parse(ev.data) as { run_id?: string };
+        if (payload.run_id === page.params.id) {
+          void invalidate(`app:run:${page.params.id}`);
+        }
+      } catch { /* ignore */ }
+    });
+    const offStatusChanged = handle.on('run_status_changed', (ev) => {
+      try {
+        const payload = JSON.parse(ev.data) as { run_id?: string };
+        if (payload.run_id === page.params.id) {
+          void invalidate(`app:run:${page.params.id}`);
+        }
+      } catch { /* ignore */ }
+    });
+    return () => {
+      offRunFinalized();
+      offStatusChanged();
+      handle.dispose();
+      sse = null;
+    };
+  });
+
+  function reconnect() {
+    if (sse) {
+      sse.dispose();
+      sse = useEventSource([runRoute]);
+    }
+  }
 
   const tabs = [
     { id: 'results',       label: 'Results' },
@@ -64,6 +113,9 @@
     <h1>Run <code class="text-mono">{r.id.slice(0, 12)}…</code></h1>
     <TierBadge tier={r.tier} />
     <RunStatusBadge status={r.status} />
+    {#if isLive && sse}
+      <LiveStatus {sse} onReconnect={reconnect} label="watching for completion…" />
+    {/if}
   </div>
   <p class="meta text-muted">
     <ModelLink slug={r.model.slug} display_name={r.model.display_name} api_model_id={r.model.api_model_id} family_slug={r.model.family_slug} />
