@@ -22,6 +22,10 @@ const budgets: Budget[] = [
   // root layout/page chunks (initial route shell)
   { glob: 'nodes/0.*.js',      maxKbGz: 20 },
   { glob: 'nodes/1.*.js',      maxKbGz: 20 },
+  // cmd-K palette lazy chunk (CommandPalette + fuzzy + palette-bus). Listed
+  // BEFORE the wildcard nodes/*.js so the dedupe in the loop picks the
+  // tighter per-chunk cap. Spec target: ≤ 6 KB gz.
+  { glob: 'nodes/*-CommandPalette*.js', maxKbGz: 6 },
   // all per-page chunks individually capped
   { glob: 'nodes/*.js',        maxKbGz: 20 },
 ];
