@@ -498,3 +498,194 @@ already reflects the current SVG output).
    change is being baselined — and the new baseline must be re-captured
    on Ubuntu CI before merging.
 
+## Custom-domain flip pre-flight checklist
+
+> P6 Phase F deliverable. Before executing the SITE_BASE_URL change in
+> Phase G, verify ALL of the following. Each item is independently
+> verifiable; check them off in the PR description for the Phase G
+> commit.
+
+### Single source of truth — verify before flip
+
+The custom-domain flip works only if every surface that emits an
+absolute URL reads from `SITE_BASE_URL` (via `SITE_ROOT` in source
+code). One hardcoded `centralgauge.sshadows.workers.dev` in a non-test
+file will silently mis-link after the flip. Run these greps locally
+before staging the Phase G commit:
+
+```bash
+# 1. SITE_ROOT (or its build-time twin BASE_URL) is referenced at every
+# absolute-URL emission site
+grep -c "SITE_ROOT" \
+  site/src/routes/+layout.svelte \
+  site/src/lib/components/layout/StructuredData.svelte
+# Expected: each file > 0. Canonical (+layout.svelte) and JSON-LD
+# (StructuredData.svelte) both emit via SITE_ROOT.
+
+grep -n "SITE_BASE_URL" site/scripts/build-sitemap.ts
+# Expected: > 0 hits. The sitemap generator runs in a Node-only build
+# context (no `$lib` import), so it reads `process.env.SITE_BASE_URL`
+# directly and exports its own `BASE_URL` const that mirrors SITE_ROOT
+# semantics.
+
+# 2. Only ONE source of the workers.dev default URL string
+grep -rn "centralgauge\.sshadows\.workers\.dev" site/src
+# Expected: only site/src/lib/shared/site.ts:18 (the default value
+# fallback). Any other hit in src/ is a hardcode bug — fix before flip.
+
+# 3. wrangler.toml is the single runtime override point
+grep -n "SITE_BASE_URL" site/wrangler.toml
+# Expected: 1 line under [vars]. After the flip this line — and ONLY
+# this line — changes.
+
+# 4. SITEMAP_ROUTES count matches the sitemap reality
+grep -c "^  '/" site/scripts/build-sitemap.ts
+# Expected: 9 (alphabetized routes: /, /about, /compare, /families,
+# /limitations, /models, /runs, /search, /tasks).
+```
+
+If any expected count is wrong, fix the underlying source-of-truth
+violation before proceeding — do not paper over with the wrangler
+[vars] flip.
+
+### Pre-flight checklist
+
+- [ ] **DNS prep**: Cloudflare DNS record for the new domain (A or
+      CNAME) points at the Worker. Verify with `dig +short <domain>`.
+- [ ] **Worker custom-domain binding**: Cloudflare dashboard → Workers
+      & Pages → centralgauge → Custom Domains → `<domain>` is in the
+      list with status `Active`.
+- [ ] **SSL Mode**: Cloudflare → SSL/TLS → Mode → Full (strict).
+- [ ] **Sitemap regeneration plan**: After flipping `SITE_BASE_URL`,
+      the next build regenerates `static/sitemap.xml` (and the
+      adapter copies it to `.svelte-kit/cloudflare/sitemap.xml`) with
+      the new domain. Verify by running `npm run build` AFTER the
+      wrangler.toml edit and checking the artifact:
+
+      ```bash
+      grep -c "<loc>https://<new-domain>/" \
+        site/static/sitemap.xml
+      # Expected: 9 (matches SITEMAP_ROUTES.length at
+      # site/scripts/build-sitemap.ts:37)
+      ```
+
+- [ ] **Canonical URL**: After deploy, verify SSR-emitted canonical:
+
+      ```bash
+      curl -s https://<new-domain>/ | grep '<link rel="canonical"'
+      # Expected: <link rel="canonical" href="https://<new-domain>/" />
+      ```
+
+- [ ] **JSON-LD**: After deploy, verify WebSite + Organization JSON-LD
+      schemas reference the new domain (not the old workers.dev):
+
+      ```bash
+      curl -s https://<new-domain>/ | grep -A2 '"@type":"WebSite"' | grep "url"
+      # Expected: "url":"https://<new-domain>"
+      ```
+
+- [ ] **robots.txt sitemap pointer**: `site/static/robots.txt`
+      currently hardcodes the workers.dev sitemap URL. Update its
+      `Sitemap:` line as part of the Phase G commit, OR convert
+      robots.txt to a SvelteKit endpoint that reads `SITE_ROOT` at
+      request time. Pick one and complete it before the flip — do not
+      let the sitemap reference go stale.
+- [ ] **Cloudflare Web Analytics token**: If RUM (P5.4 Task L1) was
+      tied to the old workers.dev domain, update the token's
+      `monitored_domains` to include the new domain.
+- [ ] **Old-domain redirect (optional)**: Decide whether
+      `*.workers.dev` should 301-redirect to the new domain. If yes,
+      add a Cloudflare Page Rule.
+- [ ] **Lighthouse + Playwright**: Re-baseline e2e specs that hardcode
+      `localhost:4173` (none should — verify) or any external domain.
+- [ ] **Search Console resubmission**: After deploy, submit the new
+      sitemap URL to Google Search Console (one-time operator action).
+
+## Custom-domain flip operator runbook (Phase G)
+
+> P6 Phase F deliverable. When ready to flip from
+> `centralgauge.sshadows.workers.dev` to a custom domain, follow the
+> sequence below. Phase G is HELD until explicit user trigger.
+
+### Pre-flip (operator, ~30 min)
+
+1. Add DNS record (Cloudflare DNS): `<domain>` → CNAME
+   `centralgauge.sshadows.workers.dev`, Proxy enabled, TTL Auto.
+
+2. Cloudflare Workers dashboard → centralgauge → Custom Domains →
+   "Add Custom Domain" → `<domain>`. Wait for SSL provisioning
+   (~5 min).
+
+3. Confirm SSL Mode: Cloudflare → SSL/TLS → Full (strict).
+
+4. Run the pre-flight checklist above. Every box must be checked
+   before staging the wrangler.toml edit.
+
+### Code change (developer, ~5 min)
+
+1. Edit `site/wrangler.toml` `[vars]` block:
+
+   ```toml
+   [vars]
+   SITE_BASE_URL = "https://<domain>"
+   ```
+
+2. (If chosen above) Update `site/static/robots.txt` `Sitemap:` line
+   to reference the new domain.
+
+3. Run `cd site && npm run build` — verify the new sitemap regenerates
+   with `<domain>` URLs.
+
+4. Commit:
+
+   ```bash
+   git -C /u/Git/CentralGauge add site/wrangler.toml site/static/robots.txt
+   git -C /u/Git/CentralGauge commit -m "feat(site): custom-domain flip — SITE_BASE_URL → https://<domain>"
+   ```
+
+### Deploy + verify (developer, ~10 min)
+
+1. Deploy: `cd site && npx wrangler deploy`.
+
+2. Run verification script:
+
+   ```bash
+   cd site && bash scripts/verify-domain-flip.sh <domain> centralgauge.sshadows.workers.dev
+   ```
+
+3. Expected: all PASS, 0 FAIL. The script exits non-zero on any
+   failure with a diagnostic line on stderr.
+
+### Post-flip (operator, ~5 min)
+
+1. Submit new sitemap to Google Search Console:
+   <https://search.google.com/search-console>.
+
+2. (Optional) Add Cloudflare Page Rule:
+   `centralgauge.sshadows.workers.dev/*` → 301 redirect to
+   `https://<domain>/$1`. Saves SEO juice; alternative is letting both
+   domains serve and relying on canonical rel-tags to dedupe.
+
+3. Update Cloudflare Web Analytics token's `monitored_domains` to
+   include `<domain>`.
+
+4. Update internal docs (CONTRIBUTING.md, README.md) to reference the
+   new domain.
+
+### Rollback (developer, ~5 min)
+
+If post-flip verification fails, or RUM/Lighthouse regress within the
+first hour:
+
+1. Revert the `SITE_BASE_URL` line in `site/wrangler.toml` back to
+   `https://centralgauge.sshadows.workers.dev`.
+2. (If changed) Revert `site/static/robots.txt` `Sitemap:` line.
+3. `cd site && npx wrangler deploy` — old domain is the SSR root
+   again. The custom-domain DNS binding can stay; it just renders the
+   workers.dev canonical until the next forward flip.
+4. Re-run `bash scripts/verify-domain-flip.sh
+   centralgauge.sshadows.workers.dev` (with new = old) to confirm
+   parity with pre-flip state.
+5. Open a follow-up issue documenting the regression before
+   re-attempting the flip.
+
