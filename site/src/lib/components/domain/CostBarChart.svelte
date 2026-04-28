@@ -17,25 +17,29 @@
   const p95Y = $derived(innerH - (p95Cost / maxCost) * innerH);
 </script>
 
-<figure class="chart">
-  <svg width={width} height={height} role="img" aria-label="Cost per run, mean {formatCost(meanCost)}, p95 {formatCost(p95Cost)}">
-    <g transform="translate({margin.left}, {margin.top})">
-      <line x1="0" y1="0" x2="0" y2={innerH} stroke="var(--border)" />
-      <line x1="0" y1={innerH} x2={innerW} y2={innerH} stroke="var(--border)" />
-      {#each points as p, i}
-        {@const w = innerW / Math.max(1, points.length)}
-        {@const h = (p.cost_usd / maxCost) * innerH}
-        {@const x = i * w}
-        {@const y = innerH - h}
-        <rect {x} {y} width={w * 0.7} height={h} fill="var(--accent)" />
-      {/each}
-      <line x1="0" y1={meanY} x2={innerW} y2={meanY} stroke="var(--success)" stroke-dasharray="4 4" />
-      <line x1="0" y1={p95Y} x2={innerW} y2={p95Y} stroke="var(--warning)" stroke-dasharray="4 4" />
-      <text x="-8" y={meanY} fill="var(--success)" font-size="10" text-anchor="end" dominant-baseline="middle">mean</text>
-      <text x="-8" y={p95Y} fill="var(--warning)" font-size="10" text-anchor="end" dominant-baseline="middle">p95</text>
-    </g>
-  </svg>
-</figure>
+{#if points.length > 0}
+  <figure class="chart">
+    <svg width={width} height={height} role="img" aria-label="Cost per run, mean {formatCost(meanCost)}, p95 {formatCost(p95Cost)}">
+      <g transform="translate({margin.left}, {margin.top})">
+        <line x1="0" y1="0" x2="0" y2={innerH} stroke="var(--border)" />
+        <line x1="0" y1={innerH} x2={innerW} y2={innerH} stroke="var(--border)" />
+        {#each points as p, i}
+          {@const w = innerW / Math.max(1, points.length)}
+          {@const h = (p.cost_usd / maxCost) * innerH}
+          {@const x = i * w}
+          {@const y = innerH - h}
+          <rect {x} {y} width={w * 0.7} height={h} fill="var(--accent)" />
+        {/each}
+        <line x1="0" y1={meanY} x2={innerW} y2={meanY} stroke="var(--success)" stroke-dasharray="4 4" />
+        <line x1="0" y1={p95Y} x2={innerW} y2={p95Y} stroke="var(--warning)" stroke-dasharray="4 4" />
+        <text x="-8" y={meanY} fill="var(--success)" font-size="10" text-anchor="end" dominant-baseline="middle">mean</text>
+        <text x="-8" y={p95Y} fill="var(--warning)" font-size="10" text-anchor="end" dominant-baseline="middle">p95</text>
+      </g>
+    </svg>
+  </figure>
+{:else}
+  <p class="text-muted">No cost data yet.</p>
+{/if}
 
 <style>
   .chart { margin: 0; }
