@@ -30,7 +30,7 @@
       {#each points as p, i}
         {@const x = (i / Math.max(1, points.length - 1)) * innerW}
         {@const y = innerH - p.score * innerH}
-        <circle {x} {y} cx={x} cy={y} r="3" fill="var(--accent)" />
+        <circle cx={x} cy={y} r="3" fill="var(--accent)" />
       {/each}
       <text x="-8" y="0" fill="var(--text-muted)" font-size="10" text-anchor="end" dominant-baseline="middle">1.0</text>
       <text x="-8" y={innerH} fill="var(--text-muted)" font-size="10" text-anchor="end" dominant-baseline="middle">0.0</text>
