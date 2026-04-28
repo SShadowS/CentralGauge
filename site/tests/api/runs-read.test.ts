@@ -321,6 +321,19 @@ describe('GET /api/v1/runs/:id', () => {
     expect(res.status).toBe(404);
   });
 
+  it('emits completed_at as null (not empty string) for incomplete runs', async () => {
+    // P6 C1: null preservation across the wire. Set the completed_at column
+    // to NULL to simulate a still-running ingest (rare path).
+    await env.DB.prepare(`UPDATE runs SET completed_at = NULL, status = 'running' WHERE id = 'r1'`).run();
+    const res = await SELF.fetch('https://x/api/v1/runs/r1', {
+      headers: { 'cache-control': 'no-cache' },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { completed_at: string | null; status: string };
+    expect(body.completed_at).toBeNull();
+    expect(body.status).toBe('running');
+  });
+
   it('returns 500 result_corrupt when failure_reasons_json is malformed', async () => {
     await env.DB.prepare(`UPDATE results SET failure_reasons_json = '{bad json' WHERE run_id = 'r1'`).run();
     // `runs/[id]` is `public, s-maxage=30` and the adapter-cloudflare wrapper

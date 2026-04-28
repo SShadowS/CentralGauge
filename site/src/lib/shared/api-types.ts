@@ -128,7 +128,12 @@ export interface RunDetail {
   pricing_version: string;
   centralgauge_sha?: string;
   started_at: string;
-  completed_at: string;
+  /**
+   * `null` while the run is pending/running. The `/api/v1/runs/:id` endpoint
+   * emits `null` (not `''`) for incomplete runs (P6 Task C1; was a string-typed
+   * lie that yielded empty strings on the wire). Consumers must handle null.
+   */
+  completed_at: string | null;
   settings: {
     temperature: number;
     max_attempts: number;
@@ -182,22 +187,14 @@ export interface Transcript {
 // =============================================================================
 // Model limitations — GET /api/v1/models/:slug/limitations (markdown or json)
 // =============================================================================
-
-export interface LimitationItem {
-  al_concept: string;
-  severity: 'low' | 'medium' | 'high';
-  description: string;
-  first_seen_at: string;
-  example_run_id: string;
-  example_task_id: string;
-}
-
-export interface ModelLimitations {
-  model_slug: string;
-  generated_at: string;
-  total: number;
-  items: LimitationItem[];
-}
+//
+// LimitationItem / ModelLimitations interfaces removed in P6 (Task C2) —
+// dead code; the limitations page uses the markdown response path
+// (`Accept: text/markdown`) and the JSON branch's actual shape diverged
+// from these interfaces (real keys: al_concept, concept, description,
+// correct_pattern, error_codes, first_seen, last_seen, occurrence_count,
+// severity — none of which matched the dropped types).
+// See docs/superpowers/plans/2026-04-28-p6-stabilization.md.
 
 // =============================================================================
 // Models index — GET /api/v1/models  (P5.3 extension)

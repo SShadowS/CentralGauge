@@ -226,7 +226,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       pricing_version: run.pricing_version,
       ...(run.centralgauge_sha ? { centralgauge_sha: run.centralgauge_sha } : {}),
       started_at: run.started_at,
-      completed_at: run.completed_at ?? '',
+      // P6 C1: emit null (not '') for incomplete runs; matches RunDetail.completed_at: string | null.
+      completed_at: run.completed_at ?? null,
       settings: {
         temperature: run.temperature ?? 0,
         max_attempts: run.max_attempts ?? 0,

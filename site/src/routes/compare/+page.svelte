@@ -5,8 +5,8 @@
   import CompareTable from '$lib/components/domain/CompareTable.svelte';
   import CompareStatRow from '$lib/components/domain/CompareStatRow.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
+  import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import Input from '$lib/components/ui/Input.svelte';
-  import { GitCompare } from '$lib/components/ui/icons';
   import { formatScore, formatCost } from '$lib/client/format';
 
   let { data } = $props();
@@ -82,11 +82,12 @@
 </section>
 
 {#if !data.compare}
-  <section class="empty">
-    <GitCompare size={32} />
-    <p class="text-muted">Add at least two model slugs to compare.</p>
-    <p class="hint text-muted">Try: <code class="text-mono">?models=sonnet-4-7,gpt-5</code></p>
-  </section>
+  <EmptyState title="Pick at least two models to compare">
+    {#snippet children()}
+      Add a slug to the input above, or jump straight in via URL — for example
+      <code class="text-mono">?models=sonnet-4-7,gpt-5</code>.
+    {/snippet}
+  </EmptyState>
 {:else}
   <section class="stats">
     <h2>At a glance</h2>
@@ -111,13 +112,4 @@
 
   section { margin-top: var(--space-6); }
   section h2 { font-size: var(--text-xl); margin-bottom: var(--space-4); }
-
-  .empty {
-    padding: var(--space-9) var(--space-5);
-    text-align: center;
-    border: 1px dashed var(--border);
-    border-radius: var(--radius-2);
-    color: var(--text-muted);
-  }
-  .empty .hint { margin-top: var(--space-3); font-size: var(--text-xs); }
 </style>

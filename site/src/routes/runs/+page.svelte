@@ -7,6 +7,7 @@
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
+  import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
   import Input from '$lib/components/ui/Input.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
@@ -163,10 +164,13 @@
     {/if}
 
     {#if data.runs.data.length === 0}
-      <div class="empty">
-        <p class="text-muted">No runs match the current filters.</p>
-        <button class="clear" onclick={clearAll}>Clear filters</button>
-      </div>
+      <EmptyState
+        title="No runs match the current filters"
+        ctaLabel="Clear filters"
+        ctaHref="/runs"
+      >
+        {#snippet children()}Try removing one or more filters from the rail above.{/snippet}
+      </EmptyState>
     {:else}
       <RunsTable rows={data.runs.data} />
       <RunsCursorPager
@@ -196,7 +200,6 @@
 
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-5); align-items: center; }
   .clear { background: transparent; border: 0; color: var(--text-muted); font-size: var(--text-xs); cursor: pointer; }
-  .empty { padding: var(--space-7) var(--space-5); text-align: center; }
 
   .banners-wrap {
     margin: var(--space-4) 0 var(--space-5) 0;

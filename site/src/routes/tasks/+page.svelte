@@ -6,6 +6,7 @@
   import RunsCursorPager from '$lib/components/domain/RunsCursorPager.svelte';
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
+  import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
 
   let { data } = $props();
@@ -110,10 +111,21 @@
     {/if}
 
     {#if filteredRows.length === 0}
-      <div class="empty">
-        <p class="text-muted">No tasks match the current filters.</p>
-        <button class="clear" onclick={clearAll}>Clear filters</button>
-      </div>
+      {#if allRows.length === 0}
+        <EmptyState title="No tasks in the catalog yet">
+          {#snippet children()}
+            Task catalog populates after <code class="text-mono">centralgauge sync-catalog --apply</code>.
+          {/snippet}
+        </EmptyState>
+      {:else}
+        <EmptyState
+          title="No tasks match the current filters"
+          ctaLabel="Clear filters"
+          ctaHref={page.url.pathname}
+        >
+          {#snippet children()}Try clearing one or more filters above.{/snippet}
+        </EmptyState>
+      {/if}
     {:else}
       <TasksIndexTable rows={filteredRows} />
       <RunsCursorPager
@@ -143,5 +155,4 @@
 
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-5); align-items: center; }
   .clear { background: transparent; border: 0; color: var(--text-muted); font-size: var(--text-xs); cursor: pointer; }
-  .empty { padding: var(--space-7) var(--space-5); text-align: center; }
 </style>

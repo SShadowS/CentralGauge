@@ -1,6 +1,7 @@
 <script lang="ts">
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import ShortcomingsTable from '$lib/components/domain/ShortcomingsTable.svelte';
+  import EmptyState from '$lib/components/ui/EmptyState.svelte';
 
   let { data } = $props();
   const items = $derived(data.shortcomings.data);
@@ -22,7 +23,12 @@
 </header>
 
 {#if items.length === 0}
-  <p class="empty text-muted">No shortcomings recorded yet.</p>
+  <EmptyState title="No shortcomings recorded yet">
+    {#snippet children()}
+      Limitations are derived from compile errors and accumulate as runs land.
+      None have surfaced for the current dataset.
+    {/snippet}
+  </EmptyState>
 {:else}
   <ShortcomingsTable items={items} />
 {/if}
@@ -31,5 +37,4 @@
   .head { padding: var(--space-6) 0 var(--space-5) 0; }
   .head h1 { font-size: var(--text-3xl); margin: 0; }
   .meta { font-size: var(--text-sm); margin-top: var(--space-2); }
-  .empty { padding: var(--space-7) var(--space-5); text-align: center; }
 </style>
