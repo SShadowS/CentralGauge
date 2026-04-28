@@ -1,5 +1,6 @@
 import type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow } from '$shared/api-types';
 import { getAll } from './db';
+import { computeModelAggregates } from './model-aggregates';
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -37,6 +38,7 @@ export async function computeLeaderboard(
 
   const sql = `
     SELECT
+      m.id AS model_id,
       m.slug AS model_slug,
       m.display_name AS model_display,
       m.api_model_id AS model_api,
@@ -62,6 +64,7 @@ export async function computeLeaderboard(
   `;
 
   type Row = {
+    model_id: number;
     model_slug: string; model_display: string; model_api: string; family_slug: string;
     run_count: number; tasks_attempted: number; tasks_passed: number;
     avg_score: number; avg_cost_usd: number; last_run_at: string;
@@ -69,19 +72,16 @@ export async function computeLeaderboard(
 
   const rows = await getAll<Row>(db, sql, [...params, q.limit]);
 
-  // Second query: verified *run* count per model (distinct runs, not task rows).
-  // Joins models so we can key directly on slug — no third lookup needed.
-  const verifiedSql = `
-    SELECT m.slug AS model_slug, COUNT(DISTINCT runs.id) AS verified_runs
-    FROM runs
-    JOIN models m ON m.id = runs.model_id
-    ${q.set === 'current' ? `WHERE runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1) AND ` : 'WHERE '}runs.tier = 'verified'
-    GROUP BY m.slug
-  `;
-  const verified = await getAll<{ model_slug: string; verified_runs: number }>(db, verifiedSql, []);
-  const verifiedByModelSlug = new Map<string, number>(
-    verified.map((v) => [v.model_slug, +(v.verified_runs ?? 0)]),
-  );
+  // Verified run count: delegate to computeModelAggregates so all callers
+  // (this function, /api/v1/models, /api/v1/models/[slug]) compute it the
+  // same way. The is_current=1 filter is preserved via taskSetCurrent.
+  const modelIds = rows.map((r) => r.model_id);
+  const aggMap = modelIds.length === 0
+    ? new Map<number, { verified_runs: number }>()
+    : await computeModelAggregates(db, {
+      modelIds,
+      taskSetCurrent: q.set === 'current',
+    });
 
   return rows.map((r, idx) => ({
     rank: idx + 1,
@@ -92,7 +92,7 @@ export async function computeLeaderboard(
     tasks_passed: r.tasks_passed ?? 0,
     avg_score: Math.round((+(r.avg_score ?? 0)) * 1e6) / 1e6,
     avg_cost_usd: Math.round((+(r.avg_cost_usd ?? 0)) * 1e6) / 1e6,
-    verified_runs: verifiedByModelSlug.get(r.model_slug) ?? 0,
+    verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,
     last_run_at: r.last_run_at,
   }));
 }

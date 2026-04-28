@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { cachedJson } from '$lib/server/cache';
 import { getAll, getFirst } from '$lib/server/db';
 import { ApiError, errorResponse } from '$lib/server/errors';
+import { computeModelAggregates } from '$lib/server/model-aggregates';
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
@@ -24,22 +25,28 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     );
     if (!model) throw new ApiError(404, 'model_not_found', `No model '${params.slug}'`);
 
-    const aggregate = await getFirst<{
-      run_count: number | string;
+    // Delegate run/score/cost aggregates to the shared helper so this
+    // endpoint and the leaderboard return identical numbers for the same model.
+    const aggMap = await computeModelAggregates(env.DB, { modelIds: [model.id] });
+    const agg = aggMap.get(model.id) ?? {
+      run_count: 0,
+      verified_runs: 0,
+      avg_score: null,
+      avg_cost_usd: null,
+      last_run_at: null,
+    };
+
+    // tasks_attempted / tasks_passed are not in the helper (they are per-task
+    // counts, not per-model aggregates). Compute them directly here.
+    const taskAggregate = await getFirst<{
       tasks_attempted: number | string;
       tasks_passed: number | string | null;
-      avg_score: number | string | null;
-      avg_cost_usd: number | string | null;
     }>(
       env.DB,
-      `SELECT COUNT(DISTINCT runs.id) AS run_count,
-              COUNT(*) AS tasks_attempted,
-              SUM(r.passed) AS tasks_passed,
-              AVG(r.score) AS avg_score,
-              AVG((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) AS avg_cost_usd
+      `SELECT COUNT(*) AS tasks_attempted,
+              SUM(r.passed) AS tasks_passed
        FROM runs
        JOIN results r ON r.run_id = runs.id
-       JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
        WHERE runs.model_id = ?`,
       [model.id],
     );
@@ -74,9 +81,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       [model.id],
     );
 
-    const runCount = +(aggregate?.run_count ?? 0);
-    const avgScore = aggregate?.avg_score;
-    const avgCostUsd = aggregate?.avg_cost_usd;
+    const runCount = agg.run_count;
 
     return cachedJson(request, {
       slug: model.slug,
@@ -87,10 +92,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       family_display: model.family_display,
       aggregates: {
         run_count: runCount,
-        tasks_attempted: +(aggregate?.tasks_attempted ?? 0),
-        tasks_passed: runCount === 0 ? null : +(aggregate?.tasks_passed ?? 0),
-        avg_score: runCount === 0 ? null : Number((+(avgScore ?? 0)).toFixed(6)),
-        avg_cost_usd: runCount === 0 ? null : Number((+(avgCostUsd ?? 0)).toFixed(6)),
+        tasks_attempted: +(taskAggregate?.tasks_attempted ?? 0),
+        tasks_passed: runCount === 0 ? null : +(taskAggregate?.tasks_passed ?? 0),
+        avg_score: runCount === 0 ? null : agg.avg_score,
+        avg_cost_usd: runCount === 0 ? null : agg.avg_cost_usd,
       },
       consistency_score: Math.max(0, Math.min(1, +(consistency?.consistency ?? 1))),
       recent_runs: recentRuns,
