@@ -23,3 +23,7 @@ export { default as GitCompare } from './GitCompare.svelte';
 export { default as SearchX } from './SearchX.svelte';
 export { default as Command } from './Command.svelte';
 export { default as CornerDownLeft } from './CornerDownLeft.svelte';
+export { default as Maximize2 } from './Maximize2.svelte';
+export { default as Minimize2 } from './Minimize2.svelte';
+export { default as Activity } from './Activity.svelte';
+export { default as Image } from './Image.svelte';
