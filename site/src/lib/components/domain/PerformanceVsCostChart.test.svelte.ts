@@ -55,7 +55,7 @@ describe('PerformanceVsCostChart', () => {
     const titles = Array.from(container.querySelectorAll('title')).map(
       (t) => t.textContent ?? '',
     );
-    expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('score 80.000'))).toBe(true);
+    expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('score 80.00'))).toBe(true);
     expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('cost $0.0123'))).toBe(true);
   });
 

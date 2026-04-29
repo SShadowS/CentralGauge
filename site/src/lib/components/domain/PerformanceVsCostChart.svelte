@@ -40,48 +40,79 @@
     role="img"
     aria-label="Performance vs Cost chart, top {displayed.length} models"
   >
+    <!-- gridlines (drawn first so bars + labels paint over) -->
+    {#each [25, 50, 75] as v (v)}
+      <line
+        x1={PADDING.left}
+        y1={PADDING.top + innerH * (1 - v / 100)}
+        x2={PADDING.left + innerW}
+        y2={PADDING.top + innerH * (1 - v / 100)}
+        stroke="var(--border)"
+        stroke-dasharray="2 4"
+        stroke-width="1"
+      />
+    {/each}
+
     <!-- axes -->
     <line
       x1={PADDING.left} y1={PADDING.top + innerH}
       x2={PADDING.left + innerW} y2={PADDING.top + innerH}
-      stroke="var(--border)"
+      stroke="var(--border-strong)"
     />
     <line
       x1={PADDING.left} y1={PADDING.top}
       x2={PADDING.left} y2={PADDING.top + innerH}
-      stroke="var(--border)"
+      stroke="var(--border-strong)"
     />
     <line
       x1={PADDING.left + innerW} y1={PADDING.top}
       x2={PADDING.left + innerW} y2={PADDING.top + innerH}
-      stroke="var(--border)"
+      stroke="var(--border-strong)"
     />
 
     <!-- y1 axis labels (score, left) -->
-    <text x={PADDING.left - 6} y={PADDING.top + innerH} text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
-    <text x={PADDING.left - 6} y={PADDING.top + innerH / 2} text-anchor="end" font-size="10" fill="var(--text-muted)">50</text>
+    <text x={PADDING.left - 6} y={PADDING.top + innerH + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
+    <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.75 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">25</text>
+    <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.5 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">50</text>
+    <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.25 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">75</text>
     <text x={PADDING.left - 6} y={PADDING.top + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">100</text>
 
     <!-- y2 axis labels (cost, right) -->
-    <text x={PADDING.left + innerW + 6} y={PADDING.top + innerH} font-size="10" fill="var(--text-muted)">$0</text>
+    <text x={PADDING.left + innerW + 6} y={PADDING.top + innerH + 3} font-size="10" fill="var(--text-muted)">$0</text>
     <text x={PADDING.left + innerW + 6} y={PADDING.top + 4} font-size="10" fill="var(--text-muted)">${maxCost.toFixed(2)}</text>
 
     {#each displayed as row, i (row.model.slug)}
       {@const cx = PADDING.left + xStep * (i + 0.5)}
       {@const barH = (row.avg_score / maxScore) * innerH}
+      {@const barTop = PADDING.top + innerH - barH}
       {@const dotY = PADDING.top + innerH - (row.avg_cost_usd / maxCost) * innerH}
+      {@const labelInside = barH >= 22}
 
       <!-- score bar -->
       <rect
         x={cx - barWidth / 2}
-        y={PADDING.top + innerH - barH}
+        y={barTop}
         width={barWidth}
         height={barH}
         fill="var(--accent)"
-        opacity="0.7"
+        opacity="0.85"
       >
-        <title>{row.model.display_name}: score {row.avg_score.toFixed(3)}</title>
+        <title>{row.model.display_name}: score {row.avg_score.toFixed(2)}</title>
       </rect>
+
+      <!-- score label — inside bar top when there's room, above otherwise.
+           Inside = white-on-accent for direct read; above = body text. -->
+      <text
+        x={cx}
+        y={labelInside ? barTop + 14 : barTop - 6}
+        text-anchor="middle"
+        font-size="11"
+        font-weight="600"
+        fill={labelInside ? '#ffffff' : 'var(--text)'}
+        style="pointer-events: none"
+      >
+        {row.avg_score.toFixed(0)}
+      </text>
 
       <!-- cost dot -->
       <circle cx={cx} cy={dotY} r="4" fill="var(--warning)" stroke="white" stroke-width="1.5">
@@ -91,7 +122,7 @@
       <!-- x-axis label (model rank) -->
       <text
         x={cx}
-        y={PADDING.top + innerH + 14}
+        y={PADDING.top + innerH + 16}
         text-anchor="middle"
         font-size="10"
         fill="var(--text-muted)"
