@@ -85,13 +85,21 @@
 </div>
 
 <style>
-  .wrap { overflow-x: auto; }
-  table {
+  .wrap {
+    overflow-x: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
-    overflow: hidden;
   }
-  thead { background: var(--surface); position: sticky; top: var(--nav-h); z-index: var(--z-sticky); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    background: var(--surface);
+    position: sticky;
+    top: var(--nav-h);
+    z-index: var(--z-sticky);
+  }
   th, td {
     text-align: left;
     padding: var(--space-3) var(--space-5);
