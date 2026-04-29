@@ -108,4 +108,24 @@ describe('ShortcomingsSection', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(container.textContent).toContain('Could not load shortcomings');
   });
+
+  // Regression: prior to the non-reactive `started` guard, the $effect
+  // read `loading` ($state) and then wrote `loading = true` on the same
+  // tick. Svelte 5 re-runs effects when their tracked reads change, so
+  // the self-write retriggered the effect — the cleanup aborted the
+  // in-flight fetch, .finally then flipped loading=false, which retriggered
+  // again. The browser hung at 100% CPU on /models/[slug] pages.
+  // Asserts fetch is invoked EXACTLY ONCE (not on a tight loop).
+  it('lazy-fetch runs exactly ONCE per slug (no infinite loop)', async () => {
+    const fetchSpy = vi.fn(async () => new Response(
+      JSON.stringify({ data: [row({ al_concept: 'interfaces' })] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ));
+    global.fetch = fetchSpy as unknown as typeof fetch;
+    render(ShortcomingsSection, { slug: 'anthropic/claude-opus-4-6' });
+    // Sleep generously past fetch-resolve + .finally + any pending microtasks
+    // so a buggy implementation has every chance to re-fire.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });

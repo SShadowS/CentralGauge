@@ -30,12 +30,22 @@
   let loading = $state(false);
   let loadError = $state('');
 
+  // Non-reactive guard. Plain `let` (not $state) so reading it inside the
+  // effect does NOT establish a reactive dependency. Without this guard,
+  // the effect's own `loading = true` write retriggered the effect (it
+  // also READ `loading`), the cleanup aborted the in-flight fetch, the
+  // .finally then flipped `loading = false`, retriggering the effect
+  // again — an infinite loop that pegged the browser CPU on
+  // /models/[slug] pages.
+  let started = false;
+
   // Lazy client-side fetch. Skipped entirely when items prop is provided
   // (the parent did the work — useful for tests and SSR-fast paths).
   $effect(() => {
     if (items !== undefined) return;
     if (!slug) return;
-    if (fetched !== null || loading) return;
+    if (started) return;
+    started = true;
     loading = true;
     const ctrl = new AbortController();
     // Slug may contain '/' (vendor/model). encodeURI keeps the slash; the
