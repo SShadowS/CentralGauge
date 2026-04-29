@@ -16,11 +16,13 @@
   const innerW = W - PADDING.left - PADDING.right;
   const innerH = H - PADDING.top - PADDING.bottom;
 
-  // y1: avg_score on a fixed 0..1 scale (left axis).
+  // y1: avg_score on a fixed 0..100 scale (left axis). Production data is
+  //     0-100 (e.g. 68.13), not 0-1 — the prior 0..1 cap pinned every bar
+  //     to the top of the chart.
   // y2: avg_cost_usd on a 0..max scale (right axis). Floor at $0.01 so a
   //     run with zero cost doesn't divide by zero and so the y2 axis
   //     never collapses to a single point.
-  const maxScore = 1.0;
+  const maxScore = 100;
   const maxCost = $derived(Math.max(0.01, ...displayed.map((r) => r.avg_cost_usd)));
 
   // Sparse-data UX: clamp barWidth to a minimum visual size so a 4-row
@@ -57,8 +59,8 @@
 
     <!-- y1 axis labels (score, left) -->
     <text x={PADDING.left - 6} y={PADDING.top + innerH} text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
-    <text x={PADDING.left - 6} y={PADDING.top + innerH / 2} text-anchor="end" font-size="10" fill="var(--text-muted)">0.5</text>
-    <text x={PADDING.left - 6} y={PADDING.top + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">1.0</text>
+    <text x={PADDING.left - 6} y={PADDING.top + innerH / 2} text-anchor="end" font-size="10" fill="var(--text-muted)">50</text>
+    <text x={PADDING.left - 6} y={PADDING.top + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">100</text>
 
     <!-- y2 axis labels (cost, right) -->
     <text x={PADDING.left + innerW + 6} y={PADDING.top + innerH} font-size="10" fill="var(--text-muted)">$0</text>

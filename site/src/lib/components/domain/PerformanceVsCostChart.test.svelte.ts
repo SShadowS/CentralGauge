@@ -38,9 +38,9 @@ describe('PerformanceVsCostChart', () => {
 
   it('renders one bar and one dot per row (3 rows -> 3 of each)', () => {
     const rows = [
-      row('a', 0.9, 0.01),
-      row('b', 0.7, 0.05),
-      row('c', 0.5, 0.02),
+      row('a', 90, 0.01),
+      row('b', 70, 0.05),
+      row('c', 50, 0.02),
     ];
     const { container } = render(PerformanceVsCostChart, { rows });
     expect(container.querySelector('svg')).not.toBeNull();
@@ -49,19 +49,19 @@ describe('PerformanceVsCostChart', () => {
   });
 
   it('exposes hover tooltips via <title> elements on bars and dots', () => {
-    const rows = [row('claude-sonnet', 0.8, 0.0123)];
+    const rows = [row('claude-sonnet', 80, 0.0123)];
     const { container } = render(PerformanceVsCostChart, { rows });
 
     const titles = Array.from(container.querySelectorAll('title')).map(
       (t) => t.textContent ?? '',
     );
-    expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('score 0.800'))).toBe(true);
+    expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('score 80.000'))).toBe(true);
     expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('cost $0.0123'))).toBe(true);
   });
 
   it('caps display at top N=12 even when 20 rows are provided', () => {
     const rows = Array.from({ length: 20 }, (_, i) =>
-      row(`m${i}`, 0.5 + (i % 5) * 0.05, 0.01 + i * 0.001, i + 1),
+      row(`m${i}`, 50 + (i % 5) * 5, 0.01 + i * 0.001, i + 1),
     );
     const { container } = render(PerformanceVsCostChart, { rows });
     // 12 bars + score legend rect = 13 rects
@@ -72,10 +72,10 @@ describe('PerformanceVsCostChart', () => {
 
   it('keeps a sane minimum bar width with sparse data (4 rows)', () => {
     const rows = [
-      row('a', 0.9, 0.01),
-      row('b', 0.7, 0.02),
-      row('c', 0.5, 0.03),
-      row('d', 0.3, 0.04),
+      row('a', 90, 0.01),
+      row('b', 70, 0.02),
+      row('c', 50, 0.03),
+      row('d', 30, 0.04),
     ];
     const { container } = render(PerformanceVsCostChart, { rows });
     // Bars are <rect> elements that have an inline <title> child; the
