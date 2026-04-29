@@ -12,18 +12,17 @@
 
   const W = 720;
   const H = 240;
-  const PADDING = { top: 16, right: 60, bottom: 60, left: 50 };
+  // Top padding leaves room for the on-bar score label so it never clips
+  // when a model scores 100.
+  const PADDING = { top: 28, right: 24, bottom: 48, left: 50 };
   const innerW = W - PADDING.left - PADDING.right;
   const innerH = H - PADDING.top - PADDING.bottom;
 
-  // y1: avg_score on a fixed 0..100 scale (left axis). Production data is
-  //     0-100 (e.g. 68.13), not 0-1 — the prior 0..1 cap pinned every bar
-  //     to the top of the chart.
-  // y2: avg_cost_usd on a 0..max scale (right axis). Floor at $0.01 so a
-  //     run with zero cost doesn't divide by zero and so the y2 axis
-  //     never collapses to a single point.
+  // avg_score is 0..100 (production data, e.g. 68.13). The earlier
+  // version overlaid avg_cost_usd as a right-axis dot but that overlapped
+  // the on-bar score label whenever the two values landed at similar y.
+  // Cost lives in the table column; the chart is score-only.
   const maxScore = 100;
-  const maxCost = $derived(Math.max(0.01, ...displayed.map((r) => r.avg_cost_usd)));
 
   // Sparse-data UX: clamp barWidth to a minimum visual size so a 4-row
   // chart still has bars that read as bars rather than thin lines.
@@ -38,7 +37,7 @@
   <svg
     viewBox="0 0 {W} {H}"
     role="img"
-    aria-label="Performance vs Cost chart, top {displayed.length} models"
+    aria-label="Score chart, top {displayed.length} models"
   >
     <!-- gridlines (drawn first so bars + labels paint over) -->
     {#each [25, 50, 75] as v (v)}
@@ -64,29 +63,18 @@
       x2={PADDING.left} y2={PADDING.top + innerH}
       stroke="var(--border-strong)"
     />
-    <line
-      x1={PADDING.left + innerW} y1={PADDING.top}
-      x2={PADDING.left + innerW} y2={PADDING.top + innerH}
-      stroke="var(--border-strong)"
-    />
 
-    <!-- y1 axis labels (score, left) -->
+    <!-- y-axis labels (score) -->
     <text x={PADDING.left - 6} y={PADDING.top + innerH + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.75 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">25</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.5 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">50</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.25 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">75</text>
     <text x={PADDING.left - 6} y={PADDING.top + 4} text-anchor="end" font-size="10" fill="var(--text-muted)">100</text>
 
-    <!-- y2 axis labels (cost, right) -->
-    <text x={PADDING.left + innerW + 6} y={PADDING.top + innerH + 3} font-size="10" fill="var(--text-muted)">$0</text>
-    <text x={PADDING.left + innerW + 6} y={PADDING.top + 4} font-size="10" fill="var(--text-muted)">${maxCost.toFixed(2)}</text>
-
     {#each displayed as row, i (row.model.slug)}
       {@const cx = PADDING.left + xStep * (i + 0.5)}
       {@const barH = (row.avg_score / maxScore) * innerH}
       {@const barTop = PADDING.top + innerH - barH}
-      {@const dotY = PADDING.top + innerH - (row.avg_cost_usd / maxCost) * innerH}
-      {@const labelInside = barH >= 22}
 
       <!-- score bar -->
       <rect
@@ -95,49 +83,64 @@
         width={barWidth}
         height={barH}
         fill="var(--accent)"
-        opacity="0.85"
+        rx="2"
       >
         <title>{row.model.display_name}: score {row.avg_score.toFixed(2)}</title>
       </rect>
 
-      <!-- score label — inside bar top when there's room, above otherwise.
-           Inside = white-on-accent for direct read; above = body text. -->
-      <text
-        x={cx}
-        y={labelInside ? barTop + 14 : barTop - 6}
-        text-anchor="middle"
-        font-size="11"
-        font-weight="600"
-        fill={labelInside ? '#ffffff' : 'var(--text)'}
-        style="pointer-events: none"
-      >
-        {row.avg_score.toFixed(0)}
-      </text>
+      <!-- score label: inside bar top when there's room, above otherwise.
+           No cost dot to collide with — the chart is score-only. -->
+      {#if barH >= 24}
+        <text
+          x={cx}
+          y={barTop + 17}
+          text-anchor="middle"
+          font-size="14"
+          font-weight="700"
+          font-family="var(--font-mono)"
+          fill="#ffffff"
+          style="pointer-events: none"
+        >
+          {row.avg_score.toFixed(1)}
+        </text>
+      {:else}
+        <text
+          x={cx}
+          y={barTop - 6}
+          text-anchor="middle"
+          font-size="13"
+          font-weight="700"
+          font-family="var(--font-mono)"
+          fill="var(--text)"
+          style="pointer-events: none"
+        >
+          {row.avg_score.toFixed(1)}
+        </text>
+      {/if}
 
-      <!-- cost dot -->
-      <circle cx={cx} cy={dotY} r="4" fill="var(--warning)" stroke="white" stroke-width="1.5">
-        <title>{row.model.display_name}: cost ${row.avg_cost_usd.toFixed(4)}</title>
-      </circle>
-
-      <!-- x-axis label (model rank) -->
+      <!-- x-axis rank label -->
       <text
         x={cx}
         y={PADDING.top + innerH + 16}
         text-anchor="middle"
-        font-size="10"
+        font-size="11"
+        font-weight="500"
         fill="var(--text-muted)"
       >
-        {i + 1}
+        #{i + 1}
+      </text>
+      <text
+        x={cx}
+        y={PADDING.top + innerH + 30}
+        text-anchor="middle"
+        font-size="10"
+        fill="var(--text-faint)"
+      >
+        {row.model.display_name.length > 14
+          ? row.model.display_name.slice(0, 13) + '…'
+          : row.model.display_name}
       </text>
     {/each}
-
-    <!-- legend -->
-    <g transform="translate({PADDING.left}, {H - 24})">
-      <rect width="12" height="12" fill="var(--accent)" opacity="0.7" />
-      <text x="16" y="10" font-size="10" fill="var(--text-muted)">Score (left axis)</text>
-      <circle cx="120" cy="6" r="4" fill="var(--warning)" stroke="white" stroke-width="1.5" />
-      <text x="130" y="10" font-size="10" fill="var(--text-muted)">Cost (right axis)</text>
-    </g>
   </svg>
 {/if}
 

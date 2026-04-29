@@ -36,7 +36,7 @@ describe('PerformanceVsCostChart', () => {
     expect(empty?.textContent).toContain('No data');
   });
 
-  it('renders one bar and one dot per row (3 rows -> 3 of each)', () => {
+  it('renders one bar per row (3 rows -> 3 bars, no cost overlay)', () => {
     const rows = [
       row('a', 90, 0.01),
       row('b', 70, 0.05),
@@ -44,11 +44,16 @@ describe('PerformanceVsCostChart', () => {
     ];
     const { container } = render(PerformanceVsCostChart, { rows });
     expect(container.querySelector('svg')).not.toBeNull();
-    expect(container.querySelectorAll('rect').length).toBeGreaterThanOrEqual(3);
-    expect(container.querySelectorAll('circle')).toHaveLength(3 + 1); // bars + 1 legend dot
+    // Bar rects all carry an inline <title>; filter to just those.
+    const bars = Array.from(container.querySelectorAll('rect')).filter(
+      (r) => r.querySelector('title') !== null,
+    );
+    expect(bars).toHaveLength(3);
+    // Cost dot was removed; the chart is score-only.
+    expect(container.querySelectorAll('circle')).toHaveLength(0);
   });
 
-  it('exposes hover tooltips via <title> elements on bars and dots', () => {
+  it('exposes a score tooltip via <title> on each bar', () => {
     const rows = [row('claude-sonnet', 80, 0.0123)];
     const { container } = render(PerformanceVsCostChart, { rows });
 
@@ -56,7 +61,6 @@ describe('PerformanceVsCostChart', () => {
       (t) => t.textContent ?? '',
     );
     expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('score 80.00'))).toBe(true);
-    expect(titles.some((t) => t.includes('claude-sonnet') && t.includes('cost $0.0123'))).toBe(true);
   });
 
   it('caps display at top N=12 even when 20 rows are provided', () => {
@@ -64,10 +68,10 @@ describe('PerformanceVsCostChart', () => {
       row(`m${i}`, 50 + (i % 5) * 5, 0.01 + i * 0.001, i + 1),
     );
     const { container } = render(PerformanceVsCostChart, { rows });
-    // 12 bars + score legend rect = 13 rects
-    expect(container.querySelectorAll('rect')).toHaveLength(13);
-    // 12 cost dots + 1 legend dot = 13 circles
-    expect(container.querySelectorAll('circle')).toHaveLength(13);
+    const bars = Array.from(container.querySelectorAll('rect')).filter(
+      (r) => r.querySelector('title') !== null,
+    );
+    expect(bars).toHaveLength(12);
   });
 
   it('keeps a sane minimum bar width with sparse data (4 rows)', () => {
@@ -78,8 +82,6 @@ describe('PerformanceVsCostChart', () => {
       row('d', 30, 0.04),
     ];
     const { container } = render(PerformanceVsCostChart, { rows });
-    // Bars are <rect> elements that have an inline <title> child; the
-    // legend rect has no <title>. Filter on that.
     const bars = Array.from(container.querySelectorAll('rect')).filter(
       (r) => r.querySelector('title') !== null,
     );
@@ -88,5 +90,11 @@ describe('PerformanceVsCostChart', () => {
       const w = parseFloat(bar.getAttribute('width') ?? '0');
       expect(w).toBeGreaterThanOrEqual(8);
     }
+  });
+
+  it('renders the score number on each bar', () => {
+    const rows = [row('a', 68.13, 0.05)];
+    const { container } = render(PerformanceVsCostChart, { rows });
+    expect(container.textContent).toContain('68.1');
   });
 });
