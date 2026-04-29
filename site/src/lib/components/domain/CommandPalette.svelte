@@ -19,12 +19,22 @@
   // Keep a ref to the input so we can refocus when the palette opens.
   let inputEl: HTMLInputElement | undefined = $state();
 
+  // Non-reactive guard. Plain `let` (not $state) so reading inside the
+  // effect does NOT establish a reactive dependency. Reading `loading`
+  // (a $state) and then writing it on the same tick caused the effect
+  // to re-run, the cleanup aborted the fetch, and .finally flipped it
+  // back — infinite loop. `started` is set once and never tested again
+  // by Svelte's reactivity engine.
+  let started = false;
+
   // Effect 1: lazy-load index on first open. Separate from the focus/reset
   // effect so a rapid open/close sequence can abort an in-flight fetch
   // (otherwise `loading` could stick at true after the bus already closed,
   // and the next open would skip the load entirely).
   $effect(() => {
-    if (!paletteBus.open || index || loading) return;
+    if (!paletteBus.open || index) return;
+    if (started) return;
+    started = true;
     loading = true;
     const ctrl = new AbortController();
     fetch('/api/v1/internal/search-index.json', { signal: ctrl.signal })

@@ -77,8 +77,18 @@
   let sigLoading = $state(false);
   let sigError = $state('');
 
+  // Non-reactive guard. Plain `let` (not $state) so reading inside the
+  // effect does NOT establish a reactive dependency. Without this guard,
+  // `loadSignature()`'s `sigLoading = true` write would re-trigger the
+  // effect (which transitively reads `sigLoading` via the early-return
+  // check), the .finally flip back to false would re-trigger it again —
+  // infinite loop. Once kicked off, `sigStarted` stays true forever; the
+  // effect never tries to start a second fetch.
+  let sigStarted = false;
+
   async function loadSignature() {
-    if (signature || sigLoading) return;
+    if (sigStarted) return;
+    sigStarted = true;
     sigLoading = true;
     try {
       const res = await fetch(`/api/v1/runs/${r.id}/signature`);
