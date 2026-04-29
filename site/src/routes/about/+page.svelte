@@ -1,6 +1,5 @@
 <script lang="ts">
-  // Placeholder page — full methodology + transparency content lands in P5.4.
-  // Lives at /about because the Footer transparency link points here.
+  // P7: full /about with scoring methodology section.
 </script>
 
 <svelte:head>
@@ -15,22 +14,76 @@
     AL code generation, debugging, and refactoring for Microsoft Dynamics 365 Business Central.
   </p>
 
-  <h2>Status</h2>
-  <p class="text-muted">
-    The site is in beta (P5). Detailed methodology, scoring formulas, tier definitions,
-    and transparency documentation will land before public launch.
-  </p>
+  <nav class="toc" aria-label="Table of contents">
+    <h2 class="toc-h">Contents</h2>
+    <ul>
+      <li><a href="#status">Status</a></li>
+      <li><a href="#scoring">Scoring metrics</a></li>
+      <li><a href="#transparency">Transparency</a></li>
+    </ul>
+  </nav>
 
-  <h2 id="transparency">Transparency</h2>
-  <p>
-    Every benchmark run is signed with an Ed25519 keypair held by the operator's machine
-    and verified by the worker before ingest. The signed payload, public key, and
-    verification record are linked from each run's detail page.
-  </p>
-  <p class="text-muted">
-    Source code is available on
-    <a href="https://github.com/SShadowS/CentralGauge">GitHub</a>.
-  </p>
+  <section id="status">
+    <h2>Status</h2>
+    <p class="text-muted">
+      The site is in beta (P5). Detailed methodology, scoring formulas, tier definitions,
+      and transparency documentation will land before public launch.
+    </p>
+  </section>
+
+  <section id="scoring">
+    <h2>Scoring metrics</h2>
+
+    <p>
+      CentralGauge surfaces two distinct metrics — they measure different things and may diverge for the same model.
+    </p>
+
+    <h3>avg_score (per-attempt)</h3>
+    <p>
+      The leaderboard's <strong>Score</strong> column averages over <em>every attempt row</em> in <code>results</code> (each task contributes 2 rows: attempt 1 and attempt 2). This captures partial credit — a task scoring 0.5 on attempt 1 and 1.0 on attempt 2 contributes 0.75 to avg_score.
+    </p>
+
+    <h3>pass_at_n (per-task, "best across runs")</h3>
+    <p>
+      The Pass@N metric is the fraction of <em>distinct tasks</em> the model eventually solved (in any attempt, in any run). With multi-run data, the rule is "best across runs per task":
+    </p>
+    <ul>
+      <li><strong>Pass@1</strong>: distinct tasks where SOME run had attempt-1 succeed.</li>
+      <li><strong>Pass@2-only</strong>: distinct tasks where SOME run had attempt-2 succeed AND no run had attempt-1 succeed.</li>
+      <li><strong>Pass@N</strong> = (Pass@1 + Pass@2-only) / tasks_attempted_distinct.</li>
+    </ul>
+    <p>
+      Concrete example: a model runs T1 twice. Run 1 succeeds on attempt 1; Run 2 succeeds only on attempt 2. T1 counts toward Pass@1 (the model demonstrated first-try capability somewhere), NOT Pass@2-only. The invariant <code>Pass@1 + Pass@2-only &le; tasks_attempted_distinct</code> always holds — no double-counting across runs.
+    </p>
+
+    <h3>tasks_attempted vs tasks_attempted_distinct</h3>
+    <p>
+      The API exposes both: <code>tasks_attempted</code> (per-attempt; <code>COUNT(*)</code> over rows in <code>results</code>) and <code>tasks_attempted_distinct</code> (per-task; <code>COUNT(DISTINCT task_id)</code>). Pass@N's denominator is <code>tasks_attempted_distinct</code>; <code>tasks_attempted</code> is preserved for back-compatibility with consumers built before the per-task split. The numbers differ — for a model with 4 tasks attempted twice each, <code>tasks_attempted</code> is 8, <code>tasks_attempted_distinct</code> is 4.
+    </p>
+
+    <h3>Why both?</h3>
+    <p>
+      <code>avg_score</code> rewards models that get close on tricky tasks. <code>pass_at_n</code> rewards models that just finish.
+      The leaderboard sort toggle (<code>?sort=avg_score</code>, <code>?sort=pass_at_n</code>, <code>?sort=pass_at_1</code>) lets you rank by whichever matters for your use case.
+    </p>
+
+    <p>
+      The Pass@1 / Pass@2 stacked bar on each leaderboard row visualizes the per-task breakdown: green for first-try success, amber for retry-recovery, red for unsolved.
+    </p>
+  </section>
+
+  <section id="transparency">
+    <h2>Transparency</h2>
+    <p>
+      Every benchmark run is signed with an Ed25519 keypair held by the operator's machine
+      and verified by the worker before ingest. The signed payload, public key, and
+      verification record are linked from each run's detail page.
+    </p>
+    <p class="text-muted">
+      Source code is available on
+      <a href="https://github.com/SShadowS/CentralGauge">GitHub</a>.
+    </p>
+  </section>
 </article>
 
 <style>
@@ -47,5 +100,41 @@
     font-size: var(--text-xl);
     margin-top: var(--space-4);
   }
+  h3 {
+    font-size: var(--text-lg);
+    margin-top: var(--space-3);
+  }
   p { line-height: var(--leading-base); }
+  ul { padding-left: var(--space-5); line-height: var(--leading-base); }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--code-bg);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-1);
+  }
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    padding: var(--space-3) var(--space-5);
+  }
+  .toc-h {
+    font-size: var(--text-sm);
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 0 0 var(--space-2) 0;
+    letter-spacing: 0.05em;
+  }
+  .toc ul {
+    margin: 0;
+    padding-left: var(--space-5);
+  }
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  section h2 { margin: 0; scroll-margin-top: var(--space-7); }
+  section h3 { margin: var(--space-3) 0 0 0; }
 </style>

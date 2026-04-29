@@ -390,6 +390,21 @@ To update baselines after intentional UI changes:
    font-rendering drift. Bump tolerance ONLY as a last resort; prefer to
    capture baselines from an Ubuntu container locally.
 
+## P7 implementation notes (learned during build-out)
+
+- **Pass@1/Pass@2 SQL semantics — "best across runs per task"**: with multi-run data, naive per-run aggregation breaks. Use correlated subqueries scoped to `model_id` (any run for the model), not `run_id`. tasks_passed_attempt_1 = `COUNT(DISTINCT task_id) WHERE EXISTS (any run, attempt=1, passed=1)`; tasks_passed_attempt_2_only requires the parallel EXISTS for attempt=2 AND a NOT EXISTS for attempt=1. Invariant: `a1 + a2only ≤ tasks_attempted_distinct`. See `site/src/lib/server/leaderboard.ts` + B1 fixtures A/B/C.
+- **`tasks_attempted` vs `tasks_attempted_distinct`**: the legacy field is per-attempt (`COUNT(*)`), preserved for back-compat. The new field is per-task (`COUNT(DISTINCT task_id)`) and is the right denominator for Pass@N. Don't silently swap one for the other — external API consumers' numbers would halve.
+- **Settings suffix only when consistent across runs**: `formatSettingsSuffix(profile)` returns `''` when settings differ across the row's runs (multi-settings ambiguity per IM-2). The SQL guard is `CASE WHEN COUNT(DISTINCT settings_hash) = 1 THEN ... ELSE NULL END`. Renderers receive empty string and SettingsBadge renders nothing.
+- **Markdown changelog is build-time**: `import changelogMarkdown from '../../../../docs/site/changelog.md?raw'` snapshots the file at build. Edits require redeploy. Do not introduce a runtime markdown read.
+- **Matrix queries filter by current task_set EVERYWHERE (CR-5)**: not just the tasks list — the cells query, the models query, the settings-suffix subquery — all need `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`. Without uniform filtering, old-task-set runs pollute current cell aggregates.
+- **Per-row stacked-bar widgets**: encapsulate as a component (`<AttemptStackedBar>`); don't inline SVG into the table. Keeps the table cell logic simple and the widget testable in isolation.
+- **Shortcomings UI uses /api/v1/models/[slug]/limitations, NOT /api/v1/shortcomings?model=** (IM-1). The per-model endpoint already exists and returns `correct_pattern` populated as text; the global aggregate endpoint is for /shortcomings index.
+- **`incorrect_pattern` rendering is P8 scope** (CR-1). Don't fetch from `/api/v1/blobs/<key>` — the keys are `shortcomings/<sha>.al.zst` (path validation fails) and zstd-compressed (`.text()` returns garbage). Wait for the new fzstd decompression endpoint.
+- **API endpoint integration tests live under `site/tests/api/<name>.test.ts`** (CR-2), NOT under `site/src/routes/.../__test__/`. Vitest's worker pool include matches `tests/**/*.test.ts`; tests in `__test__/` next to routes would land in jsdom or be skipped silently.
+- **Empty-state UX is mandatory**, not optional. Production data state at P7 ship time has 0 tasks (CC-1; operator-driven) and 0 shortcomings (CC-2; analyzer is P8). Every new surface MUST handle empty arrays gracefully via `<EmptyState>` from `$lib/components/ui/` (shipped in P6 C3).
+- **Visual regression baseline regenerates per-phase**, not at end (IM-6). Each `*-COMMIT` includes baseline regen for pages that phase visibly changes. J4 reconciles any missed.
+- **Vite `?raw` cross-root import works**: `import md from '../../../../docs/site/changelog.md?raw'` reaches outside `site/` into the repo's `docs/`. Precedent in `site/src/lib/server/canonical.ts`. Keep build-time imports — runtime `fs.readFile` would not work in the Cloudflare Worker.
+
 ## /leaderboard redirect sunset (2026-05-30)
 
 The P5.5 cutover left a 302 redirect at `src/routes/leaderboard/+server.ts`

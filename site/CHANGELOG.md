@@ -1,5 +1,41 @@
 # CentralGauge site — changelog
 
+## P7 — Stat parity (2026-04-29)
+
+Closes the parity gap with the legacy dashboard.
+
+### Added
+- Pass@1 / Pass@2 split with multi-run "best across runs per task" semantics (leaderboard mini-bar; model detail breakdown tile)
+- `tasks_attempted_distinct` field on LeaderboardRow + ModelDetail.aggregates (per-task count alongside legacy per-attempt `tasks_attempted`)
+- /categories (index + drill-down)
+- /matrix (full task × model grid; task_set-filtered queries throughout)
+- /changelog (markdown-driven)
+- ShortcomingsSection on model detail (pedagogical UI shell; analyzer is P8 scope, empty-state messaging until then)
+- SummaryBand + PerformanceVsCostChart on /
+- Settings suffix on model display name when settings consistent across runs (`(50K, t0.1)`); empty when ambiguous
+- Score sort toggle: avg_score / pass_at_n / pass_at_1
+- /about#scoring documents avg_score vs pass_at_n divergence + multi-run aggregation rule
+- Run detail per-attempt section gains "View transcript" link (gated on `transcript_key` presence) using existing TranscriptViewer
+
+### Changed
+- LeaderboardRow gains tasks_passed_attempt_1, tasks_passed_attempt_2_only, tasks_attempted_distinct, pass_at_n, settings_suffix
+- ModelDetail.aggregates parallel extension
+- /tasks gains Category column
+- Visual regression baselines regenerated per-phase (B/C/D/E/F)
+
+### Deprecated
+- `LeaderboardRow.tasks_attempted` (per-attempt count) — still emitted; superseded by `tasks_attempted_distinct` (per-task). Removal targeted P9+.
+- `LeaderboardRow.tasks_passed` (per-attempt sum) — same.
+
+### Operator
+- docs/site/operations.md §"Tasks-empty symptom (CC-1)" cross-links the existing P6 §"Catalog reconciliation" runbook (run `centralgauge sync-catalog --apply` to populate tasks)
+- docs/site/operations.md §"Shortcomings empty (CC-2)" documents the P8 analyzer-build deferral
+
+### Out of scope (deferred to P8)
+- Shortcomings analyzer build (CC-2 root cause; bench-side LLM-driven classification + signed batch writes)
+- Incorrect-pattern rendering (CR-1; needs new /api/v1/shortcomings/<id>/incorrect-pattern endpoint with fzstd decompression)
+- `tasks_attempted` deprecation (P7 ships co-existence; P9+ may remove the legacy field)
+
 ## P5.5 — Cutover (2026-04-30)
 
 - Move leaderboard from `/leaderboard` to `/` (homepage)

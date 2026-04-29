@@ -105,9 +105,11 @@
                     </ul>
                   {/if}
                 </div>
-                <div class="links">
-                  <a href="/runs/{runId}/transcripts/{r.task_id}/{attempt.attempt}">View transcript →</a>
-                </div>
+                {#if attempt.transcript_key}
+                  <div class="links">
+                    <a href="/runs/{runId}/transcripts/{r.task_id}/{attempt.attempt}">View transcript →</a>
+                  </div>
+                {/if}
               </div>
             </td>
           </tr>
