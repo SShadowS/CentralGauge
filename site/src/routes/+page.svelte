@@ -6,6 +6,8 @@
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
   import StatusIndicator from '$lib/components/domain/StatusIndicator.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
+  import SummaryBand from '$lib/components/domain/SummaryBand.svelte';
+  import PerformanceVsCostChart from '$lib/components/domain/PerformanceVsCostChart.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
   import Checkbox from '$lib/components/ui/Checkbox.svelte';
   import { formatRelativeTime } from '$lib/client/format';
@@ -97,6 +99,13 @@
   </p>
 </div>
 
+<SummaryBand stats={data.summary} />
+
+<section class="perf-chart" aria-labelledby="perf-chart-heading">
+  <h2 id="perf-chart-heading" class="sr-only">Performance vs Cost</h2>
+  <PerformanceVsCostChart rows={data.leaderboard.data} />
+</section>
+
 <div class="layout">
   <FilterRail>
     <fieldset class="group">
@@ -150,6 +159,8 @@
 <style>
   .header h1 { font-size: var(--text-3xl); margin: 0; }
   .meta { font-size: var(--text-sm); color: var(--text-muted); margin-top: var(--space-2); display: inline-flex; gap: var(--space-3); align-items: center; }
+
+  .perf-chart { padding: var(--space-5) 0; border-bottom: 1px solid var(--border); }
 
   .layout {
     display: grid;
