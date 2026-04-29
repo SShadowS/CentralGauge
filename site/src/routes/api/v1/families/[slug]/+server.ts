@@ -24,7 +24,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
              AVG(r.score) AS avg_score,
              COUNT(DISTINCT runs.id) AS run_count,
              MAX(runs.started_at) AS last_run_at,
-             AVG((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) AS avg_cost_usd
+             SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
+               / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd
       FROM models m
       LEFT JOIN runs ON runs.model_id = m.id
       LEFT JOIN results r ON r.run_id = runs.id

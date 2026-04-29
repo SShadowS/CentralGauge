@@ -98,9 +98,13 @@ export async function computeLeaderboard(
          ${taskSetClauseSubA2}
       ) AS tasks_passed_attempt_2_only,
       AVG(r.score) AS avg_score,
-      AVG(
+      -- Per-task cost: total $ spent / distinct task count. Per-task is a
+      -- fairer "what does X cost to use" number than per-attempt because a
+      -- model that retries more would otherwise look cheaper (each retry
+      -- is another data point dragging the per-attempt mean down).
+      SUM(
         (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
-      ) AS avg_cost_usd,
+      ) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
       MAX(runs.started_at) AS last_run_at
     FROM runs
     JOIN models m ON m.id = runs.model_id

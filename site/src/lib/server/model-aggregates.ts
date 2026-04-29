@@ -145,7 +145,9 @@ export async function computeModelAggregates(
            COUNT(DISTINCT runs.id)                                       AS run_count,
            COUNT(DISTINCT CASE WHEN runs.tier = 'verified' THEN runs.id ELSE NULL END) AS verified_runs,
            AVG(r.score)                                                  AS avg_score,
-           AVG((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) AS avg_cost_usd,
+           -- Per-task cost (matches /api/v1/leaderboard semantics).
+           SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
+             / NULLIF(COUNT(DISTINCT r.task_id), 0)                      AS avg_cost_usd,
            MAX(runs.started_at)                                          AS last_run_at,
            COUNT(r.id) AS tasks_attempted,
            COALESCE(SUM(r.passed), 0) AS tasks_passed,
