@@ -372,6 +372,53 @@ the canary proxy rewrite `Location: /foo` → `Location:
 redirected URLs through canary; review the destination path directly
 (see Canary review checklist above for the post-cutover entry).
 
+## Tasks-empty symptom (CC-1)
+
+> P7 audit-finding pointer. Cross-link only — the runbook lives below in
+> §"Catalog drift remediation (P6 A4/A5/A6)".
+
+**Symptom (audit wording):** `/api/v1/tasks` returns `{data: []}` despite
+many `results` rows referencing task IDs.
+
+**Status (verified 2026-04-27):** Production diagnostics returned
+`tasks_in_catalog: 0`, `drift_count: 64`. Root cause is the operator never
+ran `centralgauge sync-catalog --apply` after the latest task-set ingest.
+
+**Fix:** follow the §"Catalog drift remediation" runbook below — single
+operator command (`deno task start sync-catalog --apply`).
+
+**UI fallback (P7 Phases C/D):** the `/api/v1/categories` and
+`/api/v1/matrix` endpoints handle `tasks_in_catalog=0` gracefully and emit
+empty arrays; consumer pages render an empty-state. Operators do NOT need
+to run sync before the site builds; once they do, the UI auto-populates.
+No new diagnostic script is added by P7 — `/api/v1/health/catalog-drift`
+shipped in P6 already reports the same data the audit surfaced.
+
+## Shortcomings empty (CC-2)
+
+> P7 audit-finding acknowledgment. No fix in P7 — analyzer is a P8
+> bench-side deliverable.
+
+**Symptom:** `/api/v1/shortcomings` and
+`/api/v1/models/[slug]/limitations?accept=application/json` return
+`{data: []}` for ALL models globally.
+
+**Root cause:** no shortcomings analyzer has run on any results. The
+server-side write endpoint (`/api/v1/admin/shortcomings/batch`) exists,
+but no caller has invoked it. Building the analyzer involves LLM-driven
+failure-mode classification + signed batch writes — out of P7 scope.
+
+**Status:** deferred to P8 (bench-side analyzer build).
+
+**UI behavior (P7 Phase E):** the model-detail Shortcomings section ships
+with mandatory empty-state messaging (e.g. "Pedagogical analysis pending —
+the analyzer has not yet run for this model"). When P8 ships, the same UI
+auto-populates via the existing
+`/api/v1/models/[slug]/limitations?accept=application/json` endpoint —
+NO new endpoint, NO migration. The global aggregate
+endpoint (`/api/v1/shortcomings`) is NOT extended with `?model=`; the
+per-model endpoint is the right surface.
+
 ## Catalog drift remediation (P6 A4/A5/A6)
 
 ### Symptom

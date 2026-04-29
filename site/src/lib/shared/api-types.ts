@@ -12,17 +12,67 @@ export interface LeaderboardQuery {
   difficulty: 'easy' | 'medium' | 'hard' | null;
   family: string | null;
   since: string | null;
+  /**
+   * Optional category-slug filter (P7 Mini-phase A). Restricts the
+   * leaderboard to runs/results whose tasks are in the given category.
+   * `null` (default) returns all categories.
+   */
+  category: string | null;
   limit: number;
   cursor: { score: number; id: number } | null;
 }
 
 export interface LeaderboardRow {
   rank: number;
-  model: { slug: string; display_name: string; api_model_id: string };
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    /**
+     * P7 Mini-phase A. Concise settings string e.g. ` (50K, t0.1)`.
+     * Empty string when settings differ across the row's runs
+     * (multi-settings ambiguity per IM-2 design rationale). Renderers
+     * should append verbatim to display_name.
+     */
+    settings_suffix: string;
+  };
   family_slug: string;
   run_count: number;
+  /**
+   * @deprecated Per-attempt count (COUNT(*) over results). Preserved for
+   * back-compat; use `tasks_attempted_distinct` for per-task semantics.
+   * Removal targeted P9+.
+   */
   tasks_attempted: number;
+  /**
+   * @deprecated Per-attempt sum of passed=1 rows. Use
+   * `tasks_passed_attempt_1` + `tasks_passed_attempt_2_only` for per-task
+   * semantics. Removal targeted P9+.
+   */
   tasks_passed: number;
+  /**
+   * P7 Mini-phase A. Per-task count: COUNT(DISTINCT task_id) across all
+   * the model's runs. Use this denominator for pass@N.
+   */
+  tasks_attempted_distinct: number;
+  /**
+   * P7 Mini-phase A. Distinct tasks where SOME run for this model had
+   * attempt=1 passed=1 ("best across runs per task" semantics).
+   */
+  tasks_passed_attempt_1: number;
+  /**
+   * P7 Mini-phase A. Distinct tasks where SOME run had attempt=2 passed=1
+   * AND NO run had attempt=1 passed=1. Mutually exclusive with
+   * tasks_passed_attempt_1 by construction; their sum equals the overall
+   * pass count.
+   */
+  tasks_passed_attempt_2_only: number;
+  /**
+   * P7 Mini-phase A. Run-aggregate probability:
+   * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
+   * tasks_attempted_distinct. 0 when no attempts.
+   */
+  pass_at_n: number;
   avg_score: number;
   avg_cost_usd: number;
   verified_runs: number;
@@ -56,11 +106,55 @@ export interface FailureMode {
 }
 
 export interface ModelDetail {
-  model: { slug: string; display_name: string; api_model_id: string; family_slug: string; added_at: string };
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    family_slug: string;
+    added_at: string;
+    /**
+     * P7 Mini-phase A. Concise settings string e.g. ` (50K, t0.1)`.
+     * Empty string when settings differ across the model's runs
+     * (multi-settings ambiguity per IM-2 design rationale).
+     */
+    settings_suffix: string;
+  };
   aggregates: {
     avg_score: number;
+    /**
+     * @deprecated Per-attempt count (COUNT(*) over results). Preserved
+     * for back-compat; use `tasks_attempted_distinct` for per-task
+     * semantics. Removal targeted P9+.
+     */
     tasks_attempted: number;
+    /**
+     * @deprecated Per-attempt sum of passed=1 rows. Use
+     * `tasks_passed_attempt_1` + `tasks_passed_attempt_2_only` for
+     * per-task semantics. Removal targeted P9+.
+     */
     tasks_passed: number;
+    /**
+     * P7 Mini-phase A. Per-task count: COUNT(DISTINCT task_id) across
+     * all the model's runs. Pass@N denominator.
+     */
+    tasks_attempted_distinct: number;
+    /**
+     * P7 Mini-phase A. Distinct tasks where SOME run had attempt=1
+     * passed=1.
+     */
+    tasks_passed_attempt_1: number;
+    /**
+     * P7 Mini-phase A. Distinct tasks where SOME run had attempt=2
+     * passed=1 AND NO run had attempt=1 passed=1 (mutually exclusive
+     * with tasks_passed_attempt_1).
+     */
+    tasks_passed_attempt_2_only: number;
+    /**
+     * P7 Mini-phase A. (tasks_passed_attempt_1 +
+     * tasks_passed_attempt_2_only) / tasks_attempted_distinct; 0 when
+     * no attempts.
+     */
+    pass_at_n: number;
     avg_cost_usd: number;
     latency_p50_ms: number;
     run_count: number;
@@ -398,4 +492,112 @@ export interface PaletteEntry {
 export interface PaletteIndex {
   generated_at: string;
   entries: PaletteEntry[];
+}
+
+// =============================================================================
+// Categories index — GET /api/v1/categories  (P7 Mini-phase A)
+// =============================================================================
+//
+// Aggregates per task_categories row across `tasks` joined with `results`.
+// When `tasks_in_catalog = 0` (current production until operator runs
+// `centralgauge sync-catalog --apply`), the endpoint returns an empty
+// data array. Consumers MUST render an empty-state.
+
+export interface CategoriesIndexItem {
+  slug: string;
+  name: string;
+  /** Number of tasks (in is_current=1 task set) belonging to this category. */
+  task_count: number;
+  /**
+   * Average pass rate across all results for tasks in this category;
+   * `null` when no results exist (or no tasks exist for this category).
+   */
+  avg_pass_rate: number | null;
+}
+
+export interface CategoriesIndexResponse {
+  data: CategoriesIndexItem[];
+  generated_at: string;
+}
+
+// =============================================================================
+// Category detail — GET /api/v1/categories/:slug  (P7 Mini-phase A)
+// =============================================================================
+
+export interface CategoryDetailResponse {
+  slug: string;
+  name: string;
+  task_count: number;
+  avg_pass_rate: number | null;
+  task_ids: string[];
+  generated_at: string;
+}
+
+// =============================================================================
+// Task Results Matrix — GET /api/v1/matrix  (P7 Mini-phase A type, endpoint Phase D)
+// =============================================================================
+//
+// Dense rectangular matrix: tasks × models. Each cell carries per-(task,model)
+// aggregates. Tasks-empty production state yields empty `tasks` and `cells`
+// arrays; consumers MUST render an empty-state.
+
+export interface MatrixCell {
+  /** Distinct attempts that passed (sum across runs). */
+  passed: number;
+  /** Distinct attempts that were attempted (sum across runs). */
+  attempted: number;
+  /** Optional AL-concept tag for failed cells; analyzer-driven (P8). */
+  concept?: string;
+}
+
+export interface MatrixTask {
+  id: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  category_slug: string | null;
+}
+
+export interface MatrixModel {
+  slug: string;
+  display_name: string;
+}
+
+export interface MatrixResponse {
+  tasks: MatrixTask[];
+  models: MatrixModel[];
+  /** Dense `cells[taskIndex][modelIndex]`. Same shape as tasks × models. */
+  cells: MatrixCell[][];
+  generated_at: string;
+}
+
+// =============================================================================
+// Summary band stats — GET /api/v1/summary  (P7 Mini-phase A)
+// =============================================================================
+
+export interface ChangelogEntry {
+  /** ISO-8601 date (YYYY-MM-DD) extracted from `## Title (YYYY-MM-DD)`. */
+  date: string;
+  /** Section title (without the trailing date). */
+  title: string;
+  /** Body markdown between this entry's header and the next. */
+  body: string;
+}
+
+export interface SummaryStats {
+  runs: number;
+  models: number;
+  /**
+   * Distinct task count in the catalog. May be 0 in current production
+   * when operator has not run `sync-catalog --apply` (CC-1).
+   */
+  tasks: number;
+  total_cost_usd: number;
+  total_tokens: number;
+  /** ISO-8601 timestamp of the latest run; `null` when no runs exist. */
+  last_run_at: string | null;
+  /**
+   * Latest changelog entry parsed from `docs/site/changelog.md` at build
+   * time. `null` when the changelog has no entries (bootstrap state).
+   */
+  latest_changelog: ChangelogEntry | null;
+  generated_at: string;
 }
