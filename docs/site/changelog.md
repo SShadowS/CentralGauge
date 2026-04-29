@@ -1,82 +1,58 @@
-# CentralGauge site — changelog
+# CentralGauge — changelog
 
-This file is the source-of-truth for the public `/changelog` page on the
-CentralGauge dashboard. Operators add entries by appending a new
-`## Title (YYYY-MM-DD)` section at the top, committing, and redeploying.
+This file is the source of truth for the public `/changelog` page.
 
-The site reads this file at build time via Vite's `?raw` import; runtime
-reads are not supported by design (zero D1 writes, deterministic bundles).
+**What belongs here.** User-facing milestones only:
 
-## P7 — Stat parity restored (2026-04-29)
+- **New models** added to the benchmark
+- **New surfaces** — entirely new pages or top-level features (e.g. a
+  new route, a new dashboard widget, live updates)
 
-P7 closes the parity gap between the new SvelteKit/Cloudflare site and the
-legacy static dashboard. The leaderboard now exposes the same per-task
-metrics the bench has been emitting all along.
+**What does NOT belong here.** Bug fixes, refactors, internal cleanup,
+type-debt sweeps, dependency bumps, test infrastructure, performance
+nudges. Those live on GitHub — the commit log and release notes are
+the right home for them.
 
-**New surfaces:**
+Operators add entries by appending a new `## Title (YYYY-MM-DD)`
+section at the top, committing, and redeploying. The site reads this
+file at build time via Vite's `?raw` import; runtime reads are not
+supported by design (zero D1 writes, deterministic bundles).
 
-- Pass@1 / Pass@2 split visible on the leaderboard, model detail, and matrix
-- `/categories` index + `/categories/[slug]` drill-down
-- `/matrix` route — every task × every model with a single click cell
-- Shortcomings UI on each model detail page (analyzer ships in P8)
-- Summary band + Performance vs Cost chart on the home page
-- `/changelog` (this page!)
+## Live updates + cmd-K palette (2026-04-26)
 
-**Behavior changes:**
+- The leaderboard, model detail, and run pages now refresh in place
+  when new runs finalize — no manual reload.
+- Press **⌘K** (or **Ctrl-K**) anywhere on the site to jump to a
+  model, run, or task.
 
-- Model display names now show a settings suffix `(50K, t0.1)` when settings
-  are consistent across the model's runs
-- Score column accepts a sort toggle: `avg_score` / `pass_at_n` / `pass_at_1`
-- `/tasks` gains a Category column
+## DeepSeek V4 Pro joins the leaderboard (2026-04-25)
 
-See [the plan](https://github.com/SShadowS/CentralGauge/blob/master/docs/superpowers/plans/2026-04-29-p7-stat-parity.md)
-for the full design rationale + done-criteria checklist.
+DeepSeek's V4 Pro flagship is now benchmarked alongside the Claude
+and GPT families, routed through OpenRouter. Family pages and the
+matrix expand to cover it automatically.
 
-## P6 — Production stabilization (2026-04-28)
+## Per-task matrix + category drill-downs (2026-04-25)
 
-P6 closed the post-cutover audit findings:
+- New `/matrix` route — every task × every model in a single grid,
+  one click per cell to see the run.
+- New `/categories` index with per-category pages drilling into the
+  tasks behind each capability area.
 
-- `/api/v1/search` 500 fixed (FTS5 schema corrected; `bm25()` ranking now
-  works against the populated index)
-- `/tasks` now populates from D1 (was empty after cutover)
-- Canary scope leak fixed — the canary route no longer bleeds production
-  data into stamped responses
-- `<EmptyState>` atom shipped under `$lib/components/ui/` for uniform
-  empty-collection messaging
-- 17+ TypeScript errors resolved (type debt cleanup)
+## Run detail + signed transcripts (2026-04-24)
 
-## P5.5 — Production cutover (2026-04-27)
+Every run now has a permalink (`/runs/<id>`) showing per-task
+attempts, failure modes, cost breakdown, and a verifiable Ed25519
+signature for the ingest payload. Transcripts are reachable
+per-attempt and are renderable in print.
 
-P5.5 promoted the SvelteKit/Cloudflare site to the canonical URL.
+## GPT-5.5 joins the leaderboard (2026-04-23)
 
-- Leaderboard moved from `/leaderboard` to `/` (homepage)
-- `static/robots.txt` published; build-time `sitemap.xml` (9 public routes)
-- Layout-level JSON-LD structured data (WebSite + Organization)
-- Per-page `<link rel="canonical">` pointing at SITE_ROOT + pathname
-- 30-day 302 redirect at `/leaderboard?<query>` → `/?<query>`
-  (sunset 2026-05-30)
+OpenAI's GPT-5.5 is now benchmarked alongside GPT-5 and the Claude
+Opus family. Earlier GPT-5.5 results may show no temperature setting
+— the new model rejects the parameter so we omit it.
 
-## P5.4 — Live + polish (2026-04-26)
+## Initial models on the new dashboard (2026-04-21)
 
-- SSE per-route subscriptions on `/`, `/runs`, `/runs/:id`, `/models/:slug`,
-  `/families/:slug`
-- Dynamic OG image generation (`@cf-wasm/og` + R2 cache)
-- Density mode UI toggle + `cmd-shift-d` keybind + localStorage persistence
-- Cloudflare Web Analytics RUM beacon (gated on `rum_beacon` flag)
-- Visual regression suite (5 pages × 2 themes × 2 densities × 1 viewport)
-
-## P5.3 — Cross-cuts (2026-04-25)
-
-- 9 new routes: `/models`, `/runs`, `/families`, `/families/:slug`,
-  `/tasks`, `/tasks/:id`, `/compare`, `/search`, `/limitations`
-- cmd-K palette overlay
-- 2 new public API endpoints: `GET /api/v1/shortcomings`,
-  `GET /api/v1/internal/search-index.json`
-
-## P5.2 — Detail surfaces (2026-04-24)
-
-- `/models/:slug`, `/runs/:id`, `/runs/:id/transcripts/:taskId/:attempt`,
-  `/runs/:id/signature`
-- Domain widgets: `TranscriptViewer`, `SignaturePanel`, `TaskHistoryChart`,
-  `CostBarChart`, `FailureModesList`, `MarkdownRenderer`
-- Print stylesheet (`@media print` rules)
+The first six production models go live: **Claude Opus 4.7**,
+**Claude Opus 4.6**, **GPT-5**, **GPT-4o**, **Gemini 2.5 Pro**, and
+**Gemini 2.0 Flash**.
