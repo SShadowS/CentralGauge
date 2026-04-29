@@ -12,6 +12,7 @@
   import TaskHistoryChart from '$lib/components/domain/TaskHistoryChart.svelte';
   import CostBarChart from '$lib/components/domain/CostBarChart.svelte';
   import FailureModesList from '$lib/components/domain/FailureModesList.svelte';
+  import ShortcomingsSection from '$lib/components/domain/ShortcomingsSection.svelte';
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
   import { tierFromRow, formatScore, formatCost, formatDuration } from '$lib/client/format';
@@ -81,6 +82,7 @@
     { id: 'history',      label: 'History' },
     { id: 'cost',         label: 'Cost' },
     { id: 'failures',     label: 'Failure modes' },
+    { id: 'shortcomings', label: 'Shortcomings' },
     { id: 'recent-runs',  label: 'Recent runs' },
     { id: 'methodology',  label: 'Methodology' },
   ];
@@ -152,6 +154,12 @@
         <FailureModesList modes={m.failure_modes} />
       </section>
     {/if}
+
+    <section id="shortcomings">
+      <h2>Shortcomings</h2>
+      <p class="text-muted">AL concepts {m.model.display_name} struggles with. Click a row for description, correct pattern, and observed error codes.</p>
+      <ShortcomingsSection slug={m.model.slug} />
+    </section>
 
     <section id="recent-runs">
       <h2>Recent runs</h2>
