@@ -94,12 +94,7 @@
     width: 100%;
     border-collapse: collapse;
   }
-  thead th {
-    background: var(--surface);
-    position: sticky;
-    top: var(--nav-h);
-    z-index: var(--z-sticky);
-  }
+  thead { background: var(--surface); }
   th, td {
     text-align: left;
     padding: var(--space-3) var(--space-5);
