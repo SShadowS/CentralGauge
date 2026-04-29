@@ -14,16 +14,6 @@
     if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
     return `$${n.toFixed(2)}`;
   }
-
-  // Slugify the changelog title for the anchor link target on /changelog.
-  // The changelog page renders entries with the same slug derivation; if it
-  // ever diverges, the link will scroll to top instead of throwing.
-  function slugify(title: string): string {
-    return title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  }
 </script>
 
 <section class="summary-band" aria-label="Site-wide aggregates">
@@ -35,7 +25,9 @@
     <StatTile label="Total tokens" value={fmtNum(stats.total_tokens)} />
   </div>
   {#if stats.latest_changelog}
-    <a class="callout" href="/changelog#{slugify(stats.latest_changelog.title)}">
+    <!-- Slug comes from the parser (build-time) so the anchor matches the
+         <article id> rendered by /changelog/+page.svelte exactly. -->
+    <a class="callout" href="/changelog#{stats.latest_changelog.slug}">
       <span class="badge">New</span>
       <span class="title">{stats.latest_changelog.title}</span>
       <span class="date text-muted">{stats.latest_changelog.date}</span>

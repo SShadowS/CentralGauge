@@ -2,9 +2,21 @@ import type { RequestHandler } from './$types';
 import { cachedJson } from '$lib/server/cache';
 import { getFirst } from '$lib/server/db';
 import { errorResponse } from '$lib/server/errors';
-import type { SummaryStats } from '$lib/shared/api-types';
+import { parseChangelog } from '$lib/server/changelog';
+import type { ChangelogEntry, SummaryStats } from '$lib/shared/api-types';
+// Build-time `?raw` import: Vite inlines the markdown file's contents as a
+// string at bundle time. The path crosses the site/ boundary; the precedent
+// is `site/src/lib/shared/canonical.ts` (re-export from `../../shared`).
+// Edits to the markdown file require a redeploy — there is no runtime read
+// (zero D1 writes; deterministic bundles).
+import changelogMarkdown from '../../../../../../docs/site/changelog.md?raw';
 
 const CACHE_TTL_SECONDS = 60;
+
+// Parse once at module init. The result is shared across all requests
+// served by this Worker isolate; it can never change without a redeploy.
+const CHANGELOG_ENTRIES: ChangelogEntry[] = parseChangelog(changelogMarkdown);
+const LATEST_CHANGELOG: ChangelogEntry | null = CHANGELOG_ENTRIES[0] ?? null;
 
 /**
  * GET /api/v1/summary — aggregate counts + cost/token totals for the
@@ -78,9 +90,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         total_cost_usd: Math.round((+(cost?.total_cost_usd ?? 0)) * 1e6) / 1e6,
         total_tokens: +(cost?.total_tokens ?? 0),
         last_run_at: counts?.last_run_at ?? null,
-        // Phase F populates this from a build-time `?raw` import of
-        // docs/site/changelog.md. Bootstrap state is null.
-        latest_changelog: null,
+        // Build-time markdown parse of docs/site/changelog.md (Phase H).
+        // `LATEST_CHANGELOG` is `null` only when the markdown file has zero
+        // matching `## Title (YYYY-MM-DD)` headers (bootstrap-state safe).
+        latest_changelog: LATEST_CHANGELOG,
         generated_at: new Date().toISOString(),
       };
 

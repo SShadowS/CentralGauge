@@ -9,6 +9,8 @@
       <a href="https://github.com/SShadowS/CentralGauge">Source on GitHub</a>
       <span aria-hidden="true">·</span>
       <a href="/about#transparency">Verified by Ed25519 signed ingest</a>
+      <span aria-hidden="true">·</span>
+      <a href="/changelog">Changelog</a>
     </div>
     <div class="right">
       Build <code>{buildSha}</code>{#if buildAt} · {buildAt}{/if}

@@ -626,6 +626,14 @@ export interface ChangelogEntry {
   date: string;
   /** Section title (without the trailing date). */
   title: string;
+  /**
+   * Anchor slug derived from the title (lowercase + non-alphanumeric → `-`).
+   * The `/changelog` page renders `<article id={slug}>`; SummaryBand's
+   * callout links to `/changelog#<slug>`. Both call sites must produce
+   * identical strings — see `slugifyTitle()` in `lib/server/changelog.ts`
+   * and the inline `slugify()` in `SummaryBand.svelte`.
+   */
+  slug: string;
   /** Body markdown between this entry's header and the next. */
   body: string;
 }

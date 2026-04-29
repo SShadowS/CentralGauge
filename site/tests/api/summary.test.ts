@@ -83,8 +83,15 @@ describe('GET /api/v1/summary', () => {
     expect(body.total_tokens).toBe(3_500_000);
     expect(body.total_cost_usd).toBeCloseTo(40, 5);
     expect(body.last_run_at).toBe('2026-04-15T00:00:00Z');
-    // Phase F wires latest_changelog from a build-time import; A ships null.
-    expect(body.latest_changelog).toBeNull();
+    // Phase H wires latest_changelog from a build-time `?raw` import of
+    // docs/site/changelog.md. The fixture markdown ships with several
+    // dated entries; the latest one (newest date) must be exposed here.
+    expect(body.latest_changelog).not.toBeNull();
+    expect(body.latest_changelog!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(typeof body.latest_changelog!.title).toBe('string');
+    expect(body.latest_changelog!.title.length).toBeGreaterThan(0);
+    expect(typeof body.latest_changelog!.slug).toBe('string');
+    expect(body.latest_changelog!.slug).toMatch(/^[a-z0-9-]+$/);
     expect(typeof body.generated_at).toBe('string');
   });
 
@@ -101,6 +108,8 @@ describe('GET /api/v1/summary', () => {
     expect(body.total_tokens).toBe(0);
     expect(body.total_cost_usd).toBe(0);
     expect(body.last_run_at).toBeNull();
-    expect(body.latest_changelog).toBeNull();
+    // Changelog is build-time content, independent of D1 state — still
+    // populated even when the database is empty.
+    expect(body.latest_changelog).not.toBeNull();
   });
 });

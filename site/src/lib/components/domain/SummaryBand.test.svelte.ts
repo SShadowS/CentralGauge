@@ -61,6 +61,7 @@ describe('SummaryBand', () => {
         latest_changelog: {
           date: '2026-04-20',
           title: 'Phase F shipped',
+          slug: 'phase-f-shipped',
           body: '# changes',
         },
       },
