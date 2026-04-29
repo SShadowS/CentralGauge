@@ -3,11 +3,15 @@
   import KeyHint from '$lib/components/ui/KeyHint.svelte';
   import DensityToggle from '$lib/components/domain/DensityToggle.svelte';
   import { paletteBus } from '$lib/client/palette-bus.svelte';
-  import { getTheme, cycleTheme, type Theme } from '$lib/client/theme';
+  import { getTheme, getEffectiveTheme, cycleTheme, type Theme } from '$lib/client/theme';
   import { onMount } from 'svelte';
   import { page } from '$app/state';
 
   let theme: Theme = $state('system');
+  // Effective = what the user is actually seeing right now. Drives the
+  // icon so the button always shows the current state, including when
+  // stored is 'system' but the OS prefers dark.
+  let effective: 'light' | 'dark' = $state('light');
 
   // Modifier key shown in the palette hint. SSR renders "Ctrl" — that's
   // the right default for Windows/Linux (the majority of visitors) and
@@ -18,6 +22,7 @@
 
   onMount(() => {
     theme = getTheme();
+    effective = getEffectiveTheme();
     const platform =
       // navigator.userAgentData.platform is the modern API (Chromium); platform
       // is the legacy one (still present everywhere). Prefer the modern API.
@@ -26,7 +31,10 @@
     if (/mac|iphone|ipad/i.test(platform)) modKey = '⌘';
   });
 
-  function toggleTheme() { theme = cycleTheme(); }
+  function toggleTheme() {
+    theme = cycleTheme();
+    effective = getEffectiveTheme();
+  }
   function openPalette() { paletteBus.openPalette(); }
 
   // Read flag from layout data via $page.data (LayoutServer load propagates).
@@ -56,8 +64,8 @@
       {#if densityFlag}
         <DensityToggle />
       {/if}
-      <button class="icon-btn" onclick={toggleTheme} aria-label="Toggle theme (current: {theme})">
-        {#if theme === 'dark'}<Moon size={18} />{:else}<Sun size={18} />{/if}
+      <button class="icon-btn" onclick={toggleTheme} aria-label="Toggle theme (current: {effective})">
+        {#if effective === 'dark'}<Moon size={18} />{:else}<Sun size={18} />{/if}
       </button>
       <a class="icon-btn" href="https://github.com/SShadowS/CentralGauge" aria-label="GitHub repository">
         <Github size={18} />

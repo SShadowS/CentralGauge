@@ -1,5 +1,15 @@
 /**
- * Theme controller. Three states: light / dark / system (default).
+ * Theme controller.
+ *
+ * Stored theme has three states: 'light' / 'dark' / 'system' (default
+ * for first-time visitors). The toggle button, however, is a TWO-state
+ * flip — it always switches between the currently visible theme and
+ * its opposite, then persists the explicit choice. The 'system' state
+ * is reachable only by clearing localStorage (intentional: a 3-state
+ * cycle made one of the three transitions visually invisible whenever
+ * 'system' matched the OS preference, so the button felt broken on
+ * every other click).
+ *
  * - "system" → no data-theme attribute; CSS @media (prefers-color-scheme) applies
  * - "light" / "dark" → data-theme set on <html>, persisted in localStorage
  *
@@ -16,6 +26,18 @@ export function getTheme(): Theme {
   return v === 'light' || v === 'dark' ? v : 'system';
 }
 
+/**
+ * Resolve a stored 'system' to the actual visible theme via the OS
+ * preference. Use this whenever the UI needs to know which CSS palette
+ * is currently rendered (e.g. icon selection, the toggle inversion).
+ */
+export function getEffectiveTheme(): 'light' | 'dark' {
+  const stored = getTheme();
+  if (stored === 'light' || stored === 'dark') return stored;
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function setTheme(theme: Theme): void {
   if (typeof document === 'undefined') return;
   if (theme === 'system') {
@@ -27,10 +49,13 @@ export function setTheme(theme: Theme): void {
   }
 }
 
+/**
+ * Flip light ↔ dark, always producing a visible change. The next theme
+ * is always the OPPOSITE of what is currently rendered, regardless of
+ * whether the stored value is 'light' / 'dark' / 'system'.
+ */
 export function cycleTheme(): Theme {
-  const order: Theme[] = ['light', 'dark', 'system'];
-  const current = getTheme();
-  const next = order[(order.indexOf(current) + 1) % order.length];
+  const next: Theme = getEffectiveTheme() === 'dark' ? 'light' : 'dark';
   setTheme(next);
   return next;
 }

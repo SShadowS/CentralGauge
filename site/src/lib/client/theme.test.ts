@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { getTheme, setTheme, cycleTheme, type Theme } from './theme';
+import { getTheme, getEffectiveTheme, setTheme, cycleTheme } from './theme';
 
 describe('theme controller', () => {
   beforeEach(() => {
@@ -29,13 +29,32 @@ describe('theme controller', () => {
     expect(localStorage.getItem('theme')).toBe(null);
   });
 
-  it('cycleTheme cycles light -> dark -> system -> light', () => {
+  it('getEffectiveTheme resolves "system" via prefers-color-scheme (jsdom default: light)', () => {
+    expect(getEffectiveTheme()).toBe('light');
+  });
+
+  it('getEffectiveTheme returns the stored explicit value', () => {
+    setTheme('dark');
+    expect(getEffectiveTheme()).toBe('dark');
+  });
+
+  it('cycleTheme flips light → dark', () => {
     setTheme('light');
     cycleTheme();
     expect(getTheme()).toBe('dark');
-    cycleTheme();
-    expect(getTheme()).toBe('system');
+  });
+
+  it('cycleTheme flips dark → light', () => {
+    setTheme('dark');
     cycleTheme();
     expect(getTheme()).toBe('light');
+  });
+
+  it('cycleTheme from "system" picks the OPPOSITE of the resolved theme', () => {
+    // jsdom default: prefers-color-scheme returns light → effective is light
+    // → cycle should produce 'dark'.
+    setTheme('system');
+    cycleTheme();
+    expect(getTheme()).toBe('dark');
   });
 });
