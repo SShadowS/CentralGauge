@@ -67,6 +67,60 @@ describe('POST /api/v1/task-sets', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(r2)
     });
     expect(r2res.status).toBe(200); // 200 = already existed, not recreated
+    const r2body = await r2res.json<{ status: string }>();
+    expect(r2body.status).toBe('exists');
+  });
+
+  it('backfills tasks when task_set row exists but tasks table is empty', async () => {
+    // Simulate the production scenario: a task_set row was inserted (e.g. by the
+    // admin endpoint or a partially-applied bench run) but per-task data never
+    // landed in the `tasks` table.
+    const hash = 'sha256:backfill';
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 1)`,
+    ).bind(hash, '2026-04-26T00:00:00Z', 2).run();
+    const before = await env.DB.prepare(
+      `SELECT COUNT(*) AS c FROM tasks WHERE task_set_hash = ?`,
+    ).bind(hash).first<{ c: number }>();
+    expect(before?.c).toBe(0);
+
+    const payload = {
+      hash,
+      created_at: '2026-04-26T00:00:00Z',
+      task_count: 2,
+      tasks: [
+        { task_id: 'easy/a', content_hash: 'cha', difficulty: 'easy', category_slug: 'data-modeling', manifest: { id: 'A' } },
+        { task_id: 'medium/b', content_hash: 'chb', difficulty: 'medium', category_slug: 'business-logic', manifest: { id: 'B' } },
+      ],
+    };
+    const { publicKey, signedRequest } = await createSignedPayload(payload, 0);
+    const keyRow = await env.DB.prepare(
+      `INSERT INTO machine_keys(machine_id, public_key, scope, created_at) VALUES (?,?,?,?)`,
+    ).bind('m', publicKey, 'ingest', new Date().toISOString()).run();
+    signedRequest.signature.key_id = keyRow.meta!.last_row_id!;
+
+    const res = await SELF.fetch('http://x/api/v1/task-sets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json<{ status: string; hash: string; task_count: number }>();
+    expect(body.status).toBe('backfilled');
+    expect(body.hash).toBe(hash);
+    expect(body.task_count).toBe(2);
+
+    const after = await env.DB.prepare(
+      `SELECT COUNT(*) AS c FROM tasks WHERE task_set_hash = ?`,
+    ).bind(hash).first<{ c: number }>();
+    expect(after?.c).toBe(2);
+
+    // task_set row was NOT duplicated and is_current was preserved.
+    const setRow = await env.DB.prepare(
+      `SELECT hash, task_count, is_current FROM task_sets WHERE hash = ?`,
+    ).bind(hash).first<{ hash: string; task_count: number; is_current: number }>();
+    expect(setRow?.is_current).toBe(1);
+    expect(setRow?.task_count).toBe(2);
   });
 
   it('rejects unsigned requests', async () => {
