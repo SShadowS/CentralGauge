@@ -23,6 +23,7 @@ import {
   registerDoctorCommand,
   registerIngestCommand,
   registerModelsCommand,
+  registerPopulateShortcomingsCommand,
   registerPopulateTaskSetCommand,
   registerReportCommand,
   registerReportDbCommand,
@@ -108,6 +109,7 @@ registerModelsCommand(cliAny);
 registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
 registerSyncCatalogCommand(cliAny);
+registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
 

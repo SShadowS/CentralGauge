@@ -11,6 +11,7 @@ export { registerContainerCommands } from "./container-command.ts";
 export { registerDoctorCommand } from "./doctor-command.ts";
 export { registerIngestCommand } from "./ingest-command.ts";
 export { registerModelsCommand } from "./models-command.ts";
+export { registerPopulateShortcomingsCommand } from "./populate-shortcomings-command.ts";
 export { registerPopulateTaskSetCommand } from "./populate-task-set-command.ts";
 export { registerReportCommand } from "./report-command.ts";
 export { registerRulesCommand } from "./rules-command.ts";
