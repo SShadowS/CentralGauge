@@ -11,12 +11,18 @@
   const displayed = $derived(rows.slice(0, TOP_N));
 
   const W = 720;
-  const H = 240;
-  // Top padding leaves room for the on-bar score label so it never clips
-  // when a model scores 100.
-  const PADDING = { top: 28, right: 24, bottom: 48, left: 50 };
-  const innerW = W - PADDING.left - PADDING.right;
-  const innerH = H - PADDING.top - PADDING.bottom;
+  // Bottom padding grows when the x-axis labels rotate so diagonal text
+  // doesn't clip out of the SVG. The rotation kicks in for crowded charts
+  // (>6 bars) where horizontal labels would overlap.
+  const ROTATE_LABELS = $derived(rows.slice(0, 12).length > 6);
+  const H = $derived(ROTATE_LABELS ? 280 : 240);
+  const PADDING = $derived(
+    ROTATE_LABELS
+      ? { top: 28, right: 24, bottom: 88, left: 50 }
+      : { top: 28, right: 24, bottom: 56, left: 50 },
+  );
+  const innerW = $derived(W - PADDING.left - PADDING.right);
+  const innerH = $derived(H - PADDING.top - PADDING.bottom);
 
   // avg_score is 0..100 (production data, e.g. 68.13). The earlier
   // version overlaid avg_cost_usd as a right-axis dot but that overlapped
@@ -124,22 +130,36 @@
         y={PADDING.top + innerH + 16}
         text-anchor="middle"
         font-size="11"
-        font-weight="500"
-        fill="var(--text-muted)"
+        font-weight="600"
+        fill="var(--text)"
       >
         #{i + 1}
       </text>
-      <text
-        x={cx}
-        y={PADDING.top + innerH + 30}
-        text-anchor="middle"
-        font-size="10"
-        fill="var(--text-faint)"
-      >
-        {row.model.display_name.length > 14
-          ? row.model.display_name.slice(0, 13) + '…'
-          : row.model.display_name}
-      </text>
+      <!-- Model name. Rotated -30° on crowded charts (>6 rows) so long
+           names don't overlap; bottom-aligned at a fixed y. Horizontal
+           on sparse charts since the slot has plenty of room. -->
+      {#if ROTATE_LABELS}
+        <text
+          x={cx}
+          y={PADDING.top + innerH + 32}
+          text-anchor="end"
+          font-size="11"
+          fill="var(--text-muted)"
+          transform="rotate(-30 {cx} {PADDING.top + innerH + 32})"
+        >
+          {row.model.display_name}
+        </text>
+      {:else}
+        <text
+          x={cx}
+          y={PADDING.top + innerH + 32}
+          text-anchor="middle"
+          font-size="11"
+          fill="var(--text-muted)"
+        >
+          {row.model.display_name}
+        </text>
+      {/if}
     {/each}
   </svg>
 {/if}

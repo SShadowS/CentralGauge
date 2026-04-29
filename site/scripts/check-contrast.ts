@@ -13,6 +13,7 @@ interface Pair { name: string; fg: string; bg: string; min: number; }
 const lightPairs: Pair[] = [
   { name: 'body / bg',                fg: '#0a0a0a', bg: '#ffffff', min: 7   },
   { name: 'body-muted / bg',          fg: '#525252', bg: '#ffffff', min: 4.5 },
+  { name: 'body-faint / bg',          fg: '#707070', bg: '#ffffff', min: 4.5 },
   { name: 'body / surface',           fg: '#0a0a0a', bg: '#fafafa', min: 7   },
   { name: 'accent / bg',              fg: '#0a4dff', bg: '#ffffff', min: 4.5 },
   { name: 'accent-fg / accent',       fg: '#ffffff', bg: '#0a4dff', min: 4.5 },
@@ -28,6 +29,7 @@ const lightPairs: Pair[] = [
 const darkPairs: Pair[] = [
   { name: 'body / bg (dark)',         fg: '#fafafa', bg: '#0a0a0a', min: 7   },
   { name: 'body-muted / bg (dark)',   fg: '#a3a3a3', bg: '#0a0a0a', min: 4.5 },
+  { name: 'body-faint / bg (dark)',   fg: '#888888', bg: '#0a0a0a', min: 4.5 },
   { name: 'accent / bg (dark)',       fg: '#4d7fff', bg: '#0a0a0a', min: 4.5 },
   { name: 'success / bg (dark)',      fg: '#4dbb6f', bg: '#0a0a0a', min: 4.5 },
   { name: 'warning / bg (dark)',      fg: '#f59f0e', bg: '#0a0a0a', min: 4.5 },

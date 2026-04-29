@@ -8,7 +8,11 @@
   --surface-elevated: #ffffff;
   --text: #0a0a0a;
   --text-muted: #525252;
-  --text-faint: #a3a3a3;
+  /* --text-faint must hold ≥4.5:1 on --bg for WCAG AA; #a3a3a3 was 2.52:1
+     and failed for actual content (API IDs, dates). Bumped 2026-04-29
+     after axe-core scan — still distinctly lighter than --text-muted to
+     preserve the hierarchy. */
+  --text-faint: #707070;
   --border: #e5e5e5;
   --border-strong: #a3a3a3;
   --accent: #0a4dff;
@@ -116,7 +120,8 @@
   --surface-elevated: #1a1a1a;
   --text: #fafafa;
   --text-muted: #a3a3a3;
-  --text-faint: #525252;
+  /* See light-theme note. Dark #525252 was 2.20:1 on #0a0a0a; #888 = 5.66:1. */
+  --text-faint: #888888;
   --border: #2a2a2a;
   --border-strong: #525252;
   --accent: #4d7fff;
@@ -144,7 +149,7 @@
     --surface-elevated: #1a1a1a;
     --text: #fafafa;
     --text-muted: #a3a3a3;
-    --text-faint: #525252;
+    --text-faint: #888888;
     --border: #2a2a2a;
     --border-strong: #525252;
     --accent: #4d7fff;
