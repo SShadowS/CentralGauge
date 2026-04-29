@@ -83,22 +83,36 @@ export class LeaderboardBroadcaster {
       const entry: ClientEntry = { writer, routes };
       this.clients.add(entry);
 
-      // Initial ping always flows (route "*" matches every subscriber).
-      await this.writeEvent(writer, { type: 'ping', ts: new Date().toISOString() });
-
       // Send up to 20 buffered events that match this client's routes.
       // Walk backwards through the full buffer so a route that only
-      // appears 30+ events back still gets its replay (otherwise a
-      // subscriber to /models/no-such-slug receives ZERO events even
-      // when the buffer holds 50 events for OTHER routes).
+      // appears 30+ events back still gets its replay.
       const initialEvents: BroadcastEvent[] = [];
       for (let i = this.recent.length - 1; i >= 0 && initialEvents.length < 20; i--) {
         const ev = this.recent[i];
         if (matchesClient(ev, entry)) initialEvents.unshift(ev);
       }
-      for (const ev of initialEvents) {
-        await this.writeEvent(writer, ev);
-      }
+
+      // Initial frames are written async AFTER the Response is constructed.
+      // Awaiting writes inside the handler deadlocks when more than one
+      // chunk is queued: TransformStream backpressure makes write(2) wait
+      // for the reader to pull, but the reader (the outer Worker forwarding
+      // bytes to the client) only materialises once we return — so the DO
+      // RPC never resolves and the client sees a 0-byte hang. Fire-and-
+      // forget; the writes drain naturally as the client reads.
+      // Comment-line padding (`:\n\n`) is a no-op SSE event that flushes
+      // response headers immediately so EventSource sees `open` even when
+      // no real events are buffered.
+      (async () => {
+        try {
+          await writer.write(this.encoder.encode(':\n\n'));
+          await this.writeEvent(writer, { type: 'ping', ts: new Date().toISOString() });
+          for (const ev of initialEvents) {
+            await this.writeEvent(writer, ev);
+          }
+        } catch {
+          // Client aborted before initial frames drained.
+        }
+      })();
 
       // Clean up on disconnect
       request.signal.addEventListener('abort', () => {
