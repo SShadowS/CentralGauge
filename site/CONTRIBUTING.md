@@ -405,6 +405,78 @@ To update baselines after intentional UI changes:
 - **Visual regression baseline regenerates per-phase**, not at end (IM-6). Each `*-COMMIT` includes baseline regen for pages that phase visibly changes. J4 reconciles any missed.
 - **Vite `?raw` cross-root import works**: `import md from '../../../../docs/site/changelog.md?raw'` reaches outside `site/` into the repo's `docs/`. Precedent in `site/src/lib/server/canonical.ts`. Keep build-time imports — runtime `fs.readFile` would not work in the Cloudflare Worker.
 
+## Common pitfalls — Svelte 5 runes
+
+### `$effect` self-loops via `$state` reads inside the guard
+
+**Symptom:** browser pegs CPU at 100 % on a page that uses an `$effect` for
+lazy fetch / one-shot setup. Devtools shows the effect re-running on every
+microtask. Closing the tab is the only relief.
+
+**Cause:** the guard expression at the top of the effect READS a `$state`
+variable that the effect itself WRITES. Reading `$state` inside an effect
+establishes a reactive dependency, so writing it retriggers the effect, the
+cleanup aborts the in-flight work, the `.finally` flips state again,
+retriggering the effect — infinite loop.
+
+```svelte
+<!-- BAD: loading is $state, read in guard, written in body -->
+let loading = $state(false);
+$effect(() => {
+  if (loading) return;          // READ — establishes dep
+  loading = true;               // WRITE — retriggers effect
+  fetch(...).finally(() => { loading = false; });
+});
+```
+
+**Fix:** use a plain `let` (non-reactive) for "started once" / "in flight"
+guards. The `$state` variables can still drive UI; the guard is internal
+bookkeeping and must not be reactive.
+
+```svelte
+<!-- GOOD: started is plain let, NOT $state -->
+let loading = $state(false);
+let started = false;            // NOT reactive
+$effect(() => {
+  if (started) return;
+  started = true;
+  loading = true;
+  fetch(...).finally(() => { loading = false; });
+});
+```
+
+**Occurred in:** `ShortcomingsSection.svelte`, `CommandPalette.svelte`,
+`runs/[id]/+page.svelte` (signature panel). Each was an independent
+re-discovery — fold the rule in early when reviewing new `$effect` code.
+
+### `position: sticky` inside an `overflow: auto` wrap
+
+**Symptom:** sticky `<thead>` (or sticky cells) pin at an unexpected
+position — typically OVER the first row of the table, hiding rank #1.
+
+**Cause:** any ancestor with `overflow-x: auto` / `overflow-y: auto` /
+`overflow: hidden` becomes the sticky containing block. Sticky elements
+then pin relative to that wrapper's edge, not the viewport. With `top:
+56px` and the wrap starting at `y = 620`, the thead pins at
+`wrap.top + 56 = 676 px` — the same y as the first body row in flow,
+covering it.
+
+**Fix options (pick one):**
+- Drop sticky if the table fits on screen — simplest, what the leaderboard
+  uses today.
+- Make the wrap NOT a scroll container (`overflow: visible`) and instead
+  rely on the document scroll for horizontal overflow.
+- Move the sticky element OUT of the wrap (e.g., a separate sticky header
+  row outside the scroll container, with column widths kept in sync).
+
+**Don't:** apply sticky to the `<th>` cells inside the wrap and expect a
+different result. The containing block is the wrap regardless of which
+descendant carries `position: sticky`.
+
+**Occurred in:** `LeaderboardTable.svelte` (April 2026). Three iterations
+to find — diagnose with `getBoundingClientRect()` on `thead` + `wrap` to
+see the pinning math directly.
+
 ## /leaderboard redirect sunset (2026-05-30)
 
 The P5.5 cutover left a 302 redirect at `src/routes/leaderboard/+server.ts`
