@@ -22,8 +22,8 @@ supported by design (zero D1 writes, deterministic bundles).
 
 - The leaderboard, model detail, and run pages now refresh in place
   when new runs finalize — no manual reload.
-- Press **⌘K** (or **Ctrl-K**) anywhere on the site to jump to a
-  model, run, or task.
+- Press **Ctrl-K** (or **⌘K** on Mac) anywhere on the site to jump
+  to a model, run, or task.
 
 ## DeepSeek V4 Pro joins the leaderboard (2026-04-25)
 

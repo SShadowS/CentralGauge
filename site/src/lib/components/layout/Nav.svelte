@@ -9,7 +9,22 @@
 
   let theme: Theme = $state('system');
 
-  onMount(() => { theme = getTheme(); });
+  // Modifier key shown in the palette hint. SSR renders "Ctrl" — that's
+  // the right default for Windows/Linux (the majority of visitors) and
+  // avoids a hydration mismatch on those platforms. On Mac we swap to
+  // "⌘" after mount; brief 1-frame layout shift is acceptable since
+  // both labels occupy the same kbd width.
+  let modKey: string = $state('Ctrl');
+
+  onMount(() => {
+    theme = getTheme();
+    const platform =
+      // navigator.userAgentData.platform is the modern API (Chromium); platform
+      // is the legacy one (still present everywhere). Prefer the modern API.
+      (navigator as Navigator & { userAgentData?: { platform?: string } })
+        .userAgentData?.platform ?? navigator.platform ?? '';
+    if (/mac|iphone|ipad/i.test(platform)) modKey = '⌘';
+  });
 
   function toggleTheme() { theme = cycleTheme(); }
   function openPalette() { paletteBus.openPalette(); }
@@ -33,10 +48,10 @@
       <li><a href="/search">Search</a></li>
     </ul>
     <div class="actions">
-      <button type="button" class="palette-btn" onclick={openPalette} aria-label="Open command palette (⌘K)">
+      <button type="button" class="palette-btn" onclick={openPalette} aria-label="Open command palette ({modKey}+K)">
         <Command size={16} />
         <span class="palette-label">Search…</span>
-        <KeyHint keys={['⌘', 'K']} />
+        <KeyHint keys={[modKey, 'K']} />
       </button>
       {#if densityFlag}
         <DensityToggle />
