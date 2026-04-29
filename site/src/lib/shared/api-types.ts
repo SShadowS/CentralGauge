@@ -166,6 +166,29 @@ export interface ModelDetail {
     run_count: number;
     verified_runs: number;
   };
+  /**
+   * P7 Phase G: settings transparency block. Each scalar is `null` when its
+   * value differs across the model's runs (multi-settings ambiguity ⇒
+   * surfaced as "varies" by the UI). `tokens_avg_per_run` and
+   * `consistency_pct` are always concrete numbers (0 when no data).
+   */
+  settings: {
+    /** Consistent temperature across runs; `null` when values differ. */
+    temperature: number | null;
+    /**
+     * Consistent thinking budget across runs; `null` when values differ
+     * or absent from `settings_profiles.extra_json`. Strings (e.g.
+     * `"50000"`, `"high"`) so both numeric and named tiers fit.
+     */
+    thinking_budget: string | null;
+    /** Average total tokens (in + out) per run. */
+    tokens_avg_per_run: number;
+    /**
+     * Percentage (0-100) of tasks where every run produced the identical
+     * (attempt-1 passed, attempt-2 passed) tuple. 0 when no tasks.
+     */
+    consistency_pct: number;
+  };
   history: ModelHistoryPoint[];
   failure_modes: FailureMode[];
   recent_runs: ModelHistoryPoint[];   // last 20

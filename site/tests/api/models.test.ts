@@ -111,6 +111,81 @@ describe('GET /api/v1/models/:slug', () => {
     expect(body.failure_modes).toEqual([]);
   });
 
+  // Phase G: settings transparency block on /api/v1/models/:slug.
+  it('emits the settings block (Phase G) with consistent values across a single-run model', async () => {
+    const res = await SELF.fetch('https://x/api/v1/models/sonnet-4.7?_cb=settingsblock');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      settings: {
+        temperature: number | null;
+        thinking_budget: string | null;
+        tokens_avg_per_run: number;
+        consistency_pct: number;
+      };
+    };
+    // Single run → settings consistent. Seed sets temperature=0.0 and
+    // omits thinking_budget. Tokens columns default to 0 (no fixture data).
+    expect(body.settings).toBeDefined();
+    expect(body.settings.temperature).toBe(0);
+    expect(body.settings.thinking_budget).toBe(null);
+    expect(body.settings.tokens_avg_per_run).toBe(0);
+    // Single run per task ⇒ trivially 100% consistent.
+    expect(body.settings.consistency_pct).toBe(100);
+  });
+
+  it('returns null temperature when runs have differing temperatures (Phase G)', async () => {
+    // Insert a second settings_profile with a different temperature, plus a
+    // run pinned to that profile. Now the model has runs across two
+    // different temperatures and the API should surface `null`.
+    await env.DB.prepare(
+      `INSERT INTO settings_profiles(hash,temperature,max_attempts) VALUES ('s_high',0.8,2)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_hot','ts',1,'s_high','rig','2026-04-03T00:00:00Z','2026-04-03T01:00:00Z','completed','claimed','v1','sig','2026-04-03T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('r_hot','easy/a',1,1,1.0,1,3,3)`,
+    ).run();
+
+    const res = await SELF.fetch('https://x/api/v1/models/sonnet-4.7?_cb=variestemp');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      settings: { temperature: number | null; thinking_budget: string | null; consistency_pct: number };
+    };
+    expect(body.settings.temperature).toBe(null);
+    expect(body.settings.thinking_budget).toBe(null);
+    // 'easy/a' now ran twice, both attempt-1 passed=1 ⇒ still consistent.
+    expect(body.settings.consistency_pct).toBe(100);
+  });
+
+  it('extracts thinking_budget from settings_profiles.extra_json (Phase G)', async () => {
+    // Wipe seed runs and build a fresh fixture with a thinking budget set.
+    await env.DB.prepare(`DELETE FROM results`).run();
+    await env.DB.prepare(`DELETE FROM runs`).run();
+    await env.DB.prepare(`DELETE FROM settings_profiles`).run();
+    await env.DB.prepare(
+      `INSERT INTO settings_profiles(hash,temperature,max_attempts,extra_json) VALUES ('s_think',0.1,2,'{"thinking_budget":50000}')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_think','ts',1,'s_think','rig','2026-04-04T00:00:00Z','2026-04-04T01:00:00Z','completed','claimed','v1','sig','2026-04-04T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r_think','easy/a',1,1,1.0,1,3,3,1200,800)`,
+    ).run();
+
+    const res = await SELF.fetch('https://x/api/v1/models/sonnet-4.7?_cb=think');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      settings: { temperature: number | null; thinking_budget: string | null; tokens_avg_per_run: number };
+    };
+    expect(body.settings.temperature).toBeCloseTo(0.1, 5);
+    expect(body.settings.thinking_budget).toBe('50000');
+    // 1200 + 800 = 2000 tokens for the only run.
+    expect(body.settings.tokens_avg_per_run).toBe(2000);
+  });
+
   it('returns 404 for unknown model', async () => {
     const res = await SELF.fetch('https://x/api/v1/models/nonexistent');
     expect(res.status).toBe(404);
@@ -147,6 +222,13 @@ describe('GET /api/v1/models/:slug', () => {
     expect(body.history).toEqual([]);
     expect(body.failure_modes).toEqual([]);
     expect(body.recent_runs).toEqual([]);
+    // Phase G: settings block should still be present, with all-default values.
+    const bodyWithSettings = body as unknown as { settings: { temperature: number | null; thinking_budget: string | null; tokens_avg_per_run: number; consistency_pct: number } };
+    expect(bodyWithSettings.settings).toBeDefined();
+    expect(bodyWithSettings.settings.temperature).toBe(null);
+    expect(bodyWithSettings.settings.thinking_budget).toBe(null);
+    expect(bodyWithSettings.settings.tokens_avg_per_run).toBe(0);
+    expect(bodyWithSettings.settings.consistency_pct).toBe(0);
   });
 
   it('extracts failure_modes from compile_errors_json', async () => {

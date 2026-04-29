@@ -79,6 +79,7 @@
 
   const tocItems = [
     { id: 'overview',     label: 'Overview' },
+    { id: 'settings',     label: 'Settings' },
     { id: 'history',      label: 'History' },
     { id: 'cost',         label: 'Cost' },
     { id: 'failures',     label: 'Failure modes' },
@@ -86,6 +87,15 @@
     { id: 'recent-runs',  label: 'Recent runs' },
     { id: 'methodology',  label: 'Methodology' },
   ];
+
+  // Phase G: settings transparency. Null scalars surface as "varies" so the
+  // user knows the value isn't stable across the model's runs.
+  const formatVaries = (v: number | string | null): string =>
+    v === null ? 'varies' : String(v);
+  const formatTokens = (n: number): string =>
+    n === 0 ? '—' : n.toLocaleString('en-US');
+  const formatConsistency = (n: number): string =>
+    n === 0 ? '—' : `${n.toFixed(n % 1 === 0 ? 0 : 1)}%`;
 </script>
 
 <svelte:head>
@@ -136,6 +146,23 @@
           {m.aggregates.verified_runs} of these runs are verified by an independent verifier machine.
         {/if}
       </p>
+    </section>
+
+    <section id="settings">
+      <h2>Settings</h2>
+      <p class="text-muted">
+        Generation parameters used across this model's runs. "varies" indicates the value differed between runs.
+      </p>
+      <dl class="settings">
+        <dt>Temperature</dt>
+        <dd>{formatVaries(m.settings.temperature)}</dd>
+        <dt>Thinking budget</dt>
+        <dd>{formatVaries(m.settings.thinking_budget)}</dd>
+        <dt>Avg tokens / run</dt>
+        <dd>{formatTokens(m.settings.tokens_avg_per_run)}</dd>
+        <dt>Consistency</dt>
+        <dd>{formatConsistency(m.settings.consistency_pct)}</dd>
+      </dl>
     </section>
 
     <section id="history">
@@ -203,4 +230,25 @@
   @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 
   .seemore { margin-top: var(--space-4); font-size: var(--text-sm); }
+
+  /* Phase G: settings transparency block. Two-column dl that wraps on
+     narrow viewports. Tabular numerals so the value column lines up. */
+  .settings {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: var(--space-2) var(--space-4);
+    margin: 0;
+  }
+  .settings dt {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+  .settings dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (max-width: 480px) {
+    .settings { grid-template-columns: 1fr; gap: 0; }
+    .settings dd { margin-bottom: var(--space-2); }
+  }
 </style>

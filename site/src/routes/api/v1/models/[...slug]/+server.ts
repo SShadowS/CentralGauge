@@ -175,6 +175,12 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         run_count: runCount,
         verified_runs: agg?.verified_runs ?? 0,
       },
+      settings: {
+        temperature: agg?.temperature ?? null,
+        thinking_budget: agg?.thinking_budget ?? null,
+        tokens_avg_per_run: agg?.tokens_avg_per_run ?? 0,
+        consistency_pct: agg?.consistency_pct ?? 0,
+      },
       history,
       failure_modes: failureModes,
       recent_runs: recentRuns,

@@ -67,6 +67,28 @@ export interface Aggregate {
    * ambiguity → suffix omitted).
    */
   settings_suffix: string;
+  /**
+   * Temperature consistent across all the model's runs in scope (P7 Phase G).
+   * `null` when the model has runs with differing temperatures (or none).
+   */
+  temperature: number | null;
+  /**
+   * Thinking budget consistent across all the model's runs in scope
+   * (P7 Phase G). Parsed from `settings_profiles.extra_json`. `null` when
+   * inconsistent across runs (or no value in extras).
+   */
+  thinking_budget: string | null;
+  /**
+   * Average total tokens (in + out) per RUN — sum-per-run averaged across
+   * runs (P7 Phase G). 0 when no results.
+   */
+  tokens_avg_per_run: number;
+  /**
+   * Per-task outcome consistency: percentage of tasks where ALL runs produced
+   * the identical (attempt-1 passed, attempt-2 passed) tuple (P7 Phase G).
+   * 100 when only one run per task (trivial consistency); 0 when no tasks.
+   */
+  consistency_pct: number;
 }
 
 export interface ComputeOpts {
@@ -131,6 +153,7 @@ export async function computeModelAggregates(
            CASE WHEN COUNT(DISTINCT runs.settings_hash) = 1
                 THEN MAX(runs.settings_hash) ELSE NULL END
              AS settings_hash_unique,
+           COUNT(DISTINCT runs.settings_hash) AS settings_hash_count,
            (SELECT COUNT(DISTINCT r1.task_id)
             FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
             WHERE ru1.model_id = runs.model_id AND r1.attempt = 1 AND r1.passed = 1
@@ -168,6 +191,7 @@ export async function computeModelAggregates(
     tasks_passed_attempt_1: number | string | null;
     tasks_passed_attempt_2_only: number | string | null;
     settings_hash_unique: string | null;
+    settings_hash_count: number | string | null;
   }>();
 
   // Resolve settings profiles in a separate batch lookup (sidesteps SQLite
@@ -179,24 +203,44 @@ export async function computeModelAggregates(
         .filter((h): h is string => !!h),
     ),
   );
-  const profileByHash = new Map<string, SettingsProfileLike>();
+  const profileByHash = new Map<
+    string,
+    SettingsProfileLike & { extra_json: string | null }
+  >();
   if (uniqueHashes.length > 0) {
     const ph = uniqueHashes.map(() => '?').join(',');
     const profileRs = await db
-      .prepare(`SELECT hash, temperature, max_tokens FROM settings_profiles WHERE hash IN (${ph})`)
+      .prepare(
+        `SELECT hash, temperature, max_tokens, extra_json FROM settings_profiles WHERE hash IN (${ph})`,
+      )
       .bind(...uniqueHashes)
       .all<{
         hash: string;
         temperature: number | null;
         max_tokens: number | null;
+        extra_json: string | null;
       }>();
     for (const p of profileRs.results ?? []) {
       profileByHash.set(p.hash, {
         temperature: typeof p.temperature === 'number' ? p.temperature : null,
         max_tokens: typeof p.max_tokens === 'number' ? p.max_tokens : null,
+        extra_json: typeof p.extra_json === 'string' ? p.extra_json : null,
       });
     }
   }
+
+  // Phase G: per-model consistency / settings consistency / token averages.
+  // These need access to per-run rows (for tokens) and per-(task, run) rows
+  // (for consistency). We compute in TS to keep semantics auditable.
+  const modelIdsInResult = (rs.results ?? []).map((r) => r.model_id);
+  const tokensByModel = await computeTokensAvgPerRun(db, where, params);
+  const consistencyByModel = await computeConsistencyPct(db, where, params);
+  const settingsConsistencyByModel = await computeSettingsConsistency(
+    db,
+    where,
+    params,
+    modelIdsInResult,
+  );
 
   // Optionally fetch per-result durations and compute median in TS. We do this
   // in a second query (rather than a SQL window function) so the math stays
@@ -220,6 +264,24 @@ export async function computeModelAggregates(
       : null;
     const settingsSuffix = formatSettingsSuffix(profile);
 
+    // Settings consistency: prefer the unique-hash short-circuit (1 hash →
+    // values trivially consistent). Otherwise rely on the cross-hash scan
+    // computed in `computeSettingsConsistency` (same temp / thinking value
+    // across all hashes used by this model).
+    const consistent = settingsConsistencyByModel.get(row.model_id);
+    let temperature: number | null;
+    let thinkingBudget: string | null;
+    if (profile) {
+      temperature = profile.temperature;
+      thinkingBudget = parseThinkingBudget(profile.extra_json);
+    } else if (consistent) {
+      temperature = consistent.temperature;
+      thinkingBudget = consistent.thinking_budget;
+    } else {
+      temperature = null;
+      thinkingBudget = null;
+    }
+
     out.set(row.model_id, {
       run_count: Number(row.run_count ?? 0),
       verified_runs: Number(row.verified_runs ?? 0),
@@ -234,6 +296,201 @@ export async function computeModelAggregates(
       tasks_passed_attempt_2_only: passedA2Only,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
       settings_suffix: settingsSuffix,
+      temperature,
+      thinking_budget: thinkingBudget,
+      tokens_avg_per_run: tokensByModel.get(row.model_id) ?? 0,
+      consistency_pct: consistencyByModel.get(row.model_id) ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
+ * Parses a `thinking_budget` value out of `settings_profiles.extra_json`.
+ * The catalog tolerates either a numeric token budget (e.g. `50000`) or a
+ * named tier (e.g. `"high"`, `"low"`, `"max"`); we normalize to string for
+ * uniform display.
+ */
+function parseThinkingBudget(extraJson: string | null | undefined): string | null {
+  if (!extraJson) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(extraJson);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const tb = (parsed as Record<string, unknown>).thinking_budget;
+  if (typeof tb === 'number' && Number.isFinite(tb)) return String(tb);
+  if (typeof tb === 'string' && tb.length > 0) return tb;
+  return null;
+}
+
+/**
+ * Per-model average total tokens (in + out) per RUN. Sums tokens across each
+ * run's results, then averages run-totals across runs. Returns 0 for models
+ * with no runs.
+ */
+async function computeTokensAvgPerRun(
+  db: D1Database,
+  where: string[],
+  params: Array<string | number>,
+): Promise<Map<number, number>> {
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const sql = `
+    SELECT runs.model_id AS model_id,
+           runs.id       AS run_id,
+           COALESCE(SUM(r.tokens_in), 0) + COALESCE(SUM(r.tokens_out), 0) AS run_tokens
+    FROM runs
+    LEFT JOIN results r ON r.run_id = runs.id
+    ${whereSql}
+    GROUP BY runs.model_id, runs.id
+  `;
+  const rs = await db.prepare(sql).bind(...params).all<{
+    model_id: number;
+    run_id: string;
+    run_tokens: number | string | null;
+  }>();
+
+  const buckets = new Map<number, number[]>();
+  for (const row of rs.results ?? []) {
+    const arr = buckets.get(row.model_id) ?? [];
+    arr.push(Number(row.run_tokens ?? 0));
+    buckets.set(row.model_id, arr);
+  }
+  const out = new Map<number, number>();
+  for (const [modelId, arr] of buckets.entries()) {
+    if (arr.length === 0) {
+      out.set(modelId, 0);
+      continue;
+    }
+    const total = arr.reduce((a, b) => a + b, 0);
+    out.set(modelId, Math.round(total / arr.length));
+  }
+  return out;
+}
+
+/**
+ * Per-model task-outcome consistency. For each task, gathers the
+ * (attempt-1 passed, attempt-2 passed) tuple from every run and counts the
+ * task as "consistent" iff all runs produced the same tuple. Returns the
+ * percentage (0-100, two decimals) of consistent tasks. Tasks with only one
+ * run are trivially consistent.
+ */
+async function computeConsistencyPct(
+  db: D1Database,
+  where: string[],
+  params: Array<string | number>,
+): Promise<Map<number, number>> {
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const sql = `
+    SELECT runs.model_id AS model_id,
+           r.task_id     AS task_id,
+           runs.id       AS run_id,
+           r.attempt     AS attempt,
+           r.passed      AS passed
+    FROM runs
+    JOIN results r ON r.run_id = runs.id
+    ${whereSql}
+  `;
+  const rs = await db.prepare(sql).bind(...params).all<{
+    model_id: number;
+    task_id: string;
+    run_id: string;
+    attempt: number | string | null;
+    passed: number | string | null;
+  }>();
+
+  // bucket: model_id -> task_id -> run_id -> { a1: 0|1, a2: 0|1 }
+  const byModel = new Map<number, Map<string, Map<string, { a1: number; a2: number }>>>();
+  for (const row of rs.results ?? []) {
+    const attempt = Number(row.attempt ?? 0);
+    const passed = Number(row.passed ?? 0) === 1 ? 1 : 0;
+    let byTask = byModel.get(row.model_id);
+    if (!byTask) {
+      byTask = new Map();
+      byModel.set(row.model_id, byTask);
+    }
+    let byRun = byTask.get(row.task_id);
+    if (!byRun) {
+      byRun = new Map();
+      byTask.set(row.task_id, byRun);
+    }
+    const tuple = byRun.get(row.run_id) ?? { a1: 0, a2: 0 };
+    if (attempt === 1) tuple.a1 = passed;
+    else if (attempt === 2) tuple.a2 = passed;
+    byRun.set(row.run_id, tuple);
+  }
+
+  const out = new Map<number, number>();
+  for (const [modelId, byTask] of byModel.entries()) {
+    let total = 0;
+    let consistent = 0;
+    for (const byRun of byTask.values()) {
+      total += 1;
+      const sigs = new Set<string>();
+      for (const t of byRun.values()) sigs.add(`${t.a1}|${t.a2}`);
+      if (sigs.size <= 1) consistent += 1;
+    }
+    if (total === 0) {
+      out.set(modelId, 0);
+      continue;
+    }
+    out.set(modelId, Math.round((consistent / total) * 10000) / 100);
+  }
+  return out;
+}
+
+/**
+ * Resolves cross-hash settings consistency. When a model has runs across
+ * multiple settings hashes but the underlying values (temperature, thinking
+ * budget) happen to be the same, callers should still surface those values.
+ * Returns null entries for models whose values differ.
+ */
+async function computeSettingsConsistency(
+  db: D1Database,
+  where: string[],
+  params: Array<string | number>,
+  modelIds: number[],
+): Promise<Map<number, { temperature: number | null; thinking_budget: string | null }>> {
+  const out = new Map<number, { temperature: number | null; thinking_budget: string | null }>();
+  if (modelIds.length === 0) return out;
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const sql = `
+    SELECT DISTINCT runs.model_id AS model_id,
+                    sp.temperature AS temperature,
+                    sp.extra_json  AS extra_json
+    FROM runs
+    JOIN settings_profiles sp ON sp.hash = runs.settings_hash
+    ${whereSql}
+  `;
+  const rs = await db.prepare(sql).bind(...params).all<{
+    model_id: number;
+    temperature: number | null;
+    extra_json: string | null;
+  }>();
+
+  const byModel = new Map<number, Array<{ temp: number | null; thinking: string | null }>>();
+  for (const row of rs.results ?? []) {
+    const arr = byModel.get(row.model_id) ?? [];
+    arr.push({
+      temp: typeof row.temperature === 'number' ? row.temperature : null,
+      thinking: parseThinkingBudget(row.extra_json),
+    });
+    byModel.set(row.model_id, arr);
+  }
+  for (const [modelId, arr] of byModel.entries()) {
+    if (arr.length === 0) {
+      out.set(modelId, { temperature: null, thinking_budget: null });
+      continue;
+    }
+    const tempSet = new Set(arr.map((r) => (r.temp === null ? '__null__' : String(r.temp))));
+    const thinkingSet = new Set(
+      arr.map((r) => (r.thinking === null ? '__null__' : r.thinking)),
+    );
+    out.set(modelId, {
+      temperature: tempSet.size === 1 && arr[0]!.temp !== null ? arr[0]!.temp : null,
+      thinking_budget: thinkingSet.size === 1 && arr[0]!.thinking !== null ? arr[0]!.thinking : null,
     });
   }
   return out;
