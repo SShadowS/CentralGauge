@@ -13,11 +13,12 @@
 
   let { data } = $props();
 
-  const FILTER_KEYS = new Set(['set', 'tier', 'difficulty', 'family', 'since']);
+  const FILTER_KEYS = new Set(['set', 'tier', 'difficulty', 'family', 'since', 'category']);
 
   let setVal = $derived(data.filters.set);
   let tierVerified = $derived(data.filters.tier === 'verified' || data.filters.tier === 'all');
   let tierClaimed = $derived(data.filters.tier === 'claimed' || data.filters.tier === 'all');
+  let categoryVal = $derived(data.filters.category ?? '');
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
@@ -109,6 +110,17 @@
       <Checkbox label="Verified" checked={tierVerified} onchange={(e) => applyTier((e.target as HTMLInputElement).checked, tierClaimed)} />
       <Checkbox label="Claimed"  checked={tierClaimed}  onchange={(e) => applyTier(tierVerified, (e.target as HTMLInputElement).checked)} />
     </fieldset>
+
+    {#if data.categories.length > 0}
+      <fieldset class="group">
+        <legend>Category</legend>
+        <Radio label="All" name="category" value="" group={categoryVal} onchange={() => pushFilter({ category: null })} />
+        {#each data.categories as cat (cat.slug)}
+          <Radio label={cat.name} name="category" value={cat.slug} group={categoryVal} onchange={() => pushFilter({ category: cat.slug })} />
+        {/each}
+        <a class="rail-link" href="/categories">Browse all →</a>
+      </fieldset>
+    {/if}
   </FilterRail>
 
   <div class="results">
@@ -162,4 +174,5 @@
   }
   .empty { text-align: center; padding: var(--space-9) 0; color: var(--text-muted); }
   .count { margin-top: var(--space-5); font-size: var(--text-sm); }
+  .rail-link { font-size: var(--text-xs); color: var(--accent); margin-top: var(--space-2); }
 </style>

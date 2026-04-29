@@ -47,6 +47,18 @@ export async function computeLeaderboard(
     : '';
   if (q.difficulty) params.push(q.difficulty);
 
+  // Category filter (P7 Phase C1) — JOINs tasks→task_categories scoped to the
+  // run's task_set_hash so the filter respects the active set. Uses alias
+  // `t_cat` to avoid colliding with the `t` alias used by difficulty.
+  const categoryJoin = q.category
+    ? `JOIN tasks t_cat ON t_cat.task_id = r.task_id AND t_cat.task_set_hash = runs.task_set_hash
+       JOIN task_categories tc ON tc.id = t_cat.category_id`
+    : '';
+  if (q.category) {
+    wheres.push(`tc.slug = ?`);
+    params.push(q.category);
+  }
+
   const whereClause = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
 
   // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
@@ -95,6 +107,7 @@ export async function computeLeaderboard(
     JOIN model_families mf ON mf.id = m.family_id
     JOIN results r ON r.run_id = runs.id
     ${difficultyJoin}
+    ${categoryJoin}
     JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
     ${whereClause}
     GROUP BY m.id

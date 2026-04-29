@@ -384,6 +384,39 @@ describe('GET /api/v1/leaderboard', () => {
     expect(slugs).toEqual([...slugs].sort());
   });
 
+  // ===========================================================================
+  // P7 Phase C1 — Category filter on leaderboard endpoint
+  // ===========================================================================
+
+  it('?category=easy filters to tasks in the easy category only', async () => {
+    // Default seed: category 1 ("easy") = task 'easy/a', category 2 ("hard") = 'hard/b'.
+    // sonnet on r1: easy/a passed, hard/b failed → category=easy → only easy/a counts → score=1.0
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?category=easy&_cb=cat-easy');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'sonnet-4.7');
+    expect(sonnet, 'category=easy: sonnet present').toBeDefined();
+    // r1.easy/a passed (1.0) + r2.easy/a passed (1.0) = avg 1.0
+    expect(sonnet!.avg_score).toBe(1.0);
+  });
+
+  it('?category=hard filters to tasks in the hard category only', async () => {
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?category=hard&_cb=cat-hard');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'sonnet-4.7');
+    expect(sonnet, 'category=hard: sonnet present').toBeDefined();
+    // r1.hard/b failed (0.0) + r2.hard/b passed (1.0) = avg 0.5
+    expect(sonnet!.avg_score).toBe(0.5);
+  });
+
+  it('?category=nonexistent returns empty data array', async () => {
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?category=nonexistent-slug&_cb=cat-none');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: unknown[] };
+    expect(body.data).toEqual([]);
+  });
+
   it('omits settings_suffix when settings differ across runs', async () => {
     await env.DB.batch([
       env.DB.prepare(
