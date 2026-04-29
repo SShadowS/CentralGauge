@@ -108,15 +108,16 @@
   .rank { width: 48px; color: var(--text-muted); }
   .score { white-space: nowrap; }
   .attempts-cell {
-    min-width: 110px;
+    min-width: 120px;
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
     align-items: stretch;
   }
   .attempts-cell .ratio {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
   }
   .hbtn {
     background: transparent;

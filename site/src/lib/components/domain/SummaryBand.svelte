@@ -1,76 +1,48 @@
 <script lang="ts">
-  import StatTile from './StatTile.svelte';
   import type { SummaryStats } from '$shared/api-types';
 
   interface Props { stats: SummaryStats; }
   let { stats }: Props = $props();
-
-  function fmtNum(n: number): string {
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-    return String(n);
-  }
-  function fmtCost(n: number): string {
-    if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
-    return `$${n.toFixed(2)}`;
-  }
 </script>
 
-<section class="summary-band" aria-label="Site-wide aggregates">
-  <div class="stats">
-    <StatTile label="Runs" value={fmtNum(stats.runs)} />
-    <StatTile label="Models" value={fmtNum(stats.models)} />
-    <StatTile label="Tasks" value={fmtNum(stats.tasks)} />
-    <StatTile label="Total cost" value={fmtCost(stats.total_cost_usd)} />
-    <StatTile label="Total tokens" value={fmtNum(stats.total_tokens)} />
-  </div>
-  {#if stats.latest_changelog}
-    <!-- Slug comes from the parser (build-time) so the anchor matches the
-         <article id> rendered by /changelog/+page.svelte exactly. -->
-    <a class="callout" href="/changelog#{stats.latest_changelog.slug}">
-      <span class="badge">New</span>
-      <span class="title">{stats.latest_changelog.title}</span>
-      <span class="date text-muted">{stats.latest_changelog.date}</span>
-      <span class="cta">→</span>
-    </a>
-  {/if}
-</section>
+{#if stats.latest_changelog}
+  <!-- Slug comes from the parser (build-time) so the anchor matches the
+       <article id> rendered by /changelog/+page.svelte exactly. The stat
+       tile grid that previously rendered above this callout was removed
+       2026-04-29 — the same numbers are shown elsewhere (per-row tile
+       grid was visual noise above the leaderboard). -->
+  <a class="callout" href="/changelog#{stats.latest_changelog.slug}">
+    <span class="badge">New</span>
+    <span class="title">{stats.latest_changelog.title}</span>
+    <span class="date text-muted">{stats.latest_changelog.date}</span>
+    <span class="cta" aria-hidden="true">→</span>
+  </a>
+{/if}
 
 <style>
-  .summary-band {
-    padding: var(--space-5) 0;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: var(--space-4);
-  }
-  @media (max-width: 768px) {
-    .stats { grid-template-columns: repeat(3, 1fr); }
-  }
   .callout {
     display: flex;
     gap: var(--space-3);
     align-items: center;
-    padding: var(--space-3) var(--space-4);
-    background: var(--surface-2);
-    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-5);
+    margin-top: var(--space-5);
+    background: var(--accent-soft);
+    border-radius: var(--radius-2);
     text-decoration: none;
     color: var(--text);
   }
-  .callout:hover { background: var(--surface-3); }
+  .callout:hover { background: var(--accent-soft); filter: brightness(0.97); }
   .callout .badge {
     padding: 2px 8px;
     background: var(--accent);
-    color: white;
-    border-radius: 12px;
+    color: var(--accent-fg);
+    border-radius: var(--radius-pill);
     font-size: var(--text-xs);
+    font-weight: var(--weight-semi);
+    letter-spacing: var(--tracking-wide);
     text-transform: uppercase;
   }
-  .callout .title { flex: 1; font-weight: var(--weight-semi); }
+  .callout .title { flex: 1; font-weight: var(--weight-medium); }
   .callout .date { font-size: var(--text-sm); }
+  .callout .cta { color: var(--accent); }
 </style>

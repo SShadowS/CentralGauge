@@ -17,6 +17,13 @@
   --success: #0a7d3a;
   --warning: #b45309;
   --danger: #c2261c;
+  /* Chart-fill variants — brighter than semantic tokens above so 8-16 px
+     bars stay legible. OKLCH lightness 0.60-0.75 keeps body-row contrast
+     high without crossing into garish territory. Don't substitute these
+     for borders/text — they fail WCAG against --bg. */
+  --chart-success: oklch(0.62 0.17 146);
+  --chart-warning: oklch(0.76 0.16 78);
+  --chart-danger: oklch(0.60 0.22 28);
   --tier-verified: #0a7d3a;
   --tier-claimed: #525252;
   --code-bg: #f5f5f5;
@@ -118,6 +125,9 @@
   --success: #4dbb6f;
   --warning: #f59f0e;
   --danger: #ef5046;
+  --chart-success: oklch(0.68 0.17 146);
+  --chart-warning: oklch(0.78 0.17 78);
+  --chart-danger: oklch(0.65 0.22 28);
   --tier-verified: #4dbb6f;
   --tier-claimed: #a3a3a3;
   --code-bg: #1a1a1a;
@@ -143,6 +153,9 @@
     --success: #4dbb6f;
     --warning: #f59f0e;
     --danger: #ef5046;
+    --chart-success: oklch(0.68 0.17 146);
+    --chart-warning: oklch(0.78 0.17 78);
+    --chart-danger: oklch(0.65 0.22 28);
     --tier-verified: #4dbb6f;
     --tier-claimed: #a3a3a3;
     --code-bg: #1a1a1a;

@@ -51,21 +51,26 @@
   .bar {
     display: flex;
     width: 100%;
-    min-width: 60px;
-    height: 12px;
-    border-radius: 4px;
+    min-width: 80px;
+    height: 14px;
+    border-radius: 3px;
     overflow: hidden;
-    background: var(--surface-2, var(--surface));
+    background: var(--surface);
+    border: 1px solid var(--border);
   }
   .seg { height: 100%; }
-  .seg-a1 { background: var(--success); }
-  .seg-a2 { background: var(--warning, var(--info, #f59e0b)); }
-  .seg-fail { background: var(--danger); }
+  /* Hairline separator between adjacent segments — defines the boundary
+     without competing with the segment colors. Uses inset shadow so the
+     separator stays inside the rounded corners and doesn't push width. */
+  .seg + .seg { box-shadow: inset 1px 0 0 rgb(0 0 0 / 0.15); }
+  .seg-a1 { background: var(--chart-success); }
+  .seg-a2 { background: var(--chart-warning); }
+  .seg-fail { background: var(--chart-danger); }
   .seg-empty {
     width: 100%;
     text-align: center;
     font-size: var(--text-xs);
     color: var(--text-muted);
-    line-height: 12px;
+    line-height: 14px;
   }
 </style>
