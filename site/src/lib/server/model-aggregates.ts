@@ -1,3 +1,5 @@
+import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
+
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
  * avg_score, avg_cost_usd, last_run_at, latency_p50_ms). Used by:
@@ -28,6 +30,43 @@ export interface Aggregate {
   last_run_at: string | null;
   /** Median of per-result total duration (ms). null when no results have any duration data. */
   latency_p50_ms: number | null;
+  /**
+   * @deprecated Per-attempt count (COUNT(*) over results). Preserved for
+   * back-compat; use `tasks_attempted_distinct` for per-task semantics.
+   */
+  tasks_attempted: number;
+  /**
+   * @deprecated Per-attempt sum of passed=1 rows. Use
+   * `tasks_passed_attempt_1` + `tasks_passed_attempt_2_only` for per-task
+   * semantics.
+   */
+  tasks_passed: number;
+  /**
+   * Per-task count: COUNT(DISTINCT task_id) across all the model's runs in
+   * scope (P7 Mini-phase B). Pass@N denominator.
+   */
+  tasks_attempted_distinct: number;
+  /**
+   * Distinct tasks where SOME run in scope had attempt=1 passed=1
+   * ("best across runs per task" semantics; P7 Mini-phase B).
+   */
+  tasks_passed_attempt_1: number;
+  /**
+   * Distinct tasks where SOME run had attempt=2 passed=1 AND NO run had
+   * attempt=1 passed=1 (mutually exclusive with tasks_passed_attempt_1).
+   */
+  tasks_passed_attempt_2_only: number;
+  /**
+   * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
+   * tasks_attempted_distinct; 0 when no attempts.
+   */
+  pass_at_n: number;
+  /**
+   * Concise settings string e.g. ` (50K, t0.1)` (P7 Mini-phase B). Empty
+   * string when settings_hash differs across the row's runs (multi-settings
+   * ambiguity → suffix omitted).
+   */
+  settings_suffix: string;
 }
 
 export interface ComputeOpts {
@@ -49,6 +88,13 @@ export async function computeModelAggregates(
   const where: string[] = [];
   const params: Array<string | number> = [];
 
+  // Subquery interpolation slots — must mirror outer task_set scoping inside
+  // correlated subqueries (CR-5). Without these, attempt-1 successes from a
+  // non-current task set would bleed into the current-set leaderboard.
+  let taskSetClauseSubA1 = '';
+  let taskSetClauseSubA2 = '';
+  let taskSetClauseSubA2NotExists = '';
+
   if (opts.modelIds && opts.modelIds.length > 0) {
     const ph = opts.modelIds.map(() => '?').join(',');
     where.push(`runs.model_id IN (${ph})`);
@@ -56,6 +102,10 @@ export async function computeModelAggregates(
   }
   if (opts.taskSetCurrent) {
     where.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+    taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    taskSetClauseSubA2NotExists =
+      `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
   }
   if (opts.tier) {
     where.push(`runs.tier = ?`);
@@ -74,7 +124,29 @@ export async function computeModelAggregates(
            COUNT(DISTINCT CASE WHEN runs.tier = 'verified' THEN runs.id ELSE NULL END) AS verified_runs,
            AVG(r.score)                                                  AS avg_score,
            AVG((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) AS avg_cost_usd,
-           MAX(runs.started_at)                                          AS last_run_at
+           MAX(runs.started_at)                                          AS last_run_at,
+           COUNT(r.id) AS tasks_attempted,
+           COALESCE(SUM(r.passed), 0) AS tasks_passed,
+           COUNT(DISTINCT r.task_id) AS tasks_attempted_distinct,
+           CASE WHEN COUNT(DISTINCT runs.settings_hash) = 1
+                THEN MAX(runs.settings_hash) ELSE NULL END
+             AS settings_hash_unique,
+           (SELECT COUNT(DISTINCT r1.task_id)
+            FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
+            WHERE ru1.model_id = runs.model_id AND r1.attempt = 1 AND r1.passed = 1
+              ${taskSetClauseSubA1}
+           ) AS tasks_passed_attempt_1,
+           (SELECT COUNT(DISTINCT r2.task_id)
+            FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
+            WHERE ru2.model_id = runs.model_id AND r2.attempt = 2 AND r2.passed = 1
+              AND NOT EXISTS (
+                SELECT 1 FROM results r1b JOIN runs ru1b ON ru1b.id = r1b.run_id
+                WHERE ru1b.model_id = runs.model_id AND r1b.task_id = r2.task_id
+                  AND r1b.attempt = 1 AND r1b.passed = 1
+                  ${taskSetClauseSubA2NotExists}
+              )
+              ${taskSetClauseSubA2}
+           ) AS tasks_passed_attempt_2_only
     FROM runs
     LEFT JOIN results r ON r.run_id = runs.id
     LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
@@ -90,7 +162,41 @@ export async function computeModelAggregates(
     avg_score: number | string | null;
     avg_cost_usd: number | string | null;
     last_run_at: string | null;
+    tasks_attempted: number | string | null;
+    tasks_passed: number | string | null;
+    tasks_attempted_distinct: number | string | null;
+    tasks_passed_attempt_1: number | string | null;
+    tasks_passed_attempt_2_only: number | string | null;
+    settings_hash_unique: string | null;
   }>();
+
+  // Resolve settings profiles in a separate batch lookup (sidesteps SQLite
+  // "misuse of aggregate" when MAX() is referenced inside a scalar subquery).
+  const uniqueHashes = Array.from(
+    new Set(
+      (rs.results ?? [])
+        .map((r) => r.settings_hash_unique)
+        .filter((h): h is string => !!h),
+    ),
+  );
+  const profileByHash = new Map<string, SettingsProfileLike>();
+  if (uniqueHashes.length > 0) {
+    const ph = uniqueHashes.map(() => '?').join(',');
+    const profileRs = await db
+      .prepare(`SELECT hash, temperature, max_tokens FROM settings_profiles WHERE hash IN (${ph})`)
+      .bind(...uniqueHashes)
+      .all<{
+        hash: string;
+        temperature: number | null;
+        max_tokens: number | null;
+      }>();
+    for (const p of profileRs.results ?? []) {
+      profileByHash.set(p.hash, {
+        temperature: typeof p.temperature === 'number' ? p.temperature : null,
+        max_tokens: typeof p.max_tokens === 'number' ? p.max_tokens : null,
+      });
+    }
+  }
 
   // Optionally fetch per-result durations and compute median in TS. We do this
   // in a second query (rather than a SQL window function) so the math stays
@@ -103,6 +209,17 @@ export async function computeModelAggregates(
 
   const out = new Map<number, Aggregate>();
   for (const row of rs.results ?? []) {
+    const passedA1 = Number(row.tasks_passed_attempt_1 ?? 0);
+    const passedA2Only = Number(row.tasks_passed_attempt_2_only ?? 0);
+    const attemptedDistinct = Number(row.tasks_attempted_distinct ?? 0);
+    const passAtN = attemptedDistinct > 0
+      ? (passedA1 + passedA2Only) / attemptedDistinct
+      : 0;
+    const profile = row.settings_hash_unique
+      ? profileByHash.get(row.settings_hash_unique) ?? null
+      : null;
+    const settingsSuffix = formatSettingsSuffix(profile);
+
     out.set(row.model_id, {
       run_count: Number(row.run_count ?? 0),
       verified_runs: Number(row.verified_runs ?? 0),
@@ -110,10 +227,18 @@ export async function computeModelAggregates(
       avg_cost_usd: row.avg_cost_usd === null ? null : Number(Number(row.avg_cost_usd).toFixed(6)),
       last_run_at: row.last_run_at,
       latency_p50_ms: p50ByModel ? p50ByModel.get(row.model_id) ?? null : null,
+      tasks_attempted: Number(row.tasks_attempted ?? 0),
+      tasks_passed: Number(row.tasks_passed ?? 0),
+      tasks_attempted_distinct: attemptedDistinct,
+      tasks_passed_attempt_1: passedA1,
+      tasks_passed_attempt_2_only: passedA2Only,
+      pass_at_n: Math.round(passAtN * 1e6) / 1e6,
+      settings_suffix: settingsSuffix,
     });
   }
   return out;
 }
+
 
 /**
  * Per-model median of total per-result duration. Returns a Map keyed by

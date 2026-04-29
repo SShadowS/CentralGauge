@@ -18,6 +18,12 @@ export interface LeaderboardQuery {
    * `null` (default) returns all categories.
    */
   category: string | null;
+  /**
+   * P7 Mini-phase B sort key. `avg_score` (default, server-side ORDER BY),
+   * `pass_at_n` and `pass_at_1` (TS-side post-query sort because the
+   * correlated subquery alias is not referenceable in SQLite ORDER BY).
+   */
+  sort: 'avg_score' | 'pass_at_n' | 'pass_at_1';
   limit: number;
   cursor: { score: number; id: number } | null;
 }

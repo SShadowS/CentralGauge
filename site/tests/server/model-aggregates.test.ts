@@ -128,4 +128,33 @@ describe('computeModelAggregates', () => {
     // [600, 1200] → (600 + 1200) / 2 = 900
     expect(out.get(1)?.latency_p50_ms).toBe(900);
   });
+
+  it('returns pass@1 / pass@2-only / tasks_attempted_distinct breakdown (P7 B1)', async () => {
+    // model 1, taskSetCurrent: 1 run (r1), 2 attempt-1 results: easy/a passed,
+    // hard/b failed (no attempt=2). Expected: distinct=2, a1=1, a2only=0.
+    const out = await computeModelAggregates(env.DB, {
+      modelIds: [1],
+      taskSetCurrent: true,
+    });
+    const a = out.get(1);
+    expect(a).toBeDefined();
+    expect(a!.tasks_attempted_distinct).toBe(2);
+    expect(a!.tasks_passed_attempt_1).toBe(1);
+    expect(a!.tasks_passed_attempt_2_only).toBe(0);
+    expect(a!.pass_at_n).toBeCloseTo(0.5, 6);
+    // Invariant
+    expect(a!.tasks_passed_attempt_1 + a!.tasks_passed_attempt_2_only)
+      .toBeLessThanOrEqual(a!.tasks_attempted_distinct);
+  });
+
+  it('settings_suffix renders when all runs share one settings_hash', async () => {
+    const out = await computeModelAggregates(env.DB, {
+      modelIds: [1],
+      taskSetCurrent: true,
+    });
+    const a = out.get(1);
+    // Only 1 run (r1) in current set with hash 's' → settings_profile (t=0,
+    // max_tokens=null) → temperature-only suffix ` (t0)`.
+    expect(a?.settings_suffix).toBe(' (t0)');
+  });
 });

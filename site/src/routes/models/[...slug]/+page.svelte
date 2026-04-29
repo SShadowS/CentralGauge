@@ -3,6 +3,8 @@
   import { page } from '$app/state';
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import StatTile from '$lib/components/domain/StatTile.svelte';
+  import AttemptBreakdownTile from '$lib/components/domain/AttemptBreakdownTile.svelte';
+  import SettingsBadge from '$lib/components/domain/SettingsBadge.svelte';
   import TableOfContents from '$lib/components/domain/TableOfContents.svelte';
   import TierBadge from '$lib/components/domain/TierBadge.svelte';
   import FamilyBadge from '$lib/components/domain/FamilyBadge.svelte';
@@ -12,7 +14,7 @@
   import FailureModesList from '$lib/components/domain/FailureModesList.svelte';
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import { tierFromRow, formatScore, formatCost, formatDuration, formatTaskRatio } from '$lib/client/format';
+  import { tierFromRow, formatScore, formatCost, formatDuration } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   import type { RunsListItem } from '$shared/api-types';
 
@@ -49,7 +51,6 @@
   }
 
   const sparklineValues = $derived(m.history.slice(-30).map((p) => p.score));
-  const tasksRatio = $derived(formatTaskRatio(m.aggregates.tasks_passed, m.aggregates.tasks_attempted));
 
   const recentRunRows = $derived<RunsListItem[]>(
     m.recent_runs.map((r) => ({
@@ -98,7 +99,7 @@
 
 <header class="page-header">
   <div class="title-row">
-    <h1>{m.model.display_name}</h1>
+    <h1>{m.model.display_name}<SettingsBadge suffix={m.model.settings_suffix} /></h1>
     <TierBadge {tier} />
     <Button href="/compare?models={m.model.slug}" variant="secondary" size="sm">Compare</Button>
     <Button href="/api/v1/models/{m.model.slug}" variant="ghost" size="sm">JSON</Button>
@@ -118,7 +119,7 @@
     <section class="stats">
       <StatTile label="Score" value={formatScore(m.aggregates.avg_score)} sparklineValues={sparklineValues}
         delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined} />
-      <StatTile label="Tasks pass" value={tasksRatio} />
+      <AttemptBreakdownTile aggregates={m.aggregates} />
       <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
         delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
       <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} />
@@ -127,7 +128,7 @@
     <section id="overview">
       <h2>Overview</h2>
       <p class="text-muted">
-        {m.model.display_name} has run on {m.aggregates.run_count} occasions, attempting {m.aggregates.tasks_attempted} tasks
+        {m.model.display_name} has run on {m.aggregates.run_count} occasions, attempting {m.aggregates.tasks_attempted_distinct} tasks
         with an average score of {formatScore(m.aggregates.avg_score)}.
         {#if m.aggregates.verified_runs > 0}
           {m.aggregates.verified_runs} of these runs are verified by an independent verifier machine.

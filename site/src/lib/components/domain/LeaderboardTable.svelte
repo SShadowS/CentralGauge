@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatScore, formatCost, formatRelativeTime, formatTaskRatio, tierFromRow } from '$lib/client/format';
+  import { formatRelativeTime, tierFromRow } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
   import ScoreCell from './ScoreCell.svelte';
   import CostCell from './CostCell.svelte';
+  import AttemptStackedBar from './AttemptStackedBar.svelte';
+  import SettingsBadge from './SettingsBadge.svelte';
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
 
   interface Props {
@@ -39,8 +41,8 @@
         <th scope="col" aria-sort={ariaSort('avg_score')}>
           <button class="hbtn" onclick={() => clickSort('avg_score')}>Score {#if sortField === 'avg_score'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
-        <th scope="col" aria-sort={ariaSort('tasks_passed')}>
-          <button class="hbtn" onclick={() => clickSort('tasks_passed')}>Tasks {#if sortField === 'tasks_passed'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('pass_at_n')}>
+          <button class="hbtn" onclick={() => clickSort('pass_at_n')}>Pass {#if sortField === 'pass_at_n' || sortField === 'pass_at_1'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
         <th scope="col" aria-sort={ariaSort('avg_cost_usd')}>
           <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost {#if sortField === 'avg_cost_usd'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
@@ -61,10 +63,19 @@
               api_model_id={row.model.api_model_id}
               family_slug={row.family_slug}
               tier={tierFromRow(row)}
-            />
+            /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
           <td class="score"><ScoreCell score={row.avg_score} /></td>
-          <td class="text-mono">{formatTaskRatio(row.tasks_passed, row.tasks_attempted)}</td>
+          <td class="attempts-cell">
+            <AttemptStackedBar
+              attempt1={row.tasks_passed_attempt_1}
+              attempt2Only={row.tasks_passed_attempt_2_only}
+              attempted={row.tasks_attempted_distinct}
+            />
+            <span class="ratio text-mono">
+              {row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only}/{row.tasks_attempted_distinct}
+            </span>
+          </td>
           <td><CostCell usd={row.avg_cost_usd} /></td>
           <td class="text-muted">{formatRelativeTime(row.last_run_at)}</td>
         </tr>
@@ -93,6 +104,17 @@
   tbody tr:hover { background: var(--surface); }
   .rank { width: 48px; color: var(--text-muted); }
   .score { white-space: nowrap; }
+  .attempts-cell {
+    min-width: 110px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    align-items: stretch;
+  }
+  .attempts-cell .ratio {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
   .hbtn {
     background: transparent;
     border: 0;

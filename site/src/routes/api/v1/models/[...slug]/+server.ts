@@ -52,24 +52,15 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     );
     if (!model) throw new ApiError(404, 'model_not_found', `No model '${params.slug}'`);
 
-    // 1. Aggregates (run_count, verified_runs, avg_score, avg_cost_usd, latency_p50_ms).
+    // 1. Aggregates (run_count, verified_runs, avg_score, avg_cost_usd,
+    //    latency_p50_ms, tasks_*, pass_at_n, settings_suffix). Helper now
+    //    supplies all per-task counts, so the legacy per-attempt SELECT below
+    //    is no longer needed.
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
       includeLatencyP50: true,
     });
     const agg = aggMap.get(model.id) ?? null;
-
-    // 2. Per-task counts (not in helper — helper is per-model only).
-    const taskAggregate = await getFirst<{
-      tasks_attempted: number | string;
-      tasks_passed: number | string | null;
-    }>(
-      env.DB,
-      `SELECT COUNT(*) AS tasks_attempted, SUM(r.passed) AS tasks_passed
-       FROM runs JOIN results r ON r.run_id = runs.id
-       WHERE runs.model_id = ?`,
-      [model.id],
-    );
 
     // 3. History — last N runs with per-run avg score + summed cost. We group
     //    by run_id over `v_results_with_cost` so cost lines up with the
@@ -154,8 +145,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     }
 
     const runCount = agg?.run_count ?? 0;
-    const tasksAttempted = +(taskAggregate?.tasks_attempted ?? 0);
-    const tasksPassed = +(taskAggregate?.tasks_passed ?? 0);
+    const tasksAttempted = agg?.tasks_attempted ?? 0;
+    const tasksPassed = agg?.tasks_passed ?? 0;
+    const tasksAttemptedDistinct = agg?.tasks_attempted_distinct ?? 0;
+    const tasksPassedAttempt1 = agg?.tasks_passed_attempt_1 ?? 0;
+    const tasksPassedAttempt2Only = agg?.tasks_passed_attempt_2_only ?? 0;
+    const passAtN = agg?.pass_at_n ?? 0;
+    const settingsSuffix = agg?.settings_suffix ?? '';
 
     const body: ModelDetail = {
       model: {
@@ -164,11 +160,16 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         api_model_id: model.api_model_id,
         family_slug: model.family_slug,
         added_at: addedAt,
+        settings_suffix: settingsSuffix,
       },
       aggregates: {
         avg_score: agg?.avg_score ?? 0,
         tasks_attempted: tasksAttempted,
         tasks_passed: tasksPassed,
+        tasks_attempted_distinct: tasksAttemptedDistinct,
+        tasks_passed_attempt_1: tasksPassedAttempt1,
+        tasks_passed_attempt_2_only: tasksPassedAttempt2Only,
+        pass_at_n: passAtN,
         avg_cost_usd: agg?.avg_cost_usd ?? 0,
         latency_p50_ms: agg?.latency_p50_ms ?? 0,
         run_count: runCount,

@@ -162,4 +162,248 @@ describe('GET /api/v1/leaderboard', () => {
     const res = await SELF.fetch('https://x/api/v1/leaderboard?limit=500');
     expect(res.status).toBe(400);
   });
+
+  // ===========================================================================
+  // P7 Mini-phase B — Pass@1 / Pass@2 visualization SQL fixtures (B1)
+  // ===========================================================================
+
+  it('Fixture A — single-run baseline: attempt counts, distinct counts, pass_at_n', async () => {
+    // sonnet-4.7 (model_id=1) on r1 only — but we need attempt-2 rows too.
+    // The default seed lacks attempt=2 rows; insert a bespoke fixture under
+    // a fresh model so it doesn't pollute existing assertions.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (10,1,'fixA','fix-a','Fixture A')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',10,1.0,2.0,'2026-04-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts-current','t3','ch3','easy','{}'),('ts-current','t4','ch4','easy','{}')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('rA','ts-current',10,'s1','rig','2026-04-15T00:00:00Z','2026-04-15T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-15T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0])),
+    ]);
+    // Fixture A — 4 tasks:
+    //   easy/a:   attempt=1 passed=1                    → attempt_1
+    //   t3:       attempt=1 failed, attempt=2 passed=1  → attempt_2_only
+    //   hard/b:   attempt=1 failed, attempt=2 failed    → neither (in distinct only)
+    //   t4:       attempt=1 passed=1, attempt=2 passed=1 → attempt_1 (NOT double-counted)
+    const fixtureA: Array<[string, string, number, number, number]> = [
+      ['rA', 'easy/a', 1, 1, 1.0],
+      ['rA', 't3',     1, 0, 0.0],
+      ['rA', 't3',     2, 1, 1.0],
+      ['rA', 'hard/b', 1, 0, 0.0],
+      ['rA', 'hard/b', 2, 0, 0.0],
+      ['rA', 't4',     1, 1, 1.0],
+      ['rA', 't4',     2, 1, 1.0],
+    ];
+    for (const [run, task, attempt, passed, score] of fixtureA) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,?,?,?,1,3,3,1000,500)`,
+      ).bind(run, task, attempt, passed, score).run();
+    }
+
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=fixA');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const fixA = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'fixA');
+    expect(fixA, 'Fixture A: model row missing').toBeDefined();
+    expect(fixA!.tasks_passed_attempt_1, 'Fixture A: 2 attempt-1 successes').toBe(2);
+    expect(fixA!.tasks_passed_attempt_2_only, 'Fixture A: 1 attempt-2-only success').toBe(1);
+    expect(fixA!.tasks_attempted_distinct, 'Fixture A: 4 distinct tasks').toBe(4);
+    expect(Math.abs((fixA!.pass_at_n as number) - 0.75)).toBeLessThan(1e-6);
+    // Invariant: a1 + a2only ≤ tasks_attempted_distinct
+    expect(
+      (fixA!.tasks_passed_attempt_1 as number) + (fixA!.tasks_passed_attempt_2_only as number),
+    ).toBeLessThanOrEqual(fixA!.tasks_attempted_distinct as number);
+  });
+
+  it('Fixture B — multi-run conflicting outcomes: attempt-1 win wins (CR-4 critical)', async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (11,1,'fixB','fix-b','Fixture B')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',11,1.0,2.0,'2026-04-01')`,
+      ),
+      // Two runs of the SAME task T1 (already in seed: 'easy/a').
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('rB1','ts-current',11,'s1','rig','2026-04-16T00:00:00Z','2026-04-16T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-16T00:00:00Z',1,?),
+                ('rB2','ts-current',11,'s1','rig','2026-04-17T00:00:00Z','2026-04-17T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-17T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0]), new Uint8Array([0])),
+    ]);
+    // Run 1: attempt=1 passed=1
+    // Run 2: attempt=1 passed=0, attempt=2 passed=1
+    const fixtureB: Array<[string, string, number, number, number]> = [
+      ['rB1', 'easy/a', 1, 1, 1.0],
+      ['rB2', 'easy/a', 1, 0, 0.0],
+      ['rB2', 'easy/a', 2, 1, 1.0],
+    ];
+    for (const [run, task, attempt, passed, score] of fixtureB) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,?,?,?,1,3,3,1000,500)`,
+      ).bind(run, task, attempt, passed, score).run();
+    }
+
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=fixB');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const fixB = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'fixB');
+    expect(fixB).toBeDefined();
+    // "best across runs per task": Run-1 first-try success classifies T1 → attempt_1.
+    expect(fixB!.tasks_passed_attempt_1, 'Fixture B: Run-1 first-try success classifies T1').toBe(1);
+    expect(fixB!.tasks_passed_attempt_2_only, 'Fixture B: NOT double-counted').toBe(0);
+    expect(fixB!.tasks_attempted_distinct, 'Fixture B: 1 distinct task').toBe(1);
+    expect(fixB!.pass_at_n).toBe(1);
+    expect(
+      (fixB!.tasks_passed_attempt_1 as number) + (fixB!.tasks_passed_attempt_2_only as number),
+    ).toBeLessThanOrEqual(fixB!.tasks_attempted_distinct as number);
+  });
+
+  it('Fixture C — multi-run retry-only across runs', async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (12,1,'fixC','fix-c','Fixture C')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',12,1.0,2.0,'2026-04-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('rC1','ts-current',12,'s1','rig','2026-04-18T00:00:00Z','2026-04-18T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-18T00:00:00Z',1,?),
+                ('rC2','ts-current',12,'s1','rig','2026-04-19T00:00:00Z','2026-04-19T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-19T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0]), new Uint8Array([0])),
+    ]);
+    // Run 1: attempt=1 failed, attempt=2 failed
+    // Run 2: attempt=1 failed, attempt=2 passed=1
+    const fixtureC: Array<[string, string, number, number, number]> = [
+      ['rC1', 'easy/a', 1, 0, 0.0],
+      ['rC1', 'easy/a', 2, 0, 0.0],
+      ['rC2', 'easy/a', 1, 0, 0.0],
+      ['rC2', 'easy/a', 2, 1, 1.0],
+    ];
+    for (const [run, task, attempt, passed, score] of fixtureC) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,?,?,?,1,3,3,1000,500)`,
+      ).bind(run, task, attempt, passed, score).run();
+    }
+
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=fixC');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const fixC = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'fixC');
+    expect(fixC).toBeDefined();
+    expect(fixC!.tasks_passed_attempt_1, 'Fixture C: never first-try success').toBe(0);
+    expect(fixC!.tasks_passed_attempt_2_only, 'Fixture C: Run-2 retry succeeded').toBe(1);
+    expect(fixC!.tasks_attempted_distinct).toBe(1);
+    expect(fixC!.pass_at_n).toBe(1);
+    expect(
+      (fixC!.tasks_passed_attempt_1 as number) + (fixC!.tasks_passed_attempt_2_only as number),
+    ).toBeLessThanOrEqual(fixC!.tasks_attempted_distinct as number);
+  });
+
+  it('Fixture D — cross-task-set scoping (CR-5 critical: taskSetClauseSubA*)', async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (13,1,'fixD','fix-d','Fixture D')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',13,1.0,2.0,'2026-04-01')`,
+      ),
+      // One run in OLD set + one in CURRENT set, same task_id 'easy/a'.
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('rD-OLD','ts-old',13,'s1','rig','2025-12-01T00:00:00Z','2025-12-01T01:00:00Z','completed','claimed','v2026-04','sig','2025-12-01T00:00:00Z',1,?),
+                ('rD-CUR','ts-current',13,'s1','rig','2026-04-20T00:00:00Z','2026-04-20T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-20T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0]), new Uint8Array([0])),
+    ]);
+    // Run-OLD: attempt=1 passed=1 (first-try in OLD set)
+    // Run-CUR: attempt=1 passed=0, attempt=2 passed=1 (retry-only in CURRENT set)
+    const fixtureD: Array<[string, string, number, number, number]> = [
+      ['rD-OLD', 'easy/a', 1, 1, 1.0],
+      ['rD-CUR', 'easy/a', 1, 0, 0.0],
+      ['rD-CUR', 'easy/a', 2, 1, 1.0],
+    ];
+    for (const [run, task, attempt, passed, score] of fixtureD) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,?,?,?,1,3,3,1000,500)`,
+      ).bind(run, task, attempt, passed, score).run();
+    }
+
+    // Default scope is set=current. Run-OLD MUST NOT bleed in.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=fixD-current');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const fixD = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'fixD');
+    expect(fixD, 'Fixture D: model present in current-set leaderboard').toBeDefined();
+    expect(
+      fixD!.tasks_passed_attempt_1,
+      'Fixture D: Run-OLD attempt-1 success MUST NOT bleed into CURRENT set (taskSetClauseSubA1 missing)',
+    ).toBe(0);
+    expect(
+      fixD!.tasks_passed_attempt_2_only,
+      'Fixture D: Run-CUR attempt-2 should classify (taskSetClauseSubA2NotExists missing if 0)',
+    ).toBe(1);
+    expect(fixD!.tasks_attempted_distinct).toBe(1);
+    expect(fixD!.pass_at_n).toBe(1);
+    expect(
+      (fixD!.tasks_passed_attempt_1 as number) + (fixD!.tasks_passed_attempt_2_only as number),
+    ).toBeLessThanOrEqual(fixD!.tasks_attempted_distinct as number);
+
+    // set=all should aggregate both runs; OLD attempt-1 success now classifies T1.
+    const resAll = await SELF.fetch('https://x/api/v1/leaderboard?set=all&test=fixD-all');
+    const bodyAll = await resAll.json() as { data: Array<Record<string, unknown>> };
+    const fixDAll = bodyAll.data.find((r) => (r.model as Record<string, unknown>).slug === 'fixD');
+    expect(fixDAll).toBeDefined();
+    expect(fixDAll!.tasks_passed_attempt_1, 'Fixture D set=all: OLD first-try classifies T1').toBe(1);
+    expect(fixDAll!.tasks_passed_attempt_2_only, 'Fixture D set=all: NOT double-counted').toBe(0);
+  });
+
+  it('emits settings_suffix when all runs share one settings_hash', async () => {
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=settings');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'sonnet-4.7');
+    expect(sonnet).toBeDefined();
+    const m = sonnet!.model as Record<string, unknown>;
+    // settings_profiles row: max_tokens=8192 (~8K), temperature=0.0 → ' (8K, t0)'
+    expect(m.settings_suffix).toBe(' (8K, t0)');
+  });
+
+  it('?sort=pass_at_n re-orders rows by pass_at_n descending (B5)', async () => {
+    // Default seed: sonnet has 3/4 pass-attempts on current set (r1+r2 each
+    // 1 attempt-1 row), opus has 2/2 attempt-1 passes — opus wins pass_at_n.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=pass_at_n&_cb=1');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const slugs = body.data.map((r) => (r.model as Record<string, unknown>).slug);
+    // Both rows have pass_at_n=1.0 (each task in current set passed at-1
+    // for both models in seed) — tie-break is alphabetical model.slug.
+    expect(slugs).toEqual([...slugs].sort());
+  });
+
+  it('omits settings_suffix when settings differ across runs', async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO settings_profiles(hash,temperature,max_attempts,max_tokens,prompt_version,bc_version) VALUES ('s2',0.5,2,16384,'v3','Cronus28')`,
+      ),
+      // Add a second run for sonnet using a different settings_hash.
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('r-mix','ts-current',1,'s2','rig','2026-04-21T00:00:00Z','2026-04-21T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-21T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r-mix','easy/a',1,1,1.0,1,3,3,500,200)`,
+      ),
+    ]);
+
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?test=mixed-settings');
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find((r) => (r.model as Record<string, unknown>).slug === 'sonnet-4.7');
+    expect(sonnet).toBeDefined();
+    const m = sonnet!.model as Record<string, unknown>;
+    expect(m.settings_suffix, 'mixed settings → suffix omitted').toBe('');
+  });
 });

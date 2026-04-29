@@ -89,6 +89,18 @@ function parseQuery(url: URL): LeaderboardQuery {
     throw new ApiError(400, 'invalid_since', 'since must be an ISO-8601 date');
   }
 
+  // P7 Phase B accepts the field; SQL filter wires up in Phase C (categories).
+  const category = url.searchParams.get('category')?.trim() || null;
+
+  // P7 Phase B5 — sort key. The page may pass sort fields the SQL ORDER BY
+  // doesn't recognize (e.g. `model:desc`, `tasks_passed:desc`, used only by
+  // the LeaderboardTable header buttons for client-side affordance, not for
+  // server semantics). Server only acts on the three values it understands;
+  // unknown sorts fall through to the default `avg_score` ORDER BY (no 400).
+  const sortField = url.searchParams.get('sort')?.split(':')[0] ?? 'avg_score';
+  const sortRaw: 'avg_score' | 'pass_at_n' | 'pass_at_1' =
+    sortField === 'pass_at_n' || sortField === 'pass_at_1' ? sortField : 'avg_score';
+
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw ? parseInt(limitRaw, 10) : 50;
   if (!Number.isFinite(limit) || limit < 1 || limit > 100) {
@@ -101,6 +113,8 @@ function parseQuery(url: URL): LeaderboardQuery {
     difficulty: (difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
     family,
     since,
+    category,
+    sort: sortRaw,
     limit,
     cursor: null,
   };
