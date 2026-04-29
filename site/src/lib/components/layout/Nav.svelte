@@ -28,6 +28,7 @@
       <li><a href="/models">Models</a></li>
       <li><a href="/categories">Categories</a></li>
       <li><a href="/tasks">Tasks</a></li>
+      <li><a href="/matrix">Matrix</a></li>
       <li><a href="/compare">Compare</a></li>
       <li><a href="/search">Search</a></li>
     </ul>

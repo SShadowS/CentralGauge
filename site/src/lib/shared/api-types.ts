@@ -552,22 +552,41 @@ export interface MatrixCell {
   passed: number;
   /** Distinct attempts that were attempted (sum across runs). */
   attempted: number;
-  /** Optional AL-concept tag for failed cells; analyzer-driven (P8). */
-  concept?: string;
+  /**
+   * Optional AL-concept tag for failed cells; analyzer-driven (P8).
+   * `null` until shortcomings analyzer ships (CC-2). Tooltip falls back to
+   * the "{passed}/{attempted} passed" string when null.
+   */
+  concept: string | null;
 }
 
 export interface MatrixTask {
   id: string;
   difficulty: 'easy' | 'medium' | 'hard';
   category_slug: string | null;
+  category_name: string | null;
 }
 
 export interface MatrixModel {
+  /** Numeric model_id — used as the canonical column key for cells lookup. */
+  model_id: number;
   slug: string;
   display_name: string;
+  /**
+   * Concise settings suffix e.g. ` (50K, t0.1)` (P7 Mini-phase A).
+   * Empty string when settings vary across the model's runs.
+   */
+  settings_suffix: string;
+}
+
+export interface MatrixFilters {
+  set: 'current' | 'all';
+  category: string | null;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
 }
 
 export interface MatrixResponse {
+  filters: MatrixFilters;
   tasks: MatrixTask[];
   models: MatrixModel[];
   /** Dense `cells[taskIndex][modelIndex]`. Same shape as tasks × models. */
