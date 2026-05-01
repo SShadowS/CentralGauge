@@ -134,6 +134,9 @@ async function queryD1<T = Record<string, unknown>>(
   opts: QueryD1Options,
   sql: string,
 ): Promise<T[]> {
+  // Flatten multi-line SQL to a single line — Windows `npx.cmd` rejects batch
+  // arguments containing newlines with "batch file arguments are invalid".
+  const flatSql = sql.replace(/\s+/g, " ").trim();
   const args = [
     "wrangler",
     "d1",
@@ -142,7 +145,7 @@ async function queryD1<T = Record<string, unknown>>(
     opts.remote ? "--remote" : "--local",
     "--json",
     "--command",
-    sql,
+    flatSql,
   ];
   const cmd = new Deno.Command("npx", {
     args,
@@ -173,13 +176,15 @@ async function fetchRuns(opts: QueryD1Options): Promise<BackfillRun[]> {
 async function fetchShortcomings(
   opts: QueryD1Options,
 ): Promise<BackfillShortcoming[]> {
+  // Group shortcomings by (model_slug). We don't have a per-shortcoming
+  // task_set_hash column, so we attribute it to NULL (sentinel pre-p6-unknown
+  // applied downstream) — matches the plan's edge-case handling for legacy
+  // data where the link from shortcomings to a specific task_set is lost.
   return await queryD1<BackfillShortcoming>(
     opts,
-    `SELECT m.slug AS model_slug, runs.task_set_hash AS task_set_hash, s.first_seen AS first_seen
+    `SELECT m.slug AS model_slug, NULL AS task_set_hash, s.first_seen AS first_seen
        FROM shortcomings s
        JOIN models m ON m.id = s.model_id
-       LEFT JOIN runs ON runs.model_id = m.id
-       GROUP BY s.id
        ORDER BY s.first_seen ASC`,
   );
 }
@@ -188,7 +193,9 @@ async function fetchOccurrenceGroups(
   opts: QueryD1Options,
 ): Promise<BackfillOccurrenceGroup[]> {
   // Two-step: rows with occurrences (real publish), then shortcomings without
-  // any occurrences (CASCADE-deleted → cascaded=true).
+  // any occurrences (CASCADE-deleted -> cascaded=true).
+  // shortcoming_occurrences has no timestamp column; we use shortcomings.last_seen
+  // as the canonical "last published" timestamp for the (model, task_set) pair.
   const withOcc = await queryD1<{
     model_slug: string;
     task_set_hash: string | null;
@@ -197,8 +204,8 @@ async function fetchOccurrenceGroups(
   }>(
     opts,
     `SELECT m.slug AS model_slug, NULL AS task_set_hash,
-            MAX(occ.first_seen_at) AS last_seen,
-            COUNT(occ.id) AS occurrences_count
+            MAX(s.last_seen) AS last_seen,
+            COUNT(occ.shortcoming_id) AS occurrences_count
        FROM shortcoming_occurrences occ
        JOIN shortcomings s ON s.id = occ.shortcoming_id
        JOIN models m ON m.id = s.model_id
@@ -214,7 +221,7 @@ async function fetchOccurrenceGroups(
        FROM shortcomings s
        JOIN models m ON m.id = s.model_id
        LEFT JOIN shortcoming_occurrences occ ON occ.shortcoming_id = s.id
-       WHERE occ.id IS NULL
+       WHERE occ.shortcoming_id IS NULL
        GROUP BY m.slug`,
   );
   const withOccGroups = withOcc.map((g) => ({ ...g }));
