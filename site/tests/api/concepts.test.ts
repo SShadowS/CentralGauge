@@ -26,10 +26,21 @@ beforeEach(async () => {
        VALUES (3, 'old-pitfall', 'Old', 'misc', 'd3', 100, 1000)`
     ),
   ]);
+  // The list handler now canonicalises cache keys (strips junk query params,
+  // keeps only `?recent=<clamped-N>`). The previous `?_cb=<unique>` busting
+  // strategy no longer works — those params are stripped before cache.match.
+  // Explicitly clear every canonical cache slot the suite touches between
+  // tests; otherwise the second test in a suite hits the first's stale entry.
+  const cache = await caches.open(CONCEPT_CACHE_NAME);
+  for (const n of [1, 2, 5, 10, 20, 50, 100, 200, 9999]) {
+    await cache.delete(new Request(`https://x/api/v1/concepts?recent=${n}`));
+  }
+  await cache.delete(new Request('https://x/api/v1/concepts'));
+  await cache.delete(new Request('https://x/api/v1/concepts/flowfield-calcfields'));
+  await cache.delete(new Request('https://x/api/v1/concepts/flowfield-calc'));
+  await cache.delete(new Request('https://x/api/v1/concepts/does-not-exist'));
 });
 
-// Cache API entries are not cleared between tests (see reset-db.ts note); use
-// a unique `?_cb=N` query parameter per test to bypass cross-test cache hits.
 describe('GET /api/v1/concepts', () => {
   it('returns recent N ordered by last_seen DESC', async () => {
     const res = await SELF.fetch(
@@ -172,5 +183,67 @@ describe('cache invalidation integration', () => {
 
     const after = await cache.match(new Request(url));
     expect(after).toBeUndefined();
+  });
+
+  it('invalidateConcept clears the list cache for arbitrary N (not just 20)', async () => {
+    // Warm the cache for several recent=N values. A naive invalidator that
+    // hardcodes ?recent=20 leaves these stale.
+    const ns = [1, 50, 100, 200];
+    for (const n of ns) {
+      const r = await SELF.fetch(`https://x/api/v1/concepts?recent=${n}`);
+      expect(r.status).toBe(200);
+      await r.arrayBuffer();
+    }
+
+    const cache = await caches.open(CONCEPT_CACHE_NAME);
+    for (const n of ns) {
+      const present = await cache.match(
+        new Request(`https://x/api/v1/concepts?recent=${n}`),
+      );
+      expect(present).toBeTruthy();
+    }
+
+    await invalidateConcept('flowfield-calcfields', [], 'https://x');
+
+    for (const n of ns) {
+      const after = await cache.match(
+        new Request(`https://x/api/v1/concepts?recent=${n}`),
+      );
+      expect(after, `?recent=${n} should be invalidated`).toBeUndefined();
+    }
+  });
+
+  it('list endpoint canonicalises cache key — junk query params hit the same entry', async () => {
+    // Cache amplification mitigation: ?recent=20 and ?recent=20&junk=foo
+    // must share one cache entry (canonical key strips unrecognised params).
+    const cache = await caches.open(CONCEPT_CACHE_NAME);
+
+    // Warm with the canonical URL.
+    const canonical = await SELF.fetch(
+      'https://x/api/v1/concepts?recent=20',
+    );
+    expect(canonical.status).toBe(200);
+    await canonical.arrayBuffer();
+
+    // The canonical entry must exist after warm.
+    const canonicalHit = await cache.match(
+      new Request('https://x/api/v1/concepts?recent=20'),
+    );
+    expect(canonicalHit).toBeTruthy();
+
+    // Issue a junk-param request — handler must canonicalise and return the
+    // *same* cached entry rather than create a new one.
+    const r2 = await SELF.fetch(
+      'https://x/api/v1/concepts?recent=20&junk=1&utm_source=ev',
+    );
+    expect(r2.status).toBe(200);
+    await r2.arrayBuffer();
+
+    // The junk-param URL must NOT appear as a separate cache entry — that's
+    // the amplification we're closing.
+    const junkEntry = await cache.match(
+      new Request('https://x/api/v1/concepts?recent=20&junk=1&utm_source=ev'),
+    );
+    expect(junkEntry, 'junk-param URL must not create a separate cache entry').toBeUndefined();
   });
 });

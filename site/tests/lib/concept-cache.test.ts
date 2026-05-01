@@ -53,4 +53,27 @@ describe('invalidateConcept', () => {
     expect(await cache.match(new Request(list))).toBeUndefined();
     expect(await cache.match(new Request(recent))).toBeUndefined();
   });
+
+  it('clears every canonical recent=N variant (1, 5, 10, 20, 50, 100, 200)', async () => {
+    // The list handler clamps `?recent` to [1, 200] and uses a canonical
+    // cache key. Invalidation must drop every well-known canonical N value,
+    // not just the analyzer's default ?recent=20.
+    const cache = await caches.open(CONCEPT_CACHE_NAME);
+    const canonicalNs = [1, 5, 10, 20, 50, 100, 200];
+    for (const n of canonicalNs) {
+      await cache.put(
+        new Request(`${ORIGIN}/api/v1/concepts?recent=${n}`),
+        cachedResponse(`n=${n}`),
+      );
+    }
+
+    await invalidateConcept('any', [], ORIGIN);
+
+    for (const n of canonicalNs) {
+      const after = await cache.match(
+        new Request(`${ORIGIN}/api/v1/concepts?recent=${n}`),
+      );
+      expect(after, `?recent=${n} should be invalidated`).toBeUndefined();
+    }
+  });
 });

@@ -19,6 +19,28 @@
 const CACHE_NAME = "cg-concepts";
 
 /**
+ * Canonical `recent=N` cache-key values produced by the list handler.
+ * The handler clamps `recent` to [1, 200] and uses a canonical Request URL
+ * (only `?recent=<clamped-N>`, all other query params stripped) so distinct
+ * UI surfaces with stable N values share one cache slot.
+ *
+ * Invalidation must clear every well-known N — without this, a write only
+ * invalidates `?recent=20` and surfaces using `?recent=50`/`?recent=100`
+ * keep serving 5-min stale data after every cluster mutation.
+ *
+ * Keep this list in sync with the canonical-key whitelist enforced by
+ * `concepts/+server.ts`. Adding a new client surface that fetches a
+ * different N MUST add that N here too — otherwise that surface stays
+ * stale across writes.
+ *
+ * Note: Cloudflare Workers ALSO exposes `caches.delete(name)` (extension)
+ * which would purge the named cache wholesale; verified at 2026-04-29 to
+ * throw "the method is not implemented" in miniflare and is non-standard
+ * in production workerd. Iterating canonical N is the portable path.
+ */
+const CANONICAL_RECENT_NS = [1, 5, 10, 20, 50, 100, 200] as const;
+
+/**
  * Delete every cached response for the given slug + aliases.
  *
  * IMPORTANT: callers must `await` this (NOT `ctx.waitUntil`) so the next
@@ -42,9 +64,13 @@ export async function invalidateConcept(
     await cache.delete(new Request(url));
   }
   // Also clear the list endpoint, which embeds these slugs in its rollup.
-  // Two common variants: bare and the analyzer fetcher's `?recent=20`.
+  // Bare `/concepts` plus every canonical `?recent=N` variant the list
+  // handler may produce.
   await cache.delete(new Request(`${origin}/api/v1/concepts`));
-  await cache.delete(new Request(`${origin}/api/v1/concepts?recent=20`));
+  for (const n of CANONICAL_RECENT_NS) {
+    await cache.delete(new Request(`${origin}/api/v1/concepts?recent=${n}`));
+  }
 }
 
 export const CONCEPT_CACHE_NAME = CACHE_NAME;
+export const CONCEPT_LIST_CANONICAL_NS = CANONICAL_RECENT_NS;
