@@ -141,9 +141,13 @@ export function registerVerifyCommand(cli: Command): void {
       "Max parallel analysis (default: 1 for interactive)",
       { default: 1 },
     )
-    .option("--model <model:string>", "LLM for analysis", {
-      default: "claude-opus-4-6",
-    })
+    .option(
+      "--model <model:string>",
+      "LLM for analysis (vendor-prefixed prod slug)",
+      {
+        default: "anthropic/claude-opus-4-6",
+      },
+    )
     .option(
       "--shortcomings-dir <dir:string>",
       "Dir for model shortcomings",
