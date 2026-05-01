@@ -43,6 +43,12 @@ interface PopulateShortcomingsOptions {
   only?: string;
   dryRun?: boolean;
   d1Database?: string;
+  /**
+   * Override the `analyzer_model` field included in the top-level batch
+   * payload. The endpoint forwards this into concept.created /
+   * concept.aliased event payloads. Defaults to `claude-opus-4-6`.
+   */
+  analyzerModel?: string;
 }
 
 interface BatchOccurrence {
@@ -59,11 +65,22 @@ interface BatchShortcoming {
   incorrect_pattern_sha256: string;
   error_codes: string[];
   occurrences: BatchOccurrence[];
+  /**
+   * D-prompt: registry-shaped concept slug the analyzer proposed. Endpoint
+   * resolves this to a concept_id via the three-tier resolver. Legacy JSON
+   * files (predating Phase D) lack this field — those entries pass through
+   * with `concept_id` left NULL.
+   */
+  concept_slug_proposed: string | null;
+  concept_slug_existing_match: string | null;
+  similarity_score: number | null;
 }
 
 interface BatchPayload {
   model_slug: string;
   shortcomings: BatchShortcoming[];
+  /** Tagged into the analysis.completed lifecycle event payload. */
+  analyzer_model: string;
 }
 
 /**
@@ -214,6 +231,7 @@ async function buildBatchPayload(
   modelSlug: string,
   siteDir: string,
   dbName: string,
+  analyzerModel: string,
 ): Promise<{ payload: BatchPayload; skipped: string[] }> {
   const shortcomings: BatchShortcoming[] = [];
   const skipped: string[] = [];
@@ -263,6 +281,10 @@ async function buildBatchPayload(
     // Endpoint accepts entries with empty occurrences (validates `array or
     // absent`), so even when all task lookups fail we still upsert the
     // shortcoming text. UI shows the entry without per-result links.
+    //
+    // D-prompt: pass the registry-shaped fields through. Legacy JSON files
+    // (predating Phase D) have these as undefined → null → endpoint logs a
+    // deprecation warning and leaves concept_id NULL until D-data backfill.
     shortcomings.push({
       al_concept: entry.alConcept,
       concept: entry.concept,
@@ -271,10 +293,20 @@ async function buildBatchPayload(
       incorrect_pattern_sha256: await sha256Hex(entry.incorrectPattern),
       error_codes: entry.errorCodes,
       occurrences,
+      concept_slug_proposed: entry.concept_slug_proposed ?? null,
+      concept_slug_existing_match: entry.concept_slug_existing_match ?? null,
+      similarity_score: entry.similarity_score ?? null,
     });
   }
 
-  return { payload: { model_slug: modelSlug, shortcomings }, skipped };
+  return {
+    payload: {
+      model_slug: modelSlug,
+      shortcomings,
+      analyzer_model: analyzerModel,
+    },
+    skipped,
+  };
 }
 
 async function readShortcomingsFile(
@@ -376,11 +408,13 @@ async function handlePopulateShortcomings(
       colors.gray(`        json model: ${file.model} → prod slug: ${slug}`),
     );
 
+    const analyzerModel = options.analyzerModel ?? "claude-opus-4-6";
     const { payload, skipped } = await buildBatchPayload(
       file,
       slug,
       siteDir,
       dbName,
+      analyzerModel,
     );
     allSkipped.push(...skipped.map((s) => `${file.model}: ${s}`));
     const occCount = payload.shortcomings.reduce(
@@ -518,6 +552,10 @@ export function registerPopulateShortcomingsCommand(cli: Command): void {
       "--dry-run",
       "Build payloads and print without POSTing",
       { default: false },
+    )
+    .option(
+      "--analyzer-model <id:string>",
+      "Analyzer model id forwarded to concept.created/concept.aliased event payloads (default: claude-opus-4-6)",
     )
     .example(
       "Upload all model files",
