@@ -8,9 +8,14 @@ beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); })
 beforeEach(async () => { await resetDb(); });
 
 describe('lifecycle throughput', () => {
-  it('writes 100 events without rate-limit or quota errors', async () => {
+  it('writes 100 events without rate-limit or quota errors (under 30s wall-clock)', async () => {
     const { keyId, keypair } = await registerMachineKey('tp', 'admin');
     let okCount = 0;
+    // I6: bracket the loop with wall-clock timing so a regression that
+    // accidentally enables KV puts (~50 ms ea.) or per-event subprocess
+    // spawn (~500 ms ea.) makes the assertion fail loudly instead of just
+    // creeping toward the per-test timeout.
+    const t0 = Date.now();
     for (let i = 0; i < 100; i++) {
       // Canonical AppendEventInput shape — see A1.5 helper.
       const payload = {
@@ -33,8 +38,13 @@ describe('lifecycle throughput', () => {
       });
       if (r.status === 200) okCount++;
     }
+    const elapsed = Date.now() - t0;
     expect(okCount).toBe(100);
     const total = await env.DB.prepare(`SELECT COUNT(*) AS c FROM lifecycle_events`).first<{ c: number }>();
     expect(total?.c).toBe(100);
-  }, 60_000); // 60s timeout — generous for the 100-event loop
+    // 30s for 100 events on local D1 is generous: real worker traffic should
+    // hit ~5-10 ms per event including signing. If we blow past 30s, something
+    // expensive (KV put, fetch fan-out, subprocess) snuck into the hot path.
+    expect(elapsed).toBeLessThan(30_000);
+  }, 60_000); // 60s vitest timeout — leaves 30s headroom over the 30s assert.
 });
