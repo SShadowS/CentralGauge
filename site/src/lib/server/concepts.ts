@@ -50,6 +50,14 @@ export interface MergeArgs {
   envelopeJson: string;
   ts: number;
   reviewerActorId?: string;
+  /**
+   * Origin to thread into invalidateConcept (e.g. derived from request.url
+   * in admin endpoints). When omitted, falls back to the helper's sentinel
+   * default — fine when the SvelteKit adapter routes all reads through the
+   * same sentinel-keyed cache. Tests pass the request origin (`https://x`)
+   * to assert per-slug cache eviction end-to-end.
+   */
+  cacheOrigin?: string;
 }
 
 /**
@@ -153,7 +161,11 @@ export async function mergeConceptTx(
   // (true-merge) loser slug — all three could be cached as separate URLs.
   const aliasesToDrop: string[] = [args.proposedSlug];
   if (loser) aliasesToDrop.push(loser.slug);
-  await invalidateConcept(winner.slug, aliasesToDrop);
+  if (args.cacheOrigin !== undefined) {
+    await invalidateConcept(winner.slug, aliasesToDrop, args.cacheOrigin);
+  } else {
+    await invalidateConcept(winner.slug, aliasesToDrop);
+  }
 
   return { eventId, aliasInserted: true };
 }
@@ -172,6 +184,8 @@ export interface CreateArgs {
   envelopeJson: string;
   ts: number;
   analyzerModel: string | null;
+  /** See MergeArgs.cacheOrigin. */
+  cacheOrigin?: string;
 }
 
 export async function createConceptTx(
@@ -237,7 +251,11 @@ export async function createConceptTx(
   }
   await db.batch(stmts);
 
-  await invalidateConcept(args.proposedSlug, []);
+  if (args.cacheOrigin !== undefined) {
+    await invalidateConcept(args.proposedSlug, [], args.cacheOrigin);
+  } else {
+    await invalidateConcept(args.proposedSlug, []);
+  }
   return { conceptId, eventId };
 }
 
@@ -257,6 +275,8 @@ export interface SplitArgs {
   actorId: string;
   envelopeJson: string;
   ts: number;
+  /** See MergeArgs.cacheOrigin. */
+  cacheOrigin?: string;
 }
 
 /**
@@ -328,10 +348,12 @@ export async function splitConceptTx(
     .prepare(`SELECT slug FROM concepts WHERE id = ?`)
     .bind(args.originalConceptId)
     .first<{ slug: string }>();
-  await invalidateConcept(
-    original!.slug,
-    args.newConceptRows.map((r) => r.slug),
-  );
+  const childSlugs = args.newConceptRows.map((r) => r.slug);
+  if (args.cacheOrigin !== undefined) {
+    await invalidateConcept(original!.slug, childSlugs, args.cacheOrigin);
+  } else {
+    await invalidateConcept(original!.slug, childSlugs);
+  }
 
   return { eventId, newConceptIds };
 }
