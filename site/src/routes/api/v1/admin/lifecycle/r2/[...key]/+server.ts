@@ -25,9 +25,14 @@ const MAX_BODY_BYTES = 50 * 1024 * 1024; // I4: 50 MB cap on PUT body.
  *  - no `..` segments (parent-directory traversal)
  *  - no control chars / null bytes (covered by charset, but re-checked)
  *
+ * Exported for unit testing — HTTP-layer URL normalization eats most
+ * traversal patterns before they reach the route, so direct tests of this
+ * function are the best assurance the guard would still hold under
+ * pathological input (URL-encoded `..`, etc).
+ *
  * Throws `ApiError(400, 'invalid_key', ...)` naming the specific violation.
  */
-function validateR2Key(key: string | undefined): string {
+export function validateR2Key(key: string | undefined): string {
   if (!key || key.length === 0) {
     throw new ApiError(400, 'invalid_key', 'r2 key required');
   }
