@@ -50,12 +50,20 @@ export async function fetchRecentConcepts(
   }
   if (!res.ok) {
     // Non-fatal: missing-registry → empty seed list. Analyzer still works.
+    // Drain the body to release the underlying stream — Deno's test runner
+    // flags an unconsumed response body as a leak.
+    try {
+      await res.body?.cancel();
+    } catch { /* swallow */ }
     return [];
   }
   let body: { data?: ConceptSummary[] };
   try {
     body = (await res.json()) as { data?: ConceptSummary[] };
   } catch {
+    try {
+      await res.body?.cancel();
+    } catch { /* swallow */ }
     return [];
   }
   const data = Array.isArray(body.data) ? body.data : [];
