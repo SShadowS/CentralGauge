@@ -25,13 +25,27 @@ interface CycleFlags {
   yes: boolean;
 }
 
-function parseStep(name: string, label: string): CycleStep {
-  if (!CYCLE_STEPS.includes(name as CycleStep)) {
-    throw new Error(
-      `${label}: invalid step '${name}'. Valid: ${CYCLE_STEPS.join(", ")}`,
-    );
-  }
-  return name as CycleStep;
+/**
+ * Pure parser: returns the matching `CycleStep` or null if `name` isn't a
+ * known step. Test-friendly (no side effects). User-facing CLI code uses
+ * `parseStepOrExit` which logs a colored error and `Deno.exit(2)`s on bad
+ * input — matches the pattern at handleCycle's --llms guard.
+ */
+export function parseStep(name: string): CycleStep | null {
+  return CYCLE_STEPS.includes(name as CycleStep) ? (name as CycleStep) : null;
+}
+
+function parseStepOrExit(name: string, label: string): CycleStep {
+  const parsed = parseStep(name);
+  if (parsed) return parsed;
+  console.error(
+    colors.red(
+      `[ERROR] ${label}: invalid step '${name}'. Valid: ${
+        CYCLE_STEPS.join(", ")
+      }`,
+    ),
+  );
+  Deno.exit(2);
 }
 
 async function handleCycle(flags: CycleFlags): Promise<void> {
@@ -65,10 +79,10 @@ async function handleCycle(flags: CycleFlags): Promise<void> {
   const opts: CycleOptions = {
     llms: flags.llms,
     taskSet: flags.taskSet,
-    fromStep: parseStep(flags.from, "--from"),
-    toStep: parseStep(flags.to, "--to"),
+    fromStep: parseStepOrExit(flags.from, "--from"),
+    toStep: parseStepOrExit(flags.to, "--to"),
     forceRerun: (flags.forceRerun ?? []).map((s) =>
-      parseStep(s, "--force-rerun")
+      parseStepOrExit(s, "--force-rerun")
     ),
     analyzerModel,
     dryRun: flags.dryRun,
