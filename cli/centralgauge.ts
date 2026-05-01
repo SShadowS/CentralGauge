@@ -17,6 +17,7 @@ import { SplashScreen } from "../src/utils/splash-screen.ts";
 import {
   registerAgentsCommand,
   registerBenchCommand,
+  registerClusterReviewCommand,
   registerCompileTestCommands,
   registerConfigCommands,
   registerContainerCommands,
@@ -114,6 +115,17 @@ registerSyncCatalogCommand(cliAny);
 registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
+
+// `lifecycle` parent — hosts cluster-review (D7) and any future operator
+// triage subcommands. Plan A's H-task is expected to expand this with
+// `lifecycle status` / `lifecycle audit` etc.; until then the parent lives
+// here so `centralgauge lifecycle cluster-review` resolves correctly.
+const lifecycleCmd = new Command().description(
+  "Lifecycle event-log operator tooling (cluster review, audit, replay).",
+);
+registerClusterReviewCommand(lifecycleCmd);
+// deno-lint-ignore no-explicit-any
+(cli as any).command("lifecycle", lifecycleCmd);
 
 // Parse and execute
 if (import.meta.main) {
