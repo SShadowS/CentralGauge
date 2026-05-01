@@ -12,38 +12,60 @@ import { uploadLifecycleBlob } from "../../ingest/r2.ts";
 import { loadIngestConfig, readPrivateKey } from "../../ingest/config.ts";
 import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
-async function fileCountAndSize(
-  dir: string,
-): Promise<{ file_count: number; total_size_bytes: number }> {
-  let file_count = 0;
-  let total_size_bytes = 0;
-  async function walk(p: string): Promise<void> {
-    for await (const entry of Deno.readDir(p)) {
-      const full = `${p}/${entry.name}`;
-      if (entry.isDirectory) {
-        await walk(full);
-      } else if (entry.isFile) {
-        file_count++;
-        const stat = await Deno.stat(full);
-        total_size_bytes += stat.size;
-      }
-    }
+/**
+ * `findSessions` (src/verify/debug-parser.ts) treats sessions as FILES
+ * directly under `debugDir` matching `*-session-{sessionId}.jsonl`. List
+ * those files for the given session id and return their names.
+ */
+async function listSessionFiles(
+  debugDir: string,
+  sessionId: string,
+): Promise<string[]> {
+  const matches: string[] = [];
+  for await (const entry of Deno.readDir(debugDir)) {
+    if (!entry.isFile) continue;
+    if (!entry.name.endsWith(`-session-${sessionId}.jsonl`)) continue;
+    matches.push(entry.name);
   }
-  await walk(dir);
-  return { file_count, total_size_bytes };
+  return matches;
 }
 
-/** Run `tar -cf - <session> | zstd -19 -o <out>` from cwd=debugDir */
+async function fileCountAndSize(
+  debugDir: string,
+  sessionFiles: string[],
+): Promise<{ file_count: number; total_size_bytes: number }> {
+  let total_size_bytes = 0;
+  for (const name of sessionFiles) {
+    const stat = await Deno.stat(`${debugDir}/${name}`);
+    total_size_bytes += stat.size;
+  }
+  return { file_count: sessionFiles.length, total_size_bytes };
+}
+
+/**
+ * Run `tar -cf - <files…> | zstd -19 -o <out>` from `cwd=debugDir`. The
+ * file list is the set of `*-session-{sessionId}.jsonl` files (sessions
+ * are file-per-record in the debug-parser's layout, NOT a subdir).
+ */
 async function tarAndCompress(
   debugDir: string,
   sessionId: string,
   outPath: string,
+  files?: string[],
 ): Promise<void> {
-  // tar | zstd via shell pipe. On Windows, Git Bash provides both.
+  const sessionFiles = files ?? await listSessionFiles(debugDir, sessionId);
+  if (sessionFiles.length === 0) {
+    throw new Error(
+      `no session files found for session ${sessionId} under ${debugDir}`,
+    );
+  }
+  // Quote each file individually for the shell. tar | zstd via Git Bash on
+  // Windows; native bash on POSIX.
+  const fileArgs = sessionFiles.map((f) => `"${f}"`).join(" ");
   const cmd = new Deno.Command("bash", {
     args: [
       "-c",
-      `tar -cf - "${sessionId}" | zstd -19 -o "${outPath}"`,
+      `tar -cf - ${fileArgs} | zstd -19 -o "${outPath}"`,
     ],
     cwd: debugDir,
     stdout: "piped",
@@ -91,13 +113,35 @@ export async function runDebugCaptureStep(
       },
     };
   }
-  const sessionDir = `${debugDir}/${sessionId}`;
-  const { file_count, total_size_bytes } = await fileCountAndSize(sessionDir);
+  // Sessions are FILES directly under `debugDir` matching
+  // `*-session-${sessionId}.jsonl` (per src/verify/debug-parser.ts —
+  // `findSessions` regex `session-(\d+)\.jsonl$`). Treating the path
+  // as a subdirectory was a layout mismatch that ENOENT'd in production
+  // (issue I4). The local_path field on emitted events therefore
+  // references `debugDir` (the directory containing the session files),
+  // not a synthetic `${debugDir}/${sessionId}` subdir that doesn't exist.
+  const sessionFiles = await listSessionFiles(debugDir, sessionId);
+  if (sessionFiles.length === 0) {
+    return {
+      success: false,
+      eventType: "debug.failed",
+      payload: {
+        error_code: "no_debug_session",
+        error_message:
+          `no session files matching *-session-${sessionId}.jsonl under ${debugDir}`,
+      },
+    };
+  }
+  const localPath = debugDir;
+  const { file_count, total_size_bytes } = await fileCountAndSize(
+    debugDir,
+    sessionFiles,
+  );
 
   if (ctx.dryRun) {
     console.log(
       colors.yellow(
-        `[DRY] debug-capture: would tar + upload ${sessionDir} (${file_count} files, ${total_size_bytes} bytes)`,
+        `[DRY] debug-capture: would tar + upload ${file_count} session files for ${sessionId} (${total_size_bytes} bytes) under ${debugDir}`,
       ),
     );
     // Dry-run: no upload, no event write. The orchestrator short-circuits
@@ -110,7 +154,7 @@ export async function runDebugCaptureStep(
       payload: {
         reason: "dry_run",
         session_id: sessionId,
-        local_path: sessionDir,
+        local_path: localPath,
         file_count,
         total_size_bytes,
         r2_key: `lifecycle/debug/${ctx.modelSlug}/${sessionId}.tar.zst`,
@@ -124,7 +168,8 @@ export async function runDebugCaptureStep(
     suffix: ".tar.zst",
   });
   try {
-    const compress = opts.compressor ?? tarAndCompress;
+    const compress = opts.compressor ??
+      ((d, s, o) => tarAndCompress(d, s, o, sessionFiles));
     await compress(debugDir, sessionId, tmpFile);
     const body = await Deno.readFile(tmpFile);
 
@@ -155,7 +200,7 @@ export async function runDebugCaptureStep(
       eventType: "debug.captured",
       payload: {
         session_id: sessionId,
-        local_path: sessionDir,
+        local_path: localPath,
         file_count,
         total_size_bytes,
         r2_key: result.r2_key,

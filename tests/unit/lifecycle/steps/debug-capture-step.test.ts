@@ -5,12 +5,19 @@ import { cleanupTempDir, createTempDir } from "../../../utils/test-helpers.ts";
 Deno.test("debug-capture dry-run reports session metadata without upload", async () => {
   const tmp = await createTempDir("cycle-debug-capture-dry");
   try {
-    // Create a fake debug session.
+    // I4 — sessions are FILES directly under debug/, NOT subdirectories.
+    // Filenames: `${kind}-${provider}-${ts}-session-${sessionId}.jsonl`
+    // where `kind` is `compilation` or `tests` (matches findSessions in
+    // src/verify/debug-parser.ts).
     const sessionId = "1765986258980";
-    await Deno.mkdir(`${tmp}/debug/${sessionId}`, { recursive: true });
+    await Deno.mkdir(`${tmp}/debug`, { recursive: true });
     await Deno.writeTextFile(
-      `${tmp}/debug/${sessionId}/trace.jsonl`,
-      '{"type":"compilation","ok":false}\n',
+      `${tmp}/debug/compilation-anthropic-2026-04-29T00-00-00-000Z-session-${sessionId}.jsonl`,
+      '{"type":"compilation_result","success":false,"taskId":"x","model":"y","attempt":1,"errors":[]}\n',
+    );
+    await Deno.writeTextFile(
+      `${tmp}/debug/tests-anthropic-2026-04-29T00-00-00-000Z-session-${sessionId}.jsonl`,
+      '{"type":"test_result","success":false,"taskId":"x","model":"y","attempt":1,"results":[]}\n',
     );
 
     const result = await runDebugCaptureStep(
@@ -31,7 +38,8 @@ Deno.test("debug-capture dry-run reports session metadata without upload", async
     assertEquals(result.eventType, "debug.skipped");
     assertEquals(result.payload["reason"], "dry_run");
     assertEquals(result.payload["session_id"], sessionId);
-    assertEquals(result.payload["file_count"], 1);
+    // Two session files (compilation + tests) should be detected.
+    assertEquals(result.payload["file_count"], 2);
     assertEquals(
       result.payload["r2_key"],
       `lifecycle/debug/anthropic/claude-opus-4-7/${sessionId}.tar.zst`,
@@ -44,9 +52,13 @@ Deno.test("debug-capture dry-run reports session metadata without upload", async
 Deno.test("debug-capture invokes injected uploader with expected r2_key", async () => {
   const tmp = await createTempDir("cycle-debug-capture-up");
   try {
+    // Sessions are FILES directly under debug/ (matches findSessions).
     const sessionId = "1765986258980";
-    await Deno.mkdir(`${tmp}/debug/${sessionId}`, { recursive: true });
-    await Deno.writeTextFile(`${tmp}/debug/${sessionId}/x.txt`, "hi");
+    await Deno.mkdir(`${tmp}/debug`, { recursive: true });
+    await Deno.writeTextFile(
+      `${tmp}/debug/compilation-anthropic-2026-04-29T00-00-00-000Z-session-${sessionId}.jsonl`,
+      "hi",
+    );
     // Stand up minimal .centralgauge.yml with admin keypair so
     // loadIngestConfig satisfies the lifecycle admin-scope requirement.
     // Use absolute key paths because loadIngestConfig resolves relative
