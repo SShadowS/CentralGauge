@@ -1,3 +1,4 @@
+import { canonicalJSON } from '$lib/shared/canonical';
 import type {
   AppendEventInput,
   LifecycleEnvelope,
@@ -80,17 +81,15 @@ export async function queryEvents(
   }));
 }
 
-async function computePayloadHash(payload: Record<string, unknown>): Promise<string> {
-  // Canonical JSON: sort keys recursively for stable hashes.
+/**
+ * Worker-side payload hash. MUST stay byte-identical to the CLI's
+ * `src/lifecycle/event-log.ts:computePayloadHash` so signed payloads with
+ * pre-computed `payload_hash` round-trip. Both sides import `canonicalJSON`
+ * from `shared/canonical.ts` (single source of truth).
+ */
+export async function computePayloadHash(payload: Record<string, unknown>): Promise<string> {
   const canon = canonicalJSON(payload);
   const bytes = new TextEncoder().encode(canon);
   const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-function canonicalJSON(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonicalJSON).join(',') + ']';
-  const keys = Object.keys(value as Record<string, unknown>).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJSON((value as Record<string, unknown>)[k])).join(',') + '}';
 }
