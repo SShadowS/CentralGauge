@@ -92,6 +92,9 @@ scripts/*
 !scripts/generate-machine-key.ts
 !scripts/seed-admin-key.ts
 !scripts/smoke-ingest.ts
+!scripts/backfill-lifecycle.ts
+!scripts/migrate-shortcomings-slugs.ts
+!scripts/verify-backfill-invariants.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
