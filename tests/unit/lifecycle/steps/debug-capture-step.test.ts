@@ -27,9 +27,9 @@ Deno.test("debug-capture dry-run reports session metadata without upload", async
       { sessionIdOverride: sessionId },
     );
     assertEquals(result.success, true);
-    // Dry-run path returns empty eventType (no canonical debug.skipped).
-    assertEquals(result.eventType, "");
-    assertEquals(result.payload["dry_run"], true);
+    // Dry-run path returns canonical `debug.skipped` (added in C1).
+    assertEquals(result.eventType, "debug.skipped");
+    assertEquals(result.payload["reason"], "dry_run");
     assertEquals(result.payload["session_id"], sessionId);
     assertEquals(result.payload["file_count"], 1);
     assertEquals(
@@ -121,7 +121,8 @@ Deno.test("debug-capture returns no_debug_session when debug dir empty", async (
       cwd: tmp,
     });
     assertEquals(result.success, false);
-    assertEquals(result.eventType, "");
+    // Pre-flight failure now emits canonical `debug.failed` (added in C1).
+    assertEquals(result.eventType, "debug.failed");
     assertEquals(result.payload["error_code"], "no_debug_session");
   } finally {
     await cleanupTempDir(tmp);

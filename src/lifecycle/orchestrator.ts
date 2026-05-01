@@ -298,7 +298,18 @@ function stepsBetween(from: CycleStep, to: CycleStep): CycleStep[] {
   return CYCLE_STEPS.slice(fromIdx, toIdx + 1);
 }
 
-function stepEventName(step: CycleStep, kind: string): LifecycleEventType {
+/**
+ * Synthesize a canonical event type for `(step, kind)`.
+ *
+ * Exported for the canonicity smoke test in `tests/unit/lifecycle/
+ * orchestrator.test.ts`, which iterates every (step, kind) pair and asserts
+ * the result is a member of `CANONICAL_EVENT_TYPES`. Production callers
+ * remain only the orchestrator itself.
+ */
+export function stepEventName(
+  step: CycleStep,
+  kind: string,
+): LifecycleEventType {
   if (step === "debug-capture") {
     return (kind === "completed"
       ? "debug.captured"
@@ -598,17 +609,16 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
         actor_id: actorId,
       }, ingestOpts);
       const result = await dispatcher(step, ctx);
-      // Some steps (e.g. debug-capture pre-flight no_debug_session) cannot
-      // emit a step-level terminal because no canonical event type exists
-      // (`debug.failed` is not in the appendix). They return an empty
-      // eventType — the orchestrator records the failure via cycle.failed
-      // only.
-      if (result.eventType) {
+      // The empty-string sentinel means "no step-level event for this
+      // outcome" — the orchestrator records the failure via `cycle.failed`
+      // only. After this guard `result.eventType` narrows to
+      // `LifecycleEventType` (the strict union), so no cast is needed.
+      if (result.eventType !== "") {
         await appendEvent({
           ts: Date.now(),
           model_slug: modelSlug,
           task_set_hash: taskSetHash,
-          event_type: result.eventType as LifecycleEventType,
+          event_type: result.eventType,
           tool_versions: toolVersions,
           envelope: fullEnvelope,
           payload: result.payload,

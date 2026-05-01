@@ -52,14 +52,14 @@ export async function runAnalyzeStep(
         `[DRY] analyze: would run \`centralgauge verify --shortcomings-only --model ${ctx.analyzerModel}\``,
       ),
     );
-    // The appendix has no `analysis.skipped` or `analysis.dry_run` event
-    // type. Return an empty eventType — the orchestrator already
-    // short-circuits dispatch in dry-run mode, so this branch is only
-    // reached by direct unit-test invocation.
+    // Dry-run: no LLM call, no file write. The orchestrator short-circuits
+    // dispatch in dry-run mode; this branch only runs when the step is
+    // invoked directly from a unit test. Return `analysis.skipped` so
+    // callers that DO write the event get a canonical type.
     return {
       success: true,
-      eventType: "",
-      payload: { dry_run: true, analyzer_model: ctx.analyzerModel },
+      eventType: "analysis.skipped",
+      payload: { reason: "dry_run", analyzer_model: ctx.analyzerModel },
     };
   }
 

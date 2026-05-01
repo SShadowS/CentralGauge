@@ -4,6 +4,8 @@
  * @module src/lifecycle/orchestrator-types
  */
 
+import type { LifecycleEventType } from "./types.ts";
+
 export type CycleStep = "bench" | "debug-capture" | "analyze" | "publish";
 
 export const CYCLE_STEPS: readonly CycleStep[] = [
@@ -48,13 +50,12 @@ export interface StepResult {
   success: boolean;
   /**
    * Canonical event type the orchestrator should write for this step
-   * (e.g. 'bench.completed', 'bench.failed', 'bench.skipped'). When the
-   * step has no canonical event type for its outcome (e.g. debug-capture
-   * preflight failure — there is no `debug.failed` in the appendix), set
-   * to the empty string. The orchestrator translates this case into
-   * `cycle.failed{ failed_step, error_code, error_message }` and writes
-   * NO step-level event.
+   * (e.g. 'bench.completed', 'bench.failed', 'bench.skipped'). The empty
+   * string sentinel means "no step-level event for this outcome — record
+   * via `cycle.failed` only". Strict union typing prevents a typo at any
+   * step's call site from synthesizing a non-canonical event type that
+   * the worker would reject with `400 invalid_event_type`.
    */
-  eventType: string;
+  eventType: LifecycleEventType | "";
   payload: Record<string, unknown>;
 }

@@ -79,13 +79,12 @@ export async function runDebugCaptureStep(
   const sessionId = opts.sessionIdOverride ??
     await findLatestSession(debugDir);
   if (!sessionId) {
-    // The Event types appendix has no `debug.failed`. Step modules NEVER emit
-    // non-canonical event types. Return an empty `eventType` and let the
-    // orchestrator translate this failure into `cycle.failed{ failed_step:
-    // 'debug-capture', error_code, error_message }`.
+    // Pre-flight failure: emit `debug.failed` so the failure is visible at the
+    // step granularity. The orchestrator additionally records `cycle.failed`
+    // with `failed_step: 'debug-capture'`.
     return {
       success: false,
-      eventType: "",
+      eventType: "debug.failed",
       payload: {
         error_code: "no_debug_session",
         error_message: `no debug sessions under ${debugDir}`,
@@ -101,15 +100,15 @@ export async function runDebugCaptureStep(
         `[DRY] debug-capture: would tar + upload ${sessionDir} (${file_count} files, ${total_size_bytes} bytes)`,
       ),
     );
-    // The appendix has no `debug.skipped` event type. Return an empty
-    // eventType; the orchestrator already short-circuits dispatch in
-    // dry-run mode, so this branch only fires when invoked directly from
-    // a unit test.
+    // Dry-run: no upload, no event write. The orchestrator short-circuits
+    // dispatch in dry-run mode; this branch only runs when the step is
+    // invoked directly from a unit test. We return `debug.skipped` so
+    // callers that DO write the event get a canonical type.
     return {
       success: true,
-      eventType: "",
+      eventType: "debug.skipped",
       payload: {
-        dry_run: true,
+        reason: "dry_run",
         session_id: sessionId,
         local_path: sessionDir,
         file_count,

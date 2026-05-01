@@ -133,8 +133,8 @@ describe("event-log", () => {
     assertFalse(isCanonicalActor("OPERATOR"));
   });
 
-  it("CANONICAL_EVENT_TYPES has the expected 25 strategic-plan entries", () => {
-    assertEquals(CANONICAL_EVENT_TYPES.length, 25);
+  it("CANONICAL_EVENT_TYPES has the expected 29 strategic-plan entries", () => {
+    assertEquals(CANONICAL_EVENT_TYPES.length, 29);
   });
 
   it("CANONICAL_ACTORS has the expected 4 strategic-plan entries", () => {

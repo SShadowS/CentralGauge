@@ -39,8 +39,8 @@ describe('lifecycle constants parity (worker mirrors Deno)', () => {
     expect([...CANONICAL_ACTORS]).toEqual(denoActors);
   });
 
-  it('expected count from strategic plan: 25 event types, 4 actors', () => {
-    expect(CANONICAL_EVENT_TYPES.length).toBe(25);
+  it('expected count from strategic plan: 29 event types, 4 actors', () => {
+    expect(CANONICAL_EVENT_TYPES.length).toBe(29);
     expect(CANONICAL_ACTORS.length).toBe(4);
   });
 });

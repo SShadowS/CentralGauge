@@ -97,7 +97,7 @@ Deno.test("analyze emits analysis.failed when JSON does not match schema", async
   }
 });
 
-Deno.test("analyze dry-run returns empty eventType + analyzer_model in payload", async () => {
+Deno.test("analyze dry-run returns analysis.skipped + analyzer_model in payload", async () => {
   const result = await runAnalyzeStep({
     modelSlug: "anthropic/claude-opus-4-7",
     taskSetHash: "current",
@@ -109,8 +109,9 @@ Deno.test("analyze dry-run returns empty eventType + analyzer_model in payload",
     cwd: ".",
   });
   assertEquals(result.success, true);
-  assertEquals(result.eventType, "");
-  assertEquals(result.payload["dry_run"], true);
+  // Dry-run path now returns canonical `analysis.skipped` (added in C1).
+  assertEquals(result.eventType, "analysis.skipped");
+  assertEquals(result.payload["reason"], "dry_run");
   assertEquals(result.payload["analyzer_model"], "anthropic/claude-opus-4-6");
 });
 
