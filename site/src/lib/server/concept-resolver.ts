@@ -130,25 +130,89 @@ export async function resolveConcept(
   // Tier 3: auto-create. INSERT concept first (need concept_id for the event
   // payload per strategic appendix line 460), then emit concept.created with
   // that concept_id, then back-patch provenance_event_id.
-  const inserted = await db
-    .prepare(
-      `INSERT INTO concepts (slug, display_name, al_concept, description,
-                             canonical_correct_pattern, first_seen, last_seen,
-                             provenance_event_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-       RETURNING id`,
-    )
-    .bind(
-      input.proposed_slug,
-      input.display_name,
-      input.al_concept,
-      input.description,
-      input.correct_pattern,
-      nowMs,
-      nowMs,
-    )
-    .first<{ id: number }>();
-  if (!inserted) throw new Error('concept insert returned no row');
+  //
+  // Concurrency: two batch requests can race on the same proposed_slug. The
+  // first wins the INSERT; the second hits a UNIQUE constraint failure on
+  // `concepts.slug`. We catch that failure, re-SELECT the winner's id, and
+  // recover as an alias-merge with `payload.race_recovery: true` so audit
+  // consumers can distinguish a real analyzer-driven alias-merge from a
+  // collision-driven one. Without this recovery the second concurrent
+  // batch request 500s.
+  let inserted: { id: number } | null = null;
+  try {
+    inserted = await db
+      .prepare(
+        `INSERT INTO concepts (slug, display_name, al_concept, description,
+                               canonical_correct_pattern, first_seen, last_seen,
+                               provenance_event_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+         RETURNING id`,
+      )
+      .bind(
+        input.proposed_slug,
+        input.display_name,
+        input.al_concept,
+        input.description,
+        input.correct_pattern,
+        nowMs,
+        nowMs,
+      )
+      .first<{ id: number }>();
+    if (!inserted) throw new Error('concept insert returned no row');
+  } catch (e) {
+    const msg = String(e instanceof Error ? e.message : e);
+    if (msg.includes('UNIQUE constraint failed: concepts.slug')) {
+      // Race partner already created this concept. Recover as alias-merge.
+      const existing = await db
+        .prepare(
+          `SELECT id FROM concepts WHERE slug = ? AND superseded_by IS NULL`,
+        )
+        .bind(input.proposed_slug)
+        .first<{ id: number }>();
+      if (!existing) {
+        // Slug is taken but the row is superseded — surface the original
+        // error rather than silently masking what is likely a deeper bug.
+        throw e;
+      }
+      const ev = await appendEvent({
+        event_type: 'concept.aliased',
+        model_slug: modelSlug,
+        task_set_hash: taskSetHash,
+        actor: 'operator',
+        actor_id: null,
+        payload: {
+          alias_slug: input.proposed_slug,
+          concept_id: existing.id,
+          similarity: input.similarity_score,
+          analyzer_model: input.analyzer_model,
+          reviewer_actor_id: null,
+          // Distinguish race-driven recovery from analyzer-driven alias-merge.
+          race_recovery: true,
+        },
+      });
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO concept_aliases
+             (alias_slug, concept_id, noted_at, similarity, reviewer_actor_id, alias_event_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          input.proposed_slug,
+          existing.id,
+          nowMs,
+          input.similarity_score,
+          null,
+          ev.id,
+        )
+        .run();
+      return {
+        concept_id: existing.id,
+        action: 'aliased',
+        emitted_event_id: ev.id,
+      };
+    }
+    throw e;
+  }
 
   // Now that we have the new concept_id, emit concept.created with it in the
   // payload (per strategic plan: payload = { concept_id, slug,
