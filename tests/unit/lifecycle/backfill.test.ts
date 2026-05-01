@@ -1,9 +1,11 @@
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 import {
+  type BackfillOccurrenceGroup,
   buildAnalysisEvents,
   buildBenchEvents,
   buildPublishEvents,
+  dedupePublishGroups,
 } from "../../../scripts/backfill-lifecycle.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 
@@ -101,5 +103,80 @@ describe("backfill-lifecycle", () => {
     assertEquals(events[0]!.event_type, "publish.completed");
     assertEquals(events[1]!.migration_note, "occurrences cascaded");
     assertEquals(events[1]!.payload, { occurrences_count: 0 });
+  });
+
+  // I3: mixed-state model — one shortcoming with occurrences AND a separate
+  // shortcoming WITHOUT occurrences appears in BOTH the withOcc query AND the
+  // cascaded query, so naive concatenation emits two publish.completed events
+  // with the same (model_slug, task_set_hash, event_type) triple. Site dedupes
+  // by payload_hash but the migration_note differs ("backfilled..." vs
+  // "occurrences cascaded") → two non-duplicate-by-server-rules rows land for
+  // the same logical state. Wrong.
+  it("dedupePublishGroups: mixed-state model produces only the withOcc group", () => {
+    const groups: BackfillOccurrenceGroup[] = [
+      {
+        model_slug: "anthropic/mixed-model",
+        task_set_hash: null,
+        last_seen: "2026-04-20T00:00:00Z",
+        occurrences_count: 3,
+      },
+      {
+        model_slug: "anthropic/mixed-model",
+        task_set_hash: null,
+        last_seen: "2026-04-19T00:00:00Z",
+        occurrences_count: 0,
+        cascaded: true,
+      },
+      // Pure-cascaded model (no occurrences anywhere) survives.
+      {
+        model_slug: "openai/cascaded-only",
+        task_set_hash: null,
+        last_seen: "2026-04-18T00:00:00Z",
+        occurrences_count: 0,
+        cascaded: true,
+      },
+    ];
+    const deduped = dedupePublishGroups(groups);
+    assertEquals(deduped.length, 2);
+    const mixed = deduped.find((g) =>
+      g.model_slug === "anthropic/mixed-model"
+    )!;
+    assertEquals(mixed.occurrences_count, 3);
+    assertEquals(mixed.cascaded, undefined);
+    const cascadedOnly = deduped.find((g) =>
+      g.model_slug === "openai/cascaded-only"
+    )!;
+    assertEquals(cascadedOnly.occurrences_count, 0);
+    assertEquals(cascadedOnly.cascaded, true);
+  });
+
+  it("mixed-state model emits exactly one publish.completed event (end-to-end)", () => {
+    const groups: BackfillOccurrenceGroup[] = [
+      {
+        model_slug: "anthropic/mixed-model",
+        task_set_hash: "h1",
+        last_seen: "2026-04-20T00:00:00Z",
+        occurrences_count: 3,
+      },
+      {
+        model_slug: "anthropic/mixed-model",
+        task_set_hash: "h1",
+        last_seen: "2026-04-19T00:00:00Z",
+        occurrences_count: 0,
+        cascaded: true,
+      },
+    ];
+    const events = buildPublishEvents(dedupePublishGroups(groups));
+    const forMixed = events.filter((e) =>
+      e.model_slug === "anthropic/mixed-model"
+    );
+    assertEquals(forMixed.length, 1);
+    assertEquals(forMixed[0]!.payload, { occurrences_count: 3 });
+    // Real publish wins → migration_note is the standard backfill stamp,
+    // NOT "occurrences cascaded".
+    assertEquals(
+      forMixed[0]!.migration_note?.startsWith("backfilled at"),
+      true,
+    );
   });
 });

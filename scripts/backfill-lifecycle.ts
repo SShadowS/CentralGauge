@@ -124,6 +124,30 @@ export function buildPublishEvents(
   });
 }
 
+/**
+ * Deduplicate publish groups for mixed-state models.
+ *
+ * A model with BOTH (a) shortcomings whose occurrences exist AND (b)
+ * shortcomings whose occurrences were CASCADE-deleted appears in BOTH the
+ * `withOcc` and `cascaded` queries inside `fetchOccurrenceGroups`. Without
+ * this filter, two `publish.completed` events would be emitted for the same
+ * (model_slug, task_set_hash) pair — one with the real count and one with
+ * `occurrences_count=0 + migration_note='occurrences cascaded'`.
+ *
+ * Resolution: the real publish wins. We drop the cascaded row when a withOcc
+ * row exists for the same (model_slug, task_set_hash) key.
+ */
+export function dedupePublishGroups(
+  groups: BackfillOccurrenceGroup[],
+): BackfillOccurrenceGroup[] {
+  const keyOf = (g: BackfillOccurrenceGroup) =>
+    `${g.model_slug}\x1f${g.task_set_hash ?? ""}`;
+  const realKeys = new Set(
+    groups.filter((g) => !g.cascaded).map(keyOf),
+  );
+  return groups.filter((g) => !g.cascaded || !realKeys.has(keyOf(g)));
+}
+
 interface QueryD1Options {
   siteDir: string;
   dbName: string;
@@ -230,7 +254,10 @@ async function fetchOccurrenceGroups(
     occurrences_count: 0,
     cascaded: true,
   }));
-  return [...withOccGroups, ...cascadedGroups];
+  // I3 fix: a mixed-state model (one shortcoming with occurrences + one without)
+  // appears in BOTH queries; drop the cascaded duplicate when a real publish row
+  // covers the same (model_slug, task_set_hash) key.
+  return dedupePublishGroups([...withOccGroups, ...cascadedGroups]);
 }
 
 async function main() {
