@@ -164,6 +164,30 @@ describe('GET /api/v1/concepts/[slug]', () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it('rejects malformed slugs with 400 invalid_slug (before any DB call)', async () => {
+    // Same kebab-case regex as the shortcomings/batch validator. A 400 on
+    // junk slugs (uppercase, underscores, leading hyphen, etc.) prevents
+    // cache amplification on the detail endpoint and returns a typed error
+    // shape consistent with the rest of the API.
+    const bad = [
+      'Has-Uppercase',
+      'has_underscores',
+      '-leading-hyphen',
+      'trailing-hyphen-',
+      'has spaces',
+      'a', // too short — must start AND end with alnum, so single-char fails
+      '!shouty',
+    ];
+    for (const slug of bad) {
+      const res = await SELF.fetch(
+        `https://x/api/v1/concepts/${encodeURIComponent(slug)}?_cb=invalid`,
+      );
+      expect(res.status, `expected 400 for "${slug}"`).toBe(400);
+      const body = (await res.json()) as { code: string; error: string };
+      expect(body.code).toBe('invalid_slug');
+    }
+  });
 });
 
 describe('cache invalidation integration', () => {

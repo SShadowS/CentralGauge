@@ -18,6 +18,17 @@ import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
 
 const CACHE_TTL_S = 300;
 
+/**
+ * Same kebab-case regex used by `shortcomings/batch/+server.ts`. Slugs are
+ * reflected in cached responses, so validating up-front prevents cache
+ * amplification from junk inputs (Cache API would otherwise create a slot
+ * per garbage URL) and returns a typed 400 before any DB call.
+ *
+ * Parameterised SQL bind already prevents injection — this is a defence-
+ * in-depth + cache-hygiene measure, not an injection fix.
+ */
+const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
 interface ConceptRow {
   id: number;
   slug: string;
@@ -43,11 +54,18 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
   }
   const env = platform.env;
   try {
+    const slug = params.slug ?? '';
+    if (!SLUG_REGEX.test(slug)) {
+      throw new ApiError(
+        400,
+        'invalid_slug',
+        `slug must match ${SLUG_REGEX.source}`,
+      );
+    }
+
     const cache = await caches.open(CONCEPT_CACHE_NAME);
     const cached = await cache.match(request);
     if (cached) return cached;
-
-    const slug = params.slug!;
 
     // Try direct slug match first.
     let concept = await getFirst<ConceptRow>(
