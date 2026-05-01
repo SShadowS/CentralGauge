@@ -534,118 +534,155 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
     // batch endpoint.
     let priorAnalysisPayloadHash: string | undefined;
 
-    for (const step of stepsToConsider) {
-      const events = opts.dryRun ? ([] as LifecycleEvent[]) : await queryEvents(
-        {
-          model_slug: modelSlug,
-          task_set_hash: taskSetHash,
-          limit: 100,
-        } satisfies QueryEventsFilter,
-        ingestOpts,
-      );
-      const prior = classifyEvents(step, events);
-      const decision = decideStep(
-        step,
-        prior,
-        opts.forceRerun.includes(step),
-        fullEnvelope,
-      );
-
-      if (opts.dryRun) {
-        console.log(
-          colors.yellow(
-            `[DRY] step ${step}: would ${decision.kind} (${decision.reason})`,
-          ),
+    /**
+     * The per-step loop's `appendEvent` calls (Wave 1 admin endpoint) can
+     * fail — D1 500, network blip, the Wave 3 / C1 canonicalization gap
+     * before it lands. If that happens here, the lock-token tiebreaker
+     * upstream of `runCycle` would treat the surviving `cycle.started` as
+     * winner-active for 90 minutes (CYCLE_TTL_SECONDS), wedging the
+     * (model, task_set) until manual `--force-unlock`. Wrap the loop and
+     * emit `cycle.failed{error_code:'orchestrator_crash'}` BEFORE
+     * re-throwing, so subsequent invocations see a terminal and the lock
+     * unwinds immediately.
+     */
+    let crashError: Error | null = null;
+    let currentStep: CycleStep | null = null;
+    try {
+      for (const step of stepsToConsider) {
+        currentStep = step;
+        const events = opts.dryRun
+          ? ([] as LifecycleEvent[])
+          : await queryEvents(
+            {
+              model_slug: modelSlug,
+              task_set_hash: taskSetHash,
+              limit: 100,
+            } satisfies QueryEventsFilter,
+            ingestOpts,
+          );
+        const prior = classifyEvents(step, events);
+        const decision = decideStep(
+          step,
+          prior,
+          opts.forceRerun.includes(step),
+          fullEnvelope,
         );
-        stepsRun.push(step);
-        continue;
-      }
 
-      if (decision.kind === "skip") {
-        const priorId = decision.priorEventId;
-        console.log(
-          colors.gray(
-            `[SKIP] ${step}: ${decision.reason} (prior id=${priorId})`,
-          ),
-        );
+        if (opts.dryRun) {
+          console.log(
+            colors.yellow(
+              `[DRY] step ${step}: would ${decision.kind} (${decision.reason})`,
+            ),
+          );
+          stepsRun.push(step);
+          continue;
+        }
+
+        if (decision.kind === "skip") {
+          const priorId = decision.priorEventId;
+          console.log(
+            colors.gray(
+              `[SKIP] ${step}: ${decision.reason} (prior id=${priorId})`,
+            ),
+          );
+          await appendEvent({
+            ts: Date.now(),
+            model_slug: modelSlug,
+            task_set_hash: taskSetHash,
+            event_type: stepEventName(step, "skipped"),
+            tool_versions: toolVersions,
+            envelope: fullEnvelope,
+            payload: {
+              reason: decision.reason,
+              prior_event_id: priorId,
+            },
+            actor: "operator",
+            actor_id: actorId,
+          }, ingestOpts);
+          stepsSkipped.push(step);
+          // Even when analyze is skipped, surface the prior payload_hash so
+          // publish can chain idempotency from the prior completed run.
+          if (step === "analyze" && prior.completed) {
+            const ph = (prior.completed.payload as { payload_hash?: string })
+              .payload_hash;
+            if (typeof ph === "string") priorAnalysisPayloadHash = ph;
+          }
+          continue;
+        }
+
+        // run | retry → emit *.started, dispatch, emit terminal event.
         await appendEvent({
           ts: Date.now(),
           model_slug: modelSlug,
           task_set_hash: taskSetHash,
-          event_type: stepEventName(step, "skipped"),
+          event_type: stepEventName(step, "started"),
           tool_versions: toolVersions,
           envelope: fullEnvelope,
           payload: {
+            decision: decision.kind,
             reason: decision.reason,
-            prior_event_id: priorId,
           },
           actor: "operator",
           actor_id: actorId,
         }, ingestOpts);
-        stepsSkipped.push(step);
-        // Even when analyze is skipped, surface the prior payload_hash so
-        // publish can chain idempotency from the prior completed run.
-        if (step === "analyze" && prior.completed) {
-          const ph = (prior.completed.payload as { payload_hash?: string })
-            .payload_hash;
-          if (typeof ph === "string") priorAnalysisPayloadHash = ph;
+        const result = await dispatcher(step, ctx);
+        // The empty-string sentinel means "no step-level event for this
+        // outcome" — the orchestrator records the failure via `cycle.failed`
+        // only. After this guard `result.eventType` narrows to
+        // `LifecycleEventType` (the strict union), so no cast is needed.
+        if (result.eventType !== "") {
+          await appendEvent({
+            ts: Date.now(),
+            model_slug: modelSlug,
+            task_set_hash: taskSetHash,
+            event_type: result.eventType,
+            tool_versions: toolVersions,
+            envelope: fullEnvelope,
+            payload: result.payload,
+            actor: "operator",
+            actor_id: actorId,
+          }, ingestOpts);
         }
-        continue;
+        // Cache analyze hash for downstream publish idempotency.
+        if (
+          step === "analyze" &&
+          result.success &&
+          typeof result.payload["payload_hash"] === "string"
+        ) {
+          priorAnalysisPayloadHash = result.payload["payload_hash"] as string;
+        }
+        if (!result.success) {
+          cycleFailed = true;
+          failedStep = step;
+          lastFailureMessage = String(result.payload["error_message"] ?? "");
+          lastFailureCode = String(
+            result.payload["error_code"] ?? "step_failed",
+          );
+          console.error(
+            colors.red(`[FAIL] step ${step}: ${lastFailureMessage}`),
+          );
+          break;
+        }
+        console.log(colors.green(`[OK] step ${step}: ${result.eventType}`));
+        stepsRun.push(step);
       }
-
-      // run | retry → emit *.started, dispatch, emit terminal event.
-      await appendEvent({
-        ts: Date.now(),
-        model_slug: modelSlug,
-        task_set_hash: taskSetHash,
-        event_type: stepEventName(step, "started"),
-        tool_versions: toolVersions,
-        envelope: fullEnvelope,
-        payload: {
-          decision: decision.kind,
-          reason: decision.reason,
-        },
-        actor: "operator",
-        actor_id: actorId,
-      }, ingestOpts);
-      const result = await dispatcher(step, ctx);
-      // The empty-string sentinel means "no step-level event for this
-      // outcome" — the orchestrator records the failure via `cycle.failed`
-      // only. After this guard `result.eventType` narrows to
-      // `LifecycleEventType` (the strict union), so no cast is needed.
-      if (result.eventType !== "") {
-        await appendEvent({
-          ts: Date.now(),
-          model_slug: modelSlug,
-          task_set_hash: taskSetHash,
-          event_type: result.eventType,
-          tool_versions: toolVersions,
-          envelope: fullEnvelope,
-          payload: result.payload,
-          actor: "operator",
-          actor_id: actorId,
-        }, ingestOpts);
-      }
-      // Cache analyze hash for downstream publish idempotency.
-      if (
-        step === "analyze" &&
-        result.success &&
-        typeof result.payload["payload_hash"] === "string"
-      ) {
-        priorAnalysisPayloadHash = result.payload["payload_hash"] as string;
-      }
-      if (!result.success) {
-        cycleFailed = true;
-        failedStep = step;
-        lastFailureMessage = String(result.payload["error_message"] ?? "");
-        lastFailureCode = String(result.payload["error_code"] ?? "step_failed");
-        console.error(
-          colors.red(`[FAIL] step ${step}: ${lastFailureMessage}`),
-        );
-        break;
-      }
-      console.log(colors.green(`[OK] step ${step}: ${result.eventType}`));
-      stepsRun.push(step);
+    } catch (e) {
+      // Mid-cycle event-write throw (D1 500, network blip, …). Capture and
+      // emit `cycle.failed{orchestrator_crash}` outside the per-step loop
+      // so the lock-token tiebreaker sees a terminal and unwinds the
+      // (model, task_set) immediately instead of waiting CYCLE_TTL.
+      crashError = e instanceof Error ? e : new Error(String(e));
+      cycleFailed = true;
+      failedStep = currentStep;
+      lastFailureCode = "orchestrator_crash";
+      lastFailureMessage = crashError.message;
+      console.error(
+        colors.red(
+          `[FAIL] orchestrator crash at step ${
+            currentStep ?? "<pre-loop>"
+          }: ${crashError.message}`,
+        ),
+      );
     }
 
     // 4. Terminal cycle event.
@@ -653,24 +690,49 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
       const terminal: LifecycleEventType = cycleFailed
         ? "cycle.failed"
         : "cycle.completed";
-      await appendEvent({
-        ts: Date.now(),
-        model_slug: modelSlug,
-        task_set_hash: taskSetHash,
-        event_type: terminal,
-        tool_versions: toolVersions,
-        envelope: fullEnvelope,
-        payload: cycleFailed
-          ? {
-            failed_step: failedStep,
-            error_code: lastFailureCode,
-            error_message: lastFailureMessage,
-            prior_event_id: cycleStartedEventId,
-          }
-          : { steps_run: stepsRun, steps_skipped: stepsSkipped },
-        actor: "operator",
-        actor_id: actorId,
-      }, ingestOpts);
+      // Wrap the terminal event-write itself: if D1 is *still* down, we
+      // shouldn't mask the original crash error with the terminal-write
+      // error. Best-effort: log and continue to re-throw the original.
+      try {
+        await appendEvent({
+          ts: Date.now(),
+          model_slug: modelSlug,
+          task_set_hash: taskSetHash,
+          event_type: terminal,
+          tool_versions: toolVersions,
+          envelope: fullEnvelope,
+          payload: cycleFailed
+            ? {
+              failed_step: failedStep,
+              error_code: lastFailureCode,
+              error_message: lastFailureMessage,
+              prior_event_id: cycleStartedEventId,
+            }
+            : { steps_run: stepsRun, steps_skipped: stepsSkipped },
+          actor: "operator",
+          actor_id: actorId,
+        }, ingestOpts);
+      } catch (terminalWriteErr) {
+        // Worst case: the terminal write also failed. Surface the
+        // *original* crash error if we have one; otherwise re-throw the
+        // terminal failure.
+        if (crashError) {
+          console.error(
+            colors.red(
+              `[ERROR] failed to write cycle.failed terminal: ${
+                (terminalWriteErr as Error).message
+              } — re-throwing original crash`,
+            ),
+          );
+        } else {
+          throw terminalWriteErr;
+        }
+      }
+      if (crashError) {
+        // Re-throw outside the catch so the caller (CLI) sees the
+        // original error message and exit code.
+        throw crashError;
+      }
       if (cycleFailed) {
         console.error(
           colors.red(`[FAIL] cycle ${modelSlug}: failed at step ${failedStep}`),

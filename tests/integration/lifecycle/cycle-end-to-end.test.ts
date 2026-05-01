@@ -240,6 +240,86 @@ Deno.test("runCycle skip-on-success: prior bench.completed + matching envelope �
   }
 });
 
+Deno.test("runCycle mid-cycle event-write crash → cycle.failed{orchestrator_crash}", async () => {
+  // C2 regression. If any `appendEvent` call throws partway through the
+  // per-step loop (Wave 1 admin endpoint 500, network blip, the C1 bug
+  // before it lands), the cycle.started lock would otherwise survive
+  // without a terminal — wedging the lock-token tiebreaker for 90 min.
+  // The orchestrator MUST wrap the per-step loop with a catch that emits
+  // `cycle.failed{error_code:'orchestrator_crash'}` BEFORE re-throwing.
+  const tmp = await createTempDir("cycle-e2e-crash");
+  const events: FakeEvent[] = [];
+  // Wrap the in-memory store and inject a throw on the second
+  // appendEvent (the first is `cycle.started`; the second is
+  // `bench.started`). After the throw, the orchestrator's catch should
+  // still write `cycle.failed`.
+  const baseStore = inMemoryStore(events);
+  let appendCallCount = 0;
+  setEventStore({
+    appendEvent: (e, opts) => {
+      appendCallCount++;
+      if (appendCallCount === 2) {
+        return Promise.reject(new Error("simulated D1 500"));
+      }
+      return baseStore.appendEvent(e, opts);
+    },
+    queryEvents: baseStore.queryEvents.bind(baseStore),
+  });
+  try {
+    await writeCgConfig(tmp);
+    setStepDispatcher((_step, _ctx) =>
+      Promise.resolve({
+        success: true,
+        eventType: "bench.completed",
+        payload: { runs_count: 1, tasks_count: 1, results_count: 1 },
+      })
+    );
+    const { runCycle } = await import("../../../src/lifecycle/orchestrator.ts");
+    const oldCwd = Deno.cwd();
+    Deno.chdir(tmp);
+    let thrown: Error | null = null;
+    try {
+      await runCycle({
+        llms: ["anthropic/claude-opus-4-7"],
+        taskSet: "current",
+        fromStep: "bench",
+        toStep: "bench",
+        forceRerun: [],
+        analyzerModel: "anthropic/claude-opus-4-6",
+        dryRun: false,
+        forceUnlock: false,
+        yes: true,
+      });
+    } catch (e) {
+      thrown = e as Error;
+    } finally {
+      setStepDispatcher(null);
+      Deno.chdir(oldCwd);
+    }
+    assert(thrown, "runCycle should re-throw after emitting cycle.failed");
+    // The orchestrator emitted cycle.started (id=1). The bench.started
+    // append THREW (id reservation aborted). The catch path must then
+    // emit cycle.failed{error_code:'orchestrator_crash'} so the lock is
+    // not stranded for 90 min.
+    const cycleFailed = events.find((e) => e.event_type === "cycle.failed");
+    assert(
+      cycleFailed,
+      "expected cycle.failed terminal event after mid-cycle crash",
+    );
+    const payload = cycleFailed.payload as Record<string, unknown>;
+    assertEquals(payload["error_code"], "orchestrator_crash");
+    assertEquals(payload["failed_step"], "bench");
+    assert(
+      typeof payload["error_message"] === "string" &&
+        (payload["error_message"] as string).includes("simulated D1 500"),
+      "expected error_message to carry the original throw text",
+    );
+  } finally {
+    setEventStore(null);
+    await cleanupTempDir(tmp);
+  }
+});
+
 Deno.test("runCycle resume-on-failure: prior bench.failed → next run retries", async () => {
   const tmp = await createTempDir("cycle-e2e-resume");
   const events: FakeEvent[] = [];
