@@ -1,6 +1,18 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertExists, assertRejects } from "@std/assert";
-import type { LifecycleEvent } from "../../../src/lifecycle/types.ts";
+import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertFalse,
+  assertRejects,
+} from "@std/assert";
+import {
+  CANONICAL_ACTORS,
+  CANONICAL_EVENT_TYPES,
+  isCanonicalActor,
+  isCanonicalEventType,
+  type LifecycleEvent,
+} from "../../../src/lifecycle/types.ts";
 import {
   buildAppendBody,
   computePayloadHash,
@@ -94,6 +106,39 @@ describe("event-log", () => {
     ];
     const state = reduceCurrentState(events);
     assertEquals(state.bench?.event_type, "bench.failed");
+  });
+
+  it("isCanonicalEventType accepts every entry in CANONICAL_EVENT_TYPES", () => {
+    for (const t of CANONICAL_EVENT_TYPES) {
+      assert(isCanonicalEventType(t), `${t} should be canonical`);
+    }
+  });
+
+  it("isCanonicalEventType rejects bogus strings", () => {
+    assertFalse(isCanonicalEventType(""));
+    assertFalse(isCanonicalEventType("bench.invalid_phase"));
+    assertFalse(isCanonicalEventType("BENCH.COMPLETED")); // case-sensitive
+    assertFalse(isCanonicalEventType("nonexistent.action"));
+  });
+
+  it("isCanonicalActor accepts every entry in CANONICAL_ACTORS", () => {
+    for (const a of CANONICAL_ACTORS) {
+      assert(isCanonicalActor(a), `${a} should be canonical`);
+    }
+  });
+
+  it("isCanonicalActor rejects bogus strings", () => {
+    assertFalse(isCanonicalActor(""));
+    assertFalse(isCanonicalActor("rogue"));
+    assertFalse(isCanonicalActor("OPERATOR"));
+  });
+
+  it("CANONICAL_EVENT_TYPES has the expected 25 strategic-plan entries", () => {
+    assertEquals(CANONICAL_EVENT_TYPES.length, 25);
+  });
+
+  it("CANONICAL_ACTORS has the expected 4 strategic-plan entries", () => {
+    assertEquals(CANONICAL_ACTORS.length, 4);
   });
 
   it("buildAppendBody throws on empty model_slug", async () => {

@@ -4,34 +4,71 @@
  * script consumes the same shape.
  */
 
-export type LifecycleEventType =
-  | "bench.started"
-  | "bench.completed"
-  | "bench.failed"
-  | "bench.skipped"
-  | "debug.captured"
-  | "analysis.started"
-  | "analysis.completed"
-  | "analysis.failed"
-  | "analysis.accepted"
-  | "analysis.rejected"
-  | "publish.started"
-  | "publish.completed"
-  | "publish.failed"
-  | "publish.skipped"
-  | "cycle.started"
-  | "cycle.completed"
-  | "cycle.failed"
-  | "cycle.timed_out"
-  | "cycle.aborted"
-  | "concept.created"
-  | "concept.merged"
-  | "concept.split"
-  | "concept.aliased"
-  | "model.released"
-  | "task_set.changed";
+/**
+ * Single source of truth for the canonical lifecycle event-type universe.
+ * `LifecycleEventType` (the union) is derived from this `as const` tuple, and
+ * `CANONICAL_EVENT_TYPES` (the runtime Set) is the value-side mirror used at
+ * the API boundary to validate `event_type` after JSON.parse (where the union
+ * has evaporated). If you add a string here, you MUST also amend the
+ * strategic plan's "Event types" appendix in the same commit; the runtime
+ * check rejects anything outside this set with `400 invalid_event_type`.
+ */
+export const CANONICAL_EVENT_TYPES = [
+  "bench.started",
+  "bench.completed",
+  "bench.failed",
+  "bench.skipped",
+  "debug.captured",
+  "analysis.started",
+  "analysis.completed",
+  "analysis.failed",
+  "analysis.accepted",
+  "analysis.rejected",
+  "publish.started",
+  "publish.completed",
+  "publish.failed",
+  "publish.skipped",
+  "cycle.started",
+  "cycle.completed",
+  "cycle.failed",
+  "cycle.timed_out",
+  "cycle.aborted",
+  "concept.created",
+  "concept.merged",
+  "concept.split",
+  "concept.aliased",
+  "model.released",
+  "task_set.changed",
+] as const;
 
-export type LifecycleActor = "operator" | "ci" | "migration" | "reviewer";
+export type LifecycleEventType = typeof CANONICAL_EVENT_TYPES[number];
+
+const CANONICAL_EVENT_TYPE_SET: ReadonlySet<string> = new Set(
+  CANONICAL_EVENT_TYPES,
+);
+
+/**
+ * Runtime guard for `event_type`. Use at API boundaries (worker POST handler)
+ * or anywhere a string-typed value crosses into typed lifecycle code paths.
+ */
+export function isCanonicalEventType(s: string): s is LifecycleEventType {
+  return CANONICAL_EVENT_TYPE_SET.has(s);
+}
+
+export const CANONICAL_ACTORS = [
+  "operator",
+  "ci",
+  "migration",
+  "reviewer",
+] as const;
+
+export type LifecycleActor = typeof CANONICAL_ACTORS[number];
+
+const CANONICAL_ACTOR_SET: ReadonlySet<string> = new Set(CANONICAL_ACTORS);
+
+export function isCanonicalActor(s: string): s is LifecycleActor {
+  return CANONICAL_ACTOR_SET.has(s);
+}
 
 export type LifecycleStep = "bench" | "debug" | "analyze" | "publish" | "cycle";
 

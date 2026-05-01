@@ -28,6 +28,15 @@ export default defineConfig(async () => {
     'utf8'
   ).replace(/^import\s+[^;]+from\s+["']\.\.\/chunks\/[^"']+["'];?\s*$/gm, '');
 
+  // Inject the Deno-side lifecycle types source as a string constant so the
+  // worker-mirror parity test (`lifecycle-event-types-parity.test.ts`) can
+  // diff against it without filesystem access. Reading the file at
+  // config-time = single source of truth, evaluated once per test run.
+  const lifecycleTypesSource = readFileSync(
+    path.resolve('../src/lifecycle/types.ts'),
+    'utf8',
+  );
+
   return {
     resolve: {
       alias: {
@@ -62,6 +71,9 @@ export default defineConfig(async () => {
         }
       })
     ],
+    define: {
+      __LIFECYCLE_TYPES_SOURCE__: JSON.stringify(lifecycleTypesSource),
+    },
     test: {
       setupFiles: ['./tests/setup.ts'],
       include: ['tests/**/*.test.ts'],

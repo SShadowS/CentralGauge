@@ -75,6 +75,73 @@ describe('POST /api/v1/admin/lifecycle/events', () => {
     });
     expect(resp.status).toBe(401);
   });
+
+  it('rejects non-canonical event_type with 400 invalid_event_type (C3)', async () => {
+    const { keyId, keypair } = await registerMachineKey('cli-c3', 'admin');
+    const payload = {
+      ts: 99999,
+      model_slug: 'm/c3',
+      task_set_hash: 'hc3',
+      event_type: 'bench.invalid_phase', // NOT in CANONICAL_EVENT_TYPES
+      payload_hash: 'c'.repeat(64),
+      tool_versions: null,
+      envelope: null,
+      payload: {},
+      actor: 'operator',
+    };
+    const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
+    const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(400);
+    const body = await resp.json() as { code: string };
+    expect(body.code).toBe('invalid_event_type');
+  });
+
+  it('rejects missing actor with 400 (I5)', async () => {
+    const { keyId, keypair } = await registerMachineKey('cli-i5a', 'admin');
+    const payload = {
+      ts: 88888,
+      model_slug: 'm/i5',
+      task_set_hash: 'hi5',
+      event_type: 'bench.completed',
+      payload_hash: 'd'.repeat(64),
+      tool_versions: null,
+      envelope: null,
+      payload: {},
+      // actor intentionally omitted
+    };
+    const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
+    const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(400);
+    const body = await resp.json() as { code: string; error: string };
+    expect(body.code).toBe('missing_field');
+    expect(body.error).toMatch(/actor/);
+  });
+
+  it('rejects non-canonical actor with 400 invalid_actor (I5)', async () => {
+    const { keyId, keypair } = await registerMachineKey('cli-i5b', 'admin');
+    const payload = {
+      ts: 77777,
+      model_slug: 'm/i5b',
+      task_set_hash: 'hi5b',
+      event_type: 'bench.completed',
+      payload_hash: 'e'.repeat(64),
+      tool_versions: null,
+      envelope: null,
+      payload: {},
+      actor: 'rogue', // NOT in CANONICAL_ACTORS
+    };
+    const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
+    const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(400);
+    const body = await resp.json() as { code: string };
+    expect(body.code).toBe('invalid_actor');
+  });
 });
 
 describe('GET /api/v1/admin/lifecycle/state', () => {

@@ -3,6 +3,12 @@ import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signat
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
+import {
+  CANONICAL_ACTORS,
+  CANONICAL_EVENT_TYPES,
+  isCanonicalActor,
+  isCanonicalEventType,
+} from '$lib/shared/lifecycle-constants';
 
 /**
  * Wire body matches the canonical `AppendEventInput` shape from
@@ -24,6 +30,26 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
       throw new ApiError(400, 'missing_field', 'model_slug, task_set_hash, event_type required');
+    }
+    if (!p.actor) {
+      throw new ApiError(400, 'missing_field', 'actor required (one of: ' + CANONICAL_ACTORS.join(', ') + ')');
+    }
+    // Runtime allowlist: the TS union evaporates at JSON.parse, so we need a
+    // value-side check before INSERT. Source of truth = CANONICAL_EVENT_TYPES
+    // in src/lifecycle/types.ts (single tuple, type derived from it).
+    if (!isCanonicalEventType(p.event_type)) {
+      throw new ApiError(
+        400,
+        'invalid_event_type',
+        `event_type "${p.event_type}" is not canonical; allowed: ${CANONICAL_EVENT_TYPES.join(', ')}`,
+      );
+    }
+    if (!isCanonicalActor(p.actor)) {
+      throw new ApiError(
+        400,
+        'invalid_actor',
+        `actor "${p.actor}" is not canonical; allowed: ${CANONICAL_ACTORS.join(', ')}`,
+      );
     }
     if (p.payload_hash && p.ts !== undefined) {
       const dup = await db.prepare(
