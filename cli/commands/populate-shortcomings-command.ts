@@ -104,6 +104,23 @@ async function sha256Hex(text: string): Promise<string> {
 }
 
 /**
+ * Read `account_id` from `site/wrangler.toml`. Single source of truth that
+ * wrangler itself reads for `--remote` calls; saves callers from setting
+ * `CLOUDFLARE_ACCOUNT_ID` separately when the value is already declared.
+ */
+async function readAccountIdFromWranglerToml(
+  siteDir: string,
+): Promise<string | null> {
+  try {
+    const toml = await Deno.readTextFile(`${siteDir}/wrangler.toml`);
+    const match = toml.match(/^\s*account_id\s*=\s*["']([^"']+)["']/m);
+    return match?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Run a wrangler D1 query against the production database and return the
  * parsed JSON result rows. Mirrors `scripts/seed-admin-key.ts` shell-out
  * pattern. Wrangler must be installed in `site/`.
@@ -113,10 +130,11 @@ async function queryD1(
   dbName: string,
   sql: string,
 ): Promise<Array<Record<string, unknown>>> {
-  const accountId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID");
+  const accountId = Deno.env.get("CLOUDFLARE_ACCOUNT_ID") ??
+    await readAccountIdFromWranglerToml(siteDir);
   if (!accountId) {
     throw new Error(
-      "CLOUDFLARE_ACCOUNT_ID env var required for wrangler D1 queries",
+      "CLOUDFLARE_ACCOUNT_ID not set and not found in site/wrangler.toml",
     );
   }
   const cmd = new Deno.Command("npx", {
@@ -138,7 +156,10 @@ async function queryD1(
   const { code, stdout, stderr } = await cmd.output();
   if (code !== 0) {
     const err = new TextDecoder().decode(stderr);
-    throw new Error(`wrangler d1 execute failed (code ${code}): ${err}`);
+    const outText = new TextDecoder().decode(stdout);
+    throw new Error(
+      `wrangler d1 execute failed (code ${code}):\n[stderr]\n${err}\n[stdout]\n${outText}`,
+    );
   }
   const out = new TextDecoder().decode(stdout);
   // wrangler emits warnings before the JSON; locate the JSON array.
