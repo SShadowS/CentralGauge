@@ -116,16 +116,30 @@ export function resolveTargetFilename(targetSlug: string): string {
   return `${targetSlug.replaceAll("/", "_")}.json`;
 }
 
-interface CliOptions {
+export interface MigrateOptions {
   dir: string;
   dryRun: boolean;
+  /** Inject a logger for tests; defaults to console.log. */
+  log?(line: string): void;
 }
 
-async function migrate(opts: CliOptions): Promise<{
+export interface MigrateResult {
   migrated: string[];
   missing: string[];
   alreadyMigrated: string[];
-}> {
+}
+
+/**
+ * Atomic per-file migration:
+ *   read → parse → write-new → remove-old
+ *
+ * Failure of read/parse leaves no on-disk change. The per-file order is
+ * read-and-parse FIRST (any malformed JSON aborts with a useful message
+ * naming the file BEFORE any write), so a corrupt file does not leave a
+ * half-migrated state on disk.
+ */
+export async function migrate(opts: MigrateOptions): Promise<MigrateResult> {
+  const log = opts.log ?? ((s: string) => console.log(s));
   const migrated: string[] = [];
   const missing: string[] = [];
   const alreadyMigrated: string[] = [];
@@ -149,11 +163,22 @@ async function migrate(opts: CliOptions): Promise<{
       continue;
     }
 
-    const json = JSON.parse(text) as { model: string; [k: string]: unknown };
+    let json: { model: string; [k: string]: unknown };
+    try {
+      json = JSON.parse(text) as { model: string; [k: string]: unknown };
+    } catch (e) {
+      // Re-throw with a useful filename-anchored message. Parse happens
+      // BEFORE any write, so no partial-migration is left on disk.
+      throw new Error(
+        `Failed to parse JSON at ${oldPath}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
     json.model = row.target;
     const out = JSON.stringify(json, null, 2);
     if (opts.dryRun) {
-      console.log(
+      log(
         colors.yellow(
           `[DRY] ${oldPath} -> ${newPath} (model: ${row.legacy} -> ${row.target})`,
         ),
@@ -163,7 +188,7 @@ async function migrate(opts: CliOptions): Promise<{
       if (newPath !== oldPath) {
         await Deno.remove(oldPath);
       }
-      console.log(colors.green(`[OK] ${row.legacyFile} -> ${newName}`));
+      log(colors.green(`[OK] ${row.legacyFile} -> ${newName}`));
     }
     migrated.push(row.legacyFile);
   }
