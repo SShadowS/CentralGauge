@@ -280,4 +280,180 @@ describe('POST /api/v1/shortcomings/batch', () => {
     expect(body.code).toBe('bad_payload');
     expect(body.error).toContain('shortcomings[0].occurrences[0].result_id');
   });
+
+  // ===========================================================================
+  // D-prompt — three-tier concept resolver band tests
+  // ===========================================================================
+
+  it('aliases existing concept when similarity ≥ 0.85 (auto-merge → emits concept.aliased)', async () => {
+    await env.DB.prepare(
+      `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
+       VALUES (10, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd', 1000, 2000)`
+    ).run();
+
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const item = {
+      ...SAMPLE_SHORTCOMING,
+      concept_slug_proposed: 'flowfield-calc',
+      concept_slug_existing_match: 'flowfield-calcfields',
+      similarity_score: 0.93
+    };
+    const res = await SELF.fetch(
+      await shortcomingsBatchRequest(
+        { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'm' },
+        keyId,
+        keypair
+      )
+    );
+    expect(res.status).toBe(200);
+    const row = await env.DB
+      .prepare(
+        `SELECT concept_id, analysis_event_id FROM shortcomings WHERE al_concept = 'interfaces'`
+      )
+      .first<{ concept_id: number; analysis_event_id: number }>();
+    expect(row?.concept_id).toBe(10);
+    // analysis_event_id is the real id of the analysis.completed event
+    // written upstream of resolveConcept (STEP 1 of the per-batch ordering).
+    expect(row?.analysis_event_id).toBeGreaterThan(0);
+    // concept.aliased written; concept.created NOT written for the
+    // auto-merge band (would create a duplicate registry entry — exactly
+    // the failure the registry was added to prevent).
+    const aliased = await env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.aliased'`)
+      .first<{ n: number }>();
+    expect(aliased?.n).toBe(1);
+    const created = await env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.created'`)
+      .first<{ n: number }>();
+    expect(created?.n).toBe(0);
+    // Alias row was inserted with alias_event_id pointing at the captured
+    // concept.aliased event.
+    const alias = await env.DB
+      .prepare(`SELECT alias_event_id FROM concept_aliases WHERE alias_slug = 'flowfield-calc'`)
+      .first<{ alias_event_id: number }>();
+    expect(alias?.alias_event_id).toBeGreaterThan(0);
+  });
+
+  it('writes pending_review row with real analysis_event_id when similarity in [0.70, 0.85)', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const item = {
+      ...SAMPLE_SHORTCOMING,
+      concept_slug_proposed: 'unclear-concept',
+      concept_slug_existing_match: null,
+      similarity_score: 0.77
+    };
+    const res = await SELF.fetch(
+      await shortcomingsBatchRequest(
+        { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'm' },
+        keyId,
+        keypair
+      )
+    );
+    expect(res.status).toBe(200);
+    const pending = await env.DB
+      .prepare(
+        `SELECT concept_slug_proposed, analysis_event_id, payload_json, confidence FROM pending_review`
+      )
+      .first<{
+        concept_slug_proposed: string;
+        analysis_event_id: number;
+        payload_json: string;
+        confidence: number;
+      }>();
+    expect(pending?.concept_slug_proposed).toBe('unclear-concept');
+    // analysis_event_id is the real lifecycle_events.id from the
+    // analysis.completed event written upstream — NOT a `0` placeholder.
+    // Verifies the FK NOT NULL REFERENCES lifecycle_events(id) is satisfied
+    // with a real row.
+    expect(pending?.analysis_event_id).toBeGreaterThan(0);
+    const evRow = await env.DB
+      .prepare(`SELECT event_type FROM lifecycle_events WHERE id = ?`)
+      .bind(pending!.analysis_event_id)
+      .first<{ event_type: string }>();
+    expect(evRow?.event_type).toBe('analysis.completed');
+    expect(pending?.confidence).toBe(0.77);
+    // CANONICAL payload_json shape: { entry, confidence }. Cluster metadata
+    // (when present) nests under entry._cluster.
+    const parsed = JSON.parse(pending!.payload_json) as {
+      entry: { concept_slug_proposed: string };
+      confidence: number;
+    };
+    expect(parsed.entry.concept_slug_proposed).toBe('unclear-concept');
+    expect(parsed.confidence).toBe(0.77);
+    // shortcoming row was NOT written for the pending entry — operator's
+    // accept decision creates it later via Plan F.
+    const sc = await env.DB
+      .prepare(`SELECT COUNT(*) AS n FROM shortcomings`)
+      .first<{ n: number }>();
+    expect(sc?.n).toBe(0);
+  });
+
+  it('creates new concept + emits concept.created event with concept_id in payload when similarity < 0.70', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    const item = {
+      ...SAMPLE_SHORTCOMING,
+      concept_slug_proposed: 'fresh-pitfall',
+      concept_slug_existing_match: null,
+      similarity_score: 0.41
+    };
+    const res = await SELF.fetch(
+      await shortcomingsBatchRequest(
+        { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'claude-opus-4-6' },
+        keyId,
+        keypair
+      )
+    );
+    expect(res.status).toBe(200);
+    const concept = await env.DB
+      .prepare(`SELECT id, provenance_event_id FROM concepts WHERE slug = 'fresh-pitfall'`)
+      .first<{ id: number; provenance_event_id: number }>();
+    expect(concept?.id).toBeGreaterThan(0);
+    // provenance_event_id is back-patched to the concept.created event id
+    // (per the two-step concept.created → back-patch pattern).
+    expect(concept?.provenance_event_id).toBeGreaterThan(0);
+    const ev = await env.DB
+      .prepare(`SELECT event_type, payload_json FROM lifecycle_events WHERE id = ?`)
+      .bind(concept!.provenance_event_id)
+      .first<{ event_type: string; payload_json: string }>();
+    expect(ev?.event_type).toBe('concept.created');
+    // Per strategic appendix: payload = { concept_id, slug, llm_proposed_slug,
+    // similarity_to_nearest, analyzer_model }. concept_id MUST be present
+    // and equal to the freshly-inserted concept row's id.
+    const payload = JSON.parse(ev!.payload_json) as Record<string, unknown>;
+    expect(payload.concept_id).toBe(concept!.id);
+    expect(payload.slug).toBe('fresh-pitfall');
+    expect(payload.analyzer_model).toBe('claude-opus-4-6');
+    // shortcomings row carries the resolved concept_id + analysis_event_id.
+    const sc = await env.DB
+      .prepare(
+        `SELECT concept_id, analysis_event_id FROM shortcomings WHERE al_concept = 'interfaces'`
+      )
+      .first<{ concept_id: number; analysis_event_id: number }>();
+    expect(sc?.concept_id).toBe(concept!.id);
+    expect(sc?.analysis_event_id).toBeGreaterThan(0);
+  });
+
+  it('accepts legacy payload (no concept_slug_proposed) with concept_id NULL', async () => {
+    const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+    // Note: no concept_slug_* fields → legacy path → deprecation warning logged.
+    const res = await SELF.fetch(
+      await shortcomingsBatchRequest(
+        { model_slug: 'sonnet-4.7', shortcomings: [SAMPLE_SHORTCOMING] },
+        keyId,
+        keypair
+      )
+    );
+    expect(res.status).toBe(200);
+    const sc = await env.DB
+      .prepare(`SELECT concept_id FROM shortcomings WHERE al_concept = 'interfaces'`)
+      .first<{ concept_id: number | null }>();
+    expect(sc?.concept_id).toBeNull(); // legacy path: concept_id remains NULL
+    // No concept event emitted for legacy payload.
+    const events = await env.DB
+      .prepare(
+        `SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type IN ('concept.created', 'concept.aliased')`
+      )
+      .first<{ n: number }>();
+    expect(events?.n).toBe(0);
+  });
 });

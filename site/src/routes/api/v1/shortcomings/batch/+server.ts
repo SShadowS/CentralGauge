@@ -2,6 +2,9 @@ import type { RequestHandler } from './$types';
 import { verifySignedRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { broadcastEvent } from '$lib/server/broadcaster';
+import { resolveConcept } from '$lib/server/concept-resolver';
+import { invalidateConcept } from '$lib/server/concept-cache';
+import { appendEvent } from '$lib/server/lifecycle-event-log';
 
 interface ShortcomingOccurrence {
   result_id: number;
@@ -17,9 +20,21 @@ interface ShortcomingItem {
   incorrect_pattern_sha256: string;
   error_codes: string[];
   occurrences: ShortcomingOccurrence[];
+  // D-prompt: registry-shaped fields. Required for new clients; legacy clients
+  // (still posting only `concept`) trigger a deprecation warning and the
+  // resolver path is skipped — `concept_id` stays NULL until D-data backfill.
+  concept_slug_proposed: string | null;
+  concept_slug_existing_match: string | null;
+  similarity_score: number | null;
 }
 
-function validateOccurrence(occ: unknown, shortIdx: number, occIdx: number): ShortcomingOccurrence {
+const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
+function validateOccurrence(
+  occ: unknown,
+  shortIdx: number,
+  occIdx: number
+): ShortcomingOccurrence {
   const o = occ as Record<string, unknown>;
   const { result_id, task_id, error_code } = o;
   if (!Number.isInteger(result_id) || (result_id as number) <= 0) {
@@ -83,6 +98,47 @@ function validateShortcomingItem(item: unknown, index: number): ShortcomingItem 
     ? rawOccurrences.map((occ, occIdx) => validateOccurrence(occ, index, occIdx))
     : [];
 
+  // D-prompt: validate the new registry-shaped fields. All three are
+  // optional/nullable for legacy clients; new clients post all three.
+  const proposed = it.concept_slug_proposed;
+  if (proposed !== undefined && proposed !== null) {
+    if (typeof proposed !== 'string' || !SLUG_REGEX.test(proposed)) {
+      throw new ApiError(
+        400,
+        'bad_payload',
+        `shortcomings[${index}].concept_slug_proposed must be kebab-case`
+      );
+    }
+  }
+  const existingMatch = it.concept_slug_existing_match;
+  if (existingMatch !== undefined && existingMatch !== null) {
+    if (typeof existingMatch !== 'string' || !SLUG_REGEX.test(existingMatch)) {
+      throw new ApiError(
+        400,
+        'bad_payload',
+        `shortcomings[${index}].concept_slug_existing_match must be kebab-case or null`
+      );
+    }
+  }
+  const sim = it.similarity_score;
+  if (sim !== undefined && sim !== null) {
+    if (typeof sim !== 'number' || sim < 0 || sim > 1) {
+      throw new ApiError(
+        400,
+        'bad_payload',
+        `shortcomings[${index}].similarity_score must be in [0,1] or null`
+      );
+    }
+  }
+  if (proposed === undefined || proposed === null) {
+    // Legacy client path: log a one-line deprecation warning. concept_id stays
+    // NULL until D-data clusters legacy entries server-side.
+    console.warn(
+      `[deprecation] shortcomings[${index}] missing concept_slug_proposed; ` +
+        `falling back to legacy 'concept' field. Will be required in v2.`
+    );
+  }
+
   return {
     al_concept: it.al_concept,
     concept: it.concept,
@@ -90,8 +146,18 @@ function validateShortcomingItem(item: unknown, index: number): ShortcomingItem 
     correct_pattern: it.correct_pattern,
     incorrect_pattern_sha256: it.incorrect_pattern_sha256,
     error_codes: Array.isArray(rawErrorCodes) ? (rawErrorCodes as string[]) : [],
-    occurrences
+    occurrences,
+    concept_slug_proposed: typeof proposed === 'string' ? proposed : null,
+    concept_slug_existing_match:
+      typeof existingMatch === 'string' ? existingMatch : null,
+    similarity_score: typeof sim === 'number' ? sim : null
   };
+}
+
+async function sha256Hex(text: string): Promise<string> {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -145,25 +211,142 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     let upserted = 0;
     let occurrences = 0;
 
+    // STEP 1 (D-prompt): write `analysis.completed` FIRST so every downstream
+    // shortcoming + pending_review row has a real `analysis_event_id` to FK.
+    // ONE event per batch (not per item) — matches the strategic appendix
+    // payload `{entries_count, min_confidence, payload_hash}`. The captured
+    // id is reused for both shortcomings.analysis_event_id AND
+    // pending_review.analysis_event_id.
+    const taskSetHash =
+      typeof payload.task_set_hash === 'string' ? payload.task_set_hash : 'unknown';
+    const analyzerModel =
+      typeof payload.analyzer_model === 'string' ? payload.analyzer_model : modelSlug;
+    const writeNowMs = Date.now();
+    const invalidationSlugs: string[] = [];
+
+    // Skip the analysis.completed event entirely on empty batches — the event
+    // is meaningless when nothing changed (matches the existing SSE skip).
+    let analysisEventId: number | null = null;
+    if (shortcomings.length > 0) {
+      const analysisEvt = await appendEvent(db, {
+        event_type: 'analysis.completed',
+        model_slug: modelSlug,
+        task_set_hash: taskSetHash,
+        actor: 'operator',
+        actor_id: null,
+        payload: {
+          analyzer_model: analyzerModel,
+          entries_count: shortcomings.length,
+          payload_hash: await sha256Hex(JSON.stringify(shortcomings))
+        }
+      });
+      analysisEventId = analysisEvt.id;
+    }
+
     for (const item of shortcomings) {
       const r2Key = `shortcomings/${item.incorrect_pattern_sha256}.al.zst`;
       const errorCodesJson = JSON.stringify(item.error_codes);
 
-      // Upsert the shortcoming row; preserve first_seen on conflict
+      let conceptId: number | null = null;
+
+      if (item.concept_slug_proposed) {
+        // STEP 2: resolveConcept emits concept.aliased OR concept.created OR
+        // returns 'pending'. It calls `appendEvent` directly with object
+        // payloads — the helper serializes + hashes internally.
+        const resolved = await resolveConcept(
+          db,
+          {
+            proposed_slug: item.concept_slug_proposed,
+            existing_match: item.concept_slug_existing_match,
+            similarity_score: item.similarity_score,
+            display_name: item.concept,
+            al_concept: item.al_concept,
+            description: item.description,
+            correct_pattern: item.correct_pattern,
+            analyzer_model: analyzerModel
+          },
+          writeNowMs,
+          (input) => appendEvent(db, input),
+          modelSlug,
+          taskSetHash
+        );
+
+        if (resolved.action === 'pending') {
+          // STEP 4: pending_review row references the real analysis_event_id
+          // from STEP 1. No `0` placeholder — the FK NOT NULL REFERENCES
+          // lifecycle_events(id) holds because we wrote a real row upstream.
+          //
+          // CANONICAL payload_json shape (also used by Plan D-data's
+          // enqueueReviewTx and read by Plan F's /decide endpoint):
+          //   `{ entry, confidence }`
+          // Cluster metadata (when present) nests under `entry._cluster`.
+          // The /decide endpoint reads only top-level `entry` + `confidence`;
+          // nested cluster data is opaque to it.
+          const pendingPayload = {
+            entry: item,
+            confidence: item.similarity_score ?? 0
+          };
+          await db
+            .prepare(
+              `INSERT INTO pending_review (analysis_event_id, model_slug, concept_slug_proposed,
+                                           payload_json, confidence, created_at, status)
+               VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+            )
+            .bind(
+              analysisEventId, // real event id from STEP 1
+              modelSlug,
+              item.concept_slug_proposed,
+              JSON.stringify(pendingPayload),
+              item.similarity_score ?? 0,
+              writeNowMs
+            )
+            .run();
+          // Skip writing this row to shortcomings — reviewer decision creates
+          // it via Plan F's /decide endpoint when the operator approves.
+          continue;
+        }
+
+        conceptId = resolved.concept_id;
+        if (resolved.action === 'created' || resolved.action === 'aliased') {
+          // Cache invalidation needed for both bands — a freshly-aliased slug
+          // shouldn't serve stale 5-min results from
+          // /api/v1/concepts/<aliased-slug>.
+          invalidationSlugs.push(item.concept_slug_proposed);
+        }
+      }
+
+      // STEP 3: Upsert shortcoming with concept_id (when resolved) AND
+      // analysis_event_id (when present — empty batches skip step 1).
       const row = await db
         .prepare(
-          `INSERT INTO shortcomings(model_id, al_concept, concept, description, correct_pattern, incorrect_pattern_r2_key, error_codes_json, first_seen, last_seen)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO shortcomings(model_id, al_concept, concept, description, correct_pattern,
+                                    incorrect_pattern_r2_key, error_codes_json, first_seen, last_seen,
+                                    concept_id, analysis_event_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(model_id, al_concept) DO UPDATE SET
              concept = excluded.concept,
              description = excluded.description,
              correct_pattern = excluded.correct_pattern,
              incorrect_pattern_r2_key = excluded.incorrect_pattern_r2_key,
              error_codes_json = excluded.error_codes_json,
-             last_seen = excluded.last_seen
+             last_seen = excluded.last_seen,
+             concept_id = COALESCE(excluded.concept_id, concept_id),
+             analysis_event_id = COALESCE(excluded.analysis_event_id, analysis_event_id)
            RETURNING id`
         )
-        .bind(modelId, item.al_concept, item.concept, item.description, item.correct_pattern, r2Key, errorCodesJson, now, now)
+        .bind(
+          modelId,
+          item.al_concept,
+          item.concept,
+          item.description,
+          item.correct_pattern,
+          r2Key,
+          errorCodesJson,
+          now,
+          now,
+          conceptId,
+          analysisEventId
+        )
         .first<{ id: number }>();
 
       if (!row) throw new ApiError(500, 'db_error', 'failed to upsert shortcoming');
@@ -189,6 +372,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           }
         }
       }
+    }
+
+    // Inline cache invalidation — NOT ctx.waitUntil — so subsequent reads see
+    // fresh data deterministically (CLAUDE.md guidance).
+    for (const slug of invalidationSlugs) {
+      await invalidateConcept(slug);
     }
 
     // Best-effort SSE broadcast: surfaces newly recorded shortcomings on the

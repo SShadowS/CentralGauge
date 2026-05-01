@@ -9,12 +9,12 @@ import type { LLMConfig, LLMRequest } from "../llm/types.ts";
 import type {
   AnalysisContext,
   AnalysisResult,
-  ConfidenceLevel,
   FailingTask,
   FixableAnalysisResult,
-  FixableCategory,
   ModelShortcomingResult,
 } from "./types.ts";
+import { AnalysisOutputSchema, type ModelShortcomingParsed } from "./schema.ts";
+import { type ConceptSummary, fetchRecentConcepts } from "./concept-fetcher.ts";
 
 /**
  * Configuration for the failure analyzer
@@ -30,6 +30,10 @@ export interface AnalyzerConfig {
   maxTokens: number;
   /** API key (optional if set via env) */
   apiKey?: string;
+  /** Site URL for the concept registry seed fetch. Default: prod. */
+  registryBaseUrl?: string;
+  /** Top-N most-recently-seen concepts to inject into the system prompt. */
+  recentConceptCount?: number;
 }
 
 /**
@@ -40,7 +44,47 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
   model: "claude-sonnet-4-5-20250929",
   temperature: 0.1,
   maxTokens: 4000,
+  registryBaseUrl: "https://centralgauge.sshadows.workers.dev",
+  recentConceptCount: 20,
 };
+
+/**
+ * Render the existing-concepts block for the LLM system prompt. When the
+ * registry is empty (cold start, network outage), instruct the LLM to invent
+ * fresh kebab-case slugs — the resolver's tier-3 auto-create path handles
+ * those server-side.
+ */
+function renderConceptsBlock(concepts: ConceptSummary[]): string {
+  if (concepts.length === 0) {
+    return "(registry empty — propose a fresh kebab-case slug)";
+  }
+  return concepts
+    .map((c) => `- ${c.slug}: ${c.display_name} — ${c.description}`)
+    .join("\n");
+}
+
+/**
+ * Build the analyzer system prompt with the top-N most-recently-seen
+ * concepts injected. Exported for unit-testing prompt shape.
+ */
+export function buildSystemPrompt(concepts: ConceptSummary[]): string {
+  return `You are an expert AL (Business Central) developer analyzing benchmark task failures.
+Respond ONLY with raw JSON (no markdown, no commentary).
+
+When the outcome is "model_shortcoming", you MUST provide:
+- "concept_slug_proposed": a kebab-case slug for the AL concept the model got wrong
+  (e.g. "flowfield-calcfields-requirement"). Lowercase, hyphen-separated, no spaces.
+- "concept_slug_existing_match": a slug from the registry below if the proposed
+  concept matches one of them, or null if nothing fits.
+- "similarity_score": your confidence (0..1) that concept_slug_existing_match is
+  the same concept; null when concept_slug_existing_match is null.
+
+Existing canonical concepts (top ${concepts.length} most-recently-seen):
+${renderConceptsBlock(concepts)}
+
+Reuse an existing slug when the same AL pitfall is at issue. Invent a new slug
+only when no existing concept fits. Slug regex: ^[a-z0-9][a-z0-9-]*[a-z0-9]$.`;
+}
 
 /**
  * Build the analysis prompt for a failing task
@@ -233,67 +277,89 @@ async function loadAnalysisContext(
 }
 
 /**
- * Parse LLM response into an AnalysisResult
- * Exported for testing
+ * Parse LLM response into an AnalysisResult.
+ *
+ * Uses the canonical zod schema in `./schema.ts` to validate shape (including
+ * the D-prompt registry fields `concept_slug_proposed`,
+ * `concept_slug_existing_match`, `similarity_score`). Anything that doesn't
+ * pass `safeParse` falls through to `parseFallback` rather than landing
+ * partial/garbage data in the shortcomings tracker.
+ *
+ * Exported for testing.
  */
 export function parseAnalysisResponse(
   response: string,
   task: FailingTask,
 ): AnalysisResult {
-  // Try to extract JSON from the response
   let jsonStr = response.trim();
-
-  // Remove markdown code blocks if present
   const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (jsonMatch && jsonMatch[1]) {
-    jsonStr = jsonMatch[1].trim();
-  }
+  if (jsonMatch && jsonMatch[1]) jsonStr = jsonMatch[1].trim();
 
+  let raw: unknown;
   try {
-    const parsed = JSON.parse(jsonStr);
-
-    if (parsed.outcome === "fixable") {
-      // Always use the correct path from the task, not the LLM's suggestion
-      const isTaskYamlFix = parsed.affectedFile === "task_yaml";
-      const correctFilePath = isTaskYamlFix
-        ? task.taskYamlPath
-        : task.testAlPath;
-
-      return {
-        outcome: "fixable",
-        taskId: task.taskId,
-        model: task.model,
-        category: parsed.category as FixableCategory,
-        description: parsed.description || "No description provided",
-        fix: {
-          fileType: isTaskYamlFix ? "task_yaml" : "test_al",
-          filePath: correctFilePath,
-          description: parsed.fix?.description || "No fix description",
-          codeBefore: parsed.fix?.codeBefore || "",
-          codeAfter: parsed.fix?.codeAfter || "",
-        },
-        confidence: (parsed.confidence || "medium") as ConfidenceLevel,
-      } satisfies FixableAnalysisResult;
-    } else if (parsed.outcome === "model_shortcoming") {
-      return {
-        outcome: "model_shortcoming",
-        taskId: task.taskId,
-        model: task.model,
-        category: "model_knowledge_gap",
-        concept: parsed.concept || "unknown-concept",
-        alConcept: parsed.alConcept || "unknown",
-        description: parsed.description || "No description provided",
-        errorCode: parsed.errorCode,
-        generatedCode: parsed.generatedCode || "",
-        correctPattern: parsed.correctPattern || "",
-        confidence: (parsed.confidence || "medium") as ConfidenceLevel,
-      } satisfies ModelShortcomingResult;
-    }
+    raw = JSON.parse(jsonStr);
   } catch {
-    // JSON parsing failed, fall back to model shortcoming with low confidence
+    return parseFallback(response, task);
   }
 
-  // Default fallback - assume model shortcoming if we can't parse
+  const parsed = AnalysisOutputSchema.safeParse(raw);
+  if (!parsed.success) {
+    return parseFallback(response, task);
+  }
+
+  if (parsed.data.outcome === "fixable") {
+    // Always use the correct path from the task, not the LLM's suggestion.
+    const isTaskYamlFix = parsed.data.affectedFile === "task_yaml";
+    const correctFilePath = isTaskYamlFix ? task.taskYamlPath : task.testAlPath;
+    return {
+      outcome: "fixable",
+      taskId: task.taskId,
+      model: task.model,
+      category: parsed.data.category,
+      description: parsed.data.description,
+      fix: {
+        fileType: isTaskYamlFix ? "task_yaml" : "test_al",
+        filePath: correctFilePath,
+        description: parsed.data.fix.description ?? "",
+        codeBefore: parsed.data.fix.codeBefore ?? "",
+        codeAfter: parsed.data.fix.codeAfter ?? "",
+      },
+      confidence: parsed.data.confidence,
+    } satisfies FixableAnalysisResult;
+  }
+
+  // model_shortcoming branch — carry the new D-prompt fields through.
+  const sc: ModelShortcomingParsed = parsed.data;
+  const result: ModelShortcomingResult = {
+    outcome: "model_shortcoming",
+    taskId: task.taskId,
+    model: task.model,
+    category: "model_knowledge_gap",
+    concept: sc.concept,
+    alConcept: sc.alConcept,
+    description: sc.description,
+    generatedCode: sc.generatedCode,
+    correctPattern: sc.correctPattern,
+    confidence: sc.confidence,
+    concept_slug_proposed: sc.concept_slug_proposed,
+    concept_slug_existing_match: sc.concept_slug_existing_match,
+    similarity_score: sc.similarity_score,
+  };
+  if (sc.errorCode !== undefined) result.errorCode = sc.errorCode;
+  return result;
+}
+
+/**
+ * Fallback when JSON parsing or zod validation fails: emit a low-confidence
+ * `parse-failure` shortcoming carrying the (truncated) raw response so the
+ * operator can debug. The new D-prompt fields default to a `parse-failure`
+ * slug + null match — the resolver auto-creates a fresh concept on the
+ * server, which is fine for telemetry-only shortcomings.
+ */
+function parseFallback(
+  response: string,
+  task: FailingTask,
+): ModelShortcomingResult {
   return {
     outcome: "model_shortcoming",
     taskId: task.taskId,
@@ -307,7 +373,10 @@ export function parseAnalysisResponse(
     generatedCode: "",
     correctPattern: "",
     confidence: "low",
-  } satisfies ModelShortcomingResult;
+    concept_slug_proposed: "parse-failure",
+    concept_slug_existing_match: null,
+    similarity_score: null,
+  };
 }
 
 /**
@@ -321,6 +390,19 @@ export class FailureAnalyzer {
   }
 
   /**
+   * Fetch the top-N most-recently-seen concepts from the registry. Falls
+   * back to `[]` on outage; analyzer prompt then instructs the LLM to invent
+   * fresh slugs.
+   */
+  private async loadConcepts(): Promise<ConceptSummary[]> {
+    return await fetchRecentConcepts({
+      recent: this.config.recentConceptCount ?? 20,
+      baseUrl: this.config.registryBaseUrl ??
+        "https://centralgauge.sshadows.workers.dev",
+    });
+  }
+
+  /**
    * Analyze a single failing task
    */
   async analyzeTask(task: FailingTask): Promise<AnalysisResult> {
@@ -329,6 +411,11 @@ export class FailureAnalyzer {
 
     // Build prompt
     const prompt = buildAnalysisPrompt(task, context);
+
+    // Inject the top-N most-recently-seen concepts so the LLM can propose
+    // `concept_slug_existing_match` rather than always inventing a fresh slug.
+    const concepts = await this.loadConcepts();
+    const systemPrompt = buildSystemPrompt(concepts);
 
     // Get LLM adapter
     const llmConfig: LLMConfig = {
@@ -345,9 +432,7 @@ export class FailureAnalyzer {
       // Call LLM
       const request: LLMRequest = {
         prompt,
-        systemPrompt:
-          "You are an expert AL (Business Central) developer analyzing benchmark task failures. " +
-          "Respond only with valid JSON, no markdown or explanation.",
+        systemPrompt,
         temperature: this.config.temperature,
         maxTokens: this.config.maxTokens,
       };
@@ -380,6 +465,9 @@ export class FailureAnalyzer {
   ): Promise<AnalysisResult> {
     const prompt = buildAnalysisPrompt(task, context);
 
+    const concepts = await this.loadConcepts();
+    const systemPrompt = buildSystemPrompt(concepts);
+
     const llmConfig: LLMConfig = {
       provider: this.config.provider,
       model: this.config.model,
@@ -393,9 +481,7 @@ export class FailureAnalyzer {
     try {
       const request: LLMRequest = {
         prompt,
-        systemPrompt:
-          "You are an expert AL (Business Central) developer analyzing benchmark task failures. " +
-          "Respond only with valid JSON, no markdown or explanation.",
+        systemPrompt,
         temperature: this.config.temperature,
         maxTokens: this.config.maxTokens,
       };
