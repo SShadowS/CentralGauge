@@ -60,6 +60,7 @@ deno run --allow-all scripts/backfill-lifecycle.ts --remote --dry-run
 ```
 
 Expected output:
+
 ```
 [INFO] reading runs from remote D1
 [PLAN] bench=<N> analysis=<M> publish=<P> total=<N+M+P>
@@ -134,6 +135,7 @@ deno task start populate-shortcomings --only openrouter/deepseek/deepseek-v3.2 -
 ```
 
 Expected:
+
 ```
 [FILE] model-shortcomings/openrouter_deepseek_deepseek-v3.2.json
 [DRY] payload: <N> shortcomings, <M> occurrences
