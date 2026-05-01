@@ -44,6 +44,21 @@ export interface StepContext {
   analyzerModel: string;
   dryRun: boolean;
   cwd: string;
+  /**
+   * Hash of the most-recent `analysis.completed.payload` (or, when analyze
+   * was skipped this run, the prior completed event's payload_hash).
+   * Set by the orchestrator when dispatching the publish step so the
+   * publish step can short-circuit a re-POST when the batch is unchanged.
+   * `undefined` means "no prior analyze terminal — POST unconditionally".
+   */
+  priorAnalysisPayloadHash?: string;
+  /**
+   * Event id of the most-recent `publish.completed`, paired with
+   * `priorAnalysisPayloadHash`. The publish step writes this onto its
+   * `publish.skipped{prior_event_id}` payload so the lifecycle log
+   * preserves the lineage from the prior successful publish.
+   */
+  priorPublishEventId?: number;
 }
 
 export interface StepResult {

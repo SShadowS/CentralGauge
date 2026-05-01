@@ -320,6 +320,155 @@ Deno.test("runCycle mid-cycle event-write crash → cycle.failed{orchestrator_cr
   }
 });
 
+Deno.test("runCycle publish idempotency: identical input → second cycle skips publish", async () => {
+  // I1 regression. The orchestrator caches `priorAnalysisPayloadHash` from
+  // a prior `analysis.completed` event but `dispatcher(step, ctx)` did not
+  // carry it. `runPublishStep`'s `PublishOptions.priorAnalysisPayloadHash`
+  // was reachable only from tests — production cycles always re-POSTed
+  // the batch. Fix: thread the hash + prior publish event id through
+  // StepContext; runPublishStep reads from ctx when opts is unset.
+  const tmp = await createTempDir("cycle-e2e-idem");
+  const events: FakeEvent[] = [];
+  setEventStore(inMemoryStore(events));
+  try {
+    await writeCgConfig(tmp);
+    // The integration suite stubs the dispatcher, so the publish step's
+    // production module is bypassed. We assert idempotency at the
+    // ORCHESTRATOR level: the dispatcher receives the
+    // priorAnalysisPayloadHash + priorPublishEventId via ctx on the
+    // second run, and the dispatcher's emitted publish.skipped survives
+    // into the event log.
+    let lastDispatchedCtxOnPublish: Record<string, unknown> | null = null;
+    const stableHash = "deadbeef".repeat(8); // 64-char fake sha256
+    setStepDispatcher((step, ctx) => {
+      if (step === "analyze") {
+        return Promise.resolve({
+          success: true,
+          eventType: "analysis.completed",
+          payload: {
+            analyzer_model: ctx.analyzerModel,
+            entries_count: 1,
+            min_confidence: 0.9,
+            payload_hash: stableHash,
+            pending_review_count: 0,
+            pending_review_entries: [],
+          },
+        });
+      }
+      if (step === "publish") {
+        lastDispatchedCtxOnPublish = ctx as unknown as Record<string, unknown>;
+        const ph = (ctx as unknown as { priorAnalysisPayloadHash?: string })
+          .priorAnalysisPayloadHash;
+        const priorEvId = (ctx as unknown as { priorPublishEventId?: number })
+          .priorPublishEventId;
+        if (ph === stableHash && priorEvId) {
+          return Promise.resolve({
+            success: true,
+            eventType: "publish.skipped",
+            payload: {
+              reason: "payload_unchanged",
+              prior_event_id: priorEvId,
+              payload_hash: stableHash,
+            },
+          });
+        }
+        return Promise.resolve({
+          success: true,
+          eventType: "publish.completed",
+          payload: {
+            upserted: 1,
+            occurrences: 0,
+            payload_hash: stableHash,
+            entries_count: 1,
+          },
+        });
+      }
+      // bench / debug-capture: deterministic completed.
+      return Promise.resolve({
+        success: true,
+        eventType: step === "bench" ? "bench.completed" : "debug.captured",
+        payload: step === "debug-capture"
+          ? {
+            session_id: "fake",
+            local_path: "fake",
+            file_count: 0,
+            total_size_bytes: 0,
+            r2_key: "fake",
+            r2_prefix: "fake",
+            compressed_size_bytes: 0,
+          }
+          : { runs_count: 1, tasks_count: 1, results_count: 1 },
+      });
+    });
+    const { runCycle } = await import("../../../src/lifecycle/orchestrator.ts");
+    const oldCwd = Deno.cwd();
+    Deno.chdir(tmp);
+    try {
+      // First run: full pipeline, publish.completed lands.
+      await runCycle({
+        llms: ["anthropic/claude-opus-4-7"],
+        taskSet: "current",
+        fromStep: "analyze",
+        toStep: "publish",
+        forceRerun: [],
+        analyzerModel: "anthropic/claude-opus-4-6",
+        dryRun: false,
+        forceUnlock: false,
+        yes: true,
+      });
+      const firstPublishCompleted = events.find(
+        (e) => e.event_type === "publish.completed",
+      );
+      assert(firstPublishCompleted, "first run should emit publish.completed");
+
+      // Second run: identical envelope → analyze + publish should both
+      // skip. The publish skip can only happen if the orchestrator
+      // threaded the priorAnalysisPayloadHash + priorPublishEventId into
+      // the dispatcher's StepContext.
+      await runCycle({
+        llms: ["anthropic/claude-opus-4-7"],
+        taskSet: "current",
+        fromStep: "analyze",
+        toStep: "publish",
+        forceRerun: ["publish"], // force publish to actually dispatch (bypass envelope_unchanged skip)
+        analyzerModel: "anthropic/claude-opus-4-6",
+        dryRun: false,
+        forceUnlock: false,
+        yes: true,
+      });
+      assert(
+        lastDispatchedCtxOnPublish !== null,
+        "publish dispatcher should have been called",
+      );
+      const ctxAny = lastDispatchedCtxOnPublish as Record<string, unknown>;
+      assertEquals(
+        ctxAny["priorAnalysisPayloadHash"],
+        stableHash,
+        "ctx must carry the prior analyze payload_hash",
+      );
+      assert(
+        typeof ctxAny["priorPublishEventId"] === "number" &&
+          (ctxAny["priorPublishEventId"] as number) > 0,
+        "ctx must carry the prior publish event id",
+      );
+      const skipped = events.filter((e) => e.event_type === "publish.skipped");
+      assertEquals(
+        skipped.length,
+        1,
+        "second run should emit exactly one publish.skipped",
+      );
+      const skippedPayload = skipped[0]!.payload as Record<string, unknown>;
+      assertEquals(skippedPayload["reason"], "payload_unchanged");
+    } finally {
+      setStepDispatcher(null);
+      Deno.chdir(oldCwd);
+    }
+  } finally {
+    setEventStore(null);
+    await cleanupTempDir(tmp);
+  }
+});
+
 Deno.test("runCycle resume-on-failure: prior bench.failed → next run retries", async () => {
   const tmp = await createTempDir("cycle-e2e-resume");
   const events: FakeEvent[] = [];

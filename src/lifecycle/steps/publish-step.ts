@@ -114,17 +114,25 @@ export async function runPublishStep(
   );
   const payloadHash = await sha256Hex(canonical);
 
+  // Idempotency: prefer explicit `opts.*` (test injection) over `ctx.*`
+  // (set by the orchestrator from prior lifecycle events). Production
+  // cycles always populate via ctx — opts is the test-only escape hatch.
+  const priorAnalysisHash = opts.priorAnalysisPayloadHash ??
+    ctx.priorAnalysisPayloadHash;
+  const priorPublishEvId = opts.priorPublishEventId ??
+    ctx.priorPublishEventId;
+
   if (
-    opts.priorAnalysisPayloadHash &&
-    opts.priorAnalysisPayloadHash === payloadHash &&
-    opts.priorPublishEventId
+    priorAnalysisHash &&
+    priorAnalysisHash === payloadHash &&
+    priorPublishEvId
   ) {
     return {
       success: true,
       eventType: "publish.skipped",
       payload: {
         reason: "payload_unchanged",
-        prior_event_id: opts.priorPublishEventId,
+        prior_event_id: priorPublishEvId,
         payload_hash: payloadHash,
       },
     };

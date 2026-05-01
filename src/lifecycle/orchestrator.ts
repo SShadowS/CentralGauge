@@ -531,8 +531,11 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
 
     // Cache the analyze step's payload_hash so the publish step can detect
     // unchanged payloads and emit publish.skipped without round-tripping the
-    // batch endpoint.
+    // batch endpoint. `priorPublishEventId` is the most-recent
+    // `publish.completed` event id (looked up at publish-dispatch time so we
+    // capture events emitted earlier in this same cycle as well).
     let priorAnalysisPayloadHash: string | undefined;
+    let priorPublishEventId: number | undefined;
 
     /**
      * The per-step loop's `appendEvent` calls (Wave 1 admin endpoint) can
@@ -625,7 +628,47 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
           actor: "operator",
           actor_id: actorId,
         }, ingestOpts);
-        const result = await dispatcher(step, ctx);
+        // For the publish step: seed `priorAnalysisPayloadHash` +
+        // `priorPublishEventId` from the prior event log so the publish
+        // step can short-circuit a re-POST when the analyze payload is
+        // unchanged AND a prior publish.completed exists. This was
+        // previously dead code (`PublishOptions.priorAnalysisPayloadHash`
+        // was test-only) — production cycles always re-POSTed the batch.
+        // Look up these values from the events list, falling back to the
+        // in-loop cache populated by the analyze branch above.
+        let dispatchCtx: StepContext = ctx;
+        if (step === "publish") {
+          // priorAnalysisPayloadHash: prefer the cache (set by the analyze
+          // step earlier in THIS cycle's loop, including the skip path);
+          // fall back to the most recent analysis.completed in the event
+          // log (captures cross-cycle continuity).
+          let analysisHash: string | undefined = priorAnalysisPayloadHash;
+          if (!analysisHash) {
+            const priorAnalyze = classifyEvents("analyze", events);
+            if (priorAnalyze.completed) {
+              const ph = (priorAnalyze.completed.payload as {
+                payload_hash?: string;
+              }).payload_hash;
+              if (typeof ph === "string") analysisHash = ph;
+            }
+          }
+          // priorPublishEventId: most recent publish.completed.
+          let publishEvId: number | undefined = priorPublishEventId;
+          if (!publishEvId) {
+            const priorPublish = classifyEvents("publish", events);
+            if (priorPublish.completed) publishEvId = priorPublish.completed.id;
+          }
+          dispatchCtx = {
+            ...ctx,
+            ...(analysisHash !== undefined
+              ? { priorAnalysisPayloadHash: analysisHash }
+              : {}),
+            ...(publishEvId !== undefined
+              ? { priorPublishEventId: publishEvId }
+              : {}),
+          };
+        }
+        const result = await dispatcher(step, dispatchCtx);
         // The empty-string sentinel means "no step-level event for this
         // outcome" — the orchestrator records the failure via `cycle.failed`
         // only. After this guard `result.eventType` narrows to
@@ -741,10 +784,6 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
       }
       console.log(colors.green(`[OK] cycle ${modelSlug}: completed`));
     } else {
-      // priorAnalysisPayloadHash is intentionally only used in non-dry-run
-      // dispatch; cite the var here so the compiler doesn't flag it as
-      // unused when we add a dry-run-aware branch later.
-      void priorAnalysisPayloadHash;
       console.log(
         colors.yellow(`[DRY] cycle ${modelSlug}: plan printed; no writes.`),
       );
