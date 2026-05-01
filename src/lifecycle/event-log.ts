@@ -105,6 +105,32 @@ export interface AppendOptions {
 }
 
 /**
+ * Test-only swappable backend for `appendEvent` / `queryEvents`. Plan C's
+ * orchestrator integration tests inject an in-memory store via
+ * `setEventStore` to assert the EVENT SEQUENCE without round-tripping the
+ * worker's signed-admin endpoints. Production code MUST NOT call
+ * `setEventStore`; the shim is exported only for the integration suite
+ * under `tests/integration/lifecycle/`.
+ */
+export interface EventStoreBackend {
+  appendEvent: (
+    e: AppendEventInput,
+    opts: AppendOptions,
+  ) => Promise<{ id: number }>;
+  queryEvents: (
+    filter: QueryEventsFilter,
+    opts: AppendOptions,
+  ) => Promise<LifecycleEvent[]>;
+}
+
+let backend: EventStoreBackend | null = null;
+
+/** Test-only. Reset to default by calling `setEventStore(null)` (cast). */
+export function setEventStore(b: EventStoreBackend | null): void {
+  backend = b;
+}
+
+/**
  * POST a lifecycle event via the signed admin endpoint. Used by every CLI
  * command (verify, populate-shortcomings, cycle) that emits lifecycle events.
  * The worker code path skips this and writes D1 directly.
@@ -113,6 +139,7 @@ export async function appendEvent(
   input: AppendEventInput,
   opts: AppendOptions,
 ): Promise<{ id: number }> {
+  if (backend) return backend.appendEvent(input, opts);
   const body = await buildAppendBody(input);
   const signature = await signPayload(
     body.payload,
@@ -202,6 +229,7 @@ export async function queryEvents(
   filter: QueryEventsFilter,
   opts: AppendOptions,
 ): Promise<LifecycleEvent[]> {
+  if (backend) return backend.queryEvents(filter, opts);
   const params = new URLSearchParams({ model: filter.model_slug });
   if (filter.task_set_hash) params.set("task_set", filter.task_set_hash);
   if (filter.since !== undefined) params.set("since", String(filter.since));
