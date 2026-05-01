@@ -67,34 +67,17 @@ interface BatchPayload {
 }
 
 /**
- * Map JSON file `model` field to the production slug. The legacy JSONs use
- * un-prefixed identifiers (e.g. `claude-opus-4-6`); production slugs are
- * vendor-prefixed (`anthropic/claude-opus-4-6`). For models already prefixed
- * (`deepseek/deepseek-v3.2`), prepend `openrouter/` since OpenRouter is how
- * those land in the catalog (matching `openrouter/deepseek/deepseek-v4-pro`).
+ * Pass-through after Phase B2 migrated all JSON `model` fields to
+ * vendor-prefixed production slugs. Retained as a function (not inlined) so
+ * future invariant checks (e.g. slug-format validation) have a single home.
  *
- * Returns null when no mapping is known — caller skips such files.
+ * Returns null only when the input doesn't match the expected slug shape
+ * (vendor/model or vendor/family/model). Old hardcoded prefix table deleted —
+ * see strategic plan Phase B Task B4.
  */
-function mapToProductionSlug(jsonModel: string): string | null {
-  // Hardcoded mapping for known legacy JSONs that don't carry a vendor prefix.
-  // Only the entries with a confirmed production catalog row are listed; the
-  // rest are skipped so we don't push shortcomings for nonexistent models.
-  const VENDOR_PREFIX_MAP: Record<string, string> = {
-    "claude-opus-4-6": "anthropic/claude-opus-4-6",
-    "claude-opus-4-7": "anthropic/claude-opus-4-7",
-    "gpt-5.5": "openai/gpt-5.5",
-    "gpt-5.3-codex": "openai/gpt-5.3-codex",
-  };
-  if (VENDOR_PREFIX_MAP[jsonModel]) return VENDOR_PREFIX_MAP[jsonModel];
-
-  // Already prefixed (filename had `_` separator → `/`).
-  if (jsonModel.includes("/")) {
-    // OpenRouter mirrors most third-party models; legacy JSONs from those
-    // providers shipped without the `openrouter/` prefix.
-    return `openrouter/${jsonModel}`;
-  }
-
-  return null;
+export function mapToProductionSlug(jsonModel: string): string | null {
+  if (!jsonModel.includes("/")) return null;
+  return jsonModel;
 }
 
 async function sha256Hex(text: string): Promise<string> {
