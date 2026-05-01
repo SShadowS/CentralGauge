@@ -1,12 +1,14 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import {
   type BackfillOccurrenceGroup,
   buildAnalysisEvents,
   buildBenchEvents,
   buildPublishEvents,
   dedupePublishGroups,
+  writeEvents,
 } from "../../../scripts/backfill-lifecycle.ts";
+import type { AppendEventInput } from "../../../src/lifecycle/types.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 
 describe("backfill-lifecycle", () => {
@@ -177,6 +179,119 @@ describe("backfill-lifecycle", () => {
     assertEquals(
       forMixed[0]!.migration_note?.startsWith("backfilled at"),
       true,
+    );
+  });
+});
+
+describe("writeEvents (I1+I2)", () => {
+  function mkEv(slug: string, ts: number): AppendEventInput {
+    return {
+      ts,
+      model_slug: slug,
+      task_set_hash: "h",
+      event_type: "bench.completed",
+      payload: { run_id: slug + ts },
+      tool_versions: {},
+      envelope: {},
+      actor: "migration",
+    };
+  }
+
+  it("paces requests at the configured interval (I1)", async () => {
+    const events = [mkEv("a", 1), mkEv("b", 2), mkEv("c", 3)];
+    const sleeps: number[] = [];
+    const seen: AppendEventInput[] = [];
+    const result = await writeEvents(events, {
+      append: (ev) => {
+        seen.push(ev);
+        return Promise.resolve();
+      },
+      sleep: (ms) => {
+        sleeps.push(ms);
+        return Promise.resolve();
+      },
+      paceMs: 7000,
+      log: () => {},
+    });
+    assertEquals(seen.length, 3);
+    assertEquals(result.written, 3);
+    assertEquals(result.skipped, 0);
+    // Sleep called exactly once per appended event (after each, including the
+    // last for simple loop-loc).
+    assertEquals(sleeps.length, 3);
+    assertEquals(sleeps.every((s) => s === 7000), true);
+  });
+
+  it("skips duplicate_event 409 and continues (I2)", async () => {
+    const events = [mkEv("a", 1), mkEv("b", 2), mkEv("c", 3)];
+    const result = await writeEvents(events, {
+      append: (ev) => {
+        if (ev.model_slug === "b") {
+          return Promise.reject(
+            new Error('appendEvent failed (409): {"error":"duplicate_event"}'),
+          );
+        }
+        return Promise.resolve();
+      },
+      sleep: () => Promise.resolve(),
+      paceMs: 0,
+      log: () => {},
+    });
+    assertEquals(result.written, 2);
+    assertEquals(result.skipped, 1);
+  });
+
+  it("re-throws non-duplicate errors (I2 negative case)", async () => {
+    const events = [mkEv("a", 1), mkEv("b", 2)];
+    await assertRejects(
+      () =>
+        writeEvents(events, {
+          append: () =>
+            Promise.reject(
+              new Error('appendEvent failed (500): {"error":"server_error"}'),
+            ),
+          sleep: () => Promise.resolve(),
+          paceMs: 0,
+          log: () => {},
+        }),
+      Error,
+      "(500)",
+    );
+  });
+
+  it("logs per-event progress with [N/total] prefix (I1 visibility)", async () => {
+    const events = [mkEv("a", 1), mkEv("b", 2)];
+    const lines: string[] = [];
+    await writeEvents(events, {
+      append: () => Promise.resolve(),
+      sleep: () => Promise.resolve(),
+      paceMs: 0,
+      log: (s) => lines.push(s),
+    });
+    // Per-event progress; each line includes [n/total] and the event_type.
+    assertEquals(lines.length >= 2, true);
+    assertEquals(lines[0]!.includes("[1/2]"), true);
+    assertEquals(lines[0]!.includes("bench.completed"), true);
+    assertEquals(lines[1]!.includes("[2/2]"), true);
+  });
+
+  it("re-throws ordinary 409 (no duplicate_event marker) — I2 boundary", async () => {
+    // 409 alone (without duplicate_event in the message) is NOT a known idempotency
+    // outcome — bail rather than silently swallow conflicts of unknown shape.
+    const events = [mkEv("a", 1)];
+    await assertRejects(
+      () =>
+        writeEvents(events, {
+          append: () =>
+            Promise.reject(
+              new Error('appendEvent failed (409): {"error":"some_other_409"}'),
+            ),
+          sleep: () => Promise.resolve(),
+          paceMs: 0,
+          log: () => {},
+        }),
+      Error,
+      "(409)",
     );
   });
 });

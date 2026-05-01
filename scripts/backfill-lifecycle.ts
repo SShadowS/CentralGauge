@@ -148,6 +148,65 @@ export function dedupePublishGroups(
   return groups.filter((g) => !g.cascaded || !realKeys.has(keyOf(g)));
 }
 
+/**
+ * Default pacing (ms) between admin endpoint POSTs. The site enforces ~10
+ * req/min on `/api/v1/admin/*`; 7000ms → ~8.5 req/min, comfortably under the
+ * cap with margin for jitter. Predictable wall-clock (~7.5 min for 64 events)
+ * keeps the runbook deterministic.
+ */
+export const DEFAULT_PACE_MS = 7000;
+
+export interface WriteEventsDeps {
+  append(ev: AppendEventInput): Promise<unknown>;
+  sleep(ms: number): Promise<void>;
+  paceMs?: number;
+  log?(line: string): void;
+}
+
+/**
+ * Sequentially POST events with two operational properties (Wave 2 review):
+ *
+ *  - I1 PACING: sleep `paceMs` after each successful or skipped append. Avoids
+ *    the rate-limiter's first-429 abort entirely (proactive pacing, not
+ *    reactive retry).
+ *  - I2 IDEMPOTENCY: a `409 duplicate_event` reply means the event already
+ *    landed (server dedupes by `(payload_hash, ts, event_type)`); treat it as
+ *    a soft skip and continue. Any other error short-circuits the loop.
+ *
+ * Operator-visible per-event log line carries `[N/total] event_type model_slug`
+ * so the ~7-min run shows steady progress instead of one banner every 70 sec.
+ */
+export async function writeEvents(
+  events: AppendEventInput[],
+  deps: WriteEventsDeps,
+): Promise<{ written: number; skipped: number }> {
+  let written = 0;
+  let skipped = 0;
+  const total = events.length;
+  const paceMs = deps.paceMs ?? DEFAULT_PACE_MS;
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i]!;
+    const idx = i + 1;
+    try {
+      await deps.append(ev);
+      written++;
+      deps.log?.(`[${idx}/${total}] ${ev.event_type} ${ev.model_slug}`);
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("(409)") && msg.includes("duplicate_event")) {
+        skipped++;
+        deps.log?.(
+          `[${idx}/${total}] ${ev.event_type} ${ev.model_slug} (skip: duplicate)`,
+        );
+      } else {
+        throw e;
+      }
+    }
+    if (paceMs > 0) await deps.sleep(paceMs);
+  }
+  return { written, skipped };
+}
+
 interface QueryD1Options {
   siteDir: string;
   dbName: string;
@@ -311,19 +370,21 @@ async function main() {
         throw new Error("admin_key_path / admin_key_id required for backfill");
       }
       const privKey = await readPrivateKey(config.adminKeyPath);
-      let written = 0;
-      for (const ev of all) {
-        await appendEvent(ev, {
-          url: config.url,
-          privateKey: privKey,
-          keyId: config.adminKeyId,
-        });
-        written++;
-        if (written % 10 === 0) {
-          console.log(colors.gray(`[PROGRESS] ${written}/${all.length}`));
-        }
-      }
-      console.log(colors.green(`[OK] wrote ${written} synthetic events`));
+      const { written, skipped } = await writeEvents(all, {
+        append: (ev) =>
+          appendEvent(ev, {
+            url: config.url,
+            privateKey: privKey,
+            keyId: config.adminKeyId!,
+          }),
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        log: (line) => console.log(colors.gray(line)),
+      });
+      console.log(
+        colors.green(
+          `[OK] wrote ${written} events (skipped ${skipped} duplicates)`,
+        ),
+      );
     })
     .parse(Deno.args);
 }
