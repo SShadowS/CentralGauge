@@ -257,7 +257,7 @@ async function acquireLock(
   return { lockToken, cycleStartedEventId: startedEvent.id };
 }
 
-async function dispatchStep(
+async function defaultDispatchStep(
   step: CycleStep,
   ctx: StepContext,
 ): Promise<StepResult> {
@@ -271,6 +271,22 @@ async function dispatchStep(
     case "publish":
       return await runPublishStep(ctx);
   }
+}
+
+/**
+ * Override the default step dispatcher. Test-only — production code MUST
+ * use the default dispatcher. The integration suite injects a mock so it
+ * can avoid spawning real `centralgauge bench` / `verify` subprocesses.
+ */
+export type StepDispatcher = (
+  step: CycleStep,
+  ctx: StepContext,
+) => Promise<StepResult>;
+
+let dispatcher: StepDispatcher = defaultDispatchStep;
+
+export function setStepDispatcher(d: StepDispatcher | null): void {
+  dispatcher = d ?? defaultDispatchStep;
 }
 
 function stepsBetween(from: CycleStep, to: CycleStep): CycleStep[] {
@@ -581,7 +597,7 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
         actor: "operator",
         actor_id: actorId,
       }, ingestOpts);
-      const result = await dispatchStep(step, ctx);
+      const result = await dispatcher(step, ctx);
       // Some steps (e.g. debug-capture pre-flight no_debug_session) cannot
       // emit a step-level terminal because no canonical event type exists
       // (`debug.failed` is not in the appendix). They return an empty
