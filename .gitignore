@@ -93,6 +93,7 @@ scripts/*
 !scripts/seed-admin-key.ts
 !scripts/smoke-ingest.ts
 !scripts/backfill-lifecycle.ts
+!scripts/backfill-concepts.ts
 !scripts/migrate-shortcomings-slugs.ts
 !scripts/verify-backfill-invariants.ts
 TestLookupSandbox.md
