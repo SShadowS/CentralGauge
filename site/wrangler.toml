@@ -32,6 +32,13 @@ migrations_dir = "migrations"
 binding = "BLOBS"
 bucket_name = "centralgauge-blobs"
 
+# R2 bucket for lifecycle debug bundles (Plan A foundation; Plan C uploads,
+# Plan F review UI reads via the proxy at /api/v1/admin/lifecycle/r2/<key>).
+[[r2_buckets]]
+binding = "LIFECYCLE_BLOBS"
+bucket_name = "centralgauge-lifecycle"
+preview_bucket_name = "centralgauge-lifecycle-preview"
+
 # KV namespace for leaderboard cache.
 # NOTE: Leaderboard read cache moved to Cache API (caches.default) and the
 # rate limiter moved to the [[unsafe.bindings]] ratelimit binding below to
