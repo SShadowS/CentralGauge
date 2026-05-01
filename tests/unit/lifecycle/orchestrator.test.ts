@@ -41,6 +41,43 @@ Deno.test("stepEventName: every (step, kind) returns a canonical event type", ()
   }
 });
 
+Deno.test("defaultDispatchStep throws on unhandled CycleStep (I5)", async () => {
+  // Defensive default branch. The switch over `CycleStep` is exhaustive
+  // at compile time, but a future expansion that doesn't update the
+  // dispatcher would silently fall through to `undefined` (returning a
+  // rejected Promise resolves to `undefined.then` → TypeError) instead of
+  // a clear "unhandled step" error. Pin the default-branch behavior here.
+  const { defaultDispatchStep } = await import(
+    "../../../src/lifecycle/orchestrator.ts"
+  );
+  const fakeCtx = {
+    modelSlug: "x",
+    taskSetHash: "h",
+    lockToken: "t",
+    envelope: {},
+    toolVersions: {},
+    analyzerModel: "m",
+    dryRun: false,
+    cwd: ".",
+  };
+  let caught: Error | null = null;
+  try {
+    // Cast to bypass the strict union — simulates "the union grew but
+    // the dispatcher didn't".
+    await defaultDispatchStep(
+      "wat" as unknown as CycleStep,
+      fakeCtx,
+    );
+  } catch (e) {
+    caught = e as Error;
+  }
+  assert(caught, "expected default branch to throw");
+  assert(
+    /unhandled step/i.test(caught.message),
+    `expected 'unhandled step' in error, got: ${caught.message}`,
+  );
+});
+
 Deno.test("stepEventName: debug 'completed' aliases to 'debug.captured'", () => {
   // Sanity-pin the aliasing rule. If this changes, the worker's reduction
   // logic for the debug step state needs to update too.

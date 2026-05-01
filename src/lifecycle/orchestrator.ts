@@ -272,7 +272,18 @@ async function acquireLock(
   return { lockToken, cycleStartedEventId: startedEvent.id };
 }
 
-async function defaultDispatchStep(
+/**
+ * Built-in step dispatcher. Exhaustive at compile time, with a defensive
+ * `default:` branch that throws on a future `CycleStep` union expansion
+ * that didn't update this switch. Without it the missing case would
+ * silently return `undefined`; downstream `.payload` reads would then
+ * throw a confusing TypeError far from the root cause.
+ *
+ * Exported for the canonicity smoke test in
+ * `tests/unit/lifecycle/orchestrator.test.ts` — production callers use
+ * the module-level `dispatcher` indirection.
+ */
+export async function defaultDispatchStep(
   step: CycleStep,
   ctx: StepContext,
 ): Promise<StepResult> {
@@ -285,6 +296,14 @@ async function defaultDispatchStep(
       return await runAnalyzeStep(ctx);
     case "publish":
       return await runPublishStep(ctx);
+    default: {
+      // Compile-time exhaustiveness witness. If a new CycleStep is added
+      // and forgotten here, the cast below becomes a type error and this
+      // line stops compiling — forcing the developer to update the switch.
+      const _exhaustive: never = step;
+      void _exhaustive;
+      throw new Error(`unhandled step ${String(step)}`);
+    }
   }
 }
 
