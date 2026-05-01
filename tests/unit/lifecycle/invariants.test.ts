@@ -4,6 +4,7 @@ import {
   assertAnalysisCoversShortcomings,
   assertPublishCoversOccurrences,
 } from "../../../scripts/verify-backfill-invariants.ts";
+import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 
 describe("backfill invariants", () => {
   it("passes when every (model,task_set) with shortcomings has an analysis event", () => {
@@ -53,6 +54,22 @@ describe("backfill invariants", () => {
       },
     ];
     const result = assertPublishCoversOccurrences(occGroups, events);
+    assertEquals(result.missing, []);
+  });
+
+  it("uses PRE_P6_TASK_SET_SENTINEL (not a hardcoded literal) for null task_set_hash keying", () => {
+    // Shortcoming row with null task_set_hash matches event row also keyed on
+    // the sentinel — both must agree on the same string. If the script had a
+    // hardcoded literal that drifted from the canonical export, this would fail.
+    const shortcomings = [{ model_slug: "m/x", task_set_hash: null }];
+    const events = [
+      {
+        model_slug: "m/x",
+        task_set_hash: PRE_P6_TASK_SET_SENTINEL,
+        event_type: "analysis.completed",
+      },
+    ];
+    const result = assertAnalysisCoversShortcomings(shortcomings, events);
     assertEquals(result.missing, []);
   });
 });

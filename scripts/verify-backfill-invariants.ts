@@ -9,6 +9,8 @@
  *    has at least one `publish.completed` event for that pair.
  */
 
+import { PRE_P6_TASK_SET_SENTINEL } from "../src/lifecycle/types.ts";
+
 interface KeyedRow {
   model_slug: string;
   task_set_hash: string | null;
@@ -19,7 +21,7 @@ interface KeyedEvent extends KeyedRow {
 }
 
 function key(r: KeyedRow): string {
-  return `${r.model_slug}\x1f${r.task_set_hash ?? "pre-p6-unknown"}`;
+  return `${r.model_slug}\x1f${r.task_set_hash ?? PRE_P6_TASK_SET_SENTINEL}`;
 }
 
 export function assertAnalysisCoversShortcomings(
