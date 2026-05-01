@@ -2,6 +2,7 @@ import type { RequestHandler } from './$types';
 import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
+import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
 import {
   CANONICAL_ACTORS,
@@ -24,8 +25,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const body = await request.json() as { version: number; signature: unknown; payload: AppendEventInput & { payload_hash?: string | null } };
     if (body.version !== 1) throw new ApiError(400, 'bad_version', 'only version 1 supported');
-    // TODO(Plan F / F5): replace with `await authenticateAdminRequest(request, platform.env)`
-    // for the dual CF-Access + Ed25519 path. Today: Ed25519 only.
+    // POST is body-signed (the existing SignedAdminRequest pattern signs the
+    // full payload object), so URL-param binding is N/A here. Helper not
+    // used because the body itself is the canonical signed unit.
+    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
     await verifySignedRequest(db, body as unknown as SignedAdminRequest, 'admin');
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
@@ -70,25 +73,23 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
   const db = platform.env.DB;
   try {
-    // Header-based signature path (no JSON body for GET).
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
-    if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing X-CG-Signature/X-CG-Key-Id/X-CG-Signed-At');
-    }
     const model = url.searchParams.get('model');
     if (!model) throw new ApiError(400, 'missing_model', 'model query param required');
-    const fakeBody = {
-      version: 1,
-      payload: { model },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
-    };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
     const taskSet = url.searchParams.get('task_set');
     const since = url.searchParams.get('since');
     const eventTypePrefix = url.searchParams.get('event_type_prefix');
     const limit = url.searchParams.get('limit');
+    // C1 fix: bind every URL param that affects the response into the signed
+    // bytes. Otherwise an attacker holding ANY signed envelope could swap
+    // `model=` to read state for arbitrary models.
+    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
+    await verifyLifecycleAdminRequest(db, request, {
+      signedFields: buildHeaderSignedFields({
+        method: 'GET',
+        path: url.pathname,
+        query: { model, task_set: taskSet, since, event_type_prefix: eventTypePrefix, limit },
+      }),
+    });
     const params: (string | number)[] = [model];
     let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                       tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note

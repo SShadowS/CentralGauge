@@ -1,26 +1,24 @@
 import type { RequestHandler } from './$types';
-import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 
 export const GET: RequestHandler = async ({ request, platform, url }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
   const db = platform.env.DB;
   try {
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
-    if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing signature headers');
-    }
     const model = url.searchParams.get('model');
     const taskSet = url.searchParams.get('task_set');
     if (!model || !taskSet) throw new ApiError(400, 'missing_params', 'model and task_set required');
-    const fakeBody = {
-      version: 1,
-      payload: { model },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
-    };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
+    // C1 fix: signed bytes bind both `model` and `task_set` so a captured
+    // signature can't be replayed against a different (model, task_set) pair.
+    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
+    await verifyLifecycleAdminRequest(db, request, {
+      signedFields: buildHeaderSignedFields({
+        method: 'GET',
+        path: url.pathname,
+        query: { model, task_set: taskSet },
+      }),
+    });
     // v_lifecycle_state gives last_ts + last_event_id per step; JOIN back for the row.
     const rows = await db.prepare(
       `SELECT v.step, e.id, e.ts, e.model_slug, e.task_set_hash, e.event_type,

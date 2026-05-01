@@ -1,6 +1,7 @@
 import { env, applyD1Migrations, SELF } from 'cloudflare:test';
 import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
+import { signLifecycleHeaders } from '../fixtures/lifecycle-sign';
 import { registerMachineKey } from '../fixtures/ingest-helpers';
 import { resetDb } from '../utils/reset-db';
 
@@ -40,17 +41,14 @@ describe('lifecycle roundtrip', () => {
       expect(r.status).toBe(200);
     }
 
-    const { signedRequest } = await createSignedPayload({ model: 'm/r' }, keyId, undefined, keypair);
+    const stateHeaders = await signLifecycleHeaders(keypair, keyId, {
+      method: 'GET',
+      path: '/api/v1/admin/lifecycle/state',
+      query: { model: 'm/r', task_set: 'hr' },
+    });
     const stateResp = await SELF.fetch(
       `https://x/api/v1/admin/lifecycle/state?model=m/r&task_set=hr`,
-      {
-        method: 'GET',
-        headers: {
-          'X-CG-Signature': signedRequest.signature.value,
-          'X-CG-Key-Id': String(signedRequest.signature.key_id),
-          'X-CG-Signed-At': signedRequest.signature.signed_at,
-        },
-      },
+      { method: 'GET', headers: stateHeaders },
     );
     expect(stateResp.status).toBe(200);
     const state = await stateResp.json() as Record<string, { event_type: string }>;

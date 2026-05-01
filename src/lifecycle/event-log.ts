@@ -1,3 +1,5 @@
+import * as ed from "npm:@noble/ed25519@3.1.0";
+import { encodeBase64 } from "jsr:@std/encoding@^1.0.5/base64";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { canonicalJSON } from "../ingest/canonical.ts";
 import { signPayload } from "../ingest/sign.ts";
@@ -145,6 +147,57 @@ export interface QueryEventsFilter {
  * accepts the same filter shape; only the first arg differs (D1Database vs.
  * AppendOptions).
  */
+/**
+ * Sign a lifecycle-admin GET/PUT request — matches the canonical scheme in
+ * `site/src/lib/server/lifecycle-auth.ts`. Body-hash binding closes the
+ * pre-fix C1 attack where a captured signed envelope could be replayed
+ * against a different URL or with arbitrary body bytes.
+ */
+export async function signLifecycleHeaders(
+  privateKey: Uint8Array,
+  keyId: number,
+  args: {
+    method: "GET" | "PUT";
+    path: string;
+    query?: Record<string, string | number | null | undefined>;
+    body?: Uint8Array;
+    now?: Date;
+  },
+): Promise<Record<string, string>> {
+  const signedAt = (args.now ?? new Date()).toISOString();
+  let body_sha256 = "";
+  if (args.body) {
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      args.body as BufferSource,
+    );
+    body_sha256 = encodeHex(new Uint8Array(digest));
+  }
+  const q: Record<string, string> = {};
+  if (args.query) {
+    for (const [k, v] of Object.entries(args.query)) {
+      if (v === null || v === undefined) continue;
+      q[k] = String(v);
+    }
+  }
+  const canonical = canonicalJSON({
+    method: args.method,
+    path: args.path,
+    query: q,
+    body_sha256,
+    signed_at: signedAt,
+  });
+  const sig = await ed.signAsync(
+    new TextEncoder().encode(canonical),
+    privateKey,
+  );
+  return {
+    "X-CG-Signature": encodeBase64(sig),
+    "X-CG-Key-Id": String(keyId),
+    "X-CG-Signed-At": signedAt,
+  };
+}
+
 export async function queryEvents(
   filter: QueryEventsFilter,
   opts: AppendOptions,
@@ -156,23 +209,23 @@ export async function queryEvents(
     params.set("event_type_prefix", filter.event_type_prefix);
   }
   if (filter.limit !== undefined) params.set("limit", String(filter.limit));
-  // Read endpoint accepts a signed empty payload + the query params for filtering.
-  const body = { version: 1 as const, payload: { model: filter.model_slug } };
-  const signature = await signPayload(
-    body.payload,
-    opts.privateKey,
-    opts.keyId,
-  );
-  const resp = await fetch(
-    `${opts.url}/api/v1/admin/lifecycle/events?${params}`,
-    {
-      method: "GET",
-      headers: {
-        "X-CG-Signature": signature.value,
-        "X-CG-Key-Id": String(signature.key_id),
-        "X-CG-Signed-At": signature.signed_at,
-      },
+  // Sign-by-headers — canonical bytes bind URL params + path so a captured
+  // envelope can't be replayed for a different (model, task_set) pair.
+  const path = "/api/v1/admin/lifecycle/events";
+  const headers = await signLifecycleHeaders(opts.privateKey, opts.keyId, {
+    method: "GET",
+    path,
+    query: {
+      model: filter.model_slug,
+      task_set: filter.task_set_hash,
+      since: filter.since,
+      event_type_prefix: filter.event_type_prefix,
+      limit: filter.limit,
     },
+  });
+  const resp = await fetch(
+    `${opts.url}${path}?${params}`,
+    { method: "GET", headers },
   );
   if (!resp.ok) throw new Error(`queryEvents failed (${resp.status})`);
   const raw = await resp.json() as LifecycleEvent[];
