@@ -41,6 +41,16 @@ CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b \
 
 Expected: `Backup created: <backup-id>`. **Record the backup-id**.
 
+Verify the backup is recorded by Cloudflare (the recorded id should appear at the top):
+
+```bash
+cd site
+CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b \
+  npx wrangler d1 backup list centralgauge
+```
+
+Expected: a row with `created_at` matching the moment you ran the previous command and `id` matching what you recorded.
+
 ## Step 3 — Dry-run B1 against production
 
 Read-only. Reports the planned event count without writing.
@@ -64,9 +74,15 @@ The strategic plan's Phase B5 acceptance was `bench~=45 analysis~=12 publish~=7 
 deno run --allow-all scripts/backfill-lifecycle.ts --remote
 ```
 
-Expected: `[OK] wrote <total> synthetic events`. Per-10 progress lines printed. The admin endpoint rate-limits at ~10 req/min — on a fresh 64-event run this completes in ~7-10 minutes.
+Expected: `[OK] wrote <written> events (skipped <skipped> duplicates)`. Per-event progress lines printed (`[N/total] <event_type> <model_slug>`).
 
-If you see `429 rate_limited` mid-run, the script aborts. Resume by re-running — but first confirm what was already written:
+The script paces at ~7 s per event (8.5 req/min, comfortably below the admin endpoint's ~10 req/min cap). For ~64 events expect ~7.5 min wall-clock — predictable and steady.
+
+**Re-running after a partial failure is safe.** The site dedupes by `(payload_hash, ts, event_type)` and returns `409 duplicate_event` for already-written rows; the script catches that specific shape and continues with the next event, surfacing the count in the final summary as `skipped <N> duplicates`.
+
+If the script reports `[FAIL]` for any reason **other than** `duplicate_event` (e.g., 5xx, network error, sudden 429 burst that the pacing didn't absorb), capture the error from the console output and rollback via D1 backup restore (Step 8). Do not attempt a partial-resume against an unknown failure mode.
+
+To inspect what was already written between attempts:
 
 ```bash
 cd site
@@ -74,8 +90,6 @@ CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b \
   npx wrangler d1 execute centralgauge --remote \
   --command="SELECT event_type, COUNT(*) AS n FROM lifecycle_events WHERE actor='migration' GROUP BY event_type"
 ```
-
-If a partial write occurred, **rollback to backup-id** (Step 8) and start over rather than attempt a partial-resume; the backfill is not idempotent against partial state.
 
 ## Step 5 — Apply B2 slug migration to the model-shortcomings dir
 
