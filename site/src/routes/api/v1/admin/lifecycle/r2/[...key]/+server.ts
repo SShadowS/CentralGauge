@@ -1,6 +1,7 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
+import { validateR2Key } from '$lib/server/r2-key';
 
 /**
  * R2 proxy for lifecycle blob storage. Plan C uploads debug bundles via PUT
@@ -16,53 +17,6 @@ import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/serve
  */
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024; // I4: 50 MB cap on PUT body.
-
-/**
- * Validate the R2 key path-component against C2's threat model:
- *  - must start with `lifecycle/`
- *  - charset restricted to [A-Za-z0-9._/-]
- *  - length 1..1024 (excluding the `lifecycle/` prefix would still be ≤ 1024)
- *  - no `..` segments (parent-directory traversal)
- *  - no control chars / null bytes (covered by charset, but re-checked)
- *
- * Exported for unit testing — HTTP-layer URL normalization eats most
- * traversal patterns before they reach the route, so direct tests of this
- * function are the best assurance the guard would still hold under
- * pathological input (URL-encoded `..`, etc).
- *
- * Throws `ApiError(400, 'invalid_key', ...)` naming the specific violation.
- */
-export function validateR2Key(key: string | undefined): string {
-  if (!key || key.length === 0) {
-    throw new ApiError(400, 'invalid_key', 'r2 key required');
-  }
-  if (key.length > 1024) {
-    throw new ApiError(400, 'invalid_key', `key exceeds 1024 chars (got ${key.length})`);
-  }
-  if (!key.startsWith('lifecycle/')) {
-    throw new ApiError(400, 'invalid_key', 'key must start with "lifecycle/"');
-  }
-  // Charset: alphanumeric + dot, dash, underscore, slash. NO whitespace, NO
-  // unicode, NO control chars. Hard line.
-  if (!/^[A-Za-z0-9._/-]+$/.test(key)) {
-    throw new ApiError(
-      400,
-      'invalid_key',
-      'key contains characters outside [A-Za-z0-9._/-] (control chars / null / unicode rejected)',
-    );
-  }
-  // Path-traversal: forbid `..` as a path segment anywhere.
-  const segments = key.split('/');
-  if (segments.some((s) => s === '..' || s === '.')) {
-    throw new ApiError(400, 'invalid_key', 'key contains "." or ".." segment (path traversal rejected)');
-  }
-  // Defensive: empty segments mean `//` — should never happen with the
-  // charset regex above, but check explicitly.
-  if (segments.some((s) => s.length === 0)) {
-    throw new ApiError(400, 'invalid_key', 'key contains empty path segment ("//")');
-  }
-  return key;
-}
 
 export const PUT: RequestHandler = async ({ request, platform, params, url }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
