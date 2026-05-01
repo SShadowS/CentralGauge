@@ -92,6 +92,21 @@ export function decideStep(
   if (forceRerun) {
     return { kind: "run", reason: "force_rerun_flag" };
   }
+  // Ordering matters: when the most-recent terminal is a failure
+  // (`prior.failed.id > prior.completed.id`), the operator's expectation is
+  // 'retry' regardless of any older completed run. Pre-I2 this branch
+  // checked completed first and silently skipped a step the operator had
+  // just seen fail. classifyEvents records the most-recent of each kind
+  // independently — comparing ids restores ordering.
+  const completedId = prior.completed?.id ?? 0;
+  const failedId = prior.failed?.id ?? 0;
+  if (prior.failed && failedId > completedId) {
+    return {
+      kind: "retry",
+      reason: "prior_failure",
+      priorEventId: prior.failed.id,
+    };
+  }
   if (prior.completed) {
     if (envelopeMatches(prior.completed.envelope, currentEnvelope)) {
       return {

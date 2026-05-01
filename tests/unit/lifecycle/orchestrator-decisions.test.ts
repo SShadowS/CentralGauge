@@ -97,6 +97,44 @@ Deno.test("decideStep retry-after-ttl when started long ago", () => {
   assertEquals(d.reason, "started_event_ttl_expired");
 });
 
+Deno.test("decideStep retry when prior.failed is NEWER than prior.completed (I2)", () => {
+  // Scenario: bench.completed (id=5) succeeded, then a later attempt
+  // emitted bench.failed (id=10). The most-recent action was a failure;
+  // the operator expects 'retry'. Pre-fix the decision was 'skip'
+  // (envelope_unchanged) because completed was checked first and
+  // ordering was ignored.
+  const d = decideStep(
+    "bench",
+    {
+      completed: { id: 5, ts: 100, payload: {}, envelope: env },
+      failed: { id: 10, ts: 200, payload: {} },
+    },
+    false,
+    env,
+    1000,
+  );
+  assertEquals(d.kind, "retry");
+  assertEquals(d.reason, "prior_failure");
+});
+
+Deno.test("decideStep skip when prior.completed is NEWER than prior.failed", () => {
+  // Inverse of the above: failed (id=5) then completed (id=10) → the
+  // most-recent action was the success → skip-on-envelope-unchanged
+  // applies.
+  const d = decideStep(
+    "bench",
+    {
+      completed: { id: 10, ts: 200, payload: {}, envelope: env },
+      failed: { id: 5, ts: 100, payload: {} },
+    },
+    false,
+    env,
+    1000,
+  );
+  assertEquals(d.kind, "skip");
+  assertEquals(d.reason, "envelope_unchanged");
+});
+
 Deno.test("decideStep run on force_rerun regardless of completed", () => {
   const d = decideStep(
     "bench",
