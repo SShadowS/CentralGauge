@@ -88,7 +88,12 @@ export const handle: Handle = async ({ event, resolve }) => {
     return resolve(event);
   }
 
-  const shouldLimit = WRITE_METHODS.has(method) && path.startsWith('/api/');
+  // Admin lifecycle endpoints are Ed25519-signature-authenticated (key
+  // revocation = throttle); IP-based limits would block legitimate weekly-CI
+  // bursts (Phase G writes ~50 events per cycle × ~6 models = ~300/week,
+  // and the throughput acceptance test exercises 100 events in tight loop).
+  const shouldLimit = WRITE_METHODS.has(method) && path.startsWith('/api/') &&
+    !path.startsWith('/api/v1/admin/lifecycle/');
 
   if (shouldLimit) {
     // The RL binding is provisioned via [[unsafe.bindings]] in wrangler.toml.
