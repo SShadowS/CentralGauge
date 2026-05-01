@@ -6,8 +6,25 @@ import type { LifecycleEnvelope, ToolVersions } from "./types.ts";
  * Collect tool versions for the reproducibility envelope. Each subprocess
  * call is wrapped — when a tool isn't installed (e.g. claude-code on a CI
  * runner that only does bench), the version is left undefined, NOT an error.
+ *
+ * I7: Memoized at the module level. The first call spawns 4 subprocesses
+ * (~400-800 ms wall-clock); every subsequent call returns the cached
+ * Promise instantly. Tool versions don't change mid-process, so this is
+ * always safe. Concurrent calls before the first resolves share the same
+ * in-flight Promise — we never fan out to 2x4 = 8 subprocesses.
+ *
+ * Reset the cache via `__resetToolVersionsCacheForTesting` (test-only).
  */
-export async function collectToolVersions(): Promise<ToolVersions> {
+let cachedToolVersions: Promise<ToolVersions> | null = null;
+
+export function collectToolVersions(): Promise<ToolVersions> {
+  if (cachedToolVersions === null) {
+    cachedToolVersions = collectToolVersionsUncached();
+  }
+  return cachedToolVersions;
+}
+
+async function collectToolVersionsUncached(): Promise<ToolVersions> {
   const [deno, wrangler, claudeCode, bcCompiler] = await Promise.all([
     runVersion(["deno", "--version"], /deno (\d+\.\d+\.\d+)/),
     runVersion(["npx", "wrangler", "--version"], /(\d+\.\d+\.\d+)/),
@@ -20,6 +37,14 @@ export async function collectToolVersions(): Promise<ToolVersions> {
   if (claudeCode !== undefined) out.claude_code = claudeCode;
   if (bcCompiler !== undefined) out.bc_compiler = bcCompiler;
   return out;
+}
+
+/**
+ * Reset the in-process cache. EXPORTED FOR TESTS ONLY — production code must
+ * never call this; the cache is the whole point.
+ */
+export function __resetToolVersionsCacheForTesting(): void {
+  cachedToolVersions = null;
 }
 
 async function runVersion(
