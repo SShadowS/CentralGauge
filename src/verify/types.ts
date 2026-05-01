@@ -142,6 +142,21 @@ export interface ModelShortcomingResult {
   correctPattern: string;
   /** Confidence in the analysis */
   confidence: ConfidenceLevel;
+  /**
+   * D-prompt: registry-shaped concept slug the analyzer proposed for this
+   * entry. Required for the batch endpoint to resolve to a concept_id.
+   */
+  concept_slug_proposed: string;
+  /**
+   * Slug from the registry the analyzer believes matches the proposed slug,
+   * or null when no match candidate was found (sub-0.70 band → auto-create).
+   */
+  concept_slug_existing_match: string | null;
+  /**
+   * Cosine similarity (0..1) between proposed_slug and existing_match. null
+   * when concept_slug_existing_match is null.
+   */
+  similarity_score: number | null;
 }
 
 /**
@@ -171,6 +186,21 @@ export interface ModelShortcomingEntry {
   firstSeen: string;
   /** Number of occurrences */
   occurrences: number;
+  /**
+   * D-prompt: registry-shaped concept slug the analyzer proposed for this
+   * entry. Required for the batch endpoint to resolve to a concept_id.
+   */
+  concept_slug_proposed: string;
+  /**
+   * Slug from the registry the analyzer believes matches the proposed slug,
+   * or null when no match candidate was found (sub-0.70 band → auto-create).
+   */
+  concept_slug_existing_match: string | null;
+  /**
+   * Cosine similarity (0..1) between proposed_slug and existing_match. null
+   * when concept_slug_existing_match is null.
+   */
+  similarity_score: number | null;
 }
 
 /**

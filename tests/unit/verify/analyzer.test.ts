@@ -4,6 +4,7 @@
 
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
+  buildSystemPrompt,
   type FailingTask,
   isFixableResult,
   isModelShortcomingResult,
@@ -142,6 +143,10 @@ Deno.test("parseAnalysisResponse: parses model_shortcoming correctly", () => {
     generatedCode: "interface 50100 'Payment Processor'",
     correctPattern: "interface 'Payment Processor'",
     confidence: "high",
+    // D-prompt: registry-shaped fields are now required by the zod schema.
+    concept_slug_proposed: "interface-id-syntax",
+    concept_slug_existing_match: null,
+    similarity_score: null,
   });
 
   const result = parseAnalysisResponse(llmResponse, task);
@@ -250,4 +255,88 @@ Deno.test("parseAnalysisResponse: uses correct path based on affectedFile value"
     assertEquals(result2.fix.filePath, "tasks/easy/CG-AL-E001-special.yml");
     assertEquals(result2.fix.fileType, "task_yaml");
   }
+});
+
+Deno.test("parseAnalysisResponse: carries concept_slug_proposed through", () => {
+  const task = createMockTask();
+  const llmResponse = JSON.stringify({
+    outcome: "model_shortcoming",
+    category: "model_knowledge_gap",
+    concept: "FlowField requires CalcFields",
+    alConcept: "flowfield",
+    description: "did not call CalcFields",
+    generatedCode: "Rec.Total",
+    correctPattern: 'Rec.CalcFields("Total"); Rec.Total',
+    confidence: "high",
+    concept_slug_proposed: "flowfield-calcfields-requirement",
+    concept_slug_existing_match: null,
+    similarity_score: null,
+  });
+  const result = parseAnalysisResponse(llmResponse, task);
+  if (!isModelShortcomingResult(result)) {
+    throw new Error("expected model_shortcoming");
+  }
+  assertEquals(
+    result.concept_slug_proposed,
+    "flowfield-calcfields-requirement",
+  );
+  assertEquals(result.concept_slug_existing_match, null);
+  assertEquals(result.similarity_score, null);
+});
+
+Deno.test("parseAnalysisResponse: carries existing-match + similarity through", () => {
+  const task = createMockTask();
+  const llmResponse = JSON.stringify({
+    outcome: "model_shortcoming",
+    category: "model_knowledge_gap",
+    concept: "Reserved keyword",
+    alConcept: "syntax",
+    description: "used reserved keyword",
+    generatedCode: "procedure Foo(record: Record);",
+    correctPattern: "procedure Foo(rec: Record);",
+    confidence: "medium",
+    concept_slug_proposed: "reserved-keyword-as-param-name",
+    concept_slug_existing_match: "reserved-keyword-as-parameter-name",
+    similarity_score: 0.91,
+  });
+  const result = parseAnalysisResponse(llmResponse, task);
+  if (!isModelShortcomingResult(result)) {
+    throw new Error("expected shortcoming");
+  }
+  assertEquals(
+    result.concept_slug_existing_match,
+    "reserved-keyword-as-parameter-name",
+  );
+  assertEquals(result.similarity_score, 0.91);
+});
+
+Deno.test("parseAnalysisResponse: parse-failure fallback fills new fields", () => {
+  const task = createMockTask();
+  const result = parseAnalysisResponse("not json at all", task);
+  if (!isModelShortcomingResult(result)) {
+    throw new Error("expected shortcoming");
+  }
+  assertEquals(result.concept, "parse-failure");
+  assertEquals(result.concept_slug_proposed, "parse-failure");
+  assertEquals(result.concept_slug_existing_match, null);
+  assertEquals(result.similarity_score, null);
+});
+
+Deno.test("buildSystemPrompt: includes each concept slug + display name", () => {
+  const out = buildSystemPrompt([
+    {
+      slug: "flowfield-calcfields",
+      display_name: "FlowField",
+      description: "x",
+      last_seen: "2026-04-29T00:00:00Z",
+    },
+  ]);
+  if (!out.includes("flowfield-calcfields")) throw new Error(out);
+  if (!out.includes("FlowField")) throw new Error(out);
+  if (!out.includes("kebab-case")) throw new Error("missing slug guidance");
+});
+
+Deno.test("buildSystemPrompt: handles empty registry gracefully", () => {
+  const out = buildSystemPrompt([]);
+  if (!out.includes("registry empty")) throw new Error(out);
 });

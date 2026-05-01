@@ -36,6 +36,9 @@ Deno.test("shortcomings-tracker: adds shortcoming correctly", async () => {
       generatedCode: 'interface 70008 "Test"',
       correctPattern: 'interface "Test"',
       confidence: "high",
+      concept_slug_proposed: "interface-id-syntax",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     await tracker.addShortcoming("test-model", result);
@@ -70,6 +73,9 @@ Deno.test("shortcomings-tracker: deduplicates by alConcept", async () => {
       generatedCode: 'interface 70008 "Test"',
       correctPattern: 'interface "Test"',
       confidence: "high",
+      concept_slug_proposed: "interface-id-syntax",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     // Add second shortcoming with same alConcept
@@ -85,6 +91,9 @@ Deno.test("shortcomings-tracker: deduplicates by alConcept", async () => {
       generatedCode: 'interface 70015 "Other"',
       correctPattern: 'interface "Other"',
       confidence: "high",
+      concept_slug_proposed: "interface-id-syntax",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     await tracker.addShortcoming("test-model", result1);
@@ -123,6 +132,9 @@ Deno.test("shortcomings-tracker: saves and loads from disk", async () => {
       generatedCode: 'interface 70008 "Test"',
       correctPattern: 'interface "Test"',
       confidence: "high",
+      concept_slug_proposed: "interface-id-syntax",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     await tracker1.addShortcoming("test-model", result);
@@ -155,6 +167,9 @@ Deno.test("shortcomings-tracker: tracks different models separately", async () =
       generatedCode: "test",
       correctPattern: "correct",
       confidence: "high",
+      concept_slug_proposed: "interface-id-syntax",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     const result2: ModelShortcomingResult = {
@@ -168,6 +183,9 @@ Deno.test("shortcomings-tracker: tracks different models separately", async () =
       generatedCode: "test",
       correctPattern: "correct",
       confidence: "high",
+      concept_slug_proposed: "flowfield-calcfields",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     await tracker.addShortcoming("model-a", result1);
@@ -203,6 +221,9 @@ Deno.test("shortcomings-tracker: getCount returns correct count", async () => {
       generatedCode: "",
       correctPattern: "",
       confidence: "high",
+      concept_slug_proposed: "concept-1",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     const result2: ModelShortcomingResult = {
@@ -216,6 +237,9 @@ Deno.test("shortcomings-tracker: getCount returns correct count", async () => {
       generatedCode: "",
       correctPattern: "",
       confidence: "high",
+      concept_slug_proposed: "concept-2",
+      concept_slug_existing_match: null,
+      similarity_score: null,
     };
 
     await tracker.addShortcoming("test-model", result1);

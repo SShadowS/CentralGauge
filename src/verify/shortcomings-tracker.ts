@@ -81,7 +81,9 @@ export class ShortcomingsTracker {
         existing.errorCodes.push(result.errorCode);
       }
     } else {
-      // Create new entry
+      // Create new entry. The first analyzer call's slug wins — entries are
+      // append-only-friendly (the slug never changes after the first write,
+      // matching the canonical-registry invariant).
       const newEntry: ModelShortcomingEntry = {
         concept: result.concept,
         alConcept: result.alConcept,
@@ -92,6 +94,9 @@ export class ShortcomingsTracker {
         affectedTasks: [result.taskId],
         firstSeen: new Date().toISOString(),
         occurrences: 1,
+        concept_slug_proposed: result.concept_slug_proposed,
+        concept_slug_existing_match: result.concept_slug_existing_match,
+        similarity_score: result.similarity_score,
       };
       file.shortcomings.push(newEntry);
     }

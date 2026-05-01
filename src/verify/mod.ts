@@ -47,10 +47,30 @@ export {
 // Analyzer
 export type { AnalyzerConfig } from "./analyzer.ts";
 export {
+  buildSystemPrompt,
   DEFAULT_ANALYZER_CONFIG,
   FailureAnalyzer,
   parseAnalysisResponse,
 } from "./analyzer.ts";
+
+// Concept fetcher (analyzer prompt seed)
+export type { ConceptSummary, FetchOptions } from "./concept-fetcher.ts";
+export { fetchRecentConcepts } from "./concept-fetcher.ts";
+
+// Schema (re-exports for Plan F's confidence scorer)
+export type {
+  AnalysisOutputParsed,
+  AnalyzerEntry,
+  FixableAnalysisParsed,
+  ModelShortcomingParsed,
+} from "./schema.ts";
+export {
+  AnalysisOutputSchema,
+  AnalyzerEntrySchema,
+  ConfidenceLevelSchema,
+  FixableAnalysisSchema,
+  ModelShortcomingSchema,
+} from "./schema.ts";
 
 // Shortcomings tracker
 export { ShortcomingsTracker } from "./shortcomings-tracker.ts";
