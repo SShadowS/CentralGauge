@@ -34,6 +34,13 @@ export async function resetDb(): Promise<void> {
     await env.BLOBS.delete(blobs.objects.map((o: R2Object) => o.key));
   }
 
+  // Lifecycle debug bundles (Plan A binding) — clear so per-test fixtures
+  // don't leak across `it` blocks within the same file.
+  const lifecycleBlobs = await env.LIFECYCLE_BLOBS.list();
+  if (lifecycleBlobs.objects.length > 0) {
+    await env.LIFECYCLE_BLOBS.delete(lifecycleBlobs.objects.map((o: R2Object) => o.key));
+  }
+
   const cache = await env.CACHE.list();
   await Promise.all(
     cache.keys.map((k: KVNamespaceListKey<unknown, string>) => env.CACHE.delete(k.name)),
