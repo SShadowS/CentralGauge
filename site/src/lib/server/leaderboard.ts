@@ -174,6 +174,8 @@ export async function computeLeaderboard(
     : await computeModelAggregates(db, {
       modelIds,
       taskSetCurrent: q.set === 'current',
+      includeLatencyP50: true,
+      includePassHatAtN: true,
     });
 
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
