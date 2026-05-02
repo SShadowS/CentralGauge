@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { authenticateAdminRequest } from '$lib/server/cf-access';
+import { actorIdFromAuth, authenticateAdminRequest } from '$lib/server/cf-access';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
@@ -17,6 +17,12 @@ import {
  * tool_versions / envelope. The worker-side `appendEvent` helper (A1.5)
  * stringifies them to D1 columns. Pre-stringified `*_json` fields are NOT
  * accepted; payloads are objects.
+ *
+ * Auth-trail invariant: the audit row's `actor_id` is ALWAYS derived from
+ * the verified auth identity (CF Access email or `key:<id>` for the CLI
+ * signature), NEVER from the request body. Wave 5 / CRITICAL 1 fixed an
+ * impersonation regression where a body-supplied `actor_id` flowed verbatim
+ * into `lifecycle_events.actor_id`.
  */
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -30,7 +36,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // pattern signs the full payload object). The browser path uses CF
     // Access (no body.signature) — operators rarely append events from
     // the UI, but the dual-auth contract keeps the surface uniform.
-    await authenticateAdminRequest(request, platform.env, body);
+    const auth = await authenticateAdminRequest(request, platform.env, body);
+    // Wave 5 / CRITICAL 1 — derive actor_id from the verified auth identity,
+    // NOT from the request body. Without this override an authenticated
+    // caller could forge audit-trail rows with arbitrary actor_id values
+    // (e.g. `operator@victim.com`).
+    const verifiedActorId = actorIdFromAuth(auth);
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
       throw new ApiError(400, 'missing_field', 'model_slug, task_set_hash, event_type required');
@@ -63,7 +74,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         throw new ApiError(409, 'duplicate_event', `event already recorded with id=${dup.id}`);
       }
     }
-    const { id } = await appendEvent(db, p);
+    // Override body.actor_id with the verified identity (Wave 5 / C1).
+    const { id } = await appendEvent(db, { ...p, actor_id: verifiedActorId });
     return jsonResponse({ id }, 200);
   } catch (err) {
     return errorResponse(err);

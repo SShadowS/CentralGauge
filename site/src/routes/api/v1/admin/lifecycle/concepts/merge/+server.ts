@@ -12,7 +12,10 @@
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
-import { authenticateAdminRequest } from "$lib/server/cf-access";
+import {
+  actorIdFromAuth,
+  authenticateAdminRequest,
+} from "$lib/server/cf-access";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { mergeConceptTx } from "$lib/server/concepts";
 import { slugSchema } from "$lib/shared/slug";
@@ -49,7 +52,11 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
       throw new ApiError(400, "bad_version", "only version 1 supported");
     }
     // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
-    await authenticateAdminRequest(request, platform.env, body);
+    const auth = await authenticateAdminRequest(request, platform.env, body);
+    // Wave 5 / CRITICAL 1 — verifiedActorId from auth, NOT body. Without
+    // this an authenticated caller could forge audit rows with arbitrary
+    // actor_id values (e.g. `operator@victim.com`).
+    const verifiedActorId = actorIdFromAuth(auth);
     const parsed = Body.safeParse(body.payload);
     if (!parsed.success) {
       throw new ApiError(
@@ -76,7 +83,8 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
       modelSlug: p.model_slug,
       taskSetHash: p.task_set_hash,
       actor: p.actor,
-      actorId: p.actor_id,
+      // Wave 5 / C1: override body.actor_id with the verified identity.
+      actorId: verifiedActorId,
       envelopeJson: p.envelope_json,
       ts: p.ts,
       ...(p.reviewer_actor_id !== undefined
