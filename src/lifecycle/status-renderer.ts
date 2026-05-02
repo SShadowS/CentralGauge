@@ -32,6 +32,27 @@ const DISPLAY_STEPS: readonly Step[] = ["bench", "debug", "analyze", "publish"];
 /** Threshold past which a terminal `.completed` row flips to STALE. */
 export const STALE_DAYS = 14;
 
+/**
+ * Tolerance for normal clock-jitter between machines (ms). A `last_ts` up to
+ * this far in the future is treated as "now" — past this, the cell is flagged
+ * as clock-skewed and rendered STALE so an absurd future timestamp can't
+ * silently render OK.
+ */
+export const CLOCK_SKEW_TOLERANCE_MS = 60_000;
+
+/**
+ * Detect a materially-future timestamp. Exported so `status-hints.ts` can
+ * compute the same predicate (single source of truth — drift between the
+ * renderer's STALE flag and the hint generator's clock-skew hint would
+ * confuse operators).
+ */
+export function isClockSkewed(
+  lastTs: number,
+  now: number = Date.now(),
+): boolean {
+  return lastTs > now + CLOCK_SKEW_TOLERANCE_MS;
+}
+
 const MODEL_COL_WIDTH = 40;
 const STEP_COL_WIDTH = 8;
 const TOTAL_WIDTH = MODEL_COL_WIDTH + STEP_COL_WIDTH * DISPLAY_STEPS.length;
@@ -46,7 +67,18 @@ function summarizeCell(row: StateRow | undefined): CellSummary {
   if (row.last_event_type.endsWith(".started")) {
     return { sym: "…", state: "in_progress" };
   }
-  const ageDays = (Date.now() - row.last_ts) / (1000 * 60 * 60 * 24);
+  // Clock-skew belt-and-suspenders: a future last_ts (clock skew across
+  // machines, or a future-bug in event ingestion) would otherwise render as
+  // OK because `Date.now() - r.last_ts` is negative and `negative > STALE_DAYS`
+  // is false. Surface it as STALE so the operator notices.
+  if (isClockSkewed(row.last_ts)) return { sym: "STALE", state: "stale" };
+  // Clamp to zero so any near-future timestamp within the tolerance window is
+  // treated as "now" (avoiding negative ageDays leaking elsewhere if this
+  // helper is reused).
+  const ageDays = Math.max(
+    0,
+    (Date.now() - row.last_ts) / (1000 * 60 * 60 * 24),
+  );
   if (ageDays > STALE_DAYS) return { sym: "STALE", state: "stale" };
   return { sym: "OK", state: "ok" };
 }

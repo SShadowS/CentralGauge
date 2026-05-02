@@ -328,6 +328,72 @@ Deno.test("StatusJsonOutputSchema requires legacy_rows array", () => {
 // --legacy flag: human display vs JSON contract
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Clock-skew edge case (IMPORTANT 4): future last_ts must not silently OK
+// ---------------------------------------------------------------------------
+
+Deno.test(
+  "renderer flips to STALE when last_ts is materially in the future (clock skew)",
+  () => {
+    // ~16 minutes in the future — well past the 60s jitter tolerance.
+    const futureRow: StateRow = row({
+      model_slug: "vendor/skewed-model",
+      step: "bench",
+      last_ts: Date.now() + 1_000_000,
+      last_event_type: "bench.completed",
+    });
+    const matrix = renderMatrix([futureRow], { color: false });
+    const skewedLine = matrix
+      .split("\n")
+      .find((l) => l.includes("vendor/skewed-model"));
+    // Must NOT render as OK; must render as STALE.
+    assertEquals(
+      (skewedLine!.match(/OK/g) ?? []).length,
+      0,
+      "future-timestamped row must not render as OK",
+    );
+    assertStringIncludes(skewedLine!, "STALE");
+  },
+);
+
+Deno.test(
+  "hints emit a clock-skew info hint when last_ts is materially in the future",
+  () => {
+    const futureRow: StateRow = row({
+      model_slug: "vendor/skewed-model",
+      step: "bench",
+      last_ts: Date.now() + 1_000_000,
+      last_event_type: "bench.completed",
+    });
+    const hints = generateHints([futureRow]);
+    const skew = hints.find((h) => h.model_slug === "vendor/skewed-model");
+    assertEquals(skew?.severity, "info");
+    assertStringIncludes(skew?.text ?? "", "Future timestamp");
+    assertStringIncludes(skew?.text ?? "", "clock skew");
+    assertStringIncludes(
+      skew?.command ?? "",
+      "centralgauge lifecycle status --model vendor/skewed-model",
+    );
+  },
+);
+
+Deno.test(
+  "renderer tolerates 60s jitter — last_ts at +30s still renders OK",
+  () => {
+    const jitterRow: StateRow = row({
+      model_slug: "vendor/jittery-model",
+      step: "bench",
+      last_ts: Date.now() + 30_000,
+      last_event_type: "bench.completed",
+    });
+    const matrix = renderMatrix([jitterRow], { color: false });
+    const line = matrix
+      .split("\n")
+      .find((l) => l.includes("vendor/jittery-model"));
+    assertStringIncludes(line!, "OK");
+  },
+);
+
 Deno.test(
   "--legacy controls human display only; JSON always exposes legacy_rows",
   () => {

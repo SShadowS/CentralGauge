@@ -31,7 +31,7 @@
  * @module src/lifecycle/status-hints
  */
 import type { Hint, StateRow, Step } from "./status-types.ts";
-import { STALE_DAYS } from "./status-renderer.ts";
+import { isClockSkewed, STALE_DAYS } from "./status-renderer.ts";
 
 interface ModelState {
   bench?: StateRow;
@@ -64,8 +64,23 @@ function groupByModel(rows: StateRow[]): Map<string, ModelState> {
 function isStale(r: StateRow | undefined): boolean {
   if (!r) return false;
   if (r.last_event_type.endsWith(".started")) return false;
-  const ageDays = (Date.now() - r.last_ts) / (1000 * 60 * 60 * 24);
+  // Clamp negative ageDays to zero so a clock-skewed row doesn't get stale
+  // (the dedicated clock-skew hint takes precedence in `hintFor`).
+  const ageDays = Math.max(0, (Date.now() - r.last_ts) / (1000 * 60 * 60 * 24));
   return ageDays > STALE_DAYS;
+}
+
+/**
+ * Detect a clock-skewed row across any of the model's tracked steps. Returns
+ * the first skewed row encountered (priority: bench → debug → analyze →
+ * publish) so the hint command identifies the offending row's slug.
+ */
+function findClockSkewedRow(st: ModelState): StateRow | undefined {
+  for (const step of ["bench", "debug", "analyze", "publish"] as const) {
+    const r = st[step];
+    if (r && isClockSkewed(r.last_ts)) return r;
+  }
+  return undefined;
 }
 
 function isInProgress(r: StateRow | undefined): boolean {
@@ -77,6 +92,20 @@ function isMissing(r: StateRow | undefined): boolean {
 }
 
 function hintFor(model: string, st: ModelState): Hint | null {
+  // 0. Clock-skew (future last_ts) — highest precedence so an absurd
+  // future timestamp never gets masked by a downstream missing-step hint.
+  // The matrix renderer flags the row as STALE in lockstep
+  // (see `isClockSkewed` in status-renderer.ts).
+  const skewed = findClockSkewedRow(st);
+  if (skewed) {
+    return {
+      model_slug: model,
+      severity: "info",
+      text: `Future timestamp detected for ${model} (clock skew?). Re-poll: ` +
+        `centralgauge lifecycle status --model ${model}`,
+      command: `centralgauge lifecycle status --model ${model}`,
+    };
+  }
   // 1. bench missing → entry-point hint.
   if (isMissing(st.bench)) {
     return {
