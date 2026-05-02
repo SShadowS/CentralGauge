@@ -1,5 +1,8 @@
 # Lifecycle Implementation — Plan Index & Wavefront Sequencing
 
+> **Status:** All 7 waves shipped. Initiative closed.
+> Final acceptance summary: [`2026-04-29-lifecycle-COMPLETE.md`](./2026-04-29-lifecycle-COMPLETE.md).
+
 ## Goal
 
 Sequence the 10 lifecycle implementation plans into execution wavefronts so independent plans run in parallel via subagent-driven-development.
@@ -10,18 +13,18 @@ The strategic plan [`2026-04-29-model-lifecycle-event-sourcing.md`](./2026-04-29
 
 ## Wavefront table
 
-| Wave | Plan | Depends-On | Parallel-with | Est. lines | File |
-|------|------|------------|---------------|------------|------|
-| 1 | A — Foundation (schema + event log + envelope) | — | — | ~450 | [lifecycle-A-foundation-impl.md](./2026-04-29-lifecycle-A-foundation-impl.md) |
-| 2 | B — Backfill + slug migration | A | D-prompt | ~400 | [lifecycle-B-backfill-impl.md](./2026-04-29-lifecycle-B-backfill-impl.md) |
-| 2 | D-prompt — Analyzer prompt + batch endpoint | A | B | ~350 | [lifecycle-D-prompt-impl.md](./2026-04-29-lifecycle-D-prompt-impl.md) |
-| 3 | C — Orchestrator (`cycle` command + checkpointing) | A, B, D-prompt | — | ~600 | [lifecycle-C-orchestrator-impl.md](./2026-04-29-lifecycle-C-orchestrator-impl.md) |
-| 4 | D-data — Concept clustering + registry backfill | C | — | ~450 | [lifecycle-D-data-impl.md](./2026-04-29-lifecycle-D-data-impl.md) |
-| 5 | E — Differential analysis (gen-N vs gen-N-1) | D-data | F, H | ~400 | [lifecycle-E-differential-impl.md](./2026-04-29-lifecycle-E-differential-impl.md) |
-| 5 | F — Quality scoring + `/admin/lifecycle/review` UI | D-data | E, H | ~550 | [lifecycle-F-quality-review-impl.md](./2026-04-29-lifecycle-F-quality-review-impl.md) |
-| 5 | H — `centralgauge status` CLI matrix | D-data | E, F | ~350 | [lifecycle-H-status-cli-impl.md](./2026-04-29-lifecycle-H-status-cli-impl.md) |
-| 6 | G — Weekly CI cron + digest | E, F, H | — | ~300 | [lifecycle-G-ci-impl.md](./2026-04-29-lifecycle-G-ci-impl.md) |
-| 7 | J — Docs + acceptance | G | — | ~250 | [lifecycle-J-acceptance-impl.md](./2026-04-29-lifecycle-J-acceptance-impl.md) |
+| Wave | Plan | Depends-On | Parallel-with | Est. lines | File | Status |
+|------|------|------------|---------------|------------|------|--------|
+| 1 | A — Foundation (schema + event log + envelope) | — | — | ~450 | [lifecycle-A-foundation-impl.md](./2026-04-29-lifecycle-A-foundation-impl.md) | shipped |
+| 2 | B — Backfill + slug migration | A | D-prompt | ~400 | [lifecycle-B-backfill-impl.md](./2026-04-29-lifecycle-B-backfill-impl.md) | shipped |
+| 2 | D-prompt — Analyzer prompt + batch endpoint | A | B | ~350 | [lifecycle-D-prompt-impl.md](./2026-04-29-lifecycle-D-prompt-impl.md) | shipped |
+| 3 | C — Orchestrator (`cycle` command + checkpointing) | A, B, D-prompt | — | ~600 | [lifecycle-C-orchestrator-impl.md](./2026-04-29-lifecycle-C-orchestrator-impl.md) | shipped |
+| 4 | D-data — Concept clustering + registry backfill | C | — | ~450 | [lifecycle-D-data-impl.md](./2026-04-29-lifecycle-D-data-impl.md) | shipped |
+| 5 | E — Differential analysis (gen-N vs gen-N-1) | D-data | F, H | ~400 | [lifecycle-E-differential-impl.md](./2026-04-29-lifecycle-E-differential-impl.md) | shipped |
+| 5 | F — Quality scoring + `/admin/lifecycle/review` UI | D-data | E, H | ~550 | [lifecycle-F-quality-review-impl.md](./2026-04-29-lifecycle-F-quality-review-impl.md) | shipped |
+| 5 | H — `centralgauge status` CLI matrix | D-data | E, F | ~350 | [lifecycle-H-status-cli-impl.md](./2026-04-29-lifecycle-H-status-cli-impl.md) | shipped |
+| 6 | G — Weekly CI cron + digest | E, F, H | — | ~300 | [lifecycle-G-ci-impl.md](./2026-04-29-lifecycle-G-ci-impl.md) | shipped |
+| 7 | J — Docs + acceptance | G | — | ~250 | [lifecycle-J-acceptance-impl.md](./2026-04-29-lifecycle-J-acceptance-impl.md) | shipped |
 
 ## Dependency graph (ASCII)
 

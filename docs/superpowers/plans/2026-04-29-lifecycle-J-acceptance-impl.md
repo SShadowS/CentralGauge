@@ -1,5 +1,13 @@
 # Phase J — Lifecycle Acceptance + Docs — Implementation Plan
 
+> **Status:** Closed. Final acceptance summary at
+> [`2026-04-29-lifecycle-COMPLETE.md`](./2026-04-29-lifecycle-COMPLETE.md).
+> All J1–J6 deliverables shipped in Wave 7 commits on branch
+> `lifecycle/wave-7-acceptance`. Sub-step checkboxes below remain
+> unchecked in the source plan as a record of the sub-task list; the
+> overarching deliverables (J1–J7) are complete per the COMPLETE.md
+> ledger and the strategic plan's J phase checkboxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the model-lifecycle event-sourcing initiative. Land the operator + reviewer documentation, the integration test that exercises the full `cycle` flow against an in-memory D1, the changelog entries (project-level + user-facing), the runbook updates that cover the new admin endpoints + CF Access policy, and the visual-regression baselines for the new admin surfaces. After this plan ships, every phase A–H deliverable has a documented surface, a test, and a place in the changelog.
