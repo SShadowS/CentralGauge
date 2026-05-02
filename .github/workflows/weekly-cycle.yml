@@ -119,6 +119,19 @@ jobs:
             "${{ github.run_id }}" \
             "$CYCLE_RESULT")
 
+          # Truncate before passing to gh: GitHub caps issue bodies at
+          # 65,536 chars. A noisy week (many failures × verbose error
+          # messages) can blow the cap; without truncation `gh issue
+          # create --body "$BODY"` errors out and `set -e` kills the
+          # step before the artifact upload runs. The artifact (uploaded
+          # below regardless) always preserves the full digest.
+          MAX_BODY_BYTES=60000
+          if [ "${#BODY}" -gt "$MAX_BODY_BYTES" ]; then
+            BODY="${BODY:0:$MAX_BODY_BYTES}
+
+          [body truncated to ${MAX_BODY_BYTES} chars; full digest in workflow artifact]"
+          fi
+
           # Find or create the sticky issue.
           #
           # IMPORTANT: We fetch ALL matches via `.[].number` (NOT the

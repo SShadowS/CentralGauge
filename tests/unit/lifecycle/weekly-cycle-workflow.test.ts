@@ -101,3 +101,51 @@ Deno.test(
     );
   },
 );
+
+Deno.test(
+  "weekly-cycle.yml — issue body truncated to <= GitHub's 65,536-char cap",
+  async () => {
+    const wf = await loadWorkflow();
+    const step = findStep(wf, "Post or update sticky digest issue");
+    const run = step.run ?? "";
+
+    // GitHub caps issue bodies at 65,536 chars. A noisy week (many
+    // failures × verbose error messages) can blow the cap; without
+    // truncation `gh issue create --body "$BODY"` errors out and
+    // `set -e` kills the step before artifact upload.
+    const capMatch = run.match(/MAX_BODY_BYTES=(\d+)/);
+    assert(
+      capMatch !== null,
+      "expected MAX_BODY_BYTES=<n> truncation cap variable",
+    );
+    const cap = Number(capMatch![1]);
+    assert(
+      cap > 0 && cap <= 65_536,
+      `MAX_BODY_BYTES=${cap} must be > 0 and <= GitHub's 65,536-char cap`,
+    );
+    // Some headroom for the truncation footer (otherwise a body sized
+    // exactly at the cap + footer would re-blow the cap).
+    assert(
+      cap <= 64_000,
+      `MAX_BODY_BYTES=${cap} should leave headroom for truncation footer`,
+    );
+
+    // Footer must direct the operator to the artifact for the full digest.
+    assert(
+      run.includes("body truncated"),
+      "expected truncation footer mentioning 'body truncated' for visibility",
+    );
+    assert(
+      run.includes("artifact"),
+      "expected truncation footer to point operator to workflow artifact",
+    );
+
+    // The truncation step must guard the comparison: an unguarded
+    // ${#BODY} check could mistakenly truncate a valid short body if
+    // the comparator is reversed.
+    assert(
+      /\$\{#BODY\}/.test(run),
+      "expected ${#BODY} length check to gate truncation",
+    );
+  },
+);
