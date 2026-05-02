@@ -14,9 +14,8 @@
 
   let { data } = $props();
 
-  const FILTER_KEYS = new Set(['model', 'tier', 'task_set', 'since']);
+  const FILTER_KEYS = new Set(['model', 'task_set', 'since']);
 
-  const tierVal = $derived(data.filters.tier);
   const modelVal = $derived(data.filters.model);
 
   // Banner state for incoming runs. Holds the most recent N (cap 3) IDs;
@@ -145,12 +144,6 @@
       <Input label="Model slug" labelHidden type="search" placeholder="slug…" value={modelVal} oninput={onModelInput} />
     </fieldset>
 
-    <fieldset class="group">
-      <legend>Tier</legend>
-      <Radio label="All"      name="tier" value=""         group={tierVal} onchange={() => pushFilter({ tier: null })} />
-      <Radio label="Verified" name="tier" value="verified" group={tierVal} onchange={() => pushFilter({ tier: 'verified' })} />
-      <Radio label="Claimed"  name="tier" value="claimed"  group={tierVal} onchange={() => pushFilter({ tier: 'claimed' })} />
-    </fieldset>
   </FilterRail>
 
   <div class="results">

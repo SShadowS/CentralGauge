@@ -9,17 +9,14 @@
   import SummaryBand from '$lib/components/domain/SummaryBand.svelte';
   import PerformanceVsCostChart from '$lib/components/domain/PerformanceVsCostChart.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
-  import Checkbox from '$lib/components/ui/Checkbox.svelte';
   import { formatRelativeTime } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
 
-  const FILTER_KEYS = new Set(['set', 'tier', 'difficulty', 'family', 'since', 'category']);
+  const FILTER_KEYS = new Set(['set', 'difficulty', 'family', 'since', 'category']);
 
   let setVal = $derived(data.filters.set);
-  let tierVerified = $derived(data.filters.tier === 'verified' || data.filters.tier === 'all');
-  let tierClaimed = $derived(data.filters.tier === 'claimed' || data.filters.tier === 'all');
   let categoryVal = $derived(data.filters.category ?? '');
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
@@ -65,13 +62,6 @@
     goto(`?${sp.toString()}`, { keepFocus: true, noScroll: true, invalidateAll: true });
   }
 
-  function applyTier(v: boolean, c: boolean) {
-    if (v && c) pushFilter({ tier: null }); // both checked === all
-    else if (v) pushFilter({ tier: 'verified' });
-    else if (c) pushFilter({ tier: 'claimed' });
-    else pushFilter({ tier: null });
-  }
-
   function onSort(next: string) {
     pushFilter({ sort: next });
   }
@@ -112,12 +102,6 @@
       <legend>Set</legend>
       <Radio label="Current" name="set" value="current" group={setVal} onchange={() => pushFilter({ set: 'current' })} />
       <Radio label="All"     name="set" value="all"     group={setVal} onchange={() => pushFilter({ set: 'all' })} />
-    </fieldset>
-
-    <fieldset class="group">
-      <legend>Tier</legend>
-      <Checkbox label="Verified" checked={tierVerified} onchange={(e) => applyTier((e.target as HTMLInputElement).checked, tierClaimed)} />
-      <Checkbox label="Claimed"  checked={tierClaimed}  onchange={(e) => applyTier(tierVerified, (e.target as HTMLInputElement).checked)} />
     </fieldset>
 
     {#if data.categories.length > 0}

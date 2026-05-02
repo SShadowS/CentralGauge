@@ -6,7 +6,6 @@
   import AttemptBreakdownTile from '$lib/components/domain/AttemptBreakdownTile.svelte';
   import SettingsBadge from '$lib/components/domain/SettingsBadge.svelte';
   import TableOfContents from '$lib/components/domain/TableOfContents.svelte';
-  import TierBadge from '$lib/components/domain/TierBadge.svelte';
   import FamilyBadge from '$lib/components/domain/FamilyBadge.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import TaskHistoryChart from '$lib/components/domain/TaskHistoryChart.svelte';
@@ -15,7 +14,7 @@
   import ShortcomingsSection from '$lib/components/domain/ShortcomingsSection.svelte';
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import { tierFromRow, formatScore, formatCost, formatDuration } from '$lib/client/format';
+  import { formatScore, formatCost, formatDuration } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   import type { RunsListItem } from '$shared/api-types';
 
@@ -75,8 +74,6 @@
     })),
   );
 
-  const tier = $derived(tierFromRow({ verified_runs: m.aggregates.verified_runs }));
-
   const tocItems = [
     { id: 'overview',     label: 'Overview' },
     { id: 'settings',     label: 'Settings' },
@@ -112,7 +109,6 @@
 <header class="page-header">
   <div class="title-row">
     <h1>{m.model.display_name}<SettingsBadge suffix={m.model.settings_suffix} /></h1>
-    <TierBadge {tier} />
     <Button href="/compare?models={m.model.slug}" variant="secondary" size="sm">Compare</Button>
     <Button href="/api/v1/models/{m.model.slug}" variant="ghost" size="sm">JSON</Button>
     {#if data.flags.sse_live_updates && sse}

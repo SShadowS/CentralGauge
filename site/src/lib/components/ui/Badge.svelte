@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  type Variant = 'tier-verified' | 'tier-claimed' | 'success' | 'warning' | 'danger' | 'neutral';
+  type Variant = 'success' | 'warning' | 'danger' | 'neutral';
   interface Props { variant?: Variant; children: Snippet; }
   let { variant = 'neutral', children }: Props = $props();
 </script>
@@ -21,8 +21,6 @@
     text-transform: uppercase;
     letter-spacing: var(--tracking-wide);
   }
-  .variant-tier-verified { background: var(--tier-verified); color: #fff; }
-  .variant-tier-claimed  { background: var(--tier-claimed);  color: #fff; }
   .variant-success { background: var(--success); color: #fff; }
   .variant-warning { background: var(--warning); color: #fff; }
   .variant-danger  { background: var(--danger);  color: #fff; }

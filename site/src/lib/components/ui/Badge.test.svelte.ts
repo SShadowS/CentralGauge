@@ -4,8 +4,8 @@ import Badge from "./Badge.svelte";
 
 describe("Badge", () => {
   it("renders text", () => {
-    render(Badge, { children: "verified", variant: "tier-verified" });
-    expect(screen.getByText("verified")).toBeDefined();
+    render(Badge, { children: "ok", variant: "success" });
+    expect(screen.getByText("ok")).toBeDefined();
   });
   it("applies variant", () => {
     const { container } = render(Badge, { variant: "success", children: "ok" });

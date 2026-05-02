@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatRelativeTime, tierFromRow } from '$lib/client/format';
+  import { formatRelativeTime } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
   import ScoreCell from './ScoreCell.svelte';
   import CostCell from './CostCell.svelte';
@@ -71,7 +71,6 @@
               display_name={row.model.display_name}
               api_model_id={row.model.api_model_id}
               family_slug={row.family_slug}
-              tier={tierFromRow(row)}
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
           <td class="score"><ScoreCell score={row.avg_score} /></td>

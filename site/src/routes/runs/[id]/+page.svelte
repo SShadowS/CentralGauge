@@ -4,7 +4,6 @@
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import Tabs from '$lib/components/ui/Tabs.svelte';
   import StatTile from '$lib/components/domain/StatTile.svelte';
-  import TierBadge from '$lib/components/domain/TierBadge.svelte';
   import RunStatusBadge from '$lib/components/domain/RunStatusBadge.svelte';
   import ModelLink from '$lib/components/domain/ModelLink.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
@@ -121,7 +120,6 @@
 <header class="page-header">
   <div class="title-row">
     <h1>Run <code class="text-mono">{r.id.slice(0, 12)}…</code></h1>
-    <TierBadge tier={r.tier} />
     <RunStatusBadge status={r.status} />
     {#if isLive && sse}
       <LiveStatus {sse} onReconnect={reconnect} label="watching for completion…" />

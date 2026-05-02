@@ -6,7 +6,6 @@ import {
   formatScore,
   formatTaskRatio,
   formatTokens,
-  tierFromRow,
 } from "./format";
 
 describe("format", () => {
@@ -93,13 +92,4 @@ describe("format", () => {
     });
   });
 
-  describe("tierFromRow", () => {
-    it("verified when verified_runs > 0", () => {
-      expect(tierFromRow({ verified_runs: 1 })).toBe("verified");
-      expect(tierFromRow({ verified_runs: 100 })).toBe("verified");
-    });
-    it("claimed when verified_runs === 0", () => {
-      expect(tierFromRow({ verified_runs: 0 })).toBe("claimed");
-    });
-  });
 });

@@ -2,7 +2,6 @@
   import type { RunsListItem } from '$shared/api-types';
   import { formatRelativeTime, formatTaskRatio, formatCost, formatDuration, formatScore } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
-  import TierBadge from './TierBadge.svelte';
   import RunStatusBadge from './RunStatusBadge.svelte';
 
   interface Props { rows: RunsListItem[]; }
@@ -16,7 +15,6 @@
       <tr>
         <th scope="col">Started</th>
         <th scope="col">Model</th>
-        <th scope="col">Tier</th>
         <th scope="col">Tasks</th>
         <th scope="col">Score</th>
         <th scope="col">Cost</th>
@@ -38,7 +36,6 @@
               family_slug={row.model.family_slug}
             />
           </td>
-          <td><TierBadge tier={row.tier} /></td>
           <td class="text-mono">{formatTaskRatio(row.tasks_passed, row.tasks_attempted)}</td>
           <td class="text-mono">{formatScore(row.avg_score)}</td>
           <td class="text-mono">{formatCost(row.cost_usd)}</td>

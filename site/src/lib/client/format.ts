@@ -58,16 +58,3 @@ export function formatRelativeTime(
 export function formatTaskRatio(passed: number, total: number): string {
   return `${passed}/${total}`;
 }
-
-import type { LeaderboardRow } from "$shared/api-types";
-
-/**
- * Heuristic-derived tier from a LeaderboardRow. The API doesn't yet expose
- * an explicit `tier` field; we infer from `verified_runs`. If the threshold
- * changes (e.g. "verified ≥ 3 runs") or a third tier appears, update here.
- */
-export function tierFromRow(
-  row: Pick<LeaderboardRow, "verified_runs">,
-): "verified" | "claimed" {
-  return row.verified_runs > 0 ? "verified" : "claimed";
-}

@@ -126,6 +126,6 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Verified runs',
     short: 'Runs signed and verified by an independent verifier machine.',
     formula: 'COUNT of runs where the Ed25519 signature was verified by the worker at ingest.',
-    when: 'Verified runs have a stronger integrity guarantee. The tier badge (Verified vs. Claimed) reflects this count.',
+    when: 'Verified runs have a stronger integrity guarantee (Ed25519 signature verified at ingest).',
   },
 };

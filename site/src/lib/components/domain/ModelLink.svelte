@@ -1,20 +1,17 @@
 <script lang="ts">
   import FamilyBadge from './FamilyBadge.svelte';
-  import TierBadge from './TierBadge.svelte';
 
   interface Props {
     slug: string;
     display_name: string;
     api_model_id: string;
     family_slug: string;
-    tier?: 'verified' | 'claimed';
   }
-  let { slug, display_name, api_model_id, family_slug, tier }: Props = $props();
+  let { slug, display_name, api_model_id, family_slug }: Props = $props();
 </script>
 
 <div class="row">
   <a class="name" href="/models/{slug}">{display_name}</a>
-  {#if tier}<TierBadge {tier} />{/if}
   <FamilyBadge slug={family_slug} />
   <span class="api-id text-faint">{api_model_id}</span>
 </div>

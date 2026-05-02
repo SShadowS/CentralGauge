@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { ModelsIndexItem } from '$shared/api-types';
-  import { formatScore, formatRelativeTime, tierFromRow } from '$lib/client/format';
+  import { formatScore, formatRelativeTime } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
-  import TierBadge from './TierBadge.svelte';
 
   interface Props { rows: ModelsIndexItem[]; }
   let { rows }: Props = $props();
@@ -28,14 +27,13 @@
         <th scope="col">API ID</th>
         <th scope="col">Score</th>
         <th scope="col">Runs</th>
-        <th scope="col">Tier</th>
         <th scope="col">Last run</th>
       </tr>
     </thead>
     {#each groups as [family, items]}
       <tbody>
         <tr class="group">
-          <th scope="rowgroup" colspan="6">{family}</th>
+          <th scope="rowgroup" colspan="5">{family}</th>
         </tr>
         {#each items as r (r.slug)}
           <tr>
@@ -51,13 +49,6 @@
               {/if}
             </td>
             <td class="text-mono">{r.run_count}</td>
-            <td>
-              {#if r.run_count > 0}
-                <TierBadge tier={tierFromRow({ verified_runs: r.verified_runs })} />
-              {:else}
-                <span class="text-faint">—</span>
-              {/if}
-            </td>
             <td class="text-mono text-muted">
               {#if r.last_run_at}
                 {formatRelativeTime(r.last_run_at)}
