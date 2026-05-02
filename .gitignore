@@ -91,6 +91,10 @@ test-configs/*/.tasks/
 tests/al/dependencies/*/.alpackages/
 tests/al/dependencies/*/output/
 
+# Plan G — workflow orchestrator output (CI-only).
+weekly-cycle-result.json
+digest.md
+
 # Local debug files and scripts
 scripts/*
 # ...except checked-in operational tooling:
