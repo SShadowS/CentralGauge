@@ -469,6 +469,178 @@ Deno.test("runCycle publish idempotency: identical input → second cycle skips 
   }
 });
 
+Deno.test("runCycle lock-token tiebreaker: foreign cycle.started written between own write+read → newcomer loses race", async () => {
+  // J4 (Wave 7) — strategic-plan acceptance assertion: same-(model,
+  // task_set) parallel cycles must not both proceed. The loser writes
+  // `cycle.aborted{reason='lost_race'}` and throws; the winner runs
+  // the pipeline normally. Coverage gap before this test: the existing
+  // tests/unit/lifecycle/orchestrator.test.ts only exercises a single
+  // serial invocation; a regression in `acquireLock`'s tiebreaker
+  // logic (e.g. wrong sort order, off-by-one on the
+  // most-recent-cycle.started walk) would not surface until production.
+  //
+  // Two `runCycle` calls under `Promise.all` cannot reliably race in
+  // this fixture — the in-memory event-store backend resolves both
+  // `appendEvent` and `queryEvents` synchronously via
+  // `Promise.resolve(...)`, so JS's microtask scheduler tends to
+  // drain one invocation entirely before the other's continuation
+  // runs. Production has real D1 round-trips and the race is real;
+  // here it's masked.
+  //
+  // The deterministic substitute is a custom event-store backend
+  // that interleaves a foreign `cycle.started` with a HIGHER id
+  // between the newcomer's write and read — simulating the
+  // production race where another writer's started lands first in
+  // the worker's append-only D1. The newcomer's `acquireLock` walk
+  // finds the foreign event as the most-recent-active winner, sees
+  // its lock_token differs, and takes the loss path. Same
+  // `acquireLock` code path as a true race; deterministic.
+  const tmp = await createTempDir("cycle-e2e-tiebreaker");
+  const events: FakeEvent[] = [];
+  const FOREIGN_LOCK_TOKEN = "11111111-2222-3333-4444-555555555555";
+  // Build a backend that mirrors `inMemoryStore`, but on the FIRST
+  // queryEvents call after the newcomer's cycle.started, injects a
+  // foreign cycle.started with a higher id. This simulates a parallel
+  // writer winning the race after the newcomer's append but before
+  // its read-back.
+  let injected = false;
+  const baseStore = inMemoryStore(events);
+  const racingStore = {
+    appendEvent: baseStore.appendEvent.bind(baseStore),
+    queryEvents: async (
+      filter: { model_slug: string; task_set_hash?: string | undefined },
+      opts: unknown,
+    ): Promise<LifecycleEvent[]> => {
+      if (
+        !injected &&
+        events.some((e) => e.event_type === "cycle.started")
+      ) {
+        // Inject the foreign winner with a higher id than the
+        // newcomer's just-written cycle.started.
+        injected = true;
+        const nextId = events.length + 1;
+        events.push({
+          id: nextId,
+          ts: Date.now(),
+          model_slug: filter.model_slug,
+          task_set_hash: filter.task_set_hash ?? "current",
+          event_type: "cycle.started",
+          actor: "operator",
+          payload: {
+            from_step: "bench",
+            to_step: "publish",
+            force_rerun_steps: [],
+            lock_token: FOREIGN_LOCK_TOKEN,
+            ttl_seconds: 5400,
+          },
+        } as FakeEvent);
+      }
+      return await baseStore.queryEvents(filter, opts);
+    },
+  };
+  setEventStore(racingStore);
+  try {
+    await writeCgConfig(tmp);
+    setStepDispatcher((_step, _ctx) =>
+      Promise.resolve({
+        success: true,
+        eventType: "bench.completed",
+        payload: { runs_count: 1, tasks_count: 1, results_count: 1 },
+      })
+    );
+    const { runCycle } = await import("../../../src/lifecycle/orchestrator.ts");
+    const oldCwd = Deno.cwd();
+    Deno.chdir(tmp);
+    let thrown: Error | null = null;
+    try {
+      try {
+        await runCycle({
+          llms: ["anthropic/claude-opus-4-7"],
+          taskSet: "current",
+          fromStep: "bench",
+          toStep: "bench",
+          forceRerun: [],
+          analyzerModel: "anthropic/claude-opus-4-6",
+          dryRun: false,
+          forceUnlock: false,
+          yes: true,
+        });
+      } catch (e) {
+        thrown = e as Error;
+      }
+
+      // The newcomer must have thrown — `acquireLock`'s loss path
+      // re-raises after emitting cycle.aborted.
+      assert(
+        thrown,
+        "newcomer should throw after losing the lock race",
+      );
+      assert(
+        thrown!.message.includes("lost lock race"),
+        `expected 'lost lock race' in throw, got: ${thrown!.message}`,
+      );
+
+      // Sequence: newcomer's cycle.started (id=1), foreign winner
+      // injected on the read-back path (id=2), newcomer's
+      // cycle.aborted{lost_race} (id=3). No cycle.completed, no
+      // bench.*. TTL detection gates on the prior cycle.started being
+      // older than CYCLE_TTL_SECONDS; the foreign event is fresh, so
+      // no cycle.timed_out is emitted.
+      const aborted = events.filter((e) => e.event_type === "cycle.aborted");
+      assertEquals(
+        aborted.length,
+        1,
+        "expected exactly one cycle.aborted event from the newcomer",
+      );
+      const abortedPayload = aborted[0]!.payload as Record<string, unknown>;
+      assertEquals(abortedPayload["reason"], "lost_race");
+      // The newcomer captures the FOREIGN lock token in the abort
+      // payload — critical for forensics when triaging stuck locks.
+      assertEquals(
+        abortedPayload["winner_lock_token"],
+        FOREIGN_LOCK_TOKEN,
+        "loser's cycle.aborted must record the winning lock_token for triage",
+      );
+
+      // Started events: the newcomer's (id=1) + the injected foreign
+      // (id=2). Both surface in the event log.
+      const startedEvents = events.filter((e) =>
+        e.event_type === "cycle.started"
+      );
+      assertEquals(
+        startedEvents.length,
+        2,
+        "exactly two cycle.started — the newcomer and the injected foreign",
+      );
+
+      // No bench/cycle.completed — the newcomer never reached the
+      // step loop after losing the lock.
+      const completed = events.filter((e) =>
+        e.event_type === "cycle.completed"
+      );
+      assertEquals(
+        completed.length,
+        0,
+        "no cycle.completed: the newcomer never got past acquireLock",
+      );
+      const benchEvents = events.filter((e) =>
+        e.event_type.startsWith("bench.")
+      );
+      assertEquals(
+        benchEvents.length,
+        0,
+        "no bench.* events: the newcomer never reached the step loop",
+      );
+    } finally {
+      setStepDispatcher(null);
+      Deno.chdir(oldCwd);
+    }
+  } finally {
+    setEventStore(null);
+    await cleanupTempDir(tmp);
+  }
+});
+
 Deno.test("runCycle resume-on-failure: prior bench.failed → next run retries", async () => {
   const tmp = await createTempDir("cycle-e2e-resume");
   const events: FakeEvent[] = [];
