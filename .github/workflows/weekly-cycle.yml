@@ -120,7 +120,33 @@ jobs:
             "$CYCLE_RESULT")
 
           # Find or create the sticky issue.
-          EXISTING=$(gh issue list --label weekly-cycle-digest --state open --json number --jq '.[0].number' || true)
+          #
+          # IMPORTANT: We fetch ALL matches via `.[].number` (NOT the
+          # zero-index variant) so we can detect duplicates. The previous
+          # logic silently picked the first issue when 2+ were open
+          # (manual operator action OR success-then-close race), dropping
+          # the digest comment for the rest. We now fail the step with a
+          # triage message and leave it to the operator to manually close
+          # duplicates before next run:
+          #
+          #   gh issue list --label weekly-cycle-digest --state open
+          #   gh issue close <duplicate-number>
+          #
+          # Recovery: re-run the workflow once the label has at most one
+          # open issue.
+          EXISTING_NUMBERS=$(gh issue list --label weekly-cycle-digest --state open --json number --jq '.[].number' || true)
+          EXISTING_COUNT=0
+          if [ -n "$EXISTING_NUMBERS" ]; then
+            EXISTING_COUNT=$(printf '%s\n' "$EXISTING_NUMBERS" | wc -l | tr -d ' ')
+          fi
+          if [ "$EXISTING_COUNT" -ge 2 ]; then
+            echo "::error::Multiple weekly-cycle-digest issues found (${EXISTING_COUNT}); manual triage required: gh issue list --label weekly-cycle-digest --state open"
+            exit 1
+          fi
+          EXISTING=""
+          if [ "$EXISTING_COUNT" -eq 1 ]; then
+            EXISTING="$EXISTING_NUMBERS"
+          fi
 
           if [ "$CYCLE_RESULT" = "success" ]; then
             if [ -n "$EXISTING" ]; then
@@ -129,11 +155,14 @@ jobs:
             else
               # Create + immediately close on success — the issue serves as a
               # historical record but doesn't hold the operator's attention.
-              gh issue create \
+              NEW_URL=$(gh issue create \
                 --title "Weekly lifecycle digest — $(date -u +%Y-%m-%d)" \
                 --label weekly-cycle-digest \
-                --body "$BODY"
-              NEW_NUM=$(gh issue list --label weekly-cycle-digest --state open --json number --jq '.[0].number')
+                --body "$BODY")
+              # gh issue create prints the URL on stdout; extract the
+              # trailing issue number to avoid re-querying the list (which
+              # would re-trigger the duplicate-detection branch).
+              NEW_NUM=${NEW_URL##*/}
               if [ -n "$NEW_NUM" ]; then
                 gh issue close "$NEW_NUM"
               fi
