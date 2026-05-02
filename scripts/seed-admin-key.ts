@@ -61,7 +61,9 @@ function parseArgs(argv: string[]): CliArgs {
     if (arg === "--scope") {
       const v = argv[++i];
       if (v !== "admin" && v !== "ingest" && v !== "verifier") {
-        console.error(`[FAIL] --scope must be admin|ingest|verifier (got '${v}')`);
+        console.error(
+          `[FAIL] --scope must be admin|ingest|verifier (got '${v}')`,
+        );
         Deno.exit(2);
       }
       scope = v;

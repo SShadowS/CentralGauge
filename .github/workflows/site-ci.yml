@@ -2,18 +2,18 @@ name: Site CI
 
 on:
   pull_request:
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
   push:
-    branches: [ master ]
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    branches: [master]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
 
 defaults:
   run:
     working-directory: site
 
 env:
-  ALLOW_TEST_BROADCAST: 'on'    # gates the test-only /__test_only__/broadcast endpoint
-  CI: '1'
+  ALLOW_TEST_BROADCAST: "on" # gates the test-only /__test_only__/broadcast endpoint
+  CI: "1"
 
 jobs:
   unit-and-build:
@@ -21,7 +21,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run check
       - run: npm run test:main
@@ -37,9 +41,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Required so visual-regression baselines are present for diff.
-          lfs: false   # baselines are NOT in LFS (in-repo per Task G1 design)
+          lfs: false # baselines are NOT in LFS (in-repo per Task G1 design)
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
@@ -63,7 +71,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run build
       - run: npm run seed:e2e

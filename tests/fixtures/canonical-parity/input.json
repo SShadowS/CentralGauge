@@ -1,6 +1,6 @@
 {
   "zebra": 1,
-  "alpha": {"nested_z": 2, "nested_a": [1, null, "s"]},
+  "alpha": { "nested_z": 2, "nested_a": [1, null, "s"] },
   "unicode": "héllo → 世界",
   "negatives": -0,
   "emptyArr": [],

@@ -5,7 +5,7 @@ name: Daily catalog drift probe
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 jobs:
@@ -19,5 +19,5 @@ jobs:
         run: cd site && npm ci
       - name: Run catalog-drift invariant
         env:
-          CI_PROD_PROBE: '1'
+          CI_PROD_PROBE: "1"
         run: cd site && npx vitest run --config vitest.build.config.ts tests/build/catalog-drift-invariant.test.ts
