@@ -277,6 +277,7 @@ Deno.test("StatusJsonOutputSchema accepts a fully populated payload", () => {
       command:
         "centralgauge cycle --llms anthropic/claude-opus-4-7 --from analyze",
     }],
+    error_rows: [],
   };
   const r = StatusJsonOutputSchema.parse(ok);
   assertEquals(r.rows.length, 1);
@@ -428,9 +429,165 @@ Deno.test(
       rows: current,
       legacy_rows: legacy,
       hints: generateHints(current),
+      error_rows: [],
     };
     const verified = StatusJsonOutputSchema.parse(output);
     assertEquals(verified.legacy_rows.length, 1);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Per-model partial-failure handling (IMPORTANT 1)
+// ---------------------------------------------------------------------------
+
+Deno.test(
+  "collectRowsAndErrors continues past a per-model failure and captures it",
+  async () => {
+    const taskSetHash = "test-hash";
+    const csFn = (slug: string): Promise<CurrentStateMap> => {
+      if (slug === "vendor/broken-model") {
+        return Promise.reject(new Error("HTTP 429 Too Many Requests"));
+      }
+      const map: CurrentStateMap = {
+        bench: ev({
+          id: 1,
+          model_slug: slug,
+          task_set_hash: taskSetHash,
+          event_type: "bench.completed",
+        }),
+      };
+      return Promise.resolve(map);
+    };
+    const result = await __testing__.collectRowsAndErrors(
+      ["vendor/m1", "vendor/broken-model", "vendor/m3"],
+      taskSetHash,
+      (slug, _hash) => csFn(slug),
+    );
+    // Two successful models contribute one bench row each.
+    assertEquals(result.rows.length, 2);
+    assertEquals(
+      result.rows.map((r) => r.model_slug).sort(),
+      ["vendor/m1", "vendor/m3"],
+    );
+    // The failed model is captured in error_rows.
+    assertEquals(result.errorRows.length, 1);
+    assertEquals(result.errorRows[0]!.model_slug, "vendor/broken-model");
+    assertStringIncludes(result.errorRows[0]!.error_message, "429");
+  },
+);
+
+Deno.test(
+  "collectRowsAndErrors yields empty error_rows when all models succeed",
+  async () => {
+    const taskSetHash = "test-hash";
+    const csFn = (slug: string): Promise<CurrentStateMap> => {
+      const map: CurrentStateMap = {
+        bench: ev({
+          id: 1,
+          model_slug: slug,
+          task_set_hash: taskSetHash,
+          event_type: "bench.completed",
+        }),
+      };
+      return Promise.resolve(map);
+    };
+    const result = await __testing__.collectRowsAndErrors(
+      ["vendor/m1", "vendor/m2"],
+      taskSetHash,
+      (slug, _hash) => csFn(slug),
+    );
+    assertEquals(result.rows.length, 2);
+    assertEquals(result.errorRows.length, 0);
+  },
+);
+
+Deno.test(
+  "renderErrorSection emits the failed-model section + retry hints",
+  () => {
+    const errorRows = [
+      { model_slug: "vendor/broken-1", error_message: "HTTP 429" },
+      { model_slug: "vendor/broken-2", error_message: "ENOTFOUND" },
+    ];
+    const out = __testing__.renderErrorSection(errorRows);
+    assertStringIncludes(out, "## Errors");
+    assertStringIncludes(out, "vendor/broken-1");
+    assertStringIncludes(out, "vendor/broken-2");
+    // Both retry hints must be present and slug-specific.
+    assertStringIncludes(
+      out,
+      "centralgauge lifecycle status --model vendor/broken-1",
+    );
+    assertStringIncludes(
+      out,
+      "centralgauge lifecycle status --model vendor/broken-2",
+    );
+  },
+);
+
+Deno.test(
+  "matrix + error section: successful rows render alongside the errors block",
+  async () => {
+    const taskSetHash = "test-hash";
+    const csFn = (slug: string): Promise<CurrentStateMap> => {
+      if (slug === "vendor/down") {
+        return Promise.reject(new Error("HTTP 503 Service Unavailable"));
+      }
+      return Promise.resolve({
+        bench: ev({
+          id: 1,
+          model_slug: slug,
+          task_set_hash: taskSetHash,
+          event_type: "bench.completed",
+        }),
+      });
+    };
+    const { rows, errorRows } = await __testing__.collectRowsAndErrors(
+      ["vendor/up", "vendor/down"],
+      taskSetHash,
+      (slug, _hash) => csFn(slug),
+    );
+    // Successful rows render via the existing matrix path.
+    const matrix = renderMatrix(rows, { color: false });
+    assertStringIncludes(matrix, "vendor/up");
+    // The down model is NOT in the matrix (it threw, so no rows).
+    assertEquals(matrix.includes("vendor/down"), false);
+    // The error section is appended below the matrix.
+    const errSection = __testing__.renderErrorSection(errorRows);
+    assertStringIncludes(errSection, "## Errors");
+    assertStringIncludes(errSection, "vendor/down");
+    assertStringIncludes(errSection, "503");
+  },
+);
+
+Deno.test(
+  "StatusJsonOutputSchema accepts an error_rows array",
+  () => {
+    const ok: StatusJsonOutput = {
+      as_of_ts: 0,
+      rows: [],
+      legacy_rows: [],
+      hints: [],
+      error_rows: [
+        { model_slug: "vendor/broken", error_message: "HTTP 429" },
+      ],
+    };
+    const r = StatusJsonOutputSchema.parse(ok);
+    assertEquals(r.error_rows.length, 1);
+    assertEquals(r.error_rows[0]!.model_slug, "vendor/broken");
+  },
+);
+
+Deno.test(
+  "StatusJsonOutputSchema defaults error_rows to empty array when omitted",
+  () => {
+    // Backwards compat with previous payloads that didn't set error_rows.
+    const r = StatusJsonOutputSchema.parse({
+      as_of_ts: 0,
+      rows: [],
+      legacy_rows: [],
+      hints: [],
+    });
+    assertEquals(r.error_rows, []);
   },
 );
 

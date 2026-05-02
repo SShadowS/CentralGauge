@@ -54,6 +54,7 @@ import { PRE_P6_TASK_SET_SENTINEL } from "../../src/lifecycle/types.ts";
 import { generateHints } from "../../src/lifecycle/status-hints.ts";
 import { renderMatrix } from "../../src/lifecycle/status-renderer.ts";
 import {
+  type ErrorRow,
   type StateRow,
   StateRowSchema,
   type StatusJsonOutput,
@@ -210,15 +211,53 @@ interface FetchAllStateDeps {
   listModelsFn?: (url: string) => Promise<string[]>;
 }
 
+/** Tuple shape returned by {@link fetchAllRows} / {@link collectRowsAndErrors}. */
+export interface FetchAllRowsResult {
+  rows: StateRow[];
+  errorRows: ErrorRow[];
+}
+
+/**
+ * Iterate `models` and call `csFn` per model, capturing per-model failures
+ * in `errorRows` instead of aborting. A single transient 429 / network blip
+ * on model #4 of 6 used to make the operator see zero rows; now the loop
+ * continues and the matrix renders the successful rows + an "## Errors"
+ * section identifying which models failed.
+ *
+ * Pure (no config / IO of its own) — exported for unit tests so callers can
+ * assert the partial-failure semantics without spinning up the worker.
+ */
+export async function collectRowsAndErrors(
+  models: readonly string[],
+  taskSetHash: string,
+  csFn: (slug: string, taskSetHash: string) => Promise<CurrentStateMap>,
+): Promise<FetchAllRowsResult> {
+  const rows: StateRow[] = [];
+  const errorRows: ErrorRow[] = [];
+  for (const slug of models) {
+    try {
+      const state = await csFn(slug, taskSetHash);
+      rows.push(...currentStateToRows(slug, taskSetHash, state));
+    } catch (err) {
+      errorRows.push({
+        model_slug: slug,
+        error_message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { rows, errorRows };
+}
+
 /**
  * Fetch state for every model (or one when --model is set) and flatten the
- * results into a single `StateRow[]` partition-friendly array. Exported
- * for unit tests; production callers go through `handleStatus`.
+ * results into a single `StateRow[]` partition-friendly array, plus any
+ * per-model fetch failures. Exported for unit tests; production callers go
+ * through `handleStatus`.
  */
 export async function fetchAllRows(
   flags: StatusFlags,
   deps: FetchAllStateDeps = {},
-): Promise<StateRow[]> {
+): Promise<FetchAllRowsResult> {
   const csFn = deps.currentStateFn ?? currentState;
   const listFn = deps.listModelsFn ?? listAllModels;
 
@@ -242,34 +281,69 @@ export async function fetchAllRows(
   }
   const adminPriv = await readPrivateKey(config.adminKeyPath);
   const taskSetHash = await resolveTaskSetHash(flags.taskSet);
+  const adminKeyId = config.adminKeyId;
+  const url = config.url;
 
-  const models = flags.model ? [flags.model] : await listFn(config.url);
+  const models = flags.model ? [flags.model] : await listFn(url);
 
-  const allRows: StateRow[] = [];
-  for (const slug of models) {
-    const state = await csFn(slug, taskSetHash, {
-      url: config.url,
-      privateKey: adminPriv,
-      keyId: config.adminKeyId,
-    });
-    allRows.push(...currentStateToRows(slug, taskSetHash, state));
+  return await collectRowsAndErrors(
+    models,
+    taskSetHash,
+    (slug, hash) =>
+      csFn(slug, hash, {
+        url,
+        privateKey: adminPriv,
+        keyId: adminKeyId,
+      }),
+  );
+}
+
+/**
+ * Render the `## Errors` section listing per-model fetch failures + a
+ * paste-ready single-model retry command per failure. Returns "" when
+ * there are no errors so the caller can unconditionally append.
+ *
+ * Exported on `__testing__` for unit tests.
+ */
+function renderErrorSection(errorRows: readonly ErrorRow[]): string {
+  if (errorRows.length === 0) return "";
+  const lines: string[] = [];
+  lines.push("");
+  lines.push(colors.bold(colors.red("## Errors")));
+  lines.push(
+    colors.dim(
+      `${errorRows.length} model${errorRows.length === 1 ? "" : "s"} ` +
+        `failed to fetch state. Successful rows are rendered above; each ` +
+        `failure can be retried singly with the command shown.`,
+    ),
+  );
+  for (const e of errorRows) {
+    lines.push(
+      `  ${colors.red("[FAIL]")} ${e.model_slug}: ${e.error_message}`,
+    );
+    lines.push(
+      `     ${
+        colors.cyan(`centralgauge lifecycle status --model ${e.model_slug}`)
+      }`,
+    );
   }
-  return allRows;
+  return lines.join("\n");
 }
 
 async function handleStatus(flags: StatusFlags): Promise<void> {
-  const rows = await fetchAllRows(flags);
+  const { rows, errorRows } = await fetchAllRows(flags);
   const { current, legacy } = partitionRows(rows);
 
   if (flags.json) {
-    // --json ALWAYS includes legacy_rows regardless of --legacy. Plan G's
-    // CI consumers rely on this contract; --legacy controls only the
-    // human-readable display below.
+    // --json ALWAYS includes legacy_rows + error_rows regardless of --legacy.
+    // Plan G's CI consumers rely on this contract; --legacy controls only
+    // the human-readable display below.
     const output: StatusJsonOutput = {
       as_of_ts: Date.now(),
       rows: current,
       legacy_rows: legacy,
       hints: generateHints(current),
+      error_rows: errorRows,
     };
     // Self-validate before printing — catches drift between the renderer
     // and the schema. Output that fails to parse never reaches stdout.
@@ -306,6 +380,12 @@ async function handleStatus(flags: StatusFlags): Promise<void> {
     );
     console.log(renderMatrix(legacy, { color: true, dim: true }));
   }
+
+  // Per-model partial failures land at the bottom so they don't push the
+  // matrix off-screen on small terminals — operators see the data first,
+  // then the errors + retry commands.
+  const errSection = renderErrorSection(errorRows);
+  if (errSection) console.log(errSection);
 }
 
 /**
@@ -316,6 +396,14 @@ async function handleStatus(flags: StatusFlags): Promise<void> {
  */
 export const __testing__ = {
   listAllModels,
+  /**
+   * Re-exposed under `__testing__` so unit tests can reach the helper through
+   * a single import (`__testing__.collectRowsAndErrors`) — `collectRowsAndErrors`
+   * is also exported as a top-level symbol because future cycle/orchestrator
+   * code may want to reuse it for batch state pulls.
+   */
+  collectRowsAndErrors,
+  renderErrorSection,
 };
 
 export function registerStatusCommand(parent: Command): void {

@@ -56,17 +56,40 @@ export const HintSchema = z.object({
 export type Hint = z.infer<typeof HintSchema>;
 
 /**
+ * One per-model fetch failure captured during a `lifecycle status` run.
+ * The status command iterates models sequentially calling `currentState()`
+ * per model — a single transient 429 / network blip on model #4 of 6 used
+ * to abort the whole run. Now the failure is captured here and the run
+ * continues; operators see successful rows + an "## Errors" section.
+ *
+ * Plan G's CI digest can detect a partial-failure run with:
+ *
+ *   centralgauge lifecycle status --json | jq '.error_rows | length'
+ */
+export const ErrorRowSchema = z.object({
+  model_slug: z.string(),
+  error_message: z.string(),
+});
+export type ErrorRow = z.infer<typeof ErrorRowSchema>;
+
+/**
  * `--json` output schema.
  *
  * `legacy_rows` is ALWAYS populated when pre-P6 sentinel rows exist. The
  * `--legacy` CLI flag controls only the human-readable display section; the
  * JSON contract surfaces both partitions unconditionally so CI consumers
  * (Plan G) need not pass `--legacy` to see them.
+ *
+ * `error_rows` defaults to `[]` for backwards compatibility with payloads
+ * generated before the per-model partial-failure fix. Adding the field is
+ * non-breaking; CI consumers that don't read `error_rows` continue to work
+ * unchanged.
  */
 export const StatusJsonOutputSchema = z.object({
   as_of_ts: z.number().int(),
   rows: z.array(StateRowSchema),
   legacy_rows: z.array(StateRowSchema),
   hints: z.array(HintSchema),
+  error_rows: z.array(ErrorRowSchema).default([]),
 });
 export type StatusJsonOutput = z.infer<typeof StatusJsonOutputSchema>;

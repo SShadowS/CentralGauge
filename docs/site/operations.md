@@ -769,11 +769,52 @@ the command exits 0.
     "severity": "info" | "warn" | "error",
     "text": "<human-readable summary>",
     "command": "<exact command to execute>"
-  }]
+  }],
+  "error_rows": [
+    /* Per-model fetch failures captured during the run. ALWAYS present
+       (defaults to []). See "Partial-failure contract" below. */
+    {
+      "model_slug": "vendor/broken",
+      "error_message": "HTTP 429 Too Many Requests"
+    }
+  ]
 }
 ```
 
 `step` is one of `"bench"`, `"debug"`, `"analyze"`, `"publish"`, `"cycle"`.
+
+### Partial-failure contract
+
+`lifecycle status` iterates models sequentially and calls the signed
+`currentState()` endpoint per model. Before this fix, a single transient
+429 / network blip on model #4 of 6 would abort the entire run and the
+operator saw zero rows.
+
+Now each `currentState()` call is wrapped in try/catch:
+
+- Successful models contribute to `rows` (and the matrix renders normally).
+- Failed models are captured in `error_rows` with the original error
+  message for triage.
+- The loop continues past failures — `rows` is never empty just because
+  one model is unreachable.
+- Human-readable mode appends an `## Errors` section below the matrix
+  listing each failure with a paste-ready single-model retry command:
+  `centralgauge lifecycle status --model <slug>`.
+- `--json` mode includes `error_rows` (array, may be empty) so CI
+  consumers can detect partial-failure runs:
+
+  ```bash
+  ERR_COUNT=$(centralgauge lifecycle status --json | jq '.error_rows | length')
+  if [ "$ERR_COUNT" -gt 0 ]; then
+    echo "::warning::status had $ERR_COUNT per-model failures — see .error_rows[].model_slug for retry list"
+  fi
+  ```
+
+Exit code is `0` even when `error_rows` is non-empty — the run completed
+and the operator has actionable data. CI consumers that want to gate on
+fetch failures should check `.error_rows | length` explicitly. Hard
+failures (config missing, no admin key, network down before any model
+call succeeds) still exit non-zero with `[FAIL]` to stderr.
 
 ### CI consumption pattern (Plan G `weekly-cycle.yml`)
 
