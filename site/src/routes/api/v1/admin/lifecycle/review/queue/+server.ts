@@ -75,22 +75,53 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 
     return jsonResponse(
       {
-        entries: rows.map((r) => ({
-          id: r.id,
-          analysis_event_id: r.analysis_event_id,
-          model_slug: r.model_slug,
-          concept_slug_proposed: r.concept_slug_proposed,
-          // Parse server-side so the UI gets a typed object instead of a
-          // string-that-still-needs-parsing. Plan F's review UI expects
-          // `{ entry, confidence }` per the canonical pending_review shape
-          // (see src/lifecycle/pending-review.ts docstring).
-          payload: JSON.parse(r.payload_json),
-          confidence: r.confidence,
-          created_at: r.created_at,
-          debug_session_id: r.debug_session_id,
-          r2_key: r.r2_key,
-          analyzer_model: r.analyzer_model,
-        })),
+        entries: rows.map((r) => {
+          // Wave 5 / IMPORTANT 4 — per-row try/catch on payload_json
+          // parse. Pre-fix a single corrupted row's SyntaxError surfaced
+          // as 500 internal_error and crashed the whole review UI. Now
+          // surface the row with `payload: null` + `_parse_error` so the
+          // operator can triage one row without losing the queue.
+          let payload: unknown = null;
+          let parseError: string | undefined;
+          try {
+            payload = JSON.parse(r.payload_json) as unknown;
+          } catch (err) {
+            parseError = err instanceof Error ? err.message : String(err);
+            console.warn(
+              `[review/queue] pending_review id=${r.id} payload_json parse failed: ${parseError}`,
+            );
+          }
+          const out: {
+            id: number;
+            analysis_event_id: number;
+            model_slug: string;
+            concept_slug_proposed: string;
+            payload: unknown;
+            confidence: number;
+            created_at: number;
+            debug_session_id: string | null;
+            r2_key: string | null;
+            analyzer_model: string | null;
+            _parse_error?: string;
+          } = {
+            id: r.id,
+            analysis_event_id: r.analysis_event_id,
+            model_slug: r.model_slug,
+            concept_slug_proposed: r.concept_slug_proposed,
+            // Parse server-side so the UI gets a typed object instead of a
+            // string-that-still-needs-parsing. Plan F's review UI expects
+            // `{ entry, confidence }` per the canonical pending_review shape
+            // (see src/lifecycle/pending-review.ts docstring).
+            payload,
+            confidence: r.confidence,
+            created_at: r.created_at,
+            debug_session_id: r.debug_session_id,
+            r2_key: r.r2_key,
+            analyzer_model: r.analyzer_model,
+          };
+          if (parseError !== undefined) out._parse_error = parseError;
+          return out;
+        }),
         count: rows.length,
       },
       200,
