@@ -79,7 +79,7 @@
   <h1>Leaderboard</h1>
   <p class="meta">
     {data.leaderboard.data.length} models · current task set
-    · Updated {formatRelativeTime(data.leaderboard.generated_at)}
+    · Snapshot from {formatRelativeTime(data.leaderboard.generated_at)}
     {#if data.flags.sse_live_updates && sse}
       <LiveStatus {sse} onReconnect={reconnect} />
     {/if}

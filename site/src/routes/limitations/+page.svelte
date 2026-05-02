@@ -18,7 +18,7 @@
   <h1>Limitations</h1>
   <p class="meta text-muted">
     {items.length} AL concepts where models commonly fail · sorted by models affected.
-    Updated {new Date(data.shortcomings.generated_at).toLocaleString('en-US')}.
+    Snapshot from {new Date(data.shortcomings.generated_at).toLocaleString('en-US')}.
   </p>
 </header>
 
