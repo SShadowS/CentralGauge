@@ -53,30 +53,29 @@ export interface AnalyticsOptions {
  * Generate all analytics sections as a single HTML string.
  */
 export function generateAnalyticsSections(
-  _results: BenchmarkResult[],
+  results: BenchmarkResult[],
   sortedModels: [string, PerModelStats][],
-  _shortcomingsMap: Map<string, ModelShortcomingsFile> | undefined,
-  _options: AnalyticsOptions,
+  shortcomingsMap: Map<string, ModelShortcomingsFile> | undefined,
+  options: AnalyticsOptions,
 ): string {
   const sections: string[] = [];
 
-  // Only the dual-axis Performance vs Cost chart is enabled.
-  // Other sections kept in code but disabled:
-  // sections.push(generateDifficultyCurve(results, sortedModels));
-  // sections.push(generatePipeline(results, sortedModels));
-  // sections.push(generateRecoveryRate(sortedModels));
-  // sections.push(generateCostEfficiency(sortedModels));
   sections.push(generateDualAxisChart(sortedModels));
-  // sections.push(generateTokenEfficiency(sortedModels));
-  // sections.push(generateALObjectBreakdown(results, sortedModels));
-  // sections.push(generateThemeRadar(results, sortedModels));
-  // if (shortcomingsMap && shortcomingsMap.size > 0) {
-  //   sections.push(generateErrorPatternHeatmap(sortedModels, shortcomingsMap));
-  // }
-  // sections.push(generateTaskDifficultyHeatmap(results, sortedModels));
-  // if (options.isMultiRun && options.multiRunStats) {
-  //   sections.push(generateConsistencyScore(options.multiRunStats));
-  // }
+  sections.push(generateLatencyDistribution(sortedModels));
+  sections.push(generateDifficultyCurve(results, sortedModels));
+  sections.push(generateALObjectBreakdown(results, sortedModels));
+  sections.push(generateTokenEfficiency(sortedModels));
+  sections.push(generateCostEfficiency(sortedModels));
+  sections.push(generatePipeline(results, sortedModels));
+  sections.push(generateRecoveryRate(sortedModels));
+  if (shortcomingsMap && shortcomingsMap.size > 0) {
+    sections.push(generateErrorPatternHeatmap(sortedModels, shortcomingsMap));
+  }
+  sections.push(generateTaskDifficultyHeatmap(results, sortedModels));
+  if (options.isMultiRun && options.multiRunStats) {
+    sections.push(generateConsistencyScore(options.multiRunStats));
+    sections.push(generatePassHatKChart(options.multiRunStats));
+  }
 
   return sections.filter((s) => s.length > 0).join("\n");
 }
@@ -1134,4 +1133,166 @@ export function generateConsistencyScore(
   </div>`;
 
   return wrapSvgChart(dim, svg, "Consistency Score (across runs)") + legendHtml;
+}
+
+// ---------------------------------------------------------------------------
+// Section 12: pass@k vs pass^k (Multi-run only)
+// ---------------------------------------------------------------------------
+
+export function generatePassHatKChart(
+  multiRunStats: Map<string, MultiRunModelStats>,
+): string {
+  if (multiRunStats.size === 0) return "";
+  const entries = [...multiRunStats.entries()];
+  const runCount = entries[0]?.[1].runCount ?? 1;
+  if (runCount < 2) return ""; // single-run has no useful pass^k story
+
+  const dim: ChartDimensions = {
+    width: 700,
+    height: 360,
+    margin: { top: 20, right: 100, bottom: 40, left: 60 },
+  };
+
+  const ks = Array.from({ length: runCount }, (_, i) => i + 1);
+  const plotW = dim.width - dim.margin.left - dim.margin.right;
+  const xPositions = ks.map((_, i) =>
+    dim.margin.left + (i / Math.max(ks.length - 1, 1)) * plotW
+  );
+
+  const yScale = createLinearScale(
+    0,
+    100,
+    dim.height - dim.margin.bottom,
+    dim.margin.top,
+  );
+  const yTicks = [0, 20, 40, 60, 80, 100];
+
+  let svg = "";
+  svg += svgGrid(dim, yScale, yTicks);
+  svg += svgYAxis(dim, yScale, yTicks, "Rate %");
+  svg += svgXAxisLabels(dim, ks.map((k) => `k=${k}`), xPositions);
+
+  for (const [mIdx, [, stats]] of entries.entries()) {
+    const color = getModelColor(mIdx);
+    // Solid line: pass@k
+    const passAtKPoints: Point[] = ks.map((k, i) => ({
+      x: xPositions[i] ?? dim.margin.left,
+      y: yScale((stats.passAtK[k] ?? 0) * 100),
+    }));
+    svg += svgPolyline(passAtKPoints, color, 2, "none");
+
+    // Dashed line: pass^k
+    const passHatKPoints: Point[] = ks.map((k, i) => ({
+      x: xPositions[i] ?? dim.margin.left,
+      y: yScale((stats.passHatK[k] ?? 0) * 100),
+    }));
+    svg += svgPolyline(
+      passHatKPoints,
+      color,
+      2,
+      "none",
+      `stroke-dasharray="6,4" stroke-opacity="0.85"`,
+    );
+  }
+
+  const legendHtml =
+    `<div class="chart-legend-inline" style="margin-top:0.5rem">
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#6b7280"></span><span class="chart-legend-label">pass@k (any of k)</span></span>
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#6b7280;border:1px dashed #6b7280"></span><span class="chart-legend-label">pass^k (all of k)</span></span>
+  </div>`;
+  const modelLegend = svgLegend(entries.map(([id]) => id), { maxItems: 10 });
+
+  return wrapSvgChart(dim, svg, "pass@k vs pass^k") + legendHtml + modelLegend;
+}
+
+// ---------------------------------------------------------------------------
+// Section 13: Latency Distribution (p50 / p95)
+// ---------------------------------------------------------------------------
+
+export function generateLatencyDistribution(
+  sortedModels: [string, PerModelStats][],
+): string {
+  const data = sortedModels
+    .filter(([, s]) => s.latencyP50 > 0)
+    .map(([variantId, s], idx) => ({
+      name: variantId,
+      p50: s.latencyP50,
+      p95: s.latencyP95,
+      idx,
+    }));
+  if (data.length === 0) return "";
+
+  const maxLat = Math.max(...data.map((d) => d.p95), 1);
+
+  const dim: ChartDimensions = {
+    width: 700,
+    height: Math.max(180, data.length * 32 + 60),
+    margin: { top: 20, right: 60, bottom: 40, left: 160 },
+  };
+
+  const xScale = createLinearScale(
+    0,
+    maxLat * 1.1,
+    dim.margin.left,
+    dim.width - dim.margin.right,
+  );
+  const xTicks = niceAxisTicks(0, maxLat * 1.1, 5);
+  const barHeight = 14;
+  const rowGap = 18;
+
+  let svg = "";
+  const xBottom = dim.height - dim.margin.bottom;
+  svg += svgLine(
+    dim.margin.left,
+    xBottom,
+    dim.width - dim.margin.right,
+    xBottom,
+    "var(--cg-chart-axis)",
+  );
+  for (const tick of xTicks) {
+    svg += svgText(
+      xScale(tick),
+      xBottom + 16,
+      `${(tick / 1000).toFixed(1)}s`,
+      `text-anchor="middle" font-size="10" fill="var(--cg-chart-text)"`,
+    );
+  }
+
+  for (const [i, d] of data.entries()) {
+    const y = dim.margin.top + i * (barHeight + rowGap);
+    const p50W = (d.p50 / (maxLat * 1.1)) * (dim.width - dim.margin.left -
+      dim.margin.right);
+    const p95W = (d.p95 / (maxLat * 1.1)) * (dim.width - dim.margin.left -
+      dim.margin.right);
+
+    svg += svgText(
+      dim.margin.left - 8,
+      y + barHeight / 2 + 4,
+      displayName(d.name),
+      `text-anchor="end" font-size="10" fill="var(--cg-chart-text)"`,
+    );
+    // p95 (background, lighter)
+    svg +=
+      `<rect x="${dim.margin.left}" y="${y}" width="${p95W}" height="${barHeight}" fill="${
+        getModelColor(d.idx)
+      }" opacity="0.35" rx="2"><title>${escapeHtml(d.name)} p95: ${
+        (d.p95 / 1000).toFixed(1)
+      }s</title></rect>`;
+    // p50 (foreground)
+    svg +=
+      `<rect x="${dim.margin.left}" y="${y}" width="${p50W}" height="${barHeight}" fill="${
+        getModelColor(d.idx)
+      }" rx="2"><title>${escapeHtml(d.name)} p50: ${
+        (d.p50 / 1000).toFixed(1)
+      }s</title></rect>`;
+  }
+
+  const legendHtml =
+    `<div class="chart-legend-inline" style="margin-top:0.5rem">
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6"></span><span class="chart-legend-label">p50</span></span>
+    <span class="chart-legend-item"><span class="chart-legend-dot" style="background:#3b82f6;opacity:0.35"></span><span class="chart-legend-label">p95</span></span>
+  </div>`;
+
+  return wrapSvgChart(dim, svg, "Latency Distribution (p50 / p95)") +
+    legendHtml;
 }
