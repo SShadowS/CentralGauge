@@ -2,7 +2,11 @@
  * SQLite implementation of StatsStorage interface
  */
 
-import { Database } from "@db/sqlite";
+// Type-only import — runtime load deferred to `open()` so the FFI-backed
+// SQLite npm dep doesn't require `--unstable-ffi` (and Linux Deno CI's npm
+// init quirks) until stats storage is actually opened. CLI entry points
+// that don't touch stats (doctor, lifecycle digest) skip the load entirely.
+import type { Database } from "@db/sqlite";
 import { StateError } from "../errors.ts";
 import type { StatsStorage } from "./interfaces.ts";
 import {
@@ -58,7 +62,8 @@ export class SqliteStorage implements StatsStorage {
       }
     }
 
-    this.db = new Database(this.dbPath);
+    const { Database: DatabaseCtor } = await import("@db/sqlite");
+    this.db = new DatabaseCtor(this.dbPath);
 
     // Enable foreign keys
     this.db.exec("PRAGMA foreign_keys = ON");

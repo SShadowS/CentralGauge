@@ -1,3 +1,8 @@
+// Pre-load @db/sqlite at module init so the FFI lib is loaded BEFORE
+// any test runs. The implementation now lazy-loads via dynamic import
+// inside `open()`, which would otherwise trip Deno's resource-leak
+// detector ("dynamic library loaded during test, not unloaded").
+import "@db/sqlite";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import {
   assert,

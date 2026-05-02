@@ -9,7 +9,9 @@
  *
  * Plan: docs/superpowers/plans/2026-04-29-lifecycle-D-data-impl.md Task D1.1.
  */
-import { Database } from "@db/sqlite";
+// Type-only — runtime load deferred to `init()`. See note in
+// src/stats/sqlite-storage.ts; same `--unstable-ffi` / Linux Deno CI rationale.
+import type { Database } from "@db/sqlite";
 import { dirname } from "@std/path";
 import { ensureDir } from "@std/fs";
 
@@ -21,7 +23,8 @@ export class EmbeddingCache {
     if (this.path !== ":memory:") {
       await ensureDir(dirname(this.path));
     }
-    this.db = new Database(this.path);
+    const { Database: DatabaseCtor } = await import("@db/sqlite");
+    this.db = new DatabaseCtor(this.path);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS embeddings (
         key TEXT PRIMARY KEY,

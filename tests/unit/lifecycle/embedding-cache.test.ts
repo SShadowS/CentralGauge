@@ -2,6 +2,8 @@
  * D1.1 — EmbeddingCache: SQLite-backed local cache for OpenAI embeddings.
  * Avoids repeated paid API calls during the D1 backfill iteration.
  */
+// Pre-load @db/sqlite — see note in tests/unit/stats/sqlite-storage.test.ts
+import "@db/sqlite";
 import { assertEquals, assertExists } from "@std/assert";
 import { EmbeddingCache } from "../../../src/lifecycle/embedding-cache.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
