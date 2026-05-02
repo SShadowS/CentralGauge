@@ -1,7 +1,7 @@
 import type { ServerLoad } from '@sveltejs/kit';
 import type { FamilyDetail, FamilyDiff } from '$lib/shared/api-types';
 import { error } from '@sveltejs/kit';
-import { getFirst } from '$lib/server/db';
+import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
 
 /**
  * Family page loader. Fetches the existing FamilyDetail payload and the
@@ -59,65 +59,19 @@ export const load: ServerLoad = async ({ params, fetch, depends, setHeaders, pla
     platform?.env?.LIFECYCLE_BLOBS &&
     platform?.env?.DB
   ) {
-    r2BundleAvailable = await checkR2Bundle(
+    // Delegate to the shared `checkDebugBundleAvailable` helper so the
+    // family page loader and the `/admin/lifecycle/debug-bundle-exists`
+    // endpoint stay byte-equivalent in their availability semantics.
+    // The loader collapses any non-success result to false (the UI just
+    // needs the boolean to gate the "Re-analyze gen N" CTA); the admin
+    // endpoint surfaces the discriminated reason via its JSON body.
+    const status = await checkDebugBundleAvailable(
       platform.env.DB,
       platform.env.LIFECYCLE_BLOBS,
       diff.from_gen_event_id,
     );
+    r2BundleAvailable = status.exists;
   }
 
   return { family, diff, r2BundleAvailable };
 };
-
-/**
- * Server-side R2 availability check for the debug bundle preceding a given
- * `analysis.completed` event. Returns false when:
- *   - the event id doesn't exist;
- *   - no `debug.captured` event predates it for the same model + task_set;
- *   - the debug.captured payload lacks `r2_key`;
- *   - the R2 HEAD returns null.
- *
- * Mirrors the lookup logic in
- * `/api/v1/admin/lifecycle/debug-bundle-exists/+server.ts` so the standalone
- * admin endpoint and the family page loader stay byte-equivalent in their
- * availability semantics.
- */
-async function checkR2Bundle(
-  db: D1Database,
-  bucket: R2Bucket,
-  fromEventId: number,
-): Promise<boolean> {
-  try {
-    const ev = await getFirst<{ model_slug: string; task_set_hash: string }>(
-      db,
-      `SELECT model_slug, task_set_hash FROM lifecycle_events WHERE id = ?`,
-      [fromEventId],
-    );
-    if (!ev) return false;
-    const dbg = await getFirst<{ payload_json: string }>(
-      db,
-      `SELECT payload_json
-         FROM lifecycle_events
-        WHERE model_slug = ?
-          AND task_set_hash = ?
-          AND event_type = 'debug.captured'
-          AND id <= ?
-        ORDER BY id DESC
-        LIMIT 1`,
-      [ev.model_slug, ev.task_set_hash, fromEventId],
-    );
-    if (!dbg) return false;
-    let payload: { r2_key?: unknown };
-    try {
-      payload = JSON.parse(dbg.payload_json) as { r2_key?: unknown };
-    } catch {
-      return false;
-    }
-    if (typeof payload.r2_key !== 'string' || payload.r2_key.length === 0) return false;
-    const obj = await bucket.head(payload.r2_key);
-    return obj !== null;
-  } catch (err) {
-    console.error('[family/load] checkR2Bundle failed', err);
-    return false;
-  }
-}

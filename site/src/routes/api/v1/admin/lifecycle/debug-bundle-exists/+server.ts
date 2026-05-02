@@ -1,7 +1,7 @@
 import type { RequestHandler } from './$types';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { getFirst } from '$lib/server/db';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
+import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
 
 /**
  * GET /api/v1/admin/lifecycle/debug-bundle-exists?event_id=<analysis-event-id>
@@ -41,48 +41,32 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       }),
     });
 
-    // The supplied event_id must resolve to a real lifecycle_events row.
-    const ev = await getFirst<{ model_slug: string; task_set_hash: string }>(
+    // Delegate to the shared `checkDebugBundleAvailable` helper so the
+    // admin endpoint and the family page loader stay byte-equivalent in
+    // their availability semantics. The helper returns a discriminated
+    // result; we 404 only when the supplied event_id doesn't exist (the
+    // legacy contract this endpoint surfaces) and 200 otherwise with the
+    // existence flag and reason.
+    const status = await checkDebugBundleAvailable(
       db,
-      `SELECT model_slug, task_set_hash FROM lifecycle_events WHERE id = ?`,
-      [eventId],
+      platform.env.LIFECYCLE_BLOBS,
+      eventId,
     );
-    if (!ev) throw new ApiError(404, 'event_not_found', `event ${eventId} not found`);
-
-    // Locate the most-recent debug.captured for the same (model_slug,
-    // task_set_hash) at or before this event_id. Plan C's verify step writes
-    // debug.captured with payload_json.r2_key carrying the bundle key.
-    const dbg = await getFirst<{ payload_json: string }>(
-      db,
-      `SELECT payload_json
-         FROM lifecycle_events
-        WHERE model_slug = ?
-          AND task_set_hash = ?
-          AND event_type = 'debug.captured'
-          AND id <= ?
-        ORDER BY id DESC
-        LIMIT 1`,
-      [ev.model_slug, ev.task_set_hash, eventId],
-    );
-    if (!dbg) return jsonResponse({ exists: false, reason: 'no_debug_captured' }, 200);
-
-    let payload: { r2_key?: unknown };
-    try {
-      payload = JSON.parse(dbg.payload_json) as { r2_key?: unknown };
-    } catch {
-      return jsonResponse({ exists: false, reason: 'malformed_payload_json' }, 200);
+    if (!status.exists && status.reason === 'event_not_found') {
+      throw new ApiError(404, 'event_not_found', `event ${eventId} not found`);
     }
-    if (typeof payload.r2_key !== 'string' || payload.r2_key.length === 0) {
-      return jsonResponse({ exists: false, reason: 'no_r2_key' }, 200);
+    if (status.exists) {
+      return jsonResponse({ exists: true, r2_key: status.r2_key }, 200);
     }
-
-    // R2 HEAD via the canonical LIFECYCLE_BLOBS binding (declared in
-    // wrangler.toml by Plan A). Do NOT fall back to env.BLOBS — that's the
-    // legacy P6 binding for public ingest blobs and Plan A intentionally
-    // keeps debug bundles in a separate bucket so retention policies don't
-    // co-mingle.
-    const obj = await platform.env.LIFECYCLE_BLOBS.head(payload.r2_key);
-    return jsonResponse({ exists: obj !== null, r2_key: payload.r2_key }, 200);
+    // Legacy wire contract: the `r2_head_null` branch (R2 doesn't have
+    // the bundle even though debug.captured wrote a key) emits
+    // `{ exists: false, r2_key }` WITHOUT a `reason` field. All other
+    // failure variants emit `{ exists: false, reason }`. Preserved
+    // verbatim for backward compatibility with operator scripting.
+    if (status.reason === 'r2_head_null') {
+      return jsonResponse({ exists: false, r2_key: status.r2_key }, 200);
+    }
+    return jsonResponse({ exists: false, reason: status.reason }, 200);
   } catch (err) {
     return errorResponse(err);
   }
