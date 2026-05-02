@@ -17,10 +17,11 @@ import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffi
  * standard token-rate formula. There is no `runs.total_cost_usd` column;
  * cost is derived per-result from immutable token counts × pricing rates.
  *
- * `latency_p50_ms` is the median of per-result total durations
- * (`llm_duration_ms + compile_duration_ms + test_duration_ms`). It is
- * opt-in via `includeLatencyP50: true` because it requires a second query
- * (D1's SQLite lacks PERCENTILE_CONT and median is computed in TS).
+ * `latency_p50_ms` and `latency_p95_ms` are the 50th and 95th percentiles
+ * of per-result total durations (`llm_duration_ms + compile_duration_ms +
+ * test_duration_ms`). Both are opt-in via `includeLatencyP50: true` because
+ * they require a second query (D1's SQLite lacks PERCENTILE_CONT and
+ * percentiles are computed in TS).
  */
 export interface Aggregate {
   run_count: number;
@@ -30,6 +31,14 @@ export interface Aggregate {
   last_run_at: string | null;
   /** Median of per-result total duration (ms). null when no results have any duration data. */
   latency_p50_ms: number | null;
+  /** 95th percentile per-result total duration (ms). null when no data. */
+  latency_p95_ms: number | null;
+  /** Wilson 95% CI on pass rate (per-task semantics, denominator = tasks_attempted_distinct). */
+  pass_rate_ci: { lower: number; upper: number };
+  /** Strict consistency: fraction of tasks where ALL runs passed. 0 when no runs. */
+  pass_hat_at_n: number;
+  /** Total cost across all results ÷ tasks_passed_distinct. null when 0 passed. */
+  cost_per_pass_usd: number | null;
   /**
    * @deprecated Per-attempt count (COUNT(*) over results). Preserved for
    * back-compat; use `tasks_attempted_distinct` for per-task semantics.
@@ -97,10 +106,16 @@ export interface ComputeOpts {
   tier?: string;
   since?: string;
   /**
-   * When true, also computes `latency_p50_ms` for each model. Off by default
-   * because it adds a second query; the leaderboard does not need it.
+   * When true, also computes `latency_p50_ms` and `latency_p95_ms` for each
+   * model. Off by default because it adds a second query; the leaderboard
+   * does not need it.
    */
   includeLatencyP50?: boolean;
+  /**
+   * When true, also computes `pass_hat_at_n` (strict all-runs-pass fraction)
+   * for each model. Off by default because it adds a second query.
+   */
+  includePassHatAtN?: boolean;
 }
 
 export async function computeModelAggregates(
@@ -148,6 +163,9 @@ export async function computeModelAggregates(
            -- Per-task cost (matches /api/v1/leaderboard semantics).
            SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
              / NULLIF(COUNT(DISTINCT r.task_id), 0)                      AS avg_cost_usd,
+           -- Total cost (un-divided) — used for cost_per_pass_usd.
+           SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
+                                                                          AS total_cost_usd,
            MAX(runs.started_at)                                          AS last_run_at,
            COUNT(r.id) AS tasks_attempted,
            COALESCE(SUM(r.passed), 0) AS tasks_passed,
@@ -186,6 +204,7 @@ export async function computeModelAggregates(
     verified_runs: number | string | null;
     avg_score: number | string | null;
     avg_cost_usd: number | string | null;
+    total_cost_usd: number | string | null;
     last_run_at: string | null;
     tasks_attempted: number | string | null;
     tasks_passed: number | string | null;
@@ -244,13 +263,21 @@ export async function computeModelAggregates(
     modelIdsInResult,
   );
 
-  // Optionally fetch per-result durations and compute median in TS. We do this
-  // in a second query (rather than a SQL window function) so the math stays
-  // visible & testable, and so the helper degrades gracefully on D1 builds
-  // without PERCENTILE_CONT.
-  let p50ByModel: Map<number, number | null> | null = null;
+  // Optionally fetch per-result durations and compute percentiles in TS. We do
+  // this in a second query (rather than a SQL window function) so the math
+  // stays visible & testable, and so the helper degrades gracefully on D1
+  // builds without PERCENTILE_CONT.
+  let latencyPercentilesByModel: Map<number, { p50: number; p95: number }> | null = null;
   if (opts.includeLatencyP50) {
-    p50ByModel = await computeLatencyP50ByModel(db, where, params);
+    latencyPercentilesByModel = await computeLatencyPercentilesByModel(db, where, params);
+  }
+
+  // Optionally compute pass^n (strict all-runs-pass fraction). Off by default
+  // because it adds a third query. Callers that need it (e.g. model detail
+  // page) pass includePassHatAtN: true.
+  let passHatByModel: Map<number, number> | null = null;
+  if (opts.includePassHatAtN) {
+    passHatByModel = await computePassHatAtN(db, where, params);
   }
 
   const out = new Map<number, Aggregate>();
@@ -258,8 +285,9 @@ export async function computeModelAggregates(
     const passedA1 = Number(row.tasks_passed_attempt_1 ?? 0);
     const passedA2Only = Number(row.tasks_passed_attempt_2_only ?? 0);
     const attemptedDistinct = Number(row.tasks_attempted_distinct ?? 0);
+    const tasksPassedDistinct = passedA1 + passedA2Only;
     const passAtN = attemptedDistinct > 0
-      ? (passedA1 + passedA2Only) / attemptedDistinct
+      ? tasksPassedDistinct / attemptedDistinct
       : 0;
     const profile = row.settings_hash_unique
       ? profileByHash.get(row.settings_hash_unique) ?? null
@@ -284,13 +312,24 @@ export async function computeModelAggregates(
       thinkingBudget = null;
     }
 
+    const latencyPercentiles = latencyPercentilesByModel?.get(row.model_id) ?? null;
+
+    const totalCostUsd = row.total_cost_usd === null ? null : Number(row.total_cost_usd);
+    const costPerPassUsd = tasksPassedDistinct > 0 && totalCostUsd !== null
+      ? Number((totalCostUsd / tasksPassedDistinct).toFixed(6))
+      : null;
+
     out.set(row.model_id, {
       run_count: Number(row.run_count ?? 0),
       verified_runs: Number(row.verified_runs ?? 0),
       avg_score: row.avg_score === null ? null : Number(Number(row.avg_score).toFixed(6)),
       avg_cost_usd: row.avg_cost_usd === null ? null : Number(Number(row.avg_cost_usd).toFixed(6)),
       last_run_at: row.last_run_at,
-      latency_p50_ms: p50ByModel ? p50ByModel.get(row.model_id) ?? null : null,
+      latency_p50_ms: latencyPercentiles ? Math.round(latencyPercentiles.p50) : null,
+      latency_p95_ms: latencyPercentiles ? Math.round(latencyPercentiles.p95) : null,
+      pass_rate_ci: wilsonInterval(tasksPassedDistinct, attemptedDistinct),
+      pass_hat_at_n: passHatByModel?.get(row.model_id) ?? 0,
+      cost_per_pass_usd: costPerPassUsd,
       tasks_attempted: Number(row.tasks_attempted ?? 0),
       tasks_passed: Number(row.tasks_passed ?? 0),
       tasks_attempted_distinct: attemptedDistinct,
@@ -500,15 +539,18 @@ async function computeSettingsConsistency(
 
 
 /**
- * Per-model median of total per-result duration. Returns a Map keyed by
- * model_id; models without any results having all three duration columns
- * non-null are absent (caller should treat absence as null).
+ * Per-model latency percentiles (p50 and p95) of total per-result duration.
+ * Returns a Map keyed by model_id; models without any results having positive
+ * duration are absent (caller should treat absence as null).
+ *
+ * Replaces the old `computeLatencyP50ByModel`; callers now receive both p50
+ * and p95 from a single query.
  */
-async function computeLatencyP50ByModel(
+async function computeLatencyPercentilesByModel(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
-): Promise<Map<number, number | null>> {
+): Promise<Map<number, { p50: number; p95: number }>> {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
     SELECT runs.model_id AS model_id,
@@ -533,16 +575,97 @@ async function computeLatencyP50ByModel(
     else byModel.set(row.model_id, [ms]);
   }
 
-  const out = new Map<number, number | null>();
+  const out = new Map<number, { p50: number; p95: number }>();
   for (const [modelId, arr] of byModel.entries()) {
-    if (arr.length === 0) {
-      out.set(modelId, null);
-      continue;
-    }
+    if (arr.length === 0) continue;
     arr.sort((a, b) => a - b);
-    const mid = Math.floor(arr.length / 2);
-    const p50 = arr.length % 2 === 0 ? (arr[mid - 1]! + arr[mid]!) / 2 : arr[mid]!;
-    out.set(modelId, Math.round(p50));
+    out.set(modelId, {
+      p50: percentileLinear(arr, 0.5),
+      p95: percentileLinear(arr, 0.95),
+    });
+  }
+  return out;
+}
+
+/**
+ * Linear interpolation percentile on a sorted array. Returns 0 for empty
+ * arrays.
+ */
+function percentileLinear(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  if (sorted.length === 1) return sorted[0]!;
+  const idx = p * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo]!;
+  const frac = idx - lo;
+  return sorted[lo]! * (1 - frac) + sorted[hi]! * frac;
+}
+
+/**
+ * Wilson 95% confidence interval on a proportion.
+ * Returns { lower: 0, upper: 1 } when trials ≤ 0 (no data).
+ */
+function wilsonInterval(
+  successes: number,
+  trials: number,
+): { lower: number; upper: number } {
+  if (trials <= 0) return { lower: 0, upper: 1 };
+  const z = 1.96;
+  const p = successes / trials;
+  const z2 = z * z;
+  const denom = 1 + z2 / trials;
+  const center = (p + z2 / (2 * trials)) / denom;
+  const margin =
+    (z * Math.sqrt((p * (1 - p) + z2 / (4 * trials)) / trials)) / denom;
+  return {
+    lower: Math.max(0, center - margin),
+    upper: Math.min(1, center + margin),
+  };
+}
+
+/**
+ * Strict per-model pass^n: fraction of tasks where ALL runs in scope passed.
+ * A task "passes" in a run if any of its result rows for that run has
+ * `passed = 1` (covers attempt-2 recovery). Returns a Map keyed by model_id;
+ * absent entries should be treated as 0.
+ */
+async function computePassHatAtN(
+  db: D1Database,
+  where: string[],
+  params: Array<string | number>,
+): Promise<Map<number, number>> {
+  const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  const sql = `
+    WITH per_run_task AS (
+      SELECT runs.model_id AS model_id,
+             runs.id        AS run_id,
+             r.task_id      AS task_id,
+             MAX(r.passed)  AS run_task_passed
+      FROM runs
+      JOIN results r ON r.run_id = runs.id
+      ${whereSql}
+      GROUP BY runs.model_id, runs.id, r.task_id
+    ),
+    per_task AS (
+      SELECT model_id, task_id,
+             COUNT(*)             AS n_runs,
+             SUM(run_task_passed) AS c_runs
+      FROM per_run_task
+      GROUP BY model_id, task_id
+    )
+    SELECT model_id,
+           AVG(CASE WHEN c_runs = n_runs THEN 1.0 ELSE 0.0 END) AS pass_hat
+    FROM per_task
+    GROUP BY model_id;
+  `;
+  const rs = await db.prepare(sql).bind(...params).all<{
+    model_id: number;
+    pass_hat: number | string | null;
+  }>();
+  const out = new Map<number, number>();
+  for (const row of rs.results ?? []) {
+    out.set(row.model_id, Number(row.pass_hat ?? 0));
   }
   return out;
 }
