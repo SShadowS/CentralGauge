@@ -107,10 +107,46 @@ export function selectStaleModels(
   return [...stale].sort();
 }
 
-interface CycleOutcome {
+export interface CycleOutcome {
   model_slug: string;
   exit_code: number;
   duration_ms: number;
+}
+
+/**
+ * Compute the workflow exit code from the per-model outcomes. Pure helper
+ * extracted from the `import.meta.main` block so the failure-escalation
+ * branch can be exercised without spinning up subprocesses.
+ *
+ * Returns 0 iff every cycle exited 0; otherwise 1 so the workflow's
+ * "Run weekly cycle orchestrator" step reports `failure` and the sticky
+ * digest issue stays open per Plan G's escalation contract.
+ */
+export function computeExitCode(results: readonly CycleOutcome[]): number {
+  return results.some((r) => r.exit_code !== 0) ? 1 : 0;
+}
+
+/**
+ * Summarise the per-model outcomes into the JSON shape the digest step
+ * reads. Pure helper; unit-tested.
+ */
+export function summariseResults(
+  results: readonly CycleOutcome[],
+  ranAt: string,
+): {
+  ran_at: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  results: CycleOutcome[];
+} {
+  return {
+    ran_at: ranAt,
+    total: results.length,
+    succeeded: results.filter((r) => r.exit_code === 0).length,
+    failed: results.filter((r) => r.exit_code !== 0).length,
+    results: [...results],
+  };
 }
 
 async function runCycle(modelSlug: string): Promise<CycleOutcome> {
@@ -187,18 +223,11 @@ if (import.meta.main) {
   await Deno.writeTextFile(
     "weekly-cycle-result.json",
     JSON.stringify(
-      {
-        ran_at: new Date().toISOString(),
-        total: results.length,
-        succeeded: results.filter((r) => r.exit_code === 0).length,
-        failed: results.filter((r) => r.exit_code !== 0).length,
-        results,
-      },
+      summariseResults(results, new Date().toISOString()),
       null,
       2,
     ),
   );
 
-  const anyFailed = results.some((r) => r.exit_code !== 0);
-  Deno.exit(anyFailed ? 1 : 0);
+  Deno.exit(computeExitCode(results));
 }

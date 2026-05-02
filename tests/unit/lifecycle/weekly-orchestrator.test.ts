@@ -9,7 +9,11 @@
  * @module tests/unit/lifecycle/weekly-orchestrator
  */
 import { assertEquals } from "@std/assert";
-import { selectStaleModels } from "../../../scripts/weekly-cycle.ts";
+import {
+  computeExitCode,
+  selectStaleModels,
+  summariseResults,
+} from "../../../scripts/weekly-cycle.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 
 const NOW = Date.UTC(2026, 4, 5, 6, 0, 0);
@@ -128,6 +132,57 @@ Deno.test("selectStaleModels — error_rows are reported as stale (operator tria
   };
   const stale = selectStaleModels(status, { now: NOW, staleAfterMs: 7 * DAY });
   assertEquals(stale, ["openrouter/x-ai-grok-4"]);
+});
+
+Deno.test("computeExitCode — all-zero exits 0; any non-zero exits 1", () => {
+  assertEquals(computeExitCode([]), 0);
+  assertEquals(
+    computeExitCode([{ model_slug: "a", exit_code: 0, duration_ms: 1 }]),
+    0,
+  );
+  assertEquals(
+    computeExitCode([
+      { model_slug: "a", exit_code: 0, duration_ms: 1 },
+      { model_slug: "b", exit_code: 0, duration_ms: 1 },
+    ]),
+    0,
+  );
+  // Single failure → workflow ends in failure → sticky issue stays open.
+  assertEquals(
+    computeExitCode([
+      { model_slug: "a", exit_code: 0, duration_ms: 1 },
+      { model_slug: "b", exit_code: 1, duration_ms: 1 },
+    ]),
+    1,
+  );
+  // The 99 sentinel from the catch branch also counts as failure.
+  assertEquals(
+    computeExitCode([{ model_slug: "a", exit_code: 99, duration_ms: 0 }]),
+    1,
+  );
+});
+
+Deno.test("summariseResults — counts succeeded/failed/total correctly", () => {
+  const summary = summariseResults(
+    [
+      { model_slug: "a", exit_code: 0, duration_ms: 100 },
+      { model_slug: "b", exit_code: 1, duration_ms: 200 },
+      { model_slug: "c", exit_code: 0, duration_ms: 300 },
+    ],
+    "2026-04-29T06:00:00.000Z",
+  );
+  assertEquals(summary.total, 3);
+  assertEquals(summary.succeeded, 2);
+  assertEquals(summary.failed, 1);
+  assertEquals(summary.ran_at, "2026-04-29T06:00:00.000Z");
+  assertEquals(summary.results.length, 3);
+});
+
+Deno.test("summariseResults — empty input → all zeros", () => {
+  const summary = summariseResults([], "2026-04-29T06:00:00.000Z");
+  assertEquals(summary.total, 0);
+  assertEquals(summary.succeeded, 0);
+  assertEquals(summary.failed, 0);
 });
 
 Deno.test("selectStaleModels — fully-current models are excluded", () => {
