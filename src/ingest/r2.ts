@@ -15,6 +15,7 @@
 
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { signLifecycleHeaders } from "../lifecycle/event-log.ts";
+import { cfAccessHeaders } from "./cf-access-headers.ts";
 
 export interface UploadLifecycleBlobResult {
   r2_key: string;
@@ -52,6 +53,7 @@ export async function uploadLifecycleBlob(
         headers: {
           "content-type": "application/octet-stream",
           ...headers,
+          ...cfAccessHeaders(),
         },
         body: body as BodyInit,
       });

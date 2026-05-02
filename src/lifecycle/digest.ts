@@ -29,6 +29,7 @@ import type { LifecycleEvent } from "./types.ts";
 import { type AppendOptions, queryEvents } from "./event-log.ts";
 import { signPayload } from "../ingest/sign.ts";
 import { postWithRetry } from "../ingest/client.ts";
+import { cfAccessHeaders } from "../ingest/cf-access-headers.ts";
 
 /**
  * Subset of Plan E's `FamilyDiff` shape (`site/src/lib/shared/api-types.ts`)
@@ -554,6 +555,8 @@ async function defaultFetchQueue(
   const resp = await postWithRetry(
     `${args.siteUrl}/api/v1/admin/lifecycle/cluster-review/queue`,
     { version: 1, payload, signature: sig },
+    {},
+    cfAccessHeaders(),
   );
   if (!resp.ok) {
     throw new Error(

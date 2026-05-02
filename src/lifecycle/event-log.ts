@@ -2,6 +2,7 @@ import * as ed from "npm:@noble/ed25519@3.1.0";
 import { encodeBase64 } from "jsr:@std/encoding@^1.0.5/base64";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { canonicalJSON } from "../ingest/canonical.ts";
+import { cfAccessHeaders } from "../ingest/cf-access-headers.ts";
 import { signPayload } from "../ingest/sign.ts";
 import { postWithRetry } from "../ingest/client.ts";
 import type {
@@ -153,6 +154,7 @@ export async function appendEvent(
     `${opts.url}/api/v1/admin/lifecycle/events`,
     { ...body, signature },
     { maxAttempts: 3 },
+    cfAccessHeaders(),
   );
   if (!resp.ok) {
     const text = await resp.text();
@@ -256,7 +258,7 @@ export async function queryEvents(
   });
   const resp = await fetch(
     `${opts.url}${path}?${params}`,
-    { method: "GET", headers },
+    { method: "GET", headers: { ...headers, ...cfAccessHeaders() } },
   );
   if (!resp.ok) throw new Error(`queryEvents failed (${resp.status})`);
   const raw = await resp.json() as LifecycleEvent[];

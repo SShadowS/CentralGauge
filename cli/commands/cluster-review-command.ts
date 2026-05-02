@@ -33,6 +33,7 @@ import * as colors from "@std/fmt/colors";
 import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
+import { cfAccessHeaders } from "../../src/ingest/cf-access-headers.ts";
 import { collectEnvelope } from "../../src/lifecycle/envelope.ts";
 
 export interface PendingRow {
@@ -63,6 +64,8 @@ async function fetchQueue(
   const resp = await postWithRetry(
     `${siteUrl}/api/v1/admin/lifecycle/cluster-review/queue`,
     signed,
+    {},
+    cfAccessHeaders(),
   );
   if (!resp.ok) {
     throw new Error(`fetch queue failed: ${resp.status} ${await resp.text()}`);
@@ -169,6 +172,8 @@ export async function postDecision(
   const resp = await post(
     `${deps.url}/api/v1/admin/lifecycle/cluster-review/decide`,
     { version: 1, payload, signature: sig },
+    {},
+    cfAccessHeaders(),
   );
   if (!resp.ok) {
     throw new Error(`decide failed: ${resp.status} ${await resp.text()}`);
@@ -196,6 +201,8 @@ export async function postSplit(
   const resp = await post(
     `${deps.url}/api/v1/admin/lifecycle/cluster-review/decide`,
     { version: 1, payload, signature: sig },
+    {},
+    cfAccessHeaders(),
   );
   if (!resp.ok) {
     throw new Error(`split failed: ${resp.status} ${await resp.text()}`);
