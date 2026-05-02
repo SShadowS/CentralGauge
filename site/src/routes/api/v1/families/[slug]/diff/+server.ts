@@ -43,6 +43,32 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     const toQ = url.searchParams.get('to');
     const taskSetQ = url.searchParams.get('task_set');
 
+    // Wave 5 / Plan E IMPORTANT 3: validate query params BEFORE the cache
+    // lookup. Pre-fix `+toQ` accepted `NaN`/`Infinity`/`-1`/`1.5` and
+    // `task_set` accepted any string — each unique {from, to, task_set}
+    // triple is its own cache slot, so unbounded probing fills the
+    // named cache silently. Reject malformed values with 400 before any
+    // expensive work.
+    const validatedToEventId = parsePositiveIntQuery(toQ, 'to');
+    const validatedFromEventId = parsePositiveIntQuery(fromQ, 'from');
+    // task_set accepts hex/kebab task hashes (alphanumeric, underscore,
+    // hyphen) capped at 128 chars to bound cache-key size. Special token
+    // 'current' maps to is_current=1 (same as omitting the param).
+    let validatedTaskSetHash: string | null = null;
+    if (taskSetQ !== null) {
+      if (taskSetQ === 'current') {
+        validatedTaskSetHash = null; // fall through to is_current lookup
+      } else if (!/^[a-zA-Z0-9_-]{1,128}$/.test(taskSetQ)) {
+        throw new ApiError(
+          400,
+          'invalid_task_set',
+          'task_set must match ^[a-zA-Z0-9_-]{1,128}$ or equal "current"',
+        );
+      } else {
+        validatedTaskSetHash = taskSetQ;
+      }
+    }
+
     // Cache lookup — use the actual Request as key. Hit short-circuits the
     // SQL path and matches the trigger's eviction key shape exactly.
     //
@@ -59,8 +85,8 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
 
     // Resolve task_set: explicit param > current.
     let taskSetHash: string;
-    if (taskSetQ) {
-      taskSetHash = taskSetQ;
+    if (validatedTaskSetHash !== null) {
+      taskSetHash = validatedTaskSetHash;
     } else {
       const ts = await getFirst<{ hash: string }>(
         env.DB,
@@ -73,8 +99,8 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
 
     // Resolve to_gen_event_id: explicit > most-recent analysis.completed for family.
     let toEventId: number | null;
-    if (toQ) {
-      toEventId = +toQ;
+    if (validatedToEventId !== null) {
+      toEventId = validatedToEventId;
     } else {
       const latest = await getFirst<{ id: number }>(
         env.DB,
@@ -114,8 +140,8 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
 
     let fromEventId: number | null;
     let fromEventTs: number | null;
-    if (fromQ) {
-      fromEventId = +fromQ;
+    if (validatedFromEventId !== null) {
+      fromEventId = validatedFromEventId;
       // Caller passed an explicit from event id. Look up its ts so the
       // bucket discriminator can compare against the right unit (unix-ms,
       // not autoincrement id — see existedAtFromGen history note).
@@ -242,6 +268,35 @@ async function respondCached(
   // the cached entry deterministically.
   await cache.put(request, storedResponse);
   return clientResponse;
+}
+
+/**
+ * Strict positive-integer parser for query params that flow into both the
+ * cache key and the SQL `WHERE id = ?` clause. Pre-fix `+toQ` accepted
+ * `NaN`/`Infinity`/`-1`/`1.5` silently — each unique value becomes its own
+ * cache slot AND ends up cast to NaN/Infinity when binding to D1's INTEGER
+ * column (D1 quietly coerces NaN → 0, Infinity → 0). This rejects with
+ * 400 instead.
+ *
+ * Returns null when the query value is null (caller treats as "use default").
+ * Throws ApiError(400) for anything that's present but malformed.
+ *
+ * The `String(n) === raw` round-trip catches `'  1  '`, `'1e3'`, `'0x1'`,
+ * `'01'` (leading zero) — anything that `parseInt` accepts but isn't the
+ * canonical integer string. Cache-key flooding via these variants is the
+ * specific attack we're guarding against.
+ */
+function parsePositiveIntQuery(raw: string | null, paramName: string): number | null {
+  if (raw === null) return null;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isInteger(n) || n <= 0 || String(n) !== raw) {
+    throw new ApiError(
+      400,
+      `invalid_${paramName}`,
+      `${paramName} must be a positive integer (got "${raw}")`,
+    );
+  }
+  return n;
 }
 
 function matchesEtag(ifNoneMatch: string, etag: string): boolean {

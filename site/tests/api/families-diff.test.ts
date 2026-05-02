@@ -222,4 +222,93 @@ describe('GET /api/v1/families/:slug/diff', () => {
     const body = await r.json() as { error: string; code: string };
     expect(body.code).toBe('no_current_task_set');
   });
+
+  describe('query-param validation (Wave 5 / Plan E IMPORTANT 3)', () => {
+    // Pre-fix `+toQ` accepted NaN, Infinity, -1, 1.5; `task_set` accepted
+    // arbitrary garbage. Each unique {from, to, task_set} triple is its own
+    // cache slot, so unbounded probing fills the named cache silently.
+    // The handler now rejects malformed values with 400 before any cache
+    // lookup or DB query.
+    beforeEach(async () => {
+      await seedFamilyAndModels({
+        familySlug: 'famvalidate',
+        vendor: 'anthropic',
+        models: [{ slug: 'fv-4-6', api_id: 'fv-4-6', display: 'FV 4.6', gen: 46 }],
+      });
+      await seedCurrentTaskSet('h-validate');
+    });
+
+    it('rejects to=NaN with 400', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=NaN');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_to');
+    });
+
+    it('rejects to=Infinity with 400', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=Infinity');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_to');
+    });
+
+    it('rejects to=-1 with 400', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=-1');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_to');
+    });
+
+    it('rejects to=1.5 with 400', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=1.5');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_to');
+    });
+
+    it('rejects to=0 with 400 (event ids are 1-based AUTOINCREMENT)', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=0');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_to');
+    });
+
+    it('rejects from=abc with 400', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?to=1&from=abc');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_from');
+    });
+
+    it('rejects task_set= with non-hex characters', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?task_set=evil%26junk');
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_task_set');
+    });
+
+    it('rejects task_set= with too-long string (cache-key flood guard)', async () => {
+      const longHex = 'a'.repeat(200);
+      const r = await SELF.fetch(`https://x/api/v1/families/famvalidate/diff?task_set=${longHex}`);
+      expect(r.status).toBe(400);
+      const body = await r.json() as { code: string };
+      expect(body.code).toBe('invalid_task_set');
+    });
+
+    it('accepts task_set=current as a special token', async () => {
+      // Operators / health checks may probe with `?task_set=current` to
+      // explicitly request the is_current row. Treat as equivalent to
+      // omitting the param.
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?task_set=current');
+      expect(r.status).toBe(200);
+    });
+
+    it('accepts well-formed hex task_set', async () => {
+      const r = await SELF.fetch('https://x/api/v1/families/famvalidate/diff?task_set=h-validate');
+      // Existing test suite seeds task_sets.hash with the literal string
+      // 'h-validate' — not strict hex, but matches the regex `^[a-z0-9-]+$`
+      // we'll accept (test fixtures use kebab-case hashes).
+      expect(r.status).toBe(200);
+    });
+  });
 });
