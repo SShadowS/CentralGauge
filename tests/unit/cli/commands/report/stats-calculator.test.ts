@@ -158,7 +158,7 @@ Deno.test("majorityAtN", async (t) => {
   });
 });
 
-import { calculatePerModelStats } from "../../../../../cli/commands/report/stats-calculator.ts";
+import { calculateMultiRunStats, calculatePerModelStats } from "../../../../../cli/commands/report/stats-calculator.ts";
 import type { BenchmarkResult } from "../../../../../cli/types/cli-types.ts";
 
 function mkResult(
@@ -180,6 +180,47 @@ function mkResult(
     context: { variantId, llmModel: variantId, llmProvider: "test" },
   };
 }
+
+Deno.test("calculateMultiRunStats populates passHatK + majorityAtN + variance", () => {
+  // Model m1, 2 tasks, 3 runs each.
+  // T1: outcomes [true, true, true]   → 3/3 pass → contributes to pass^k for all k
+  // T2: outcomes [true, false, true]  → 2/3 pass → majority yes; pass^3 = 0
+  const grouped = new Map<string, Map<string, BenchmarkResult[]>>([
+    ["m1", new Map<string, BenchmarkResult[]>([
+      ["T1", [
+        mkResult("m1", "T1", true, 100),
+        mkResult("m1", "T1", true, 110),
+        mkResult("m1", "T1", true, 120),
+      ]],
+      ["T2", [
+        mkResult("m1", "T2", true, 200),
+        mkResult("m1", "T2", false, 210),
+        mkResult("m1", "T2", true, 220),
+      ]],
+    ])],
+  ]);
+
+  const stats = calculateMultiRunStats(grouped, 3).get("m1")!;
+
+  // pass@k: averaged across both tasks
+  // T1: pass@1=1, pass@2=1, pass@3=1
+  // T2: pass@1=2/3, pass@2=1-C(1,2)/C(3,2)=1, pass@3=1-C(1,3)/C(3,3)=1
+  assertAlmostEquals(stats.passAtK[1]!, (1 + 2 / 3) / 2, 1e-9);
+  assertEquals(stats.passAtK[3], 1);
+
+  // pass^k = C(c,k)/C(n,k):
+  // T1: pass^1=1, pass^2=C(3,2)/C(3,2)=1, pass^3=1
+  // T2: pass^1=2/3, pass^2=C(2,2)/C(3,2)=1/3, pass^3=0
+  assertAlmostEquals(stats.passHatK[1]!, (1 + 2 / 3) / 2, 1e-9);
+  assertAlmostEquals(stats.passHatK[2]!, (1 + 1 / 3) / 2, 1e-9);
+  assertAlmostEquals(stats.passHatK[3]!, (1 + 0) / 2, 1e-9);
+
+  // majorityAtN: T1 (3>1.5 yes), T2 (2>1.5 yes) → 2/2 = 1.0
+  assertEquals(stats.majorityAtN, 1);
+
+  // perTaskPassStddev: per-task pass counts = [3, 2]; stddev sample = sqrt(0.5)
+  assertAlmostEquals(stats.perTaskPassStddev, Math.sqrt(0.5), 1e-9);
+});
 
 Deno.test("calculatePerModelStats populates new metrics", async (t) => {
   const results: BenchmarkResult[] = [

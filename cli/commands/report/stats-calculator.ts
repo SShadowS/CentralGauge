@@ -269,6 +269,32 @@ export function calculateMultiRunStats(
       passAtK[k] = totalTasks > 0 ? sumPassAtK / totalTasks : 0;
     }
 
+    // Compute pass^k (strict consistency) for each k from 1..runCount
+    const passHatK: Record<number, number> = {};
+    for (let k = 1; k <= runCount; k++) {
+      let sumPassHatK = 0;
+      for (const taskRun of perTaskRuns.values()) {
+        sumPassHatK += passHatKForTask(
+          taskRun.totalRuns,
+          taskRun.successfulRuns,
+          k,
+        );
+      }
+      passHatK[k] = totalTasks > 0 ? sumPassHatK / totalTasks : 0;
+    }
+
+    // majority@n: fraction of tasks where strictly >50% of runs passed
+    let majorityCount = 0;
+    const perTaskPassCounts: number[] = [];
+    for (const taskRun of perTaskRuns.values()) {
+      perTaskPassCounts.push(taskRun.successfulRuns);
+      if (majorityAtN(taskRun.totalRuns, taskRun.successfulRuns)) {
+        majorityCount++;
+      }
+    }
+    const majorityRate = totalTasks > 0 ? majorityCount / totalTasks : 0;
+    const passStddev = stddev(perTaskPassCounts);
+
     // Consistency: fraction of tasks where all runs have the same outcome
     let consistentCount = 0;
     for (const taskRun of perTaskRuns.values()) {
@@ -317,10 +343,10 @@ export function calculateMultiRunStats(
       // MultiRun extension fields
       runCount,
       passAtK,
-      passHatK: {},
+      passHatK,
       consistency,
-      majorityAtN: 0,
-      perTaskPassStddev: 0,
+      majorityAtN: majorityRate,
+      perTaskPassStddev: passStddev,
       perTaskRuns,
     });
   }
