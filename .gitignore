@@ -101,6 +101,7 @@ scripts/*
 !scripts/backfill-concepts.ts
 !scripts/migrate-shortcomings-slugs.ts
 !scripts/verify-backfill-invariants.ts
+!scripts/weekly-cycle.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
