@@ -299,3 +299,94 @@ export function calculateMultiRunStats(
 
   return result;
 }
+
+/**
+ * Compute pass^k (pass-hat-k, strict consistency) for a single task:
+ * pass^k = C(c, k) / C(n, k)
+ *
+ * Probability that k samples drawn without replacement from n outcomes
+ * (where c are correct) are all correct. Returns 0 when c < k or k > n.
+ */
+export function passHatKForTask(n: number, c: number, k: number): number {
+  if (k > n) return 0;
+  if (c < k) return 0;
+  if (k === 0) return 1;
+  return binomialCoefficient(c, k) / binomialCoefficient(n, k);
+}
+
+export interface ConfidenceInterval {
+  lower: number;
+  upper: number;
+}
+
+/**
+ * Wilson score interval for a binomial proportion. Default z=1.96 (95% CI).
+ * Returns [0, 1] when n=0. Robust at the boundaries (s=0 or s=n) where
+ * the normal approximation degenerates.
+ */
+export function wilsonInterval(
+  successes: number,
+  trials: number,
+  z = 1.96,
+): ConfidenceInterval {
+  if (trials <= 0) return { lower: 0, upper: 1 };
+  const p = successes / trials;
+  const z2 = z * z;
+  const denom = 1 + z2 / trials;
+  const center = (p + z2 / (2 * trials)) / denom;
+  const margin = z *
+    Math.sqrt((p * (1 - p) + z2 / (4 * trials)) / trials) / denom;
+  return {
+    lower: Math.max(0, center - margin),
+    upper: Math.min(1, center + margin),
+  };
+}
+
+/**
+ * Linear-interpolation percentile (matches numpy default and SQLite's
+ * percentile_cont). p in [0, 1]. Sorts a copy; does not mutate input.
+ */
+export function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  if (values.length === 1) return values[0]!;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = p * (sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo]!;
+  const frac = idx - lo;
+  return sorted[lo]! * (1 - frac) + sorted[hi]! * frac;
+}
+
+/** Sample standard deviation (Bessel-corrected). 0 for n < 2. */
+export function stddev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) /
+    (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+/** Cost per successful task. Returns null if no tasks passed. */
+export function costPerPass(
+  totalCost: number,
+  tasksPassed: number,
+): number | null {
+  if (tasksPassed <= 0) return null;
+  return totalCost / tasksPassed;
+}
+
+/** Tokens per successful task. Returns null if no tasks passed. */
+export function tokensPerPass(
+  totalTokens: number,
+  tasksPassed: number,
+): number | null {
+  if (tasksPassed <= 0) return null;
+  return totalTokens / tasksPassed;
+}
+
+/** Strict majority: more than half of n runs passed. Tie returns false. */
+export function majorityAtN(n: number, c: number): boolean {
+  if (n <= 0) return false;
+  return c * 2 > n;
+}
