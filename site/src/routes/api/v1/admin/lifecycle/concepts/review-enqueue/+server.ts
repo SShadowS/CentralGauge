@@ -14,10 +14,7 @@
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
-import {
-  type SignedAdminRequest,
-  verifySignedRequest,
-} from "$lib/server/signature";
+import { authenticateAdminRequest } from "$lib/server/cf-access";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { enqueueReviewTx } from "$lib/server/concepts";
 import { slugSchema } from "$lib/shared/slug";
@@ -61,11 +58,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (body.version !== 1) {
       throw new ApiError(400, "bad_version", "only version 1 supported");
     }
-    await verifySignedRequest(
-      db,
-      body as unknown as SignedAdminRequest,
-      "admin",
-    );
+    // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
+    await authenticateAdminRequest(request, platform.env, body);
     const parsed = Body.safeParse(body.payload);
     if (!parsed.success) {
       throw new ApiError(

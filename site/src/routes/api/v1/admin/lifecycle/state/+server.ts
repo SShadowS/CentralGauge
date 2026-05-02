@@ -1,4 +1,5 @@
 import type { RequestHandler } from './$types';
+import { authenticateAdminRequest } from '$lib/server/cf-access';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 
@@ -9,16 +10,22 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
     const model = url.searchParams.get('model');
     const taskSet = url.searchParams.get('task_set');
     if (!model || !taskSet) throw new ApiError(400, 'missing_params', 'model and task_set required');
-    // C1 fix: signed bytes bind both `model` and `task_set` so a captured
-    // signature can't be replayed against a different (model, task_set) pair.
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    await verifyLifecycleAdminRequest(db, request, {
-      signedFields: buildHeaderSignedFields({
-        method: 'GET',
-        path: url.pathname,
-        query: { model, task_set: taskSet },
-      }),
-    });
+    // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
+    // primary path; fall back to the existing header-signed Ed25519 path
+    // (verifyLifecycleAdminRequest binds both `model` and `task_set` into
+    // the signed bytes so a captured envelope can't be replayed against a
+    // different pair).
+    if (request.headers.get('cf-access-jwt-assertion')) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({
+          method: 'GET',
+          path: url.pathname,
+          query: { model, task_set: taskSet },
+        }),
+      });
+    }
     // v_lifecycle_state gives last_ts + last_event_id per step; JOIN back for the row.
     const rows = await db.prepare(
       `SELECT v.step, e.id, e.ts, e.model_slug, e.task_set_hash, e.event_type,

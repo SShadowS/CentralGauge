@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
+import { authenticateAdminRequest } from '$lib/server/cf-access';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
@@ -25,11 +25,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   try {
     const body = await request.json() as { version: number; signature: unknown; payload: AppendEventInput & { payload_hash?: string | null } };
     if (body.version !== 1) throw new ApiError(400, 'bad_version', 'only version 1 supported');
-    // POST is body-signed (the existing SignedAdminRequest pattern signs the
-    // full payload object), so URL-param binding is N/A here. Helper not
-    // used because the body itself is the canonical signed unit.
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    await verifySignedRequest(db, body as unknown as SignedAdminRequest, 'admin');
+    // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
+    // POST is body-signed for the CLI (the existing SignedAdminRequest
+    // pattern signs the full payload object). The browser path uses CF
+    // Access (no body.signature) — operators rarely append events from
+    // the UI, but the dual-auth contract keeps the surface uniform.
+    await authenticateAdminRequest(request, platform.env, body);
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
       throw new ApiError(400, 'missing_field', 'model_slug, task_set_hash, event_type required');
@@ -79,17 +80,24 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
     const since = url.searchParams.get('since');
     const eventTypePrefix = url.searchParams.get('event_type_prefix');
     const limit = url.searchParams.get('limit');
-    // C1 fix: bind every URL param that affects the response into the signed
-    // bytes. Otherwise an attacker holding ANY signed envelope could swap
-    // `model=` to read state for arbitrary models.
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    await verifyLifecycleAdminRequest(db, request, {
-      signedFields: buildHeaderSignedFields({
-        method: 'GET',
-        path: url.pathname,
-        query: { model, task_set: taskSet, since, event_type_prefix: eventTypePrefix, limit },
-      }),
-    });
+    // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
+    // primary path; fall back to the existing header-signed Ed25519 path
+    // (verifyLifecycleAdminRequest binds every URL param into the signed
+    // bytes, so a captured envelope can't be replayed against a different
+    // model). When the CF-Access-Jwt-Assertion header is present, CF Access
+    // wins (revocation path is the CF Access policy, not the machine_keys
+    // table).
+    if (request.headers.get('cf-access-jwt-assertion')) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({
+          method: 'GET',
+          path: url.pathname,
+          query: { model, task_set: taskSet, since, event_type_prefix: eventTypePrefix, limit },
+        }),
+      });
+    }
     const params: (string | number)[] = [model];
     let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                       tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
