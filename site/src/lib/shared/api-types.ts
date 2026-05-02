@@ -79,6 +79,10 @@ export interface LeaderboardRow {
    * tasks_attempted_distinct. 0 when no attempts.
    */
   pass_at_n: number;
+  latency_p95_ms: number;
+  pass_rate_ci: { lower: number; upper: number };
+  pass_hat_at_n: number;
+  cost_per_pass_usd: number | null;
   avg_score: number;
   avg_cost_usd: number;
   verified_runs: number;
@@ -163,6 +167,10 @@ export interface ModelDetail {
     pass_at_n: number;
     avg_cost_usd: number;
     latency_p50_ms: number;
+    latency_p95_ms: number;
+    pass_rate_ci: { lower: number; upper: number };
+    pass_hat_at_n: number;
+    cost_per_pass_usd: number | null;
     run_count: number;
     verified_runs: number;
   };
