@@ -135,6 +135,23 @@
       <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
         delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
       <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} />
+      <StatTile
+        label="Pass Rate"
+        value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%"
+        note="95% CI: [{(m.aggregates.pass_rate_ci.lower * 100).toFixed(1)}–{(m.aggregates.pass_rate_ci.upper * 100).toFixed(1)}]%"
+      />
+      <StatTile
+        label="pass^n (strict)"
+        value="{(m.aggregates.pass_hat_at_n * 100).toFixed(1)}%"
+      />
+      <StatTile
+        label="$/Pass"
+        value={m.aggregates.cost_per_pass_usd === null ? '—' : `$${m.aggregates.cost_per_pass_usd.toFixed(4)}`}
+      />
+      <StatTile
+        label="Latency p95"
+        value={formatDuration(m.aggregates.latency_p95_ms)}
+      />
     </section>
 
     <section id="overview">
@@ -227,6 +244,7 @@
     grid-template-columns: repeat(4, 1fr);
     gap: var(--space-4);
   }
+  /* 8 tiles wrap naturally to 4×2; on narrow viewports collapse to 2 columns (4 rows) */
   @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 
   .seemore { margin-top: var(--space-4); font-size: var(--text-sm); }
