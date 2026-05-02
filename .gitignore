@@ -68,6 +68,11 @@ PLAN.md
 .mcp.json
 .serena/
 debug/
+# Plan F / F6.5.3: the admin lifecycle debug-bundle proxy route lives at
+# `site/src/routes/api/v1/admin/lifecycle/debug/[...key]/+server.ts` and
+# is a real source file, not a local debug dump. Negate the broad `debug/`
+# ignore for this specific route directory.
+!site/src/routes/api/v1/admin/lifecycle/debug/
 
 # Local output directories
 model-shortcomings/
