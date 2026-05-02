@@ -43,29 +43,29 @@ component CSS).
 
 `site/src/lib/components/ui/`:
 
-| Component | Variants |
-|-----------|----------|
-| Button | primary / secondary / ghost / danger × sm / md / lg |
-| Input | text / number / search / select |
-| Checkbox | default / indeterminate |
-| Radio | default |
-| Tag | neutral / accent / success / warning / danger |
-| Badge | tier-verified / tier-claimed / status |
-| Card | default / elevated |
-| Tabs | default / underline |
-| Toast | info / success / warning / error |
-| Alert | info / success / warning / error |
-| Skeleton | text / table-row / chart |
-| Code | inline / block |
-| Diff | unified / split |
-| Sparkline | line / bar |
-| Modal | — |
-| Dialog | — |
-| Tooltip | — |
-| Spinner | — |
-| Popover | — |
-| KeyHint | — (P5.3) |
-| AttemptCell | pass / fail / null (P5.3) |
+| Component   | Variants                                            |
+| ----------- | --------------------------------------------------- |
+| Button      | primary / secondary / ghost / danger × sm / md / lg |
+| Input       | text / number / search / select                     |
+| Checkbox    | default / indeterminate                             |
+| Radio       | default                                             |
+| Tag         | neutral / accent / success / warning / danger       |
+| Badge       | tier-verified / tier-claimed / status               |
+| Card        | default / elevated                                  |
+| Tabs        | default / underline                                 |
+| Toast       | info / success / warning / error                    |
+| Alert       | info / success / warning / error                    |
+| Skeleton    | text / table-row / chart                            |
+| Code        | inline / block                                      |
+| Diff        | unified / split                                     |
+| Sparkline   | line / bar                                          |
+| Modal       | —                                                   |
+| Dialog      | —                                                   |
+| Tooltip     | —                                                   |
+| Spinner     | —                                                   |
+| Popover     | —                                                   |
+| KeyHint     | — (P5.3)                                            |
+| AttemptCell | pass / fail / null (P5.3)                           |
 
 ## Domain widgets
 

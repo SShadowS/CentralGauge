@@ -10,13 +10,13 @@ what they saw.
 
 ## Impact
 
-| Metric | Value |
-|--------|-------|
-| Duration | <X minutes / hours> |
-| Affected routes | <list> |
-| Affected user fraction | <%> |
-| Data loss / corruption | yes / no |
-| Signed-payload tamper | yes / no |
+| Metric                 | Value               |
+| ---------------------- | ------------------- |
+| Duration               | <X minutes / hours> |
+| Affected routes        | <list>              |
+| Affected user fraction | <%>                 |
+| Data loss / corruption | yes / no            |
+| Signed-payload tamper  | yes / no            |
 
 ## Timeline (UTC)
 
@@ -39,11 +39,11 @@ What changed and where. Link to the PR. Note any compensating tests added.
 
 ## Action items
 
-| Action | Owner | Due |
-|--------|-------|-----|
-| Add invariant test | <name> | YYYY-MM-DD |
+| Action                             | Owner  | Due        |
+| ---------------------------------- | ------ | ---------- |
+| Add invariant test                 | <name> | YYYY-MM-DD |
 | Document hazard in CONTRIBUTING.md | <name> | YYYY-MM-DD |
-| Update operations runbook | <name> | YYYY-MM-DD |
+| Update operations runbook          | <name> | YYYY-MM-DD |
 
 ## What went well
 

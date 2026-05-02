@@ -89,12 +89,12 @@ site/src/
 
 ## Cache layers
 
-| Layer | Where | TTL | Invalidation |
-|-------|-------|-----|--------------|
-| L1: Cache API named caches (`cg-leaderboard`, `cg-runs`, `cg-models`, `cg-models-detail`, `cg-tasks`, etc.) | Worker per-colo | API-defined `s-maxage` (typically 60 s) | None cross-colo; TTL only |
-| L2: SvelteKit `load` deduping | Per-request | Single request | Automatic |
-| L3: Browser HTTP cache + ETag | Per-client | `private, max-age=60` | `If-None-Match` 304 |
-| L4 (OG only): R2 bucket (`og/v1/<kind>/<slug>/<task-set-hash>.png`) | Global | `max-age=60, swr=86400` | New task-set hash invalidates fresh |
+| Layer                                                                                                       | Where           | TTL                                     | Invalidation                        |
+| ----------------------------------------------------------------------------------------------------------- | --------------- | --------------------------------------- | ----------------------------------- |
+| L1: Cache API named caches (`cg-leaderboard`, `cg-runs`, `cg-models`, `cg-models-detail`, `cg-tasks`, etc.) | Worker per-colo | API-defined `s-maxage` (typically 60 s) | None cross-colo; TTL only           |
+| L2: SvelteKit `load` deduping                                                                               | Per-request     | Single request                          | Automatic                           |
+| L3: Browser HTTP cache + ETag                                                                               | Per-client      | `private, max-age=60`                   | `If-None-Match` 304                 |
+| L4 (OG only): R2 bucket (`og/v1/<kind>/<slug>/<task-set-hash>.png`)                                         | Global          | `max-age=60, swr=86400`                 | New task-set hash invalidates fresh |
 
 **Invariant:** the leaderboard hot path uses Cache API only; it must never write to the `CACHE` KV namespace (1000-puts/day free-tier limit). Asserted by `site/tests/api/kv-writes.test.ts`.
 
@@ -144,15 +144,15 @@ Cron: `[triggers].crons = ["0 2 * * *"]` runs `runNightlyBackup`
 all `false`. Canary mode (path-prefixed `/_canary/`) flips everything on.
 Promotion: edit `wrangler.toml [vars]` + `wrangler deploy`.
 
-| Flag | Phase | Scope |
-|------|-------|-------|
-| `print_stylesheet` | P5.2 | documentation-only (CSS is unconditionally imported) |
-| `trajectory_charts` | P5.3 | always-on consumer (`FamilyTrajectoryChart`) |
-| `cmd_k_palette` | P5.4 | gates Nav button + chord listener |
-| `sse_live_updates` | P5.4 | gates `useEventSource` consumers |
-| `og_dynamic` | P5.4 | gates `/og/...` endpoints |
-| `density_toggle` | P5.4 | gates Nav DensityToggle button |
-| `rum_beacon` | P5.4 | gates Cloudflare Web Analytics `<script>` |
+| Flag                | Phase | Scope                                                |
+| ------------------- | ----- | ---------------------------------------------------- |
+| `print_stylesheet`  | P5.2  | documentation-only (CSS is unconditionally imported) |
+| `trajectory_charts` | P5.3  | always-on consumer (`FamilyTrajectoryChart`)         |
+| `cmd_k_palette`     | P5.4  | gates Nav button + chord listener                    |
+| `sse_live_updates`  | P5.4  | gates `useEventSource` consumers                     |
+| `og_dynamic`        | P5.4  | gates `/og/...` endpoints                            |
+| `density_toggle`    | P5.4  | gates Nav DensityToggle button                       |
+| `rum_beacon`        | P5.4  | gates Cloudflare Web Analytics `<script>`            |
 
 ## P5.5 cutover migration map (COMPLETED 2026-04-30)
 
@@ -162,17 +162,17 @@ historical reference. The current architecture uses `/` as the
 leaderboard URL; the `/leaderboard` route is a 302 redirect with a
 30-day sunset (2026-05-30).
 
-| Surface | Pre-P5.5 value | Post-P5.5 value (DONE) |
-|---------|---------------|------------------------|
-| Layout-server route | `/leaderboard` | `/` (commit `f79bfc9`) |
-| `<LiveStatus>` SSE subscription | `useEventSource(['/leaderboard'])` | `useEventSource(['/'])` plus DO route map (`sse-routes.ts:eventToRoutes`) maps `run_finalized` + `task_set_promoted` → `/` (commit `f79bfc9`) |
-| Lighthouse URL list | `127.0.0.1:4173/leaderboard` | `127.0.0.1:4173/` (commit `df6850c`) |
-| Nav active-route highlight | `pathname === '/leaderboard'` | `pathname === '/'` (commit `f79bfc9`) |
-| Robots meta | `<meta name="robots" content="noindex">` present | removed (commit `ab24b3d`) |
-| Sitemap presence | absent | `sitemap.xml` published via `static/robots.txt` + build-time `scripts/build-sitemap.ts` (commits `b6da131`, `c544be2`) |
-| Placeholder home | exists at `+page.svelte` | replaced by leaderboard markup; `/leaderboard/+server.ts` is now a 302 redirect (commit `f79bfc9`) |
-| Layout-level structured data | absent | `StructuredData.svelte` mounted in layout for site-wide JSON-LD (WebSite + Organization) (commit `0742d22`) |
-| Per-page canonical link | absent | `<link rel="canonical">` emitted on every page (commit `682c654`) |
+| Surface                         | Pre-P5.5 value                                   | Post-P5.5 value (DONE)                                                                                                                        |
+| ------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layout-server route             | `/leaderboard`                                   | `/` (commit `f79bfc9`)                                                                                                                        |
+| `<LiveStatus>` SSE subscription | `useEventSource(['/leaderboard'])`               | `useEventSource(['/'])` plus DO route map (`sse-routes.ts:eventToRoutes`) maps `run_finalized` + `task_set_promoted` → `/` (commit `f79bfc9`) |
+| Lighthouse URL list             | `127.0.0.1:4173/leaderboard`                     | `127.0.0.1:4173/` (commit `df6850c`)                                                                                                          |
+| Nav active-route highlight      | `pathname === '/leaderboard'`                    | `pathname === '/'` (commit `f79bfc9`)                                                                                                         |
+| Robots meta                     | `<meta name="robots" content="noindex">` present | removed (commit `ab24b3d`)                                                                                                                    |
+| Sitemap presence                | absent                                           | `sitemap.xml` published via `static/robots.txt` + build-time `scripts/build-sitemap.ts` (commits `b6da131`, `c544be2`)                        |
+| Placeholder home                | exists at `+page.svelte`                         | replaced by leaderboard markup; `/leaderboard/+server.ts` is now a 302 redirect (commit `f79bfc9`)                                            |
+| Layout-level structured data    | absent                                           | `StructuredData.svelte` mounted in layout for site-wide JSON-LD (WebSite + Organization) (commit `0742d22`)                                   |
+| Per-page canonical link         | absent                                           | `<link rel="canonical">` emitted on every page (commit `682c654`)                                                                             |
 
 ### P5.5 cutover — DONE
 
