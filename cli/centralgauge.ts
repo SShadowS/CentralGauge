@@ -31,6 +31,7 @@ import {
   registerReportDbCommand,
   registerRulesCommand,
   registerStatsCommands,
+  registerStatusCommand,
   registerSyncCatalogCommand,
   registerVerifyCommand,
 } from "./commands/mod.ts";
@@ -116,14 +117,16 @@ registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
 
-// `lifecycle` parent — hosts cluster-review (D7) and any future operator
-// triage subcommands. Plan A's H-task is expected to expand this with
-// `lifecycle status` / `lifecycle audit` etc.; until then the parent lives
-// here so `centralgauge lifecycle cluster-review` resolves correctly.
+// `lifecycle` parent — hosts the operator triage subcommands. Wave 4
+// scaffolded the parent for `cluster-review`; Wave 5 (Plan H) adds
+// `status` here so `centralgauge lifecycle status` resolves correctly.
+// Future waves (audit, replay) attach via the same `register*Command`
+// pattern.
 const lifecycleCmd = new Command().description(
-  "Lifecycle event-log operator tooling (cluster review, audit, replay).",
+  "Lifecycle event-log operator tooling (cluster review, status, audit, replay).",
 );
 registerClusterReviewCommand(lifecycleCmd);
+registerStatusCommand(lifecycleCmd);
 // deno-lint-ignore no-explicit-any
 (cli as any).command("lifecycle", lifecycleCmd);
 

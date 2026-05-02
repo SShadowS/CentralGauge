@@ -19,5 +19,6 @@ export { registerReportCommand } from "./report-command.ts";
 export { registerRulesCommand } from "./rules-command.ts";
 export { registerReportDbCommand } from "./report-db-command.ts";
 export { registerStatsCommands } from "./stats-command.ts";
+export { registerStatusCommand } from "./status-command.ts";
 export { registerSyncCatalogCommand } from "./sync-catalog-command.ts";
 export { registerVerifyCommand } from "./verify-command.ts";

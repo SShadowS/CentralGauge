@@ -1,0 +1,342 @@
+/**
+ * `centralgauge lifecycle status` — per-model lifecycle matrix + next-action
+ * hints + zod-validated --json output for CI consumption.
+ *
+ * The command computes per-model state across BENCHED / DEBUGGED / ANALYZED
+ * / PUBLISHED states and emits an 80-col-fit ANSI matrix with paste-ready
+ * `centralgauge cycle` commands beneath it. The `--json` mode is consumed
+ * by Plan G's weekly-cycle workflow via `jq '.hints[].command'`.
+ *
+ * Architecture notes (Plan H §H1 + cross-plan audit):
+ *
+ *   - The command uses `currentState()` from `src/lifecycle/event-log.ts`
+ *     (Wave 1 / A3) per model rather than calling Plan A's
+ *     `/api/v1/admin/lifecycle/state` endpoint directly. That endpoint
+ *     requires `(model, task_set)` to be specified up-front and returns a
+ *     CurrentStateMap-shaped JSON object — there is no "list every model"
+ *     mode. Reusing `currentState` keeps the signing pattern uniform with
+ *     the existing CLI helpers and avoids re-implementing
+ *     `signLifecycleHeaders` here.
+ *
+ *   - Model discovery (when `--model` is omitted) hits the public
+ *     `GET /api/v1/models` endpoint — unsigned, cached, returns slugs +
+ *     family + generation. One signed `currentState` round-trip per model
+ *     follows.
+ *
+ *   - `--task-set current` is resolved client-side via
+ *     `computeTaskSetHash(cwd/tasks)` to match the `cycle` command's
+ *     resolution path (same helper, identical hash). Plan H §H0.1b's
+ *     parity check is enforced by construction.
+ *
+ *   - Admin scope is required (verifier scope is also accepted by the
+ *     underlying endpoint, but the command surface fail-fasts on missing
+ *     `adminKeyPath` to keep the operator UX consistent with
+ *     `cluster-review`).
+ *
+ * @module cli/commands/status
+ */
+import { Command } from "@cliffy/command";
+import * as colors from "@std/fmt/colors";
+import {
+  type IngestCliFlags,
+  loadIngestConfig,
+  readPrivateKey,
+} from "../../src/ingest/config.ts";
+import { computeTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
+import { currentState } from "../../src/lifecycle/event-log.ts";
+import type {
+  CurrentStateMap,
+  LifecycleEvent,
+} from "../../src/lifecycle/types.ts";
+import { PRE_P6_TASK_SET_SENTINEL } from "../../src/lifecycle/types.ts";
+import { generateHints } from "../../src/lifecycle/status-hints.ts";
+import { renderMatrix } from "../../src/lifecycle/status-renderer.ts";
+import {
+  type StateRow,
+  StateRowSchema,
+  type StatusJsonOutput,
+  StatusJsonOutputSchema,
+  type Step,
+} from "../../src/lifecycle/status-types.ts";
+
+interface StatusFlags {
+  model?: string;
+  taskSet: string;
+  json: boolean;
+  legacy: boolean;
+  url?: string;
+  keyPath?: string;
+  keyId?: number;
+  machineId?: string;
+  adminKeyPath?: string;
+  adminKeyId?: number;
+}
+
+/**
+ * Convert a `CurrentStateMap` (the per-model state shape returned by
+ * `currentState()`) into a flat `StateRow[]` for the renderer. Pure,
+ * exported for unit tests so callers can synthesise fixtures without
+ * spinning up the worker.
+ */
+export function currentStateToRows(
+  modelSlug: string,
+  taskSetHash: string,
+  state: CurrentStateMap,
+): StateRow[] {
+  const out: StateRow[] = [];
+  const steps: Step[] = ["bench", "debug", "analyze", "publish", "cycle"];
+  for (const step of steps) {
+    const ev = state[step];
+    if (!ev) continue;
+    out.push(eventToRow(modelSlug, taskSetHash, step, ev));
+  }
+  return out;
+}
+
+function eventToRow(
+  modelSlug: string,
+  taskSetHash: string,
+  step: Step,
+  ev: LifecycleEvent,
+): StateRow {
+  const row: StateRow = {
+    model_slug: modelSlug,
+    task_set_hash: taskSetHash,
+    step,
+    last_ts: ev.ts,
+    last_event_id: ev.id ?? 0,
+    last_event_type: ev.event_type,
+    last_payload_hash: ev.payload_hash ?? null,
+    last_envelope_json: ev.envelope_json ?? null,
+  };
+  // Validate at the seam where untyped wire data crosses into the renderer.
+  return StateRowSchema.parse(row);
+}
+
+/**
+ * Partition rows into (current, legacy) by `task_set_hash`. The legacy
+ * partition holds rows whose hash equals `PRE_P6_TASK_SET_SENTINEL` —
+ * Plan B's backfill writes this for pre-P6 events whose original hash
+ * was NULL. Always returns both partitions; the `--legacy` flag controls
+ * only the human-readable display.
+ *
+ * Exported for tests.
+ */
+export function partitionRows(
+  rows: StateRow[],
+): { current: StateRow[]; legacy: StateRow[] } {
+  const current: StateRow[] = [];
+  const legacy: StateRow[] = [];
+  for (const r of rows) {
+    if (r.task_set_hash === PRE_P6_TASK_SET_SENTINEL) {
+      legacy.push(r);
+    } else {
+      current.push(r);
+    }
+  }
+  return { current, legacy };
+}
+
+interface ModelListEntry {
+  slug: string;
+}
+
+/**
+ * List all model slugs from the public `GET /api/v1/models` endpoint. No
+ * auth required (the endpoint is public + cached). Returns slugs in the
+ * order the worker emits them (which is `ORDER BY family_slug, slug` per
+ * the worker code).
+ */
+async function listAllModels(siteUrl: string): Promise<string[]> {
+  const resp = await fetch(`${siteUrl}/api/v1/models`);
+  if (!resp.ok) {
+    throw new Error(
+      `failed to list models: HTTP ${resp.status} ${resp.statusText}`,
+    );
+  }
+  const body = await resp.json() as { data: ModelListEntry[] };
+  return body.data.map((m) => m.slug);
+}
+
+/**
+ * Resolve the `current` task_set sentinel to a real hash. Uses the same
+ * `computeTaskSetHash(cwd/tasks)` helper the `cycle` command uses, so the
+ * two commands always agree on what "current" means (Plan H §H0.1b parity
+ * check is enforced by construction — same helper, same input).
+ */
+async function resolveTaskSetHash(taskSetFlag: string): Promise<string> {
+  if (taskSetFlag !== "current") return taskSetFlag;
+  try {
+    return await computeTaskSetHash(`${Deno.cwd()}/tasks`);
+  } catch {
+    // No tasks/ dir (e.g. running from a non-project cwd) — fall back to
+    // the literal sentinel so the command still attempts a query and the
+    // operator gets a clear error from the worker.
+    return "current";
+  }
+}
+
+interface FetchAllStateDeps {
+  /** Override for tests; defaults to `currentState` from event-log.ts. */
+  currentStateFn?: typeof currentState;
+  /** Override for tests; defaults to `listAllModels`. */
+  listModelsFn?: (url: string) => Promise<string[]>;
+}
+
+/**
+ * Fetch state for every model (or one when --model is set) and flatten the
+ * results into a single `StateRow[]` partition-friendly array. Exported
+ * for unit tests; production callers go through `handleStatus`.
+ */
+export async function fetchAllRows(
+  flags: StatusFlags,
+  deps: FetchAllStateDeps = {},
+): Promise<StateRow[]> {
+  const csFn = deps.currentStateFn ?? currentState;
+  const listFn = deps.listModelsFn ?? listAllModels;
+
+  const cliFlags: IngestCliFlags = {};
+  if (flags.url !== undefined) cliFlags.url = flags.url;
+  if (flags.keyPath !== undefined) cliFlags.keyPath = flags.keyPath;
+  if (flags.keyId !== undefined) cliFlags.keyId = flags.keyId;
+  if (flags.machineId !== undefined) cliFlags.machineId = flags.machineId;
+  if (flags.adminKeyPath !== undefined) {
+    cliFlags.adminKeyPath = flags.adminKeyPath;
+  }
+  if (flags.adminKeyId !== undefined) cliFlags.adminKeyId = flags.adminKeyId;
+
+  const config = await loadIngestConfig(Deno.cwd(), cliFlags);
+  if (!config.adminKeyPath || config.adminKeyId == null) {
+    throw new Error(
+      "admin_key_path + admin_key_id required (set in .centralgauge.yml " +
+        "or via --admin-key-path/--admin-key-id) — `lifecycle status` is " +
+        "admin scope; the ingest key is rejected by the underlying endpoint",
+    );
+  }
+  const adminPriv = await readPrivateKey(config.adminKeyPath);
+  const taskSetHash = await resolveTaskSetHash(flags.taskSet);
+
+  const models = flags.model ? [flags.model] : await listFn(config.url);
+
+  const allRows: StateRow[] = [];
+  for (const slug of models) {
+    const state = await csFn(slug, taskSetHash, {
+      url: config.url,
+      privateKey: adminPriv,
+      keyId: config.adminKeyId,
+    });
+    allRows.push(...currentStateToRows(slug, taskSetHash, state));
+  }
+  return allRows;
+}
+
+async function handleStatus(flags: StatusFlags): Promise<void> {
+  const rows = await fetchAllRows(flags);
+  const { current, legacy } = partitionRows(rows);
+
+  if (flags.json) {
+    // --json ALWAYS includes legacy_rows regardless of --legacy. Plan G's
+    // CI consumers rely on this contract; --legacy controls only the
+    // human-readable display below.
+    const output: StatusJsonOutput = {
+      as_of_ts: Date.now(),
+      rows: current,
+      legacy_rows: legacy,
+      hints: generateHints(current),
+    };
+    // Self-validate before printing — catches drift between the renderer
+    // and the schema. Output that fails to parse never reaches stdout.
+    const verified = StatusJsonOutputSchema.parse(output);
+    console.log(JSON.stringify(verified, null, 2));
+    return;
+  }
+
+  console.log(renderMatrix(current, { color: true }));
+
+  const hints = generateHints(current);
+  if (hints.length > 0) {
+    console.log("");
+    console.log(colors.bold("Next actions:"));
+    let n = 1;
+    for (const h of hints) {
+      const sevTag = h.severity === "warn"
+        ? colors.yellow("[WARN]")
+        : h.severity === "error"
+        ? colors.red("[ERR]")
+        : colors.cyan("[INFO]");
+      console.log(`  ${n}. ${sevTag} ${h.text}`);
+      console.log(`     ${colors.cyan(h.command)}`);
+      n++;
+    }
+  }
+
+  if (flags.legacy && legacy.length > 0) {
+    console.log("");
+    console.log(
+      colors.dim(
+        `Legacy rows (pre-P6 task_set_hash = "${PRE_P6_TASK_SET_SENTINEL}"):`,
+      ),
+    );
+    console.log(renderMatrix(legacy, { color: true, dim: true }));
+  }
+}
+
+export function registerStatusCommand(parent: Command): void {
+  parent.command(
+    "status",
+    new Command()
+      .description(
+        "Per-model lifecycle matrix + next-action hints (--json for CI)",
+      )
+      .option("--model <slug:string>", "Filter to a single model slug")
+      .option(
+        "--task-set <hashOrCurrent:string>",
+        "Task set hash or 'current' (default)",
+        { default: "current" },
+      )
+      .option(
+        "--json",
+        "Emit machine-readable JSON validated against StatusJsonOutputSchema",
+        { default: false },
+      )
+      .option(
+        "--legacy",
+        "Include pre-P6 sentinel rows in a separate display section " +
+          "(JSON output always includes them as `legacy_rows` regardless)",
+        { default: false },
+      )
+      .option("--url <url:string>", "Override ingest URL")
+      .option("--key-path <path:string>", "Path to ingest signing key")
+      .option("--key-id <id:number>", "Ingest key id")
+      .option("--machine-id <id:string>", "Machine id override")
+      .option("--admin-key-path <path:string>", "Path to admin signing key")
+      .option("--admin-key-id <id:number>", "Admin key id")
+      .example(
+        "Full matrix",
+        "centralgauge lifecycle status",
+      )
+      .example(
+        "Filter to one model",
+        "centralgauge lifecycle status --model anthropic/claude-opus-4-7",
+      )
+      .example(
+        "CI-friendly output",
+        "centralgauge lifecycle status --json | jq '.hints[].command'",
+      )
+      .example(
+        "Show legacy pre-P6 rows",
+        "centralgauge lifecycle status --legacy",
+      )
+      .action(async (flags) => {
+        try {
+          await handleStatus(flags as unknown as StatusFlags);
+        } catch (err) {
+          console.error(
+            colors.red("[FAIL]"),
+            err instanceof Error ? err.message : String(err),
+          );
+          Deno.exit(1);
+        }
+      }),
+  );
+}
