@@ -328,7 +328,7 @@ export async function displayMultiRunSummary(
     // majority@n
     console.log(
       `    Majority@${runCount}: ${
-        colors.yellow((stats.majorityAtN * 100).toFixed(1) + "%")
+        colors.yellow((stats.majorityRate * 100).toFixed(1) + "%")
       }   Pass-count stddev: ${stats.perTaskPassStddev.toFixed(2)}`,
     );
 

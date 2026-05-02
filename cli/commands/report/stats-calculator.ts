@@ -345,7 +345,7 @@ export function calculateMultiRunStats(
       passAtK,
       passHatK,
       consistency,
-      majorityAtN: majorityRate,
+      majorityRate,
       perTaskPassStddev: passStddev,
       perTaskRuns,
     });

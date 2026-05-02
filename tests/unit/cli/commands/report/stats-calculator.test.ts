@@ -221,8 +221,8 @@ Deno.test("calculateMultiRunStats populates passHatK + majorityAtN + variance", 
   assertAlmostEquals(stats.passHatK[2]!, (1 + 1 / 3) / 2, 1e-9);
   assertAlmostEquals(stats.passHatK[3]!, (1 + 0) / 2, 1e-9);
 
-  // majorityAtN: T1 (3>1.5 yes), T2 (2>1.5 yes) → 2/2 = 1.0
-  assertEquals(stats.majorityAtN, 1);
+  // majorityRate: T1 (3>1.5 yes), T2 (2>1.5 yes) → 2/2 = 1.0
+  assertEquals(stats.majorityRate, 1);
 
   // perTaskPassStddev: per-task pass counts = [3, 2]; stddev sample = sqrt(0.5)
   assertAlmostEquals(stats.perTaskPassStddev, Math.sqrt(0.5), 1e-9);

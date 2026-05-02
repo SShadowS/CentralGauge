@@ -136,7 +136,7 @@ export interface MultiRunModelStats extends PerModelStats {
   /** Fraction of tasks with identical outcomes across all runs (0-1) */
   consistency: number;
   /** Fraction of tasks where strict majority of runs pass (0-1). */
-  majorityAtN: number;
+  majorityRate: number;
   /** Stddev of per-task pass-counts across runs. Higher = more flaky. */
   perTaskPassStddev: number;
   perTaskRuns: Map<string, TaskRunData>;
