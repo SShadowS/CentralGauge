@@ -117,3 +117,10 @@ sandbox-debug.log
 # Local notes
 Insights.md
 RESUME-NOTES.md
+
+# Build artifacts and tool sessions
+graphify-out/
+.playwright-mcp/
+
+# Root-level screenshots from UI debugging
+/*.png
