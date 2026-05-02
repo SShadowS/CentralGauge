@@ -1,4 +1,5 @@
 import type { RequestHandler } from './$types';
+import { authenticateAdminRequest } from '$lib/server/cf-access';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
@@ -15,12 +16,10 @@ import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
  * absent, since re-analysis without a retained bundle would have to
  * re-run inference from scratch (non-deterministic).
  *
- * Auth: Ed25519 admin signature (same scheme as /admin/lifecycle/state).
- * URL-bound signing: `event_id` is in the signed bytes, so a captured
- * signature can't be replayed against arbitrary event ids.
- *
- * TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access
- * dual-auth once Plan F's helper lands.
+ * (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
+ * primary path; fall back to the existing header-signed Ed25519 path
+ * (`verifyLifecycleAdminRequest` binds `event_id` into the signed bytes
+ * so a captured envelope can't be replayed against a different id).
  */
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
@@ -33,13 +32,17 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       throw new ApiError(400, 'bad_event_id', 'event_id must be a positive integer');
     }
 
-    await verifyLifecycleAdminRequest(db, request, {
-      signedFields: buildHeaderSignedFields({
-        method: 'GET',
-        path: url.pathname,
-        query: { event_id: String(eventId) },
-      }),
-    });
+    if (request.headers.get('cf-access-jwt-assertion')) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({
+          method: 'GET',
+          path: url.pathname,
+          query: { event_id: String(eventId) },
+        }),
+      });
+    }
 
     // Delegate to the shared `checkDebugBundleAvailable` helper so the
     // admin endpoint and the family page loader stay byte-equivalent in
