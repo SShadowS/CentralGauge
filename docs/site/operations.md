@@ -545,6 +545,40 @@ already reflects the current SVG output).
    change is being baselined — and the new baseline must be re-captured
    on Ubuntu CI before merging.
 
+### Deferred lifecycle baselines
+
+Plan J6 added placeholder `test.skip` entries in
+`site/tests/e2e/visual-regression.spec.ts` for:
+
+- `/admin/lifecycle/status`
+- `/admin/lifecycle/review`
+- `/admin/lifecycle/events`
+- `/families/<slug>#diff` (Concept trajectory section)
+
+They are **skipped pending two prerequisites**:
+
+1. **CF Access fixture** for the admin pages — `/admin/lifecycle/*`
+   is gated by Cloudflare Access (Plan F5). The test rig needs a
+   cookie-injection or test-only auth-bypass before the page can
+   render in CI without a real GitHub OAuth round-trip.
+2. **Seeded lifecycle data** — pending-review rows, lifecycle_events
+   entries, family_diffs rows. The current `seed:e2e` harness covers
+   the public-facing tables; admin lifecycle data needs an extension.
+
+When both land:
+
+1. Swap `test.skip(true, '...')` → `test('...', ...)` per the
+   capture pattern used by the public PAGES loop (with theme +
+   density variants if those surfaces support them; admin pages
+   probably want a single `light · comfortable` capture only).
+2. Run the manual GitHub Actions workflow from the runbook above to
+   capture the new baselines on Ubuntu.
+3. Commit the new PNGs.
+
+Do NOT attempt to capture these baselines on a Windows dev machine —
+the P5.4 baseline-platform invariant explicitly forbids cross-OS
+captures because of font-rendering drift.
+
 ## Custom-domain flip pre-flight checklist
 
 > P6 Phase F deliverable. Before executing the SITE_BASE_URL change in
