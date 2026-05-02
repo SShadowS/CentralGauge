@@ -1,5 +1,5 @@
 /**
- * Weekly lifecycle digest generator.
+ * Weekly lifecycle digest generator + CLI input fetcher.
  *
  * Reads {@link LifecycleEvent}s + family diffs + review queue counts and
  * renders either a markdown report (for the GitHub issue) or JSON (for
@@ -26,6 +26,9 @@
  * @module src/lifecycle/digest
  */
 import type { LifecycleEvent } from "./types.ts";
+import { type AppendOptions, queryEvents } from "./event-log.ts";
+import { signPayload } from "../ingest/sign.ts";
+import { postWithRetry } from "../ingest/client.ts";
 
 /**
  * Subset of Plan E's `FamilyDiff` shape (`site/src/lib/shared/api-types.ts`)
@@ -332,4 +335,217 @@ function renderMarkdown(args: RenderArgs): string {
   }
 
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// CLI input fetcher
+// ---------------------------------------------------------------------------
+
+/**
+ * Wire shape of the public `/api/v1/families` GET. Vendor-prefixed slugs
+ * are the hash key for diff lookup.
+ */
+interface FamiliesListBody {
+  data: Array<{ slug: string }>;
+}
+
+/**
+ * Wire shape of the existing
+ * `POST /api/v1/admin/lifecycle/cluster-review/queue` endpoint (D-data §D7.3).
+ * The digest only needs slug + confidence + counts; the rest of the row
+ * shape is ignored.
+ */
+interface ClusterReviewQueueBody {
+  rows: Array<{
+    id: number;
+    model_slug: string;
+    concept_slug_proposed: string;
+    confidence: number;
+    created_at: number;
+  }>;
+}
+
+export interface FetchDigestInputsArgs {
+  /** Production worker base URL (e.g. `https://centralgauge.example`). */
+  siteUrl: string;
+  /** Lower bound for `events.ts >= sinceMs` filter. */
+  sinceMs: number;
+  /** Admin signing key (Ed25519, 32 bytes). */
+  privateKey: Uint8Array;
+  /** Admin key id (matches `key_id` column in machine_keys). */
+  keyId: number;
+  /** Models to query. Caller fetches via `lifecycle status` first. */
+  models: readonly string[];
+  /**
+   * Task-set hash to query lifecycle events under. Resolved client-side
+   * by the CLI subcommand (matches `cycle` / `status` behaviour).
+   */
+  taskSetHash: string;
+  /**
+   * Test override for `fetch`. Production callers leave it undefined so it
+   * falls through to the global. The cluster-review queue path uses
+   * `postWithRetry` directly which is not stubbable here — tests that need
+   * to stub the queue swap `queryFn`/`fetchFamiliesFn`/`fetchQueueFn` below.
+   */
+  fetchFn?: typeof fetch;
+  /**
+   * Test override for `queryEvents`. Defaults to the production helper.
+   * Lets unit tests assert per-model fan-out without round-tripping the
+   * worker.
+   */
+  queryFn?: typeof queryEvents;
+  /** Test override for the families fetch. */
+  fetchFamiliesFn?: (
+    siteUrl: string,
+    fetchFn: typeof fetch,
+  ) => Promise<string[]>;
+  /** Test override for the cluster-review queue fetch. */
+  fetchQueueFn?: (
+    args: { siteUrl: string; privateKey: Uint8Array; keyId: number },
+  ) => Promise<ReviewQueueSummary>;
+  /** Test override for the family-diff fetch. */
+  fetchDiffFn?: (
+    siteUrl: string,
+    family: string,
+    fetchFn: typeof fetch,
+  ) => Promise<FamilyDiffRow | null>;
+}
+
+/**
+ * Fetch the three input streams the digest needs:
+ *
+ *   1. Per-model lifecycle events (admin-signed GET, one round-trip per model).
+ *   2. Family slugs from `/api/v1/families` (public) + per-family diff
+ *      (`/api/v1/families/<slug>/diff`, public).
+ *   3. Pending review queue via `cluster-review/queue` POST (admin Ed25519
+ *      body-signed). The newer `/admin/lifecycle/review/queue` GET endpoint
+ *      is CF-Access-only (see `site/src/lib/server/cf-access.ts` —
+ *      `signedBody=null` is passed for read-only GETs); the CLI cannot
+ *      authenticate to it, hence the cluster-review POST mirror.
+ *
+ * Returns an `Omit<DigestInput, "format">` ready for {@link generateDigest}.
+ *
+ * Failure isolation: a single family's diff fetch failure is swallowed
+ * (logs to stderr); the other inputs proceed. A queue-fetch failure is
+ * fatal because an absent queue count would silently misreport the
+ * digest's "review queue depth" line.
+ */
+export async function fetchDigestInputs(
+  args: FetchDigestInputsArgs,
+): Promise<Omit<DigestInput, "format">> {
+  const fetchFn = args.fetchFn ?? fetch;
+  const queryFn = args.queryFn ?? queryEvents;
+  const fetchFamiliesFn = args.fetchFamiliesFn ?? defaultFetchFamilies;
+  const fetchQueueFn = args.fetchQueueFn ?? defaultFetchQueue;
+  const fetchDiffFn = args.fetchDiffFn ?? defaultFetchDiff;
+
+  const opts: AppendOptions = {
+    url: args.siteUrl,
+    privateKey: args.privateKey,
+    keyId: args.keyId,
+  };
+
+  // 1. Events — one round-trip per model. Concurrency cap not needed at
+  // the typical ~5–10 model count; a Promise.all blast is fine.
+  const eventBatches = await Promise.all(
+    args.models.map(async (slug) => {
+      try {
+        return await queryFn({
+          model_slug: slug,
+          task_set_hash: args.taskSetHash,
+          since: args.sinceMs,
+        }, opts);
+      } catch (err) {
+        // Per-model failure shouldn't kill the digest; the failed model
+        // simply contributes no events. Operator sees a less-complete
+        // digest with a workflow-step warning.
+        console.warn(
+          `[digest] queryEvents failed for ${slug}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        return [];
+      }
+    }),
+  );
+  const events = eventBatches.flat();
+
+  // 2. Family diffs. Public endpoints; no signature.
+  const families = await fetchFamiliesFn(args.siteUrl, fetchFn);
+  const familyDiffs: FamilyDiffRow[] = [];
+  for (const family of families) {
+    try {
+      const diff = await fetchDiffFn(args.siteUrl, family, fetchFn);
+      if (diff) familyDiffs.push(diff);
+    } catch (err) {
+      console.warn(
+        `[digest] family-diff fetch failed for ${family}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
+
+  // 3. Review queue (admin-signed POST, mandatory).
+  const reviewQueue = await fetchQueueFn({
+    siteUrl: args.siteUrl,
+    privateKey: args.privateKey,
+    keyId: args.keyId,
+  });
+
+  return {
+    events,
+    familyDiffs,
+    reviewQueue,
+    sinceMs: args.sinceMs,
+  };
+}
+
+async function defaultFetchFamilies(
+  siteUrl: string,
+  fetchFn: typeof fetch,
+): Promise<string[]> {
+  const resp = await fetchFn(`${siteUrl}/api/v1/families`);
+  if (!resp.ok) throw new Error(`families list failed (${resp.status})`);
+  const body = await resp.json() as FamiliesListBody;
+  return body.data.map((f) => f.slug);
+}
+
+async function defaultFetchDiff(
+  siteUrl: string,
+  family: string,
+  fetchFn: typeof fetch,
+): Promise<FamilyDiffRow | null> {
+  const resp = await fetchFn(`${siteUrl}/api/v1/families/${family}/diff`);
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`family-diff failed (${resp.status})`);
+  const body = await resp.json() as FamilyDiffRow;
+  return body;
+}
+
+async function defaultFetchQueue(
+  args: { siteUrl: string; privateKey: Uint8Array; keyId: number },
+): Promise<ReviewQueueSummary> {
+  const payload = { scope: "list" as const, ts: Date.now() };
+  const sig = await signPayload(payload, args.privateKey, args.keyId);
+  const resp = await postWithRetry(
+    `${args.siteUrl}/api/v1/admin/lifecycle/cluster-review/queue`,
+    { version: 1, payload, signature: sig },
+  );
+  if (!resp.ok) {
+    throw new Error(
+      `cluster-review/queue failed (${resp.status}): ${await resp.text()}`,
+    );
+  }
+  const body = await resp.json() as ClusterReviewQueueBody;
+  return {
+    pending_count: body.rows.length,
+    rows: body.rows.map((r) => ({
+      id: r.id,
+      model_slug: r.model_slug,
+      concept_slug_proposed: r.concept_slug_proposed,
+      confidence: r.confidence,
+      created_at: r.created_at,
+    })),
+  };
 }
