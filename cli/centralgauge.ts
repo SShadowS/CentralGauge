@@ -8,6 +8,15 @@
  * @module cli/centralgauge
  */
 
+// Polyfill process.env for npm modules that read it at module-init time.
+// Required for `@google/genai` which evaluates `process.env.GOOGLE_SDK_NODE_LOGGING`
+// in its top-level scope before Deno's Node compat layer wires up `process`.
+// Surfaced on Linux CI runners (Windows Deno is more permissive).
+// deno-lint-ignore no-explicit-any
+const _g = globalThis as any;
+_g.process ??= { env: {} };
+_g.process.env ??= {};
+
 import { Command } from "@cliffy/command";
 import { EnvLoader } from "../src/utils/env-loader.ts";
 import { isValidLogLevel, Logger } from "../src/logger/mod.ts";
