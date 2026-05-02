@@ -1,4 +1,5 @@
 import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
+import type { ServerTimer } from './server-timing';
 
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
@@ -116,6 +117,13 @@ export interface ComputeOpts {
    * for each model. Off by default because it adds a second query.
    */
   includePassHatAtN?: boolean;
+  /**
+   * Optional `ServerTimer` instance. When provided, each subquery call is
+   * wrapped with `timer.measure(...)` so per-component durations appear in
+   * the response's `Server-Timing` header. When absent, queries run
+   * uninstrumented with zero overhead.
+   */
+  timer?: ServerTimer;
 }
 
 export async function computeModelAggregates(
@@ -198,22 +206,39 @@ export async function computeModelAggregates(
   `;
 
   const stmt = db.prepare(sql).bind(...params);
-  const rs = await stmt.all<{
-    model_id: number;
-    run_count: number | string | null;
-    verified_runs: number | string | null;
-    avg_score: number | string | null;
-    avg_cost_usd: number | string | null;
-    total_cost_usd: number | string | null;
-    last_run_at: string | null;
-    tasks_attempted: number | string | null;
-    tasks_passed: number | string | null;
-    tasks_attempted_distinct: number | string | null;
-    tasks_passed_attempt_1: number | string | null;
-    tasks_passed_attempt_2_only: number | string | null;
-    settings_hash_unique: string | null;
-    settings_hash_count: number | string | null;
-  }>();
+  const rs = await (opts.timer
+    ? opts.timer.measure('aggregates_main', () => stmt.all<{
+        model_id: number;
+        run_count: number | string | null;
+        verified_runs: number | string | null;
+        avg_score: number | string | null;
+        avg_cost_usd: number | string | null;
+        total_cost_usd: number | string | null;
+        last_run_at: string | null;
+        tasks_attempted: number | string | null;
+        tasks_passed: number | string | null;
+        tasks_attempted_distinct: number | string | null;
+        tasks_passed_attempt_1: number | string | null;
+        tasks_passed_attempt_2_only: number | string | null;
+        settings_hash_unique: string | null;
+        settings_hash_count: number | string | null;
+      }>())
+    : stmt.all<{
+        model_id: number;
+        run_count: number | string | null;
+        verified_runs: number | string | null;
+        avg_score: number | string | null;
+        avg_cost_usd: number | string | null;
+        total_cost_usd: number | string | null;
+        last_run_at: string | null;
+        tasks_attempted: number | string | null;
+        tasks_passed: number | string | null;
+        tasks_attempted_distinct: number | string | null;
+        tasks_passed_attempt_1: number | string | null;
+        tasks_passed_attempt_2_only: number | string | null;
+        settings_hash_unique: string | null;
+        settings_hash_count: number | string | null;
+      }>());
 
   // Resolve settings profiles in a separate batch lookup (sidesteps SQLite
   // "misuse of aggregate" when MAX() is referenced inside a scalar subquery).
@@ -230,17 +255,24 @@ export async function computeModelAggregates(
   >();
   if (uniqueHashes.length > 0) {
     const ph = uniqueHashes.map(() => '?').join(',');
-    const profileRs = await db
+    const profileStmt = db
       .prepare(
         `SELECT hash, temperature, max_tokens, extra_json FROM settings_profiles WHERE hash IN (${ph})`,
       )
-      .bind(...uniqueHashes)
-      .all<{
-        hash: string;
-        temperature: number | null;
-        max_tokens: number | null;
-        extra_json: string | null;
-      }>();
+      .bind(...uniqueHashes);
+    const profileRs = await (opts.timer
+      ? opts.timer.measure('settings_profiles', () => profileStmt.all<{
+          hash: string;
+          temperature: number | null;
+          max_tokens: number | null;
+          extra_json: string | null;
+        }>())
+      : profileStmt.all<{
+          hash: string;
+          temperature: number | null;
+          max_tokens: number | null;
+          extra_json: string | null;
+        }>());
     for (const p of profileRs.results ?? []) {
       profileByHash.set(p.hash, {
         temperature: typeof p.temperature === 'number' ? p.temperature : null,
@@ -254,14 +286,16 @@ export async function computeModelAggregates(
   // These need access to per-run rows (for tokens) and per-(task, run) rows
   // (for consistency). We compute in TS to keep semantics auditable.
   const modelIdsInResult = (rs.results ?? []).map((r) => r.model_id);
-  const tokensByModel = await computeTokensAvgPerRun(db, where, params);
-  const consistencyByModel = await computeConsistencyPct(db, where, params);
-  const settingsConsistencyByModel = await computeSettingsConsistency(
-    db,
-    where,
-    params,
-    modelIdsInResult,
-  );
+  const { timer } = opts;
+  const tokensByModel = await (timer
+    ? timer.measure('tokens', () => computeTokensAvgPerRun(db, where, params))
+    : computeTokensAvgPerRun(db, where, params));
+  const consistencyByModel = await (timer
+    ? timer.measure('consistency', () => computeConsistencyPct(db, where, params))
+    : computeConsistencyPct(db, where, params));
+  const settingsConsistencyByModel = await (timer
+    ? timer.measure('settings', () => computeSettingsConsistency(db, where, params, modelIdsInResult))
+    : computeSettingsConsistency(db, where, params, modelIdsInResult));
 
   // Optionally fetch per-result durations and compute percentiles in TS. We do
   // this in a second query (rather than a SQL window function) so the math
@@ -269,7 +303,9 @@ export async function computeModelAggregates(
   // builds without PERCENTILE_CONT.
   let latencyPercentilesByModel: Map<number, { p50: number; p95: number }> | null = null;
   if (opts.includeLatencyP50) {
-    latencyPercentilesByModel = await computeLatencyPercentilesByModel(db, where, params);
+    latencyPercentilesByModel = await (timer
+      ? timer.measure('latency_pct', () => computeLatencyPercentilesByModel(db, where, params))
+      : computeLatencyPercentilesByModel(db, where, params));
   }
 
   // Optionally compute pass^n (strict all-runs-pass fraction). Off by default
@@ -277,7 +313,9 @@ export async function computeModelAggregates(
   // page) pass includePassHatAtN: true.
   let passHatByModel: Map<number, number> | null = null;
   if (opts.includePassHatAtN) {
-    passHatByModel = await computePassHatAtN(db, where, params);
+    passHatByModel = await (timer
+      ? timer.measure('pass_hat', () => computePassHatAtN(db, where, params))
+      : computePassHatAtN(db, where, params));
   }
 
   const out = new Map<number, Aggregate>();

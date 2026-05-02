@@ -6,6 +6,7 @@ import {
   type LeaderboardResponse,
 } from '$lib/server/leaderboard';
 import { ApiError, errorResponse } from '$lib/server/errors';
+import { ServerTimer } from '$lib/server/server-timing';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -34,19 +35,25 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
 
     let payload: LeaderboardResponse | null = null;
+    let serverTimingHeader: string | null = null;
     const cached = await cache.match(cacheKey);
     if (cached) {
       payload = (await cached.json()) as LeaderboardResponse;
+      // Cached hits carry the Server-Timing header from the original compute
+      // request — expose it so observers can distinguish warm vs. cold paths.
+      serverTimingHeader = cached.headers.get('server-timing');
     }
 
     if (!payload) {
-      const rows = await computeLeaderboard(env.DB, q);
+      const timer = new ServerTimer();
+      const rows = await computeLeaderboard(env.DB, q, timer);
       payload = {
         data: rows,
         next_cursor: null, // single page at P1; keyset paging added in P2
         generated_at: new Date().toISOString(),
         filters: q,
       };
+      serverTimingHeader = timer.header();
       // The stored Response carries `public, s-maxage=...` so caches.default
       // accepts it. The *user-facing* response is built separately by
       // `cachedJson` and stays `private`. We await inline (instead of
@@ -57,11 +64,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         headers: {
           'content-type': 'application/json; charset=utf-8',
           'cache-control': `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          'server-timing': serverTimingHeader,
         },
       });
       await cache.put(cacheKey, storeRes);
     }
-    return cachedJson(request, payload);
+    return cachedJson(request, payload, {
+      extraHeaders: serverTimingHeader ? { 'server-timing': serverTimingHeader } : {},
+    });
   } catch (err) {
     return errorResponse(err);
   }

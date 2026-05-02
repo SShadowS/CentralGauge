@@ -2,12 +2,14 @@ import type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow } from '$sha
 import { getAll } from './db';
 import { computeModelAggregates } from './model-aggregates';
 import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
+import type { ServerTimer } from './server-timing';
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
 export async function computeLeaderboard(
   db: D1Database,
   q: LeaderboardQuery,
+  timer?: ServerTimer,
 ): Promise<LeaderboardRow[]> {
   const wheres: string[] = [];
   const params: (string | number)[] = [];
@@ -137,7 +139,9 @@ export async function computeLeaderboard(
     last_run_at: string;
   };
 
-  const rows = await getAll<Row>(db, sql, [...params, q.limit]);
+  const rows = await (timer
+    ? timer.measure('leaderboard_main', () => getAll<Row>(db, sql, [...params, q.limit]))
+    : getAll<Row>(db, sql, [...params, q.limit]));
 
   // Resolve settings profiles in a separate batch lookup (only for rows with
   // a unique settings_hash). Sidesteps the SQLite "misuse of aggregate"
@@ -176,6 +180,7 @@ export async function computeLeaderboard(
       taskSetCurrent: q.set === 'current',
       includeLatencyP50: true,
       includePassHatAtN: true,
+      timer,
     });
 
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
