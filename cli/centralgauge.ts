@@ -22,6 +22,7 @@ import {
   registerConfigCommands,
   registerContainerCommands,
   registerCycleCommand,
+  registerDigestSubcommand,
   registerDoctorCommand,
   registerIngestCommand,
   registerModelsCommand,
@@ -127,6 +128,7 @@ const lifecycleCmd = new Command().description(
 );
 registerClusterReviewCommand(lifecycleCmd);
 registerStatusCommand(lifecycleCmd);
+registerDigestSubcommand(lifecycleCmd);
 // deno-lint-ignore no-explicit-any
 (cli as any).command("lifecycle", lifecycleCmd);
 
