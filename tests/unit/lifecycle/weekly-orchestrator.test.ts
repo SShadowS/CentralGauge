@@ -187,6 +187,38 @@ Deno.test("summariseResults — empty input → all zeros", () => {
   assertEquals(summary.failed, 0);
 });
 
+Deno.test("summariseResults — preserves error_message on catch-branch outcomes", () => {
+  // The catch arm of the orchestrator's per-model loop populates
+  // `error_message`; without it the 90-day weekly-cycle-result.json
+  // artifact loses the failure reason and operators have to dig
+  // through workflow logs to triage stale runs.
+  const summary = summariseResults(
+    [
+      { model_slug: "a", exit_code: 0, duration_ms: 100 },
+      {
+        model_slug: "b",
+        exit_code: 99,
+        duration_ms: 0,
+        error_message: "Error: ENOTFOUND api.openai.com",
+      },
+    ],
+    "2026-04-29T06:00:00.000Z",
+  );
+  assertEquals(summary.results.length, 2);
+  assertEquals(summary.results[0]!.error_message, undefined);
+  assertEquals(
+    summary.results[1]!.error_message,
+    "Error: ENOTFOUND api.openai.com",
+  );
+  // Round-trip JSON to confirm the field survives serialisation into
+  // the artifact file.
+  const roundTripped = JSON.parse(JSON.stringify(summary));
+  assertEquals(
+    roundTripped.results[1].error_message,
+    "Error: ENOTFOUND api.openai.com",
+  );
+});
+
 Deno.test("parseStatusJson — well-formed payload validates and returns typed shape", () => {
   // The same shape `lifecycle status --json` emits in production.
   const raw = JSON.stringify({

@@ -113,6 +113,18 @@ export interface CycleOutcome {
   model_slug: string;
   exit_code: number;
   duration_ms: number;
+  /**
+   * Failure reason captured by the orchestrator's per-model catch arm
+   * (e.g. spawn failure, IO error). Populated only when {@link runCycle}
+   * threw before returning a normal exit-code outcome; absent for normal
+   * non-zero exit codes (those carry their own diagnostics in the cycle
+   * subprocess's own logs).
+   *
+   * Persisted into `weekly-cycle-result.json` (90-day artifact) so
+   * operators triaging a stale run don't have to dig through workflow
+   * logs for the root cause.
+   */
+  error_message?: string;
 }
 
 /**
@@ -261,7 +273,12 @@ if (import.meta.main) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.log(colors.red(`[FAIL] ${slug} ${msg}`));
-      results.push({ model_slug: slug, exit_code: 99, duration_ms: 0 });
+      results.push({
+        model_slug: slug,
+        exit_code: 99,
+        duration_ms: 0,
+        error_message: msg,
+      });
     }
   }
 
