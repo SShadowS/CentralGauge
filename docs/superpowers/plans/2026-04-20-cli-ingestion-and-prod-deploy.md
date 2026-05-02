@@ -16,57 +16,57 @@
 
 ### Created
 
-| Path | Responsibility |
-|---|---|
-| `shared/canonical.ts` | Canonical JSON, single source of truth, imported from both runtimes |
-| `tests/fixtures/canonical-parity/input.json` | Golden parity fixture (input) |
-| `tests/fixtures/canonical-parity/expected.txt` | Golden parity fixture (expected canonical output) |
-| `tests/unit/canonical_parity_test.ts` | Deno-side parity assertion |
-| `site/src/lib/shared/canonical-parity.test.ts` | Worker-side parity assertion |
-| `site/migrations/0003_cost_source.sql` | Add `source` + `fetched_at` to `cost_snapshots` |
-| `site/src/routes/api/v1/runs/precheck/+server.ts` | POST precheck endpoint |
-| `site/src/routes/api/v1/admin/catalog/models/+server.ts` | Admin upsert for models |
-| `site/src/routes/api/v1/admin/catalog/pricing/+server.ts` | Admin upsert for cost_snapshots |
-| `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts` | Admin upsert for task_sets |
-| `site/src/lib/server/blob-auth.ts` | Header-based Ed25519 auth for blob PUTs |
-| `site/catalog/models.yml` | Checked-in model catalog |
-| `site/catalog/pricing.yml` | Checked-in pricing catalog |
-| `site/catalog/model-families.yml` | Checked-in model-family catalog |
-| `src/ingest/types.ts` | CLI-side ingest types |
-| `src/ingest/canonical.ts` | Re-export of shared/canonical.ts |
-| `src/ingest/sign.ts` | Ed25519 sign helper |
-| `src/ingest/envelope.ts` | Build SignedRunPayload from benchmark JSON |
-| `src/ingest/catalog/read.ts` | Parse site/catalog/*.yml |
-| `src/ingest/catalog/write.ts` | Append to site/catalog/*.yml (preserves comments) |
-| `src/ingest/catalog/task-set-hash.ts` | Deterministic hash of tasks/**/*.yml |
-| `src/ingest/pricing-sources/types.ts` | Adapter interface + `PricingRates` |
-| `src/ingest/pricing-sources/openrouter.ts` | OpenRouter pricing adapter |
-| `src/ingest/pricing-sources/anthropic.ts` | Anthropic pricing adapter |
-| `src/ingest/pricing-sources/openai.ts` | OpenAI pricing adapter |
-| `src/ingest/pricing-sources/gemini.ts` | Gemini pricing adapter |
-| `src/ingest/pricing-sources/index.ts` | Family-based dispatch |
-| `src/ingest/register.ts` | Interactive catalog+D1 registration |
-| `src/ingest/blobs.ts` | R2 blob upload with header-signed auth |
-| `src/ingest/client.ts` | HTTP POST with retry |
-| `src/ingest/config.ts` | Resolve URL, keypath, keyId, machineId |
-| `src/ingest/mod.ts` | Barrel export; `ingestRun()` entry point |
-| `cli/commands/ingest-command.ts` | `centralgauge ingest <path>` |
-| `cli/commands/sync-catalog-command.ts` | `centralgauge sync-catalog` |
-| `tests/unit/ingest/*` | Unit tests mirroring `src/ingest/` |
-| `site/test/integration/blobs-put-signed.test.ts` | Auth tests for blob PUT |
-| `site/test/integration/runs-precheck.test.ts` | Precheck tests |
-| `site/test/integration/catalog-admin.test.ts` | Catalog admin endpoints |
+| Path                                                        | Responsibility                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `shared/canonical.ts`                                       | Canonical JSON, single source of truth, imported from both runtimes |
+| `tests/fixtures/canonical-parity/input.json`                | Golden parity fixture (input)                                       |
+| `tests/fixtures/canonical-parity/expected.txt`              | Golden parity fixture (expected canonical output)                   |
+| `tests/unit/canonical_parity_test.ts`                       | Deno-side parity assertion                                          |
+| `site/src/lib/shared/canonical-parity.test.ts`              | Worker-side parity assertion                                        |
+| `site/migrations/0003_cost_source.sql`                      | Add `source` + `fetched_at` to `cost_snapshots`                     |
+| `site/src/routes/api/v1/runs/precheck/+server.ts`           | POST precheck endpoint                                              |
+| `site/src/routes/api/v1/admin/catalog/models/+server.ts`    | Admin upsert for models                                             |
+| `site/src/routes/api/v1/admin/catalog/pricing/+server.ts`   | Admin upsert for cost_snapshots                                     |
+| `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts` | Admin upsert for task_sets                                          |
+| `site/src/lib/server/blob-auth.ts`                          | Header-based Ed25519 auth for blob PUTs                             |
+| `site/catalog/models.yml`                                   | Checked-in model catalog                                            |
+| `site/catalog/pricing.yml`                                  | Checked-in pricing catalog                                          |
+| `site/catalog/model-families.yml`                           | Checked-in model-family catalog                                     |
+| `src/ingest/types.ts`                                       | CLI-side ingest types                                               |
+| `src/ingest/canonical.ts`                                   | Re-export of shared/canonical.ts                                    |
+| `src/ingest/sign.ts`                                        | Ed25519 sign helper                                                 |
+| `src/ingest/envelope.ts`                                    | Build SignedRunPayload from benchmark JSON                          |
+| `src/ingest/catalog/read.ts`                                | Parse site/catalog/*.yml                                            |
+| `src/ingest/catalog/write.ts`                               | Append to site/catalog/*.yml (preserves comments)                   |
+| `src/ingest/catalog/task-set-hash.ts`                       | Deterministic hash of tasks/**/*.yml                                |
+| `src/ingest/pricing-sources/types.ts`                       | Adapter interface + `PricingRates`                                  |
+| `src/ingest/pricing-sources/openrouter.ts`                  | OpenRouter pricing adapter                                          |
+| `src/ingest/pricing-sources/anthropic.ts`                   | Anthropic pricing adapter                                           |
+| `src/ingest/pricing-sources/openai.ts`                      | OpenAI pricing adapter                                              |
+| `src/ingest/pricing-sources/gemini.ts`                      | Gemini pricing adapter                                              |
+| `src/ingest/pricing-sources/index.ts`                       | Family-based dispatch                                               |
+| `src/ingest/register.ts`                                    | Interactive catalog+D1 registration                                 |
+| `src/ingest/blobs.ts`                                       | R2 blob upload with header-signed auth                              |
+| `src/ingest/client.ts`                                      | HTTP POST with retry                                                |
+| `src/ingest/config.ts`                                      | Resolve URL, keypath, keyId, machineId                              |
+| `src/ingest/mod.ts`                                         | Barrel export; `ingestRun()` entry point                            |
+| `cli/commands/ingest-command.ts`                            | `centralgauge ingest <path>`                                        |
+| `cli/commands/sync-catalog-command.ts`                      | `centralgauge sync-catalog`                                         |
+| `tests/unit/ingest/*`                                       | Unit tests mirroring `src/ingest/`                                  |
+| `site/test/integration/blobs-put-signed.test.ts`            | Auth tests for blob PUT                                             |
+| `site/test/integration/runs-precheck.test.ts`               | Precheck tests                                                      |
+| `site/test/integration/catalog-admin.test.ts`               | Catalog admin endpoints                                             |
 
 ### Modified
 
-| Path | Change |
-|---|---|
-| `site/src/lib/shared/canonical.ts` | Replaced with `export { canonicalJSON } from '../../../../shared/canonical'` |
-| `site/src/routes/api/v1/blobs/[sha256]/+server.ts` | Add header-based Ed25519 auth |
-| `cli/commands/bench-command.ts` | Call `ingestRun(...)` after writing results JSON |
-| `cli/commands/mod.ts` | Register new `ingest` and `sync-catalog` commands |
-| `site/wrangler.toml` | Add production env block (already present; verify) |
-| `.centralgauge.yml` | Production defaults for URL, key path |
+| Path                                               | Change                                                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `site/src/lib/shared/canonical.ts`                 | Replaced with `export { canonicalJSON } from '../../../../shared/canonical'` |
+| `site/src/routes/api/v1/blobs/[sha256]/+server.ts` | Add header-based Ed25519 auth                                                |
+| `cli/commands/bench-command.ts`                    | Call `ingestRun(...)` after writing results JSON                             |
+| `cli/commands/mod.ts`                              | Register new `ingest` and `sync-catalog` commands                            |
+| `site/wrangler.toml`                               | Add production env block (already present; verify)                           |
+| `.centralgauge.yml`                                | Production defaults for URL, key path                                        |
 
 ---
 
@@ -75,6 +75,7 @@
 ### Task 0.1: Move canonical.ts to repo root
 
 **Files:**
+
 - Create: `shared/canonical.ts`
 - Modify: `site/src/lib/shared/canonical.ts` → becomes a re-export stub
 
@@ -98,23 +99,23 @@ export function canonicalJSON(value: unknown): string {
 }
 
 function serialize(v: unknown, seen: WeakSet<object>): string {
-  if (v === null) return 'null';
-  if (typeof v === 'boolean') return v ? 'true' : 'false';
-  if (typeof v === 'number') {
+  if (v === null) return "null";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number") {
     if (!Number.isFinite(v)) {
-      throw new Error('canonicalJSON: non-finite number is not serializable');
+      throw new Error("canonicalJSON: non-finite number is not serializable");
     }
     return JSON.stringify(v);
   }
-  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === "string") return JSON.stringify(v);
   if (Array.isArray(v)) {
-    if (seen.has(v)) throw new Error('canonicalJSON: cycle detected');
+    if (seen.has(v)) throw new Error("canonicalJSON: cycle detected");
     seen.add(v);
-    return '[' + v.map((x) => serialize(x, seen)).join(',') + ']';
+    return "[" + v.map((x) => serialize(x, seen)).join(",") + "]";
   }
-  if (typeof v === 'object') {
+  if (typeof v === "object") {
     const obj = v as Record<string, unknown>;
-    if (seen.has(obj)) throw new Error('canonicalJSON: cycle detected');
+    if (seen.has(obj)) throw new Error("canonicalJSON: cycle detected");
     seen.add(obj);
     const keys = Object.keys(obj).sort();
     const parts: string[] = [];
@@ -123,9 +124,9 @@ function serialize(v: unknown, seen: WeakSet<object>): string {
       if (val === undefined) {
         throw new Error(`canonicalJSON: undefined value at key "${k}"`);
       }
-      parts.push(JSON.stringify(k) + ':' + serialize(val, seen));
+      parts.push(JSON.stringify(k) + ":" + serialize(val, seen));
     }
-    return '{' + parts.join(',') + '}';
+    return "{" + parts.join(",") + "}";
   }
   throw new Error(`canonicalJSON: unsupported type ${typeof v}`);
 }
@@ -136,7 +137,7 @@ function serialize(v: unknown, seen: WeakSet<object>): string {
 Edit `site/src/lib/shared/canonical.ts` to contain only:
 
 ```ts
-export { canonicalJSON } from '../../../../shared/canonical';
+export { canonicalJSON } from "../../../../shared/canonical";
 ```
 
 - [ ] **Step 3: Verify worker build still works**
@@ -144,6 +145,7 @@ export { canonicalJSON } from '../../../../shared/canonical';
 ```bash
 cd site && npm run check
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 4: Verify worker tests still pass**
@@ -151,6 +153,7 @@ Expected: 0 errors.
 ```bash
 cd site && npm run test:main
 ```
+
 Expected: all existing tests pass (no canonical tests exist yet).
 
 - [ ] **Step 5: Commit**
@@ -165,6 +168,7 @@ git commit -m "refactor(canonical): hoist to shared/ for CLI+Worker import"
 ### Task 0.2: Golden parity fixture + two-runtime tests
 
 **Files:**
+
 - Create: `tests/fixtures/canonical-parity/input.json`
 - Create: `tests/fixtures/canonical-parity/expected.txt`
 - Create: `tests/unit/canonical_parity_test.ts`
@@ -177,7 +181,7 @@ Write `tests/fixtures/canonical-parity/input.json`:
 ```json
 {
   "zebra": 1,
-  "alpha": {"nested_z": 2, "nested_a": [1, null, "s"]},
+  "alpha": { "nested_z": 2, "nested_a": [1, null, "s"] },
   "unicode": "héllo → 世界",
   "negatives": -0,
   "emptyArr": [],
@@ -188,14 +192,17 @@ Write `tests/fixtures/canonical-parity/input.json`:
 - [ ] **Step 2: Compute the expected canonical output**
 
 Run:
+
 ```bash
 deno eval 'import("./shared/canonical.ts").then(m => Deno.readTextFile("./tests/fixtures/canonical-parity/input.json").then(s => Deno.writeTextFile("./tests/fixtures/canonical-parity/expected.txt", m.canonicalJSON(JSON.parse(s)))))'
 ```
 
 Verify the file was written:
+
 ```bash
 cat tests/fixtures/canonical-parity/expected.txt
 ```
+
 Expected: single line, no trailing newline, begins with `{"alpha":`.
 
 - [ ] **Step 3: Write Deno-side parity test**
@@ -222,6 +229,7 @@ Deno.test("canonical JSON matches golden fixture (Deno)", async () => {
 ```bash
 deno task test:unit -- canonical_parity
 ```
+
 Expected: 1 passed.
 
 - [ ] **Step 5: Write Vitest-side parity test**
@@ -229,18 +237,18 @@ Expected: 1 passed.
 Write `site/src/lib/shared/canonical-parity.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { canonicalJSON } from './canonical';
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { canonicalJSON } from "./canonical";
 
-describe('canonical JSON parity (Vitest)', () => {
-  it('matches golden fixture', () => {
+describe("canonical JSON parity (Vitest)", () => {
+  it("matches golden fixture", () => {
     const input = JSON.parse(
-      readFileSync('../tests/fixtures/canonical-parity/input.json', 'utf8'),
+      readFileSync("../tests/fixtures/canonical-parity/input.json", "utf8"),
     );
     const expected = readFileSync(
-      '../tests/fixtures/canonical-parity/expected.txt',
-      'utf8',
+      "../tests/fixtures/canonical-parity/expected.txt",
+      "utf8",
     );
     expect(canonicalJSON(input)).toBe(expected);
   });
@@ -252,6 +260,7 @@ describe('canonical JSON parity (Vitest)', () => {
 ```bash
 cd site && npm run test:main -- canonical-parity
 ```
+
 Expected: 1 passed.
 
 - [ ] **Step 7: Commit**
@@ -266,6 +275,7 @@ git commit -m "test(canonical): add byte-parity golden fixture shared by both ru
 ### Task 0.3: Migration 0003 — cost_snapshots source + fetched_at
 
 **Files:**
+
 - Create: `site/migrations/0003_cost_source.sql`
 
 - [ ] **Step 1: Write the migration**
@@ -286,6 +296,7 @@ ALTER TABLE cost_snapshots ADD COLUMN fetched_at TEXT;
 ```bash
 cd site && npx wrangler d1 execute centralgauge-db --env preview --remote --file=migrations/0003_cost_source.sql
 ```
+
 Expected: 2 ALTERs succeed.
 
 - [ ] **Step 3: Mark migration applied in d1_migrations**
@@ -310,6 +321,7 @@ git commit -m "feat(db): add source + fetched_at columns to cost_snapshots"
 ### Task 1.1: Header-signed blob auth helper
 
 **Files:**
+
 - Create: `site/src/lib/server/blob-auth.ts`
 - Test: `site/test/integration/blobs-put-signed.test.ts`
 
@@ -318,12 +330,12 @@ git commit -m "feat(db): add source + fetched_at columns to cost_snapshots"
 Write `site/test/integration/blobs-put-signed.test.ts`:
 
 ```ts
-import { env, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
-import * as ed from '@noble/ed25519';
-import { canonicalJSON } from '$lib/shared/canonical';
+import { env, SELF } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
+import * as ed from "@noble/ed25519";
+import { canonicalJSON } from "$lib/shared/canonical";
 
-describe('PUT /api/v1/blobs/:sha256 — signed auth', () => {
+describe("PUT /api/v1/blobs/:sha256 — signed auth", () => {
   let privKey: Uint8Array;
   let pubKey: Uint8Array;
   let keyId: number;
@@ -333,41 +345,50 @@ describe('PUT /api/v1/blobs/:sha256 — signed auth', () => {
     pubKey = await ed.getPublicKeyAsync(privKey);
     const insertKey = await env.DB.prepare(
       `INSERT INTO machine_keys(machine_id, public_key, scope, created_at)
-       VALUES (?, ?, 'ingest', ?) RETURNING id`
-    ).bind('test-ingest', pubKey, new Date().toISOString()).first<{ id: number }>();
+       VALUES (?, ?, 'ingest', ?) RETURNING id`,
+    ).bind("test-ingest", pubKey, new Date().toISOString()).first<
+      { id: number }
+    >();
     keyId = insertKey!.id;
   });
 
-  it('rejects unsigned PUT with 401', async () => {
-    const body = new TextEncoder().encode('hello');
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', body)))
-      .map((b) => b.toString(16).padStart(2, '0')).join('');
+  it("rejects unsigned PUT with 401", async () => {
+    const body = new TextEncoder().encode("hello");
+    const hash = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", body)),
+    )
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
     const resp = await SELF.fetch(`https://x/api/v1/blobs/${hash}`, {
-      method: 'PUT',
+      method: "PUT",
       body,
     });
     expect(resp.status).toBe(401);
   });
 
-  it('accepts signed PUT and stores blob', async () => {
-    const body = new TextEncoder().encode('hello signed');
-    const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', body)))
-      .map((b) => b.toString(16).padStart(2, '0')).join('');
+  it("accepts signed PUT and stores blob", async () => {
+    const body = new TextEncoder().encode("hello signed");
+    const hash = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", body)),
+    )
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
     const signedAt = new Date().toISOString();
     const canonical = canonicalJSON({
-      method: 'PUT',
+      method: "PUT",
       path: `/api/v1/blobs/${hash}`,
       body_sha256: hash,
       signed_at: signedAt,
     });
-    const sig = await ed.signAsync(new TextEncoder().encode(canonical), privKey);
+    const sig = await ed.signAsync(
+      new TextEncoder().encode(canonical),
+      privKey,
+    );
     const sigB64 = btoa(String.fromCharCode(...sig));
     const resp = await SELF.fetch(`https://x/api/v1/blobs/${hash}`, {
-      method: 'PUT',
+      method: "PUT",
       headers: {
-        'X-CG-Signature': sigB64,
-        'X-CG-Key-Id': String(keyId),
-        'X-CG-Signed-At': signedAt,
+        "X-CG-Signature": sigB64,
+        "X-CG-Key-Id": String(keyId),
+        "X-CG-Signed-At": signedAt,
       },
       body,
     });
@@ -381,6 +402,7 @@ describe('PUT /api/v1/blobs/:sha256 — signed auth', () => {
 ```bash
 cd site && npm run test:main -- blobs-put-signed
 ```
+
 Expected: FAIL — first test expects 401, currently returns 201 (no auth).
 
 - [ ] **Step 3: Write the helper**
@@ -388,11 +410,11 @@ Expected: FAIL — first test expects 401, currently returns 201 (no auth).
 Write `site/src/lib/server/blob-auth.ts`:
 
 ```ts
-import { canonicalJSON } from '$lib/shared/canonical';
-import { verify } from '$lib/shared/ed25519';
-import { b64ToBytes } from '$lib/shared/base64';
-import { ApiError } from './errors';
-import type { Scope } from '$lib/shared/types';
+import { canonicalJSON } from "$lib/shared/canonical";
+import { verify } from "$lib/shared/ed25519";
+import { b64ToBytes } from "$lib/shared/base64";
+import { ApiError } from "./errors";
+import type { Scope } from "$lib/shared/types";
 
 const SKEW_LIMIT_MS = 5 * 60 * 1000;
 
@@ -419,36 +441,67 @@ export async function verifyBlobAuth(
   bodySha256: string,
   requiredScope: Scope,
 ): Promise<VerifiedBlobAuth> {
-  const sigB64 = headers.get('X-CG-Signature');
-  const keyIdStr = headers.get('X-CG-Key-Id');
-  const signedAt = headers.get('X-CG-Signed-At');
+  const sigB64 = headers.get("X-CG-Signature");
+  const keyIdStr = headers.get("X-CG-Key-Id");
+  const signedAt = headers.get("X-CG-Signed-At");
   if (!sigB64 || !keyIdStr || !signedAt) {
-    throw new ApiError(401, 'missing_signature', 'X-CG-Signature, X-CG-Key-Id, X-CG-Signed-At headers required');
+    throw new ApiError(
+      401,
+      "missing_signature",
+      "X-CG-Signature, X-CG-Key-Id, X-CG-Signed-At headers required",
+    );
   }
   const keyId = parseInt(keyIdStr, 10);
   if (!Number.isFinite(keyId) || keyId < 1) {
-    throw new ApiError(401, 'bad_key_id', 'X-CG-Key-Id must be a positive integer');
+    throw new ApiError(
+      401,
+      "bad_key_id",
+      "X-CG-Key-Id must be a positive integer",
+    );
   }
 
   const skew = Math.abs(Date.now() - Date.parse(signedAt));
   if (!Number.isFinite(skew) || skew > SKEW_LIMIT_MS) {
-    throw new ApiError(401, 'clock_skew', `signed_at skew exceeds ${SKEW_LIMIT_MS}ms`);
+    throw new ApiError(
+      401,
+      "clock_skew",
+      `signed_at skew exceeds ${SKEW_LIMIT_MS}ms`,
+    );
   }
 
   const keyRow = await db.prepare(
     `SELECT id, machine_id, public_key, scope, revoked_at FROM machine_keys WHERE id = ?`,
-  ).bind(keyId).first<{ id: number; machine_id: string; public_key: ArrayBuffer; scope: Scope; revoked_at: string | null }>();
-  if (!keyRow) throw new ApiError(401, 'unknown_key', `key_id ${keyId} not found`);
-  if (keyRow.revoked_at) throw new ApiError(401, 'revoked_key', 'key revoked');
-  if (keyRow.scope !== requiredScope && keyRow.scope !== 'admin') {
-    throw new ApiError(403, 'insufficient_scope', `need ${requiredScope}, have ${keyRow.scope}`);
+  ).bind(keyId).first<
+    {
+      id: number;
+      machine_id: string;
+      public_key: ArrayBuffer;
+      scope: Scope;
+      revoked_at: string | null;
+    }
+  >();
+  if (!keyRow) {
+    throw new ApiError(401, "unknown_key", `key_id ${keyId} not found`);
+  }
+  if (keyRow.revoked_at) throw new ApiError(401, "revoked_key", "key revoked");
+  if (keyRow.scope !== requiredScope && keyRow.scope !== "admin") {
+    throw new ApiError(
+      403,
+      "insufficient_scope",
+      `need ${requiredScope}, have ${keyRow.scope}`,
+    );
   }
 
-  const canonical = canonicalJSON({ method, path, body_sha256: bodySha256, signed_at: signedAt });
+  const canonical = canonicalJSON({
+    method,
+    path,
+    body_sha256: bodySha256,
+    signed_at: signedAt,
+  });
   const msg = new TextEncoder().encode(canonical);
   const sig = b64ToBytes(sigB64);
   const ok = await verify(sig, msg, new Uint8Array(keyRow.public_key));
-  if (!ok) throw new ApiError(401, 'bad_signature', 'Ed25519 verify failed');
+  if (!ok) throw new ApiError(401, "bad_signature", "Ed25519 verify failed");
 
   await db.prepare(`UPDATE machine_keys SET last_used_at = ? WHERE id = ?`)
     .bind(new Date().toISOString(), keyId).run();
@@ -464,28 +517,51 @@ Edit `site/src/routes/api/v1/blobs/[sha256]/+server.ts`:
 Replace the existing `PUT` handler body with:
 
 ```ts
-export const PUT: RequestHandler = async ({ params, request, platform, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+export const PUT: RequestHandler = async (
+  { params, request, platform, url },
+) => {
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const key = params.sha256!;
   if (!HEX64.test(key)) {
-    return errorResponse(new ApiError(400, 'bad_key', 'sha256 path parameter must be 64 lowercase hex chars'));
+    return errorResponse(
+      new ApiError(
+        400,
+        "bad_key",
+        "sha256 path parameter must be 64 lowercase hex chars",
+      ),
+    );
   }
 
   try {
     const body = new Uint8Array(await request.arrayBuffer());
     const actualHash = await sha256Hex(body);
     if (actualHash !== key) {
-      throw new ApiError(400, 'hash_mismatch', `body sha256 ${actualHash} does not match key ${key}`);
+      throw new ApiError(
+        400,
+        "hash_mismatch",
+        `body sha256 ${actualHash} does not match key ${key}`,
+      );
     }
 
-    await verifyBlobAuth(platform.env.DB, request.headers, 'PUT', url.pathname, key, 'ingest');
+    await verifyBlobAuth(
+      platform.env.DB,
+      request.headers,
+      "PUT",
+      url.pathname,
+      key,
+      "ingest",
+    );
 
     const r2Key = blobKey(key);
     const existing = await platform.env.BLOBS.head(r2Key);
-    if (existing) return jsonResponse({ sha256: key, status: 'exists' }, 200);
+    if (existing) return jsonResponse({ sha256: key, status: "exists" }, 200);
 
     await platform.env.BLOBS.put(r2Key, body);
-    return jsonResponse({ sha256: key, status: 'created' }, 201);
+    return jsonResponse({ sha256: key, status: "created" }, 201);
   } catch (err) {
     return errorResponse(err);
   }
@@ -493,8 +569,9 @@ export const PUT: RequestHandler = async ({ params, request, platform, url }) =>
 ```
 
 Add import at top of file:
+
 ```ts
-import { verifyBlobAuth } from '$lib/server/blob-auth';
+import { verifyBlobAuth } from "$lib/server/blob-auth";
 ```
 
 - [ ] **Step 5: Run the test**
@@ -502,6 +579,7 @@ import { verifyBlobAuth } from '$lib/server/blob-auth';
 ```bash
 cd site && npm run test:main -- blobs-put-signed
 ```
+
 Expected: both tests pass.
 
 - [ ] **Step 6: Commit**
@@ -516,6 +594,7 @@ git commit -m "feat(api): require Ed25519-signed auth on PUT /api/v1/blobs/:sha2
 ### Task 1.2: POST /api/v1/runs/precheck
 
 **Files:**
+
 - Create: `site/src/routes/api/v1/runs/precheck/+server.ts`
 - Test: `site/test/integration/runs-precheck.test.ts`
 
@@ -524,12 +603,12 @@ git commit -m "feat(api): require Ed25519-signed auth on PUT /api/v1/blobs/:sha2
 Write `site/test/integration/runs-precheck.test.ts`:
 
 ```ts
-import { env, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
-import * as ed from '@noble/ed25519';
-import { canonicalJSON } from '$lib/shared/canonical';
+import { env, SELF } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
+import * as ed from "@noble/ed25519";
+import { canonicalJSON } from "$lib/shared/canonical";
 
-describe('POST /api/v1/runs/precheck', () => {
+describe("POST /api/v1/runs/precheck", () => {
   let privKey: Uint8Array;
   let keyId: number;
 
@@ -539,54 +618,69 @@ describe('POST /api/v1/runs/precheck', () => {
     const row = await env.DB.prepare(
       `INSERT INTO machine_keys(machine_id, public_key, scope, created_at)
        VALUES (?, ?, 'ingest', ?) RETURNING id`,
-    ).bind('test-precheck', pubKey, new Date().toISOString()).first<{ id: number }>();
+    ).bind("test-precheck", pubKey, new Date().toISOString()).first<
+      { id: number }
+    >();
     keyId = row!.id;
   });
 
-  it('returns missing_blobs for unknown hashes', async () => {
+  it("returns missing_blobs for unknown hashes", async () => {
     const payload = {
-      task_set_hash: 'abc',
-      model: { slug: 'x/y', api_model_id: 'y', family_slug: 'x' },
+      task_set_hash: "abc",
+      model: { slug: "x/y", api_model_id: "y", family_slug: "x" },
       settings: { temperature: 0.1 },
-      machine_id: 'm',
+      machine_id: "m",
       started_at: new Date().toISOString(),
       completed_at: new Date().toISOString(),
-      pricing_version: 'v',
+      pricing_version: "v",
       results: [
         {
-          task_id: 't1', attempt: 1, passed: true, score: 1,
-          compile_success: true, compile_errors: [], tests_total: 1, tests_passed: 1,
-          tokens_in: 1, tokens_out: 1, tokens_cache_read: 0, tokens_cache_write: 0,
-          durations_ms: {}, failure_reasons: [],
-          transcript_sha256: 'f'.repeat(64),
-          code_sha256: 'e'.repeat(64),
+          task_id: "t1",
+          attempt: 1,
+          passed: true,
+          score: 1,
+          compile_success: true,
+          compile_errors: [],
+          tests_total: 1,
+          tests_passed: 1,
+          tokens_in: 1,
+          tokens_out: 1,
+          tokens_cache_read: 0,
+          tokens_cache_write: 0,
+          durations_ms: {},
+          failure_reasons: [],
+          transcript_sha256: "f".repeat(64),
+          code_sha256: "e".repeat(64),
         },
       ],
-      reproduction_bundle_sha256: 'd'.repeat(64),
+      reproduction_bundle_sha256: "d".repeat(64),
     };
     const canonical = canonicalJSON(payload);
-    const sig = await ed.signAsync(new TextEncoder().encode(canonical), privKey);
+    const sig = await ed.signAsync(
+      new TextEncoder().encode(canonical),
+      privKey,
+    );
     const body = {
       version: 1,
-      run_id: 'pre-' + crypto.randomUUID(),
+      run_id: "pre-" + crypto.randomUUID(),
       signature: {
-        alg: 'Ed25519',
+        alg: "Ed25519",
         key_id: keyId,
         signed_at: new Date().toISOString(),
         value: btoa(String.fromCharCode(...sig)),
       },
       payload,
     };
-    const resp = await SELF.fetch('https://x/api/v1/runs/precheck', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const resp = await SELF.fetch("https://x/api/v1/runs/precheck", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     expect(resp.status).toBe(200);
     const json = await resp.json() as { missing_blobs: string[] };
-    expect(json.missing_blobs).toContain('f'.repeat(64));
-    expect(json.missing_blobs).toContain('e'.repeat(64));
-    expect(json.missing_blobs).toContain('d'.repeat(64));
+    expect(json.missing_blobs).toContain("f".repeat(64));
+    expect(json.missing_blobs).toContain("e".repeat(64));
+    expect(json.missing_blobs).toContain("d".repeat(64));
   });
 });
 ```
@@ -596,6 +690,7 @@ describe('POST /api/v1/runs/precheck', () => {
 ```bash
 cd site && npm run test:main -- runs-precheck
 ```
+
 Expected: FAIL — 404, route doesn't exist.
 
 - [ ] **Step 3: Write the handler**
@@ -603,29 +698,48 @@ Expected: FAIL — 404, route doesn't exist.
 Write `site/src/routes/api/v1/runs/precheck/+server.ts`:
 
 ```ts
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { payloadBlobHashes, findMissingBlobs } from '$lib/server/ingest';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import type { SignedRunPayload } from '$lib/shared/types';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { findMissingBlobs, payloadBlobHashes } from "$lib/server/ingest";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import type { SignedRunPayload } from "$lib/shared/types";
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const blobs = platform.env.BLOBS;
 
   try {
     const signed = await request.json() as SignedRunPayload;
-    if (signed.version !== 1) throw new ApiError(400, 'bad_version', 'only version 1 supported');
-    if (!signed.run_id) throw new ApiError(400, 'missing_run_id', 'run_id required');
+    if (signed.version !== 1) {
+      throw new ApiError(400, "bad_version", "only version 1 supported");
+    }
+    if (!signed.run_id) {
+      throw new ApiError(400, "missing_run_id", "run_id required");
+    }
 
     await verifySignedRequest(
       db,
-      signed as unknown as { signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string }; payload: Record<string, unknown> },
-      'ingest',
+      signed as unknown as {
+        signature: {
+          alg: "Ed25519";
+          key_id: number;
+          signed_at: string;
+          value: string;
+        };
+        payload: Record<string, unknown>;
+      },
+      "ingest",
     );
 
-    const missing = await findMissingBlobs(blobs, payloadBlobHashes(signed.payload));
+    const missing = await findMissingBlobs(
+      blobs,
+      payloadBlobHashes(signed.payload),
+    );
     return jsonResponse({ missing_blobs: missing }, 200);
   } catch (err) {
     return errorResponse(err);
@@ -638,6 +752,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 ```bash
 cd site && npm run test:main -- runs-precheck
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -652,6 +767,7 @@ git commit -m "feat(api): add POST /api/v1/runs/precheck for missing-blob discov
 ### Task 1.3: Admin catalog endpoints (models, pricing, task-sets)
 
 **Files:**
+
 - Create: `site/src/routes/api/v1/admin/catalog/models/+server.ts`
 - Create: `site/src/routes/api/v1/admin/catalog/pricing/+server.ts`
 - Create: `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts`
@@ -662,18 +778,23 @@ git commit -m "feat(api): add POST /api/v1/runs/precheck for missing-blob discov
 Write `site/test/integration/catalog-admin.test.ts`:
 
 ```ts
-import { env, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
-import * as ed from '@noble/ed25519';
-import { canonicalJSON } from '$lib/shared/canonical';
+import { env, SELF } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
+import * as ed from "@noble/ed25519";
+import { canonicalJSON } from "$lib/shared/canonical";
 
-async function signedPost(path: string, payload: unknown, priv: Uint8Array, keyId: number) {
+async function signedPost(
+  path: string,
+  payload: unknown,
+  priv: Uint8Array,
+  keyId: number,
+) {
   const canonical = canonicalJSON(payload as Record<string, unknown>);
   const sig = await ed.signAsync(new TextEncoder().encode(canonical), priv);
   const body = {
     version: 1,
     signature: {
-      alg: 'Ed25519',
+      alg: "Ed25519",
       key_id: keyId,
       signed_at: new Date().toISOString(),
       value: btoa(String.fromCharCode(...sig)),
@@ -681,13 +802,13 @@ async function signedPost(path: string, payload: unknown, priv: Uint8Array, keyI
     payload,
   };
   return SELF.fetch(`https://x${path}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    method: "POST",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 }
 
-describe('admin catalog endpoints', () => {
+describe("admin catalog endpoints", () => {
   let priv: Uint8Array;
   let keyId: number;
 
@@ -697,51 +818,66 @@ describe('admin catalog endpoints', () => {
     const row = await env.DB.prepare(
       `INSERT INTO machine_keys(machine_id, public_key, scope, created_at)
        VALUES (?, ?, 'admin', ?) RETURNING id`,
-    ).bind('admin-test', pub, new Date().toISOString()).first<{ id: number }>();
+    ).bind("admin-test", pub, new Date().toISOString()).first<{ id: number }>();
     keyId = row!.id;
 
     // ensure family
     await env.DB.prepare(
       `INSERT OR IGNORE INTO model_families(slug, vendor, display_name) VALUES (?, ?, ?)`,
-    ).bind('claude', 'Anthropic', 'Claude').run();
+    ).bind("claude", "Anthropic", "Claude").run();
   });
 
-  it('upserts a model', async () => {
-    const resp = await signedPost('/api/v1/admin/catalog/models', {
-      slug: 'anthropic/claude-opus-test',
-      api_model_id: 'claude-opus-test-2026',
-      family: 'claude',
-      display_name: 'Claude Opus (Test)',
-      generation: 99,
-    }, priv, keyId);
+  it("upserts a model", async () => {
+    const resp = await signedPost(
+      "/api/v1/admin/catalog/models",
+      {
+        slug: "anthropic/claude-opus-test",
+        api_model_id: "claude-opus-test-2026",
+        family: "claude",
+        display_name: "Claude Opus (Test)",
+        generation: 99,
+      },
+      priv,
+      keyId,
+    );
     expect(resp.status).toBe(200);
     const row = await env.DB.prepare(
       `SELECT display_name FROM models WHERE slug = ?`,
-    ).bind('anthropic/claude-opus-test').first<{ display_name: string }>();
-    expect(row?.display_name).toBe('Claude Opus (Test)');
+    ).bind("anthropic/claude-opus-test").first<{ display_name: string }>();
+    expect(row?.display_name).toBe("Claude Opus (Test)");
   });
 
-  it('upserts a task_set', async () => {
-    const resp = await signedPost('/api/v1/admin/catalog/task-sets', {
-      hash: 'h'.repeat(64),
-      created_at: new Date().toISOString(),
-      task_count: 42,
-    }, priv, keyId);
+  it("upserts a task_set", async () => {
+    const resp = await signedPost(
+      "/api/v1/admin/catalog/task-sets",
+      {
+        hash: "h".repeat(64),
+        created_at: new Date().toISOString(),
+        task_count: 42,
+      },
+      priv,
+      keyId,
+    );
     expect(resp.status).toBe(200);
   });
 
-  it('upserts a pricing row', async () => {
-    const resp = await signedPost('/api/v1/admin/catalog/pricing', {
-      pricing_version: 'test-2026-04-20',
-      model_slug: 'anthropic/claude-opus-test',
-      input_per_mtoken: 15,
-      output_per_mtoken: 75,
-      cache_read_per_mtoken: 1.5,
-      cache_write_per_mtoken: 18.75,
-      effective_from: '2026-04-20T00:00:00Z',
-      source: 'anthropic-api',
-      fetched_at: '2026-04-20T10:00:00Z',
-    }, priv, keyId);
+  it("upserts a pricing row", async () => {
+    const resp = await signedPost(
+      "/api/v1/admin/catalog/pricing",
+      {
+        pricing_version: "test-2026-04-20",
+        model_slug: "anthropic/claude-opus-test",
+        input_per_mtoken: 15,
+        output_per_mtoken: 75,
+        cache_read_per_mtoken: 1.5,
+        cache_write_per_mtoken: 18.75,
+        effective_from: "2026-04-20T00:00:00Z",
+        source: "anthropic-api",
+        fetched_at: "2026-04-20T10:00:00Z",
+      },
+      priv,
+      keyId,
+    );
     expect(resp.status).toBe(200);
   });
 });
@@ -752,6 +888,7 @@ describe('admin catalog endpoints', () => {
 ```bash
 cd site && npm run test:main -- catalog-admin
 ```
+
 Expected: FAIL — 404s on all three endpoints.
 
 - [ ] **Step 3: Write the models endpoint**
@@ -759,9 +896,9 @@ Expected: FAIL — 404s on all three endpoints.
 Write `site/src/routes/api/v1/admin/catalog/models/+server.ts`:
 
 ```ts
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 interface ModelUpsert {
   slug: string;
@@ -774,17 +911,35 @@ interface ModelUpsert {
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as { signature: any; payload: ModelUpsert };
-    await verifySignedRequest(db, body, 'admin');
+    const body = await request.json() as {
+      signature: any;
+      payload: ModelUpsert;
+    };
+    await verifySignedRequest(db, body, "admin");
     const p = body.payload;
     if (!p.slug || !p.api_model_id || !p.family || !p.display_name) {
-      throw new ApiError(400, 'missing_field', 'slug, api_model_id, family, display_name required');
+      throw new ApiError(
+        400,
+        "missing_field",
+        "slug, api_model_id, family, display_name required",
+      );
     }
-    const fam = await db.prepare(`SELECT id FROM model_families WHERE slug = ?`).bind(p.family).first<{ id: number }>();
-    if (!fam) throw new ApiError(400, 'unknown_family', `model family '${p.family}' not in catalog`);
+    const fam = await db.prepare(`SELECT id FROM model_families WHERE slug = ?`)
+      .bind(p.family).first<{ id: number }>();
+    if (!fam) {
+      throw new ApiError(
+        400,
+        "unknown_family",
+        `model family '${p.family}' not in catalog`,
+      );
+    }
     await db.prepare(
       `INSERT INTO models(family_id, slug, api_model_id, display_name, generation, released_at, deprecated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -794,8 +949,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
          released_at = excluded.released_at,
          deprecated_at = excluded.deprecated_at`,
     ).bind(
-      fam.id, p.slug, p.api_model_id, p.display_name,
-      p.generation ?? null, p.released_at ?? null, p.deprecated_at ?? null,
+      fam.id,
+      p.slug,
+      p.api_model_id,
+      p.display_name,
+      p.generation ?? null,
+      p.released_at ?? null,
+      p.deprecated_at ?? null,
     ).run();
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
@@ -809,9 +969,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 Write `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts`:
 
 ```ts
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 interface TaskSetUpsert {
   hash: string;
@@ -820,14 +980,25 @@ interface TaskSetUpsert {
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as { signature: any; payload: TaskSetUpsert };
-    await verifySignedRequest(db, body, 'admin');
+    const body = await request.json() as {
+      signature: any;
+      payload: TaskSetUpsert;
+    };
+    await verifySignedRequest(db, body, "admin");
     const p = body.payload;
     if (!p.hash || !p.created_at || p.task_count == null) {
-      throw new ApiError(400, 'missing_field', 'hash, created_at, task_count required');
+      throw new ApiError(
+        400,
+        "missing_field",
+        "hash, created_at, task_count required",
+      );
     }
     await db.prepare(
       `INSERT OR IGNORE INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 0)`,
@@ -844,9 +1015,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 Write `site/src/routes/api/v1/admin/catalog/pricing/+server.ts`:
 
 ```ts
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 interface PricingUpsert {
   pricing_version: string;
@@ -862,15 +1033,36 @@ interface PricingUpsert {
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as { signature: any; payload: PricingUpsert };
-    await verifySignedRequest(db, body, 'admin');
+    const body = await request.json() as {
+      signature: any;
+      payload: PricingUpsert;
+    };
+    await verifySignedRequest(db, body, "admin");
     const p = body.payload;
-    const m = await db.prepare(`SELECT id FROM models WHERE slug = ?`).bind(p.model_slug).first<{ id: number }>();
-    if (!m) throw new ApiError(400, 'unknown_model', `model_slug '${p.model_slug}' not in catalog`);
-    if (!p.source) throw new ApiError(400, 'missing_source', 'source is required (anthropic-api, openai-api, gemini-api, openrouter-api, manual)');
+    const m = await db.prepare(`SELECT id FROM models WHERE slug = ?`).bind(
+      p.model_slug,
+    ).first<{ id: number }>();
+    if (!m) {
+      throw new ApiError(
+        400,
+        "unknown_model",
+        `model_slug '${p.model_slug}' not in catalog`,
+      );
+    }
+    if (!p.source) {
+      throw new ApiError(
+        400,
+        "missing_source",
+        "source is required (anthropic-api, openai-api, gemini-api, openrouter-api, manual)",
+      );
+    }
     await db.prepare(
       `INSERT OR IGNORE INTO cost_snapshots(
          pricing_version, model_id, input_per_mtoken, output_per_mtoken,
@@ -878,10 +1070,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
          source, fetched_at
        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).bind(
-      p.pricing_version, m.id, p.input_per_mtoken, p.output_per_mtoken,
-      p.cache_read_per_mtoken ?? 0, p.cache_write_per_mtoken ?? 0,
-      p.effective_from, p.effective_until ?? null,
-      p.source, p.fetched_at ?? null,
+      p.pricing_version,
+      m.id,
+      p.input_per_mtoken,
+      p.output_per_mtoken,
+      p.cache_read_per_mtoken ?? 0,
+      p.cache_write_per_mtoken ?? 0,
+      p.effective_from,
+      p.effective_until ?? null,
+      p.source,
+      p.fetched_at ?? null,
     ).run();
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
@@ -895,6 +1093,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 ```bash
 cd site && npm run test:main -- catalog-admin
 ```
+
 Expected: all 3 tests pass.
 
 - [ ] **Step 7: Commit**
@@ -911,6 +1110,7 @@ git commit -m "feat(api): admin catalog endpoints for models, pricing, task-sets
 ### Task 2.1: src/ingest/types.ts + canonical re-export
 
 **Files:**
+
 - Create: `src/ingest/types.ts`
 - Create: `src/ingest/canonical.ts`
 
@@ -918,7 +1118,12 @@ git commit -m "feat(api): admin catalog endpoints for models, pricing, task-sets
 
 ```ts
 // src/ingest/types.ts
-export type Source = 'anthropic-api' | 'openai-api' | 'gemini-api' | 'openrouter-api' | 'manual';
+export type Source =
+  | "anthropic-api"
+  | "openai-api"
+  | "gemini-api"
+  | "openrouter-api"
+  | "manual";
 
 export interface PricingRates {
   input_per_mtoken: number;
@@ -953,18 +1158,23 @@ export interface CatalogFamilyEntry {
 }
 
 export interface IngestConfig {
-  url: string;           // e.g. https://centralgauge.sshadows.workers.dev
-  keyPath: string;       // ~/.centralgauge/keys/production-ingest.ed25519
-  keyId: number;         // machine_keys.id
-  machineId: string;     // matches machine_keys.machine_id
+  url: string; // e.g. https://centralgauge.sshadows.workers.dev
+  keyPath: string; // ~/.centralgauge/keys/production-ingest.ed25519
+  keyId: number; // machine_keys.id
+  machineId: string; // matches machine_keys.machine_id
   adminKeyPath?: string; // for sync-catalog
   adminKeyId?: number;
 }
 
 export type IngestOutcome =
-  | { kind: 'success'; runId: string; bytesUploaded: number }
-  | { kind: 'retryable-failure'; attempts: number; lastError: Error; replayCommand: string }
-  | { kind: 'fatal-failure'; code: string; message: string };
+  | { kind: "success"; runId: string; bytesUploaded: number }
+  | {
+    kind: "retryable-failure";
+    attempts: number;
+    lastError: Error;
+    replayCommand: string;
+  }
+  | { kind: "fatal-failure"; code: string; message: string };
 ```
 
 - [ ] **Step 2: Write canonical re-export**
@@ -986,6 +1196,7 @@ git commit -m "feat(ingest): add types + canonical re-export"
 ### Task 2.2: src/ingest/sign.ts + tests
 
 **Files:**
+
 - Create: `src/ingest/sign.ts`
 - Test: `tests/unit/ingest/sign_test.ts`
 
@@ -1018,6 +1229,7 @@ Deno.test("signPayload produces verifiable Ed25519 signature over canonical JSON
 ```bash
 deno task test:unit -- sign_test
 ```
+
 Expected: FAIL — module missing.
 
 - [ ] **Step 3: Write sign.ts**
@@ -1066,7 +1278,10 @@ export async function signBlobUpload(
     body_sha256: bodySha256,
     signed_at: signedAt,
   });
-  const sig = await ed.signAsync(new TextEncoder().encode(canonical), privateKey);
+  const sig = await ed.signAsync(
+    new TextEncoder().encode(canonical),
+    privateKey,
+  );
   return { signature: encodeBase64(sig), key_id: keyId, signed_at: signedAt };
 }
 ```
@@ -1076,6 +1291,7 @@ export async function signBlobUpload(
 ```bash
 deno task test:unit -- sign_test
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1090,6 +1306,7 @@ git commit -m "feat(ingest): Ed25519 sign helper for payloads + blob uploads"
 ### Task 2.3: src/ingest/catalog/task-set-hash.ts + tests
 
 **Files:**
+
 - Create: `src/ingest/catalog/task-set-hash.ts`
 - Test: `tests/unit/ingest/task_set_hash_test.ts`
 
@@ -1120,6 +1337,7 @@ Deno.test("task-set hash is deterministic and order-independent", async () => {
 ```bash
 deno task test:unit -- task_set_hash
 ```
+
 Expected: FAIL — module missing.
 
 - [ ] **Step 3: Write the module**
@@ -1136,7 +1354,9 @@ import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
  */
 export async function computeTaskSetHash(tasksDir: string): Promise<string> {
   const entries: Array<{ rel: string; bytes: Uint8Array }> = [];
-  for await (const e of walk(tasksDir, { exts: [".yml"], includeDirs: false })) {
+  for await (
+    const e of walk(tasksDir, { exts: [".yml"], includeDirs: false })
+  ) {
     const rel = e.path.slice(tasksDir.length + 1).replaceAll("\\", "/");
     entries.push({ rel, bytes: await Deno.readFile(e.path) });
   }
@@ -1152,7 +1372,10 @@ export async function computeTaskSetHash(tasksDir: string): Promise<string> {
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const concat = new Uint8Array(total);
   let o = 0;
-  for (const c of chunks) { concat.set(c, o); o += c.length; }
+  for (const c of chunks) {
+    concat.set(c, o);
+    o += c.length;
+  }
   const digest = await crypto.subtle.digest("SHA-256", concat);
   return encodeHex(new Uint8Array(digest));
 }
@@ -1163,6 +1386,7 @@ export async function computeTaskSetHash(tasksDir: string): Promise<string> {
 ```bash
 deno task test:unit -- task_set_hash
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1177,6 +1401,7 @@ git commit -m "feat(ingest): deterministic task-set hashing over tasks/**/*.yml"
 ### Task 2.4: src/ingest/envelope.ts + tests
 
 **Files:**
+
 - Create: `src/ingest/envelope.ts`
 - Test: `tests/unit/ingest/envelope_test.ts`
 
@@ -1201,11 +1426,22 @@ Deno.test("buildPayload maps benchmark result to SignedRunPayload.payload", () =
     reproductionBundleSha256: "d".repeat(64),
     results: [
       {
-        task_id: "t1", attempt: 1, passed: true, score: 1.0,
-        compile_success: true, compile_errors: [], tests_total: 3, tests_passed: 3,
-        tokens_in: 100, tokens_out: 50, tokens_cache_read: 0, tokens_cache_write: 0,
-        durations_ms: { llm: 1000 }, failure_reasons: [],
-        transcript_sha256: "f".repeat(64), code_sha256: "e".repeat(64),
+        task_id: "t1",
+        attempt: 1,
+        passed: true,
+        score: 1.0,
+        compile_success: true,
+        compile_errors: [],
+        tests_total: 3,
+        tests_passed: 3,
+        tokens_in: 100,
+        tokens_out: 50,
+        tokens_cache_read: 0,
+        tokens_cache_write: 0,
+        durations_ms: { llm: 1000 },
+        failure_reasons: [],
+        transcript_sha256: "f".repeat(64),
+        code_sha256: "e".repeat(64),
       },
     ],
   });
@@ -1223,6 +1459,7 @@ Deno.test("buildPayload maps benchmark result to SignedRunPayload.payload", () =
 ```bash
 deno task test:unit -- envelope_test
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Write envelope.ts**
@@ -1245,7 +1482,9 @@ export interface BuildPayloadInput {
   results: ResultInput[];
 }
 
-export function buildPayload(input: BuildPayloadInput): Record<string, unknown> {
+export function buildPayload(
+  input: BuildPayloadInput,
+): Record<string, unknown> {
   const p: Record<string, unknown> = {
     task_set_hash: input.taskSetHash,
     model: input.model,
@@ -1257,7 +1496,9 @@ export function buildPayload(input: BuildPayloadInput): Record<string, unknown> 
     results: input.results,
   };
   if (input.centralgaugeSha) p.centralgauge_sha = input.centralgaugeSha;
-  if (input.reproductionBundleSha256) p.reproduction_bundle_sha256 = input.reproductionBundleSha256;
+  if (input.reproductionBundleSha256) {
+    p.reproduction_bundle_sha256 = input.reproductionBundleSha256;
+  }
   return p;
 }
 ```
@@ -1267,6 +1508,7 @@ export function buildPayload(input: BuildPayloadInput): Record<string, unknown> 
 ```bash
 deno task test:unit -- envelope_test
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1283,6 +1525,7 @@ git commit -m "feat(ingest): payload builder"
 ### Task 3.1: catalog/read.ts + tests
 
 **Files:**
+
 - Create: `src/ingest/catalog/read.ts`
 - Test: `tests/unit/ingest/catalog_read_test.ts`
 
@@ -1295,13 +1538,18 @@ import { readCatalog } from "../../../src/ingest/catalog/read.ts";
 
 Deno.test("readCatalog parses models, pricing, families", async () => {
   const tmp = await Deno.makeTempDir();
-  await Deno.writeTextFile(`${tmp}/models.yml`, `
+  await Deno.writeTextFile(
+    `${tmp}/models.yml`,
+    `
 - slug: a/b
   api_model_id: b-2026
   family: a
   display_name: B
-`);
-  await Deno.writeTextFile(`${tmp}/pricing.yml`, `
+`,
+  );
+  await Deno.writeTextFile(
+    `${tmp}/pricing.yml`,
+    `
 - pricing_version: pv-1
   model_slug: a/b
   input_per_mtoken: 1
@@ -1310,12 +1558,16 @@ Deno.test("readCatalog parses models, pricing, families", async () => {
   cache_write_per_mtoken: 0
   effective_from: 2026-04-20T00:00:00Z
   source: manual
-`);
-  await Deno.writeTextFile(`${tmp}/model-families.yml`, `
+`,
+  );
+  await Deno.writeTextFile(
+    `${tmp}/model-families.yml`,
+    `
 - slug: a
   vendor: A Inc
   display_name: Alpha
-`);
+`,
+  );
   const cat = await readCatalog(tmp);
   assertEquals(cat.models.length, 1);
   assertEquals(cat.models[0].slug, "a/b");
@@ -1330,6 +1582,7 @@ Deno.test("readCatalog parses models, pricing, families", async () => {
 ```bash
 deno task test:unit -- catalog_read
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Write read.ts**
@@ -1337,7 +1590,11 @@ Expected: FAIL.
 ```ts
 // src/ingest/catalog/read.ts
 import { parse } from "jsr:@std/yaml@^1.1.0";
-import type { CatalogModelEntry, CatalogPricingEntry, CatalogFamilyEntry } from "../types.ts";
+import type {
+  CatalogFamilyEntry,
+  CatalogModelEntry,
+  CatalogPricingEntry,
+} from "../types.ts";
 
 export interface Catalog {
   models: CatalogModelEntry[];
@@ -1365,12 +1622,24 @@ export async function readCatalog(catalogDir: string): Promise<Catalog> {
   return { models, pricing, families };
 }
 
-export function findModel(cat: Catalog, slug: string, apiModelId: string): CatalogModelEntry | null {
-  return cat.models.find((m) => m.slug === slug && m.api_model_id === apiModelId) ?? null;
+export function findModel(
+  cat: Catalog,
+  slug: string,
+  apiModelId: string,
+): CatalogModelEntry | null {
+  return cat.models.find((m) =>
+    m.slug === slug && m.api_model_id === apiModelId
+  ) ?? null;
 }
 
-export function findPricing(cat: Catalog, pricingVersion: string, modelSlug: string): CatalogPricingEntry | null {
-  return cat.pricing.find((p) => p.pricing_version === pricingVersion && p.model_slug === modelSlug) ?? null;
+export function findPricing(
+  cat: Catalog,
+  pricingVersion: string,
+  modelSlug: string,
+): CatalogPricingEntry | null {
+  return cat.pricing.find((p) =>
+    p.pricing_version === pricingVersion && p.model_slug === modelSlug
+  ) ?? null;
 }
 ```
 
@@ -1379,6 +1648,7 @@ export function findPricing(cat: Catalog, pricingVersion: string, modelSlug: str
 ```bash
 deno task test:unit -- catalog_read
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1393,6 +1663,7 @@ git commit -m "feat(ingest): catalog YAML reader"
 ### Task 3.2: catalog/write.ts + tests
 
 **Files:**
+
 - Create: `src/ingest/catalog/write.ts`
 - Test: `tests/unit/ingest/catalog_write_test.ts`
 
@@ -1401,12 +1672,18 @@ git commit -m "feat(ingest): catalog YAML reader"
 ```ts
 // tests/unit/ingest/catalog_write_test.ts
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { appendModel, appendPricing } from "../../../src/ingest/catalog/write.ts";
+import {
+  appendModel,
+  appendPricing,
+} from "../../../src/ingest/catalog/write.ts";
 
 Deno.test("appendModel adds an entry, preserving leading comments", async () => {
   const tmp = await Deno.makeTempDir();
   const path = `${tmp}/models.yml`;
-  await Deno.writeTextFile(path, `# Model catalog — checked in\n- slug: x/y\n  api_model_id: y-1\n  family: x\n  display_name: Y\n`);
+  await Deno.writeTextFile(
+    path,
+    `# Model catalog — checked in\n- slug: x/y\n  api_model_id: y-1\n  family: x\n  display_name: Y\n`,
+  );
   await appendModel(path, {
     slug: "x/z",
     api_model_id: "z-1",
@@ -1444,6 +1721,7 @@ Deno.test("appendPricing writes source field", async () => {
 ```bash
 deno task test:unit -- catalog_write
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Write write.ts**
@@ -1468,11 +1746,17 @@ async function append(path: string, entry: unknown): Promise<void> {
   await Deno.writeTextFile(path, existing + sep + snippet);
 }
 
-export async function appendModel(path: string, m: CatalogModelEntry): Promise<void> {
+export async function appendModel(
+  path: string,
+  m: CatalogModelEntry,
+): Promise<void> {
   await append(path, m);
 }
 
-export async function appendPricing(path: string, p: CatalogPricingEntry): Promise<void> {
+export async function appendPricing(
+  path: string,
+  p: CatalogPricingEntry,
+): Promise<void> {
   await append(path, p);
 }
 ```
@@ -1482,6 +1766,7 @@ export async function appendPricing(path: string, p: CatalogPricingEntry): Promi
 ```bash
 deno task test:unit -- catalog_write
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1498,6 +1783,7 @@ git commit -m "feat(ingest): catalog YAML appenders"
 ### Task 4.1: Pricing-sources interface + OpenRouter adapter
 
 **Files:**
+
 - Create: `src/ingest/pricing-sources/types.ts`
 - Create: `src/ingest/pricing-sources/openrouter.ts`
 - Test: `tests/unit/ingest/pricing_sources_openrouter_test.ts`
@@ -1537,7 +1823,10 @@ Deno.test("OpenRouter adapter parses pricing for a known model", async () => {
   });
   const fetchFn = async () => new Response(fakeResp, { status: 200 });
   const src = new OpenRouterSource(fetchFn);
-  const rates = await src.fetchPricing("anthropic/claude-opus-4-7", "claude-opus-4-7");
+  const rates = await src.fetchPricing(
+    "anthropic/claude-opus-4-7",
+    "claude-opus-4-7",
+  );
   assertEquals(rates?.input_per_mtoken, 15);
   assertEquals(rates?.output_per_mtoken, 75);
   assertEquals(rates?.cache_read_per_mtoken, 1.5);
@@ -1546,7 +1835,8 @@ Deno.test("OpenRouter adapter parses pricing for a known model", async () => {
 });
 
 Deno.test("OpenRouter adapter returns null for unknown model", async () => {
-  const fetchFn = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
+  const fetchFn = async () =>
+    new Response(JSON.stringify({ data: [] }), { status: 200 });
   const src = new OpenRouterSource(fetchFn);
   const rates = await src.fetchPricing("unknown/model", "unknown");
   assertEquals(rates, null);
@@ -1558,6 +1848,7 @@ Deno.test("OpenRouter adapter returns null for unknown model", async () => {
 ```bash
 deno task test:unit -- pricing_sources_openrouter
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 4: Write the OpenRouter adapter**
@@ -1585,7 +1876,10 @@ export class OpenRouterSource implements PricingSource {
     this.fetchFn = fetchFn;
   }
 
-  async fetchPricing(slug: string, _apiModelId: string): Promise<PricingRates | null> {
+  async fetchPricing(
+    slug: string,
+    _apiModelId: string,
+  ): Promise<PricingRates | null> {
     const resp = await this.fetchFn("https://openrouter.ai/api/v1/models");
     if (!resp.ok) return null;
     const json = await resp.json() as { data: OrModel[] };
@@ -1595,8 +1889,10 @@ export class OpenRouterSource implements PricingSource {
     return {
       input_per_mtoken: Number(hit.pricing.prompt) * 1_000_000,
       output_per_mtoken: Number(hit.pricing.completion) * 1_000_000,
-      cache_read_per_mtoken: Number(hit.pricing.input_cache_read ?? "0") * 1_000_000,
-      cache_write_per_mtoken: Number(hit.pricing.input_cache_write ?? "0") * 1_000_000,
+      cache_read_per_mtoken: Number(hit.pricing.input_cache_read ?? "0") *
+        1_000_000,
+      cache_write_per_mtoken: Number(hit.pricing.input_cache_write ?? "0") *
+        1_000_000,
       source: "openrouter-api",
       fetched_at: new Date().toISOString(),
     };
@@ -1609,6 +1905,7 @@ export class OpenRouterSource implements PricingSource {
 ```bash
 deno task test:unit -- pricing_sources_openrouter
 ```
+
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1623,6 +1920,7 @@ git commit -m "feat(ingest): OpenRouter pricing adapter"
 ### Task 4.2: Anthropic, OpenAI, Gemini adapter stubs + dispatcher
 
 **Files:**
+
 - Create: `src/ingest/pricing-sources/anthropic.ts`
 - Create: `src/ingest/pricing-sources/openai.ts`
 - Create: `src/ingest/pricing-sources/gemini.ts`
@@ -1640,7 +1938,10 @@ import type { PricingRates } from "../types.ts";
 import type { PricingSource } from "./types.ts";
 
 export class AnthropicSource implements PricingSource {
-  async fetchPricing(_slug: string, _apiModelId: string): Promise<PricingRates | null> {
+  async fetchPricing(
+    _slug: string,
+    _apiModelId: string,
+  ): Promise<PricingRates | null> {
     // Anthropic has no public pricing JSON endpoint at time of writing.
     // Implement once the endpoint exists; until then we defer to OpenRouter + manual.
     return null;
@@ -1655,7 +1956,10 @@ import type { PricingRates } from "../types.ts";
 import type { PricingSource } from "./types.ts";
 
 export class OpenAISource implements PricingSource {
-  async fetchPricing(_slug: string, _apiModelId: string): Promise<PricingRates | null> {
+  async fetchPricing(
+    _slug: string,
+    _apiModelId: string,
+  ): Promise<PricingRates | null> {
     return null;
   }
 }
@@ -1668,7 +1972,10 @@ import type { PricingRates } from "../types.ts";
 import type { PricingSource } from "./types.ts";
 
 export class GeminiSource implements PricingSource {
-  async fetchPricing(_slug: string, _apiModelId: string): Promise<PricingRates | null> {
+  async fetchPricing(
+    _slug: string,
+    _apiModelId: string,
+  ): Promise<PricingRates | null> {
     return null;
   }
 }
@@ -1686,9 +1993,12 @@ Deno.test("dispatch returns first non-null adapter result", async () => {
   const noHit: PricingSource = { fetchPricing: async () => null };
   const hit: PricingSource = {
     fetchPricing: async () => ({
-      input_per_mtoken: 1, output_per_mtoken: 2,
-      cache_read_per_mtoken: 0, cache_write_per_mtoken: 0,
-      source: "openrouter-api", fetched_at: "2026-04-20T00:00:00Z",
+      input_per_mtoken: 1,
+      output_per_mtoken: 2,
+      cache_read_per_mtoken: 0,
+      cache_write_per_mtoken: 0,
+      source: "openrouter-api",
+      fetched_at: "2026-04-20T00:00:00Z",
     }),
   };
   const rates = await fetchPricingFromSources([noHit, hit], "x/y", "y");
@@ -1716,10 +2026,14 @@ import { OpenRouterSource } from "./openrouter.ts";
 export function sourcesForFamily(family: string): PricingSource[] {
   const or = new OpenRouterSource();
   switch (family) {
-    case "claude":  return [new AnthropicSource(), or];
-    case "gpt":     return [new OpenAISource(), or];
-    case "gemini":  return [new GeminiSource(), or];
-    default:        return [or];
+    case "claude":
+      return [new AnthropicSource(), or];
+    case "gpt":
+      return [new OpenAISource(), or];
+    case "gemini":
+      return [new GeminiSource(), or];
+    default:
+      return [or];
   }
 }
 
@@ -1741,6 +2055,7 @@ export async function fetchPricingFromSources(
 ```bash
 deno task test:unit -- pricing_sources_dispatch
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1757,6 +2072,7 @@ git commit -m "feat(ingest): pricing-source stubs + family dispatcher"
 ### Task 5.1: src/ingest/config.ts
 
 **Files:**
+
 - Create: `src/ingest/config.ts`
 - Create: `.centralgauge.yml` entry for ingest (document; don't commit secrets)
 
@@ -1778,22 +2094,52 @@ interface CliFlags {
   adminKeyId?: number;
 }
 
-export async function loadIngestConfig(cwd: string, flags: CliFlags): Promise<IngestConfig> {
-  const fileConf = await loadYaml(`${cwd}/.centralgauge.yml`) ?? await loadYaml(`${homeDir()}/.centralgauge.yml`) ?? {};
-  const ingest = (fileConf as Record<string, unknown>).ingest as Record<string, unknown> | undefined ?? {};
-  const url = flags.url ?? Deno.env.get(`${ENV_PREFIX}INGEST_URL`) ?? ingest.url as string | undefined;
-  const keyPath = flags.keyPath ?? Deno.env.get(`${ENV_PREFIX}INGEST_KEY_PATH`) ?? ingest.key_path as string | undefined;
-  const keyIdRaw = flags.keyId ?? Deno.env.get(`${ENV_PREFIX}INGEST_KEY_ID`) ?? ingest.key_id;
-  const machineId = flags.machineId ?? Deno.env.get(`${ENV_PREFIX}INGEST_MACHINE_ID`) ?? ingest.machine_id as string | undefined;
-  const adminKeyPath = flags.adminKeyPath ?? ingest.admin_key_path as string | undefined;
+export async function loadIngestConfig(
+  cwd: string,
+  flags: CliFlags,
+): Promise<IngestConfig> {
+  const fileConf = await loadYaml(`${cwd}/.centralgauge.yml`) ??
+    await loadYaml(`${homeDir()}/.centralgauge.yml`) ?? {};
+  const ingest = (fileConf as Record<string, unknown>).ingest as
+    | Record<string, unknown>
+    | undefined ?? {};
+  const url = flags.url ?? Deno.env.get(`${ENV_PREFIX}INGEST_URL`) ??
+    ingest.url as string | undefined;
+  const keyPath = flags.keyPath ??
+    Deno.env.get(`${ENV_PREFIX}INGEST_KEY_PATH`) ??
+    ingest.key_path as string | undefined;
+  const keyIdRaw = flags.keyId ?? Deno.env.get(`${ENV_PREFIX}INGEST_KEY_ID`) ??
+    ingest.key_id;
+  const machineId = flags.machineId ??
+    Deno.env.get(`${ENV_PREFIX}INGEST_MACHINE_ID`) ??
+    ingest.machine_id as string | undefined;
+  const adminKeyPath = flags.adminKeyPath ??
+    ingest.admin_key_path as string | undefined;
   const adminKeyIdRaw = flags.adminKeyId ?? ingest.admin_key_id;
-  if (!url) throw new Error("ingest.url missing (flag --url, env CENTRALGAUGE_INGEST_URL, or .centralgauge.yml ingest.url)");
+  if (!url) {
+    throw new Error(
+      "ingest.url missing (flag --url, env CENTRALGAUGE_INGEST_URL, or .centralgauge.yml ingest.url)",
+    );
+  }
   if (!keyPath) throw new Error("ingest.keyPath missing");
   if (keyIdRaw == null) throw new Error("ingest.keyId missing");
   if (!machineId) throw new Error("ingest.machineId missing");
-  const keyId = typeof keyIdRaw === "number" ? keyIdRaw : parseInt(String(keyIdRaw), 10);
-  const adminKeyId = adminKeyIdRaw == null ? undefined : typeof adminKeyIdRaw === "number" ? adminKeyIdRaw : parseInt(String(adminKeyIdRaw), 10);
-  return { url: url.replace(/\/+$/, ""), keyPath: expandHome(keyPath), keyId, machineId, adminKeyPath: adminKeyPath ? expandHome(adminKeyPath) : undefined, adminKeyId };
+  const keyId = typeof keyIdRaw === "number"
+    ? keyIdRaw
+    : parseInt(String(keyIdRaw), 10);
+  const adminKeyId = adminKeyIdRaw == null
+    ? undefined
+    : typeof adminKeyIdRaw === "number"
+    ? adminKeyIdRaw
+    : parseInt(String(adminKeyIdRaw), 10);
+  return {
+    url: url.replace(/\/+$/, ""),
+    keyPath: expandHome(keyPath),
+    keyId,
+    machineId,
+    adminKeyPath: adminKeyPath ? expandHome(adminKeyPath) : undefined,
+    adminKeyId,
+  };
 }
 
 async function loadYaml(path: string): Promise<unknown | null> {
@@ -1817,7 +2163,9 @@ function expandHome(p: string): string {
 export async function readPrivateKey(path: string): Promise<Uint8Array> {
   const bytes = await Deno.readFile(expandHome(path));
   if (bytes.length !== 32) {
-    throw new Error(`private key must be 32 raw bytes (got ${bytes.length}) at ${path}`);
+    throw new Error(
+      `private key must be 32 raw bytes (got ${bytes.length}) at ${path}`,
+    );
   }
   return bytes;
 }
@@ -1828,6 +2176,7 @@ export async function readPrivateKey(path: string): Promise<Uint8Array> {
 ```bash
 deno check src/ingest/config.ts
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
@@ -1842,6 +2191,7 @@ git commit -m "feat(ingest): resolve URL/key/machine-id from flags + env + .cent
 ### Task 5.2: src/ingest/client.ts with retry
 
 **Files:**
+
 - Create: `src/ingest/client.ts`
 - Test: `tests/unit/ingest/client_test.ts`
 
@@ -1858,7 +2208,10 @@ Deno.test("postWithRetry returns success on first try", async () => {
     calls++;
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
-  const resp = await postWithRetry("https://x/y", { a: 1 }, { fetchFn: fakeFetch, maxAttempts: 3 });
+  const resp = await postWithRetry("https://x/y", { a: 1 }, {
+    fetchFn: fakeFetch,
+    maxAttempts: 3,
+  });
   assertEquals(resp.status, 200);
   assertEquals(calls, 1);
 });
@@ -1870,7 +2223,11 @@ Deno.test("postWithRetry retries on 5xx", async () => {
     if (calls < 3) return new Response("oops", { status: 503 });
     return new Response(JSON.stringify({ ok: true }), { status: 200 });
   };
-  const resp = await postWithRetry("https://x/y", { a: 1 }, { fetchFn: fakeFetch, maxAttempts: 5, backoffBaseMs: 1 });
+  const resp = await postWithRetry("https://x/y", { a: 1 }, {
+    fetchFn: fakeFetch,
+    maxAttempts: 5,
+    backoffBaseMs: 1,
+  });
   assertEquals(resp.status, 200);
   assertEquals(calls, 3);
 });
@@ -1879,9 +2236,15 @@ Deno.test("postWithRetry does NOT retry on 4xx", async () => {
   let calls = 0;
   const fakeFetch: typeof fetch = async () => {
     calls++;
-    return new Response(JSON.stringify({ code: "bad_signature" }), { status: 400 });
+    return new Response(JSON.stringify({ code: "bad_signature" }), {
+      status: 400,
+    });
   };
-  const resp = await postWithRetry("https://x/y", { a: 1 }, { fetchFn: fakeFetch, maxAttempts: 5, backoffBaseMs: 1 });
+  const resp = await postWithRetry("https://x/y", { a: 1 }, {
+    fetchFn: fakeFetch,
+    maxAttempts: 5,
+    backoffBaseMs: 1,
+  });
   assertEquals(resp.status, 400);
   assertEquals(calls, 1);
   const body = await resp.json() as { code: string };
@@ -1894,6 +2257,7 @@ Deno.test("postWithRetry does NOT retry on 4xx", async () => {
 ```bash
 deno task test:unit -- client_test
 ```
+
 Expected: FAIL.
 
 - [ ] **Step 3: Write client.ts**
@@ -1953,6 +2317,7 @@ function sleep(ms: number): Promise<void> {
 ```bash
 deno task test:unit -- client_test
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1967,6 +2332,7 @@ git commit -m "feat(ingest): HTTP POST client with exponential backoff on 5xx/ne
 ### Task 5.3: src/ingest/blobs.ts (R2 uploader)
 
 **Files:**
+
 - Create: `src/ingest/blobs.ts`
 
 - [ ] **Step 1: Write blobs.ts**
@@ -1989,7 +2355,12 @@ export async function uploadBlob(
   keyId: number,
 ): Promise<void> {
   const path = `/api/v1/blobs/${sha256}`;
-  const { signature, signed_at } = await signBlobUpload(path, sha256, privateKey, keyId);
+  const { signature, signed_at } = await signBlobUpload(
+    path,
+    sha256,
+    privateKey,
+    keyId,
+  );
   const fetchFn: typeof fetch = async (input, init) => {
     const req = new Request(input as RequestInfo, init);
     const headers = new Headers(req.headers);
@@ -2042,26 +2413,38 @@ git commit -m "feat(ingest): R2 blob uploader with header-signed auth"
 ### Task 5.4: src/ingest/register.ts (interactive)
 
 **Files:**
+
 - Create: `src/ingest/register.ts`
 
 - [ ] **Step 1: Write register.ts**
 
 ```ts
 // src/ingest/register.ts
-import { Confirm, Input, Number as NumPrompt } from "https://deno.land/x/cliffy@v0.25.7/prompt/mod.ts";
+import {
+  Confirm,
+  Input,
+  Number as NumPrompt,
+} from "https://deno.land/x/cliffy@v0.25.7/prompt/mod.ts";
 import { appendModel, appendPricing } from "./catalog/write.ts";
 import type { Catalog } from "./catalog/read.ts";
-import type { CatalogModelEntry, CatalogPricingEntry, PricingRates } from "./types.ts";
-import { sourcesForFamily, fetchPricingFromSources } from "./pricing-sources/index.ts";
+import type {
+  CatalogModelEntry,
+  CatalogPricingEntry,
+  PricingRates,
+} from "./types.ts";
+import {
+  fetchPricingFromSources,
+  sourcesForFamily,
+} from "./pricing-sources/index.ts";
 import { signPayload } from "./sign.ts";
 import { postWithRetry } from "./client.ts";
 import type { IngestConfig } from "./types.ts";
 
 export interface RegisterDeps {
-  catalogDir: string;        // site/catalog
-  config: IngestConfig;      // with adminKeyPath + adminKeyId populated
+  catalogDir: string; // site/catalog
+  config: IngestConfig; // with adminKeyPath + adminKeyId populated
   adminPrivateKey: Uint8Array;
-  interactive: boolean;      // if false, never prompt; auto-accept API results
+  interactive: boolean; // if false, never prompt; auto-accept API results
 }
 
 export async function ensureModel(
@@ -2070,7 +2453,9 @@ export async function ensureModel(
   apiModelId: string,
   deps: RegisterDeps,
 ): Promise<CatalogModelEntry> {
-  const existing = cat.models.find((m) => m.slug === slug && m.api_model_id === apiModelId);
+  const existing = cat.models.find((m) =>
+    m.slug === slug && m.api_model_id === apiModelId
+  );
   if (existing) return existing;
 
   const family = inferFamily(slug);
@@ -2083,8 +2468,13 @@ export async function ensureModel(
 
   if (deps.interactive) {
     console.log(`[WARN] Model '${slug}' not in catalog.`);
-    console.log(`       Inferred: family=${inferred.family}, display_name='${inferred.display_name}'`);
-    const ok = await Confirm.prompt({ message: "Write to catalog + D1?", default: true });
+    console.log(
+      `       Inferred: family=${inferred.family}, display_name='${inferred.display_name}'`,
+    );
+    const ok = await Confirm.prompt({
+      message: "Write to catalog + D1?",
+      default: true,
+    });
     if (!ok) throw new Error(`aborted: model '${slug}' not registered`);
   }
 
@@ -2102,29 +2492,54 @@ export async function ensurePricing(
   family: string,
   deps: RegisterDeps,
 ): Promise<CatalogPricingEntry> {
-  const existing = cat.pricing.find((p) => p.pricing_version === pricingVersion && p.model_slug === modelSlug);
+  const existing = cat.pricing.find((p) =>
+    p.pricing_version === pricingVersion && p.model_slug === modelSlug
+  );
   if (existing) return existing;
 
-  let rates: PricingRates | null = await fetchPricingFromSources(sourcesForFamily(family), modelSlug, apiModelId);
+  let rates: PricingRates | null = await fetchPricingFromSources(
+    sourcesForFamily(family),
+    modelSlug,
+    apiModelId,
+  );
 
   if (!rates) {
     if (!deps.interactive) {
-      throw new Error(`pricing for '${modelSlug}' not available from any API source; run interactively to enter manually`);
+      throw new Error(
+        `pricing for '${modelSlug}' not available from any API source; run interactively to enter manually`,
+      );
     }
-    console.log(`[WARN] No API source has pricing for '${modelSlug}'. Enter manually (per-million-tokens USD):`);
+    console.log(
+      `[WARN] No API source has pricing for '${modelSlug}'. Enter manually (per-million-tokens USD):`,
+    );
     rates = {
       input_per_mtoken: await NumPrompt.prompt({ message: "input_per_mtoken" }),
-      output_per_mtoken: await NumPrompt.prompt({ message: "output_per_mtoken" }),
-      cache_read_per_mtoken: await NumPrompt.prompt({ message: "cache_read_per_mtoken (0 if N/A)", default: 0 }),
-      cache_write_per_mtoken: await NumPrompt.prompt({ message: "cache_write_per_mtoken (0 if N/A)", default: 0 }),
+      output_per_mtoken: await NumPrompt.prompt({
+        message: "output_per_mtoken",
+      }),
+      cache_read_per_mtoken: await NumPrompt.prompt({
+        message: "cache_read_per_mtoken (0 if N/A)",
+        default: 0,
+      }),
+      cache_write_per_mtoken: await NumPrompt.prompt({
+        message: "cache_write_per_mtoken (0 if N/A)",
+        default: 0,
+      }),
       source: "manual",
       fetched_at: new Date().toISOString(),
     };
   } else if (deps.interactive) {
     console.log(`[INFO] Fetched pricing from ${rates.source}:`);
-    console.log(`       input=${rates.input_per_mtoken}/Mt output=${rates.output_per_mtoken}/Mt`);
-    const ok = await Confirm.prompt({ message: "Accept and write?", default: true });
-    if (!ok) throw new Error(`aborted: pricing for '${modelSlug}' not accepted`);
+    console.log(
+      `       input=${rates.input_per_mtoken}/Mt output=${rates.output_per_mtoken}/Mt`,
+    );
+    const ok = await Confirm.prompt({
+      message: "Accept and write?",
+      default: true,
+    });
+    if (!ok) {
+      throw new Error(`aborted: pricing for '${modelSlug}' not accepted`);
+    }
   }
 
   const entry: CatalogPricingEntry = {
@@ -2152,13 +2567,27 @@ export async function ensureTaskSet(
   });
 }
 
-async function postAdmin(deps: RegisterDeps, path: string, payload: Record<string, unknown>): Promise<void> {
-  if (!deps.config.adminKeyId) throw new Error("admin key not configured; needed for catalog writes");
-  const sig = await signPayload(payload, deps.adminPrivateKey, deps.config.adminKeyId);
+async function postAdmin(
+  deps: RegisterDeps,
+  path: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  if (!deps.config.adminKeyId) {
+    throw new Error("admin key not configured; needed for catalog writes");
+  }
+  const sig = await signPayload(
+    payload,
+    deps.adminPrivateKey,
+    deps.config.adminKeyId,
+  );
   const body = { version: 1, signature: sig, payload };
-  const resp = await postWithRetry(`${deps.config.url}${path}`, body, { maxAttempts: 3 });
+  const resp = await postWithRetry(`${deps.config.url}${path}`, body, {
+    maxAttempts: 3,
+  });
   if (resp.status !== 200) {
-    throw new Error(`admin ${path} failed: ${resp.status} ${await resp.text()}`);
+    throw new Error(
+      `admin ${path} failed: ${resp.status} ${await resp.text()}`,
+    );
   }
 }
 
@@ -2172,7 +2601,8 @@ function inferFamily(slug: string): string {
 
 function inferDisplayName(slug: string): string {
   const name = slug.split("/").pop() ?? slug;
-  return name.split(/[-_]/).map((s) => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+  return name.split(/[-_]/).map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(" ");
 }
 ```
 
@@ -2181,6 +2611,7 @@ function inferDisplayName(slug: string): string {
 ```bash
 deno check src/ingest/register.ts
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
@@ -2195,6 +2626,7 @@ git commit -m "feat(ingest): interactive register for models, pricing, task-sets
 ### Task 5.5: src/ingest/mod.ts — public ingestRun()
 
 **Files:**
+
 - Create: `src/ingest/mod.ts`
 
 - [ ] **Step 1: Write mod.ts**
@@ -2215,8 +2647,8 @@ import type { IngestOutcome } from "./types.ts";
 
 export interface IngestOptions {
   cwd: string;
-  catalogDir: string;       // site/catalog
-  tasksDir: string;         // tasks/
+  catalogDir: string; // site/catalog
+  tasksDir: string; // tasks/
   interactive: boolean;
   noIngest?: boolean;
   flags: {
@@ -2240,21 +2672,31 @@ export interface BenchResults {
   results: Array<{
     task_id: string;
     attempt: 1 | 2;
-    passed: boolean; score: number;
-    compile_success: boolean; compile_errors: unknown[];
-    tests_total: number; tests_passed: number;
-    tokens_in: number; tokens_out: number;
-    tokens_cache_read: number; tokens_cache_write: number;
+    passed: boolean;
+    score: number;
+    compile_success: boolean;
+    compile_errors: unknown[];
+    tests_total: number;
+    tests_passed: number;
+    tokens_in: number;
+    tokens_out: number;
+    tokens_cache_read: number;
+    tokens_cache_write: number;
     durations_ms: { llm?: number; compile?: number; test?: number };
     failure_reasons: string[];
-    transcript_bytes?: Uint8Array;   // required for v1
-    code_bytes?: Uint8Array;         // required for v1
+    transcript_bytes?: Uint8Array; // required for v1
+    code_bytes?: Uint8Array; // required for v1
   }>;
-  reproduction_bundle_bytes?: Uint8Array;  // required for v1
+  reproduction_bundle_bytes?: Uint8Array; // required for v1
 }
 
-export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<IngestOutcome> {
-  if (opts.noIngest) return { kind: "success", runId: br.runId, bytesUploaded: 0 };
+export async function ingestRun(
+  br: BenchResults,
+  opts: IngestOptions,
+): Promise<IngestOutcome> {
+  if (opts.noIngest) {
+    return { kind: "success", runId: br.runId, bytesUploaded: 0 };
+  }
 
   const config = await loadIngestConfig(opts.cwd, opts.flags);
   const privKey = await readPrivateKey(config.keyPath);
@@ -2264,18 +2706,31 @@ export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<
   // Compute blob hashes
   const blobTable = new Map<string, Uint8Array>(); // sha256 -> bytes
   const results = await Promise.all(br.results.map(async (r) => {
-    const transcript_sha256 = r.transcript_bytes ? await hashHex(r.transcript_bytes) : undefined;
+    const transcript_sha256 = r.transcript_bytes
+      ? await hashHex(r.transcript_bytes)
+      : undefined;
     const code_sha256 = r.code_bytes ? await hashHex(r.code_bytes) : undefined;
-    if (transcript_sha256 && r.transcript_bytes) blobTable.set(transcript_sha256, r.transcript_bytes);
+    if (transcript_sha256 && r.transcript_bytes) {
+      blobTable.set(transcript_sha256, r.transcript_bytes);
+    }
     if (code_sha256 && r.code_bytes) blobTable.set(code_sha256, r.code_bytes);
     return {
-      task_id: r.task_id, attempt: r.attempt, passed: r.passed, score: r.score,
-      compile_success: r.compile_success, compile_errors: r.compile_errors,
-      tests_total: r.tests_total, tests_passed: r.tests_passed,
-      tokens_in: r.tokens_in, tokens_out: r.tokens_out,
-      tokens_cache_read: r.tokens_cache_read, tokens_cache_write: r.tokens_cache_write,
-      durations_ms: r.durations_ms, failure_reasons: r.failure_reasons,
-      transcript_sha256, code_sha256,
+      task_id: r.task_id,
+      attempt: r.attempt,
+      passed: r.passed,
+      score: r.score,
+      compile_success: r.compile_success,
+      compile_errors: r.compile_errors,
+      tests_total: r.tests_total,
+      tests_passed: r.tests_passed,
+      tokens_in: r.tokens_in,
+      tokens_out: r.tokens_out,
+      tokens_cache_read: r.tokens_cache_read,
+      tokens_cache_write: r.tokens_cache_write,
+      durations_ms: r.durations_ms,
+      failure_reasons: r.failure_reasons,
+      transcript_sha256,
+      code_sha256,
     };
   }));
 
@@ -2295,7 +2750,14 @@ export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<
       interactive: opts.interactive,
     };
     await ensureModel(cat, br.model.slug, br.model.api_model_id, deps);
-    await ensurePricing(cat, br.pricingVersion, br.model.slug, br.model.api_model_id, br.model.family_slug, deps);
+    await ensurePricing(
+      cat,
+      br.pricingVersion,
+      br.model.slug,
+      br.model.api_model_id,
+      br.model.family_slug,
+      deps,
+    );
     const tsHash = await computeTaskSetHash(opts.tasksDir);
     await ensureTaskSet(cat, tsHash, countTasksSync(opts.tasksDir), deps);
     br.pricingVersion = br.pricingVersion; // unchanged (kept for clarity)
@@ -2318,7 +2780,11 @@ export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<
 
   // Precheck → missing blobs
   const precheckBody = buildSigned(br.runId, payload, privKey, config.keyId);
-  const preResp = await postWithRetry(`${config.url}/api/v1/runs/precheck`, await precheckBody, {});
+  const preResp = await postWithRetry(
+    `${config.url}/api/v1/runs/precheck`,
+    await precheckBody,
+    {},
+  );
   if (!preResp.ok) return fatalFrom(preResp);
   const pre = await preResp.json() as { missing_blobs: string[] };
 
@@ -2332,7 +2798,11 @@ export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<
 
   // Final signed POST (re-sign fresh for clock-skew)
   const finalBody = await buildSigned(br.runId, payload, privKey, config.keyId);
-  const runResp = await postWithRetry(`${config.url}/api/v1/runs`, finalBody, {});
+  const runResp = await postWithRetry(
+    `${config.url}/api/v1/runs`,
+    finalBody,
+    {},
+  );
   if (runResp.status === 202 || runResp.status === 200) {
     return { kind: "success", runId: br.runId, bytesUploaded };
   }
@@ -2348,14 +2818,21 @@ export async function ingestRun(br: BenchResults, opts: IngestOptions): Promise<
   return fatalFrom(runResp);
 }
 
-async function buildSigned(runId: string, payload: Record<string, unknown>, privKey: Uint8Array, keyId: number) {
+async function buildSigned(
+  runId: string,
+  payload: Record<string, unknown>,
+  privKey: Uint8Array,
+  keyId: number,
+) {
   const sig = await signPayload(payload, privKey, keyId);
   return { version: 1, run_id: runId, signature: sig, payload };
 }
 
 async function hashHex(bytes: Uint8Array): Promise<string> {
   const d = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(new Uint8Array(d)).map((b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
 }
 
 function countTasksSync(dir: string): number {
@@ -2368,7 +2845,10 @@ function countTasksSync(dir: string): number {
 }
 
 async function fatalFrom(resp: Response): Promise<IngestOutcome> {
-  const body = await resp.json().catch(() => ({})) as { code?: string; message?: string };
+  const body = await resp.json().catch(() => ({})) as {
+    code?: string;
+    message?: string;
+  };
   return {
     kind: "fatal-failure",
     code: body.code ?? `http_${resp.status}`,
@@ -2388,6 +2868,7 @@ export * from "./types.ts";
 ```bash
 deno check src/ingest/mod.ts
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 3: Commit**
@@ -2404,6 +2885,7 @@ git commit -m "feat(ingest): public ingestRun() entry point with precheck + blob
 ### Task 6.1: `centralgauge ingest <path>` command
 
 **Files:**
+
 - Create: `cli/commands/ingest-command.ts`
 - Modify: `cli/commands/mod.ts`
 
@@ -2412,7 +2894,7 @@ git commit -m "feat(ingest): public ingestRun() entry point with precheck + blob
 ```ts
 // cli/commands/ingest-command.ts
 import { Command } from "jsr:@cliffy/command@1.0.1";
-import { ingestRun, type BenchResults } from "../../src/ingest/mod.ts";
+import { type BenchResults, ingestRun } from "../../src/ingest/mod.ts";
 
 export const ingestCommand = new Command()
   .name("ingest")
@@ -2425,12 +2907,19 @@ export const ingestCommand = new Command()
   .option("--admin-key-path <path:string>", "Admin key path for catalog writes")
   .option("--admin-key-id <id:number>", "Admin key id")
   .option("--dry-run", "Parse + validate only, do not POST", { default: false })
-  .option("-y, --yes", "Non-interactive; auto-accept API-fetched pricing", { default: false })
+  .option("-y, --yes", "Non-interactive; auto-accept API-fetched pricing", {
+    default: false,
+  })
   .action(async (opts, path) => {
     const raw = await Deno.readTextFile(path);
     const parsed = JSON.parse(raw) as BenchResults;
     if (opts.dryRun) {
-      console.log("[DRY] Parsed run:", parsed.runId, "model:", parsed.model.slug);
+      console.log(
+        "[DRY] Parsed run:",
+        parsed.runId,
+        "model:",
+        parsed.model.slug,
+      );
       return;
     }
     const cwd = Deno.cwd();
@@ -2442,7 +2931,9 @@ export const ingestCommand = new Command()
       flags: opts,
     });
     if (outcome.kind === "retryable-failure") {
-      console.warn(`[WARN] Ingest failed transiently: ${outcome.lastError.message}`);
+      console.warn(
+        `[WARN] Ingest failed transiently: ${outcome.lastError.message}`,
+      );
       console.warn(`       Replay: ${outcome.replayCommand}`);
       Deno.exit(0);
     }
@@ -2450,7 +2941,9 @@ export const ingestCommand = new Command()
       console.error(`[FAIL] ${outcome.code}: ${outcome.message}`);
       Deno.exit(1);
     }
-    console.log(`[OK] ingested run ${outcome.runId} (${outcome.bytesUploaded} bytes in blobs)`);
+    console.log(
+      `[OK] ingested run ${outcome.runId} (${outcome.bytesUploaded} bytes in blobs)`,
+    );
   });
 ```
 
@@ -2476,6 +2969,7 @@ git commit -m "feat(cli): centralgauge ingest <path> command"
 ### Task 6.2: `centralgauge sync-catalog` command
 
 **Files:**
+
 - Create: `cli/commands/sync-catalog-command.ts`
 - Modify: `cli/commands/mod.ts`
 
@@ -2491,32 +2985,56 @@ import { postWithRetry } from "../../src/ingest/client.ts";
 
 export const syncCatalogCommand = new Command()
   .name("sync-catalog")
-  .description("Reconcile site/catalog/*.yml with the production D1 catalog tables")
-  .option("--dry-run", "Show planned operations, do not write", { default: true })
+  .description(
+    "Reconcile site/catalog/*.yml with the production D1 catalog tables",
+  )
+  .option("--dry-run", "Show planned operations, do not write", {
+    default: true,
+  })
   .option("--apply", "Actually write", { default: false })
   .action(async (opts) => {
     const cwd = Deno.cwd();
     const config = await loadIngestConfig(cwd, {});
     if (!config.adminKeyId || !config.adminKeyPath) {
-      throw new Error("admin_key_id + admin_key_path required in .centralgauge.yml for sync");
+      throw new Error(
+        "admin_key_id + admin_key_path required in .centralgauge.yml for sync",
+      );
     }
     const adminPriv = await readPrivateKey(config.adminKeyPath);
     const cat = await readCatalog(`${cwd}/site/catalog`);
-    console.log(`[INFO] ${cat.models.length} models, ${cat.pricing.length} pricing rows, ${cat.families.length} families`);
+    console.log(
+      `[INFO] ${cat.models.length} models, ${cat.pricing.length} pricing rows, ${cat.families.length} families`,
+    );
     const apply = opts.apply && !opts.dryRun;
     if (!apply) {
       console.log("[DRY] use --apply to write");
       return;
     }
     for (const m of cat.models) {
-      const sig = await signPayload(m as unknown as Record<string, unknown>, adminPriv, config.adminKeyId);
-      const resp = await postWithRetry(`${config.url}/api/v1/admin/catalog/models`, { version: 1, signature: sig, payload: m });
+      const sig = await signPayload(
+        m as unknown as Record<string, unknown>,
+        adminPriv,
+        config.adminKeyId,
+      );
+      const resp = await postWithRetry(
+        `${config.url}/api/v1/admin/catalog/models`,
+        { version: 1, signature: sig, payload: m },
+      );
       console.log(`[${resp.status}] model ${m.slug}`);
     }
     for (const p of cat.pricing) {
-      const sig = await signPayload(p as unknown as Record<string, unknown>, adminPriv, config.adminKeyId);
-      const resp = await postWithRetry(`${config.url}/api/v1/admin/catalog/pricing`, { version: 1, signature: sig, payload: p });
-      console.log(`[${resp.status}] pricing ${p.pricing_version} / ${p.model_slug}`);
+      const sig = await signPayload(
+        p as unknown as Record<string, unknown>,
+        adminPriv,
+        config.adminKeyId,
+      );
+      const resp = await postWithRetry(
+        `${config.url}/api/v1/admin/catalog/pricing`,
+        { version: 1, signature: sig, payload: p },
+      );
+      console.log(
+        `[${resp.status}] pricing ${p.pricing_version} / ${p.model_slug}`,
+      );
     }
   });
 ```
@@ -2537,6 +3055,7 @@ git commit -m "feat(cli): sync-catalog command for catalog → D1 reconciliation
 ### Task 6.3: Wire bench-command.ts to ingest
 
 **Files:**
+
 - Modify: `cli/commands/bench-command.ts`
 
 - [ ] **Step 1: Add --no-ingest and --yes flags**
@@ -2553,7 +3072,7 @@ Locate the flag definitions block (near the top of `cli/commands/bench-command.t
 Locate the point where `bench-command.ts` writes the results JSON to disk (search for `writeTextFile` or similar inside the action). Immediately after the write, add:
 
 ```ts
-import { ingestRun, type BenchResults } from "../../src/ingest/mod.ts";
+import { type BenchResults, ingestRun } from "../../src/ingest/mod.ts";
 
 // ... inside the action, after writing resultsPath:
 if (!opts.noIngest) {
@@ -2588,6 +3107,7 @@ Implement `assembleBenchResults(runState)` as a small helper at the bottom of th
 ```bash
 deno check cli/commands/bench-command.ts
 ```
+
 Expected: 0 errors.
 
 - [ ] **Step 4: Commit**
@@ -2604,11 +3124,13 @@ git commit -m "feat(bench): inline ingest after results write; --no-ingest to op
 ### Task 7.1: Extend scripts/smoke-ingest.ts for blobs + precheck
 
 **Files:**
+
 - Modify: `scripts/smoke-ingest.ts`
 
 - [ ] **Step 1: Extend script**
 
 Add a new CLI subcommand `full` that:
+
 1. Generates a random transcript + code body.
 2. PUTs both to `/api/v1/blobs/:sha256` with header-signed auth.
 3. POSTs to `/api/v1/runs/precheck`, expects `missing_blobs: []`.
@@ -2626,6 +3148,7 @@ deno run -A scripts/smoke-ingest.ts full \
   --key ~/.centralgauge/keys/preview-ingest.ed25519 \
   --key-id 1 --machine-id preview-ingest
 ```
+
 Expected: `[OK] precheck returned empty missing_blobs after uploads`.
 
 - [ ] **Step 3: Commit**
@@ -2649,6 +3172,7 @@ deno run -A scripts/seed-admin-key.ts \
   --pub ~/.centralgauge/keys/preview-admin.ed25519.pub \
   --machine-id preview-admin
 ```
+
 Expected: row inserted; note the returned key_id.
 
 - [ ] **Step 2: Configure `.centralgauge.yml`** (not committed; add to `.gitignore` if not already)
@@ -2682,6 +3206,7 @@ deno task start bench \
   --tasks "tasks/easy/CG-AL-E001.yml" \
   --containers Cronus28
 ```
+
 Expected: interactive prompts for model (accept), pricing (accept API-fetched or manually enter), task_set (silent). Final line: `[OK] Ingested run <id>`.
 
 - [ ] **Step 5: Verify in D1 and R2**
@@ -2690,6 +3215,7 @@ Expected: interactive prompts for model (accept), pricing (accept API-fetched or
 cd site && npx wrangler d1 execute centralgauge-db --env preview --remote --command="SELECT id, model_id, status FROM runs ORDER BY started_at DESC LIMIT 3"
 cd site && npx wrangler d1 execute centralgauge-db --env preview --remote --command="SELECT source, fetched_at, input_per_mtoken FROM cost_snapshots"
 ```
+
 Expected: new `runs` row, `cost_snapshots.source` populated.
 
 - [ ] **Step 6: No commit** (this is a smoke test step)
@@ -2706,6 +3232,7 @@ Expected: new `runs` row, `cost_snapshots.source` populated.
 deno run -A scripts/generate-machine-key.ts \
   --out ~/.centralgauge/keys/production-ingest.ed25519
 ```
+
 Expected: private key file + `.pub` file created. Confirm `.ed25519` is gitignored via `ls -la ~/.centralgauge/keys/` then check `.gitignore`.
 
 - [ ] **Step 2: Generate prod admin key**
@@ -2724,6 +3251,7 @@ cd site && npx wrangler d1 execute centralgauge-db --env production --remote --c
 cd site && npx wrangler d1 execute centralgauge-db --env production --remote --file=migrations/0003_cost_source.sql
 cd site && npx wrangler d1 execute centralgauge-db --env production --remote --command="INSERT INTO d1_migrations(name) VALUES ('0003_cost_source.sql')"
 ```
+
 Expected: all succeed.
 
 - [ ] **Step 4: Seed prod model-families**
@@ -2750,6 +3278,7 @@ deno run -A scripts/seed-admin-key.ts \
   --pub ~/.centralgauge/keys/production-admin.ed25519.pub \
   --machine-id production-admin
 ```
+
 Note the returned key_ids.
 
 - [ ] **Step 6: No commit**
@@ -2761,6 +3290,7 @@ Note the returned key_ids.
 - [ ] **Step 1: Verify wrangler.toml production env**
 
 Open `site/wrangler.toml`, confirm `[env.production]` block has:
+
 - `name = "centralgauge"` (or similar)
 - D1 binding with correct `database_id`
 - KV binding with correct `id`
@@ -2772,6 +3302,7 @@ Open `site/wrangler.toml`, confirm `[env.production]` block has:
 ```bash
 cd site && npx wrangler deploy --env production
 ```
+
 Expected: deploy succeeds, prints the URL (`https://centralgauge.sshadows.workers.dev`).
 
 - [ ] **Step 3: Run full smoke**
@@ -2783,6 +3314,7 @@ deno run -A scripts/smoke-ingest.ts full \
   --key-id <id-from-seed> \
   --machine-id production-ingest
 ```
+
 Expected: `[OK]`.
 
 - [ ] **Step 4: Commit deploy config if any changes**
@@ -2827,6 +3359,7 @@ Write `site/catalog/pricing.yml` with entries for all 6 at a shared `pricing_ver
 ```bash
 deno task start sync-catalog --apply
 ```
+
 Expected: 3 family upserts (already seeded, idempotent), 6 model upserts, 6 pricing upserts.
 
 - [ ] **Step 4: Commit**
@@ -2860,6 +3393,7 @@ deno task start bench \
   --tasks "tasks/easy/CG-AL-E001.yml" \
   --containers Cronus28
 ```
+
 Expected: `[OK] Ingested run <id>`.
 
 - [ ] **Step 3: Verify via scoreboard UI**
@@ -2881,6 +3415,7 @@ deno task start bench \
   --containers Cronus28,Cronus281,Cronus282,Cronus283 \
   --runs 1
 ```
+
 Expected: full run completes; `[OK] Ingested run <id>` per model.
 
 - [ ] **Step 2: Verify leaderboard reflects 6 models**
@@ -2902,6 +3437,7 @@ Via Cloudflare dashboard → Workers & Pages → centralgauge worker → Setting
 ```bash
 curl -I https://ai.sshadows.dk/
 ```
+
 Expected: 200, SvelteKit HTML.
 
 - [ ] **Step 3: Update `.centralgauge.yml` URL**
@@ -2924,6 +3460,7 @@ git commit -m "chore(deploy): ai.sshadows.dk cutover complete"
 ## Self-Review
 
 **Spec coverage:** Every spec section has at least one task:
+
 - Canonical shared file + parity test → Tasks 0.1, 0.2
 - Migration 0003 → Task 0.3
 - Blob auth → Task 1.1
@@ -2940,6 +3477,7 @@ git commit -m "chore(deploy): ai.sshadows.dk cutover complete"
 **Type consistency:** `BenchResults`, `IngestOutcome`, `CatalogModelEntry`, `CatalogPricingEntry`, `IngestConfig` are all defined in `src/ingest/types.ts` (Task 2.1) and used consistently in later tasks.
 
 **Known risks / open items for implementer attention:**
+
 1. The Anthropic / OpenAI / Gemini pricing adapters are stubs that return null (Task 4.2). If a live endpoint is discovered, the adapter gets a real implementation; otherwise manual entry handles those providers.
 2. Task 6.3's bench-wiring must read transcript + code bytes back from `results/` or thread them through in-memory. This may require a small refactor of bench's internal result shape.
 3. Production seed keys (Task 8.1) are manual steps that the user runs. Implementer should confirm the user has the keys locally before proceeding to Phase 9.

@@ -16,53 +16,54 @@
 
 **New files:**
 
-| Path | Purpose |
-|------|---------|
-| `src/doctor/types.ts` | `CheckLevel`, `CheckStatus`, `CheckResult`, `DoctorReport`, `DoctorContext`, `Section`, `Check` |
-| `src/doctor/engine.ts` | `runDoctor(opts) → Promise<DoctorReport>`, composition + dependency-skip |
-| `src/doctor/formatter.ts` | `formatReportToTerminal`, `formatReportAsJson` |
-| `src/doctor/repair.ts` | Auto-repair allowlist + executors (`sync-catalog`, mark-current) |
-| `src/doctor/mod.ts` | Public re-exports |
-| `src/doctor/sections/ingest/mod.ts` | Composes the 8 ingest checks into a `Section` |
-| `src/doctor/sections/ingest/check-cfg-present.ts` | Level A — config files parse, required ingest fields populated |
-| `src/doctor/sections/ingest/check-cfg-admin.ts` | Level A — admin key fields present when admin actions are configured |
-| `src/doctor/sections/ingest/check-keys-files.ts` | Level A — key files exist, exactly 32 raw bytes |
-| `src/doctor/sections/ingest/check-catalog-local.ts` | Level A — `site/catalog/*.yml` parse + schema-valid |
-| `src/doctor/sections/ingest/check-clock-skew.ts` | Level A — local vs server clock < 60s |
-| `src/doctor/sections/ingest/check-net-health.ts` | Level B — `GET ${url}/health` returns 200 within 5s |
-| `src/doctor/sections/ingest/check-auth-probe.ts` | Level C — signed `POST /api/v1/precheck`, key match + role + machine_id |
-| `src/doctor/sections/ingest/check-catalog-bench.ts` | Level D — same probe with variants/pricing/task_set, all green |
-| `cli/commands/doctor-command.ts` | Cliffy command surface for `centralgauge doctor <section>` |
-| `site/src/routes/api/v1/precheck/+server.ts` | Read-only signed-probe endpoint |
-| `tests/unit/doctor/engine.test.ts` | Engine composition + dependency-skip + summary counters |
-| `tests/unit/doctor/formatter.test.ts` | Terminal + JSON output snapshots |
-| `tests/unit/doctor/repair.test.ts` | Repair allowlist + executor invocation |
-| `tests/unit/doctor/sections/ingest/check-cfg-present.test.ts` | …one test file per check |
-| `tests/unit/doctor/sections/ingest/check-cfg-admin.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-keys-files.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-catalog-local.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-clock-skew.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-net-health.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-auth-probe.test.ts` | |
-| `tests/unit/doctor/sections/ingest/check-catalog-bench.test.ts` | |
-| `tests/integration/doctor/ingest-against-prod.test.ts` | Opt-in `DOCTOR_E2E_PROD=1` real-worker round-trip |
-| `site/tests/api/precheck.test.ts` | Worker endpoint signature + read-only contract |
-| `site/tests/api/task-sets-set-current.test.ts` | Extended task-sets endpoint with `set_current` flag |
+| Path                                                            | Purpose                                                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `src/doctor/types.ts`                                           | `CheckLevel`, `CheckStatus`, `CheckResult`, `DoctorReport`, `DoctorContext`, `Section`, `Check` |
+| `src/doctor/engine.ts`                                          | `runDoctor(opts) → Promise<DoctorReport>`, composition + dependency-skip                        |
+| `src/doctor/formatter.ts`                                       | `formatReportToTerminal`, `formatReportAsJson`                                                  |
+| `src/doctor/repair.ts`                                          | Auto-repair allowlist + executors (`sync-catalog`, mark-current)                                |
+| `src/doctor/mod.ts`                                             | Public re-exports                                                                               |
+| `src/doctor/sections/ingest/mod.ts`                             | Composes the 8 ingest checks into a `Section`                                                   |
+| `src/doctor/sections/ingest/check-cfg-present.ts`               | Level A — config files parse, required ingest fields populated                                  |
+| `src/doctor/sections/ingest/check-cfg-admin.ts`                 | Level A — admin key fields present when admin actions are configured                            |
+| `src/doctor/sections/ingest/check-keys-files.ts`                | Level A — key files exist, exactly 32 raw bytes                                                 |
+| `src/doctor/sections/ingest/check-catalog-local.ts`             | Level A — `site/catalog/*.yml` parse + schema-valid                                             |
+| `src/doctor/sections/ingest/check-clock-skew.ts`                | Level A — local vs server clock < 60s                                                           |
+| `src/doctor/sections/ingest/check-net-health.ts`                | Level B — `GET ${url}/health` returns 200 within 5s                                             |
+| `src/doctor/sections/ingest/check-auth-probe.ts`                | Level C — signed `POST /api/v1/precheck`, key match + role + machine_id                         |
+| `src/doctor/sections/ingest/check-catalog-bench.ts`             | Level D — same probe with variants/pricing/task_set, all green                                  |
+| `cli/commands/doctor-command.ts`                                | Cliffy command surface for `centralgauge doctor <section>`                                      |
+| `site/src/routes/api/v1/precheck/+server.ts`                    | Read-only signed-probe endpoint                                                                 |
+| `tests/unit/doctor/engine.test.ts`                              | Engine composition + dependency-skip + summary counters                                         |
+| `tests/unit/doctor/formatter.test.ts`                           | Terminal + JSON output snapshots                                                                |
+| `tests/unit/doctor/repair.test.ts`                              | Repair allowlist + executor invocation                                                          |
+| `tests/unit/doctor/sections/ingest/check-cfg-present.test.ts`   | …one test file per check                                                                        |
+| `tests/unit/doctor/sections/ingest/check-cfg-admin.test.ts`     |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-keys-files.test.ts`    |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-catalog-local.test.ts` |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-clock-skew.test.ts`    |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-net-health.test.ts`    |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-auth-probe.test.ts`    |                                                                                                 |
+| `tests/unit/doctor/sections/ingest/check-catalog-bench.test.ts` |                                                                                                 |
+| `tests/integration/doctor/ingest-against-prod.test.ts`          | Opt-in `DOCTOR_E2E_PROD=1` real-worker round-trip                                               |
+| `site/tests/api/precheck.test.ts`                               | Worker endpoint signature + read-only contract                                                  |
+| `site/tests/api/task-sets-set-current.test.ts`                  | Extended task-sets endpoint with `set_current` flag                                             |
 
 **Modified files:**
 
-| Path | Change |
-|------|--------|
-| `cli/centralgauge.ts` | Register `doctor` command |
-| `cli/commands/bench-command.ts` | Add precheck at startup (env-flag-gated, then default-on) and pre-ingest re-check |
-| `site/src/lib/shared/types.ts` | Add `PrecheckRequest`, `PrecheckResponse` |
-| `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts` | Accept optional `set_current: true` |
+| Path                                                        | Change                                                                            |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `cli/centralgauge.ts`                                       | Register `doctor` command                                                         |
+| `cli/commands/bench-command.ts`                             | Add precheck at startup (env-flag-gated, then default-on) and pre-ingest re-check |
+| `site/src/lib/shared/types.ts`                              | Add `PrecheckRequest`, `PrecheckResponse`                                         |
+| `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts` | Accept optional `set_current: true`                                               |
 
 ---
 
 ## Task 1: Doctor types module
 
 **Files:**
+
 - Create: `src/doctor/types.ts`
 - Test: `tests/unit/doctor/types.test.ts`
 
@@ -297,6 +298,7 @@ git commit -m "feat(doctor): types — CheckResult, DoctorReport, DoctorContext,
 ## Task 2: Engine skeleton (runDoctor with empty section)
 
 **Files:**
+
 - Create: `src/doctor/engine.ts`
 - Test: `tests/unit/doctor/engine.test.ts`
 
@@ -408,7 +410,9 @@ export async function runDoctor(opts: RunDoctorOptions): Promise<DoctorReport> {
     ...(opts.pricingVersion !== undefined
       ? { pricingVersion: opts.pricingVersion }
       : {}),
-    ...(opts.taskSetHash !== undefined ? { taskSetHash: opts.taskSetHash } : {}),
+    ...(opts.taskSetHash !== undefined
+      ? { taskSetHash: opts.taskSetHash }
+      : {}),
     previousResults: new Map(),
   };
 
@@ -490,6 +494,7 @@ git commit -m "feat(doctor): runDoctor engine — composition + timing + summary
 ## Task 3: Engine dependency-skip logic
 
 **Files:**
+
 - Modify: `src/doctor/engine.ts`
 - Test: `tests/unit/doctor/engine.test.ts` (extend)
 
@@ -638,7 +643,9 @@ export async function runDoctor(opts: RunDoctorOptions): Promise<DoctorReport> {
     ...(opts.pricingVersion !== undefined
       ? { pricingVersion: opts.pricingVersion }
       : {}),
-    ...(opts.taskSetHash !== undefined ? { taskSetHash: opts.taskSetHash } : {}),
+    ...(opts.taskSetHash !== undefined
+      ? { taskSetHash: opts.taskSetHash }
+      : {}),
     previousResults: new Map(),
   };
 
@@ -716,6 +723,7 @@ git commit -m "feat(doctor): dependency-skip — child checks skip when requires
 ## Task 4: Terminal formatter
 
 **Files:**
+
 - Create: `src/doctor/formatter.ts`
 - Test: `tests/unit/doctor/formatter.test.ts`
 
@@ -853,8 +861,7 @@ export function formatReportToTerminal(
   opts: FormatOptions = {},
 ): string {
   const useColor = opts.color ?? true;
-  const c = (fn: (s: string) => string) => (s: string) =>
-    useColor ? fn(s) : s;
+  const c = (fn: (s: string) => string) => (s: string) => useColor ? fn(s) : s;
   const green = c(colors.green);
   const red = c(colors.red);
   const yellow = c(colors.yellow);
@@ -864,7 +871,9 @@ export function formatReportToTerminal(
   const lines: string[] = [];
 
   lines.push(
-    `[doctor: ${report.section}]${" ".repeat(40)}${dim((totalMs / 1000).toFixed(1) + "s")}`,
+    `[doctor: ${report.section}]${" ".repeat(40)}${
+      dim((totalMs / 1000).toFixed(1) + "s")
+    }`,
   );
 
   for (const ch of report.checks) {
@@ -932,6 +941,7 @@ git commit -m "feat(doctor): terminal + JSON formatters for DoctorReport"
 ## Task 5: Worker shared types (Precheck request/response)
 
 **Files:**
+
 - Modify: `site/src/lib/shared/types.ts`
 
 - [ ] **Step 1: Inspect existing shared types**
@@ -1029,6 +1039,7 @@ git commit -m "feat(worker): PrecheckRequest/Response shared types"
 ## Task 6: Worker /api/v1/precheck endpoint — auth-only mode
 
 **Files:**
+
 - Create: `site/src/routes/api/v1/precheck/+server.ts`
 - Test: `site/tests/api/precheck.test.ts`
 
@@ -1134,10 +1145,7 @@ Create `site/src/routes/api/v1/precheck/+server.ts`:
 import type { RequestHandler } from "./$types";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { verifySignedRequest } from "$lib/server/signature";
-import type {
-  PrecheckRequest,
-  PrecheckResponse,
-} from "$lib/shared/types";
+import type { PrecheckRequest, PrecheckResponse } from "$lib/shared/types";
 
 export const POST: RequestHandler = async ({ request, platform }) => {
   if (!platform) {
@@ -1198,6 +1206,7 @@ git commit -m "feat(worker): /api/v1/precheck endpoint — auth-only signed prob
 ## Task 7: Worker /api/v1/precheck endpoint — catalog mode
 
 **Files:**
+
 - Modify: `site/src/routes/api/v1/precheck/+server.ts`
 - Modify: `site/tests/api/precheck.test.ts`
 
@@ -1267,90 +1276,90 @@ Expected: catalog tests fail (`catalog` field is currently undefined for all res
 Modify `site/src/routes/api/v1/precheck/+server.ts` — replace the body of `POST` between the `verifySignedRequest` and the `return jsonResponse`:
 
 ```typescript
-    const auth = {
-      ok: true as const,
-      key_id: verified.key_id,
-      key_role: verified.scope as "ingest" | "verifier" | "admin",
-      key_active: verified.revoked_at === null,
-      machine_id_match: verified.machine_id === body.payload.machine_id,
-    };
+const auth = {
+  ok: true as const,
+  key_id: verified.key_id,
+  key_role: verified.scope as "ingest" | "verifier" | "admin",
+  key_active: verified.revoked_at === null,
+  machine_id_match: verified.machine_id === body.payload.machine_id,
+};
 
-    let catalog: PrecheckResponse["catalog"];
-    const { variants, pricing_version, task_set_hash } = body.payload;
+let catalog: PrecheckResponse["catalog"];
+const { variants, pricing_version, task_set_hash } = body.payload;
 
-    if (variants && variants.length > 0) {
-      const slugs = variants.map((v) => v.slug);
-      const placeholders = slugs.map(() => "?").join(",");
+if (variants && variants.length > 0) {
+  const slugs = variants.map((v) => v.slug);
+  const placeholders = slugs.map(() => "?").join(",");
 
-      // Models present in D1
-      const modelsFound = await db
+  // Models present in D1
+  const modelsFound = await db
+    .prepare(
+      `SELECT slug, id FROM models WHERE slug IN (${placeholders})`,
+    )
+    .bind(...slugs)
+    .all<{ slug: string; id: number }>();
+  const knownSlugs = new Set(
+    (modelsFound.results ?? []).map((r) => r.slug),
+  );
+  const missing_models = slugs
+    .filter((s) => !knownSlugs.has(s))
+    .map((slug) => ({ slug, reason: "no models row" }));
+
+  // Pricing rows for known models at the requested pricing_version
+  let missing_pricing: Array<{ slug: string; pricing_version: string }> = [];
+  if (pricing_version) {
+    const knownIds = (modelsFound.results ?? []).map((r) => r.id);
+    const idMap = new Map(
+      (modelsFound.results ?? []).map((r) => [r.id, r.slug]),
+    );
+    if (knownIds.length > 0) {
+      const idPlaceholders = knownIds.map(() => "?").join(",");
+      const cs = await db
         .prepare(
-          `SELECT slug, id FROM models WHERE slug IN (${placeholders})`,
-        )
-        .bind(...slugs)
-        .all<{ slug: string; id: number }>();
-      const knownSlugs = new Set(
-        (modelsFound.results ?? []).map((r) => r.slug),
-      );
-      const missing_models = slugs
-        .filter((s) => !knownSlugs.has(s))
-        .map((slug) => ({ slug, reason: "no models row" }));
-
-      // Pricing rows for known models at the requested pricing_version
-      let missing_pricing: Array<{ slug: string; pricing_version: string }> = [];
-      if (pricing_version) {
-        const knownIds = (modelsFound.results ?? []).map((r) => r.id);
-        const idMap = new Map(
-          (modelsFound.results ?? []).map((r) => [r.id, r.slug]),
-        );
-        if (knownIds.length > 0) {
-          const idPlaceholders = knownIds.map(() => "?").join(",");
-          const cs = await db
-            .prepare(
-              `SELECT model_id FROM cost_snapshots
+          `SELECT model_id FROM cost_snapshots
                WHERE model_id IN (${idPlaceholders}) AND pricing_version = ?`,
-            )
-            .bind(...knownIds, pricing_version)
-            .all<{ model_id: number }>();
-          const haveCs = new Set((cs.results ?? []).map((r) => r.model_id));
-          missing_pricing = knownIds
-            .filter((id) => !haveCs.has(id))
-            .map((id) => ({
-              slug: idMap.get(id) ?? "(unknown)",
-              pricing_version,
-            }));
-        }
-      }
-
-      // Task-set
-      let task_set_known = false;
-      let task_set_current = false;
-      if (task_set_hash) {
-        const ts = await db
-          .prepare(
-            `SELECT hash, is_current FROM task_sets WHERE hash = ?`,
-          )
-          .bind(task_set_hash)
-          .first<{ hash: string; is_current: number }>();
-        task_set_known = !!ts;
-        task_set_current = ts?.is_current === 1;
-      }
-
-      catalog = {
-        missing_models,
-        missing_pricing,
-        task_set_current,
-        task_set_known,
-      };
+        )
+        .bind(...knownIds, pricing_version)
+        .all<{ model_id: number }>();
+      const haveCs = new Set((cs.results ?? []).map((r) => r.model_id));
+      missing_pricing = knownIds
+        .filter((id) => !haveCs.has(id))
+        .map((id) => ({
+          slug: idMap.get(id) ?? "(unknown)",
+          pricing_version,
+        }));
     }
+  }
 
-    const response: PrecheckResponse = {
-      schema_version: 1,
-      auth,
-      ...(catalog ? { catalog } : {}),
-      server_time: new Date().toISOString(),
-    };
-    return jsonResponse(response, 200);
+  // Task-set
+  let task_set_known = false;
+  let task_set_current = false;
+  if (task_set_hash) {
+    const ts = await db
+      .prepare(
+        `SELECT hash, is_current FROM task_sets WHERE hash = ?`,
+      )
+      .bind(task_set_hash)
+      .first<{ hash: string; is_current: number }>();
+    task_set_known = !!ts;
+    task_set_current = ts?.is_current === 1;
+  }
+
+  catalog = {
+    missing_models,
+    missing_pricing,
+    task_set_current,
+    task_set_known,
+  };
+}
+
+const response: PrecheckResponse = {
+  schema_version: 1,
+  auth,
+  ...(catalog ? { catalog } : {}),
+  server_time: new Date().toISOString(),
+};
+return jsonResponse(response, 200);
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1373,6 +1382,7 @@ git commit -m "feat(worker): /api/v1/precheck — bench-aware catalog probe"
 ## Task 8: Worker — extend /admin/catalog/task-sets to accept set_current
 
 **Files:**
+
 - Modify: `site/src/routes/api/v1/admin/catalog/task-sets/+server.ts`
 - Create: `site/tests/api/task-sets-set-current.test.ts`
 
@@ -1485,6 +1495,7 @@ git commit -m "feat(worker): admin task-sets endpoint accepts set_current flag"
 ## Task 9: Check — cfg.present
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-cfg-present.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-cfg-present.test.ts`
 
@@ -1527,7 +1538,10 @@ describe("checkCfgPresent", () => {
 
   it("fails when no ingest section is reachable and includes remediation", async () => {
     const tmp = await Deno.makeTempDir();
-    await Deno.writeTextFile(`${tmp}/.centralgauge.yml`, `# no ingest section\n`);
+    await Deno.writeTextFile(
+      `${tmp}/.centralgauge.yml`,
+      `# no ingest section\n`,
+    );
     Deno.env.set("CENTRALGAUGE_TEST_HOME", tmp);
     try {
       const result = await checkCfgPresent.run(ctx(tmp));
@@ -1621,7 +1635,8 @@ export const checkCfgPresent: Check = {
           ? `missing fields: ${missing.join(", ")}`
           : "no ingest section in home or project config",
         remediation: {
-          summary: "Generate keys and write ingest section to ~/.centralgauge.yml",
+          summary:
+            "Generate keys and write ingest section to ~/.centralgauge.yml",
           command:
             "deno run --allow-env --allow-read --allow-write scripts/provision-ingest-keys.ts",
           autoRepairable: false,
@@ -1669,6 +1684,7 @@ git commit -m "feat(doctor): check cfg.present — ingest config + required fiel
 ## Task 10: Check — cfg.admin
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-cfg-admin.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-cfg-admin.test.ts`
 
@@ -1799,7 +1815,8 @@ export const checkCfgAdmin: Check = {
         id: "cfg.admin",
         level: "A" as const,
         status: "failed" as const,
-        message: "admin_key_id and admin_key_path must both be set or both omitted",
+        message:
+          "admin_key_id and admin_key_path must both be set or both omitted",
         remediation: {
           summary: "Add the missing field to ~/.centralgauge.yml",
           autoRepairable: false,
@@ -1845,6 +1862,7 @@ git commit -m "feat(doctor): check cfg.admin — admin keys present (warning if 
 ## Task 11: Check — keys.files
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-keys-files.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-keys-files.test.ts`
 
@@ -1895,7 +1913,8 @@ describe("checkKeysFiles", () => {
     try {
       const result = await checkKeysFiles.run(ctx(tmp));
       assertEquals(result.status, "failed");
-      const issues = (result.details?.issues as Array<Record<string, unknown>>) ?? [];
+      const issues =
+        (result.details?.issues as Array<Record<string, unknown>>) ?? [];
       assertEquals(issues[0]?.["reason"], "not found");
     } finally {
       Deno.env.delete("CENTRALGAUGE_TEST_HOME");
@@ -1915,7 +1934,8 @@ describe("checkKeysFiles", () => {
     try {
       const result = await checkKeysFiles.run(ctx(tmp));
       assertEquals(result.status, "failed");
-      const issues = (result.details?.issues as Array<Record<string, unknown>>) ?? [];
+      const issues =
+        (result.details?.issues as Array<Record<string, unknown>>) ?? [];
       assertEquals(issues[0]?.["reason"], "wrong size");
       assertEquals(issues[0]?.["bytes"], 64);
     } finally {
@@ -2011,14 +2031,16 @@ export const checkKeysFiles: Check = {
   async run(ctx: DoctorContext) {
     const home = homeDir();
     const merged = {
-      ...((await readYaml(`${home}/.centralgauge.yml`))?.["ingest"] ?? {}) as Record<
-        string,
-        unknown
-      >,
-      ...((await readYaml(`${ctx.cwd}/.centralgauge.yml`))?.["ingest"] ?? {}) as Record<
-        string,
-        unknown
-      >,
+      ...((await readYaml(`${home}/.centralgauge.yml`))?.["ingest"] ??
+        {}) as Record<
+          string,
+          unknown
+        >,
+      ...((await readYaml(`${ctx.cwd}/.centralgauge.yml`))?.["ingest"] ??
+        {}) as Record<
+          string,
+          unknown
+        >,
     };
 
     const issues: KeyIssue[] = [];
@@ -2103,6 +2125,7 @@ git commit -m "feat(doctor): check keys.files — exists + 32 raw bytes"
 ## Task 12: Check — catalog.local
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-catalog-local.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-catalog-local.test.ts`
 
@@ -2147,7 +2170,10 @@ describe("checkCatalogLocal", () => {
   it("fails on YAML parse error", async () => {
     const tmp = await Deno.makeTempDir();
     await Deno.mkdir(`${tmp}/site/catalog`, { recursive: true });
-    await Deno.writeTextFile(`${tmp}/site/catalog/models.yml`, `: not [valid yaml`);
+    await Deno.writeTextFile(
+      `${tmp}/site/catalog/models.yml`,
+      `: not [valid yaml`,
+    );
     try {
       const result = await checkCatalogLocal.run(ctx(tmp));
       assertEquals(result.status, "failed");
@@ -2270,6 +2296,7 @@ git commit -m "feat(doctor): check catalog.local — site/catalog YAMLs parse"
 ## Task 13: Check — clock.skew
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-clock-skew.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-clock-skew.test.ts`
 
@@ -2468,6 +2495,7 @@ git commit -m "feat(doctor): check clock.skew — local vs server Date header wi
 ## Task 14: Check — net.health
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-net-health.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-net-health.test.ts`
 
@@ -2485,7 +2513,10 @@ function makeFetch(impl: typeof fetch): typeof fetch {
   return impl;
 }
 
-async function withTmpConfig<T>(url: string, body: (cwd: string) => Promise<T>): Promise<T> {
+async function withTmpConfig<T>(
+  url: string,
+  body: (cwd: string) => Promise<T>,
+): Promise<T> {
   const tmp = await Deno.makeTempDir();
   await Deno.writeTextFile(
     `${tmp}/.centralgauge.yml`,
@@ -2533,14 +2564,21 @@ describe("checkNetHealth", () => {
         fetchFn: (_url, init?: RequestInit) => {
           const signal = (init as RequestInit | undefined)?.signal;
           return new Promise((_resolve, reject) => {
-            signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+            signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+            );
           });
         },
         previousResults: new Map(),
       };
       const result = await checkNetHealth.run(ctx);
       assertEquals(result.status, "failed");
-      assertEquals(result.message.toLowerCase().includes("timeout") || result.message.toLowerCase().includes("abort"), true);
+      assertEquals(
+        result.message.toLowerCase().includes("timeout") ||
+          result.message.toLowerCase().includes("abort"),
+        true,
+      );
     });
   });
 });
@@ -2688,6 +2726,7 @@ git commit -m "feat(doctor): check net.health — GET /health 200 within 5s"
 ## Task 15: Check — auth.probe
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-auth-probe.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-auth-probe.test.ts`
 
@@ -2718,12 +2757,25 @@ describe("checkAuthProbe", () => {
     const { tmp } = await setupConfigAndKey();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: true, machine_id_match: true },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      const ctx: DoctorContext = { cwd: tmp, fetchFn, previousResults: new Map() };
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: true,
+              machine_id_match: true,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      const ctx: DoctorContext = {
+        cwd: tmp,
+        fetchFn,
+        previousResults: new Map(),
+      };
       const result = await checkAuthProbe.run(ctx);
       assertEquals(result.status, "passed");
       assertEquals(result.message.includes("key_id=7"), true);
@@ -2738,7 +2790,11 @@ describe("checkAuthProbe", () => {
     try {
       const fetchFn: typeof fetch = async () =>
         new Response("bad sig", { status: 401 });
-      const ctx: DoctorContext = { cwd: tmp, fetchFn, previousResults: new Map() };
+      const ctx: DoctorContext = {
+        cwd: tmp,
+        fetchFn,
+        previousResults: new Map(),
+      };
       const result = await checkAuthProbe.run(ctx);
       assertEquals(result.status, "failed");
       assertEquals(result.remediation?.autoRepairable, false);
@@ -2752,12 +2808,25 @@ describe("checkAuthProbe", () => {
     const { tmp } = await setupConfigAndKey();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: true, machine_id_match: false },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      const ctx: DoctorContext = { cwd: tmp, fetchFn, previousResults: new Map() };
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: true,
+              machine_id_match: false,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      const ctx: DoctorContext = {
+        cwd: tmp,
+        fetchFn,
+        previousResults: new Map(),
+      };
       const result = await checkAuthProbe.run(ctx);
       assertEquals(result.status, "failed");
       assertEquals(result.message.includes("machine_id"), true);
@@ -2771,12 +2840,25 @@ describe("checkAuthProbe", () => {
     const { tmp } = await setupConfigAndKey();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: false, machine_id_match: true },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      const ctx: DoctorContext = { cwd: tmp, fetchFn, previousResults: new Map() };
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: false,
+              machine_id_match: true,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      const ctx: DoctorContext = {
+        cwd: tmp,
+        fetchFn,
+        previousResults: new Map(),
+      };
       const result = await checkAuthProbe.run(ctx);
       assertEquals(result.status, "failed");
       assertEquals(result.message.includes("revoked"), true);
@@ -2884,9 +2966,11 @@ export const checkAuthProbe: Check = {
         id: "auth.probe",
         level: "C" as const,
         status: "failed" as const,
-        message: `401 from precheck — signature did not verify against key_id=${keyId}`,
+        message:
+          `401 from precheck — signature did not verify against key_id=${keyId}`,
         remediation: {
-          summary: "Public key in D1 doesn't match local private key. Re-provision keys and re-insert into D1.",
+          summary:
+            "Public key in D1 doesn't match local private key. Re-provision keys and re-insert into D1.",
           command:
             "deno run --allow-env --allow-read --allow-write scripts/provision-ingest-keys.ts",
           autoRepairable: false,
@@ -2933,9 +3017,11 @@ export const checkAuthProbe: Check = {
         id: "auth.probe",
         level: "C" as const,
         status: "failed" as const,
-        message: `machine_id mismatch: D1 row's machine_id ≠ local config's '${machineId}'`,
+        message:
+          `machine_id mismatch: D1 row's machine_id ≠ local config's '${machineId}'`,
         remediation: {
-          summary: "Align machine_id in ~/.centralgauge.yml with the D1 machine_keys row",
+          summary:
+            "Align machine_id in ~/.centralgauge.yml with the D1 machine_keys row",
           autoRepairable: false,
         },
         durationMs: 0,
@@ -2981,6 +3067,7 @@ git commit -m "feat(doctor): check auth.probe — signed POST /api/v1/precheck"
 ## Task 16: Check — catalog.bench
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/check-catalog-bench.ts`
 - Test: `tests/unit/doctor/sections/ingest/check-catalog-bench.test.ts`
 
@@ -3028,21 +3115,34 @@ describe("checkCatalogBench", () => {
     const tmp = await setup();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: true, machine_id_match: true },
-          catalog: {
-            missing_models: [],
-            missing_pricing: [],
-            task_set_current: true,
-            task_set_known: true,
-          },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: true,
+              machine_id_match: true,
+            },
+            catalog: {
+              missing_models: [],
+              missing_pricing: [],
+              task_set_current: true,
+              task_set_known: true,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       const ctx: DoctorContext = {
         cwd: tmp,
         fetchFn,
-        variants: [{ slug: "anthropic/claude-opus-4-7", api_model_id: "claude-opus-4-7", family_slug: "claude" }],
+        variants: [{
+          slug: "anthropic/claude-opus-4-7",
+          api_model_id: "claude-opus-4-7",
+          family_slug: "claude",
+        }],
         pricingVersion: "2026-04-26",
         taskSetHash: "abc",
         previousResults: new Map(),
@@ -3059,27 +3159,46 @@ describe("checkCatalogBench", () => {
     const tmp = await setup();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: true, machine_id_match: true },
-          catalog: {
-            missing_models: [{ slug: "openai/gpt-5", reason: "no models row" }],
-            missing_pricing: [],
-            task_set_current: true,
-            task_set_known: true,
-          },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: true,
+              machine_id_match: true,
+            },
+            catalog: {
+              missing_models: [{
+                slug: "openai/gpt-5",
+                reason: "no models row",
+              }],
+              missing_pricing: [],
+              task_set_current: true,
+              task_set_known: true,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       const ctx: DoctorContext = {
         cwd: tmp,
         fetchFn,
-        variants: [{ slug: "openai/gpt-5", api_model_id: "gpt-5", family_slug: "gpt" }],
+        variants: [{
+          slug: "openai/gpt-5",
+          api_model_id: "gpt-5",
+          family_slug: "gpt",
+        }],
         previousResults: new Map(),
       };
       const result = await checkCatalogBench.run(ctx);
       assertEquals(result.status, "failed");
       assertEquals(result.remediation?.autoRepairable, true);
-      assertEquals(result.remediation?.command, "deno task start sync-catalog --apply");
+      assertEquals(
+        result.remediation?.command,
+        "deno task start sync-catalog --apply",
+      );
     } finally {
       Deno.env.delete("CENTRALGAUGE_TEST_HOME");
       await Deno.remove(tmp, { recursive: true });
@@ -3090,17 +3209,26 @@ describe("checkCatalogBench", () => {
     const tmp = await setup();
     try {
       const fetchFn: typeof fetch = async () =>
-        new Response(JSON.stringify({
-          schema_version: 1,
-          auth: { ok: true, key_id: 7, key_role: "ingest", key_active: true, machine_id_match: true },
-          catalog: {
-            missing_models: [],
-            missing_pricing: [],
-            task_set_current: false,
-            task_set_known: true,
-          },
-          server_time: new Date().toISOString(),
-        }), { status: 200, headers: { "content-type": "application/json" } });
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            auth: {
+              ok: true,
+              key_id: 7,
+              key_role: "ingest",
+              key_active: true,
+              machine_id_match: true,
+            },
+            catalog: {
+              missing_models: [],
+              missing_pricing: [],
+              task_set_current: false,
+              task_set_known: true,
+            },
+            server_time: new Date().toISOString(),
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       const ctx: DoctorContext = {
         cwd: tmp,
         fetchFn,
@@ -3242,7 +3370,9 @@ export const checkCatalogBench: Check = {
     }
     if (cat.missing_pricing.length > 0) {
       failures.push(
-        `pricing missing for: ${cat.missing_pricing.map((m) => m.slug).join(", ")}`,
+        `pricing missing for: ${
+          cat.missing_pricing.map((m) => m.slug).join(", ")
+        }`,
       );
     }
     if (ctx.taskSetHash && !cat.task_set_known) {
@@ -3262,10 +3392,10 @@ export const checkCatalogBench: Check = {
       };
     }
 
-    const repairable = (cat.missing_models.length > 0 ||
+    const repairable = cat.missing_models.length > 0 ||
       cat.missing_pricing.length > 0 ||
       (ctx.taskSetHash !== undefined && cat.task_set_known &&
-        !cat.task_set_current));
+        !cat.task_set_current);
 
     return {
       id: "catalog.bench",
@@ -3282,7 +3412,8 @@ export const checkCatalogBench: Check = {
           autoRepairable: true,
         }
         : {
-          summary: "Investigate task_set hash; bench task tree may have drifted",
+          summary:
+            "Investigate task_set hash; bench task tree may have drifted",
           autoRepairable: false,
         },
       details: cat,
@@ -3319,6 +3450,7 @@ git commit -m "feat(doctor): check catalog.bench — bench-aware D1 catalog stat
 ## Task 17: Compose ingest section
 
 **Files:**
+
 - Create: `src/doctor/sections/ingest/mod.ts`
 - Create: `src/doctor/mod.ts`
 - Test: `tests/unit/doctor/sections/ingest/mod.test.ts`
@@ -3352,7 +3484,9 @@ describe("ingestSection", () => {
     for (const c of ingestSection.checks) {
       for (const dep of c.requires ?? []) {
         if (!seen.has(dep)) {
-          throw new Error(`Check '${c.id}' requires '${dep}' which is not declared earlier`);
+          throw new Error(
+            `Check '${c.id}' requires '${dep}' which is not declared earlier`,
+          );
         }
       }
       seen.add(c.id);
@@ -3406,10 +3540,7 @@ Also create `src/doctor/mod.ts`:
  * Public re-exports for the doctor module.
  */
 export { runDoctor } from "./engine.ts";
-export {
-  formatReportAsJson,
-  formatReportToTerminal,
-} from "./formatter.ts";
+export { formatReportAsJson, formatReportToTerminal } from "./formatter.ts";
 export type {
   Check,
   CheckLevel,
@@ -3453,6 +3584,7 @@ git commit -m "feat(doctor): compose ingest section + public mod.ts barrel"
 ## Task 18: Repair module
 
 **Files:**
+
 - Create: `src/doctor/repair.ts`
 - Test: `tests/unit/doctor/repair.test.ts`
 
@@ -3482,7 +3614,12 @@ const reportWithRepairableFailure: DoctorReport = {
         command: "deno task start sync-catalog --apply",
         autoRepairable: true,
       },
-      details: { missing_pricing: [{ slug: "openai/gpt-5", pricing_version: "2026-04-26" }] },
+      details: {
+        missing_pricing: [{
+          slug: "openai/gpt-5",
+          pricing_version: "2026-04-26",
+        }],
+      },
       durationMs: 100,
     },
   ],
@@ -3494,7 +3631,8 @@ describe("applyRepairs", () => {
     const calls: string[] = [];
     const repairer: Repairer = {
       id: "sync-catalog",
-      matches: (r) => r.id === "catalog.bench" && r.remediation?.autoRepairable === true,
+      matches: (r) =>
+        r.id === "catalog.bench" && r.remediation?.autoRepairable === true,
       run: async () => {
         calls.push("sync-catalog");
         return { ok: true, message: "synced" };
@@ -3675,7 +3813,8 @@ export const markTaskSetCurrentRepairer: Repairer = {
     // Defensive default: report not-yet-implemented so the user can run sync-catalog manually.
     return Promise.resolve({
       ok: false,
-      message: "mark-task-set-current auto-repair not yet implemented; run wrangler UPDATE manually",
+      message:
+        "mark-task-set-current auto-repair not yet implemented; run wrangler UPDATE manually",
     });
   },
 };
@@ -3713,6 +3852,7 @@ git commit -m "feat(doctor): repair allowlist — sync-catalog + mark-task-set-c
 ## Task 19: doctor CLI command
 
 **Files:**
+
 - Create: `cli/commands/doctor-command.ts`
 
 - [ ] **Step 1: Inspect existing CLI registration**
@@ -3755,7 +3895,9 @@ interface DoctorOptions {
   taskSetHash?: string;
 }
 
-function parseLevels(s: string | undefined): ("A" | "B" | "C" | "D")[] | undefined {
+function parseLevels(
+  s: string | undefined,
+): ("A" | "B" | "C" | "D")[] | undefined {
   if (!s) return undefined;
   const all: ("A" | "B" | "C" | "D")[] = ["A", "B", "C", "D"];
   const want = s.toUpperCase().split(",").map((x) => x.trim());
@@ -3800,7 +3942,11 @@ async function runIngest(options: DoctorOptions): Promise<void> {
     if (!options.json) {
       for (const a of rep.attempted) {
         console.log(
-          colors.gray(`[repair] ${a.repairerId}: ${a.ok ? "ok" : "failed"} ${a.message ?? ""}`),
+          colors.gray(
+            `[repair] ${a.repairerId}: ${a.ok ? "ok" : "failed"} ${
+              a.message ?? ""
+            }`,
+          ),
         );
       }
     }
@@ -3823,8 +3969,13 @@ export function registerDoctorCommand(cli: Command): void {
       console.log("Available sections: ingest");
       console.log("Run `centralgauge doctor ingest` to check ingest health.");
     })
-    .command("ingest", "Verify ingest health (config, keys, connectivity, catalog state)")
-    .option("--json", "Emit DoctorReport as JSON for CI/scripts", { default: false })
+    .command(
+      "ingest",
+      "Verify ingest health (config, keys, connectivity, catalog state)",
+    )
+    .option("--json", "Emit DoctorReport as JSON for CI/scripts", {
+      default: false,
+    })
     .option(
       "--levels <list:string>",
       "Comma-separated subset of levels (A,B,C,D)",
@@ -3842,7 +3993,10 @@ export function registerDoctorCommand(cli: Command): void {
       "--pricing-version <ver:string>",
       "Pricing version to validate (default: today UTC)",
     )
-    .option("--task-set-hash <hash:string>", "Task-set hash to validate is_current")
+    .option(
+      "--task-set-hash <hash:string>",
+      "Task-set hash to validate is_current",
+    )
     .action((opts: DoctorOptions) => runIngest(opts));
 }
 ```
@@ -3889,6 +4043,7 @@ git commit -m "feat(cli): centralgauge doctor ingest — engine surface for ad-h
 ## Task 20: Bench startup precheck (env-flag-gated)
 
 **Files:**
+
 - Modify: `cli/commands/bench-command.ts`
 
 - [ ] **Step 1: Locate the right insertion point**
@@ -3913,7 +4068,8 @@ import {
 
 // … inside the bench action handler, after variants are resolved …
 
-const benchPrecheckEnabled = Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
+const benchPrecheckEnabled =
+  Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
 
 if (benchPrecheckEnabled && options.ingest !== false && variants.length > 0) {
   const probes: VariantProbe[] = variants.map((v) => ({
@@ -3996,6 +4152,7 @@ git commit -m "feat(bench): startup ingest precheck behind CENTRALGAUGE_BENCH_PR
 ## Task 21: Bench pre-ingest re-check
 
 **Files:**
+
 - Modify: `cli/commands/bench-command.ts`
 
 - [ ] **Step 1: Locate the ingest call**
@@ -4063,6 +4220,7 @@ git commit -m "feat(bench): pre-ingest re-check — degrade to results-saved if 
 ## Task 22: Flip default to on
 
 **Files:**
+
 - Modify: `cli/commands/bench-command.ts`
 
 - [ ] **Step 1: Replace env-flag check with default-on**
@@ -4070,7 +4228,8 @@ git commit -m "feat(bench): pre-ingest re-check — degrade to results-saved if 
 Find:
 
 ```typescript
-const benchPrecheckEnabled = Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
+const benchPrecheckEnabled =
+  Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") === "1";
 ```
 
 Replace with:
@@ -4078,7 +4237,8 @@ Replace with:
 ```typescript
 // Default: precheck on. Set CENTRALGAUGE_BENCH_PRECHECK=0 to disable
 // (escape hatch only; --no-ingest is the supported way to skip ingest).
-const benchPrecheckEnabled = Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") !== "0";
+const benchPrecheckEnabled =
+  Deno.env.get("CENTRALGAUGE_BENCH_PRECHECK") !== "0";
 ```
 
 - [ ] **Step 2: Verify the bench's default path now precheck-gated**
@@ -4115,6 +4275,7 @@ git commit -m "feat(bench): default ingest precheck to on (set CENTRALGAUGE_BENC
 ## Task 23: Opt-in real-prod E2E test
 
 **Files:**
+
 - Create: `tests/integration/doctor/ingest-against-prod.test.ts`
 
 - [ ] **Step 1: Write the opt-in test**
@@ -4177,6 +4338,7 @@ git commit -m "test(doctor): opt-in DOCTOR_E2E_PROD=1 real-worker round-trip"
 ## Task 24: Documentation cross-link
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 - Modify: `docs/architecture/ingest-pipeline.md` (if present — append a section)
 
@@ -4186,9 +4348,9 @@ In the "Ingest Pipeline & Site" section of `CLAUDE.md`, append:
 
 ```markdown
 - `centralgauge doctor ingest [--llms <list>] [--repair]` — verify config + keys
-  + connectivity + bench-aware catalog state in one signed round-trip. Bench
-  runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to
-  disable.
+  - connectivity + bench-aware catalog state in one signed round-trip. Bench
+    runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to
+    disable.
 ```
 
 - [ ] **Step 2: Cross-link from spec**

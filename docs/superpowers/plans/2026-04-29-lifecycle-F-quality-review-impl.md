@@ -9,11 +9,13 @@
 **Tech Stack:** Deno (CLI scorer + pending-review writer), zod (schema validity), SvelteKit Cloudflare Worker (admin endpoints + UI), D1 (`pending_review` table from Phase A's migration 0006), Cloudflare Access (GitHub OAuth, `CF-Access-Jwt-Assertion` header verification), R2 (raw debug bundle proxy reads via the `LIFECYCLE_BLOBS` binding), Svelte 5 runes, Vitest.
 
 **Depends on:**
+
 - **Phase A** — event log writer (`appendEvent`), `pending_review` table from `0006_lifecycle.sql`, Ed25519 admin endpoints, AND the `LIFECYCLE_BLOBS` R2 binding declared in `site/wrangler.toml`. Plan A also creates `PUT|GET /api/v1/admin/lifecycle/r2/<key>` admin endpoints; F retro-patches them to use `authenticateAdminRequest` (see F5.5).
 - **Phase C** — analyze step writes entries + invokes `enqueue` from `src/lifecycle/pending-review.ts` (F2's module). Plan C's `analysis.completed` event payload includes `analyzer_model` (read by Plan E for diff comparability).
 - **Phase D** — concept registry; clustering-consistency signal reads `concepts.slug`. Plan D-prompt's batch endpoint shares the canonical `pending_review.payload_json` shape defined in F2.1; Plan D-data's cluster-review enqueue calls F2's `enqueue()` directly.
 
 **Cross-plan contracts this plan owns or depends on:**
+
 - `appendEvent({ model_slug, task_set_hash, event_type, payload, tool_versions, envelope }) → { id }` — canonical signature from Plan A. Both worker-side `(db, input)` and CLI-side `(input, opts)` consume `AppendEventInput` with object-form `payload`/`tool_versions`/`envelope`. F4's `/decide` endpoint emits `analysis.accepted` / `analysis.rejected` events through this writer.
 - `pending_review.payload_json = { entry: AnalyzerEntry, confidence: ConfidenceResult }` — canonical shape, owned by F2.1. Plans C, D-prompt, and D-data all emit this shape.
 - `lifecycle.analyzer_model` config knob — owned by F1.2. Plans C and G read it.
@@ -72,15 +74,15 @@
   }
 
   export interface ConfidenceResult {
-    score: number;                         // 0..1
+    score: number; // 0..1
     breakdown: {
-      schema_validity: number;             // 0 or 1
+      schema_validity: number; // 0 or 1
       concept_cluster_consistency: number; // -0.1 .. 0.2
-      cross_llm_agreement: number | null;  // null when not sampled
+      cross_llm_agreement: number | null; // null when not sampled
     };
     sampled_for_cross_llm: boolean;
     above_threshold: boolean;
-    failure_reasons: string[];             // reasons populated when score < 1
+    failure_reasons: string[]; // reasons populated when score < 1
   }
 
   /**
@@ -99,7 +101,7 @@
     const hash = await crypto.subtle.digest("SHA-256", buf);
     const view = new DataView(hash);
     const first32 = view.getUint32(0, false);
-    const bucket = Math.floor(1 / rate);  // e.g. rate=0.2 → 5 buckets
+    const bucket = Math.floor(1 / rate); // e.g. rate=0.2 → 5 buckets
     return (first32 % bucket) === 0;
   }
 
@@ -122,7 +124,9 @@
         },
         sampled_for_cross_llm: false,
         above_threshold: false,
-        failure_reasons: parsed.error.issues.map((i) => `schema:${i.path.join('.')}:${i.message}`),
+        failure_reasons: parsed.error.issues.map((i) =>
+          `schema:${i.path.join(".")}:${i.message}`
+        ),
       };
     }
     const e = parsed.data;
@@ -132,7 +136,7 @@
     // Field names are camelCase per the canonical D-prompt schema.
     if (e.correctPattern.trim().length === 0) {
       schemaScore = 0;
-      reasons.push('schema:correctPattern_empty');
+      reasons.push("schema:correctPattern_empty");
     }
     if (e.errorCodes && e.errorCodes.length === 0) {
       // empty array is allowed; explicit null is canonical, but neither blocks.
@@ -141,10 +145,10 @@
     // (b) Concept-cluster consistency.
     let clusterScore = 0;
     if (ctx.knownConceptSlugs.has(e.conceptSlugProposed)) {
-      clusterScore = 0.2;  // matches existing cluster
+      clusterScore = 0.2; // matches existing cluster
     } else {
-      clusterScore = -0.1;  // orphan — penalised but not blocking
-      reasons.push('concept:orphan_slug');
+      clusterScore = -0.1; // orphan — penalised but not blocking
+      reasons.push("concept:orphan_slug");
     }
 
     // (c) Cross-LLM agreement. Sampled.
@@ -152,8 +156,8 @@
     let crossScore: number | null = null;
     if (sampled && ctx.crossLlmAgreementRunner) {
       const raw = await ctx.crossLlmAgreementRunner(e);
-      crossScore = Math.max(0, Math.min(1, raw)) * 0.3;  // cap boost at +0.3
-      if (crossScore < 0.15) reasons.push('cross_llm:low_agreement');
+      crossScore = Math.max(0, Math.min(1, raw)) * 0.3; // cap boost at +0.3
+      if (crossScore < 0.15) reasons.push("cross_llm:low_agreement");
     }
 
     // Composite. Schema is the dominant gate (0 → score floored at 0).
@@ -195,32 +199,38 @@
   ```typescript
   import { assertEquals } from "@std/assert";
   import {
+    type AnalyzerEntry,
     scoreEntry,
     selectsForCrossLlmCheck,
-    type AnalyzerEntry,
   } from "../../../src/lifecycle/confidence.ts";
 
   const validEntry: AnalyzerEntry = {
     al_concept: "FlowField",
     concept_slug_proposed: "flowfield-calcfields-requirement",
     description: "FlowFields require explicit CalcFields() before reading",
-    correct_pattern: "Rec.CalcFields(\"Amount\");",
-    incorrect_pattern: "if Rec.\"Amount\" > 0 then ...",
+    correct_pattern: 'Rec.CalcFields("Amount");',
+    incorrect_pattern: 'if Rec."Amount" > 0 then ...',
     error_codes: ["AL0606"],
     rationale: "BC requires CalcFields for FlowField evaluation",
   };
 
   Deno.test("scoreEntry", async (t) => {
-    await t.step("returns 0 with schema:correct_pattern_empty when correct_pattern is empty", async () => {
-      const r = await scoreEntry({ ...validEntry, correct_pattern: "" }, {
-        knownConceptSlugs: new Set(),
-        crossLlmSampleRate: 0,
-        threshold: 0.7,
-      });
-      assertEquals(r.score, 0);
-      assertEquals(r.above_threshold, false);
-      assertEquals(r.failure_reasons.includes("schema:correct_pattern_empty"), true);
-    });
+    await t.step(
+      "returns 0 with schema:correct_pattern_empty when correct_pattern is empty",
+      async () => {
+        const r = await scoreEntry({ ...validEntry, correct_pattern: "" }, {
+          knownConceptSlugs: new Set(),
+          crossLlmSampleRate: 0,
+          threshold: 0.7,
+        });
+        assertEquals(r.score, 0);
+        assertEquals(r.above_threshold, false);
+        assertEquals(
+          r.failure_reasons.includes("schema:correct_pattern_empty"),
+          true,
+        );
+      },
+    );
 
     await t.step("returns 0 on bad error code (not AL\\d{4})", async () => {
       const r = await scoreEntry(
@@ -231,17 +241,20 @@
       assertEquals(r.failure_reasons[0]!.startsWith("schema:"), true);
     });
 
-    await t.step("boosts when concept_slug_proposed matches a known cluster", async () => {
-      const r = await scoreEntry(validEntry, {
-        knownConceptSlugs: new Set(["flowfield-calcfields-requirement"]),
-        crossLlmSampleRate: 0,
-        threshold: 0.7,
-      });
-      assertEquals(r.breakdown.concept_cluster_consistency, 0.2);
-      // schema=1, cluster=+0.2, cross=null → base = 1*(0.5+0.2+0) = 0.7
-      assertEquals(r.score, 0.7);
-      assertEquals(r.above_threshold, true);
-    });
+    await t.step(
+      "boosts when concept_slug_proposed matches a known cluster",
+      async () => {
+        const r = await scoreEntry(validEntry, {
+          knownConceptSlugs: new Set(["flowfield-calcfields-requirement"]),
+          crossLlmSampleRate: 0,
+          threshold: 0.7,
+        });
+        assertEquals(r.breakdown.concept_cluster_consistency, 0.2);
+        // schema=1, cluster=+0.2, cross=null → base = 1*(0.5+0.2+0) = 0.7
+        assertEquals(r.score, 0.7);
+        assertEquals(r.above_threshold, true);
+      },
+    );
 
     await t.step("penalises orphan slug", async () => {
       const r = await scoreEntry(validEntry, {
@@ -253,19 +266,25 @@
       assertEquals(r.failure_reasons.includes("concept:orphan_slug"), true);
     });
 
-    await t.step("invokes cross-LLM runner when sampling selects entry", async () => {
-      let calls = 0;
-      const r = await scoreEntry(validEntry, {
-        knownConceptSlugs: new Set(["flowfield-calcfields-requirement"]),
-        crossLlmSampleRate: 1.0,
-        threshold: 0.7,
-        crossLlmAgreementRunner: async () => { calls += 1; return 1.0; },
-      });
-      assertEquals(calls, 1);
-      assertEquals(r.sampled_for_cross_llm, true);
-      // schema=1, cluster=0.2, cross=0.3 → base = 1*(0.5+0.2+0.3) = 1.0
-      assertEquals(r.score, 1);
-    });
+    await t.step(
+      "invokes cross-LLM runner when sampling selects entry",
+      async () => {
+        let calls = 0;
+        const r = await scoreEntry(validEntry, {
+          knownConceptSlugs: new Set(["flowfield-calcfields-requirement"]),
+          crossLlmSampleRate: 1.0,
+          threshold: 0.7,
+          crossLlmAgreementRunner: async () => {
+            calls += 1;
+            return 1.0;
+          },
+        });
+        assertEquals(calls, 1);
+        assertEquals(r.sampled_for_cross_llm, true);
+        // schema=1, cluster=0.2, cross=0.3 → base = 1*(0.5+0.2+0.3) = 1.0
+        assertEquals(r.score, 1);
+      },
+    );
   });
 
   Deno.test("selectsForCrossLlmCheck is deterministic across runs", async () => {
@@ -293,8 +312,12 @@
   >
   > ```jsonc
   > {
-  >   "entry": { /* the original AnalyzerEntry: al_concept, concept_slug_proposed, description, correct_pattern, ... */ },
-  >   "confidence": { /* the full ConfidenceResult: score, breakdown, sampled_for_cross_llm, above_threshold, failure_reasons */ },
+  >   "entry": {
+  >     /* the original AnalyzerEntry: al_concept, concept_slug_proposed, description, correct_pattern, ... */
+  >   },
+  >   "confidence": {
+  >     /* the full ConfidenceResult: score, breakdown, sampled_for_cross_llm, above_threshold, failure_reasons */
+  >   }
   >   // Optional metadata may nest under entry._cluster, entry._batch, entry._source, etc.
   >   // The decide endpoint (F4) reads ONLY top-level entry + confidence.
   > }
@@ -429,7 +452,11 @@
         entry,
         confidence: conf,
       });
-      log.info(`[review-queue] enqueued '${entry.conceptSlugProposed}' (score=${conf.score.toFixed(3)})`);
+      log.info(
+        `[review-queue] enqueued '${entry.conceptSlugProposed}' (score=${
+          conf.score.toFixed(3)
+        })`,
+      );
     }
   }
   ```
@@ -443,7 +470,7 @@
 - [ ] **F3.1** — First land the auth middleware that backs F3 + F4. Create `U:\Git\CentralGauge\site\src\lib\server\cf-access.ts`:
 
   ```typescript
-  import { ApiError } from './errors';
+  import { ApiError } from "./errors";
 
   /**
    * Cloudflare Access JWT verifier.
@@ -458,7 +485,7 @@
    */
   export interface CfAccessUser {
     email: string;
-    sub: string;  // CF Access user id
+    sub: string; // CF Access user id
   }
 
   interface JwksCacheEntry {
@@ -476,8 +503,11 @@
     const url = `https://${teamDomain}/cdn-cgi/access/certs`;
     const resp = await fetch(url);
     if (!resp.ok) {
-      throw new ApiError(503, 'cf_access_jwks_unreachable',
-        `cf access JWKs fetch ${resp.status}`);
+      throw new ApiError(
+        503,
+        "cf_access_jwks_unreachable",
+        `cf access JWKs fetch ${resp.status}`,
+      );
     }
     const body = await resp.json() as { keys: JsonWebKey[] };
     jwksCache = { fetchedAt: Date.now(), keys: body.keys };
@@ -485,8 +515,8 @@
   }
 
   function b64UrlDecode(s: string): Uint8Array {
-    const pad = '='.repeat((4 - (s.length % 4)) % 4);
-    const b64 = (s + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const pad = "=".repeat((4 - (s.length % 4)) % 4);
+    const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
     const bin = atob(b64);
     const out = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
@@ -505,56 +535,82 @@
     env: { CF_ACCESS_AUD?: string; CF_ACCESS_TEAM_DOMAIN?: string },
   ): Promise<CfAccessUser> {
     if (!env.CF_ACCESS_AUD || !env.CF_ACCESS_TEAM_DOMAIN) {
-      throw new ApiError(500, 'cf_access_misconfigured',
-        'CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN must be set');
+      throw new ApiError(
+        500,
+        "cf_access_misconfigured",
+        "CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN must be set",
+      );
     }
-    const jwt = request.headers.get('cf-access-jwt-assertion');
-    if (!jwt) throw new ApiError(401, 'cf_access_missing', 'no CF Access JWT');
+    const jwt = request.headers.get("cf-access-jwt-assertion");
+    if (!jwt) throw new ApiError(401, "cf_access_missing", "no CF Access JWT");
 
-    const parts = jwt.split('.');
+    const parts = jwt.split(".");
     if (parts.length !== 3) {
-      throw new ApiError(401, 'cf_access_malformed', 'JWT must have 3 parts');
+      throw new ApiError(401, "cf_access_malformed", "JWT must have 3 parts");
     }
     const [headerB64, payloadB64, sigB64] = parts as [string, string, string];
 
-    const header = JSON.parse(new TextDecoder().decode(b64UrlDecode(headerB64))) as {
-      alg: string; kid: string;
+    const header = JSON.parse(
+      new TextDecoder().decode(b64UrlDecode(headerB64)),
+    ) as {
+      alg: string;
+      kid: string;
     };
-    if (header.alg !== 'RS256') {
-      throw new ApiError(401, 'cf_access_bad_alg', `alg=${header.alg}`);
+    if (header.alg !== "RS256") {
+      throw new ApiError(401, "cf_access_bad_alg", `alg=${header.alg}`);
     }
 
     const keys = await fetchJwks(env.CF_ACCESS_TEAM_DOMAIN);
     const jwk = keys.find((k) => (k as { kid?: string }).kid === header.kid);
-    if (!jwk) throw new ApiError(401, 'cf_access_unknown_kid', `kid=${header.kid}`);
+    if (!jwk) {
+      throw new ApiError(401, "cf_access_unknown_kid", `kid=${header.kid}`);
+    }
 
     const cryptoKey = await crypto.subtle.importKey(
-      'jwk', jwk,
-      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-      false, ['verify'],
+      "jwk",
+      jwk,
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["verify"],
     );
 
     const sig = b64UrlDecode(sigB64);
     const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, sig, data);
-    if (!ok) throw new ApiError(401, 'cf_access_bad_sig', 'signature failed');
+    const ok = await crypto.subtle.verify(
+      "RSASSA-PKCS1-v1_5",
+      cryptoKey,
+      sig,
+      data,
+    );
+    if (!ok) throw new ApiError(401, "cf_access_bad_sig", "signature failed");
 
-    const claims = JSON.parse(new TextDecoder().decode(b64UrlDecode(payloadB64))) as {
+    const claims = JSON.parse(
+      new TextDecoder().decode(b64UrlDecode(payloadB64)),
+    ) as {
       aud?: string | string[];
       email?: string;
       sub?: string;
       exp?: number;
     };
-    const auds = Array.isArray(claims.aud) ? claims.aud : (claims.aud ? [claims.aud] : []);
+    const auds = Array.isArray(claims.aud)
+      ? claims.aud
+      : (claims.aud ? [claims.aud] : []);
     if (!auds.includes(env.CF_ACCESS_AUD)) {
-      throw new ApiError(401, 'cf_access_bad_aud',
-        `expected aud=${env.CF_ACCESS_AUD}, got ${JSON.stringify(auds)}`);
+      throw new ApiError(
+        401,
+        "cf_access_bad_aud",
+        `expected aud=${env.CF_ACCESS_AUD}, got ${JSON.stringify(auds)}`,
+      );
     }
     if (claims.exp && claims.exp * 1000 < Date.now()) {
-      throw new ApiError(401, 'cf_access_expired', 'JWT exp passed');
+      throw new ApiError(401, "cf_access_expired", "JWT exp passed");
     }
     if (!claims.email || !claims.sub) {
-      throw new ApiError(401, 'cf_access_missing_claims', 'email and sub required');
+      throw new ApiError(
+        401,
+        "cf_access_missing_claims",
+        "email and sub required",
+      );
     }
 
     return { email: claims.email, sub: claims.sub };
@@ -579,35 +635,42 @@
    *     null-like state. Endpoints rely on this throw-on-fail contract.
    */
   export type AdminAuthResult =
-    | { kind: 'cf-access'; email: string; sub: string }
-    | { kind: 'admin-sig'; key_id: number; key_fingerprint: string };
+    | { kind: "cf-access"; email: string; sub: string }
+    | { kind: "admin-sig"; key_id: number; key_fingerprint: string };
 
   export async function authenticateAdminRequest(
     request: Request,
-    env: { CF_ACCESS_AUD?: string; CF_ACCESS_TEAM_DOMAIN?: string; DB: D1Database },
+    env: {
+      CF_ACCESS_AUD?: string;
+      CF_ACCESS_TEAM_DOMAIN?: string;
+      DB: D1Database;
+    },
     signedBody: { signature?: unknown } | null,
   ): Promise<AdminAuthResult> {
     // Path 1: CF Access JWT.
-    if (request.headers.get('cf-access-jwt-assertion')) {
+    if (request.headers.get("cf-access-jwt-assertion")) {
       const user = await verifyCfAccessJwt(request, env);
-      return { kind: 'cf-access', email: user.email, sub: user.sub };
+      return { kind: "cf-access", email: user.email, sub: user.sub };
     }
     // Path 2: Ed25519 admin signature.
     if (signedBody?.signature) {
-      const { verifySignedRequest } = await import('./signature');
+      const { verifySignedRequest } = await import("./signature");
       const verified = await verifySignedRequest(
         env.DB,
         signedBody as Parameters<typeof verifySignedRequest>[1],
-        'admin',
+        "admin",
       );
       return {
-        kind: 'admin-sig',
+        kind: "admin-sig",
         key_id: verified.key_id,
         key_fingerprint: `key:${verified.key_id}`,
       };
     }
-    throw new ApiError(401, 'unauthenticated',
-      'CF Access JWT or admin Ed25519 signature required');
+    throw new ApiError(
+      401,
+      "unauthenticated",
+      "CF Access JWT or admin Ed25519 signature required",
+    );
   }
   ```
 
@@ -627,10 +690,10 @@
 - [ ] **F3.3** — Create the queue endpoint at `U:\Git\CentralGauge\site\src\routes\api\v1\admin\lifecycle\review\queue\+server.ts`:
 
   ```typescript
-  import type { RequestHandler } from './$types';
-  import { authenticateAdminRequest } from '$lib/server/cf-access';
-  import { jsonResponse, errorResponse, ApiError } from '$lib/server/errors';
-  import { getAll } from '$lib/server/db';
+  import type { RequestHandler } from "./$types";
+  import { authenticateAdminRequest } from "$lib/server/cf-access";
+  import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+  import { getAll } from "$lib/server/db";
 
   interface QueueRow {
     id: number;
@@ -646,7 +709,11 @@
   }
 
   export const GET: RequestHandler = async ({ request, platform }) => {
-    if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    if (!platform) {
+      return errorResponse(
+        new ApiError(500, "no_platform", "platform env missing"),
+      );
+    }
     const env = platform.env;
     try {
       // CF Access path only — no body, no signature.
@@ -705,13 +772,13 @@
 - [ ] **F4.1** — Create `U:\Git\CentralGauge\site\src\routes\api\v1\admin\lifecycle\review\[id]\decide\+server.ts`:
 
   ```typescript
-  import type { RequestHandler } from './$types';
-  import { authenticateAdminRequest } from '$lib/server/cf-access';
-  import { jsonResponse, errorResponse, ApiError } from '$lib/server/errors';
-  import { getFirst, runBatch } from '$lib/server/db';
+  import type { RequestHandler } from "./$types";
+  import { authenticateAdminRequest } from "$lib/server/cf-access";
+  import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+  import { getFirst, runBatch } from "$lib/server/db";
 
   interface DecideBody {
-    decision: 'accept' | 'reject';
+    decision: "accept" | "reject";
     reason?: string;
     /** Optional: when posted from the CLI path. CF Access path has no body wrapping. */
     signature?: unknown;
@@ -720,10 +787,16 @@
   }
 
   export const POST: RequestHandler = async ({ request, params, platform }) => {
-    if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    if (!platform) {
+      return errorResponse(
+        new ApiError(500, "no_platform", "platform env missing"),
+      );
+    }
     const env = platform.env;
     const id = +(params.id ?? 0);
-    if (!id) return errorResponse(new ApiError(400, 'bad_id', 'numeric id required'));
+    if (!id) {
+      return errorResponse(new ApiError(400, "bad_id", "numeric id required"));
+    }
 
     try {
       const body = (await request.json()) as DecideBody;
@@ -747,14 +820,20 @@
       //   { pending_review_id, reviewer, reason? }
       // We satisfy `reviewer = actorId` below; reason is required for reject,
       // optional for accept.
-      const actorId = auth.kind === 'cf-access' ? auth.email : auth.key_fingerprint;
+      const actorId = auth.kind === "cf-access"
+        ? auth.email
+        : auth.key_fingerprint;
 
       const decision = decisionBody.decision;
-      if (decision !== 'accept' && decision !== 'reject') {
-        throw new ApiError(400, 'bad_decision', 'decision must be accept|reject');
+      if (decision !== "accept" && decision !== "reject") {
+        throw new ApiError(
+          400,
+          "bad_decision",
+          "decision must be accept|reject",
+        );
       }
-      if (decision === 'reject' && !decisionBody.reason) {
-        throw new ApiError(400, 'reason_required', 'reject requires reason');
+      if (decision === "reject" && !decisionBody.reason) {
+        throw new ApiError(400, "reason_required", "reject requires reason");
       }
 
       const pr = await getFirst<{
@@ -768,9 +847,11 @@
            FROM pending_review WHERE id = ?`,
         [id],
       );
-      if (!pr) throw new ApiError(404, 'not_found', `pending_review ${id} not found`);
-      if (pr.status !== 'pending') {
-        throw new ApiError(409, 'already_decided', `status=${pr.status}`);
+      if (!pr) {
+        throw new ApiError(404, "not_found", `pending_review ${id} not found`);
+      }
+      if (pr.status !== "pending") {
+        throw new ApiError(409, "already_decided", `status=${pr.status}`);
       }
 
       const analysisEvent = await getFirst<{ task_set_hash: string }>(
@@ -779,10 +860,12 @@
         [pr.analysis_event_id],
       );
       if (!analysisEvent) {
-        throw new ApiError(500, 'orphan_review', `analysis_event_id missing`);
+        throw new ApiError(500, "orphan_review", `analysis_event_id missing`);
       }
 
-      const eventType = decision === 'accept' ? 'analysis.accepted' : 'analysis.rejected';
+      const eventType = decision === "accept"
+        ? "analysis.accepted"
+        : "analysis.rejected";
       const eventPayload = {
         pending_review_id: id,
         reviewer: actorId,
@@ -811,9 +894,13 @@
                   payload_json, actor, actor_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           params: [
-            ts, pr.model_slug, analysisEvent.task_set_hash, eventType,
+            ts,
+            pr.model_slug,
+            analysisEvent.task_set_hash,
+            eventType,
             JSON.stringify(eventPayload),
-            'reviewer', actorId,
+            "reviewer",
+            actorId,
           ],
         },
       ];
@@ -827,7 +914,11 @@
         [ts, eventType, pr.model_slug],
       );
       if (!insertedEvent) {
-        throw new ApiError(500, 'event_lost', 'could not read back inserted event id');
+        throw new ApiError(
+          500,
+          "event_lost",
+          "could not read back inserted event id",
+        );
       }
 
       // Second batch: pending_review update + (on accept) shortcomings insert.
@@ -837,16 +928,22 @@
                    SET status = ?, reviewer_decision_event_id = ?
                  WHERE id = ?`,
           params: [
-            decision === 'accept' ? 'accepted' : 'rejected',
+            decision === "accept" ? "accepted" : "rejected",
             insertedEvent.id,
             id,
           ],
         },
       ];
-      if (decision === 'accept') {
+      if (decision === "accept") {
         const reviewBody = JSON.parse(pr.payload_json) as {
-          entry: { al_concept: string; concept_slug_proposed: string; description: string;
-                   correct_pattern: string; incorrect_pattern?: string; error_codes?: string[] };
+          entry: {
+            al_concept: string;
+            concept_slug_proposed: string;
+            description: string;
+            correct_pattern: string;
+            incorrect_pattern?: string;
+            error_codes?: string[];
+          };
           confidence: { score: number };
         };
         // Resolve concept_id (Phase D guarantees the slug exists in concepts
@@ -858,8 +955,11 @@
           [reviewBody.entry.conceptSlugProposed],
         );
         if (!concept) {
-          throw new ApiError(409, 'concept_missing',
-            `concept ${reviewBody.entry.conceptSlugProposed} not in registry`);
+          throw new ApiError(
+            409,
+            "concept_missing",
+            `concept ${reviewBody.entry.conceptSlugProposed} not in registry`,
+          );
         }
         followUp.push({
           sql: `INSERT INTO shortcomings(
@@ -880,7 +980,8 @@
             pr.analysis_event_id,
             insertedEvent.id,
             reviewBody.confidence.score,
-            ts, ts,
+            ts,
+            ts,
             pr.model_slug,
           ],
         });
@@ -902,77 +1003,101 @@
 - [ ] **F4.2** — Tests in `site/tests/api/lifecycle-review-decide.test.ts`:
 
   ```typescript
-  import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-  import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-  import { createSignedPayload } from '../fixtures/keys';
-  import { registerMachineKey } from '../fixtures/ingest-helpers';
-  import { resetDb } from '../utils/reset-db';
+  import { applyD1Migrations, env, SELF } from "cloudflare:test";
+  import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+  import { createSignedPayload } from "../fixtures/keys";
+  import { registerMachineKey } from "../fixtures/ingest-helpers";
+  import { resetDb } from "../utils/reset-db";
 
-  beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-  beforeEach(async () => { await resetDb(); });
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
 
-  describe('POST /api/v1/admin/lifecycle/review/:id/decide', () => {
-    it('rejects unauthenticated requests (no CF Access, no signature)', async () => {
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/review/1/decide', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ decision: 'accept' }),
-      });
-      expect(r.status).toBe(401);
-    });
-
-    it('rejects malformed CF Access JWT (signature mismatch)', async () => {
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/review/1/decide', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'cf-access-jwt-assertion': 'eyJhbGciOiJSUzI1NiJ9.bogus.bogus',
+  describe("POST /api/v1/admin/lifecycle/review/:id/decide", () => {
+    it("rejects unauthenticated requests (no CF Access, no signature)", async () => {
+      const r = await SELF.fetch(
+        "https://x/api/v1/admin/lifecycle/review/1/decide",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ decision: "accept" }),
         },
-        body: JSON.stringify({ decision: 'accept' }),
-      });
+      );
       expect(r.status).toBe(401);
     });
 
-    it('accepts via CLI signature path → writes analysis.accepted + shortcomings row', async () => {
+    it("rejects malformed CF Access JWT (signature mismatch)", async () => {
+      const r = await SELF.fetch(
+        "https://x/api/v1/admin/lifecycle/review/1/decide",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "cf-access-jwt-assertion": "eyJhbGciOiJSUzI1NiJ9.bogus.bogus",
+          },
+          body: JSON.stringify({ decision: "accept" }),
+        },
+      );
+      expect(r.status).toBe(401);
+    });
+
+    it("accepts via CLI signature path → writes analysis.accepted + shortcomings row", async () => {
       // Seed: model + family, concepts row, lifecycle_events row for analysis.completed,
       // pending_review row, machine key with admin scope.
       // ... setup omitted; mirror catalog-admin.test.ts pattern ...
 
-      const { keyId, keypair } = await registerMachineKey('admin', 'admin');
-      const { signedRequest } = await createSignedPayload({
-        decision: 'accept',
-      }, keyId, undefined, keypair);
+      const { keyId, keypair } = await registerMachineKey("admin", "admin");
+      const { signedRequest } = await createSignedPayload(
+        {
+          decision: "accept",
+        },
+        keyId,
+        undefined,
+        keypair,
+      );
 
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/review/1/decide', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(signedRequest),
-      });
+      const r = await SELF.fetch(
+        "https://x/api/v1/admin/lifecycle/review/1/decide",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(signedRequest),
+        },
+      );
       expect(r.status).toBe(200);
 
       const ev = await env.DB.prepare(
-        `SELECT event_type, actor_id FROM lifecycle_events WHERE event_type = 'analysis.accepted'`
+        `SELECT event_type, actor_id FROM lifecycle_events WHERE event_type = 'analysis.accepted'`,
       ).first<{ event_type: string; actor_id: string }>();
-      expect(ev?.event_type).toBe('analysis.accepted');
+      expect(ev?.event_type).toBe("analysis.accepted");
       // CLI path → actor_id = 'key:' + key_id (per authenticateAdminRequest contract)
       expect(ev?.actor_id).toMatch(/^key:\d+$/);
 
       const sc = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM shortcomings`
+        `SELECT COUNT(*) AS n FROM shortcomings`,
       ).first<{ n: number }>();
       expect(sc?.n).toBe(1);
     });
 
-    it('reject without reason returns 400', async () => {
-      const { keyId, keypair } = await registerMachineKey('admin', 'admin');
+    it("reject without reason returns 400", async () => {
+      const { keyId, keypair } = await registerMachineKey("admin", "admin");
       const { signedRequest } = await createSignedPayload(
-        { decision: 'reject' }, keyId, undefined, keypair,
+        { decision: "reject" },
+        keyId,
+        undefined,
+        keypair,
       );
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/review/1/decide', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(signedRequest),
-      });
+      const r = await SELF.fetch(
+        "https://x/api/v1/admin/lifecycle/review/1/decide",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(signedRequest),
+        },
+      );
       expect(r.status).toBe(400);
     });
   });
@@ -984,7 +1109,7 @@
 
 - [ ] **F5.1** — Document the operator runbook in `docs/site/operations.md` under a new "Admin lifecycle UI access" section:
 
-  ```markdown
+  ````markdown
   ## Admin lifecycle UI access (Cloudflare Access)
 
   The `/admin/lifecycle/*` paths are gated by Cloudflare Access with GitHub
@@ -1012,6 +1137,7 @@
      wrangler secret put CF_ACCESS_AUD
      # paste the AUD tag when prompted
      ```
+  ````
   9. Verify: `curl https://centralgauge.sshadows.workers.dev/admin/lifecycle`
      should redirect to a CF Access login page in a fresh incognito window.
 
@@ -1021,32 +1147,33 @@
   Lifecycle → Policies → remove the email. Active sessions invalidate
   on the next request.
   ```
+  ```
 
 - [ ] **F5.5** — **Retro-patch all existing admin lifecycle endpoints to call `authenticateAdminRequest`**, replacing direct `verifySignedRequest` calls. F's commit explicitly bundles these patches so no admin endpoint slips through using the old single-path auth. This is a cross-plan retro-patch: the endpoints below are owned by Plans A, D-data, and F itself, but auth wiring is centralised here:
 
-  | File | Owner plan | Current auth | Patch |
-  | --- | --- | --- | --- |
-  | `site/src/routes/api/v1/admin/lifecycle/events/+server.ts` | Plan A | `verifySignedRequest(env.DB, body, 'admin')` | `authenticateAdminRequest(request, env, body)` — POST is signed (CLI); GET may be CF-Access-only |
-  | `site/src/routes/api/v1/admin/lifecycle/state/+server.ts` | Plan A | `verifySignedRequest` (read endpoint, signed today) | `authenticateAdminRequest(request, env, null)` — accept either CF Access JWT or Ed25519 |
-  | `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts` | Plan A | `verifySignedRequest` for PUT; signed for GET | `authenticateAdminRequest` for both methods. PUT requires the body's `signature` field (CLI ingest); GET accepts CF Access (browser proxy) OR signature (CLI replay). |
-  | `site/src/routes/api/v1/admin/lifecycle/clusters/+server.ts` | Plan D-data | `verifySignedRequest` | `authenticateAdminRequest` (browser cluster review UI lives at `/admin/lifecycle/clusters`) |
-  | `site/src/routes/api/v1/admin/lifecycle/clusters/[id]/decide/+server.ts` | Plan D-data | `verifySignedRequest` | `authenticateAdminRequest` (operator clicks Accept/Reject in browser) |
-  | `site/src/routes/api/v1/admin/lifecycle/review/queue/+server.ts` | Plan F (this plan) | (new in F3.3) | `authenticateAdminRequest(request, env, null)` |
-  | `site/src/routes/api/v1/admin/lifecycle/review/[id]/decide/+server.ts` | Plan F (this plan) | (new in F4.1) | `authenticateAdminRequest(request, env, isCli ? body : null)` |
-  | `site/src/routes/api/v1/admin/lifecycle/debug/[...key]/+server.ts` | Plan F (this plan) | (new in F6.5.3) | `authenticateAdminRequest(request, env, null)` |
-  | `site/src/routes/api/v1/admin/lifecycle/debug-bundle-exists/+server.ts` | Plan E | (new in E4.5) | `authenticateAdminRequest(request, env, null)` — browser loader for family page calls this |
-  | `site/src/routes/api/v1/admin/lifecycle/reanalyze/+server.ts` | Plan E (re-analyze CTA target, if implemented) | n/a | `authenticateAdminRequest(request, env, isCli ? body : null)` |
+  | File                                                                     | Owner plan                                     | Current auth                                        | Patch                                                                                                                                                                 |
+  | ------------------------------------------------------------------------ | ---------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `site/src/routes/api/v1/admin/lifecycle/events/+server.ts`               | Plan A                                         | `verifySignedRequest(env.DB, body, 'admin')`        | `authenticateAdminRequest(request, env, body)` — POST is signed (CLI); GET may be CF-Access-only                                                                      |
+  | `site/src/routes/api/v1/admin/lifecycle/state/+server.ts`                | Plan A                                         | `verifySignedRequest` (read endpoint, signed today) | `authenticateAdminRequest(request, env, null)` — accept either CF Access JWT or Ed25519                                                                               |
+  | `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts`          | Plan A                                         | `verifySignedRequest` for PUT; signed for GET       | `authenticateAdminRequest` for both methods. PUT requires the body's `signature` field (CLI ingest); GET accepts CF Access (browser proxy) OR signature (CLI replay). |
+  | `site/src/routes/api/v1/admin/lifecycle/clusters/+server.ts`             | Plan D-data                                    | `verifySignedRequest`                               | `authenticateAdminRequest` (browser cluster review UI lives at `/admin/lifecycle/clusters`)                                                                           |
+  | `site/src/routes/api/v1/admin/lifecycle/clusters/[id]/decide/+server.ts` | Plan D-data                                    | `verifySignedRequest`                               | `authenticateAdminRequest` (operator clicks Accept/Reject in browser)                                                                                                 |
+  | `site/src/routes/api/v1/admin/lifecycle/review/queue/+server.ts`         | Plan F (this plan)                             | (new in F3.3)                                       | `authenticateAdminRequest(request, env, null)`                                                                                                                        |
+  | `site/src/routes/api/v1/admin/lifecycle/review/[id]/decide/+server.ts`   | Plan F (this plan)                             | (new in F4.1)                                       | `authenticateAdminRequest(request, env, isCli ? body : null)`                                                                                                         |
+  | `site/src/routes/api/v1/admin/lifecycle/debug/[...key]/+server.ts`       | Plan F (this plan)                             | (new in F6.5.3)                                     | `authenticateAdminRequest(request, env, null)`                                                                                                                        |
+  | `site/src/routes/api/v1/admin/lifecycle/debug-bundle-exists/+server.ts`  | Plan E                                         | (new in E4.5)                                       | `authenticateAdminRequest(request, env, null)` — browser loader for family page calls this                                                                            |
+  | `site/src/routes/api/v1/admin/lifecycle/reanalyze/+server.ts`            | Plan E (re-analyze CTA target, if implemented) | n/a                                                 | `authenticateAdminRequest(request, env, isCli ? body : null)`                                                                                                         |
 
   **Patch shape (apply identically to each file):**
 
   ```typescript
   // Before:
-  import { verifySignedRequest } from '$lib/server/signature';
+  import { verifySignedRequest } from "$lib/server/signature";
   // ... inside POST handler:
-  const verified = await verifySignedRequest(env.DB, body, 'admin');
+  const verified = await verifySignedRequest(env.DB, body, "admin");
 
   // After:
-  import { authenticateAdminRequest } from '$lib/server/cf-access';
+  import { authenticateAdminRequest } from "$lib/server/cf-access";
   // ... inside handler:
   const auth = await authenticateAdminRequest(request, env, signedBody);
   // auth.kind === 'cf' | 'cli'; downstream uses the unified actorId.
@@ -1061,47 +1188,47 @@
 - [ ] **F5.3** — Tests in `site/tests/server/cf-access.test.ts` for the JWT verifier (use a synthesised RSA keypair to avoid hitting real CF Access JWKs):
 
   ```typescript
-  import { describe, expect, it, beforeAll } from 'vitest';
-  import { verifyCfAccessJwt } from '../../src/lib/server/cf-access';
+  import { beforeAll, describe, expect, it } from "vitest";
+  import { verifyCfAccessJwt } from "../../src/lib/server/cf-access";
 
   // Spin up a stub fetch that returns our test JWK as the "CF Access JWKs"
   // endpoint, sign a JWT with the matching private key, then verify.
   // (full body left to the contributor — pattern matches existing
   // ed25519.test.ts approach in the repo)
 
-  describe('verifyCfAccessJwt', () => {
-    it('rejects when CF_ACCESS_AUD is unset', async () => {
-      const req = new Request('https://x/admin/lifecycle/review', {
-        headers: { 'cf-access-jwt-assertion': 'a.b.c' },
+  describe("verifyCfAccessJwt", () => {
+    it("rejects when CF_ACCESS_AUD is unset", async () => {
+      const req = new Request("https://x/admin/lifecycle/review", {
+        headers: { "cf-access-jwt-assertion": "a.b.c" },
       });
       await expect(
-        verifyCfAccessJwt(req, { CF_ACCESS_TEAM_DOMAIN: 't.c.com' }),
+        verifyCfAccessJwt(req, { CF_ACCESS_TEAM_DOMAIN: "t.c.com" }),
       ).rejects.toThrow(/cf_access_misconfigured/);
     });
 
-    it('rejects when JWT header is missing', async () => {
-      const req = new Request('https://x/admin/lifecycle/review');
+    it("rejects when JWT header is missing", async () => {
+      const req = new Request("https://x/admin/lifecycle/review");
       await expect(
         verifyCfAccessJwt(req, {
-          CF_ACCESS_AUD: 'aud',
-          CF_ACCESS_TEAM_DOMAIN: 't.c.com',
+          CF_ACCESS_AUD: "aud",
+          CF_ACCESS_TEAM_DOMAIN: "t.c.com",
         }),
       ).rejects.toThrow(/cf_access_missing/);
     });
 
-    it('rejects malformed JWT (not 3 parts)', async () => {
-      const req = new Request('https://x/admin/lifecycle/review', {
-        headers: { 'cf-access-jwt-assertion': 'a.b' },
+    it("rejects malformed JWT (not 3 parts)", async () => {
+      const req = new Request("https://x/admin/lifecycle/review", {
+        headers: { "cf-access-jwt-assertion": "a.b" },
       });
       await expect(
         verifyCfAccessJwt(req, {
-          CF_ACCESS_AUD: 'aud',
-          CF_ACCESS_TEAM_DOMAIN: 't.c.com',
+          CF_ACCESS_AUD: "aud",
+          CF_ACCESS_TEAM_DOMAIN: "t.c.com",
         }),
       ).rejects.toThrow(/cf_access_malformed/);
     });
 
-    it('rejects bad audience even with valid signature', async () => {
+    it("rejects bad audience even with valid signature", async () => {
       // generate keypair, sign JWT with aud='wrong', stub global fetch to
       // return the JWK, expect 'cf_access_bad_aud'
     });
@@ -1230,18 +1357,22 @@
 - [ ] **F6.3** — Server loader `site/src/routes/admin/lifecycle/+page.server.ts`:
 
   ```typescript
-  import type { PageServerLoad } from './$types';
-  import { getFirst } from '$lib/server/db';
+  import type { PageServerLoad } from "./$types";
+  import { getFirst } from "$lib/server/db";
 
   export const load: PageServerLoad = async ({ platform }) => {
-    if (!platform) throw new Error('no platform');
+    if (!platform) throw new Error("no platform");
     const env = platform.env;
     const pending = await getFirst<{ n: number }>(
       env.DB,
       `SELECT COUNT(*) AS n FROM pending_review WHERE status = 'pending'`,
       [],
     );
-    const total = await getFirst<{ n: number }>(env.DB, `SELECT COUNT(*) AS n FROM models`, []);
+    const total = await getFirst<{ n: number }>(
+      env.DB,
+      `SELECT COUNT(*) AS n FROM models`,
+      [],
+    );
     const withPending = await getFirst<{ n: number }>(
       env.DB,
       `SELECT COUNT(DISTINCT model_slug) AS n FROM pending_review WHERE status = 'pending'`,
@@ -1268,10 +1399,10 @@
 - [ ] **F6.5.1** — Server loader `site/src/routes/admin/lifecycle/review/+page.server.ts`:
 
   ```typescript
-  import type { PageServerLoad } from './$types';
+  import type { PageServerLoad } from "./$types";
 
   export const load: PageServerLoad = async ({ fetch }) => {
-    const r = await fetch('/api/v1/admin/lifecycle/review/queue');
+    const r = await fetch("/api/v1/admin/lifecycle/review/queue");
     if (!r.ok) throw new Error(`queue fetch ${r.status}`);
     return await r.json() as { entries: ReviewEntry[]; count: number };
   };
@@ -1530,12 +1661,16 @@
 - [ ] **F6.5.3** — R2 proxy endpoint `site/src/routes/api/v1/admin/lifecycle/debug/[...key]/+server.ts`. **Reads from the `LIFECYCLE_BLOBS` R2 binding declared by Plan A in `site/wrangler.toml`** (see Plan A's wrangler patch — `[[r2_buckets]] binding = "LIFECYCLE_BLOBS"`). This is the same binding Plan E's `debug-bundle-exists` endpoint uses; the names MUST match across plans:
 
   ```typescript
-  import type { RequestHandler } from './$types';
-  import { authenticateAdminRequest } from '$lib/server/cf-access';
-  import { errorResponse, ApiError } from '$lib/server/errors';
+  import type { RequestHandler } from "./$types";
+  import { authenticateAdminRequest } from "$lib/server/cf-access";
+  import { ApiError, errorResponse } from "$lib/server/errors";
 
   export const GET: RequestHandler = async ({ request, params, platform }) => {
-    if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    if (!platform) {
+      return errorResponse(
+        new ApiError(500, "no_platform", "platform env missing"),
+      );
+    }
     const env = platform.env;
     try {
       await authenticateAdminRequest(request, env, null);
@@ -1545,17 +1680,21 @@
       // names are wrong. If the binding is missing, fail loudly so deploys
       // catch it before browser traffic does.
       if (!env.LIFECYCLE_BLOBS) {
-        throw new ApiError(500, 'r2_unbound',
-          'LIFECYCLE_BLOBS R2 binding missing — Plan A wrangler.toml not deployed');
+        throw new ApiError(
+          500,
+          "r2_unbound",
+          "LIFECYCLE_BLOBS R2 binding missing — Plan A wrangler.toml not deployed",
+        );
       }
       const obj = await env.LIFECYCLE_BLOBS.get(key);
-      if (!obj) throw new ApiError(404, 'r2_missing', `key ${key} not in R2`);
+      if (!obj) throw new ApiError(404, "r2_missing", `key ${key} not in R2`);
       // Return raw bytes; UI numbers lines client-side.
       return new Response(obj.body, {
         status: 200,
         headers: {
-          'content-type': obj.httpMetadata?.contentType ?? 'text/plain; charset=utf-8',
-          'cache-control': 'private, max-age=300',
+          "content-type": obj.httpMetadata?.contentType ??
+            "text/plain; charset=utf-8",
+          "cache-control": "private, max-age=300",
         },
       });
     } catch (err) {
@@ -1571,19 +1710,19 @@
 - [ ] **F7.1** — Server loader `site/src/routes/admin/lifecycle/status/+page.server.ts` reads `v_lifecycle_state` (defined by Phase A):
 
   ```typescript
-  import type { PageServerLoad } from './$types';
-  import { getAll } from '$lib/server/db';
+  import type { PageServerLoad } from "./$types";
+  import { getAll } from "$lib/server/db";
 
   export interface StateRow {
     model_slug: string;
     task_set_hash: string;
-    step: 'bench' | 'debug' | 'analyze' | 'publish' | 'cycle' | 'other';
+    step: "bench" | "debug" | "analyze" | "publish" | "cycle" | "other";
     last_ts: number;
     last_event_id: number;
   }
 
   export const load: PageServerLoad = async ({ platform }) => {
-    if (!platform) throw new Error('no platform');
+    if (!platform) throw new Error("no platform");
     const rows = await getAll<StateRow>(
       platform.env.DB,
       `SELECT v.model_slug, v.task_set_hash, v.step, v.last_ts, v.last_event_id

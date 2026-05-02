@@ -102,16 +102,16 @@ saved the LLM spend on a failed run.
 
 ## Check matrix (level D, "ingest" section)
 
-| ID                  | Level | Requires                       | What it checks                                                                                                                                                                                                                | Remediation hint                                                                              |
-| ------------------- | ----- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cfg.present`       | A     | —                              | `~/.centralgauge.yml` and/or project `.centralgauge.yml` parses; merged ingest section has `url`, `key_id`, `key_path`, `machine_id`                                                                                          | Run `deno run scripts/provision-ingest-keys.ts` and copy output into `~/.centralgauge.yml`    |
-| `cfg.admin`         | A     | `cfg.present`                  | If admin actions needed (sync-catalog, model auto-register), `admin_key_id` + `admin_key_path` set                                                                                                                            | Add `admin_key_*` to `~/.centralgauge.yml`                                                    |
-| `keys.files`        | A     | `cfg.present`                  | Both key files exist, exactly 32 raw bytes, owner-readable                                                                                                                                                                    | Re-run `scripts/provision-ingest-keys.ts`                                                     |
-| `catalog.local`     | A     | —                              | `site/catalog/{models,model-families,pricing}.yml` parse cleanly; schema valid                                                                                                                                                | Fix YAML syntax; check git status                                                             |
-| `clock.skew`        | A     | —                              | Local clock vs. server `Date` header: skew < 60s (signed_at tolerance window)                                                                                                                                                 | Sync system clock                                                                             |
-| `net.health`        | B     | `cfg.present`                  | `GET ${url}/health` returns 200 within 5s (AbortController)                                                                                                                                                                   | Check URL; check Cloudflare worker dashboard                                                  |
-| `auth.probe`        | C     | `keys.files`, `net.health`     | Signed `POST /api/v1/precheck` with empty payload; server validates signature; returns `auth: ok` and the public key's `role` matches expected (`ingest` / `admin`)                                                           | Public key in D1 doesn't match local private key. Re-provision keys and re-insert into D1.    |
-| `catalog.bench`     | D     | `auth.probe`                   | Same precheck POST also includes the bench's `variants[]` (provider/model/api_model_id) + today's `pricing_version` + the `task_set_hash` bench will use. Server returns `missing_models`, `missing_pricing`, `task_set_current`. All must be empty / true. | Per-failure: `sync-catalog --apply` for catalog drift; SQL UPDATE for task-set current marker |
+| ID              | Level | Requires                   | What it checks                                                                                                                                                                                                                                              | Remediation hint                                                                              |
+| --------------- | ----- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `cfg.present`   | A     | —                          | `~/.centralgauge.yml` and/or project `.centralgauge.yml` parses; merged ingest section has `url`, `key_id`, `key_path`, `machine_id`                                                                                                                        | Run `deno run scripts/provision-ingest-keys.ts` and copy output into `~/.centralgauge.yml`    |
+| `cfg.admin`     | A     | `cfg.present`              | If admin actions needed (sync-catalog, model auto-register), `admin_key_id` + `admin_key_path` set                                                                                                                                                          | Add `admin_key_*` to `~/.centralgauge.yml`                                                    |
+| `keys.files`    | A     | `cfg.present`              | Both key files exist, exactly 32 raw bytes, owner-readable                                                                                                                                                                                                  | Re-run `scripts/provision-ingest-keys.ts`                                                     |
+| `catalog.local` | A     | —                          | `site/catalog/{models,model-families,pricing}.yml` parse cleanly; schema valid                                                                                                                                                                              | Fix YAML syntax; check git status                                                             |
+| `clock.skew`    | A     | —                          | Local clock vs. server `Date` header: skew < 60s (signed_at tolerance window)                                                                                                                                                                               | Sync system clock                                                                             |
+| `net.health`    | B     | `cfg.present`              | `GET ${url}/health` returns 200 within 5s (AbortController)                                                                                                                                                                                                 | Check URL; check Cloudflare worker dashboard                                                  |
+| `auth.probe`    | C     | `keys.files`, `net.health` | Signed `POST /api/v1/precheck` with empty payload; server validates signature; returns `auth: ok` and the public key's `role` matches expected (`ingest` / `admin`)                                                                                         | Public key in D1 doesn't match local private key. Re-provision keys and re-insert into D1.    |
+| `catalog.bench` | D     | `auth.probe`               | Same precheck POST also includes the bench's `variants[]` (provider/model/api_model_id) + today's `pricing_version` + the `task_set_hash` bench will use. Server returns `missing_models`, `missing_pricing`, `task_set_current`. All must be empty / true. | Per-failure: `sync-catalog --apply` for catalog drift; SQL UPDATE for task-set current marker |
 
 ### Design choices
 
@@ -145,24 +145,24 @@ export type CheckLevel = "A" | "B" | "C" | "D";
 export type CheckStatus = "passed" | "failed" | "warning" | "skipped";
 
 export interface CheckResult {
-  id: string;                    // e.g. "auth.probe"
+  id: string; // e.g. "auth.probe"
   level: CheckLevel;
   status: CheckStatus;
-  message: string;               // one-line human summary
+  message: string; // one-line human summary
   remediation?: {
-    summary: string;             // human "what to do"
-    command?: string;            // exact copy-paste cmd, when applicable
+    summary: string; // human "what to do"
+    command?: string; // exact copy-paste cmd, when applicable
     autoRepairable: boolean;
   };
-  details?: Record<string, unknown>;  // structured payload (e.g. missing_models[])
+  details?: Record<string, unknown>; // structured payload (e.g. missing_models[])
   durationMs: number;
 }
 
 export interface DoctorReport {
   schemaVersion: 1;
   section: "ingest" | "containers" | "llm" | "all";
-  generatedAt: string;           // ISO
-  ok: boolean;                   // false if any failed (warnings allowed)
+  generatedAt: string; // ISO
+  ok: boolean; // false if any failed (warnings allowed)
   checks: CheckResult[];
   summary: { passed: number; failed: number; warning: number; skipped: number };
 }
@@ -245,7 +245,7 @@ if (options.ingest !== false) {
     formatReportToTerminal(report);
     console.error(colors.red(
       "\n[FAIL] ingest precheck failed — bench aborted. " +
-      "Fix above or pass --no-ingest to skip ingest entirely."
+        "Fix above or pass --no-ingest to skip ingest entirely.",
     ));
     Deno.exit(1);
   }
@@ -259,18 +259,22 @@ Pre-ingest re-check (after all runs complete, before
 if (options.ingest !== false) {
   const recheck = await runDoctor({
     section: "ingest",
-    levels: ["B", "C"],     // skip static + catalog (already validated at start)
-    variants, pricingVersion, tasksDir,
-    repair: false,           // never auto-repair pre-ingest
+    levels: ["B", "C"], // skip static + catalog (already validated at start)
+    variants,
+    pricingVersion,
+    tasksDir,
+    repair: false, // never auto-repair pre-ingest
   });
   if (!recheck.ok) {
     console.warn(colors.yellow(
-      `[WARN] pre-ingest re-check failed; results saved to ${resultFilePaths.join(", ")}.`
+      `[WARN] pre-ingest re-check failed; results saved to ${
+        resultFilePaths.join(", ")
+      }.`,
     ));
     console.warn(colors.gray(
-      `       Replay later: deno task start ingest <path> --yes`
+      `       Replay later: deno task start ingest <path> --yes`,
     ));
-    return;  // skip ingest, exit cleanly with results on disk
+    return; // skip ingest, exit cleanly with results on disk
   }
 }
 ```
@@ -348,9 +352,9 @@ site/tests/api/precheck.test.ts                 # worker unit test
   step needs an admin API surface. Today `task_sets.is_current` is set via
   raw SQL only. We'll need either:
   (a) a new `POST /api/v1/admin/catalog/task-sets/[hash]/current`
-      authenticated by admin key, or
+  authenticated by admin key, or
   (b) extend the existing `POST /api/v1/admin/catalog/task-sets` to accept
-      a `set_current: true` flag.
+  a `set_current: true` flag.
   Decide during plan-writing.
 
 - **Clock-skew tolerance.** Server's `signed_at` validation window is
@@ -364,12 +368,12 @@ site/tests/api/precheck.test.ts                 # worker unit test
 
 ## Estimated cost
 
-| Item                                                            | LoC est.  |
-| --------------------------------------------------------------- | --------- |
-| Worker endpoint + tests                                         | ~150      |
-| Engine + types + formatter                                      | ~250      |
-| Ingest section (8 checks + tests)                               | ~600      |
-| CLI command                                                     | ~80       |
-| Bench integration + tests                                       | ~120      |
-| Auto-repair (`--repair`) + allowlist                            | ~150      |
-| **Total**                                                       | **~1350** |
+| Item                                 | LoC est.  |
+| ------------------------------------ | --------- |
+| Worker endpoint + tests              | ~150      |
+| Engine + types + formatter           | ~250      |
+| Ingest section (8 checks + tests)    | ~600      |
+| CLI command                          | ~80       |
+| Bench integration + tests            | ~120      |
+| Auto-repair (`--repair`) + allowlist | ~150      |
+| **Total**                            | **~1350** |

@@ -12,7 +12,7 @@
 async function appendEvent(
   db: D1Database,
   input: AppendEventInput,
-): Promise<{ id: number }>
+): Promise<{ id: number }>;
 ```
 
 where `AppendEventInput` carries `{ event_type, model_slug, task_set_hash, actor, actor_id, payload, tool_versions?, envelope? }` — `payload` is a **plain object** (not a JSON-string). The helper serializes `payload` / `tool_versions` / `envelope` and computes `payload_hash` internally. Every concept-write path in this plan therefore writes objects, not strings; do NOT pre-`JSON.stringify(payload)` before calling `appendEvent`. CLI code (e.g., interactive `lifecycle cluster review` from Plan D-data) imports `appendEvent` from `src/lifecycle/event-log.ts`, which signs and POSTs to `/api/v1/admin/lifecycle/events` instead — same input shape, different transport.
@@ -34,6 +34,7 @@ where `AppendEventInput` carries `{ event_type, model_slug, task_set_hash, actor
 > **Schema name reservation — `AnalyzerEntrySchema`.** The schema lives in `src/verify/schema.ts` (this plan's location) and is the canonical definition. **Plan F's confidence scorer (`src/lifecycle/confidence.ts`) imports `AnalyzerEntrySchema` from `src/verify/schema.ts`; it does NOT redefine the schema.** A duplicate definition in `confidence.ts` would drift independently and silently accept entries the analyzer would reject. If a future change to confidence scoring requires fields outside this schema (e.g., a per-entry `_meta` envelope), extend `AnalyzerEntrySchema` here and update both consumers — do not fork it.
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\verify\schema.ts` (new)
 - `U:\Git\CentralGauge\src\verify\types.ts` (modify)
 - `U:\Git\CentralGauge\tests\unit\verify\analyzer-schema.test.ts` (new)
@@ -177,7 +178,7 @@ Deno.test("ModelShortcomingSchema: accepts valid concept_slug_proposed + null ma
     alConcept: "flowfield",
     description: "Did not call CalcFields",
     generatedCode: "var x: Decimal;",
-    correctPattern: "Rec.CalcFields(\"Total\");",
+    correctPattern: 'Rec.CalcFields("Total");',
     confidence: "high",
     concept_slug_proposed: "flowfield-calcfields-requirement",
     concept_slug_existing_match: null,
@@ -277,6 +278,7 @@ All four schema tests must pass.
 ## Task 2: Wire `parseAnalysisResponse` to use the zod schema; carry new fields through
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\verify\analyzer.ts` (modify)
 - `U:\Git\CentralGauge\tests\unit\verify\analyzer.test.ts` (extend)
 
@@ -285,15 +287,12 @@ All four schema tests must pass.
 - [ ] **2.1** Add the import at the top of `src/verify/analyzer.ts` (after the existing imports, in the order required by CLAUDE.md):
 
 ```typescript
-import {
-  AnalysisOutputSchema,
-  type ModelShortcomingParsed,
-} from "./schema.ts";
+import { AnalysisOutputSchema, type ModelShortcomingParsed } from "./schema.ts";
 ```
 
 - [ ] **2.2** Replace the body of `parseAnalysisResponse` (lines 252–294) with a zod-driven path. Keep the existing fallback block (`return ModelShortcomingResult` with `concept: "parse-failure"`) for the case where neither `safeParse` nor JSON.parse succeed.
 
-```typescript
+````typescript
 export function parseAnalysisResponse(
   response: string,
   task: FailingTask,
@@ -316,9 +315,7 @@ export function parseAnalysisResponse(
 
   if (parsed.data.outcome === "fixable") {
     const isTaskYamlFix = parsed.data.affectedFile === "task_yaml";
-    const correctFilePath = isTaskYamlFix
-      ? task.taskYamlPath
-      : task.testAlPath;
+    const correctFilePath = isTaskYamlFix ? task.taskYamlPath : task.testAlPath;
     return {
       outcome: "fixable",
       taskId: task.taskId,
@@ -378,7 +375,7 @@ function parseFallback(
     similarity_score: null,
   };
 }
-```
+````
 
 - [ ] **2.3** Add three test cases to `tests/unit/verify/analyzer.test.ts` (do not delete existing ones — they still pass once you add the new fields to the LLM-response fixtures' shortcoming branch):
 
@@ -392,7 +389,7 @@ Deno.test("parseAnalysisResponse: carries concept_slug_proposed through", () => 
     alConcept: "flowfield",
     description: "did not call CalcFields",
     generatedCode: "Rec.Total",
-    correctPattern: "Rec.CalcFields(\"Total\"); Rec.Total",
+    correctPattern: 'Rec.CalcFields("Total"); Rec.Total',
     confidence: "high",
     concept_slug_proposed: "flowfield-calcfields-requirement",
     concept_slug_existing_match: null,
@@ -402,7 +399,10 @@ Deno.test("parseAnalysisResponse: carries concept_slug_proposed through", () => 
   if (!isModelShortcomingResult(result)) {
     throw new Error("expected model_shortcoming");
   }
-  assertEquals(result.concept_slug_proposed, "flowfield-calcfields-requirement");
+  assertEquals(
+    result.concept_slug_proposed,
+    "flowfield-calcfields-requirement",
+  );
   assertEquals(result.concept_slug_existing_match, null);
   assertEquals(result.similarity_score, null);
 });
@@ -423,7 +423,9 @@ Deno.test("parseAnalysisResponse: carries existing-match + similarity through", 
     similarity_score: 0.91,
   });
   const result = parseAnalysisResponse(llmResponse, task);
-  if (!isModelShortcomingResult(result)) throw new Error("expected shortcoming");
+  if (!isModelShortcomingResult(result)) {
+    throw new Error("expected shortcoming");
+  }
   assertEquals(
     result.concept_slug_existing_match,
     "reserved-keyword-as-parameter-name",
@@ -434,7 +436,9 @@ Deno.test("parseAnalysisResponse: carries existing-match + similarity through", 
 Deno.test("parseAnalysisResponse: parse-failure fallback fills new fields", () => {
   const task = createMockTask();
   const result = parseAnalysisResponse("not json at all", task);
-  if (!isModelShortcomingResult(result)) throw new Error("expected shortcoming");
+  if (!isModelShortcomingResult(result)) {
+    throw new Error("expected shortcoming");
+  }
   assertEquals(result.concept, "parse-failure");
   assertEquals(result.concept_slug_proposed, "parse-failure");
   assertEquals(result.concept_slug_existing_match, null);
@@ -456,6 +460,7 @@ deno fmt src/verify/analyzer.ts tests/unit/verify/analyzer.test.ts
 ## Task 3: Update analyzer system prompt to inject top-N existing concepts
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\verify\analyzer.ts` (modify)
 - `U:\Git\CentralGauge\src\verify\concept-fetcher.ts` (new)
 - `U:\Git\CentralGauge\tests\unit\verify\concept-fetcher.test.ts` (new)
@@ -616,13 +621,12 @@ export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
 
 ```typescript
 // Add inside analyzer.ts (above class FailureAnalyzer):
-import {
-  type ConceptSummary,
-  fetchRecentConcepts,
-} from "./concept-fetcher.ts";
+import { type ConceptSummary, fetchRecentConcepts } from "./concept-fetcher.ts";
 
 function renderConceptsBlock(concepts: ConceptSummary[]): string {
-  if (concepts.length === 0) return "(registry empty — propose a fresh kebab-case slug)";
+  if (concepts.length === 0) {
+    return "(registry empty — propose a fresh kebab-case slug)";
+  }
   return concepts
     .map((c) => `- ${c.slug}: ${c.display_name} — ${c.description}`)
     .join("\n");
@@ -654,7 +658,8 @@ only when no existing concept fits. Slug regex: ^[a-z0-9][a-z0-9-]*[a-z0-9]$.`;
 // Inside analyzeTask, BEFORE building the LLMRequest:
 const concepts = await fetchRecentConcepts({
   recent: this.config.recentConceptCount ?? 20,
-  baseUrl: this.config.registryBaseUrl ?? "https://centralgauge.sshadows.workers.dev",
+  baseUrl: this.config.registryBaseUrl ??
+    "https://centralgauge.sshadows.workers.dev",
 });
 const systemPrompt = buildSystemPrompt(concepts);
 
@@ -711,6 +716,7 @@ deno fmt src/verify/analyzer.ts src/verify/concept-fetcher.ts tests/unit/verify/
 **Why before endpoint changes:** Both the batch endpoint (Task 5) and the GET concepts endpoints (Task 6) call this helper. Land the helper + tests first so subsequent tasks can wire it without conditional branches.
 
 **Files:**
+
 - `U:\Git\CentralGauge\site\src\lib\server\concept-cache.ts` (new)
 - `U:\Git\CentralGauge\site\tests\lib\concept-cache.test.ts` (new)
 
@@ -730,7 +736,7 @@ deno fmt src/verify/analyzer.ts src/verify/concept-fetcher.ts tests/unit/verify/
  *  - lifecycle cluster review CLI (D7, future) for concept.merged / concept.split
  */
 
-const CACHE_NAME = 'cg-concepts';
+const CACHE_NAME = "cg-concepts";
 
 /**
  * Delete every cached response for the given slug + aliases.
@@ -742,7 +748,7 @@ const CACHE_NAME = 'cg-concepts';
 export async function invalidateConcept(
   slug: string,
   aliases: string[] = [],
-  origin = 'http://internal.invalid'
+  origin = "http://internal.invalid",
 ): Promise<void> {
   const cache = await caches.open(CACHE_NAME);
   const targets = [slug, ...aliases];
@@ -763,39 +769,42 @@ export const CONCEPT_CACHE_NAME = CACHE_NAME;
 
 ```typescript
 // U:\Git\CentralGauge\site\tests\lib\concept-cache.test.ts
-import { describe, it, expect } from 'vitest';
-import { invalidateConcept, CONCEPT_CACHE_NAME } from '../../src/lib/server/concept-cache';
+import { describe, expect, it } from "vitest";
+import {
+  CONCEPT_CACHE_NAME,
+  invalidateConcept,
+} from "../../src/lib/server/concept-cache";
 
-describe('invalidateConcept', () => {
-  it('deletes the canonical slug entry', async () => {
+describe("invalidateConcept", () => {
+  it("deletes the canonical slug entry", async () => {
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    const url = 'http://internal.invalid/api/v1/concepts/flowfield-calcfields';
-    await cache.put(new Request(url), new Response('cached'));
+    const url = "http://internal.invalid/api/v1/concepts/flowfield-calcfields";
+    await cache.put(new Request(url), new Response("cached"));
     expect(await cache.match(new Request(url))).toBeTruthy();
 
-    await invalidateConcept('flowfield-calcfields');
+    await invalidateConcept("flowfield-calcfields");
     expect(await cache.match(new Request(url))).toBeUndefined();
   });
 
-  it('deletes every alias variant', async () => {
+  it("deletes every alias variant", async () => {
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    const canonical = 'http://internal.invalid/api/v1/concepts/canon';
-    const alias = 'http://internal.invalid/api/v1/concepts/old-name';
-    await cache.put(new Request(canonical), new Response('a'));
-    await cache.put(new Request(alias), new Response('b'));
+    const canonical = "http://internal.invalid/api/v1/concepts/canon";
+    const alias = "http://internal.invalid/api/v1/concepts/old-name";
+    await cache.put(new Request(canonical), new Response("a"));
+    await cache.put(new Request(alias), new Response("b"));
 
-    await invalidateConcept('canon', ['old-name']);
+    await invalidateConcept("canon", ["old-name"]);
 
     expect(await cache.match(new Request(canonical))).toBeUndefined();
     expect(await cache.match(new Request(alias))).toBeUndefined();
   });
 
-  it('also clears the list endpoint cache', async () => {
+  it("also clears the list endpoint cache", async () => {
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    const list = 'http://internal.invalid/api/v1/concepts';
-    await cache.put(new Request(list), new Response('list'));
+    const list = "http://internal.invalid/api/v1/concepts";
+    await cache.put(new Request(list), new Response("list"));
 
-    await invalidateConcept('any');
+    await invalidateConcept("any");
     expect(await cache.match(new Request(list))).toBeUndefined();
   });
 });
@@ -812,6 +821,7 @@ cd U:/Git/CentralGauge/site && npm run build && npm test -- tests/lib/concept-ca
 ## Task 5: Site — Extend `/api/v1/shortcomings/batch` endpoint
 
 **Files:**
+
 - `U:\Git\CentralGauge\site\src\routes\api\v1\shortcomings\batch\+server.ts` (modify)
 - `U:\Git\CentralGauge\site\src\lib\server\concept-resolver.ts` (new)
 - `U:\Git\CentralGauge\site\tests\api\shortcomings-batch.test.ts` (extend)
@@ -843,24 +853,24 @@ cd U:/Git/CentralGauge/site && npm run build && npm test -- tests/lib/concept-ca
  * bug in an earlier draft; do not reintroduce.
  */
 
-import type { D1Database } from '@cloudflare/workers-types';
-import type { AppendEventInput } from './lifecycle-event-log';
+import type { D1Database } from "@cloudflare/workers-types";
+import type { AppendEventInput } from "./lifecycle-event-log";
 
 export interface ResolveInput {
   proposed_slug: string;
   existing_match: string | null;
   similarity_score: number | null;
-  display_name: string;       // from item.concept (analyzer free-text)
+  display_name: string; // from item.concept (analyzer free-text)
   al_concept: string;
   description: string;
   correct_pattern: string;
-  analyzer_model: string;     // who proposed (for concept.created / concept.aliased payload)
+  analyzer_model: string; // who proposed (for concept.created / concept.aliased payload)
 }
 
-export type ResolveAction = 'aliased' | 'created' | 'pending';
+export type ResolveAction = "aliased" | "created" | "pending";
 
 export interface ResolveResult {
-  concept_id: number | null;  // null when action === 'pending'
+  concept_id: number | null; // null when action === 'pending'
   action: ResolveAction;
   emitted_event_id: number | null; // event row id for 'aliased' / 'created'; null for 'pending'
 }
@@ -873,7 +883,9 @@ const REVIEW_LOWER_BOUND = 0.70;
  * `appendEvent(db, AppendEventInput)` from `$lib/server/lifecycle-event-log`.
  * Tests pass a fake that captures inputs.
  */
-export type AppendEventFn = (input: AppendEventInput) => Promise<{ id: number }>;
+export type AppendEventFn = (
+  input: AppendEventInput,
+) => Promise<{ id: number }>;
 
 export async function resolveConcept(
   db: D1Database,
@@ -888,16 +900,18 @@ export async function resolveConcept(
   // Tier 1: auto-merge — existing match passed-through (sim ≥ 0.85).
   if (input.existing_match && sim >= AUTO_MERGE_THRESHOLD) {
     const row = await db
-      .prepare(`SELECT id FROM concepts WHERE slug = ? AND superseded_by IS NULL`)
+      .prepare(
+        `SELECT id FROM concepts WHERE slug = ? AND superseded_by IS NULL`,
+      )
       .bind(input.existing_match)
       .first<{ id: number }>();
     if (row) {
       // Emit concept.aliased FIRST (event id needed for concept_aliases.alias_event_id).
       const ev = await appendEvent({
-        event_type: 'concept.aliased',
+        event_type: "concept.aliased",
         model_slug: modelSlug,
         task_set_hash: taskSetHash,
-        actor: 'operator',
+        actor: "operator",
         actor_id: null,
         payload: {
           alias_slug: input.proposed_slug,
@@ -923,7 +937,7 @@ export async function resolveConcept(
           ev.id,
         )
         .run();
-      return { concept_id: row.id, action: 'aliased', emitted_event_id: ev.id };
+      return { concept_id: row.id, action: "aliased", emitted_event_id: ev.id };
     }
     // Existing slug claimed by analyzer but not in registry — fall through to create.
   }
@@ -932,7 +946,7 @@ export async function resolveConcept(
   // analysis.rejected when the operator decides. The caller is responsible for
   // INSERTing pending_review with a real analysis_event_id (NOT a 0 placeholder).
   if (sim >= REVIEW_LOWER_BOUND && sim < AUTO_MERGE_THRESHOLD) {
-    return { concept_id: null, action: 'pending', emitted_event_id: null };
+    return { concept_id: null, action: "pending", emitted_event_id: null };
   }
 
   // Tier 3: auto-create. INSERT concept first (need concept_id for the event payload),
@@ -943,7 +957,7 @@ export async function resolveConcept(
                              canonical_correct_pattern, first_seen, last_seen,
                              provenance_event_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
-       RETURNING id`
+       RETURNING id`,
     )
     .bind(
       input.proposed_slug,
@@ -955,15 +969,15 @@ export async function resolveConcept(
       nowIso,
     )
     .first<{ id: number }>();
-  if (!inserted) throw new Error('concept insert returned no row');
+  if (!inserted) throw new Error("concept insert returned no row");
 
   // Now that we have the new concept_id, emit concept.created with it in the payload
   // (per strategic plan: payload = { concept_id, slug, llm_proposed_slug, similarity_to_nearest, analyzer_model }).
   const ev = await appendEvent({
-    event_type: 'concept.created',
+    event_type: "concept.created",
     model_slug: modelSlug,
     task_set_hash: taskSetHash,
-    actor: 'operator',
+    actor: "operator",
     actor_id: null,
     payload: {
       concept_id: inserted.id,
@@ -980,7 +994,11 @@ export async function resolveConcept(
     .bind(ev.id, inserted.id)
     .run();
 
-  return { concept_id: inserted.id, action: 'created', emitted_event_id: ev.id };
+  return {
+    concept_id: inserted.id,
+    action: "created",
+    emitted_event_id: ev.id,
+  };
 }
 
 export const _thresholds = { AUTO_MERGE_THRESHOLD, REVIEW_LOWER_BOUND };
@@ -990,10 +1008,10 @@ export const _thresholds = { AUTO_MERGE_THRESHOLD, REVIEW_LOWER_BOUND };
 
 ```typescript
 // U:\Git\CentralGauge\site\tests\lib\concept-resolver.test.ts
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resolveConcept } from '../../src/lib/server/concept-resolver';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resolveConcept } from "../../src/lib/server/concept-resolver";
+import { resetDb } from "../utils/reset-db";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -1005,130 +1023,150 @@ beforeEach(async () => {
 let nextEventId = 1;
 // fakeAppend matches the canonical AppendEventInput shape: payload is an object,
 // not a JSON string. The real helper computes payload_hash + serializes internally.
-const fakeAppend = async (e: { event_type: string; payload: Record<string, unknown> }) =>
-  ({ id: nextEventId++ });
+const fakeAppend = async (
+  e: { event_type: string; payload: Record<string, unknown> },
+) => ({ id: nextEventId++ });
 
-describe('resolveConcept', () => {
-  it('aliases an existing concept (action=aliased) when existing_match + sim ≥ 0.85', async () => {
+describe("resolveConcept", () => {
+  it("aliases an existing concept (action=aliased) when existing_match + sim ≥ 0.85", async () => {
     await env.DB.prepare(
       `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
-       VALUES (1, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd', '2026-04-29', '2026-04-29')`
+       VALUES (1, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd', '2026-04-29', '2026-04-29')`,
     ).run();
     const res = await resolveConcept(
       env.DB,
       {
-        proposed_slug: 'flowfield-calc',
-        existing_match: 'flowfield-calcfields',
+        proposed_slug: "flowfield-calc",
+        existing_match: "flowfield-calcfields",
         similarity_score: 0.91,
-        display_name: 'FlowField',
-        al_concept: 'flowfield',
-        description: 'd',
-        correct_pattern: 'p',
-        analyzer_model: 'claude-opus-4-6',
+        display_name: "FlowField",
+        al_concept: "flowfield",
+        description: "d",
+        correct_pattern: "p",
+        analyzer_model: "claude-opus-4-6",
       },
-      '2026-04-29T00:00:00Z',
+      "2026-04-29T00:00:00Z",
       fakeAppend,
-      'anthropic/claude-opus-4-6',
-      'ts-1',
+      "anthropic/claude-opus-4-6",
+      "ts-1",
     );
-    expect(res.action).toBe('aliased');
+    expect(res.action).toBe("aliased");
     expect(res.concept_id).toBe(1);
-    expect(res.emitted_event_id).toBeTypeOf('number');
+    expect(res.emitted_event_id).toBeTypeOf("number");
     // Alias row inserted with alias_event_id = the captured event id.
     const alias = await env.DB.prepare(
       `SELECT alias_event_id FROM concept_aliases WHERE alias_slug = ?`,
-    ).bind('flowfield-calc').first<{ alias_event_id: number }>();
+    ).bind("flowfield-calc").first<{ alias_event_id: number }>();
     expect(alias?.alias_event_id).toBe(res.emitted_event_id);
   });
 
-  it('returns pending when similarity in review band [0.70, 0.85)', async () => {
+  it("returns pending when similarity in review band [0.70, 0.85)", async () => {
     const res = await resolveConcept(
       env.DB,
       {
-        proposed_slug: 'flowfield-calc',
+        proposed_slug: "flowfield-calc",
         existing_match: null,
         similarity_score: 0.78,
-        display_name: 'x', al_concept: 'y', description: 'z',
-        correct_pattern: 'p', analyzer_model: 'm',
+        display_name: "x",
+        al_concept: "y",
+        description: "z",
+        correct_pattern: "p",
+        analyzer_model: "m",
       },
-      '2026-04-29T00:00:00Z',
+      "2026-04-29T00:00:00Z",
       fakeAppend,
-      'm',
-      't',
+      "m",
+      "t",
     );
-    expect(res.action).toBe('pending');
+    expect(res.action).toBe("pending");
     expect(res.concept_id).toBeNull();
   });
 
-  it('creates a new concept when similarity < 0.70', async () => {
+  it("creates a new concept when similarity < 0.70", async () => {
     const res = await resolveConcept(
       env.DB,
       {
-        proposed_slug: 'fresh-concept',
+        proposed_slug: "fresh-concept",
         existing_match: null,
         similarity_score: 0.42,
-        display_name: 'Fresh',
-        al_concept: 'misc',
-        description: 'd',
-        correct_pattern: 'p',
-        analyzer_model: 'm',
+        display_name: "Fresh",
+        al_concept: "misc",
+        description: "d",
+        correct_pattern: "p",
+        analyzer_model: "m",
       },
-      '2026-04-29T00:00:00Z',
+      "2026-04-29T00:00:00Z",
       fakeAppend,
-      'm',
-      't',
+      "m",
+      "t",
     );
-    expect(res.action).toBe('created');
+    expect(res.action).toBe("created");
     expect(res.concept_id).toBeGreaterThan(0);
-    const row = await env.DB.prepare(`SELECT slug, provenance_event_id FROM concepts WHERE id = ?`)
-      .bind(res.concept_id!).first<{ slug: string; provenance_event_id: number | null }>();
-    expect(row?.slug).toBe('fresh-concept');
+    const row = await env.DB.prepare(
+      `SELECT slug, provenance_event_id FROM concepts WHERE id = ?`,
+    )
+      .bind(res.concept_id!).first<
+      { slug: string; provenance_event_id: number | null }
+    >();
+    expect(row?.slug).toBe("fresh-concept");
     // provenance_event_id is back-patched to the captured concept.created event id.
     expect(row?.provenance_event_id).toBe(res.emitted_event_id);
   });
 
-  it('concept.created payload carries concept_id (per strategic appendix)', async () => {
-    const captured: Array<{ event_type: string; payload: Record<string, unknown> }> = [];
-    const captureAppend = async (e: { event_type: string; payload: Record<string, unknown> }) => {
+  it("concept.created payload carries concept_id (per strategic appendix)", async () => {
+    const captured: Array<
+      { event_type: string; payload: Record<string, unknown> }
+    > = [];
+    const captureAppend = async (
+      e: { event_type: string; payload: Record<string, unknown> },
+    ) => {
       captured.push(e);
       return { id: nextEventId++ };
     };
     const res = await resolveConcept(
       env.DB,
       {
-        proposed_slug: 'fresh-with-id', existing_match: null, similarity_score: 0.3,
-        display_name: 'X', al_concept: 'a', description: 'd', correct_pattern: 'p',
-        analyzer_model: 'claude-opus-4-6',
+        proposed_slug: "fresh-with-id",
+        existing_match: null,
+        similarity_score: 0.3,
+        display_name: "X",
+        al_concept: "a",
+        description: "d",
+        correct_pattern: "p",
+        analyzer_model: "claude-opus-4-6",
       },
-      '2026-04-29T00:00:00Z',
+      "2026-04-29T00:00:00Z",
       captureAppend,
-      'm',
-      't',
+      "m",
+      "t",
     );
-    expect(res.action).toBe('created');
-    const evt = captured.find((c) => c.event_type === 'concept.created');
+    expect(res.action).toBe("created");
+    const evt = captured.find((c) => c.event_type === "concept.created");
     expect(evt).toBeDefined();
     expect(evt!.payload.concept_id).toBe(res.concept_id);
-    expect(evt!.payload.slug).toBe('fresh-with-id');
-    expect(evt!.payload.analyzer_model).toBe('claude-opus-4-6');
+    expect(evt!.payload.slug).toBe("fresh-with-id");
+    expect(evt!.payload.analyzer_model).toBe("claude-opus-4-6");
   });
 
-  it('creates when similarity is null (no analyzer match attempt)', async () => {
+  it("creates when similarity is null (no analyzer match attempt)", async () => {
     const res = await resolveConcept(
       env.DB,
       {
-        proposed_slug: 'never-seen',
+        proposed_slug: "never-seen",
         existing_match: null,
         similarity_score: null,
-        display_name: 'N', al_concept: 'a', description: 'd',
-        correct_pattern: 'p', analyzer_model: 'm',
+        display_name: "N",
+        al_concept: "a",
+        description: "d",
+        correct_pattern: "p",
+        analyzer_model: "m",
       },
-      '2026-04-29T00:00:00Z',
+      "2026-04-29T00:00:00Z",
       fakeAppend,
-      'm',
-      't',
+      "m",
+      "t",
     );
-    expect(res.action).toBe('created');
+    expect(res.action).toBe("created");
   });
 });
 ```
@@ -1204,10 +1242,12 @@ return {
 
 ```typescript
 // Replace the existing for (const item of shortcomings) block:
-const taskSetHash =
-  typeof payload.task_set_hash === 'string' ? payload.task_set_hash : 'unknown';
-const analyzerModel =
-  typeof payload.analyzer_model === 'string' ? payload.analyzer_model : modelSlug;
+const taskSetHash = typeof payload.task_set_hash === "string"
+  ? payload.task_set_hash
+  : "unknown";
+const analyzerModel = typeof payload.analyzer_model === "string"
+  ? payload.analyzer_model
+  : modelSlug;
 
 const writeNow = new Date().toISOString();
 const writeNowMs = Date.now();
@@ -1217,10 +1257,10 @@ const invalidationSlugs: string[] = [];
 // analysis_event_id to reference. Captured id is reused by the per-item loop
 // for both shortcomings.analysis_event_id and pending_review.analysis_event_id.
 const analysisEvt = await appendEvent(db, {
-  event_type: 'analysis.completed',
+  event_type: "analysis.completed",
   model_slug: modelSlug,
   task_set_hash: taskSetHash,
-  actor: 'operator',
+  actor: "operator",
   actor_id: null,
   payload: {
     analyzer_model: analyzerModel,
@@ -1257,7 +1297,7 @@ for (const item of shortcomings) {
       taskSetHash,
     );
 
-    if (resolved.action === 'pending') {
+    if (resolved.action === "pending") {
       // STEP 4: pending_review row references the real analysis_event_id from step 1.
       // No `0` placeholder — the FK NOT NULL REFERENCES lifecycle_events(id) holds.
       // CANONICAL payload_json shape (also used by Plan D-data's enqueueReviewTx
@@ -1272,7 +1312,7 @@ for (const item of shortcomings) {
       await db.prepare(
         `INSERT INTO pending_review (analysis_event_id, model_slug, concept_slug_proposed,
                                      payload_json, confidence, created_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+         VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
       ).bind(
         analysisEventId, // real event id, NOT a 0 placeholder.
         modelSlug,
@@ -1286,7 +1326,7 @@ for (const item of shortcomings) {
     }
 
     conceptId = resolved.concept_id;
-    if (resolved.action === 'created' || resolved.action === 'aliased') {
+    if (resolved.action === "created" || resolved.action === "aliased") {
       // Cache invalidation needed for both bands — a freshly-aliased slug shouldn't
       // serve stale 5-min results from /api/v1/concepts/<aliased-slug>.
       invalidationSlugs.push(item.concept_slug_proposed);
@@ -1308,13 +1348,22 @@ for (const item of shortcomings) {
        last_seen = excluded.last_seen,
        concept_id = COALESCE(excluded.concept_id, concept_id),
        analysis_event_id = excluded.analysis_event_id
-     RETURNING id`
+     RETURNING id`,
   ).bind(
-    modelId, item.al_concept, item.concept, item.description, item.correct_pattern,
-    r2Key, errorCodesJson, now, now, conceptId, analysisEventId,
+    modelId,
+    item.al_concept,
+    item.concept,
+    item.description,
+    item.correct_pattern,
+    r2Key,
+    errorCodesJson,
+    now,
+    now,
+    conceptId,
+    analysisEventId,
   ).first<{ id: number }>();
 
-  if (!row) throw new ApiError(500, 'db_error', 'failed to upsert shortcoming');
+  if (!row) throw new ApiError(500, "db_error", "failed to upsert shortcoming");
   upserted++;
 
   // Existing occurrence-batch logic stays unchanged below this point.
@@ -1336,58 +1385,78 @@ for (const slug of invalidationSlugs) {
 ```typescript
 // Append at bottom of describe('POST /api/v1/shortcomings/batch'):
 
-it('aliases existing concept when similarity ≥ 0.85 (auto-merge → emits concept.aliased)', async () => {
+it("aliases existing concept when similarity ≥ 0.85 (auto-merge → emits concept.aliased)", async () => {
   await env.DB.prepare(
     `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
-     VALUES (10, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd', '2026-04-29', '2026-04-29')`
+     VALUES (10, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd', '2026-04-29', '2026-04-29')`,
   ).run();
 
-  const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+  const { keyId, keypair } = await registerMachineKey(
+    "verifier-machine",
+    "verifier",
+  );
   const item = {
     ...SAMPLE_SHORTCOMING,
-    concept_slug_proposed: 'flowfield-calc',
-    concept_slug_existing_match: 'flowfield-calcfields',
+    concept_slug_proposed: "flowfield-calc",
+    concept_slug_existing_match: "flowfield-calcfields",
     similarity_score: 0.93,
   };
-  const res = await SELF.fetch(await shortcomingsBatchRequest(
-    { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'm' },
-    keyId, keypair,
-  ));
+  const res = await SELF.fetch(
+    await shortcomingsBatchRequest(
+      { model_slug: "sonnet-4.7", shortcomings: [item], analyzer_model: "m" },
+      keyId,
+      keypair,
+    ),
+  );
   expect(res.status).toBe(200);
   const row = await env.DB
-    .prepare(`SELECT concept_id, analysis_event_id FROM shortcomings WHERE al_concept = 'interfaces'`)
+    .prepare(
+      `SELECT concept_id, analysis_event_id FROM shortcomings WHERE al_concept = 'interfaces'`,
+    )
     .first<{ concept_id: number; analysis_event_id: number }>();
   expect(row?.concept_id).toBe(10);
   // analysis_event_id is the real id of the analysis.completed event written upstream of resolveConcept.
   expect(row?.analysis_event_id).toBeGreaterThan(0);
   // concept.aliased event written; concept.created NOT written for the auto-merge band.
   const aliased = await env.DB
-    .prepare(`SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.aliased'`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.aliased'`,
+    )
     .first<{ n: number }>();
   expect(aliased?.n).toBe(1);
   const created = await env.DB
-    .prepare(`SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.created'`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM lifecycle_events WHERE event_type = 'concept.created'`,
+    )
     .first<{ n: number }>();
   expect(created?.n).toBe(0);
 });
 
-it('writes pending_review row with real analysis_event_id when similarity in [0.70, 0.85)', async () => {
-  const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+it("writes pending_review row with real analysis_event_id when similarity in [0.70, 0.85)", async () => {
+  const { keyId, keypair } = await registerMachineKey(
+    "verifier-machine",
+    "verifier",
+  );
   const item = {
     ...SAMPLE_SHORTCOMING,
-    concept_slug_proposed: 'unclear-concept',
+    concept_slug_proposed: "unclear-concept",
     concept_slug_existing_match: null,
     similarity_score: 0.77,
   };
-  const res = await SELF.fetch(await shortcomingsBatchRequest(
-    { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'm' },
-    keyId, keypair,
-  ));
+  const res = await SELF.fetch(
+    await shortcomingsBatchRequest(
+      { model_slug: "sonnet-4.7", shortcomings: [item], analyzer_model: "m" },
+      keyId,
+      keypair,
+    ),
+  );
   expect(res.status).toBe(200);
   const pending = await env.DB
-    .prepare(`SELECT concept_slug_proposed, analysis_event_id FROM pending_review`)
+    .prepare(
+      `SELECT concept_slug_proposed, analysis_event_id FROM pending_review`,
+    )
     .first<{ concept_slug_proposed: string; analysis_event_id: number }>();
-  expect(pending?.concept_slug_proposed).toBe('unclear-concept');
+  expect(pending?.concept_slug_proposed).toBe("unclear-concept");
   // analysis_event_id is the real lifecycle_events.id from the analysis.completed
   // event written upstream — NOT the legacy `0` placeholder. Verifies the FK
   // NOT NULL REFERENCES lifecycle_events(id) is satisfied with a real row.
@@ -1396,54 +1465,77 @@ it('writes pending_review row with real analysis_event_id when similarity in [0.
     .prepare(`SELECT event_type FROM lifecycle_events WHERE id = ?`)
     .bind(pending!.analysis_event_id)
     .first<{ event_type: string }>();
-  expect(evRow?.event_type).toBe('analysis.completed');
+  expect(evRow?.event_type).toBe("analysis.completed");
   // shortcoming row was NOT written for the pending entry.
-  const sc = await env.DB.prepare(`SELECT COUNT(*) AS n FROM shortcomings`).first<{ n: number }>();
+  const sc = await env.DB.prepare(`SELECT COUNT(*) AS n FROM shortcomings`)
+    .first<{ n: number }>();
   expect(sc?.n).toBe(0);
 });
 
-it('creates new concept + emits concept.created event with concept_id in payload when similarity < 0.70', async () => {
-  const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+it("creates new concept + emits concept.created event with concept_id in payload when similarity < 0.70", async () => {
+  const { keyId, keypair } = await registerMachineKey(
+    "verifier-machine",
+    "verifier",
+  );
   const item = {
     ...SAMPLE_SHORTCOMING,
-    concept_slug_proposed: 'fresh-pitfall',
+    concept_slug_proposed: "fresh-pitfall",
     concept_slug_existing_match: null,
     similarity_score: 0.41,
   };
-  const res = await SELF.fetch(await shortcomingsBatchRequest(
-    { model_slug: 'sonnet-4.7', shortcomings: [item], analyzer_model: 'claude-opus-4-6' },
-    keyId, keypair,
-  ));
+  const res = await SELF.fetch(
+    await shortcomingsBatchRequest(
+      {
+        model_slug: "sonnet-4.7",
+        shortcomings: [item],
+        analyzer_model: "claude-opus-4-6",
+      },
+      keyId,
+      keypair,
+    ),
+  );
   expect(res.status).toBe(200);
   const concept = await env.DB
-    .prepare(`SELECT id, provenance_event_id FROM concepts WHERE slug = 'fresh-pitfall'`)
+    .prepare(
+      `SELECT id, provenance_event_id FROM concepts WHERE slug = 'fresh-pitfall'`,
+    )
     .first<{ id: number; provenance_event_id: number }>();
   expect(concept?.id).toBeGreaterThan(0);
   // provenance_event_id is back-patched to the concept.created event id.
   expect(concept?.provenance_event_id).toBeGreaterThan(0);
   const ev = await env.DB
-    .prepare(`SELECT event_type, payload_json FROM lifecycle_events WHERE id = ?`)
+    .prepare(
+      `SELECT event_type, payload_json FROM lifecycle_events WHERE id = ?`,
+    )
     .bind(concept!.provenance_event_id)
     .first<{ event_type: string; payload_json: string }>();
-  expect(ev?.event_type).toBe('concept.created');
+  expect(ev?.event_type).toBe("concept.created");
   // Per strategic appendix: payload = { concept_id, slug, llm_proposed_slug, similarity_to_nearest, analyzer_model }.
   // concept_id MUST be present and equal to the freshly-inserted concept row's id.
   const payload = JSON.parse(ev!.payload_json) as Record<string, unknown>;
   expect(payload.concept_id).toBe(concept!.id);
-  expect(payload.slug).toBe('fresh-pitfall');
-  expect(payload.analyzer_model).toBe('claude-opus-4-6');
+  expect(payload.slug).toBe("fresh-pitfall");
+  expect(payload.analyzer_model).toBe("claude-opus-4-6");
 });
 
-it('accepts legacy payload (no concept_slug_proposed) with deprecation warning', async () => {
-  const { keyId, keypair } = await registerMachineKey('verifier-machine', 'verifier');
+it("accepts legacy payload (no concept_slug_proposed) with deprecation warning", async () => {
+  const { keyId, keypair } = await registerMachineKey(
+    "verifier-machine",
+    "verifier",
+  );
   // Note: no concept_slug_* fields → legacy path.
-  const res = await SELF.fetch(await shortcomingsBatchRequest(
-    { model_slug: 'sonnet-4.7', shortcomings: [SAMPLE_SHORTCOMING] },
-    keyId, keypair,
-  ));
+  const res = await SELF.fetch(
+    await shortcomingsBatchRequest(
+      { model_slug: "sonnet-4.7", shortcomings: [SAMPLE_SHORTCOMING] },
+      keyId,
+      keypair,
+    ),
+  );
   expect(res.status).toBe(200);
   const sc = await env.DB
-    .prepare(`SELECT concept_id FROM shortcomings WHERE al_concept = 'interfaces'`)
+    .prepare(
+      `SELECT concept_id FROM shortcomings WHERE al_concept = 'interfaces'`,
+    )
     .first<{ concept_id: number | null }>();
   expect(sc?.concept_id).toBeNull(); // legacy path: concept_id remains NULL
 });
@@ -1462,6 +1554,7 @@ All four band tests + the resolver tests must pass. Do NOT run `deno fmt` on any
 ## Task 6: Site — `/api/v1/concepts` and `/api/v1/concepts/[slug]` endpoints
 
 **Files:**
+
 - `U:\Git\CentralGauge\site\src\routes\api\v1\concepts\+server.ts` (new)
 - `U:\Git\CentralGauge\site\src\routes\api\v1\concepts\[slug]\+server.ts` (new)
 - `U:\Git\CentralGauge\site\tests\api\concepts.test.ts` (new)
@@ -1472,10 +1565,10 @@ All four band tests + the resolver tests must pass. Do NOT run `deno fmt` on any
 
 ```typescript
 // U:\Git\CentralGauge\site\src\routes\api\v1\concepts\+server.ts
-import type { RequestHandler } from './$types';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
-import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
+import type { RequestHandler } from "./$types";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
+import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
 
 const CACHE_TTL_S = 300;
 const DEFAULT_LIMIT = 20;
@@ -1498,9 +1591,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const cached = await cache.match(request);
     if (cached) return cached;
 
-    const recentParam = url.searchParams.get('recent');
+    const recentParam = url.searchParams.get("recent");
     const limit = Math.min(
-      Math.max(parseInt(recentParam ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1),
+      Math.max(
+        parseInt(recentParam ?? String(DEFAULT_LIMIT), 10) || DEFAULT_LIMIT,
+        1,
+      ),
       MAX_LIMIT,
     );
 
@@ -1532,9 +1628,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=60`,
-        'x-api-version': 'v1',
+        "content-type": "application/json; charset=utf-8",
+        "cache-control":
+          `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=60`,
+        "x-api-version": "v1",
       },
     });
     await cache.put(request, response.clone());
@@ -1551,10 +1648,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
 ```typescript
 // U:\Git\CentralGauge\site\src\routes\api\v1\concepts\[slug]\+server.ts
-import type { RequestHandler } from './$types';
-import { getAll, getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
+import type { RequestHandler } from "./$types";
+import { getAll, getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
 
 const CACHE_TTL_S = 300;
 
@@ -1589,13 +1686,21 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         `SELECT concept_id FROM concept_aliases WHERE alias_slug = ?`,
         [params.slug!],
       );
-      if (!alias) throw new ApiError(404, 'concept_not_found', `concept '${params.slug}' not found`);
+      if (!alias) {
+        throw new ApiError(
+          404,
+          "concept_not_found",
+          `concept '${params.slug}' not found`,
+        );
+      }
       // Resolve by id.
       // (Two-step lookup acceptable given Cache API absorbs the cost on warm reads.)
     }
 
     const conceptId = concept?.id;
-    if (!conceptId) throw new ApiError(500, 'db_error', 'concept resolution failed');
+    if (!conceptId) {
+      throw new ApiError(500, "db_error", "concept resolution failed");
+    }
 
     const models = await getAll<{
       slug: string;
@@ -1633,9 +1738,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': `public, s-maxage=${CACHE_TTL_S}`,
-        'x-api-version': 'v1',
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": `public, s-maxage=${CACHE_TTL_S}`,
+        "x-api-version": "v1",
       },
     });
     await cache.put(request, response.clone());
@@ -1650,10 +1755,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
 
 ```typescript
 // U:\Git\CentralGauge\site\tests\api\concepts.test.ts
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import { invalidateConcept, CONCEPT_CACHE_NAME } from '../../src/lib/server/concept-cache';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import {
+  CONCEPT_CACHE_NAME,
+  invalidateConcept,
+} from "../../src/lib/server/concept-cache";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -1663,83 +1771,87 @@ beforeEach(async () => {
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
-       VALUES (1, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd1', '2026-04-25', '2026-04-29')`
+       VALUES (1, 'flowfield-calcfields', 'FlowField', 'flowfield', 'd1', '2026-04-25', '2026-04-29')`,
     ),
     env.DB.prepare(
       `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
-       VALUES (2, 'reserved-keyword', 'Reserved keyword', 'syntax', 'd2', '2026-04-20', '2026-04-28')`
+       VALUES (2, 'reserved-keyword', 'Reserved keyword', 'syntax', 'd2', '2026-04-20', '2026-04-28')`,
     ),
     env.DB.prepare(
       `INSERT INTO concepts (id, slug, display_name, al_concept, description, first_seen, last_seen)
-       VALUES (3, 'old-pitfall', 'Old', 'misc', 'd3', '2026-04-01', '2026-04-10')`
+       VALUES (3, 'old-pitfall', 'Old', 'misc', 'd3', '2026-04-01', '2026-04-10')`,
     ),
   ]);
 });
 
-describe('GET /api/v1/concepts', () => {
-  it('returns recent N ordered by last_seen DESC', async () => {
-    const res = await SELF.fetch('http://x/api/v1/concepts?recent=2');
+describe("GET /api/v1/concepts", () => {
+  it("returns recent N ordered by last_seen DESC", async () => {
+    const res = await SELF.fetch("http://x/api/v1/concepts?recent=2");
     expect(res.status).toBe(200);
     const body = await res.json<{ data: Array<{ slug: string }> }>();
     expect(body.data.length).toBe(2);
-    expect(body.data[0].slug).toBe('flowfield-calcfields');
-    expect(body.data[1].slug).toBe('reserved-keyword');
+    expect(body.data[0].slug).toBe("flowfield-calcfields");
+    expect(body.data[1].slug).toBe("reserved-keyword");
   });
 
-  it('clamps recent to [1, 200]', async () => {
-    const res = await SELF.fetch('http://x/api/v1/concepts?recent=9999');
+  it("clamps recent to [1, 200]", async () => {
+    const res = await SELF.fetch("http://x/api/v1/concepts?recent=9999");
     expect(res.status).toBe(200);
     const body = await res.json<{ data: unknown[] }>();
     expect(body.data.length).toBe(3); // only 3 seeded
   });
 });
 
-describe('GET /api/v1/concepts/[slug]', () => {
-  it('returns concept detail with model rollup', async () => {
+describe("GET /api/v1/concepts/[slug]", () => {
+  it("returns concept detail with model rollup", async () => {
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO models (id, slug, display_name, family_id, generation, vendor)
-         VALUES (1, 'anthropic/claude-opus-4-6', 'Opus 4.6', 1, 6, 'anthropic')`
+         VALUES (1, 'anthropic/claude-opus-4-6', 'Opus 4.6', 1, 6, 'anthropic')`,
       ),
       env.DB.prepare(
         `INSERT INTO shortcomings (model_id, al_concept, concept, description,
                                    correct_pattern, incorrect_pattern_r2_key, error_codes_json,
                                    first_seen, last_seen, concept_id)
          VALUES (1, 'flowfield', 'FlowField', 'd', 'p', 'k', '[]',
-                 '2026-04-29', '2026-04-29', 1)`
+                 '2026-04-29', '2026-04-29', 1)`,
       ),
     ]);
-    const res = await SELF.fetch('http://x/api/v1/concepts/flowfield-calcfields');
+    const res = await SELF.fetch(
+      "http://x/api/v1/concepts/flowfield-calcfields",
+    );
     expect(res.status).toBe(200);
     const body = await res.json<{
       data: { slug: string; affected_models: Array<{ slug: string }> };
     }>();
-    expect(body.data.slug).toBe('flowfield-calcfields');
+    expect(body.data.slug).toBe("flowfield-calcfields");
     expect(body.data.affected_models.length).toBe(1);
-    expect(body.data.affected_models[0].slug).toBe('anthropic/claude-opus-4-6');
+    expect(body.data.affected_models[0].slug).toBe("anthropic/claude-opus-4-6");
   });
 
-  it('returns 404 for unknown slug', async () => {
-    const res = await SELF.fetch('http://x/api/v1/concepts/does-not-exist');
+  it("returns 404 for unknown slug", async () => {
+    const res = await SELF.fetch("http://x/api/v1/concepts/does-not-exist");
     expect(res.status).toBe(404);
   });
 });
 
-describe('cache invalidation integration', () => {
-  it('invalidateConcept clears the per-slug cached response', async () => {
+describe("cache invalidation integration", () => {
+  it("invalidateConcept clears the per-slug cached response", async () => {
     // Warm the cache.
-    const first = await SELF.fetch('http://x/api/v1/concepts/flowfield-calcfields');
+    const first = await SELF.fetch(
+      "http://x/api/v1/concepts/flowfield-calcfields",
+    );
     expect(first.status).toBe(200);
     const cache = await caches.open(CONCEPT_CACHE_NAME);
     const present = await cache.match(
-      new Request('http://x/api/v1/concepts/flowfield-calcfields'),
+      new Request("http://x/api/v1/concepts/flowfield-calcfields"),
     );
     expect(present).toBeTruthy();
 
-    await invalidateConcept('flowfield-calcfields', [], 'http://x');
+    await invalidateConcept("flowfield-calcfields", [], "http://x");
 
     const after = await cache.match(
-      new Request('http://x/api/v1/concepts/flowfield-calcfields'),
+      new Request("http://x/api/v1/concepts/flowfield-calcfields"),
     );
     expect(after).toBeUndefined();
   });
@@ -1757,6 +1869,7 @@ cd U:/Git/CentralGauge/site && npm run build && npm test -- tests/api/concepts.t
 ## Task 7: Wire shortcomings-tracker JSON output to carry the new fields end-to-end
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\verify\shortcomings-tracker.ts` (modify)
 - `U:\Git\CentralGauge\tests\unit\verify\shortcomings-tracker.test.ts` (extend if exists; otherwise add minimal coverage inline)
 - `U:\Git\CentralGauge\cli\commands\populate-shortcomings-command.ts` (modify — pass new fields through to the batch POST)

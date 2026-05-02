@@ -33,11 +33,13 @@
 **Spec:** `docs/superpowers/specs/2026-04-27-p5-site-ui-design.md` §5.2 (OG sitemap), §6.7 (density modes), §8.5-§8.6 (SSE per-route + connection mgmt), §8.9 (loading + error states), §9.5-§9.7 (a11y budgets + axe-core + RUM), §10.1-§10.7 (testing layers + suite list + visual regression), §11.3-§11.6 (rollout sequence + pre-cutover gates + observability + rollback), §11.8-§11.9 (build artifact hygiene + doc deliverables), §13 (P5 done-criteria).
 
 **Prior plans:**
+
 - `docs/superpowers/plans/2026-04-27-p5-1-foundation-leaderboard.md` (P5.1 — completed)
 - `docs/superpowers/plans/2026-04-27-p5-2-detail-surfaces.md` (P5.2 — completed)
 - `docs/superpowers/plans/2026-04-28-p5-3-cross-cuts.md` (P5.3 — completed)
 
 **Out of scope (deferred to P5.5 cutover, P6 post-launch):**
+
 - Renaming `/leaderboard` → `/` and removing the placeholder homepage — P5.5 (single atomic commit per spec §11.3)
 - Removing `<meta name="robots" content="noindex">` — P5.5
 - Publishing `sitemap.xml` and `robots.txt` to allow crawlers — P5.5
@@ -53,93 +55,93 @@
 
 ### New files
 
-| Path | Responsibility |
-|------|----------------|
-| `site/src/lib/client/use-event-source.svelte.ts` | Reusable SSE hook: subscribes, decodes events, exposes reactive `$state` status + `on()` listener registry; auto-reconnect with exponential backoff; AbortController-driven teardown. `.svelte.ts` extension required for `$state` rune. |
-| `site/src/lib/client/use-event-source.test.ts` | Unit tests for `useEventSource` (jsdom EventSource shim) |
-| `site/src/lib/client/density-bus.svelte.ts` | Module-scope rune store for density mode (client-only, mirrors `palette-bus.svelte.ts` pattern) |
-| `site/src/lib/client/density-bus.test.svelte.ts` | density-bus unit tests |
-| `site/src/lib/client/keyboard.ts` | Tiny global keybind registry; one entry per chord; `cmd-shift-d` for density and (potential future) chords route through it |
-| `site/src/lib/client/keyboard.test.ts` | Unit tests for chord matcher (modifiers, key normalization) |
-| `site/src/lib/components/ui/icons/Maximize2.svelte` | Lucide maximize-2 (comfortable density indicator) |
-| `site/src/lib/components/ui/icons/Minimize2.svelte` | Lucide minimize-2 (compact density indicator) |
-| `site/src/lib/components/ui/icons/Activity.svelte` | Lucide activity (RUM status, optional dev surface) |
-| `site/src/lib/components/ui/icons/Image.svelte` | Lucide image (OG endpoint card link in /about) |
-| `site/src/lib/components/domain/LiveStatus.svelte` | SSE status pill (green/yellow/gray dot + label), bound to `useEventSource` status |
-| `site/src/lib/components/domain/LiveStatus.test.svelte.ts` | LiveStatus tests (3 status variants + label override) |
-| `site/src/lib/components/domain/DensityToggle.svelte` | Comfortable/Compact button-pair in Nav `<div class="actions">` |
-| `site/src/lib/components/domain/DensityToggle.test.svelte.ts` | DensityToggle tests (click toggles, keybind toggles, persists) |
-| `site/src/lib/server/og-render.ts` | `renderOgPng({ kind, slug, taskSetHash, env })` wrapper around `@cf-wasm/og` Satori chain; loads fonts; checks R2 cache; falls back to render-and-store |
-| `site/src/lib/server/og-render.test.ts` | Unit tests for `renderOgPng` cache hit/miss path (R2Bucket mock) |
-| `site/src/lib/server/fonts/inter-400.ttf` | Inter Regular 400, vendored from `rsms/inter` v3.19 (binary; ~110 KB) |
-| `site/src/lib/server/fonts/inter-600.ttf` | Inter SemiBold 600, vendored from same upstream (~115 KB) |
-| `site/src/lib/server/fonts/README.md` | Provenance + license note (Inter is OFL-1.1) |
-| `site/src/lib/server/sse-routes.ts` | Server helper: `routePatternMatches(eventRoutes, subscribed)` + `eventToRoutes(ev)` (mapping a `BroadcastEvent` to the route patterns it should fan out to) |
-| `site/src/lib/server/sse-routes.test.ts` | Unit tests for the route-match logic |
-| `site/src/lib/server/canary.ts` | Helper: `isCanary(url)` + `extractCanaryPath(url)` for the path-prefix routing |
-| `site/src/lib/server/canary.test.ts` | Unit tests for canary path parsing |
-| `site/src/routes/og/index.png/+server.ts` | GET → leaderboard OG (1200×630) |
-| `site/src/routes/og/models/[slug].png/+server.ts` | GET → per-model OG |
-| `site/src/routes/og/runs/[id].png/+server.ts` | GET → per-run OG |
-| `site/src/routes/og/families/[slug].png/+server.ts` | GET → per-family OG |
-| `site/src/routes/_canary/[sha]/[...path]/+page.server.ts` | Canary reverse-loader: marks `event.locals.canary = true`, sets `X-Canary` header, forwards to wrapped route |
-| `site/src/routes/_canary/[sha]/[...path]/+page.svelte` | Canary `<svelte:component this={routeModule}>` shell |
-| `site/tests/api/events-live-routes.test.ts` | Worker-pool tests for the per-route SSE filter |
-| `site/tests/api/og-images.test.ts` | Worker-pool tests for all four OG endpoints (status / content-type / cache header) |
-| `site/tests/api/canary.test.ts` | Worker-pool tests for canary path routing + header propagation |
-| `site/tests/api/test-only-broadcast.test.ts` | Worker-pool tests verifying `__test_only__/broadcast` returns 403 without env+header double-gate (Task H8.5) |
-| `site/tests/api/rum-beacon-emit.test.ts` | Worker-pool integration test that the beacon `<script>` is emitted when `FLAG_RUM_BEACON=on` AND `CF_WEB_ANALYTICS_TOKEN` is set (Task F2 step 4) |
-| `site/tests/server/og-render.test.ts` | Direct unit test for `renderOgPng` (R2 mock) |
-| `site/tests/e2e/golden-path.spec.ts` | E2E: home → models → model detail → runs → run detail → transcript → signature → repro download |
-| `site/tests/e2e/responsive.spec.ts` | 4 viewports × leaderboard + models + runs (no screenshots, presence assertions) |
-| `site/tests/e2e/keyboard.spec.ts` | Tab order, sort activation, modal trap, cmd-K, cmd-shift-d |
-| `site/tests/e2e/a11y.spec.ts` | axe-core full-coverage on every page in light + dark + comfortable + compact |
-| `site/tests/e2e/sse.spec.ts` | SSE connect / event / disconnect / reconnect / fallback for the 5 subscribed routes |
-| `site/tests/e2e/density.spec.ts` | Density toggle: nav button, cmd-shift-d, localStorage persistence, no-flash boot |
-| `site/tests/e2e/og.spec.ts` | OG endpoints respond 200 with image/png + correct cache-control |
-| `site/tests/e2e/visual-regression.spec.ts` | Visual regression: 5 key pages × 2 themes × 2 densities × 1 desktop viewport |
-| `site/tests/e2e/__screenshots__/.gitkeep` | Placeholder so the directory exists in git before first baseline commit |
-| `site/tests/utils/seed-fixtures.ts` | Single source of truth for test slugs/IDs (`sonnet-4-7`, `run-0000`, `CG-AL-E001`, `claude` family) so P5.2/P5.3/P5.4 specs share names. Retires the P5.1 `seeded-run-id-1` placeholder (Task H2). |
-| `site/tests/utils/seed-fixtures.test.ts` | Self-test that fixture constants compile and don't drift |
-| `site/scripts/seed-e2e.ts` | Build-and-run helper: applies migrations + runs `seedSmokeData` against the local D1 backing `wrangler dev` |
-| `site/scripts/check-kv-writes.ts` | CI assertion: parses `wrangler tail` JSON output during E2E run, asserts zero KV puts (per CLAUDE.md "KV write counter still flat" invariant) |
-| `docs/site/architecture.md` | mkdocs page: data flow, module organization, SSR/cache layers, DO usage, worker-isolate hazards |
-| `docs/site/design-system.md` | mkdocs page: tokens, atoms, density modes, theme system, contrast policy |
-| `docs/site/operations.md` | mkdocs page: deploy steps, flag flip procedure, rollback drills, monitoring runbook, RUM review cadence |
-| `docs/postmortems/_template.md` | mkdocs page: postmortem template (impact, timeline, root cause, fix, action items) |
+| Path                                                          | Responsibility                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/src/lib/client/use-event-source.svelte.ts`              | Reusable SSE hook: subscribes, decodes events, exposes reactive `$state` status + `on()` listener registry; auto-reconnect with exponential backoff; AbortController-driven teardown. `.svelte.ts` extension required for `$state` rune. |
+| `site/src/lib/client/use-event-source.test.ts`                | Unit tests for `useEventSource` (jsdom EventSource shim)                                                                                                                                                                                 |
+| `site/src/lib/client/density-bus.svelte.ts`                   | Module-scope rune store for density mode (client-only, mirrors `palette-bus.svelte.ts` pattern)                                                                                                                                          |
+| `site/src/lib/client/density-bus.test.svelte.ts`              | density-bus unit tests                                                                                                                                                                                                                   |
+| `site/src/lib/client/keyboard.ts`                             | Tiny global keybind registry; one entry per chord; `cmd-shift-d` for density and (potential future) chords route through it                                                                                                              |
+| `site/src/lib/client/keyboard.test.ts`                        | Unit tests for chord matcher (modifiers, key normalization)                                                                                                                                                                              |
+| `site/src/lib/components/ui/icons/Maximize2.svelte`           | Lucide maximize-2 (comfortable density indicator)                                                                                                                                                                                        |
+| `site/src/lib/components/ui/icons/Minimize2.svelte`           | Lucide minimize-2 (compact density indicator)                                                                                                                                                                                            |
+| `site/src/lib/components/ui/icons/Activity.svelte`            | Lucide activity (RUM status, optional dev surface)                                                                                                                                                                                       |
+| `site/src/lib/components/ui/icons/Image.svelte`               | Lucide image (OG endpoint card link in /about)                                                                                                                                                                                           |
+| `site/src/lib/components/domain/LiveStatus.svelte`            | SSE status pill (green/yellow/gray dot + label), bound to `useEventSource` status                                                                                                                                                        |
+| `site/src/lib/components/domain/LiveStatus.test.svelte.ts`    | LiveStatus tests (3 status variants + label override)                                                                                                                                                                                    |
+| `site/src/lib/components/domain/DensityToggle.svelte`         | Comfortable/Compact button-pair in Nav `<div class="actions">`                                                                                                                                                                           |
+| `site/src/lib/components/domain/DensityToggle.test.svelte.ts` | DensityToggle tests (click toggles, keybind toggles, persists)                                                                                                                                                                           |
+| `site/src/lib/server/og-render.ts`                            | `renderOgPng({ kind, slug, taskSetHash, env })` wrapper around `@cf-wasm/og` Satori chain; loads fonts; checks R2 cache; falls back to render-and-store                                                                                  |
+| `site/src/lib/server/og-render.test.ts`                       | Unit tests for `renderOgPng` cache hit/miss path (R2Bucket mock)                                                                                                                                                                         |
+| `site/src/lib/server/fonts/inter-400.ttf`                     | Inter Regular 400, vendored from `rsms/inter` v3.19 (binary; ~110 KB)                                                                                                                                                                    |
+| `site/src/lib/server/fonts/inter-600.ttf`                     | Inter SemiBold 600, vendored from same upstream (~115 KB)                                                                                                                                                                                |
+| `site/src/lib/server/fonts/README.md`                         | Provenance + license note (Inter is OFL-1.1)                                                                                                                                                                                             |
+| `site/src/lib/server/sse-routes.ts`                           | Server helper: `routePatternMatches(eventRoutes, subscribed)` + `eventToRoutes(ev)` (mapping a `BroadcastEvent` to the route patterns it should fan out to)                                                                              |
+| `site/src/lib/server/sse-routes.test.ts`                      | Unit tests for the route-match logic                                                                                                                                                                                                     |
+| `site/src/lib/server/canary.ts`                               | Helper: `isCanary(url)` + `extractCanaryPath(url)` for the path-prefix routing                                                                                                                                                           |
+| `site/src/lib/server/canary.test.ts`                          | Unit tests for canary path parsing                                                                                                                                                                                                       |
+| `site/src/routes/og/index.png/+server.ts`                     | GET → leaderboard OG (1200×630)                                                                                                                                                                                                          |
+| `site/src/routes/og/models/[slug].png/+server.ts`             | GET → per-model OG                                                                                                                                                                                                                       |
+| `site/src/routes/og/runs/[id].png/+server.ts`                 | GET → per-run OG                                                                                                                                                                                                                         |
+| `site/src/routes/og/families/[slug].png/+server.ts`           | GET → per-family OG                                                                                                                                                                                                                      |
+| `site/src/routes/_canary/[sha]/[...path]/+page.server.ts`     | Canary reverse-loader: marks `event.locals.canary = true`, sets `X-Canary` header, forwards to wrapped route                                                                                                                             |
+| `site/src/routes/_canary/[sha]/[...path]/+page.svelte`        | Canary `<svelte:component this={routeModule}>` shell                                                                                                                                                                                     |
+| `site/tests/api/events-live-routes.test.ts`                   | Worker-pool tests for the per-route SSE filter                                                                                                                                                                                           |
+| `site/tests/api/og-images.test.ts`                            | Worker-pool tests for all four OG endpoints (status / content-type / cache header)                                                                                                                                                       |
+| `site/tests/api/canary.test.ts`                               | Worker-pool tests for canary path routing + header propagation                                                                                                                                                                           |
+| `site/tests/api/test-only-broadcast.test.ts`                  | Worker-pool tests verifying `__test_only__/broadcast` returns 403 without env+header double-gate (Task H8.5)                                                                                                                             |
+| `site/tests/api/rum-beacon-emit.test.ts`                      | Worker-pool integration test that the beacon `<script>` is emitted when `FLAG_RUM_BEACON=on` AND `CF_WEB_ANALYTICS_TOKEN` is set (Task F2 step 4)                                                                                        |
+| `site/tests/server/og-render.test.ts`                         | Direct unit test for `renderOgPng` (R2 mock)                                                                                                                                                                                             |
+| `site/tests/e2e/golden-path.spec.ts`                          | E2E: home → models → model detail → runs → run detail → transcript → signature → repro download                                                                                                                                          |
+| `site/tests/e2e/responsive.spec.ts`                           | 4 viewports × leaderboard + models + runs (no screenshots, presence assertions)                                                                                                                                                          |
+| `site/tests/e2e/keyboard.spec.ts`                             | Tab order, sort activation, modal trap, cmd-K, cmd-shift-d                                                                                                                                                                               |
+| `site/tests/e2e/a11y.spec.ts`                                 | axe-core full-coverage on every page in light + dark + comfortable + compact                                                                                                                                                             |
+| `site/tests/e2e/sse.spec.ts`                                  | SSE connect / event / disconnect / reconnect / fallback for the 5 subscribed routes                                                                                                                                                      |
+| `site/tests/e2e/density.spec.ts`                              | Density toggle: nav button, cmd-shift-d, localStorage persistence, no-flash boot                                                                                                                                                         |
+| `site/tests/e2e/og.spec.ts`                                   | OG endpoints respond 200 with image/png + correct cache-control                                                                                                                                                                          |
+| `site/tests/e2e/visual-regression.spec.ts`                    | Visual regression: 5 key pages × 2 themes × 2 densities × 1 desktop viewport                                                                                                                                                             |
+| `site/tests/e2e/__screenshots__/.gitkeep`                     | Placeholder so the directory exists in git before first baseline commit                                                                                                                                                                  |
+| `site/tests/utils/seed-fixtures.ts`                           | Single source of truth for test slugs/IDs (`sonnet-4-7`, `run-0000`, `CG-AL-E001`, `claude` family) so P5.2/P5.3/P5.4 specs share names. Retires the P5.1 `seeded-run-id-1` placeholder (Task H2).                                       |
+| `site/tests/utils/seed-fixtures.test.ts`                      | Self-test that fixture constants compile and don't drift                                                                                                                                                                                 |
+| `site/scripts/seed-e2e.ts`                                    | Build-and-run helper: applies migrations + runs `seedSmokeData` against the local D1 backing `wrangler dev`                                                                                                                              |
+| `site/scripts/check-kv-writes.ts`                             | CI assertion: parses `wrangler tail` JSON output during E2E run, asserts zero KV puts (per CLAUDE.md "KV write counter still flat" invariant)                                                                                            |
+| `docs/site/architecture.md`                                   | mkdocs page: data flow, module organization, SSR/cache layers, DO usage, worker-isolate hazards                                                                                                                                          |
+| `docs/site/design-system.md`                                  | mkdocs page: tokens, atoms, density modes, theme system, contrast policy                                                                                                                                                                 |
+| `docs/site/operations.md`                                     | mkdocs page: deploy steps, flag flip procedure, rollback drills, monitoring runbook, RUM review cadence                                                                                                                                  |
+| `docs/postmortems/_template.md`                               | mkdocs page: postmortem template (impact, timeline, root cause, fix, action items)                                                                                                                                                       |
 
 ### Modified files
 
-| Path | Change |
-|------|--------|
-| `site/src/do/leaderboard-broadcaster.ts` | Add `?routes=` query-param parsing on `/subscribe`; per-writer `Set<string>` of subscribed route patterns; filter fanout via `eventToRoutes()` |
-| `site/src/lib/server/broadcaster.ts` | No change — caller-side already passes BroadcastEvent. Document that `eventToRoutes` is server-only |
-| `site/src/routes/api/v1/events/live/+server.ts` | Forward `?routes=` query-string to DO `/subscribe`; document the wire format |
-| `site/src/lib/server/flags.ts` | Add `density_toggle: boolean` flag (default false); update interface + DEFAULTS + canary block |
-| `site/src/lib/server/flags.test.ts` | Cover new flag (3 new assertions) |
-| `site/src/lib/components/layout/Nav.svelte` | Mount `<DensityToggle>`, mount `<LiveStatus>` (when on a SSE-subscribing route), inject density no-flash boot script via `+layout.svelte` head |
-| `site/src/routes/+layout.svelte` | Inline density no-flash script at `<svelte:head>` (mirrors theme); inject Cloudflare RUM beacon `<script>` when `flags.rum_beacon` is on (added below); register `cmd-shift-d` chord via `keyboard.ts` |
-| `site/src/routes/+layout.server.ts` | Add `densityToken` (always `'comfortable'` server-side; client overrides) to layout data; conditionally pass `cfWebAnalyticsToken` from env |
-| `site/src/routes/leaderboard/+page.svelte` | Replace static `<StatusIndicator status="static">` with `<LiveStatus>` driven by `useEventSource(['/leaderboard'])` + `invalidate('app:leaderboard')` on `run_finalized` |
-| `site/src/routes/runs/+page.svelte` | Mount `<LiveStatus>` + `useEventSource(['/runs'])`; prepend new-row banner with 5 s fade for incoming `run_finalized` events |
-| `site/src/routes/runs/[id]/+page.svelte` | Subscribe only when `data.run.status === 'pending' || 'running'`; invalidate `app:run:<id>` on matching event |
-| `site/src/routes/models/[slug]/+page.svelte` | Subscribe to `['/models/[slug]']` filtered by `model_slug === data.model.slug`; invalidate `app:model:<slug>` on match |
-| `site/src/routes/families/[slug]/+page.svelte` | Subscribe to `['/families/[slug]']` filtered by family membership; invalidate `app:family:<slug>` on match |
-| `site/src/routes/+page.svelte` | (Placeholder home — touched only to add the SSE route advertisement when the page IS leaderboard, which it currently isn't; comment-only change for traceability) |
-| `site/playwright.config.ts` | Add second project `chromium-preview` running against port 4173; gated on `process.env.CI === '1'`; webServer entry adds `npm run preview` on 4173 |
-| `site/package.json` | Update `preview` to `wrangler dev --port 4173` (Task A8 — current default 8787 mismatches LHCI/Playwright); add scripts: `seed:e2e`, `test:e2e:ci` (gates on CI env), `og:dev` (local OG render preview); add dep `@cf-wasm/og@0.3.7` (Task A7) |
-| `site/vite.config.ts` | Replace stub `defineConfig({ plugins: [sveltekit()] })` with named-chunk config for cmd-K + use-event-source (Task D1 step 4 / Task I0 verification) — produces `chunks/cmd-k-<hash>.js` and `chunks/use-event-source-<hash>.js` so the bundle-budget glob bites |
-| `site/scripts/check-bundle-budget.ts` | Replace `nodes/*-CommandPalette*.js` glob (currently zero matches) with the new lazy chunk path emitted after Task I0; add `chunks/use-event-source*.js` ≤ 2 KB gz |
-| `site/lighthouserc.json` | Add `/og/index.png` (HEAD-only — Lighthouse's HTML check should skip; document as informational); confirm preview server start command |
-| `site/wrangler.toml` | Add `[vars]` entries: `FLAG_CMD_K_PALETTE = "on"`, `FLAG_SSE_LIVE_UPDATES = "on"`, `FLAG_OG_DYNAMIC = "on"`, `FLAG_DENSITY_TOGGLE = "on"`, `FLAG_RUM_BEACON = "on"`, `CF_WEB_ANALYTICS_TOKEN = "<placeholder>"` (real token via `wrangler secret put` post-deploy) |
-| `site/svelte.config.js` | No change required — `prerender.handleHttpError = 'fail'` already set in P5.3. Document that `/og/...` routes are NOT prerendered (each has `export const prerender = false` in `+server.ts`) |
-| `site/src/styles/tokens.css` | Add `[data-density="compact"]` selector block redefining `--row-h`, `--cell-padding-y`, `--input-h` to compact values (tokens themselves already exist from P5.1; this just makes the attribute switch them) |
-| `site/scripts/check-contrast.ts` | No change — density mode does not introduce new color pairings |
-| `site/CONTRIBUTING.md` | Append "P5.4 implementation notes" section + a "Visual regression — updating baselines" subsection |
-| `site/CHANGELOG.md` | Add P5.4 entry (NEW file if absent — see Task J5) |
-| `mkdocs.yml` | Register the four new doc pages under a `Site` nav section |
-| `.github/workflows/site-ci.yml` | Insert seed step before E2E + LHCI; add KV write-counter check; restructure into setup + parallel test jobs |
-| `.gitattributes` | Mark `tests/e2e/__screenshots__/**.png` as binary (clean diffs) |
+| Path                                            | Change                                                                                                                                                                                                                                                             |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `site/src/do/leaderboard-broadcaster.ts`        | Add `?routes=` query-param parsing on `/subscribe`; per-writer `Set<string>` of subscribed route patterns; filter fanout via `eventToRoutes()`                                                                                                                     |
+| `site/src/lib/server/broadcaster.ts`            | No change — caller-side already passes BroadcastEvent. Document that `eventToRoutes` is server-only                                                                                                                                                                |
+| `site/src/routes/api/v1/events/live/+server.ts` | Forward `?routes=` query-string to DO `/subscribe`; document the wire format                                                                                                                                                                                       |
+| `site/src/lib/server/flags.ts`                  | Add `density_toggle: boolean` flag (default false); update interface + DEFAULTS + canary block                                                                                                                                                                     |
+| `site/src/lib/server/flags.test.ts`             | Cover new flag (3 new assertions)                                                                                                                                                                                                                                  |
+| `site/src/lib/components/layout/Nav.svelte`     | Mount `<DensityToggle>`, mount `<LiveStatus>` (when on a SSE-subscribing route), inject density no-flash boot script via `+layout.svelte` head                                                                                                                     |
+| `site/src/routes/+layout.svelte`                | Inline density no-flash script at `<svelte:head>` (mirrors theme); inject Cloudflare RUM beacon `<script>` when `flags.rum_beacon` is on (added below); register `cmd-shift-d` chord via `keyboard.ts`                                                             |
+| `site/src/routes/+layout.server.ts`             | Add `densityToken` (always `'comfortable'` server-side; client overrides) to layout data; conditionally pass `cfWebAnalyticsToken` from env                                                                                                                        |
+| `site/src/routes/leaderboard/+page.svelte`      | Replace static `<StatusIndicator status="static">` with `<LiveStatus>` driven by `useEventSource(['/leaderboard'])` + `invalidate('app:leaderboard')` on `run_finalized`                                                                                           |
+| `site/src/routes/runs/+page.svelte`             | Mount `<LiveStatus>` + `useEventSource(['/runs'])`; prepend new-row banner with 5 s fade for incoming `run_finalized` events                                                                                                                                       |
+| `site/src/routes/runs/[id]/+page.svelte`        | Subscribe only when `data.run.status === 'pending'                                                                                                                                                                                                                 |
+| `site/src/routes/models/[slug]/+page.svelte`    | Subscribe to `['/models/[slug]']` filtered by `model_slug === data.model.slug`; invalidate `app:model:<slug>` on match                                                                                                                                             |
+| `site/src/routes/families/[slug]/+page.svelte`  | Subscribe to `['/families/[slug]']` filtered by family membership; invalidate `app:family:<slug>` on match                                                                                                                                                         |
+| `site/src/routes/+page.svelte`                  | (Placeholder home — touched only to add the SSE route advertisement when the page IS leaderboard, which it currently isn't; comment-only change for traceability)                                                                                                  |
+| `site/playwright.config.ts`                     | Add second project `chromium-preview` running against port 4173; gated on `process.env.CI === '1'`; webServer entry adds `npm run preview` on 4173                                                                                                                 |
+| `site/package.json`                             | Update `preview` to `wrangler dev --port 4173` (Task A8 — current default 8787 mismatches LHCI/Playwright); add scripts: `seed:e2e`, `test:e2e:ci` (gates on CI env), `og:dev` (local OG render preview); add dep `@cf-wasm/og@0.3.7` (Task A7)                    |
+| `site/vite.config.ts`                           | Replace stub `defineConfig({ plugins: [sveltekit()] })` with named-chunk config for cmd-K + use-event-source (Task D1 step 4 / Task I0 verification) — produces `chunks/cmd-k-<hash>.js` and `chunks/use-event-source-<hash>.js` so the bundle-budget glob bites   |
+| `site/scripts/check-bundle-budget.ts`           | Replace `nodes/*-CommandPalette*.js` glob (currently zero matches) with the new lazy chunk path emitted after Task I0; add `chunks/use-event-source*.js` ≤ 2 KB gz                                                                                                 |
+| `site/lighthouserc.json`                        | Add `/og/index.png` (HEAD-only — Lighthouse's HTML check should skip; document as informational); confirm preview server start command                                                                                                                             |
+| `site/wrangler.toml`                            | Add `[vars]` entries: `FLAG_CMD_K_PALETTE = "on"`, `FLAG_SSE_LIVE_UPDATES = "on"`, `FLAG_OG_DYNAMIC = "on"`, `FLAG_DENSITY_TOGGLE = "on"`, `FLAG_RUM_BEACON = "on"`, `CF_WEB_ANALYTICS_TOKEN = "<placeholder>"` (real token via `wrangler secret put` post-deploy) |
+| `site/svelte.config.js`                         | No change required — `prerender.handleHttpError = 'fail'` already set in P5.3. Document that `/og/...` routes are NOT prerendered (each has `export const prerender = false` in `+server.ts`)                                                                      |
+| `site/src/styles/tokens.css`                    | Add `[data-density="compact"]` selector block redefining `--row-h`, `--cell-padding-y`, `--input-h` to compact values (tokens themselves already exist from P5.1; this just makes the attribute switch them)                                                       |
+| `site/scripts/check-contrast.ts`                | No change — density mode does not introduce new color pairings                                                                                                                                                                                                     |
+| `site/CONTRIBUTING.md`                          | Append "P5.4 implementation notes" section + a "Visual regression — updating baselines" subsection                                                                                                                                                                 |
+| `site/CHANGELOG.md`                             | Add P5.4 entry (NEW file if absent — see Task J5)                                                                                                                                                                                                                  |
+| `mkdocs.yml`                                    | Register the four new doc pages under a `Site` nav section                                                                                                                                                                                                         |
+| `.github/workflows/site-ci.yml`                 | Insert seed step before E2E + LHCI; add KV write-counter check; restructure into setup + parallel test jobs                                                                                                                                                        |
+| `.gitattributes`                                | Mark `tests/e2e/__screenshots__/**.png` as binary (clean diffs)                                                                                                                                                                                                    |
 
 ### Out of scope (deferred to P5.5)
 
@@ -157,6 +159,7 @@ Lays the groundwork: Durable Object accepts route-pattern subscriptions and pre-
 ### Task A0: Verify density tokens already exist; add `[data-density]` attribute selector
 
 **Files:**
+
 - Modify: `site/src/styles/tokens.css`
 
 The spec says density modes are "table row 44 px / 32 px". P5.1's tokens.css already defines `--row-h-comfortable: 44px` and `--row-h-compact: 32px`. The toggle merely flips `<html data-density="compact">`. CSS does the rest.
@@ -166,6 +169,7 @@ The spec says density modes are "table row 44 px / 32 px". P5.1's tokens.css alr
 ```bash
 grep -n "row-h-" U:/Git/CentralGauge/site/src/styles/tokens.css
 ```
+
 Expected: `--row-h-comfortable: 44px;` and `--row-h-compact: 32px;` (P5.1 baseline).
 
 If absent, add them in the `:root` block alongside `--space-*` (do NOT introduce new color tokens — density is dimensional, not chromatic).
@@ -213,102 +217,113 @@ git -C /u/Git/CentralGauge commit -m "feat(site/tokens): add [data-density] attr
 ### Task A1: Extract `sse-routes.ts` — event→route-pattern mapping
 
 **Files:**
+
 - Create: `site/src/lib/server/sse-routes.ts`
 - Create: `site/src/lib/server/sse-routes.test.ts`
 
 The Durable Object needs to know, given a `BroadcastEvent`, which route patterns should receive it. Today it broadcasts to all clients. The new logic:
 
-| Event type | Affected route patterns |
-|------------|-------------------------|
-| `run_finalized { run_id, model_slug, family_slug }` | `/leaderboard`, `/runs`, `/runs/<run_id>`, `/models/<model_slug>`, `/families/<family_slug>` |
-| `task_set_promoted` | `/leaderboard`, `/models/*` (broadcast — every model row affected; `/tasks` intentionally excluded — not a §8.5 subscriber) |
-| `shortcoming_added { model_slug }` | `/limitations`, `/models/<model_slug>` |
-| `ping` | (all subscribers — heartbeat) |
+| Event type                                          | Affected route patterns                                                                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `run_finalized { run_id, model_slug, family_slug }` | `/leaderboard`, `/runs`, `/runs/<run_id>`, `/models/<model_slug>`, `/families/<family_slug>`                                |
+| `task_set_promoted`                                 | `/leaderboard`, `/models/*` (broadcast — every model row affected; `/tasks` intentionally excluded — not a §8.5 subscriber) |
+| `shortcoming_added { model_slug }`                  | `/limitations`, `/models/<model_slug>`                                                                                      |
+| `ping`                                              | (all subscribers — heartbeat)                                                                                               |
 
 Pattern format: literal route paths with `{slug}` placeholders. Subscribers send their concrete route (or pattern) as a comma-separated `routes` query param; the matcher handles both literals and patterns.
 
 - [ ] **Step 1: TDD — write `site/src/lib/server/sse-routes.test.ts`**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { eventToRoutes, routePatternMatches } from './sse-routes';
-import type { BroadcastEvent } from '../../do/leaderboard-broadcaster';
+import { describe, expect, it } from "vitest";
+import { eventToRoutes, routePatternMatches } from "./sse-routes";
+import type { BroadcastEvent } from "../../do/leaderboard-broadcaster";
 
-describe('eventToRoutes', () => {
-  it('maps run_finalized to leaderboard, runs, run-detail, model-detail, family-detail', () => {
+describe("eventToRoutes", () => {
+  it("maps run_finalized to leaderboard, runs, run-detail, model-detail, family-detail", () => {
     const ev: BroadcastEvent = {
-      type: 'run_finalized',
-      ts: '2026-04-29T00:00:00Z',
-      run_id: 'r-001',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      type: "run_finalized",
+      ts: "2026-04-29T00:00:00Z",
+      run_id: "r-001",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     };
     const routes = eventToRoutes(ev);
-    expect(routes).toContain('/leaderboard');
-    expect(routes).toContain('/runs');
-    expect(routes).toContain('/runs/r-001');
-    expect(routes).toContain('/models/sonnet-4-7');
-    expect(routes).toContain('/families/claude');
+    expect(routes).toContain("/leaderboard");
+    expect(routes).toContain("/runs");
+    expect(routes).toContain("/runs/r-001");
+    expect(routes).toContain("/models/sonnet-4-7");
+    expect(routes).toContain("/families/claude");
   });
 
-  it('maps task_set_promoted to leaderboard, models/*', () => {
+  it("maps task_set_promoted to leaderboard, models/*", () => {
     // /tasks is intentionally NOT in this list — the spec's §8.5
     // subscriber list does not include /tasks, so fanning out to
     // /tasks would be dead noise at the DO. If /tasks ever
     // subscribes (future plan), add it back here.
-    const ev: BroadcastEvent = { type: 'task_set_promoted', ts: '2026-04-29T00:00:00Z' };
-    const routes = eventToRoutes(ev);
-    expect(routes).toContain('/leaderboard');
-    expect(routes).toContain('/models/*');
-    expect(routes).not.toContain('/tasks');
-  });
-
-  it('maps shortcoming_added to limitations and the affected model detail page', () => {
     const ev: BroadcastEvent = {
-      type: 'shortcoming_added',
-      ts: '2026-04-29T00:00:00Z',
-      model_slug: 'haiku-3-5',
+      type: "task_set_promoted",
+      ts: "2026-04-29T00:00:00Z",
     };
     const routes = eventToRoutes(ev);
-    expect(routes).toContain('/limitations');
-    expect(routes).toContain('/models/haiku-3-5');
+    expect(routes).toContain("/leaderboard");
+    expect(routes).toContain("/models/*");
+    expect(routes).not.toContain("/tasks");
   });
 
-  it('maps ping to wildcard (all subscribers)', () => {
-    const ev: BroadcastEvent = { type: 'ping', ts: '2026-04-29T00:00:00Z' };
+  it("maps shortcoming_added to limitations and the affected model detail page", () => {
+    const ev: BroadcastEvent = {
+      type: "shortcoming_added",
+      ts: "2026-04-29T00:00:00Z",
+      model_slug: "haiku-3-5",
+    };
     const routes = eventToRoutes(ev);
-    expect(routes).toEqual(['*']);
+    expect(routes).toContain("/limitations");
+    expect(routes).toContain("/models/haiku-3-5");
   });
 
-  it('returns empty array when payload is missing required fields', () => {
+  it("maps ping to wildcard (all subscribers)", () => {
+    const ev: BroadcastEvent = { type: "ping", ts: "2026-04-29T00:00:00Z" };
+    const routes = eventToRoutes(ev);
+    expect(routes).toEqual(["*"]);
+  });
+
+  it("returns empty array when payload is missing required fields", () => {
     // run_finalized without run_id / model_slug — defensively, do not match anything
-    const bad: BroadcastEvent = { type: 'run_finalized', ts: '2026-04-29T00:00:00Z' };
+    const bad: BroadcastEvent = {
+      type: "run_finalized",
+      ts: "2026-04-29T00:00:00Z",
+    };
     expect(eventToRoutes(bad)).toEqual([]);
   });
 });
 
-describe('routePatternMatches', () => {
-  it('matches when subscriber listed the literal event route', () => {
-    expect(routePatternMatches(['/leaderboard'], ['/leaderboard'])).toBe(true);
-    expect(routePatternMatches(['/runs/r-001'], ['/runs/r-001'])).toBe(true);
+describe("routePatternMatches", () => {
+  it("matches when subscriber listed the literal event route", () => {
+    expect(routePatternMatches(["/leaderboard"], ["/leaderboard"])).toBe(true);
+    expect(routePatternMatches(["/runs/r-001"], ["/runs/r-001"])).toBe(true);
   });
 
-  it('matches when subscriber listed a wildcard the event satisfies', () => {
-    expect(routePatternMatches(['/models/sonnet-4-7'], ['/models/*'])).toBe(true);
+  it("matches when subscriber listed a wildcard the event satisfies", () => {
+    expect(routePatternMatches(["/models/sonnet-4-7"], ["/models/*"])).toBe(
+      true,
+    );
   });
 
   it('matches ping (event route "*") for any subscriber', () => {
-    expect(routePatternMatches(['*'], ['/leaderboard'])).toBe(true);
-    expect(routePatternMatches(['*'], ['/runs'])).toBe(true);
+    expect(routePatternMatches(["*"], ["/leaderboard"])).toBe(true);
+    expect(routePatternMatches(["*"], ["/runs"])).toBe(true);
   });
 
-  it('rejects mismatched routes', () => {
-    expect(routePatternMatches(['/leaderboard'], ['/runs'])).toBe(false);
-    expect(routePatternMatches(['/models/sonnet-4-7'], ['/models/gpt-5'])).toBe(false);
+  it("rejects mismatched routes", () => {
+    expect(routePatternMatches(["/leaderboard"], ["/runs"])).toBe(false);
+    expect(routePatternMatches(["/models/sonnet-4-7"], ["/models/gpt-5"])).toBe(
+      false,
+    );
   });
 
-  it('handles empty event-routes by rejecting (filtered out earlier; defensive)', () => {
-    expect(routePatternMatches([], ['/leaderboard'])).toBe(false);
+  it("handles empty event-routes by rejecting (filtered out earlier; defensive)", () => {
+    expect(routePatternMatches([], ["/leaderboard"])).toBe(false);
   });
 });
 ```
@@ -337,38 +352,38 @@ Expected: FAIL (module not found).
  * Both sides (event-routes + subscriber-routes) can use any pattern; matching
  * is bidirectional intersection — see `routePatternMatches`.
  */
-import type { BroadcastEvent } from '../../do/leaderboard-broadcaster';
+import type { BroadcastEvent } from "../../do/leaderboard-broadcaster";
 
 export function eventToRoutes(ev: BroadcastEvent): string[] {
   switch (ev.type) {
-    case 'run_finalized': {
+    case "run_finalized": {
       const runId = (ev as { run_id?: string }).run_id;
       const modelSlug = (ev as { model_slug?: string }).model_slug;
       const familySlug = (ev as { family_slug?: string }).family_slug;
       // Defensive: malformed event without identifiers fans out to nothing.
       // Avoids broadcasting noise to every client when the producer slipped.
       if (!runId && !modelSlug && !familySlug) return [];
-      const routes: string[] = ['/leaderboard', '/runs'];
+      const routes: string[] = ["/leaderboard", "/runs"];
       if (runId) routes.push(`/runs/${runId}`);
       if (modelSlug) routes.push(`/models/${modelSlug}`);
       if (familySlug) routes.push(`/families/${familySlug}`);
       return routes;
     }
-    case 'task_set_promoted':
+    case "task_set_promoted":
       // Promotion changes every leaderboard row's task-set membership and
       // every model's `is_current` aggregate, so we wildcard models.
       // /tasks is intentionally absent: spec §8.5 subscriber list does
       // not include /tasks, so fanning out there is dead noise. Add
       // /tasks back if a future plan subscribes the page.
-      return ['/leaderboard', '/models/*'];
-    case 'shortcoming_added': {
+      return ["/leaderboard", "/models/*"];
+    case "shortcoming_added": {
       const modelSlug = (ev as { model_slug?: string }).model_slug;
-      const routes = ['/limitations'];
+      const routes = ["/limitations"];
       if (modelSlug) routes.push(`/models/${modelSlug}`);
       return routes;
     }
-    case 'ping':
-      return ['*'];
+    case "ping":
+      return ["*"];
     default:
       // Exhaustiveness sentinel — adding a new BroadcastEvent type without
       // updating this switch should fail typecheck if we tighten the union.
@@ -380,7 +395,10 @@ export function eventToRoutes(ev: BroadcastEvent): string[] {
  * Returns true if the union of event routes and subscriber routes share at
  * least one match. Both sides may use literals, wildcard segments, or "*".
  */
-export function routePatternMatches(eventRoutes: string[], subscriberRoutes: string[]): boolean {
+export function routePatternMatches(
+  eventRoutes: string[],
+  subscriberRoutes: string[],
+): boolean {
   if (eventRoutes.length === 0 || subscriberRoutes.length === 0) return false;
   for (const er of eventRoutes) {
     for (const sr of subscriberRoutes) {
@@ -391,12 +409,14 @@ export function routePatternMatches(eventRoutes: string[], subscriberRoutes: str
 }
 
 function matchOne(a: string, b: string): boolean {
-  if (a === '*' || b === '*') return true;
+  if (a === "*" || b === "*") return true;
   if (a === b) return true;
   // Wildcard segment: "/models/*" matches "/models/<anything-no-slash>"
-  if (a.endsWith('/*')) {
-    const prefix = a.slice(0, -1);   // "/models/"
-    if (b.startsWith(prefix) && !b.slice(prefix.length).includes('/')) return true;
+  if (a.endsWith("/*")) {
+    const prefix = a.slice(0, -1); // "/models/"
+    if (b.startsWith(prefix) && !b.slice(prefix.length).includes("/")) {
+      return true;
+    }
   }
   return false;
 }
@@ -419,6 +439,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/sse): add sse-routes helper — 
 ### Task A2: Extend Durable Object `/subscribe` to accept `?routes=` and pre-filter fanout
 
 **Files:**
+
 - Modify: `site/src/do/leaderboard-broadcaster.ts`
 - Modify: `site/src/routes/api/v1/events/live/+server.ts`
 - Create: `site/tests/api/events-live-routes.test.ts`
@@ -438,23 +459,30 @@ The route pattern values arrive URL-encoded (e.g. `%2Fleaderboard`); we decode o
 - [ ] **Step 1: TDD — write `site/tests/api/events-live-routes.test.ts`**
 
 ```ts
-import { env } from 'cloudflare:test';
-import { afterAll, describe, it, expect } from 'vitest';
-import { broadcastEvent } from '../../src/lib/server/broadcaster';
+import { env } from "cloudflare:test";
+import { afterAll, describe, expect, it } from "vitest";
+import { broadcastEvent } from "../../src/lib/server/broadcaster";
 
-describe('LeaderboardBroadcaster route filtering', () => {
+describe("LeaderboardBroadcaster route filtering", () => {
   afterAll(async () => {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
-    await stub.fetch('https://do/reset', { method: 'POST', headers: { 'x-test-only': '1' } });
+    await stub.fetch("https://do/reset", {
+      method: "POST",
+      headers: { "x-test-only": "1" },
+    });
   });
 
-  async function subscribeOnce(routesParam?: string): Promise<{ frames: string[] }> {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  async function subscribeOnce(
+    routesParam?: string,
+  ): Promise<{ frames: string[] }> {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
-    const url = routesParam ? `https://do/subscribe?routes=${encodeURIComponent(routesParam)}` : 'https://do/subscribe';
+    const url = routesParam
+      ? `https://do/subscribe?routes=${encodeURIComponent(routesParam)}`
+      : "https://do/subscribe";
     const ctrl = new AbortController();
-    const res = await stub.fetch(url, { method: 'GET', signal: ctrl.signal });
+    const res = await stub.fetch(url, { method: "GET", signal: ctrl.signal });
     expect(res.status).toBe(200);
     const reader = res.body!.getReader();
     const dec = new TextDecoder();
@@ -477,57 +505,57 @@ describe('LeaderboardBroadcaster route filtering', () => {
     return { frames };
   }
 
-  it('default subscriber (no routes param) receives all events', async () => {
+  it("default subscriber (no routes param) receives all events", async () => {
     // Fire the event first so the buffered-replay path picks it up.
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-default-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-default-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
     const { frames } = await subscribeOnce();
-    const joined = frames.join('');
+    const joined = frames.join("");
     expect(joined).toContain('"run_id":"r-default-1"');
   });
 
-  it('subscriber listing /leaderboard receives a run_finalized event', async () => {
+  it("subscriber listing /leaderboard receives a run_finalized event", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-lb-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-lb-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const { frames } = await subscribeOnce('/leaderboard');
-    expect(frames.join('')).toContain('"run_id":"r-lb-1"');
+    const { frames } = await subscribeOnce("/leaderboard");
+    expect(frames.join("")).toContain('"run_id":"r-lb-1"');
   });
 
-  it('subscriber listing /models/gpt-5 does NOT receive run_finalized for sonnet-4-7', async () => {
+  it("subscriber listing /models/gpt-5 does NOT receive run_finalized for sonnet-4-7", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-fil-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-fil-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const { frames } = await subscribeOnce('/models/gpt-5');
+    const { frames } = await subscribeOnce("/models/gpt-5");
     // The event should NOT appear (filtered out at the DO).
     // Note: ping events still flow (route "*"), so we explicitly assert the
     // run_id is missing rather than asserting empty frames.
-    expect(frames.join('')).not.toContain('"run_id":"r-fil-1"');
+    expect(frames.join("")).not.toContain('"run_id":"r-fil-1"');
   });
 
-  it('subscriber listing /models/sonnet-4-7 receives the matching run_finalized', async () => {
+  it("subscriber listing /models/sonnet-4-7 receives the matching run_finalized", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-match-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-match-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const { frames } = await subscribeOnce('/models/sonnet-4-7');
-    expect(frames.join('')).toContain('"run_id":"r-match-1"');
+    const { frames } = await subscribeOnce("/models/sonnet-4-7");
+    expect(frames.join("")).toContain('"run_id":"r-match-1"');
   });
 });
 ```
@@ -540,25 +568,25 @@ Expected: FAILS — current DO ignores `?routes=` and broadcasts everything (the
 - [ ] **Step 3: Modify `site/src/do/leaderboard-broadcaster.ts`**
 
 ```ts
-import type { DurableObjectState } from '@cloudflare/workers-types';
-import { eventToRoutes, routePatternMatches } from '../lib/server/sse-routes';
+import type { DurableObjectState } from "@cloudflare/workers-types";
+import { eventToRoutes, routePatternMatches } from "../lib/server/sse-routes";
 
 const MAX_BUFFERED = 100;
 
 export interface BroadcastEvent {
-  type: 'run_finalized' | 'task_set_promoted' | 'shortcoming_added' | 'ping';
+  type: "run_finalized" | "task_set_promoted" | "shortcoming_added" | "ping";
   ts: string;
   [k: string]: unknown;
 }
 
 interface ClientEntry {
   writer: WritableStreamDefaultWriter<Uint8Array>;
-  routes: string[];   // parsed from ?routes= comma list, default ['*']
+  routes: string[]; // parsed from ?routes= comma list, default ['*']
 }
 
 export class LeaderboardBroadcaster {
   private state: DurableObjectState;
-  private clients: Set<ClientEntry>;        // changed from Set<Writer> to Set<ClientEntry>
+  private clients: Set<ClientEntry>; // changed from Set<Writer> to Set<ClientEntry>
   private recent: BroadcastEvent[];
   private encoder: TextEncoder;
 
@@ -573,35 +601,49 @@ export class LeaderboardBroadcaster {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === '/broadcast' && request.method === 'POST') {
+    if (path === "/broadcast" && request.method === "POST") {
       let ev: BroadcastEvent;
-      try { ev = (await request.json()) as BroadcastEvent; }
-      catch { return new Response('Bad JSON', { status: 400 }); }
+      try {
+        ev = (await request.json()) as BroadcastEvent;
+      } catch {
+        return new Response("Bad JSON", { status: 400 });
+      }
 
       this.recent.push(ev);
-      if (this.recent.length > MAX_BUFFERED) this.recent = this.recent.slice(-MAX_BUFFERED);
+      if (this.recent.length > MAX_BUFFERED) {
+        this.recent = this.recent.slice(-MAX_BUFFERED);
+      }
       this.fanout(ev);
       return Response.json({ ok: true, clients: this.clients.size });
     }
 
-    if (path === '/recent' && request.method === 'GET') {
-      const limitParam = url.searchParams.get('limit');
-      const limit = Math.min(limitParam ? parseInt(limitParam, 10) || 20 : 20, MAX_BUFFERED);
+    if (path === "/recent" && request.method === "GET") {
+      const limitParam = url.searchParams.get("limit");
+      const limit = Math.min(
+        limitParam ? parseInt(limitParam, 10) || 20 : 20,
+        MAX_BUFFERED,
+      );
       const events = this.recent.slice(-limit);
       return Response.json({ events });
     }
 
-    if (path === '/subscribe' && request.method === 'GET') {
-      const routesParam = url.searchParams.get('routes');
+    if (path === "/subscribe" && request.method === "GET") {
+      const routesParam = url.searchParams.get("routes");
       const routes = parseRoutesParam(routesParam);
 
-      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const { readable, writable } = new TransformStream<
+        Uint8Array,
+        Uint8Array
+      >();
       const writer = writable.getWriter();
       const entry: ClientEntry = { writer, routes };
       this.clients.add(entry);
 
       // Initial ping always flows (route "*" matches every subscriber).
-      await this.writeEvent(writer, { type: 'ping', ts: new Date().toISOString() });
+      await this.writeEvent(writer, {
+        type: "ping",
+        ts: new Date().toISOString(),
+      });
 
       // Send up to 20 buffered events that match this client's routes.
       // Walk backwards through the full buffer so a route that only
@@ -609,7 +651,11 @@ export class LeaderboardBroadcaster {
       // subscriber to /models/no-such-slug receives ZERO events even
       // when the buffer holds 50 events for OTHER routes).
       const initialEvents: BroadcastEvent[] = [];
-      for (let i = this.recent.length - 1; i >= 0 && initialEvents.length < 20; i--) {
+      for (
+        let i = this.recent.length - 1;
+        i >= 0 && initialEvents.length < 20;
+        i--
+      ) {
         const ev = this.recent[i];
         if (matchesClient(ev, entry)) initialEvents.unshift(ev);
       }
@@ -617,28 +663,30 @@ export class LeaderboardBroadcaster {
         await this.writeEvent(writer, ev);
       }
 
-      request.signal.addEventListener('abort', () => {
+      request.signal.addEventListener("abort", () => {
         this.clients.delete(entry);
         writer.close().catch(() => {});
       });
 
       return new Response(readable, {
         headers: {
-          'content-type': 'text/event-stream',
-          'cache-control': 'no-cache, no-store',
-          'x-accel-buffering': 'no',
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache, no-store",
+          "x-accel-buffering": "no",
         },
       });
     }
 
-    if (path === '/reset' && request.method === 'POST') {
-      if (request.headers.get('x-test-only') !== '1') return new Response('Forbidden', { status: 403 });
+    if (path === "/reset" && request.method === "POST") {
+      if (request.headers.get("x-test-only") !== "1") {
+        return new Response("Forbidden", { status: 403 });
+      }
       await this.closeAllClients();
       this.recent = [];
       return Response.json({ ok: true });
     }
 
-    return new Response('Not Found', { status: 404 });
+    return new Response("Not Found", { status: 404 });
   }
 
   private async closeAllClients(): Promise<void> {
@@ -648,11 +696,18 @@ export class LeaderboardBroadcaster {
   }
 
   private formatFrame(ev: BroadcastEvent): Uint8Array {
-    return this.encoder.encode(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`);
+    return this.encoder.encode(
+      `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`,
+    );
   }
 
-  private async writeEvent(writer: WritableStreamDefaultWriter<Uint8Array>, ev: BroadcastEvent): Promise<void> {
-    try { await writer.write(this.formatFrame(ev)); } catch { /* cleanup on next fanout */ }
+  private async writeEvent(
+    writer: WritableStreamDefaultWriter<Uint8Array>,
+    ev: BroadcastEvent,
+  ): Promise<void> {
+    try {
+      await writer.write(this.formatFrame(ev));
+    } catch { /* cleanup on next fanout */ }
   }
 
   private fanout(ev: BroadcastEvent): void {
@@ -668,14 +723,16 @@ export class LeaderboardBroadcaster {
 }
 
 function parseRoutesParam(raw: string | null): string[] {
-  if (!raw) return ['*'];
-  const parts = raw.split(',').map((s) => decodeURIComponent(s).trim()).filter(Boolean);
-  return parts.length > 0 ? parts : ['*'];
+  if (!raw) return ["*"];
+  const parts = raw.split(",").map((s) => decodeURIComponent(s).trim()).filter(
+    Boolean,
+  );
+  return parts.length > 0 ? parts : ["*"];
 }
 
 function matchesClient(ev: BroadcastEvent, entry: ClientEntry): boolean {
   // Heartbeats and reset events always flow.
-  if (ev.type === 'ping') return true;
+  if (ev.type === "ping") return true;
   return routePatternMatches(eventToRoutes(ev), entry.routes);
 }
 ```
@@ -683,21 +740,29 @@ function matchesClient(ev: BroadcastEvent, entry: ClientEntry): boolean {
 - [ ] **Step 4: Modify `site/src/routes/api/v1/events/live/+server.ts`**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { errorResponse, ApiError } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const env = platform.env;
-  const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
   const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
   // Forward `?routes=` (URL-encoded comma list) verbatim to the DO. Empty or
   // missing → DO defaults to ['*'] (back-compat for any legacy caller).
-  const routes = url.searchParams.get('routes');
-  const target = routes ? `https://do/subscribe?routes=${encodeURIComponent(routes)}` : 'https://do/subscribe';
+  const routes = url.searchParams.get("routes");
+  const target = routes
+    ? `https://do/subscribe?routes=${encodeURIComponent(routes)}`
+    : "https://do/subscribe";
 
-  return stub.fetch(new Request(target, { method: 'GET', signal: request.signal }));
+  return stub.fetch(
+    new Request(target, { method: "GET", signal: request.signal }),
+  );
 };
 ```
 
@@ -718,6 +783,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/sse): per-route SSE filtering �
 ### Task A2.5: Persist DO `recent` buffer across hibernation
 
 **Files:**
+
 - Modify: `site/src/do/leaderboard-broadcaster.ts`
 - Modify: `site/tests/api/events-live-routes.test.ts` (add hibernation persistence test)
 
@@ -771,7 +837,9 @@ In `/broadcast`:
 
 ```ts
 this.recent.push(ev);
-if (this.recent.length > MAX_BUFFERED) this.recent = this.recent.slice(-MAX_BUFFERED);
+if (this.recent.length > MAX_BUFFERED) {
+  this.recent = this.recent.slice(-MAX_BUFFERED);
+}
 // Persist (fire-and-forget; dropping a write is acceptable — the buffer
 // is best-effort replay, not transactional event log)
 this.state.storage.put(RECENT_STORAGE_KEY, this.recent).catch(() => {});
@@ -790,10 +858,10 @@ await this.state.storage.delete(RECENT_STORAGE_KEY);
 Add to `site/tests/api/events-live-routes.test.ts`:
 
 ```ts
-import { runInDurableObject } from 'cloudflare:test';
-import type { LeaderboardBroadcaster } from '../../src/do/leaderboard-broadcaster';
+import { runInDurableObject } from "cloudflare:test";
+import type { LeaderboardBroadcaster } from "../../src/do/leaderboard-broadcaster";
 
-it('recent buffer is written to state.storage and survives in-memory wipe', async () => {
+it("recent buffer is written to state.storage and survives in-memory wipe", async () => {
   // `cloudflare:test`'s `env.X.get(id)` always returns a stub backed by the
   // SAME singleton DO instance for a given id within a test run — there is
   // no per-`get()` isolation, so the original two-stub pattern was a no-op
@@ -811,32 +879,38 @@ it('recent buffer is written to state.storage and survives in-memory wipe', asyn
   //      repopulate `recent` on the next cold start. This branch is
   //      unit-tested separately if needed by directly invoking the
   //      restore promise factory in isolation.
-  const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
   const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
   await broadcastEvent(env, {
-    type: 'run_finalized',
+    type: "run_finalized",
     ts: new Date().toISOString(),
-    run_id: 'r-persist-1',
-    model_slug: 'sonnet-4-7',
-    family_slug: 'claude',
+    run_id: "r-persist-1",
+    model_slug: "sonnet-4-7",
+    family_slug: "claude",
   });
 
   // (1) Storage write happened.
-  await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (_instance, state) => {
-    const stored = await state.storage.get<BroadcastEvent[]>('recent');
-    expect(stored).toBeDefined();
-    const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
-    expect(ids).toContain('r-persist-1');
-  });
+  await runInDurableObject<LeaderboardBroadcaster, void>(
+    stub,
+    async (_instance, state) => {
+      const stored = await state.storage.get<BroadcastEvent[]>("recent");
+      expect(stored).toBeDefined();
+      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
+      expect(ids).toContain("r-persist-1");
+    },
+  );
 
   // (2) Wipe in-memory `recent` (hibernation analogue) — storage stays.
-  await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (instance, state) => {
-    (instance as unknown as { recent: BroadcastEvent[] }).recent = [];
-    const stored = await state.storage.get<BroadcastEvent[]>('recent');
-    const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
-    expect(ids).toContain('r-persist-1');
-  });
+  await runInDurableObject<LeaderboardBroadcaster, void>(
+    stub,
+    async (instance, state) => {
+      (instance as unknown as { recent: BroadcastEvent[] }).recent = [];
+      const stored = await state.storage.get<BroadcastEvent[]>("recent");
+      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
+      expect(ids).toContain("r-persist-1");
+    },
+  );
 });
 ```
 
@@ -866,6 +940,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/sse): persist DO recent buffer v
 ### Task A3: Add `density_toggle` and `rum_beacon` flags
 
 **Files:**
+
 - Modify: `site/src/lib/server/flags.ts`
 - Modify: `site/src/lib/server/flags.test.ts`
 
@@ -880,8 +955,8 @@ export interface Flags {
   og_dynamic: boolean;
   trajectory_charts: boolean;
   print_stylesheet: boolean;
-  density_toggle: boolean;     // NEW (P5.4)
-  rum_beacon: boolean;          // NEW (P5.4)
+  density_toggle: boolean; // NEW (P5.4)
+  rum_beacon: boolean; // NEW (P5.4)
 }
 
 const DEFAULTS: Flags = {
@@ -894,7 +969,10 @@ const DEFAULTS: Flags = {
   rum_beacon: false,
 };
 
-export function loadFlags(env: Record<string, string | undefined>, isCanary: boolean): Flags {
+export function loadFlags(
+  env: Record<string, string | undefined>,
+  isCanary: boolean,
+): Flags {
   if (isCanary) {
     return {
       cmd_k_palette: true,
@@ -908,10 +986,10 @@ export function loadFlags(env: Record<string, string | undefined>, isCanary: boo
   }
   const out: Flags = { ...DEFAULTS };
   for (const k of Object.keys(out) as Array<keyof Flags>) {
-    const envName = 'FLAG_' + (k as string).toUpperCase();
+    const envName = "FLAG_" + (k as string).toUpperCase();
     const v = env[envName];
-    if (v === 'on') out[k] = true;
-    if (v === 'off') out[k] = false;
+    if (v === "on") out[k] = true;
+    if (v === "off") out[k] = false;
   }
   return out;
 }
@@ -922,17 +1000,19 @@ export function loadFlags(env: Record<string, string | undefined>, isCanary: boo
 Add three assertions:
 
 ```ts
-it('density_toggle defaults to false and respects FLAG_DENSITY_TOGGLE', () => {
+it("density_toggle defaults to false and respects FLAG_DENSITY_TOGGLE", () => {
   expect(loadFlags({}, false).density_toggle).toBe(false);
-  expect(loadFlags({ FLAG_DENSITY_TOGGLE: 'on' }, false).density_toggle).toBe(true);
+  expect(loadFlags({ FLAG_DENSITY_TOGGLE: "on" }, false).density_toggle).toBe(
+    true,
+  );
 });
 
-it('rum_beacon defaults to false and respects FLAG_RUM_BEACON', () => {
+it("rum_beacon defaults to false and respects FLAG_RUM_BEACON", () => {
   expect(loadFlags({}, false).rum_beacon).toBe(false);
-  expect(loadFlags({ FLAG_RUM_BEACON: 'on' }, false).rum_beacon).toBe(true);
+  expect(loadFlags({ FLAG_RUM_BEACON: "on" }, false).rum_beacon).toBe(true);
 });
 
-it('canary mode flips both new flags on', () => {
+it("canary mode flips both new flags on", () => {
   const f = loadFlags({}, true);
   expect(f.density_toggle).toBe(true);
   expect(f.rum_beacon).toBe(true);
@@ -956,6 +1036,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/flags): add density_toggle and r
 ### Task A4: Extract `canary.ts` — path-prefix detection
 
 **Files:**
+
 - Create: `site/src/lib/server/canary.ts`
 - Create: `site/src/lib/server/canary.test.ts`
 
@@ -964,28 +1045,34 @@ Spec §11.1 says canary URLs are `/_canary/<sha>/<route>`. The layout-server alr
 - [ ] **Step 1: TDD — `site/src/lib/server/canary.test.ts`**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { isCanary, extractCanaryPath } from './canary';
+import { describe, expect, it } from "vitest";
+import { extractCanaryPath, isCanary } from "./canary";
 
-describe('canary', () => {
-  it('isCanary recognizes the prefix', () => {
-    expect(isCanary(new URL('http://x/_canary/abc/leaderboard'))).toBe(true);
-    expect(isCanary(new URL('http://x/leaderboard'))).toBe(false);
-    expect(isCanary(new URL('http://x/'))).toBe(false);
+describe("canary", () => {
+  it("isCanary recognizes the prefix", () => {
+    expect(isCanary(new URL("http://x/_canary/abc/leaderboard"))).toBe(true);
+    expect(isCanary(new URL("http://x/leaderboard"))).toBe(false);
+    expect(isCanary(new URL("http://x/"))).toBe(false);
   });
 
-  it('extractCanaryPath returns sha + tail', () => {
-    const out = extractCanaryPath(new URL('http://x/_canary/abc1234/models/sonnet-4-7?tier=verified'));
-    expect(out).toEqual({ sha: 'abc1234', path: '/models/sonnet-4-7', search: '?tier=verified' });
+  it("extractCanaryPath returns sha + tail", () => {
+    const out = extractCanaryPath(
+      new URL("http://x/_canary/abc1234/models/sonnet-4-7?tier=verified"),
+    );
+    expect(out).toEqual({
+      sha: "abc1234",
+      path: "/models/sonnet-4-7",
+      search: "?tier=verified",
+    });
   });
 
-  it('extractCanaryPath handles missing tail', () => {
-    const out = extractCanaryPath(new URL('http://x/_canary/abc/'));
-    expect(out).toEqual({ sha: 'abc', path: '/', search: '' });
+  it("extractCanaryPath handles missing tail", () => {
+    const out = extractCanaryPath(new URL("http://x/_canary/abc/"));
+    expect(out).toEqual({ sha: "abc", path: "/", search: "" });
   });
 
-  it('extractCanaryPath returns null on non-canary URL', () => {
-    expect(extractCanaryPath(new URL('http://x/leaderboard'))).toBeNull();
+  it("extractCanaryPath returns null on non-canary URL", () => {
+    expect(extractCanaryPath(new URL("http://x/leaderboard"))).toBeNull();
   });
 });
 ```
@@ -1009,25 +1096,25 @@ Expected: FAIL.
  */
 
 export function isCanary(url: URL): boolean {
-  return url.pathname.startsWith('/_canary/');
+  return url.pathname.startsWith("/_canary/");
 }
 
 export interface CanaryParts {
   sha: string;
-  path: string;        // leading slash; "/" if no tail
-  search: string;      // includes "?" if present, else ""
+  path: string; // leading slash; "/" if no tail
+  search: string; // includes "?" if present, else ""
 }
 
 export function extractCanaryPath(url: URL): CanaryParts | null {
   if (!isCanary(url)) return null;
   // pathname:  /_canary/<sha>/<rest...>
-  const stripped = url.pathname.slice('/_canary/'.length);
-  const slash = stripped.indexOf('/');
+  const stripped = url.pathname.slice("/_canary/".length);
+  const slash = stripped.indexOf("/");
   const sha = slash === -1 ? stripped : stripped.slice(0, slash);
-  const tail = slash === -1 ? '' : stripped.slice(slash);  // includes leading slash
+  const tail = slash === -1 ? "" : stripped.slice(slash); // includes leading slash
   return {
     sha,
-    path: tail || '/',
+    path: tail || "/",
     search: url.search,
   };
 }
@@ -1050,6 +1137,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/canary): extract canary path uti
 ### Task A5: Vendor 4 new Lucide icons (Maximize2, Minimize2, Activity, Image)
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/icons/Maximize2.svelte`
 - Create: `site/src/lib/components/ui/icons/Minimize2.svelte`
 - Create: `site/src/lib/components/ui/icons/Activity.svelte`
@@ -1088,10 +1176,10 @@ Path data per icon (from upstream `lucide.dev` MIT):
 Append to `site/src/lib/components/ui/icons/index.ts`:
 
 ```ts
-export { default as Maximize2 } from './Maximize2.svelte';
-export { default as Minimize2 } from './Minimize2.svelte';
-export { default as Activity } from './Activity.svelte';
-export { default as Image } from './Image.svelte';
+export { default as Maximize2 } from "./Maximize2.svelte";
+export { default as Minimize2 } from "./Minimize2.svelte";
+export { default as Activity } from "./Activity.svelte";
+export { default as Image } from "./Image.svelte";
 ```
 
 - [ ] **Step 3: Verify**
@@ -1111,6 +1199,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/icons): vendor 4 Lucide icons (M
 ### Task A6: Vendor Inter TTF fonts for OG renderer
 
 **Files:**
+
 - Create: `site/src/lib/server/fonts/inter-400.ttf` (binary, ~110 KB)
 - Create: `site/src/lib/server/fonts/inter-600.ttf` (binary, ~115 KB)
 - Create: `site/src/lib/server/fonts/README.md`
@@ -1155,6 +1244,7 @@ OFL-1.1 — https://scripts.sil.org/cms/scripts/page.php?site_id=nrsi&id=OFL
 ```bash
 ls -la U:/Git/CentralGauge/site/src/lib/server/fonts/
 ```
+
 Expected: 3 files (2 binaries + README).
 
 - [ ] **Step 4: Commit**
@@ -1169,6 +1259,7 @@ git -C /u/Git/CentralGauge commit -m "build(site): vendor Inter 400/600 TTFs for
 ### Task A7: Verify `@cf-wasm/og` worker bundle size before adopting
 
 **Files:**
+
 - Modify: `site/package.json` (add the dep)
 - Verification only — no source changes here; the bundle-size check gates Mini-phase D.
 
@@ -1190,7 +1281,7 @@ Add a temporary throwaway import at the top of `site/src/hooks.server.ts` (rever
 
 ```ts
 // TEMP — A7 smoke. Remove before commit.
-import { ImageResponse as _ImageResponse } from '@cf-wasm/og';
+import { ImageResponse as _ImageResponse } from "@cf-wasm/og";
 void _ImageResponse;
 ```
 
@@ -1206,11 +1297,11 @@ Record both raw and gzipped sizes. Free-tier limit: 1 MB (1048576 bytes) compres
 
 - [ ] **Step 4: Decide split vs. single-worker**
 
-| Compressed size | Action |
-|-----------------|--------|
-| ≤ 900 KB | Continue with single-worker; proceed to Mini-phase D |
-| 900 KB – 1 MB | Continue with single-worker but flag as fragile; document threshold in `docs/site/operations.md` |
-| > 1 MB | Add Task D0.5 (separate `og-renderer-worker`) before Mini-phase D; OR escalate to user about paid-tier upgrade |
+| Compressed size | Action                                                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| ≤ 900 KB        | Continue with single-worker; proceed to Mini-phase D                                                           |
+| 900 KB – 1 MB   | Continue with single-worker but flag as fragile; document threshold in `docs/site/operations.md`               |
+| > 1 MB          | Add Task D0.5 (separate `og-renderer-worker`) before Mini-phase D; OR escalate to user about paid-tier upgrade |
 
 If split is required: a separate worker package lives at `og-worker/` with its own `wrangler.toml`, exposes a single `fetch` handler that accepts a JSON `OgPayload` and returns a PNG. Main worker calls it via `env.OG_RENDERER.fetch(...)` (service binding) from within the four `/og/...` SvelteKit routes. The OG cache (R2) stays in the main worker — only the rendering hops out.
 
@@ -1234,6 +1325,7 @@ Replace `<raw>/<gz>` with measured sizes; replace `$STATUS` with `under-free-tie
 ### Task A8: Update `npm run preview` to bind port 4173 against the built worker
 
 **Files:**
+
 - Modify: `site/package.json`
 
 Today's script (line 9) is `"preview": "wrangler dev"` which binds port 8787 by default. CI's Lighthouse, Playwright preview project, and the visual-regression baseline workflow all hit `127.0.0.1:4173`. The mismatch silently fails: tests time out waiting for a port nothing's listening on.
@@ -1269,6 +1361,7 @@ If the curl returns non-200 within 30 s of preview start, the build didn't emit 
 ```bash
 grep "127.0.0.1:4173" /u/Git/CentralGauge/site/lighthouserc.json
 ```
+
 Expected: 14 matches (1 per URL). No edits needed; LHCI's `startServerCommand: "npm run build && npm run preview"` now produces a 4173 listener.
 
 - [ ] **Step 4: Commit**
@@ -1287,6 +1380,7 @@ The DO accepts route filtering (Mini-phase A). Now we add the client-side machin
 ### Task B1: `useEventSource` client hook
 
 **Files:**
+
 - Create: `site/src/lib/client/use-event-source.svelte.ts`
 - Create: `site/src/lib/client/use-event-source.test.ts`
 
@@ -1305,12 +1399,15 @@ Signature:
 
 ```ts
 export interface EventSourceHandle {
-  status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
-  on(type: string, handler: (ev: MessageEvent) => void): () => void;  // returns unsubscribe
+  status: "connecting" | "connected" | "reconnecting" | "disconnected";
+  on(type: string, handler: (ev: MessageEvent) => void): () => void; // returns unsubscribe
   dispose(): void;
 }
 
-export function useEventSource(routes: string[], opts?: { url?: string }): EventSourceHandle;
+export function useEventSource(
+  routes: string[],
+  opts?: { url?: string },
+): EventSourceHandle;
 ```
 
 Reconnect logic: on `error` event, schedule retry at 1 s, then 3 s, then 10 s. After 3 retries, status flips to `disconnected` and stops; the consumer can call `dispose()` and re-open if user clicks a "Reconnect" button.
@@ -1318,8 +1415,8 @@ Reconnect logic: on `error` event, schedule retry at 1 s, then 3 s, then 10 s. A
 - [ ] **Step 1: TDD — `site/src/lib/client/use-event-source.test.ts`**
 
 ```ts
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useEventSource } from './use-event-source.svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEventSource } from "./use-event-source.svelte";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -1351,9 +1448,13 @@ class FakeEventSource {
     for (const h of list) h(ev);
   }
 
-  close() { this.readyState = 2; }
+  close() {
+    this.readyState = 2;
+  }
 
-  static reset() { FakeEventSource.instances = []; }
+  static reset() {
+    FakeEventSource.instances = [];
+  }
 }
 
 beforeEach(() => {
@@ -1367,67 +1468,72 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('useEventSource', () => {
-  it('opens an EventSource with route query param', () => {
-    const h = useEventSource(['/leaderboard']);
+describe("useEventSource", () => {
+  it("opens an EventSource with route query param", () => {
+    const h = useEventSource(["/leaderboard"]);
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0].url).toContain('routes=');
-    expect(FakeEventSource.instances[0].url).toContain(encodeURIComponent('/leaderboard'));
+    expect(FakeEventSource.instances[0].url).toContain("routes=");
+    expect(FakeEventSource.instances[0].url).toContain(
+      encodeURIComponent("/leaderboard"),
+    );
     h.dispose();
   });
 
-  it('encodes multiple routes as a comma list', () => {
-    const h = useEventSource(['/runs', '/runs/r-1']);
+  it("encodes multiple routes as a comma list", () => {
+    const h = useEventSource(["/runs", "/runs/r-1"]);
     const url = FakeEventSource.instances[0].url;
-    expect(decodeURIComponent(url)).toContain('/runs,/runs/r-1');
+    expect(decodeURIComponent(url)).toContain("/runs,/runs/r-1");
     h.dispose();
   });
 
-  it('on(type, handler) receives dispatched events', () => {
-    const h = useEventSource(['/leaderboard']);
+  it("on(type, handler) receives dispatched events", () => {
+    const h = useEventSource(["/leaderboard"]);
     const handler = vi.fn();
-    h.on('run_finalized', handler);
-    FakeEventSource.instances[0].dispatch('run_finalized', { run_id: 'r-1', ts: 'now' });
+    h.on("run_finalized", handler);
+    FakeEventSource.instances[0].dispatch("run_finalized", {
+      run_id: "r-1",
+      ts: "now",
+    });
     expect(handler).toHaveBeenCalledTimes(1);
     h.dispose();
   });
 
-  it('status transitions connecting → connected on open', () => {
-    const h = useEventSource(['/leaderboard']);
-    expect(h.status).toBe('connecting');
-    FakeEventSource.instances[0].onopen?.(new Event('open'));
-    expect(h.status).toBe('connected');
+  it("status transitions connecting → connected on open", () => {
+    const h = useEventSource(["/leaderboard"]);
+    expect(h.status).toBe("connecting");
+    FakeEventSource.instances[0].onopen?.(new Event("open"));
+    expect(h.status).toBe("connected");
     h.dispose();
   });
 
-  it('reconnects with exponential backoff on error', () => {
-    const h = useEventSource(['/leaderboard']);
+  it("reconnects with exponential backoff on error", () => {
+    const h = useEventSource(["/leaderboard"]);
     expect(FakeEventSource.instances).toHaveLength(1);
-    FakeEventSource.instances[0].onerror?.(new Event('error'));
-    expect(h.status).toBe('reconnecting');
+    FakeEventSource.instances[0].onerror?.(new Event("error"));
+    expect(h.status).toBe("reconnecting");
     vi.advanceTimersByTime(1000);
-    expect(FakeEventSource.instances).toHaveLength(2);  // 1 s retry
-    FakeEventSource.instances[1].onerror?.(new Event('error'));
+    expect(FakeEventSource.instances).toHaveLength(2); // 1 s retry
+    FakeEventSource.instances[1].onerror?.(new Event("error"));
     vi.advanceTimersByTime(3000);
-    expect(FakeEventSource.instances).toHaveLength(3);  // 3 s retry
-    FakeEventSource.instances[2].onerror?.(new Event('error'));
+    expect(FakeEventSource.instances).toHaveLength(3); // 3 s retry
+    FakeEventSource.instances[2].onerror?.(new Event("error"));
     vi.advanceTimersByTime(10_000);
-    expect(FakeEventSource.instances).toHaveLength(4);  // 10 s retry
-    FakeEventSource.instances[3].onerror?.(new Event('error'));
-    expect(h.status).toBe('disconnected');
+    expect(FakeEventSource.instances).toHaveLength(4); // 10 s retry
+    FakeEventSource.instances[3].onerror?.(new Event("error"));
+    expect(h.status).toBe("disconnected");
     vi.advanceTimersByTime(60_000);
-    expect(FakeEventSource.instances).toHaveLength(4);  // no further retry after 3 attempts
+    expect(FakeEventSource.instances).toHaveLength(4); // no further retry after 3 attempts
     h.dispose();
   });
 
-  it('dispose closes the active EventSource and prevents future reconnects', () => {
-    const h = useEventSource(['/leaderboard']);
+  it("dispose closes the active EventSource and prevents future reconnects", () => {
+    const h = useEventSource(["/leaderboard"]);
     const es = FakeEventSource.instances[0];
     h.dispose();
     expect(es.readyState).toBe(2);
-    es.onerror?.(new Event('error'));
+    es.onerror?.(new Event("error"));
     vi.advanceTimersByTime(10_000);
-    expect(FakeEventSource.instances).toHaveLength(1);  // no reconnect after dispose
+    expect(FakeEventSource.instances).toHaveLength(1); // no reconnect after dispose
   });
 });
 ```
@@ -1472,7 +1578,11 @@ Expected: FAIL (module not found).
 
 const RETRY_DELAYS_MS = [1000, 3000, 10_000];
 
-export type EventSourceStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+export type EventSourceStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
 
 export interface EventSourceHandle {
   readonly status: EventSourceStatus;
@@ -1488,15 +1598,18 @@ interface InternalState {
   handlers: Map<string, Set<(ev: MessageEvent) => void>>;
 }
 
-export function useEventSource(routes: string[], opts: { url?: string } = {}): EventSourceHandle {
-  const baseUrl = opts.url ?? '/api/v1/events/live';
-  const routeParam = encodeURIComponent(routes.join(','));
+export function useEventSource(
+  routes: string[],
+  opts: { url?: string } = {},
+): EventSourceHandle {
+  const baseUrl = opts.url ?? "/api/v1/events/live";
+  const routeParam = encodeURIComponent(routes.join(","));
   const fullUrl = `${baseUrl}?routes=${routeParam}`;
 
   // Reactive status — $state is a compile-time transform that requires
   // the .svelte.ts file extension. Reads via the getter below pick up
   // every transition.
-  let status = $state<EventSourceStatus>('connecting');
+  let status = $state<EventSourceStatus>("connecting");
 
   const state: InternalState = {
     attempt: 0,
@@ -1513,8 +1626,8 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
 
     es.onopen = () => {
       if (state.disposed) return;
-      status = 'connected';
-      state.attempt = 0;   // reset on successful open
+      status = "connected";
+      state.attempt = 0; // reset on successful open
     };
 
     es.onerror = () => {
@@ -1522,10 +1635,10 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
       es.close();
       state.source = null;
       if (state.attempt >= RETRY_DELAYS_MS.length) {
-        status = 'disconnected';
+        status = "disconnected";
         return;
       }
-      status = 'reconnecting';
+      status = "reconnecting";
       const delay = RETRY_DELAYS_MS[state.attempt];
       state.attempt += 1;
       state.retryTimer = setTimeout(open, delay);
@@ -1557,13 +1670,15 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
     state.source?.close();
     state.source = null;
     state.handlers.clear();
-    status = 'disconnected';
+    status = "disconnected";
   }
 
   open();
 
   return {
-    get status() { return status; },
+    get status() {
+      return status;
+    },
     on,
     dispose,
   };
@@ -1587,7 +1702,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/sse): useEventSource client hook
 > reactivity runtime. The `$state` rune still compiles to a plain
 > getter/setter under jsdom; tests asserting `handle.status` after
 > dispatching events work because the getter returns the latest mutated
-> value. Reactivity-via-effect-rerun is what the *consumer* needs — the
+> value. Reactivity-via-effect-rerun is what the _consumer_ needs — the
 > hook itself is just a state holder, and tests verify the holder
 > works.
 
@@ -1596,6 +1711,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/sse): useEventSource client hook
 ### Task B2: `<LiveStatus>` domain widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/LiveStatus.svelte`
 - Create: `site/src/lib/components/domain/LiveStatus.test.svelte.ts`
 
@@ -1606,34 +1722,43 @@ Why a separate widget rather than inlining `<StatusIndicator status={sse.status}
 - [ ] **Step 1: TDD — `site/src/lib/components/domain/LiveStatus.test.svelte.ts`**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import LiveStatus from './LiveStatus.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import LiveStatus from "./LiveStatus.svelte";
 
-function makeHandle(status: 'connecting' | 'connected' | 'reconnecting' | 'disconnected') {
+function makeHandle(
+  status: "connecting" | "connected" | "reconnecting" | "disconnected",
+) {
   return { status, on: () => () => {}, dispose: () => {} };
 }
 
-describe('LiveStatus', () => {
-  it('renders connected state', () => {
-    const { container } = render(LiveStatus, { sse: makeHandle('connected') });
-    expect(container.querySelector('.status-connected')).not.toBeNull();
+describe("LiveStatus", () => {
+  it("renders connected state", () => {
+    const { container } = render(LiveStatus, { sse: makeHandle("connected") });
+    expect(container.querySelector(".status-connected")).not.toBeNull();
   });
 
-  it('renders reconnecting state with spinner-equivalent class', () => {
-    const { container } = render(LiveStatus, { sse: makeHandle('reconnecting') });
-    expect(container.querySelector('.status-reconnecting')).not.toBeNull();
+  it("renders reconnecting state with spinner-equivalent class", () => {
+    const { container } = render(LiveStatus, {
+      sse: makeHandle("reconnecting"),
+    });
+    expect(container.querySelector(".status-reconnecting")).not.toBeNull();
   });
 
-  it('renders disconnected state and exposes a Reconnect button', () => {
-    const { container, getByRole } = render(LiveStatus, { sse: makeHandle('disconnected') });
-    expect(container.querySelector('.status-disconnected')).not.toBeNull();
-    expect(getByRole('button', { name: /reconnect/i })).toBeDefined();
+  it("renders disconnected state and exposes a Reconnect button", () => {
+    const { container, getByRole } = render(LiveStatus, {
+      sse: makeHandle("disconnected"),
+    });
+    expect(container.querySelector(".status-disconnected")).not.toBeNull();
+    expect(getByRole("button", { name: /reconnect/i })).toBeDefined();
   });
 
-  it('label override surfaces in the rendered text', () => {
-    const { getByText } = render(LiveStatus, { sse: makeHandle('connected'), label: 'streaming' });
-    expect(getByText('streaming')).toBeDefined();
+  it("label override surfaces in the rendered text", () => {
+    const { getByText } = render(LiveStatus, {
+      sse: makeHandle("connected"),
+      label: "streaming",
+    });
+    expect(getByText("streaming")).toBeDefined();
   });
 });
 ```
@@ -1723,6 +1848,7 @@ The route patterns sent over the wire ARE NOT the SvelteKit route IDs — they'r
 ### Task C1: Wire SSE on `/leaderboard`
 
 **Files:**
+
 - Modify: `site/src/routes/leaderboard/+page.svelte`
 
 The existing static `<StatusIndicator status="static" label="" />` is replaced by `<LiveStatus>`. The flag gates the entire SSE block — when `sse_live_updates: false`, we render the legacy static indicator unchanged.
@@ -1803,6 +1929,7 @@ Then run the existing `tests/e2e/leaderboard.spec.ts` (carry-over from P5.1) to 
 ```bash
 cd site && npx playwright test tests/e2e/leaderboard.spec.ts 2>&1 | tail -10
 ```
+
 Expected: green (E2E doesn't open SSE; flag is off in non-canary preview).
 
 - [ ] **Step 3: Commit**
@@ -1817,6 +1944,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/leaderboard): SSE live updates v
 ### Task C2: Wire SSE on `/runs`
 
 **Files:**
+
 - Modify: `site/src/routes/runs/+page.svelte`
 
 Same pattern as C1, but with a flourish: incoming `run_finalized` events display a temporary "new run" banner above the table for 5 seconds. The banner is reduced-motion-aware (no fade transition under `prefers-reduced-motion: reduce`).
@@ -1943,6 +2071,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/runs): SSE on /runs — new-run 
 ### Task C3: Wire SSE on `/runs/:id` (only when status is pending or running)
 
 **Files:**
+
 - Modify: `site/src/routes/runs/[id]/+page.svelte`
 
 §8.5 says the run-detail subscribes "only if pending/running". Most runs are completed by the time a user lands; opening an SSE for a completed run is wasteful. Gate on `data.run.status`.
@@ -2008,6 +2137,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/runs-detail): conditional SSE �
 ### Task C4: Wire SSE on `/models/:slug`
 
 **Files:**
+
 - Modify: `site/src/routes/models/[slug]/+page.svelte`
 
 The route pattern is `/models/<slug>` (concrete, not a wildcard). The DO will only forward events whose `model_slug` matches the slug. We additionally guard client-side because `task_set_promoted` (which fans out to `/models/*`) reaches every model page; we want to invalidate only for our own slug under that event too.
@@ -2068,6 +2198,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/models): SSE per-slug subscripti
 ### Task C5: Wire SSE on `/families/:slug`
 
 **Files:**
+
 - Modify: `site/src/routes/families/[slug]/+page.svelte`
 
 Family detail subscribes to `/families/<slug>`; the DO forwards `run_finalized` events whose `family_slug` matches.
@@ -2129,6 +2260,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/families): SSE per-slug subscrip
 ### Task C6: SSE producer wiring — confirm `family_slug` is on the wire
 
 **Files:**
+
 - Modify: `site/src/lib/server/ingest.ts` (only if the existing producer doesn't populate `family_slug`)
 - Modify: `site/tests/api/ingest.test.ts` (if applicable)
 
@@ -2149,16 +2281,22 @@ In whichever file calls `broadcastEvent`, change the call site:
 ```ts
 // Before:
 await broadcastEvent(env, {
-  type: 'run_finalized', ts, run_id: runId, model_slug: modelSlug,
+  type: "run_finalized",
+  ts,
+  run_id: runId,
+  model_slug: modelSlug,
 });
 
 // After:
 const familySlug = (await env.DB.prepare(
-  'SELECT mf.slug FROM model_families mf JOIN models m ON m.family_id = mf.id WHERE m.slug = ?'
+  "SELECT mf.slug FROM model_families mf JOIN models m ON m.family_id = mf.id WHERE m.slug = ?",
 ).bind(modelSlug).first<{ slug: string }>())?.slug;
 
 await broadcastEvent(env, {
-  type: 'run_finalized', ts, run_id: runId, model_slug: modelSlug,
+  type: "run_finalized",
+  ts,
+  run_id: runId,
+  model_slug: modelSlug,
   ...(familySlug ? { family_slug: familySlug } : {}),
 });
 ```
@@ -2168,7 +2306,7 @@ The conditional spread avoids the `canonicalJSON rejects undefined` hazard docum
 - [ ] **Step 3: Add a test (if file modified)**
 
 ```ts
-it('broadcastEvent payload includes family_slug when known', async () => {
+it("broadcastEvent payload includes family_slug when known", async () => {
   // pre-seed: model_families + models row
   await seed(env.DB);
   // ... trigger ingest ...
@@ -2194,17 +2332,18 @@ The renderer chain: `@cf-wasm/og` → Satori (JSX-to-SVG) → resvg-wasm (SVG-to
 ### Task D1: `og-render.ts` helper with R2-backed cache
 
 **Files:**
+
 - Create: `site/src/lib/server/og-render.ts`
 - Create: `site/src/lib/server/og-render.test.ts`
 
 Public surface:
 
 ```ts
-export type OgKind = 'index' | 'model' | 'run' | 'family';
+export type OgKind = "index" | "model" | "run" | "family";
 
 export interface OgRenderOpts {
   kind: OgKind;
-  slug?: string;             // model/family slug, run id
+  slug?: string; // model/family slug, run id
   /** For cache-key computation. Falls back to a fixed string if absent. */
   taskSetHash?: string;
   /** R2 binding from platform.env.BLOBS */
@@ -2214,15 +2353,34 @@ export interface OgRenderOpts {
 }
 
 export type OgPayload =
-  | { kind: 'index'; modelCount: number; runCount: number; lastRunAt: string }
-  | { kind: 'model'; displayName: string; familySlug: string; avgScore: number; runCount: number }
-  | { kind: 'run'; modelDisplay: string; tasksPassed: number; tasksTotal: number; tier: string; ts: string }
-  | { kind: 'family'; displayName: string; vendor: string; modelCount: number; topModelDisplay: string };
+  | { kind: "index"; modelCount: number; runCount: number; lastRunAt: string }
+  | {
+    kind: "model";
+    displayName: string;
+    familySlug: string;
+    avgScore: number;
+    runCount: number;
+  }
+  | {
+    kind: "run";
+    modelDisplay: string;
+    tasksPassed: number;
+    tasksTotal: number;
+    tier: string;
+    ts: string;
+  }
+  | {
+    kind: "family";
+    displayName: string;
+    vendor: string;
+    modelCount: number;
+    topModelDisplay: string;
+  };
 
 export interface OgRenderResult {
   body: ArrayBuffer;
-  contentType: 'image/png';
-  cacheControl: 'public, max-age=60, stale-while-revalidate=86400';
+  contentType: "image/png";
+  cacheControl: "public, max-age=60, stale-while-revalidate=86400";
   /** True when served from R2 cache; false when newly rendered. */
   cacheHit: boolean;
 }
@@ -2243,8 +2401,8 @@ Bumping `v1` to `v2` invalidates everything. `<slug-or-empty>` is the literal sl
 This is a unit test with a fake R2 bucket. The actual `@cf-wasm/og` rendering is exercised by the endpoint integration tests in Task D3-D6 (worker pool); here we verify the cache-hit/cache-miss control flow.
 
 ```ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderOgPng } from './og-render';
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { renderOgPng } from "./og-render";
 
 class FakeR2 implements R2Bucket {
   store = new Map<string, ArrayBuffer>();
@@ -2257,41 +2415,62 @@ class FakeR2 implements R2Bucket {
       // ... other R2ObjectBody shapes returned as no-ops; not exercised
     } as unknown as R2ObjectBody;
   }
-  async put(key: string, body: ArrayBuffer | ReadableStream): Promise<R2Object> {
+  async put(
+    key: string,
+    body: ArrayBuffer | ReadableStream,
+  ): Promise<R2Object> {
     if (body instanceof ArrayBuffer) this.store.set(key, body);
-    else throw new Error('FakeR2.put only handles ArrayBuffer in tests');
+    else throw new Error("FakeR2.put only handles ArrayBuffer in tests");
     return {} as R2Object;
   }
-  async head() { return null; }
+  async head() {
+    return null;
+  }
   async delete() {}
-  async list() { return { objects: [], truncated: false } as never; }
-  async createMultipartUpload(): Promise<R2MultipartUpload> { throw new Error('not impl'); }
-  async resumeMultipartUpload(): Promise<R2MultipartUpload> { throw new Error('not impl'); }
+  async list() {
+    return { objects: [], truncated: false } as never;
+  }
+  async createMultipartUpload(): Promise<R2MultipartUpload> {
+    throw new Error("not impl");
+  }
+  async resumeMultipartUpload(): Promise<R2MultipartUpload> {
+    throw new Error("not impl");
+  }
 }
 
 // Stub the actual og module so the test doesn't pull in resvg-wasm.
-vi.mock('@cf-wasm/og', () => ({
+vi.mock("@cf-wasm/og", () => ({
   ImageResponse: class {
     private body: ArrayBuffer;
     constructor(_jsx: unknown, _opts: unknown) {
-      this.body = new ArrayBuffer(1024);  // 1 KB stub PNG
+      this.body = new ArrayBuffer(1024); // 1 KB stub PNG
     }
-    arrayBuffer() { return Promise.resolve(this.body); }
+    arrayBuffer() {
+      return Promise.resolve(this.body);
+    }
   },
 }));
 
-describe('renderOgPng', () => {
+describe("renderOgPng", () => {
   let blobs: FakeR2;
-  beforeEach(() => { blobs = new FakeR2(); });
+  beforeEach(() => {
+    blobs = new FakeR2();
+  });
 
-  it('renders fresh on cache miss and stores under deterministic key', async () => {
+  it("renders fresh on cache miss and stores under deterministic key", async () => {
     const out = await renderOgPng({
-      kind: 'index', blobs,
-      payload: { kind: 'index', modelCount: 12, runCount: 87, lastRunAt: '2026-04-29T12:00:00Z' },
-      taskSetHash: 'ts1',
+      kind: "index",
+      blobs,
+      payload: {
+        kind: "index",
+        modelCount: 12,
+        runCount: 87,
+        lastRunAt: "2026-04-29T12:00:00Z",
+      },
+      taskSetHash: "ts1",
     });
     expect(out.cacheHit).toBe(false);
-    expect(out.contentType).toBe('image/png');
+    expect(out.contentType).toBe("image/png");
     expect(out.body.byteLength).toBeGreaterThan(0);
     // Cache key shape: og/<version>/<kind>/<slug>/<task-set-hash>/<payload-hash>.png
     const keys = Array.from(blobs.store.keys());
@@ -2299,55 +2478,115 @@ describe('renderOgPng', () => {
     expect(keys[0]).toMatch(/^og\/v1\/index\/_\/ts1\/[0-9a-f]{12}\.png$/);
   });
 
-  it('serves from R2 on cache hit (no re-render)', async () => {
+  it("serves from R2 on cache hit (no re-render)", async () => {
     // Pre-render once to learn the full cache key (includes payload hash)
-    const payload = { kind: 'model' as const, displayName: 'Sonnet 4.7', familySlug: 'claude', avgScore: 0.81, runCount: 12 };
-    const first = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs, payload, taskSetHash: 'ts1' });
+    const payload = {
+      kind: "model" as const,
+      displayName: "Sonnet 4.7",
+      familySlug: "claude",
+      avgScore: 0.81,
+      runCount: 12,
+    };
+    const first = await renderOgPng({
+      kind: "model",
+      slug: "sonnet-4-7",
+      blobs,
+      payload,
+      taskSetHash: "ts1",
+    });
     expect(first.cacheHit).toBe(false);
 
     // Re-render same payload — should hit cache
-    const second = await renderOgPng({ kind: 'model', slug: 'sonnet-4-7', blobs, payload, taskSetHash: 'ts1' });
+    const second = await renderOgPng({
+      kind: "model",
+      slug: "sonnet-4-7",
+      blobs,
+      payload,
+      taskSetHash: "ts1",
+    });
     expect(second.cacheHit).toBe(true);
     expect(second.body.byteLength).toBe(first.body.byteLength);
   });
 
-  it('cache key differs across kinds and slugs', async () => {
+  it("cache key differs across kinds and slugs", async () => {
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
-      payload: { kind: 'model', displayName: 'A', familySlug: 'claude', avgScore: 0, runCount: 0 },
-      taskSetHash: 'ts1',
+      kind: "model",
+      slug: "sonnet-4-7",
+      blobs,
+      payload: {
+        kind: "model",
+        displayName: "A",
+        familySlug: "claude",
+        avgScore: 0,
+        runCount: 0,
+      },
+      taskSetHash: "ts1",
     });
     await renderOgPng({
-      kind: 'model', slug: 'gpt-5', blobs,
-      payload: { kind: 'model', displayName: 'B', familySlug: 'gpt', avgScore: 0, runCount: 0 },
-      taskSetHash: 'ts1',
+      kind: "model",
+      slug: "gpt-5",
+      blobs,
+      payload: {
+        kind: "model",
+        displayName: "B",
+        familySlug: "gpt",
+        avgScore: 0,
+        runCount: 0,
+      },
+      taskSetHash: "ts1",
     });
     const keys = Array.from(blobs.store.keys()).sort();
     expect(keys).toHaveLength(2);
     expect(keys[0]).toMatch(/^og\/v1\/model\/gpt-5\/ts1\/[0-9a-f]{12}\.png$/);
-    expect(keys[1]).toMatch(/^og\/v1\/model\/sonnet-4-7\/ts1\/[0-9a-f]{12}\.png$/);
+    expect(keys[1]).toMatch(
+      /^og\/v1\/model\/sonnet-4-7\/ts1\/[0-9a-f]{12}\.png$/,
+    );
   });
 
-  it('cache key differs when display-name changes (R5: payload-content invalidation)', async () => {
+  it("cache key differs when display-name changes (R5: payload-content invalidation)", async () => {
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
-      payload: { kind: 'model', displayName: 'Old Name', familySlug: 'claude', avgScore: 0.5, runCount: 1 },
-      taskSetHash: 'ts1',
+      kind: "model",
+      slug: "sonnet-4-7",
+      blobs,
+      payload: {
+        kind: "model",
+        displayName: "Old Name",
+        familySlug: "claude",
+        avgScore: 0.5,
+        runCount: 1,
+      },
+      taskSetHash: "ts1",
     });
     await renderOgPng({
-      kind: 'model', slug: 'sonnet-4-7', blobs,
-      payload: { kind: 'model', displayName: 'New Name', familySlug: 'claude', avgScore: 0.5, runCount: 1 },
-      taskSetHash: 'ts1',
+      kind: "model",
+      slug: "sonnet-4-7",
+      blobs,
+      payload: {
+        kind: "model",
+        displayName: "New Name",
+        familySlug: "claude",
+        avgScore: 0.5,
+        runCount: 1,
+      },
+      taskSetHash: "ts1",
     });
-    expect(blobs.store.size).toBe(2);  // two distinct keys for two distinct display names
+    expect(blobs.store.size).toBe(2); // two distinct keys for two distinct display names
   });
 
-  it('cacheControl is the SWR header', async () => {
+  it("cacheControl is the SWR header", async () => {
     const out = await renderOgPng({
-      kind: 'index', blobs,
-      payload: { kind: 'index', modelCount: 0, runCount: 0, lastRunAt: '2026-04-29T00:00:00Z' },
+      kind: "index",
+      blobs,
+      payload: {
+        kind: "index",
+        modelCount: 0,
+        runCount: 0,
+        lastRunAt: "2026-04-29T00:00:00Z",
+      },
     });
-    expect(out.cacheControl).toBe('public, max-age=60, stale-while-revalidate=86400');
+    expect(out.cacheControl).toBe(
+      "public, max-age=60, stale-while-revalidate=86400",
+    );
   });
 });
 ```
@@ -2360,7 +2599,7 @@ Expected: FAIL.
 - [ ] **Step 3: Implement `site/src/lib/server/og-render.ts`**
 
 ```ts
-import { ImageResponse } from '@cf-wasm/og';
+import { ImageResponse } from "@cf-wasm/og";
 
 // Vendored fonts. Vite's `?url` suffix returns a string URL; we fetch each
 // URL once at module-init time, cache the resulting ArrayBuffer promise,
@@ -2373,45 +2612,82 @@ import { ImageResponse } from '@cf-wasm/og';
 // isolate. Subsequent requests in the same isolate reuse the resolved
 // ArrayBuffer (the promise is already settled). Cold-start cost: one
 // extra fetch per isolate, ~1-5 ms for asset-served bytes.
-import inter400Url from './fonts/inter-400.ttf?url';
-import inter600Url from './fonts/inter-600.ttf?url';
+import inter400Url from "./fonts/inter-400.ttf?url";
+import inter600Url from "./fonts/inter-600.ttf?url";
 
-let fontsPromise: Promise<Array<{
-  name: string;
-  data: ArrayBuffer;
-  weight: 400 | 600;
-  style: 'normal';
-}>> | null = null;
+let fontsPromise:
+  | Promise<
+    Array<{
+      name: string;
+      data: ArrayBuffer;
+      weight: 400 | 600;
+      style: "normal";
+    }>
+  >
+  | null = null;
 
 function getFonts() {
   if (!fontsPromise) {
     fontsPromise = Promise.all([
       fetch(inter400Url).then((r) => {
-        if (!r.ok) throw new Error(`Failed to fetch inter-400.ttf: ${r.status}`);
+        if (!r.ok) {
+          throw new Error(`Failed to fetch inter-400.ttf: ${r.status}`);
+        }
         return r.arrayBuffer();
       }),
       fetch(inter600Url).then((r) => {
-        if (!r.ok) throw new Error(`Failed to fetch inter-600.ttf: ${r.status}`);
+        if (!r.ok) {
+          throw new Error(`Failed to fetch inter-600.ttf: ${r.status}`);
+        }
         return r.arrayBuffer();
       }),
     ]).then(([d400, d600]) => [
-      { name: 'Inter', data: d400, weight: 400 as const, style: 'normal' as const },
-      { name: 'Inter', data: d600, weight: 600 as const, style: 'normal' as const },
+      {
+        name: "Inter",
+        data: d400,
+        weight: 400 as const,
+        style: "normal" as const,
+      },
+      {
+        name: "Inter",
+        data: d600,
+        weight: 600 as const,
+        style: "normal" as const,
+      },
     ]);
   }
   return fontsPromise;
 }
 
-const CACHE_VERSION = 'v1';
-const SWR_HEADER = 'public, max-age=60, stale-while-revalidate=86400';
+const CACHE_VERSION = "v1";
+const SWR_HEADER = "public, max-age=60, stale-while-revalidate=86400";
 
-export type OgKind = 'index' | 'model' | 'run' | 'family';
+export type OgKind = "index" | "model" | "run" | "family";
 
 export type OgPayload =
-  | { kind: 'index'; modelCount: number; runCount: number; lastRunAt: string }
-  | { kind: 'model'; displayName: string; familySlug: string; avgScore: number; runCount: number }
-  | { kind: 'run'; modelDisplay: string; tasksPassed: number; tasksTotal: number; tier: string; ts: string }
-  | { kind: 'family'; displayName: string; vendor: string; modelCount: number; topModelDisplay: string };
+  | { kind: "index"; modelCount: number; runCount: number; lastRunAt: string }
+  | {
+    kind: "model";
+    displayName: string;
+    familySlug: string;
+    avgScore: number;
+    runCount: number;
+  }
+  | {
+    kind: "run";
+    modelDisplay: string;
+    tasksPassed: number;
+    tasksTotal: number;
+    tier: string;
+    ts: string;
+  }
+  | {
+    kind: "family";
+    displayName: string;
+    vendor: string;
+    modelCount: number;
+    topModelDisplay: string;
+  };
 
 export interface OgRenderOpts {
   kind: OgKind;
@@ -2423,26 +2699,32 @@ export interface OgRenderOpts {
 
 export interface OgRenderResult {
   body: ArrayBuffer;
-  contentType: 'image/png';
+  contentType: "image/png";
   cacheControl: typeof SWR_HEADER;
   cacheHit: boolean;
 }
 
 export async function renderOgPng(opts: OgRenderOpts): Promise<OgRenderResult> {
-  const slugPart = opts.slug ?? '_';
-  const tsPart = opts.taskSetHash ?? 'unknown';
+  const slugPart = opts.slug ?? "_";
+  const tsPart = opts.taskSetHash ?? "unknown";
   // Include a payload-content hash so that, e.g., a model display-name
   // rename (display_name: "Claude Sonnet 4.7" → "Sonnet 4.7") triggers a
   // fresh render instead of serving the stale cached image. The
   // task-set hash alone doesn't change when only display strings move.
   const payloadHash = await hashPayload(opts.payload);
-  const key = `og/${CACHE_VERSION}/${opts.kind}/${slugPart}/${tsPart}/${payloadHash}.png`;
+  const key =
+    `og/${CACHE_VERSION}/${opts.kind}/${slugPart}/${tsPart}/${payloadHash}.png`;
 
   // 1. Cache lookup.
   const cached = await opts.blobs.get(key);
   if (cached) {
     const body = await cached.arrayBuffer();
-    return { body, contentType: 'image/png', cacheControl: SWR_HEADER, cacheHit: true };
+    return {
+      body,
+      contentType: "image/png",
+      cacheControl: SWR_HEADER,
+      cacheHit: true,
+    };
   }
 
   // 2. Cache miss — render fresh. The font ArrayBuffers are loaded once
@@ -2461,7 +2743,12 @@ export async function renderOgPng(opts: OgRenderOpts): Promise<OgRenderResult> {
   // CLAUDE.md "await cache.put inline" rule).
   await opts.blobs.put(key, body);
 
-  return { body, contentType: 'image/png', cacheControl: SWR_HEADER, cacheHit: false };
+  return {
+    body,
+    contentType: "image/png",
+    cacheControl: SWR_HEADER,
+    cacheHit: false,
+  };
 }
 
 // JSX is the @cf-wasm/og DSL. We hand-build VNodes (no JSX runtime
@@ -2475,115 +2762,181 @@ export async function renderOgPng(opts: OgRenderOpts): Promise<OgRenderResult> {
 //   (c) the OG palette is a subset of the design tokens (only `--bg`,
 //       `--text`, `--text-muted`, `--accent`, `--border`).
 const COLORS = {
-  bg: '#ffffff',
-  text: '#0a0a0a',
-  muted: '#525252',
-  accent: '#0a4dff',
-  border: '#e5e5e5',
+  bg: "#ffffff",
+  text: "#0a0a0a",
+  muted: "#525252",
+  accent: "#0a4dff",
+  border: "#e5e5e5",
 };
 
 function renderJsxForPayload(payload: OgPayload): unknown {
   switch (payload.kind) {
-    case 'index': return renderIndexCard(payload);
-    case 'model': return renderModelCard(payload);
-    case 'run':   return renderRunCard(payload);
-    case 'family': return renderFamilyCard(payload);
+    case "index":
+      return renderIndexCard(payload);
+    case "model":
+      return renderModelCard(payload);
+    case "run":
+      return renderRunCard(payload);
+    case "family":
+      return renderFamilyCard(payload);
     default: {
       // Exhaustiveness guard — adding a new OgPayload variant without
       // updating this switch fails typecheck.
       const _exhaustive: never = payload;
-      throw new Error(`Unhandled OG payload kind: ${(payload as { kind: string }).kind}`);
+      throw new Error(
+        `Unhandled OG payload kind: ${(payload as { kind: string }).kind}`,
+      );
     }
   }
 }
 
 // VNode helpers — Satori accepts a tree of {type, props, children}.
-function div(style: Record<string, string | number>, children?: unknown): unknown {
-  return { type: 'div', props: { style, children } };
+function div(
+  style: Record<string, string | number>,
+  children?: unknown,
+): unknown {
+  return { type: "div", props: { style, children } };
 }
 function span(style: Record<string, string | number>, text: string): unknown {
-  return { type: 'span', props: { style, children: text } };
+  return { type: "span", props: { style, children: text } };
 }
 
 function shellStyle(): Record<string, string | number> {
   return {
-    width: '1200px', height: '630px',
-    display: 'flex', flexDirection: 'column',
+    width: "1200px",
+    height: "630px",
+    display: "flex",
+    flexDirection: "column",
     background: COLORS.bg,
     color: COLORS.text,
-    fontFamily: 'Inter',
-    padding: '64px',
-    boxSizing: 'border-box',
+    fontFamily: "Inter",
+    padding: "64px",
+    boxSizing: "border-box",
   };
 }
 
-function renderIndexCard(p: Extract<OgPayload, { kind: 'index' }>): unknown {
+function renderIndexCard(p: Extract<OgPayload, { kind: "index" }>): unknown {
   return div(shellStyle(), [
-    span({ fontSize: 32, color: COLORS.accent, fontWeight: 600, letterSpacing: '-0.01em' }, 'CentralGauge'),
-    span({ fontSize: 64, fontWeight: 600, marginTop: 24, lineHeight: 1.1 }, 'LLM AL/BC Benchmark'),
-    span({ fontSize: 24, color: COLORS.muted, marginTop: 16 }, 'Reproducible. Signed. Open.'),
-    div({ display: 'flex', gap: '64px', fontSize: 28, flex: 1, alignItems: 'flex-end' }, [
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Models tracked'),
+    span({
+      fontSize: 32,
+      color: COLORS.accent,
+      fontWeight: 600,
+      letterSpacing: "-0.01em",
+    }, "CentralGauge"),
+    span(
+      { fontSize: 64, fontWeight: 600, marginTop: 24, lineHeight: 1.1 },
+      "LLM AL/BC Benchmark",
+    ),
+    span(
+      { fontSize: 24, color: COLORS.muted, marginTop: 16 },
+      "Reproducible. Signed. Open.",
+    ),
+    div({
+      display: "flex",
+      gap: "64px",
+      fontSize: 28,
+      flex: 1,
+      alignItems: "flex-end",
+    }, [
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Models tracked"),
         span({ fontWeight: 600, fontSize: 36 }, String(p.modelCount)),
       ]),
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Total runs'),
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Total runs"),
         span({ fontWeight: 600, fontSize: 36 }, String(p.runCount)),
       ]),
     ]),
   ]);
 }
 
-function renderModelCard(p: Extract<OgPayload, { kind: 'model' }>): unknown {
+function renderModelCard(p: Extract<OgPayload, { kind: "model" }>): unknown {
   return div(shellStyle(), [
-    span({ fontSize: 24, color: COLORS.accent }, 'CentralGauge · Model'),
-    span({ fontSize: 72, fontWeight: 600, marginTop: 24, lineHeight: 1.1 }, p.displayName),
+    span({ fontSize: 24, color: COLORS.accent }, "CentralGauge · Model"),
+    span(
+      { fontSize: 72, fontWeight: 600, marginTop: 24, lineHeight: 1.1 },
+      p.displayName,
+    ),
     span({ fontSize: 28, color: COLORS.muted, marginTop: 8 }, p.familySlug),
-    div({ display: 'flex', gap: '64px', fontSize: 28, flex: 1, alignItems: 'flex-end' }, [
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Avg score'),
-        span({ fontWeight: 600, fontSize: 48 }, (p.avgScore * 100).toFixed(1) + '%'),
+    div({
+      display: "flex",
+      gap: "64px",
+      fontSize: 28,
+      flex: 1,
+      alignItems: "flex-end",
+    }, [
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Avg score"),
+        span(
+          { fontWeight: 600, fontSize: 48 },
+          (p.avgScore * 100).toFixed(1) + "%",
+        ),
       ]),
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Runs'),
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Runs"),
         span({ fontWeight: 600, fontSize: 48 }, String(p.runCount)),
       ]),
     ]),
   ]);
 }
 
-function renderRunCard(p: Extract<OgPayload, { kind: 'run' }>): unknown {
-  const pct = p.tasksTotal > 0 ? ((p.tasksPassed / p.tasksTotal) * 100).toFixed(0) : '0';
+function renderRunCard(p: Extract<OgPayload, { kind: "run" }>): unknown {
+  const pct = p.tasksTotal > 0
+    ? ((p.tasksPassed / p.tasksTotal) * 100).toFixed(0)
+    : "0";
   return div(shellStyle(), [
-    span({ fontSize: 24, color: COLORS.accent }, 'CentralGauge · Run'),
-    span({ fontSize: 56, fontWeight: 600, marginTop: 24, lineHeight: 1.1 }, p.modelDisplay),
-    span({ fontSize: 24, color: COLORS.muted, marginTop: 8 }, `${p.tier} · ${formatTs(p.ts)}`),
-    div({ display: 'flex', gap: '64px', fontSize: 28, flex: 1, alignItems: 'flex-end' }, [
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Tasks passed'),
-        span({ fontWeight: 600, fontSize: 56 }, `${p.tasksPassed}/${p.tasksTotal}`),
+    span({ fontSize: 24, color: COLORS.accent }, "CentralGauge · Run"),
+    span(
+      { fontSize: 56, fontWeight: 600, marginTop: 24, lineHeight: 1.1 },
+      p.modelDisplay,
+    ),
+    span(
+      { fontSize: 24, color: COLORS.muted, marginTop: 8 },
+      `${p.tier} · ${formatTs(p.ts)}`,
+    ),
+    div({
+      display: "flex",
+      gap: "64px",
+      fontSize: 28,
+      flex: 1,
+      alignItems: "flex-end",
+    }, [
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Tasks passed"),
+        span(
+          { fontWeight: 600, fontSize: 56 },
+          `${p.tasksPassed}/${p.tasksTotal}`,
+        ),
       ]),
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Pass rate'),
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Pass rate"),
         span({ fontWeight: 600, fontSize: 56 }, `${pct}%`),
       ]),
     ]),
   ]);
 }
 
-function renderFamilyCard(p: Extract<OgPayload, { kind: 'family' }>): unknown {
+function renderFamilyCard(p: Extract<OgPayload, { kind: "family" }>): unknown {
   return div(shellStyle(), [
-    span({ fontSize: 24, color: COLORS.accent }, 'CentralGauge · Family'),
-    span({ fontSize: 72, fontWeight: 600, marginTop: 24, lineHeight: 1.1 }, p.displayName),
+    span({ fontSize: 24, color: COLORS.accent }, "CentralGauge · Family"),
+    span(
+      { fontSize: 72, fontWeight: 600, marginTop: 24, lineHeight: 1.1 },
+      p.displayName,
+    ),
     span({ fontSize: 28, color: COLORS.muted, marginTop: 8 }, p.vendor),
-    div({ display: 'flex', gap: '64px', fontSize: 28, flex: 1, alignItems: 'flex-end' }, [
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Models'),
+    div({
+      display: "flex",
+      gap: "64px",
+      fontSize: 28,
+      flex: 1,
+      alignItems: "flex-end",
+    }, [
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Models"),
         span({ fontWeight: 600, fontSize: 48 }, String(p.modelCount)),
       ]),
-      div({ display: 'flex', flexDirection: 'column' }, [
-        span({ color: COLORS.muted, fontSize: 18 }, 'Top'),
+      div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Top"),
         span({ fontWeight: 600, fontSize: 36 }, p.topModelDisplay),
       ]),
     ]),
@@ -2602,8 +2955,13 @@ function formatTs(iso: string): string {
  */
 async function hashPayload(payload: OgPayload): Promise<string> {
   const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical));
-  const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonical),
+  );
+  const hex = Array.from(new Uint8Array(buf)).map((b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("");
   return hex.slice(0, 12);
 }
 ```
@@ -2614,8 +2972,8 @@ Edit `site/vite.config.ts` to (a) make CommandPalette + use-event-source land in
 
 ```ts
 // site/vite.config.ts
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [sveltekit()],
@@ -2630,18 +2988,18 @@ export default defineConfig({
         chunkFileNames: (chunkInfo) => {
           // Use a name-prefixed pattern when the chunk has a recognizable
           // module ID; fall back to the hash-only default otherwise.
-          const facade = chunkInfo.facadeModuleId ?? '';
-          if (facade.includes('CommandPalette')) {
-            return 'chunks/cmd-k-[hash].js';
+          const facade = chunkInfo.facadeModuleId ?? "";
+          if (facade.includes("CommandPalette")) {
+            return "chunks/cmd-k-[hash].js";
           }
-          if (facade.includes('use-event-source')) {
-            return 'chunks/use-event-source-[hash].js';
+          if (facade.includes("use-event-source")) {
+            return "chunks/use-event-source-[hash].js";
           }
-          return 'chunks/[hash].js';
+          return "chunks/[hash].js";
         },
         manualChunks: (id) => {
-          if (id.includes('CommandPalette')) return 'cmd-k';
-          if (id.includes('use-event-source')) return 'use-event-source';
+          if (id.includes("CommandPalette")) return "cmd-k";
+          if (id.includes("use-event-source")) return "use-event-source";
           return null;
         },
       },
@@ -2667,8 +3025,9 @@ Expected: clean — verify no missing-module errors for `@cf-wasm/og`.
 - [ ] **Step 6: Re-verify worker bundle size after OG inclusion**
 
 Task A7 measured size BEFORE writing og-render.ts. Now that the renderer
-+ all 4 endpoint handlers are in the bundle, re-measure to confirm we're
-still within the 1 MB free-tier limit.
+
+- all 4 endpoint handlers are in the bundle, re-measure to confirm we're
+  still within the 1 MB free-tier limit.
 
 ```bash
 cd /u/Git/CentralGauge/site && npm run build
@@ -2690,6 +3049,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/og): renderOgPng helper with R2-
 ### Task D2: `/og/index.png` endpoint
 
 **Files:**
+
 - Create: `site/src/routes/og/index.png/+server.ts`
 
 The endpoint queries D1 for `modelCount`, `runCount`, `lastRunAt`, then calls `renderOgPng({ kind: 'index', ... })`. Adheres to the `og_dynamic` flag.
@@ -2697,20 +3057,27 @@ The endpoint queries D1 for `modelCount`, `runCount`, `lastRunAt`, then calls `r
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { loadFlags } from '$lib/server/flags';
-import { renderOgPng } from '$lib/server/og-render';
-import { isCanary } from '$lib/server/canary';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { loadFlags } from "$lib/server/flags";
+import { renderOgPng } from "$lib/server/og-render";
+import { isCanary } from "$lib/server/canary";
 
 export const prerender = false;
 
 export const GET: RequestHandler = async ({ url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const env = platform.env;
-  const flags = loadFlags(env as unknown as Record<string, string | undefined>, isCanary(url));
+  const flags = loadFlags(
+    env as unknown as Record<string, string | undefined>,
+    isCanary(url),
+  );
   if (!flags.og_dynamic) {
-    return new Response('og_dynamic flag is off', { status: 404 });
+    return new Response("og_dynamic flag is off", { status: 404 });
   }
 
   // 1. Aggregate inputs from D1.
@@ -2718,31 +3085,33 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     `SELECT
        (SELECT COUNT(*) FROM models)                                         AS model_count,
        (SELECT COUNT(*) FROM runs)                                           AS run_count,
-       (SELECT MAX(started_at) FROM runs)                                    AS last_run_at`
-  ).first<{ model_count: number; run_count: number; last_run_at: string | null }>();
+       (SELECT MAX(started_at) FROM runs)                                    AS last_run_at`,
+  ).first<
+    { model_count: number; run_count: number; last_run_at: string | null }
+  >();
 
   // 2. Cache key needs current task-set hash so a promotion invalidates fresh.
   const taskSet = await env.DB.prepare(
-    `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`
+    `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
   ).first<{ hash: string }>();
 
   const out = await renderOgPng({
-    kind: 'index',
+    kind: "index",
     blobs: env.BLOBS,
     taskSetHash: taskSet?.hash,
     payload: {
-      kind: 'index',
+      kind: "index",
       modelCount: counts?.model_count ?? 0,
       runCount: counts?.run_count ?? 0,
-      lastRunAt: counts?.last_run_at ?? '1970-01-01T00:00:00Z',
+      lastRunAt: counts?.last_run_at ?? "1970-01-01T00:00:00Z",
     },
   });
 
   return new Response(out.body, {
     headers: {
-      'content-type': out.contentType,
-      'cache-control': out.cacheControl,
-      'x-og-cache': out.cacheHit ? 'hit' : 'miss',
+      "content-type": out.contentType,
+      "cache-control": out.cacheControl,
+      "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
 };
@@ -2765,44 +3134,60 @@ git -C /u/Git/CentralGauge commit -m "feat(site/og): GET /og/index.png — leade
 ### Task D3: `/og/models/[slug].png` endpoint
 
 **Files:**
+
 - Create: `site/src/routes/og/models/[slug].png/+server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { loadFlags } from '$lib/server/flags';
-import { renderOgPng } from '$lib/server/og-render';
-import { isCanary } from '$lib/server/canary';
-import { computeModelAggregates } from '$lib/server/model-aggregates';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { loadFlags } from "$lib/server/flags";
+import { renderOgPng } from "$lib/server/og-render";
+import { isCanary } from "$lib/server/canary";
+import { computeModelAggregates } from "$lib/server/model-aggregates";
 
 export const prerender = false;
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const env = platform.env;
-  const flags = loadFlags(env as unknown as Record<string, string | undefined>, isCanary(url));
-  if (!flags.og_dynamic) return new Response('og_dynamic flag is off', { status: 404 });
+  const flags = loadFlags(
+    env as unknown as Record<string, string | undefined>,
+    isCanary(url),
+  );
+  if (!flags.og_dynamic) {
+    return new Response("og_dynamic flag is off", { status: 404 });
+  }
 
   const slug = params.slug;
   const m = await env.DB.prepare(
     `SELECT m.id, m.display_name, mf.slug AS family_slug
      FROM models m JOIN model_families mf ON mf.id = m.family_id
-     WHERE m.slug = ?`
-  ).bind(slug).first<{ id: number; display_name: string; family_slug: string }>();
+     WHERE m.slug = ?`,
+  ).bind(slug).first<
+    { id: number; display_name: string; family_slug: string }
+  >();
   if (!m) return new Response(`Unknown model: ${slug}`, { status: 404 });
 
-  const agg = (await computeModelAggregates(env.DB, { modelIds: [m.id] })).get(m.id);
-  const taskSet = await env.DB.prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`).first<{ hash: string }>();
+  const agg = (await computeModelAggregates(env.DB, { modelIds: [m.id] })).get(
+    m.id,
+  );
+  const taskSet = await env.DB.prepare(
+    `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+  ).first<{ hash: string }>();
 
   const out = await renderOgPng({
-    kind: 'model',
+    kind: "model",
     slug,
     blobs: env.BLOBS,
     taskSetHash: taskSet?.hash,
     payload: {
-      kind: 'model',
+      kind: "model",
       displayName: m.display_name,
       familySlug: m.family_slug,
       avgScore: agg?.avg_score ?? 0,
@@ -2812,9 +3197,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 
   return new Response(out.body, {
     headers: {
-      'content-type': out.contentType,
-      'cache-control': out.cacheControl,
-      'x-og-cache': out.cacheHit ? 'hit' : 'miss',
+      "content-type": out.contentType,
+      "cache-control": out.cacheControl,
+      "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
 };
@@ -2837,24 +3222,34 @@ git -C /u/Git/CentralGauge commit -m "feat(site/og): GET /og/models/:slug.png �
 ### Task D4: `/og/runs/[id].png` endpoint
 
 **Files:**
+
 - Create: `site/src/routes/og/runs/[id].png/+server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { loadFlags } from '$lib/server/flags';
-import { renderOgPng } from '$lib/server/og-render';
-import { isCanary } from '$lib/server/canary';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { loadFlags } from "$lib/server/flags";
+import { renderOgPng } from "$lib/server/og-render";
+import { isCanary } from "$lib/server/canary";
 
 export const prerender = false;
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const env = platform.env;
-  const flags = loadFlags(env as unknown as Record<string, string | undefined>, isCanary(url));
-  if (!flags.og_dynamic) return new Response('og_dynamic flag is off', { status: 404 });
+  const flags = loadFlags(
+    env as unknown as Record<string, string | undefined>,
+    isCanary(url),
+  );
+  if (!flags.og_dynamic) {
+    return new Response("og_dynamic flag is off", { status: 404 });
+  }
 
   const id = params.id;
   const row = await env.DB.prepare(
@@ -2864,17 +3259,26 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
        (SELECT COUNT(DISTINCT task_id) FROM results WHERE run_id = r.id AND passed = 1) AS tasks_passed,
        (SELECT COUNT(DISTINCT task_id) FROM results WHERE run_id = r.id) AS tasks_total
      FROM runs r JOIN models m ON m.id = r.model_id
-     WHERE r.id = ?`
-  ).bind(id).first<{ tier: string; task_set_hash: string; started_at: string; model_display: string; tasks_passed: number; tasks_total: number }>();
+     WHERE r.id = ?`,
+  ).bind(id).first<
+    {
+      tier: string;
+      task_set_hash: string;
+      started_at: string;
+      model_display: string;
+      tasks_passed: number;
+      tasks_total: number;
+    }
+  >();
   if (!row) return new Response(`Unknown run: ${id}`, { status: 404 });
 
   const out = await renderOgPng({
-    kind: 'run',
+    kind: "run",
     slug: id,
     blobs: env.BLOBS,
     taskSetHash: row.task_set_hash,
     payload: {
-      kind: 'run',
+      kind: "run",
       modelDisplay: row.model_display,
       tasksPassed: row.tasks_passed,
       tasksTotal: row.tasks_total,
@@ -2885,9 +3289,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 
   return new Response(out.body, {
     headers: {
-      'content-type': out.contentType,
-      'cache-control': out.cacheControl,
-      'x-og-cache': out.cacheHit ? 'hit' : 'miss',
+      "content-type": out.contentType,
+      "cache-control": out.cacheControl,
+      "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
 };
@@ -2906,28 +3310,38 @@ git -C /u/Git/CentralGauge commit -m "feat(site/og): GET /og/runs/:id.png — pe
 ### Task D5: `/og/families/[slug].png` endpoint
 
 **Files:**
+
 - Create: `site/src/routes/og/families/[slug].png/+server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { loadFlags } from '$lib/server/flags';
-import { renderOgPng } from '$lib/server/og-render';
-import { isCanary } from '$lib/server/canary';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { loadFlags } from "$lib/server/flags";
+import { renderOgPng } from "$lib/server/og-render";
+import { isCanary } from "$lib/server/canary";
 
 export const prerender = false;
 
 export const GET: RequestHandler = async ({ params, url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const env = platform.env;
-  const flags = loadFlags(env as unknown as Record<string, string | undefined>, isCanary(url));
-  if (!flags.og_dynamic) return new Response('og_dynamic flag is off', { status: 404 });
+  const flags = loadFlags(
+    env as unknown as Record<string, string | undefined>,
+    isCanary(url),
+  );
+  if (!flags.og_dynamic) {
+    return new Response("og_dynamic flag is off", { status: 404 });
+  }
 
   const slug = params.slug;
   const fam = await env.DB.prepare(
-    `SELECT id, display_name, vendor FROM model_families WHERE slug = ?`
+    `SELECT id, display_name, vendor FROM model_families WHERE slug = ?`,
   ).bind(slug).first<{ id: number; display_name: string; vendor: string }>();
   if (!fam) return new Response(`Unknown family: ${slug}`, { status: 404 });
 
@@ -2939,34 +3353,36 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
      WHERE m.family_id = ?
      GROUP BY m.id
      ORDER BY AVG(rs.score) DESC NULLS LAST
-     LIMIT 1`
+     LIMIT 1`,
   ).bind(fam.id).first<{ top: string }>();
 
   const memberCount = await env.DB.prepare(
-    `SELECT COUNT(*) AS c FROM models WHERE family_id = ?`
+    `SELECT COUNT(*) AS c FROM models WHERE family_id = ?`,
   ).bind(fam.id).first<{ c: number }>();
 
-  const taskSet = await env.DB.prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`).first<{ hash: string }>();
+  const taskSet = await env.DB.prepare(
+    `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
+  ).first<{ hash: string }>();
 
   const out = await renderOgPng({
-    kind: 'family',
+    kind: "family",
     slug,
     blobs: env.BLOBS,
     taskSetHash: taskSet?.hash,
     payload: {
-      kind: 'family',
+      kind: "family",
       displayName: fam.display_name,
       vendor: fam.vendor,
       modelCount: memberCount?.c ?? 0,
-      topModelDisplay: top?.top ?? '—',
+      topModelDisplay: top?.top ?? "—",
     },
   });
 
   return new Response(out.body, {
     headers: {
-      'content-type': out.contentType,
-      'cache-control': out.cacheControl,
-      'x-og-cache': out.cacheHit ? 'hit' : 'miss',
+      "content-type": out.contentType,
+      "cache-control": out.cacheControl,
+      "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
 };
@@ -2985,6 +3401,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/og): GET /og/families/:slug.png 
 ### Task D6: Worker-pool integration tests for OG endpoints
 
 **Files:**
+
 - Create: `site/tests/api/og-images.test.ts`
 
 The test exercises the actual Worker pipeline (worker pool runs the SvelteKit-built bundle), seeds D1 + R2, and asserts:
@@ -3000,12 +3417,12 @@ The test exercises the actual Worker pipeline (worker pool runs the SvelteKit-bu
 - [ ] **Step 1: Write the test**
 
 ```ts
-import { env, SELF } from 'cloudflare:test';
-import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { applyD1Migrations } from 'cloudflare:test';
-import { seed, seedSmokeData } from '../utils/seed';
+import { env, SELF } from "cloudflare:test";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { applyD1Migrations } from "cloudflare:test";
+import { seed, seedSmokeData } from "../utils/seed";
 
-describe('OG image endpoints', () => {
+describe("OG image endpoints", () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await seedSmokeData({ runCount: 3 });
@@ -3013,7 +3430,7 @@ describe('OG image endpoints', () => {
 
   afterAll(async () => {
     // Clean R2 cache so subsequent tests see fresh state.
-    const list = await env.BLOBS.list({ prefix: 'og/' });
+    const list = await env.BLOBS.list({ prefix: "og/" });
     for (const obj of list.objects) await env.BLOBS.delete(obj.key);
   });
 
@@ -3026,46 +3443,48 @@ describe('OG image endpoints', () => {
   // Note: the canary route handler is added in Mini-phase I; until then,
   // we test the code path by setting FLAG_OG_DYNAMIC in test bindings.
 
-  it('GET /og/index.png returns image/png with SWR header (cache miss)', async () => {
+  it("GET /og/index.png returns image/png with SWR header (cache miss)", async () => {
     // SELF.fetch() routes to the local worker (vitest-pool-workers fixture);
     // bare fetch() either escapes to the public internet or 404s against
     // miniflare's loopback — both make the test silently meaningless.
-    const res = await SELF.fetch('http://x/og/index.png', {
-      headers: { 'cf-canary': '1' },  // canary mode flips flag on
+    const res = await SELF.fetch("http://x/og/index.png", {
+      headers: { "cf-canary": "1" }, // canary mode flips flag on
     });
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('image/png');
-    expect(res.headers.get('cache-control')).toBe('public, max-age=60, stale-while-revalidate=86400');
-    expect(res.headers.get('x-og-cache')).toBe('miss');
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("cache-control")).toBe(
+      "public, max-age=60, stale-while-revalidate=86400",
+    );
+    expect(res.headers.get("x-og-cache")).toBe("miss");
   });
 
-  it('second GET /og/index.png returns cache-hit', async () => {
-    const res = await SELF.fetch('http://x/og/index.png');
+  it("second GET /og/index.png returns cache-hit", async () => {
+    const res = await SELF.fetch("http://x/og/index.png");
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-og-cache')).toBe('hit');
+    expect(res.headers.get("x-og-cache")).toBe("hit");
   });
 
-  it('GET /og/models/sonnet-4-7.png returns image/png', async () => {
-    const res = await SELF.fetch('http://x/og/models/sonnet-4-7.png');
+  it("GET /og/models/sonnet-4-7.png returns image/png", async () => {
+    const res = await SELF.fetch("http://x/og/models/sonnet-4-7.png");
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get("content-type")).toBe("image/png");
   });
 
-  it('GET /og/models/no-such-slug.png returns 404 (model not found, not flag-off)', async () => {
-    const res = await SELF.fetch('http://x/og/models/no-such-slug.png');
-    expect(res.status).toBe(404);  // model lookup fails; flag is on (test bindings force it on)
+  it("GET /og/models/no-such-slug.png returns 404 (model not found, not flag-off)", async () => {
+    const res = await SELF.fetch("http://x/og/models/no-such-slug.png");
+    expect(res.status).toBe(404); // model lookup fails; flag is on (test bindings force it on)
   });
 
-  it('GET /og/families/claude.png returns image/png', async () => {
-    const res = await SELF.fetch('http://x/og/families/claude.png');
+  it("GET /og/families/claude.png returns image/png", async () => {
+    const res = await SELF.fetch("http://x/og/families/claude.png");
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get("content-type")).toBe("image/png");
   });
 
-  it('GET /og/runs/run-0000.png returns image/png', async () => {
-    const res = await SELF.fetch('http://x/og/runs/run-0000.png');
+  it("GET /og/runs/run-0000.png returns image/png", async () => {
+    const res = await SELF.fetch("http://x/og/runs/run-0000.png");
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toBe('image/png');
+    expect(res.headers.get("content-type")).toBe("image/png");
   });
 });
 ```
@@ -3113,6 +3532,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/og): worker-pool integration tes
 ### Task E1: `density-bus.svelte.ts` — module-scope rune store (client-only)
 
 **Files:**
+
 - Create: `site/src/lib/client/density-bus.svelte.ts`
 - Create: `site/src/lib/client/density-bus.test.svelte.ts`
 
@@ -3121,56 +3541,56 @@ Mirrors `palette-bus.svelte.ts` exactly: a singleton class with a rune `density`
 - [ ] **Step 1: TDD — `site/src/lib/client/density-bus.test.svelte.ts`**
 
 ```ts
-import { describe, it, expect, beforeEach } from 'vitest';
-import { densityBus } from './density-bus.svelte';
+import { beforeEach, describe, expect, it } from "vitest";
+import { densityBus } from "./density-bus.svelte";
 
-describe('densityBus', () => {
+describe("densityBus", () => {
   beforeEach(() => {
     localStorage.clear();
     // Reset DOM attribute (pre-paint script writes this in production)
-    document.documentElement.removeAttribute('data-density');
-    densityBus.setDensity('comfortable');
+    document.documentElement.removeAttribute("data-density");
+    densityBus.setDensity("comfortable");
   });
 
-  it('defaults to comfortable when no attribute is set', () => {
-    expect(densityBus.density).toBe('comfortable');
+  it("defaults to comfortable when no attribute is set", () => {
+    expect(densityBus.density).toBe("comfortable");
   });
 
-  it('setDensity updates the rune', () => {
-    densityBus.setDensity('compact');
-    expect(densityBus.density).toBe('compact');
+  it("setDensity updates the rune", () => {
+    densityBus.setDensity("compact");
+    expect(densityBus.density).toBe("compact");
   });
 
-  it('persists to localStorage on setDensity', () => {
-    densityBus.setDensity('compact');
-    expect(localStorage.getItem('cg-density')).toBe('compact');
+  it("persists to localStorage on setDensity", () => {
+    densityBus.setDensity("compact");
+    expect(localStorage.getItem("cg-density")).toBe("compact");
   });
 
-  it('toggle flips comfortable ↔ compact', () => {
+  it("toggle flips comfortable ↔ compact", () => {
     densityBus.toggle();
-    expect(densityBus.density).toBe('compact');
+    expect(densityBus.density).toBe("compact");
     densityBus.toggle();
-    expect(densityBus.density).toBe('comfortable');
+    expect(densityBus.density).toBe("comfortable");
   });
 
-  it('init() syncs from localStorage', () => {
-    localStorage.setItem('cg-density', 'compact');
+  it("init() syncs from localStorage", () => {
+    localStorage.setItem("cg-density", "compact");
     densityBus.init();
-    expect(densityBus.density).toBe('compact');
+    expect(densityBus.density).toBe("compact");
   });
 
-  it('reading the data-density attribute on the html element is the source of truth at construction', () => {
+  it("reading the data-density attribute on the html element is the source of truth at construction", () => {
     // Production flow: the inline pre-paint script reads localStorage
     // and writes <html data-density>. We simulate by writing the
     // attribute, then re-importing the module — but since the module
     // is already loaded, we just verify the readInitialDensity logic
     // by checking that the rune reflects the attribute when set BEFORE
     // first construction.
-    document.documentElement.setAttribute('data-density', 'compact');
+    document.documentElement.setAttribute("data-density", "compact");
     // Force re-read via init() (which the inline script + onMount in
     // +layout.svelte effectively do). After this the rune is in sync.
     densityBus.init();
-    expect(densityBus.density).toBe('compact');
+    expect(densityBus.density).toBe("compact");
   });
 });
 ```
@@ -3200,9 +3620,9 @@ Expected: FAIL.
  *   2. reactively via the $effect in DensityToggle.svelte
  */
 
-export type Density = 'comfortable' | 'compact';
+export type Density = "comfortable" | "compact";
 
-const STORAGE_KEY = 'cg-density';
+const STORAGE_KEY = "cg-density";
 
 /**
  * Initial density read from `<html data-density>`. The inline no-flash
@@ -3217,9 +3637,9 @@ const STORAGE_KEY = 'cg-density';
  * hydration re-evaluates this expression on the rune-store first read.
  */
 function readInitialDensity(): Density {
-  if (typeof document === 'undefined') return 'comfortable';
+  if (typeof document === "undefined") return "comfortable";
   const attr = document.documentElement.dataset.density;
-  return attr === 'compact' ? 'compact' : 'comfortable';
+  return attr === "compact" ? "compact" : "comfortable";
 }
 
 class DensityBus {
@@ -3232,20 +3652,20 @@ class DensityBus {
    * register the listener.
    */
   init(): void {
-    if (typeof localStorage === 'undefined') return;
+    if (typeof localStorage === "undefined") return;
     const v = localStorage.getItem(STORAGE_KEY);
-    if (v === 'compact' || v === 'comfortable') this.density = v;
+    if (v === "compact" || v === "comfortable") this.density = v;
 
-    if (this.storageListenerAttached || typeof window === 'undefined') return;
-    window.addEventListener('storage', (e: StorageEvent) => {
+    if (this.storageListenerAttached || typeof window === "undefined") return;
+    window.addEventListener("storage", (e: StorageEvent) => {
       if (e.key !== STORAGE_KEY) return;
       const next = e.newValue;
-      if (next === 'compact' || next === 'comfortable') {
+      if (next === "compact" || next === "comfortable") {
         // Avoid re-writing localStorage from this tab — we got HERE because
         // ANOTHER tab wrote it. Just reflect into our rune + DOM.
         this.density = next;
-        if (typeof document !== 'undefined') {
-          document.documentElement.setAttribute('data-density', next);
+        if (typeof document !== "undefined") {
+          document.documentElement.setAttribute("data-density", next);
         }
       }
     });
@@ -3254,15 +3674,17 @@ class DensityBus {
 
   setDensity(d: Density): void {
     this.density = d;
-    if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, d);
-    if (typeof document !== 'undefined') {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, d);
+    }
+    if (typeof document !== "undefined") {
       // Apply attribute immediately so consumers without an effect see it.
-      document.documentElement.setAttribute('data-density', d);
+      document.documentElement.setAttribute("data-density", d);
     }
   }
 
   toggle(): void {
-    this.setDensity(this.density === 'comfortable' ? 'compact' : 'comfortable');
+    this.setDensity(this.density === "comfortable" ? "compact" : "comfortable");
   }
 }
 
@@ -3286,6 +3708,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/client): density-bus rune store 
 ### Task E2: `keyboard.ts` — global chord registry
 
 **Files:**
+
 - Create: `site/src/lib/client/keyboard.ts`
 - Create: `site/src/lib/client/keyboard.test.ts`
 
@@ -3307,23 +3730,29 @@ Today the cmd-K binding is hand-rolled inside `+layout.svelte`. Cmd-shift-d woul
 export interface ChordSpec {
   /** Lowercased non-modifier key */
   key: string;
-  meta?: boolean;    // ⌘ on macOS, ctrl on Windows/Linux (we treat them equivalently)
+  meta?: boolean; // ⌘ on macOS, ctrl on Windows/Linux (we treat them equivalently)
   shift?: boolean;
   alt?: boolean;
 }
 
 export function chordMatches(spec: ChordSpec, ev: KeyboardEvent): boolean;
-export function registerChord(spec: ChordSpec, handler: (ev: KeyboardEvent) => void): () => void;
+export function registerChord(
+  spec: ChordSpec,
+  handler: (ev: KeyboardEvent) => void,
+): () => void;
 ```
 
 - [ ] **Step 1: TDD — `site/src/lib/client/keyboard.test.ts`**
 
 ```ts
-import { describe, it, expect, vi } from 'vitest';
-import { chordMatches, registerChord } from './keyboard';
+import { describe, expect, it, vi } from "vitest";
+import { chordMatches, registerChord } from "./keyboard";
 
-function ev(key: string, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } = {}): KeyboardEvent {
-  return new KeyboardEvent('keydown', {
+function ev(
+  key: string,
+  mods: { meta?: boolean; ctrl?: boolean; shift?: boolean; alt?: boolean } = {},
+): KeyboardEvent {
+  return new KeyboardEvent("keydown", {
     key,
     metaKey: !!mods.meta,
     ctrlKey: !!mods.ctrl,
@@ -3332,45 +3761,60 @@ function ev(key: string, mods: { meta?: boolean; ctrl?: boolean; shift?: boolean
   });
 }
 
-describe('chordMatches', () => {
-  it('matches lowercased and uppercased keys', () => {
-    expect(chordMatches({ key: 'k', meta: true }, ev('k', { meta: true }))).toBe(true);
-    expect(chordMatches({ key: 'k', meta: true }, ev('K', { meta: true }))).toBe(true);
+describe("chordMatches", () => {
+  it("matches lowercased and uppercased keys", () => {
+    expect(chordMatches({ key: "k", meta: true }, ev("k", { meta: true })))
+      .toBe(true);
+    expect(chordMatches({ key: "k", meta: true }, ev("K", { meta: true })))
+      .toBe(true);
   });
 
-  it('treats meta/ctrl as equivalent', () => {
-    expect(chordMatches({ key: 'k', meta: true }, ev('k', { ctrl: true }))).toBe(true);
-    expect(chordMatches({ key: 'k', meta: true }, ev('k', { meta: true }))).toBe(true);
+  it("treats meta/ctrl as equivalent", () => {
+    expect(chordMatches({ key: "k", meta: true }, ev("k", { ctrl: true })))
+      .toBe(true);
+    expect(chordMatches({ key: "k", meta: true }, ev("k", { meta: true })))
+      .toBe(true);
   });
 
-  it('shift is required when specified', () => {
-    expect(chordMatches({ key: 'd', meta: true, shift: true }, ev('d', { meta: true, shift: true }))).toBe(true);
-    expect(chordMatches({ key: 'd', meta: true, shift: true }, ev('d', { meta: true }))).toBe(false);
+  it("shift is required when specified", () => {
+    expect(
+      chordMatches(
+        { key: "d", meta: true, shift: true },
+        ev("d", { meta: true, shift: true }),
+      ),
+    ).toBe(true);
+    expect(
+      chordMatches(
+        { key: "d", meta: true, shift: true },
+        ev("d", { meta: true }),
+      ),
+    ).toBe(false);
   });
 
-  it('rejects mismatched key', () => {
-    expect(chordMatches({ key: 'k', meta: true }, ev('j', { meta: true }))).toBe(false);
+  it("rejects mismatched key", () => {
+    expect(chordMatches({ key: "k", meta: true }, ev("j", { meta: true })))
+      .toBe(false);
   });
 
-  it('rejects spurious modifiers when not specified', () => {
-    expect(chordMatches({ key: 'k' }, ev('k', { meta: true }))).toBe(false);
+  it("rejects spurious modifiers when not specified", () => {
+    expect(chordMatches({ key: "k" }, ev("k", { meta: true }))).toBe(false);
   });
 });
 
-describe('registerChord', () => {
-  it('handler is called on matching keydown', () => {
+describe("registerChord", () => {
+  it("handler is called on matching keydown", () => {
     const handler = vi.fn();
-    const off = registerChord({ key: 'd', meta: true, shift: true }, handler);
-    document.dispatchEvent(ev('d', { meta: true, shift: true }));
+    const off = registerChord({ key: "d", meta: true, shift: true }, handler);
+    document.dispatchEvent(ev("d", { meta: true, shift: true }));
     expect(handler).toHaveBeenCalledTimes(1);
     off();
   });
 
-  it('off() prevents further calls', () => {
+  it("off() prevents further calls", () => {
     const handler = vi.fn();
-    const off = registerChord({ key: 'd', meta: true, shift: true }, handler);
+    const off = registerChord({ key: "d", meta: true, shift: true }, handler);
     off();
-    document.dispatchEvent(ev('d', { meta: true, shift: true }));
+    document.dispatchEvent(ev("d", { meta: true, shift: true }));
     expect(handler).not.toHaveBeenCalled();
   });
 });
@@ -3403,7 +3847,10 @@ export interface ChordSpec {
   alt?: boolean;
 }
 
-interface Entry { spec: ChordSpec; handler: (ev: KeyboardEvent) => void; }
+interface Entry {
+  spec: ChordSpec;
+  handler: (ev: KeyboardEvent) => void;
+}
 
 const entries = new Set<Entry>();
 let listenerAttached = false;
@@ -3418,17 +3865,22 @@ export function chordMatches(spec: ChordSpec, ev: KeyboardEvent): boolean {
   return true;
 }
 
-export function registerChord(spec: ChordSpec, handler: (ev: KeyboardEvent) => void): () => void {
+export function registerChord(
+  spec: ChordSpec,
+  handler: (ev: KeyboardEvent) => void,
+): () => void {
   const entry: Entry = { spec, handler };
   entries.add(entry);
   ensureListener();
-  return () => { entries.delete(entry); };
+  return () => {
+    entries.delete(entry);
+  };
 }
 
 function ensureListener(): void {
   if (listenerAttached) return;
-  if (typeof document === 'undefined') return;
-  document.addEventListener('keydown', onKeyDown);
+  if (typeof document === "undefined") return;
+  document.addEventListener("keydown", onKeyDown);
   listenerAttached = true;
 }
 
@@ -3474,6 +3926,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/client): keyboard chord registry
 ### Task E3: `<DensityToggle>` Nav widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/DensityToggle.svelte`
 - Create: `site/src/lib/components/domain/DensityToggle.test.svelte.ts`
 
@@ -3482,34 +3935,34 @@ Two-button group in the Nav: comfortable (Maximize2 icon) and compact (Minimize2
 - [ ] **Step 1: TDD — `site/src/lib/components/domain/DensityToggle.test.svelte.ts`**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/svelte';
-import DensityToggle from './DensityToggle.svelte';
-import { densityBus } from '$lib/client/density-bus.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import DensityToggle from "./DensityToggle.svelte";
+import { densityBus } from "$lib/client/density-bus.svelte";
 
-describe('DensityToggle', () => {
+describe("DensityToggle", () => {
   beforeEach(() => {
     localStorage.clear();
-    densityBus.setDensity('comfortable');
+    densityBus.setDensity("comfortable");
   });
 
-  it('renders both density buttons', () => {
+  it("renders both density buttons", () => {
     const { getByRole } = render(DensityToggle);
-    expect(getByRole('button', { name: /comfortable/i })).toBeDefined();
-    expect(getByRole('button', { name: /compact/i })).toBeDefined();
+    expect(getByRole("button", { name: /comfortable/i })).toBeDefined();
+    expect(getByRole("button", { name: /compact/i })).toBeDefined();
   });
 
-  it('clicking compact button updates densityBus', async () => {
+  it("clicking compact button updates densityBus", async () => {
     const { getByRole } = render(DensityToggle);
-    await fireEvent.click(getByRole('button', { name: /compact/i }));
-    expect(densityBus.density).toBe('compact');
+    await fireEvent.click(getByRole("button", { name: /compact/i }));
+    expect(densityBus.density).toBe("compact");
   });
 
-  it('aria-pressed reflects current density', () => {
-    densityBus.setDensity('compact');
+  it("aria-pressed reflects current density", () => {
+    densityBus.setDensity("compact");
     const { getByRole } = render(DensityToggle);
-    const compact = getByRole('button', { name: /compact/i });
-    expect(compact.getAttribute('aria-pressed')).toBe('true');
+    const compact = getByRole("button", { name: /compact/i });
+    expect(compact.getAttribute("aria-pressed")).toBe("true");
   });
 });
 ```
@@ -3593,6 +4046,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/domain): DensityToggle widget �
 ### Task E4: Mount `<DensityToggle>` in Nav, register cmd-shift-d, add no-flash boot
 
 **Files:**
+
 - Modify: `site/src/lib/components/layout/Nav.svelte`
 - Modify: `site/src/routes/+layout.svelte`
 
@@ -3748,22 +4202,22 @@ Add no-flash boot script + cmd-shift-d chord registration:
 Add `cfWebAnalyticsToken`:
 
 ```ts
-import type { LayoutServerLoad } from './$types';
-import { building } from '$app/environment';
-import { loadFlags, type Flags } from '$lib/server/flags';
+import type { LayoutServerLoad } from "./$types";
+import { building } from "$app/environment";
+import { type Flags, loadFlags } from "$lib/server/flags";
 
 export const load: LayoutServerLoad = async ({ platform, url }) => {
   const env: Record<string, string | undefined> = building
     ? {}
     : ((platform?.env ?? {}) as Record<string, string | undefined>);
-  const isCanary = url.pathname.startsWith('/_canary/');
+  const isCanary = url.pathname.startsWith("/_canary/");
   const flags: Flags = loadFlags(env, isCanary);
 
   return {
     flags,
     serverTime: new Date().toISOString(),
-    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? 'dev',
-    buildAt: env.CENTRALGAUGE_BUILD_AT ?? '',
+    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? "dev",
+    buildAt: env.CENTRALGAUGE_BUILD_AT ?? "",
     cfWebAnalyticsToken: env.CF_WEB_ANALYTICS_TOKEN ?? null,
   };
 };
@@ -3790,6 +4244,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/layout): mount DensityToggle + c
 ### Task F1: Add `CF_WEB_ANALYTICS_TOKEN` to `wrangler.toml` (placeholder)
 
 **Files:**
+
 - Modify: `site/wrangler.toml`
 
 The real token is set via `wrangler secret put CF_WEB_ANALYTICS_TOKEN` post-deploy (NOT committed to git — secrets are encrypted and stored by Cloudflare). The `[vars]` block holds a placeholder so the layout-server's `env.CF_WEB_ANALYTICS_TOKEN` lookup doesn't return `undefined` in dev.
@@ -3850,6 +4305,7 @@ git -C /u/Git/CentralGauge commit -m "build(site/wrangler): add CF_WEB_ANALYTICS
 ### Task F2: Skip RUM beacon during prerender + emit only when token + flag both set
 
 **Files:**
+
 - (already covered by Task E4 changes to `+layout.svelte`)
 
 The beacon emit guard is already in place from Task E4:
@@ -3868,6 +4324,7 @@ But two extra invariants must hold:
 - [ ] **Step 1: Sanity-check the guard**
 
 Read `site/src/routes/+layout.svelte` (post Task E4) and confirm:
+
 - The `<script>` tag is inside `<svelte:head>` (so it's prerender-skipped automatically when `building` is true and `data` resolves to no token)
 - The condition is `data.flags?.rum_beacon && data.cfWebAnalyticsToken`
 - The `data-cf-beacon` value uses the literal token, not a template that could expose env vars
@@ -3876,21 +4333,23 @@ Read `site/src/routes/+layout.svelte` (post Task E4) and confirm:
 
 ```ts
 // site/tests/build/rum-beacon.test.ts
-import { describe, it, expect } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-describe('RUM beacon HTML output', () => {
+describe("RUM beacon HTML output", () => {
   // The about page is prerendered. The beacon should NOT appear in its
   // bundled HTML because cfWebAnalyticsToken is null during prerender.
-  it('about/index.html does not contain the cf-beacon script', () => {
-    const aboutHtml = resolve('./.svelte-kit/output/prerendered/pages/about.html');
+  it("about/index.html does not contain the cf-beacon script", () => {
+    const aboutHtml = resolve(
+      "./.svelte-kit/output/prerendered/pages/about.html",
+    );
     if (!existsSync(aboutHtml)) {
       // Build hasn't run yet; skip.
       return;
     }
-    const html = readFileSync(aboutHtml, 'utf8');
-    expect(html).not.toContain('cloudflareinsights.com/beacon.min.js');
+    const html = readFileSync(aboutHtml, "utf8");
+    expect(html).not.toContain("cloudflareinsights.com/beacon.min.js");
   });
 });
 ```
@@ -3920,11 +4379,11 @@ test proves a flag-on, token-set request emits the script. Add to
 `site/tests/api/rum-beacon-emit.test.ts`:
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { SELF } from 'cloudflare:test';
+import { describe, expect, it } from "vitest";
+import { SELF } from "cloudflare:test";
 
-describe('RUM beacon emission (server-rendered)', () => {
-  it('beacon script is in HTML when FLAG_RUM_BEACON=on AND CF_WEB_ANALYTICS_TOKEN set', async () => {
+describe("RUM beacon emission (server-rendered)", () => {
+  it("beacon script is in HTML when FLAG_RUM_BEACON=on AND CF_WEB_ANALYTICS_TOKEN set", async () => {
     // The vitest-pool-workers config sets FLAG_RUM_BEACON=off in
     // bindings (Task D6 step 2). Override per-test by hitting the
     // canary URL — canary mode flips ALL flags on (loadFlags(_, true)).
@@ -3934,7 +4393,7 @@ describe('RUM beacon emission (server-rendered)', () => {
     // entrypoint), NOT the public internet. Bare `fetch()` would either
     // hit example.com or 404 against miniflare's loopback — both make the
     // test silently meaningless.
-    const res = await SELF.fetch('http://x/_canary/abc/leaderboard');
+    const res = await SELF.fetch("http://x/_canary/abc/leaderboard");
     expect(res.status).toBe(200); // Fail loudly if the canary route is not wired (Task I1).
     const html = await res.text();
     expect(html).toMatch(/cloudflareinsights\.com\/beacon\.min\.js/);
@@ -3971,6 +4430,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/rum): build smoke (no beacon in 
 ### Task G1: Configure Playwright `toHaveScreenshot` defaults + .gitattributes
 
 **Files:**
+
 - Modify: `site/playwright.config.ts`
 - Create: `site/.gitattributes` (project-level, scoped via path)
 - Create: `site/tests/e2e/__screenshots__/.gitkeep`
@@ -3978,23 +4438,23 @@ git -C /u/Git/CentralGauge commit -m "test(site/rum): build smoke (no beacon in 
 - [ ] **Step 1: Edit `site/playwright.config.ts` to set screenshot tolerance**
 
 ```ts
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 const PORT_DEV = 5173;
 const PORT_PREVIEW = 4173;
 
 export default defineConfig({
-  testDir: './tests/e2e',
-  testMatch: '**/*.spec.ts',
+  testDir: "./tests/e2e",
+  testMatch: "**/*.spec.ts",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: [['html', { open: 'never' }], ['list']],
+  reporter: [["html", { open: "never" }], ["list"]],
   use: {
     baseURL: `http://127.0.0.1:${process.env.CI ? PORT_PREVIEW : PORT_DEV}`,
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   /**
    * Screenshot comparison defaults. Spec §10.7 says 0.1 % tolerance, but
@@ -4017,23 +4477,24 @@ export default defineConfig({
   // Per-platform baselines: linux/darwin/win32 each get their own PNG.
   // CI runs on linux; local mac dev produces darwin baselines. Both
   // commit. See CONTRIBUTING.md (J6) for the workflow.
-  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}-{platform}{ext}',
+  snapshotPathTemplate:
+    "{testDir}/__screenshots__/{testFilePath}/{arg}-{platform}{ext}",
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: process.env.CI
     ? {
-        command: 'npm run preview',
-        port: PORT_PREVIEW,
-        reuseExistingServer: false,
-        timeout: 120_000,
-      }
+      command: "npm run preview",
+      port: PORT_PREVIEW,
+      reuseExistingServer: false,
+      timeout: 120_000,
+    }
     : {
-        command: 'npm run dev',
-        port: PORT_DEV,
-        reuseExistingServer: true,
-        timeout: 60_000,
-      },
+      command: "npm run dev",
+      port: PORT_DEV,
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
 });
 ```
 
@@ -4058,6 +4519,7 @@ touch U:/Git/CentralGauge/site/tests/e2e/__screenshots__/.gitkeep
 ```bash
 cd site && npx playwright test --list 2>&1 | tail -10
 ```
+
 Expected: existing specs listed.
 
 - [ ] **Step 5: Commit**
@@ -4072,23 +4534,24 @@ git -C /u/Git/CentralGauge commit -m "build(site/e2e): playwright config — scr
 ### Task G2: `visual-regression.spec.ts` — 5 pages × 2 themes × 2 densities
 
 **Files:**
+
 - Create: `site/tests/e2e/visual-regression.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
 const PAGES = [
-  { name: 'leaderboard', url: '/leaderboard' },
-  { name: 'models', url: '/models' },
-  { name: 'runs', url: '/runs' },
-  { name: 'compare', url: '/compare?models=sonnet-4-7,gpt-5' },
-  { name: 'about', url: '/about' },
+  { name: "leaderboard", url: "/leaderboard" },
+  { name: "models", url: "/models" },
+  { name: "runs", url: "/runs" },
+  { name: "compare", url: "/compare?models=sonnet-4-7,gpt-5" },
+  { name: "about", url: "/about" },
 ];
 
-const THEMES = ['light', 'dark'] as const;
-const DENSITIES = ['comfortable', 'compact'] as const;
+const THEMES = ["light", "dark"] as const;
+const DENSITIES = ["comfortable", "compact"] as const;
 
 for (const p of PAGES) {
   test.describe(`visual:${p.name}`, () => {
@@ -4098,26 +4561,29 @@ for (const p of PAGES) {
           // Set theme + density via localStorage before first paint
           await page.addInitScript(([t, d]) => {
             try {
-              localStorage.setItem('cg-theme', t);
-              localStorage.setItem('cg-density', d);
+              localStorage.setItem("cg-theme", t);
+              localStorage.setItem("cg-density", d);
             } catch { /* ignore */ }
           }, [theme, density]);
 
           await page.goto(p.url);
-          await page.waitForLoadState('networkidle');
+          await page.waitForLoadState("networkidle");
 
           // Mask anything time-dependent (relative timestamps, build sha)
           const masks = [
-            page.locator('text=/Updated\\s/'),
-            page.locator('text=/build:\\s+\\w+/'),
-            page.locator('time'),
+            page.locator("text=/Updated\\s/"),
+            page.locator("text=/build:\\s+\\w+/"),
+            page.locator("time"),
           ];
 
-          await expect(page).toHaveScreenshot(`${p.name}-${theme}-${density}.png`, {
-            fullPage: true,
-            mask: masks,
-            // Use the global threshold from playwright.config.ts.
-          });
+          await expect(page).toHaveScreenshot(
+            `${p.name}-${theme}-${density}.png`,
+            {
+              fullPage: true,
+              mask: masks,
+              // Use the global threshold from playwright.config.ts.
+            },
+          );
         });
       }
     }
@@ -4126,6 +4592,7 @@ for (const p of PAGES) {
 ```
 
 > **Baseline workflow.** First-time baselines must be captured locally with seeded D1, then committed. The spec mentions:
+>
 > 1. `cd site && npm run seed:e2e` (Task H4 below seeds the dev DB)
 > 2. `cd site && npm run dev` (one terminal)
 > 3. `cd site && npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots` (another terminal)
@@ -4151,6 +4618,7 @@ CI=1 cd site && npx playwright test tests/e2e/visual-regression.spec.ts --update
 ```
 
 Review each PNG manually; they should show:
+
 - No relative timestamps (masked)
 - Consistent theme tokens
 - Consistent row heights (44 px comfortable, 32 px compact)
@@ -4171,6 +4639,7 @@ P5.2 and P5.3 left specs that reference seeded data (`sonnet-4-7`, `seeded-run-i
 ### Task H1: `seed-fixtures.ts` — pinned slug constants
 
 **Files:**
+
 - Create: `site/tests/utils/seed-fixtures.ts`
 - Create: `site/tests/utils/seed-fixtures.test.ts`
 
@@ -4191,56 +4660,61 @@ Single source of truth for test slugs/IDs. Specs import these constants instead 
  */
 export const FIXTURE = {
   family: {
-    claude: 'claude',
-    gpt: 'gpt',
+    claude: "claude",
+    gpt: "gpt",
   },
   model: {
-    sonnet: 'sonnet-4-7',
-    haiku: 'haiku-3-5',
-    gpt5: 'gpt-5',
+    sonnet: "sonnet-4-7",
+    haiku: "haiku-3-5",
+    gpt5: "gpt-5",
   },
   task: {
-    easy1: 'CG-AL-E001',
-    easy2: 'CG-AL-E002',
-    medium1: 'CG-AL-M001',
-    hard1: 'CG-AL-H001',
+    easy1: "CG-AL-E001",
+    easy2: "CG-AL-E002",
+    medium1: "CG-AL-M001",
+    hard1: "CG-AL-H001",
   },
   run: {
     /** First run created by seedSmokeData ({ runCount: 5 }) */
-    run0: 'run-0000',
-    run1: 'run-0001',
+    run0: "run-0000",
+    run1: "run-0001",
   },
   /** Search-FTS fixture: query that must produce a row with <mark> */
-  searchKnownQuery: 'AL0132',
+  searchKnownQuery: "AL0132",
 } as const;
 ```
 
 - [ ] **Step 2: Add a self-test that fixtures match what `seedSmokeData` actually creates**
 
 ```ts
-import { applyD1Migrations, env } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
-import { seedSmokeData } from './seed';
-import { FIXTURE } from './seed-fixtures';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
+import { seedSmokeData } from "./seed";
+import { FIXTURE } from "./seed-fixtures";
 
-describe('FIXTURE constants reflect seedSmokeData reality', () => {
+describe("FIXTURE constants reflect seedSmokeData reality", () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
     await seedSmokeData({ runCount: 5 });
   });
 
-  it('FIXTURE.model.sonnet exists', async () => {
-    const row = await env.DB.prepare('SELECT slug FROM models WHERE slug = ?').bind(FIXTURE.model.sonnet).first();
+  it("FIXTURE.model.sonnet exists", async () => {
+    const row = await env.DB.prepare("SELECT slug FROM models WHERE slug = ?")
+      .bind(FIXTURE.model.sonnet).first();
     expect(row).not.toBeNull();
   });
 
-  it('FIXTURE.run.run0 exists', async () => {
-    const row = await env.DB.prepare('SELECT id FROM runs WHERE id = ?').bind(FIXTURE.run.run0).first();
+  it("FIXTURE.run.run0 exists", async () => {
+    const row = await env.DB.prepare("SELECT id FROM runs WHERE id = ?").bind(
+      FIXTURE.run.run0,
+    ).first();
     expect(row).not.toBeNull();
   });
 
-  it('FIXTURE.task.easy1 exists', async () => {
-    const row = await env.DB.prepare('SELECT task_id FROM tasks WHERE task_id = ?').bind(FIXTURE.task.easy1).first();
+  it("FIXTURE.task.easy1 exists", async () => {
+    const row = await env.DB.prepare(
+      "SELECT task_id FROM tasks WHERE task_id = ?",
+    ).bind(FIXTURE.task.easy1).first();
     expect(row).not.toBeNull();
   });
 });
@@ -4263,6 +4737,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/fixtures): pin E2E slug/ID const
 ### Task H2: Adopt `FIXTURE` constants + reconcile run-id mismatch (`seeded-run-id-1` → `run-0000`)
 
 **Files:**
+
 - Modify: `site/tests/e2e/model-detail.spec.ts`, `site/tests/e2e/run-detail.spec.ts`, `site/tests/e2e/transcript.spec.ts`, `site/tests/e2e/print.spec.ts` (P5.2 specs)
 - Modify: `site/tests/e2e/models-index.spec.ts`, `site/tests/e2e/runs-index.spec.ts`, `site/tests/e2e/families.spec.ts`, `site/tests/e2e/tasks.spec.ts`, `site/tests/e2e/compare.spec.ts`, `site/tests/e2e/search.spec.ts`, `site/tests/e2e/limitations.spec.ts`, `site/tests/e2e/cmd-k.spec.ts` (P5.3 specs)
 - Modify: `site/lighthouserc.json` (URLs hardcode `seeded-run-id-1`)
@@ -4285,13 +4760,13 @@ grep -rn "seeded-run-id" U:/Git/CentralGauge/site/lighthouserc.json U:/Git/Centr
 
 For each match in each spec, add `import { FIXTURE } from '../utils/seed-fixtures';` at the top and replace the literal with `FIXTURE.<group>.<name>`. Mapping table:
 
-| Literal | Replacement |
-|---------|-------------|
-| `'sonnet-4-7'` | `FIXTURE.model.sonnet` |
-| `'haiku-3-5'` | `FIXTURE.model.haiku` |
-| `'gpt-5'` | `FIXTURE.model.gpt5` |
-| `'CG-AL-E001'` | `FIXTURE.task.easy1` |
-| `'CG-AL-E002'` | `FIXTURE.task.easy2` |
+| Literal             | Replacement                         |
+| ------------------- | ----------------------------------- |
+| `'sonnet-4-7'`      | `FIXTURE.model.sonnet`              |
+| `'haiku-3-5'`       | `FIXTURE.model.haiku`               |
+| `'gpt-5'`           | `FIXTURE.model.gpt5`                |
+| `'CG-AL-E001'`      | `FIXTURE.task.easy1`                |
+| `'CG-AL-E002'`      | `FIXTURE.task.easy2`                |
 | `'seeded-run-id-1'` | `FIXTURE.run.run0` (= `'run-0000'`) |
 
 - [ ] **Step 3: Rewrite `site/lighthouserc.json` URLs**
@@ -4312,6 +4787,7 @@ The line at `CONTRIBUTING.md:140` reads `seeded-run-id-1 and sonnet-4-7`; replac
 ```bash
 grep -rn "seeded-run-id-1" U:/Git/CentralGauge/site/
 ```
+
 Expected: **zero results**. If any remain, every match must be either rewritten to `run-0000` (in fixtures, URLs) or to `FIXTURE.run.run0` (in TS specs).
 
 - [ ] **Step 6: Verify Playwright still lists every spec**
@@ -4331,6 +4807,7 @@ git -C /u/Git/CentralGauge commit -m "refactor(site/e2e): adopt FIXTURE constant
 ### Task H3: `seed:e2e` script — apply migrations + seedSmokeData against local D1
 
 **Files:**
+
 - Create: `site/scripts/seed-e2e.ts`
 - Modify: `site/package.json`
 
@@ -4355,20 +4832,26 @@ Wrangler dev's local D1 is a sqlite file under `.wrangler/state/v3/d1/...`. The 
  * already been applied by `wrangler dev`'s startup if the file exists; we
  * additionally apply migrations explicitly to handle the cold-start case.
  */
-import { execSync } from 'node:child_process';
-import { writeFileSync, readFileSync, readdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { execSync } from "node:child_process";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
-const ROOT = resolve(import.meta.dirname ?? process.cwd(), '..');
+const ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 
 function run(cmd: string): string {
   console.log(`$ ${cmd}`);
-  return execSync(cmd, { stdio: 'inherit', cwd: ROOT, encoding: 'utf8' as const }) ?? '';
+  return execSync(cmd, {
+    stdio: "inherit",
+    cwd: ROOT,
+    encoding: "utf8" as const,
+  }) ?? "";
 }
 
 // 1. Apply migrations (wrangler will skip already-applied)
-const migrations = readdirSync(join(ROOT, 'migrations')).filter((f) => f.endsWith('.sql')).sort();
+const migrations = readdirSync(join(ROOT, "migrations")).filter((f) =>
+  f.endsWith(".sql")
+).sort();
 for (const m of migrations) {
   run(`npx wrangler d1 execute centralgauge --local --file=migrations/${m}`);
 }
@@ -4440,11 +4923,15 @@ INSERT INTO shortcoming_occurrences(shortcoming_id,result_id,task_id,error_code)
   (2,5,'CG-AL-E002','AL0500');
 `;
 
-const seedFile = join(tmpdir(), 'cg-seed.sql');
+const seedFile = join(tmpdir(), "cg-seed.sql");
 writeFileSync(seedFile, SEED_SQL);
-run(`npx wrangler d1 execute centralgauge --local --file=${seedFile.replace(/\\/g, '/')}`);
+run(
+  `npx wrangler d1 execute centralgauge --local --file=${
+    seedFile.replace(/\\/g, "/")
+  }`,
+);
 
-console.log('\n[OK] E2E seed applied to local D1.');
+console.log("\n[OK] E2E seed applied to local D1.");
 ```
 
 - [ ] **Step 2: Wire scripts in `site/package.json`**
@@ -4463,6 +4950,7 @@ console.log('\n[OK] E2E seed applied to local D1.');
 ```bash
 cd site && npm run seed:e2e 2>&1 | tail -10
 ```
+
 Expected: prints `[OK] E2E seed applied to local D1.`
 
 - [ ] **Step 4: Commit**
@@ -4477,6 +4965,7 @@ git -C /u/Git/CentralGauge commit -m "build(site/scripts): seed-e2e — apply mi
 ### Task H4: `golden-path.spec.ts` — happy-path navigation
 
 **Files:**
+
 - Create: `site/tests/e2e/golden-path.spec.ts`
 
 The "happy path" per spec §10.2: land → sort → filter → drill-down → transcript → signature → repro download. One test that walks the full chain.
@@ -4484,17 +4973,18 @@ The "happy path" per spec §10.2: land → sort → filter → drill-down → tr
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
-import { FIXTURE } from '../utils/seed-fixtures';
+import { expect, test } from "@playwright/test";
+import { FIXTURE } from "../utils/seed-fixtures";
 
-test.describe('golden path', () => {
-  test('land → sort → filter → drill-down → transcript → signature', async ({ page }) => {
+test.describe("golden path", () => {
+  test("land → sort → filter → drill-down → transcript → signature", async ({ page }) => {
     // 1. Land on leaderboard
-    await page.goto('/leaderboard');
-    await expect(page.getByRole('heading', { level: 1, name: /Leaderboard/ })).toBeVisible();
+    await page.goto("/leaderboard");
+    await expect(page.getByRole("heading", { level: 1, name: /Leaderboard/ }))
+      .toBeVisible();
 
     // 2. Sort by score
-    await page.getByRole('button', { name: /Score/ }).click();
+    await page.getByRole("button", { name: /Score/ }).click();
     await expect(page).toHaveURL(/sort=/);
 
     // 3. Filter to verified tier
@@ -4502,11 +4992,13 @@ test.describe('golden path', () => {
     await expect(page).toHaveURL(/tier=verified/);
 
     // 4. Drill into top model
-    await page.locator('table tbody tr').first().getByRole('link').first().click();
+    await page.locator("table tbody tr").first().getByRole("link").first()
+      .click();
     await expect(page).toHaveURL(/\/models\//);
 
     // 5. From model, navigate to its runs
-    await page.getByRole('link', { name: /Recent runs|All runs/i }).first().click();
+    await page.getByRole("link", { name: /Recent runs|All runs/i }).first()
+      .click();
     await expect(page).toHaveURL(/\/runs/);
 
     // 6. Open run detail
@@ -4515,11 +5007,11 @@ test.describe('golden path', () => {
     await expect(page).toHaveURL(/\/runs\//);
 
     // 7. Open the Signature tab
-    await page.getByRole('tab', { name: /Signature/ }).click();
+    await page.getByRole("tab", { name: /Signature/ }).click();
     await expect(page.getByText(/Signed payload|public key/i)).toBeVisible();
 
     // 8. Confirm Reproduction tab is reachable
-    await page.getByRole('tab', { name: /Reproduction/ }).click();
+    await page.getByRole("tab", { name: /Reproduction/ }).click();
     await expect(page.getByText(/Bundle|Download/i)).toBeVisible();
   });
 });
@@ -4533,6 +5025,7 @@ Run with seeded preview:
 cd site && npm run seed:e2e
 cd site && npx playwright test tests/e2e/golden-path.spec.ts 2>&1 | tail -20
 ```
+
 Expected: green.
 
 - [ ] **Step 3: Commit**
@@ -4547,6 +5040,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): golden-path — leaderboar
 ### Task H5: `responsive.spec.ts` — 4 viewports presence-only
 
 **Files:**
+
 - Create: `site/tests/e2e/responsive.spec.ts`
 
 Element-presence assertions across mobile / tablet / desktop / wide. No screenshots (covered by visual-regression for desktop only).
@@ -4554,16 +5048,16 @@ Element-presence assertions across mobile / tablet / desktop / wide. No screensh
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
 const VIEWPORTS = [
-  { name: 'mobile', width: 375, height: 667 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 800 },
-  { name: 'wide', width: 1920, height: 1200 },
+  { name: "mobile", width: 375, height: 667 },
+  { name: "tablet", width: 768, height: 1024 },
+  { name: "desktop", width: 1280, height: 800 },
+  { name: "wide", width: 1920, height: 1200 },
 ];
 
-const PAGES = ['/leaderboard', '/models', '/runs', '/about'];
+const PAGES = ["/leaderboard", "/models", "/runs", "/about"];
 
 for (const vp of VIEWPORTS) {
   test.describe(`responsive @ ${vp.name}`, () => {
@@ -4573,29 +5067,32 @@ for (const vp of VIEWPORTS) {
       test(`${url} renders core elements`, async ({ page }) => {
         await page.goto(url);
         // h1 always visible
-        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
         // skip-to-content link first in DOM (accessibility)
         await expect(page.locator('a[href="#main"]').first()).toBeAttached();
         // main landmark present
-        await expect(page.locator('main#main')).toBeVisible();
+        await expect(page.locator("main#main")).toBeVisible();
       });
     }
 
     test(`/leaderboard table is horizontally scrollable on mobile`, async ({ page }) => {
-      await page.goto('/leaderboard');
-      const overflow = await page.locator('table').evaluate((el) => getComputedStyle(el).overflowX);
+      await page.goto("/leaderboard");
+      const overflow = await page.locator("table").evaluate((el) =>
+        getComputedStyle(el).overflowX
+      );
       // On mobile we expect either auto/scroll on the table OR its wrapper
-      if (vp.name === 'mobile') {
+      if (vp.name === "mobile") {
         // The wrapper handles scrolling; just check the page didn't choke
-        await expect(page.locator('table')).toBeVisible();
+        await expect(page.locator("table")).toBeVisible();
       }
     });
 
     test(`Nav collapses or hides links below 768px`, async ({ page }) => {
-      await page.goto('/');
+      await page.goto("/");
       if (vp.width < 768) {
         // Spec: "Mobile collapses to hamburger" — Nav.svelte uses display:none for .links
-        const linksVisible = await page.locator('nav .links li').first().isVisible().catch(() => false);
+        const linksVisible = await page.locator("nav .links li").first()
+          .isVisible().catch(() => false);
         expect(linksVisible).toBe(false);
       }
     });
@@ -4616,6 +5113,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): responsive — 4 viewports
 ### Task H6: `keyboard.spec.ts` — chord + sort + modal-trap coverage
 
 **Files:**
+
 - Create: `site/tests/e2e/keyboard.spec.ts`
 
 Existing P5.3 cmd-K spec covers ⌘K only. P5.4 broadens: tab order, sort activation via Enter, modal trap (Esc returns focus to opener), cmd-shift-d toggles density.
@@ -4623,49 +5121,52 @@ Existing P5.3 cmd-K spec covers ⌘K only. P5.4 broadens: tab order, sort activa
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('keyboard', () => {
-  test('Tab order on /leaderboard skips skip-link first', async ({ page }) => {
-    await page.goto('/leaderboard');
-    await page.keyboard.press('Tab');
-    const focusedId = await page.evaluate(() => document.activeElement?.getAttribute('href'));
-    expect(focusedId).toBe('#main');
+test.describe("keyboard", () => {
+  test("Tab order on /leaderboard skips skip-link first", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await page.keyboard.press("Tab");
+    const focusedId = await page.evaluate(() =>
+      document.activeElement?.getAttribute("href")
+    );
+    expect(focusedId).toBe("#main");
   });
 
-  test('sort headers activate on Enter', async ({ page }) => {
-    await page.goto('/leaderboard');
-    const scoreHeader = page.getByRole('button', { name: /Score/ });
+  test("sort headers activate on Enter", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const scoreHeader = page.getByRole("button", { name: /Score/ });
     await scoreHeader.focus();
-    await page.keyboard.press('Enter');
+    await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/sort=/);
   });
 
-  test('cmd-K opens palette and Esc returns focus to nav button', async ({ page }) => {
-    await page.goto('/');
-    const navBtn = page.getByRole('button', { name: /Open command palette/i });
+  test("cmd-K opens palette and Esc returns focus to nav button", async ({ page }) => {
+    await page.goto("/");
+    const navBtn = page.getByRole("button", { name: /Open command palette/i });
     await navBtn.focus();
-    await page.keyboard.press('Meta+K');
-    await expect(page.getByRole('dialog', { name: /command palette/i })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.keyboard.press("Meta+K");
+    await expect(page.getByRole("dialog", { name: /command palette/i }))
+      .toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(navBtn).toBeFocused();
   });
 
-  test('cmd-shift-d toggles density attribute on <html>', async ({ page }) => {
-    await page.goto('/leaderboard');
-    const initial = await page.locator('html').getAttribute('data-density');
-    await page.keyboard.press('Meta+Shift+D');
-    const after = await page.locator('html').getAttribute('data-density');
+  test("cmd-shift-d toggles density attribute on <html>", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const initial = await page.locator("html").getAttribute("data-density");
+    await page.keyboard.press("Meta+Shift+D");
+    const after = await page.locator("html").getAttribute("data-density");
     // Either initial was null (comfortable default) -> compact, or vice versa
     expect(after).not.toBe(initial);
   });
 
-  test('palette: ArrowDown moves selection, Enter navigates', async ({ page }) => {
-    await page.goto('/');
-    await page.keyboard.press('Meta+K');
-    await page.getByRole('searchbox').fill('models');
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
+  test("palette: ArrowDown moves selection, Enter navigates", async ({ page }) => {
+    await page.goto("/");
+    await page.keyboard.press("Meta+K");
+    await page.getByRole("searchbox").fill("models");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/models/);
   });
 });
@@ -4683,6 +5184,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): keyboard — tab order, so
 ### Task H7: `a11y.spec.ts` — axe-core full coverage in light + dark + comfortable + compact
 
 **Files:**
+
 - Create: `site/tests/e2e/a11y.spec.ts`
 
 Per spec §9.6, axe-core must run on every page in both themes. P5.4 adds the density dimension.
@@ -4690,16 +5192,23 @@ Per spec §9.6, axe-core must run on every page in both themes. P5.4 adds the de
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 const PAGES = [
-  '/leaderboard', '/models', '/runs', '/families', '/tasks',
-  '/compare?models=sonnet-4-7,gpt-5', '/search?q=AL0132', '/limitations', '/about',
+  "/leaderboard",
+  "/models",
+  "/runs",
+  "/families",
+  "/tasks",
+  "/compare?models=sonnet-4-7,gpt-5",
+  "/search?q=AL0132",
+  "/limitations",
+  "/about",
 ];
 
-const THEMES = ['light', 'dark'] as const;
-const DENSITIES = ['comfortable', 'compact'] as const;
+const THEMES = ["light", "dark"] as const;
+const DENSITIES = ["comfortable", "compact"] as const;
 
 for (const url of PAGES) {
   for (const theme of THEMES) {
@@ -4707,26 +5216,28 @@ for (const url of PAGES) {
       test(`a11y ${url} · ${theme} · ${density}`, async ({ page }) => {
         await page.addInitScript(([t, d]) => {
           try {
-            localStorage.setItem('cg-theme', t);
-            localStorage.setItem('cg-density', d);
+            localStorage.setItem("cg-theme", t);
+            localStorage.setItem("cg-density", d);
           } catch { /* ignore */ }
         }, [theme, density]);
         await page.goto(url);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
 
         const results = await new AxeBuilder({ page })
           .disableRules([
             // Excluded by spec §9.5: contrast pairs are tested separately by
             // scripts/check-contrast.ts; some spec-mandated colors trip
             // axe's overly-broad heuristic on accent-soft backgrounds.
-            'color-contrast',
+            "color-contrast",
           ])
           .analyze();
 
-        const serious = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+        const serious = results.violations.filter((v) =>
+          v.impact === "serious" || v.impact === "critical"
+        );
         if (serious.length > 0) {
           console.log(`[a11y serious] ${url} ${theme} ${density}`);
-          for (const v of serious) console.log('  -', v.id, v.help);
+          for (const v of serious) console.log("  -", v.id, v.help);
         }
         expect(serious).toHaveLength(0);
       });
@@ -4747,9 +5258,11 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): a11y full coverage — 9 p
 ### Task H8: `sse.spec.ts` — connection / event / reconnect coverage
 
 **Files:**
+
 - Create: `site/tests/e2e/sse.spec.ts`
 
 The spec runs against the seeded preview (port 4173 in CI). It needs to:
+
 1. Open `/leaderboard`, confirm `<LiveStatus>` shows "live"
 2. POST a `run_finalized` event to the broadcaster admin endpoint (or via a test-only fixture endpoint — see Task H8.5)
 3. Confirm the table re-renders within 2 s
@@ -4763,12 +5276,14 @@ The DO already has a `/reset` endpoint gated by `x-test-only: 1`. We add a secon
 
 ```ts
 // site/src/routes/api/v1/__test_only__/broadcast/+server.ts
-import type { RequestHandler } from './$types';
-import { broadcastEvent } from '$lib/server/broadcaster';
+import type { RequestHandler } from "./$types";
+import { broadcastEvent } from "$lib/server/broadcaster";
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (request.headers.get('x-test-only') !== '1') return new Response('Forbidden', { status: 403 });
-  if (!platform) return new Response('No platform', { status: 500 });
+  if (request.headers.get("x-test-only") !== "1") {
+    return new Response("Forbidden", { status: 403 });
+  }
+  if (!platform) return new Response("No platform", { status: 500 });
   const ev = await request.json();
   const ok = await broadcastEvent(platform.env, ev as never);
   return Response.json({ ok });
@@ -4781,10 +5296,14 @@ Actually, simpler: gate the handler on `process.env.NODE_ENV !== 'production'` O
 
 ```ts
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return new Response('No platform', { status: 500 });
+  if (!platform) return new Response("No platform", { status: 500 });
   const env = platform.env as { ALLOW_TEST_BROADCAST?: string };
-  if (env.ALLOW_TEST_BROADCAST !== 'on') return new Response('Forbidden', { status: 403 });
-  if (request.headers.get('x-test-only') !== '1') return new Response('Forbidden', { status: 403 });
+  if (env.ALLOW_TEST_BROADCAST !== "on") {
+    return new Response("Forbidden", { status: 403 });
+  }
+  if (request.headers.get("x-test-only") !== "1") {
+    return new Response("Forbidden", { status: 403 });
+  }
   // ... broadcast ...
 };
 ```
@@ -4794,29 +5313,32 @@ Set `ALLOW_TEST_BROADCAST=on` in `vitest.config.ts` bindings + in CI workflow's 
 - [ ] **Step 2: Implement `site/tests/e2e/sse.spec.ts`**
 
 ```ts
-import { test, expect } from '@playwright/test';
-import { FIXTURE } from '../utils/seed-fixtures';
+import { expect, test } from "@playwright/test";
+import { FIXTURE } from "../utils/seed-fixtures";
 
-test.describe('SSE live updates', () => {
-  test.skip(({ }) => !process.env.CI, 'SSE spec is CI-only — local dev does not have ALLOW_TEST_BROADCAST');
+test.describe("SSE live updates", () => {
+  test.skip(
+    ({}) => !process.env.CI,
+    "SSE spec is CI-only — local dev does not have ALLOW_TEST_BROADCAST",
+  );
 
   test('LiveStatus shows "live" on /leaderboard', async ({ page }) => {
-    await page.goto('/leaderboard');
+    await page.goto("/leaderboard");
     // Wait for SSE handshake (connection happens in mount $effect)
     await expect(page.getByText(/live/i)).toBeVisible({ timeout: 5000 });
   });
 
-  test('broadcasted run_finalized triggers leaderboard invalidate', async ({ page, request }) => {
-    await page.goto('/leaderboard');
-    await page.waitForLoadState('networkidle');
+  test("broadcasted run_finalized triggers leaderboard invalidate", async ({ page, request }) => {
+    await page.goto("/leaderboard");
+    await page.waitForLoadState("networkidle");
 
     // Inject an event via the test-only endpoint
-    const res = await request.post('/api/v1/__test_only__/broadcast', {
-      headers: { 'x-test-only': '1', 'content-type': 'application/json' },
+    const res = await request.post("/api/v1/__test_only__/broadcast", {
+      headers: { "x-test-only": "1", "content-type": "application/json" },
       data: {
-        type: 'run_finalized',
+        type: "run_finalized",
         ts: new Date().toISOString(),
-        run_id: 'sse-test-run',
+        run_id: "sse-test-run",
         model_slug: FIXTURE.model.sonnet,
         family_slug: FIXTURE.family.claude,
       },
@@ -4825,7 +5347,9 @@ test.describe('SSE live updates', () => {
 
     // The page should re-fetch its loader (invalidate fires). We watch for
     // a network request to /leaderboard's loader path.
-    await page.waitForResponse((r) => r.url().includes('/api/v1/leaderboard'), { timeout: 5000 });
+    await page.waitForResponse((r) => r.url().includes("/api/v1/leaderboard"), {
+      timeout: 5000,
+    });
   });
 });
 ```
@@ -4842,6 +5366,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): sse — live-status visibl
 ### Task H8.5: Verify `__test_only__` endpoint is blocked when env flag absent
 
 **Files:**
+
 - Create: `site/tests/api/test-only-broadcast.test.ts`
 
 The test-only endpoint accepts `POST /api/v1/__test_only__/broadcast` only when BOTH `ALLOW_TEST_BROADCAST=on` AND header `x-test-only: 1` are present. Production never sets the env var; CI does. We add an explicit assertion that the endpoint returns 403 when either gate is missing — so a production misconfiguration (env var leaking) doesn't silently expose the broadcast surface to the internet.
@@ -4851,58 +5376,70 @@ The test-only endpoint accepts `POST /api/v1/__test_only__/broadcast` only when 
 - [ ] **Step 1: Implement the test**
 
 ```ts
-import { env } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { env } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
 
-describe('__test_only__ broadcast endpoint security', () => {
-  it('returns 403 when ALLOW_TEST_BROADCAST env is absent', async () => {
+describe("__test_only__ broadcast endpoint security", () => {
+  it("returns 403 when ALLOW_TEST_BROADCAST env is absent", async () => {
     // The vitest-pool-workers config sets ALLOW_TEST_BROADCAST=on by
     // default in test bindings (Task I3 CI workflow). Override for this
     // test by deleting the binding via env mutation if supported, or
     // assert the production-path code path returns 403 explicitly via
     // a dedicated module-level test that constructs a fake event with
     // an env object missing the key.
-    const { POST } = await import('../../src/routes/api/v1/__test_only__/broadcast/+server');
-    const fakeRequest = new Request('http://x/api/v1/__test_only__/broadcast', {
-      method: 'POST',
-      headers: { 'x-test-only': '1', 'content-type': 'application/json' },
-      body: JSON.stringify({ type: 'ping', ts: 'now' }),
+    const { POST } = await import(
+      "../../src/routes/api/v1/__test_only__/broadcast/+server"
+    );
+    const fakeRequest = new Request("http://x/api/v1/__test_only__/broadcast", {
+      method: "POST",
+      headers: { "x-test-only": "1", "content-type": "application/json" },
+      body: JSON.stringify({ type: "ping", ts: "now" }),
     });
-    const fakePlatform = { env: { /* no ALLOW_TEST_BROADCAST */ } };
-    const res = await POST({ request: fakeRequest, platform: fakePlatform } as never);
+    const fakePlatform = { env: {/* no ALLOW_TEST_BROADCAST */} };
+    const res = await POST(
+      { request: fakeRequest, platform: fakePlatform } as never,
+    );
     expect(res.status).toBe(403);
   });
 
-  it('returns 403 when x-test-only header is absent (env present)', async () => {
-    const { POST } = await import('../../src/routes/api/v1/__test_only__/broadcast/+server');
-    const fakeRequest = new Request('http://x/api/v1/__test_only__/broadcast', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },  // missing x-test-only
-      body: JSON.stringify({ type: 'ping', ts: 'now' }),
+  it("returns 403 when x-test-only header is absent (env present)", async () => {
+    const { POST } = await import(
+      "../../src/routes/api/v1/__test_only__/broadcast/+server"
+    );
+    const fakeRequest = new Request("http://x/api/v1/__test_only__/broadcast", {
+      method: "POST",
+      headers: { "content-type": "application/json" }, // missing x-test-only
+      body: JSON.stringify({ type: "ping", ts: "now" }),
     });
-    const fakePlatform = { env: { ALLOW_TEST_BROADCAST: 'on' } };
-    const res = await POST({ request: fakeRequest, platform: fakePlatform } as never);
+    const fakePlatform = { env: { ALLOW_TEST_BROADCAST: "on" } };
+    const res = await POST(
+      { request: fakeRequest, platform: fakePlatform } as never,
+    );
     expect(res.status).toBe(403);
   });
 
-  it('accepts when both gates pass', async () => {
-    const { POST } = await import('../../src/routes/api/v1/__test_only__/broadcast/+server');
-    const fakeRequest = new Request('http://x/api/v1/__test_only__/broadcast', {
-      method: 'POST',
-      headers: { 'x-test-only': '1', 'content-type': 'application/json' },
+  it("accepts when both gates pass", async () => {
+    const { POST } = await import(
+      "../../src/routes/api/v1/__test_only__/broadcast/+server"
+    );
+    const fakeRequest = new Request("http://x/api/v1/__test_only__/broadcast", {
+      method: "POST",
+      headers: { "x-test-only": "1", "content-type": "application/json" },
       body: JSON.stringify({
-        type: 'run_finalized',
+        type: "run_finalized",
         ts: new Date().toISOString(),
-        run_id: 'r-test-h85',
-        model_slug: 'sonnet-4-7',
-        family_slug: 'claude',
+        run_id: "r-test-h85",
+        model_slug: "sonnet-4-7",
+        family_slug: "claude",
       }),
     });
-    const fakePlatform = { env };  // real bindings (ALLOW_TEST_BROADCAST=on)
-    const res = await POST({ request: fakeRequest, platform: fakePlatform } as never);
+    const fakePlatform = { env }; // real bindings (ALLOW_TEST_BROADCAST=on)
+    const res = await POST(
+      { request: fakeRequest, platform: fakePlatform } as never,
+    );
     // Note: real bindings include LEADERBOARD_BROADCASTER, so the call
     // should succeed (200) when both gates pass.
-    expect([200, 500]).toContain(res.status);   // 500 if DO not available; either proves not 403
+    expect([200, 500]).toContain(res.status); // 500 if DO not available; either proves not 403
   });
 });
 ```
@@ -4924,37 +5461,47 @@ git -C /u/Git/CentralGauge commit -m "test(site/security): __test_only__ broadca
 ### Task H9: `density.spec.ts` — toggle, keybind, persistence
 
 **Files:**
+
 - Create: `site/tests/e2e/density.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('density toggle', () => {
-  test('Nav button switches density and persists across reload', async ({ page }) => {
-    await page.goto('/leaderboard');
-    const compactBtn = page.getByRole('button', { name: /Compact density/i });
+test.describe("density toggle", () => {
+  test("Nav button switches density and persists across reload", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const compactBtn = page.getByRole("button", { name: /Compact density/i });
     await compactBtn.click();
-    await expect(page.locator('html')).toHaveAttribute('data-density', 'compact');
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-density",
+      "compact",
+    );
 
     // Reload — preference should restore via no-flash boot script
     await page.reload();
-    await expect(page.locator('html')).toHaveAttribute('data-density', 'compact');
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-density",
+      "compact",
+    );
   });
 
-  test('cmd-shift-d toggles density', async ({ page }) => {
-    await page.goto('/leaderboard');
-    await page.keyboard.press('Meta+Shift+D');
-    const after = await page.locator('html').getAttribute('data-density');
-    expect(['comfortable', 'compact']).toContain(after);
+  test("cmd-shift-d toggles density", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await page.keyboard.press("Meta+Shift+D");
+    const after = await page.locator("html").getAttribute("data-density");
+    expect(["comfortable", "compact"]).toContain(after);
   });
 
-  test('compact mode reduces row height', async ({ page }) => {
-    await page.goto('/leaderboard');
-    const comfortableHeight = await page.locator('table tbody tr').first().evaluate((el) => el.getBoundingClientRect().height);
-    await page.getByRole('button', { name: /Compact density/i }).click();
-    const compactHeight = await page.locator('table tbody tr').first().evaluate((el) => el.getBoundingClientRect().height);
+  test("compact mode reduces row height", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const comfortableHeight = await page.locator("table tbody tr").first()
+      .evaluate((el) => el.getBoundingClientRect().height);
+    await page.getByRole("button", { name: /Compact density/i }).click();
+    const compactHeight = await page.locator("table tbody tr").first().evaluate(
+      (el) => el.getBoundingClientRect().height,
+    );
     expect(compactHeight).toBeLessThan(comfortableHeight);
   });
 });
@@ -4972,51 +5519,52 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): density — toggle button,
 ### Task H10: `og.spec.ts` — OG endpoint smoke
 
 **Files:**
+
 - Create: `site/tests/e2e/og.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
-import { FIXTURE } from '../utils/seed-fixtures';
+import { expect, test } from "@playwright/test";
+import { FIXTURE } from "../utils/seed-fixtures";
 
-test.describe('OG image endpoints', () => {
-  const SWR = 'public, max-age=60, stale-while-revalidate=86400';
+test.describe("OG image endpoints", () => {
+  const SWR = "public, max-age=60, stale-while-revalidate=86400";
 
-  test('/og/index.png returns image/png with SWR cache header', async ({ request }) => {
-    const res = await request.get('/og/index.png');
+  test("/og/index.png returns image/png with SWR cache header", async ({ request }) => {
+    const res = await request.get("/og/index.png");
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-type']).toBe('image/png');
-    expect(res.headers()['cache-control']).toBe(SWR);
+    expect(res.headers()["content-type"]).toBe("image/png");
+    expect(res.headers()["cache-control"]).toBe(SWR);
   });
 
   test(`/og/models/${FIXTURE.model.sonnet}.png returns image/png`, async ({ request }) => {
     const res = await request.get(`/og/models/${FIXTURE.model.sonnet}.png`);
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-type']).toBe('image/png');
+    expect(res.headers()["content-type"]).toBe("image/png");
   });
 
-  test('/og/families/claude.png returns image/png', async ({ request }) => {
-    const res = await request.get('/og/families/claude.png');
+  test("/og/families/claude.png returns image/png", async ({ request }) => {
+    const res = await request.get("/og/families/claude.png");
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-type']).toBe('image/png');
+    expect(res.headers()["content-type"]).toBe("image/png");
   });
 
-  test('/og/runs/run-0000.png returns image/png', async ({ request }) => {
-    const res = await request.get('/og/runs/run-0000.png');
+  test("/og/runs/run-0000.png returns image/png", async ({ request }) => {
+    const res = await request.get("/og/runs/run-0000.png");
     expect(res.status()).toBe(200);
-    expect(res.headers()['content-type']).toBe('image/png');
+    expect(res.headers()["content-type"]).toBe("image/png");
   });
 
-  test('Unknown model slug returns 404', async ({ request }) => {
-    const res = await request.get('/og/models/no-such-slug.png');
+  test("Unknown model slug returns 404", async ({ request }) => {
+    const res = await request.get("/og/models/no-such-slug.png");
     expect(res.status()).toBe(404);
   });
 
-  test('Second request hits R2 cache (x-og-cache: hit)', async ({ request }) => {
-    await request.get('/og/index.png');  // warm
-    const res = await request.get('/og/index.png');
-    expect(res.headers()['x-og-cache']).toBe('hit');
+  test("Second request hits R2 cache (x-og-cache: hit)", async ({ request }) => {
+    await request.get("/og/index.png"); // warm
+    const res = await request.get("/og/index.png");
+    expect(res.headers()["x-og-cache"]).toBe("hit");
   });
 });
 ```
@@ -5041,6 +5589,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): og — 4 endpoints + 404 +
 ### Task I0: Split CommandPalette into a lazy chunk so the bundle-budget glob bites
 
 **Files:**
+
 - Modify: `site/src/routes/+layout.svelte`
 - Modify: `site/scripts/check-bundle-budget.ts`
 
@@ -5167,18 +5716,18 @@ forced name:
 ```ts
 const budgets: Budget[] = [
   // initial JS — entry chunks
-  { glob: 'entry/start.*.js',  maxKbGz: 25 },
-  { glob: 'entry/app.*.js',    maxKbGz: 25 },
+  { glob: "entry/start.*.js", maxKbGz: 25 },
+  { glob: "entry/app.*.js", maxKbGz: 25 },
   // root layout/page chunks
-  { glob: 'nodes/0.*.js',      maxKbGz: 20 },
-  { glob: 'nodes/1.*.js',      maxKbGz: 20 },
+  { glob: "nodes/0.*.js", maxKbGz: 20 },
+  { glob: "nodes/1.*.js", maxKbGz: 20 },
   // cmd-K palette lazy chunk (P5.4 split). Spec target: ≤ 6 KB gz.
   // Forced chunk name via vite.config.ts manualChunks + chunkFileNames.
-  { glob: 'chunks/cmd-k-*.js', maxKbGz: 6 },
+  { glob: "chunks/cmd-k-*.js", maxKbGz: 6 },
   // useEventSource client hook chunk (~1.5 KB gz observed). Cap at 2.
-  { glob: 'chunks/use-event-source-*.js', maxKbGz: 2 },
+  { glob: "chunks/use-event-source-*.js", maxKbGz: 2 },
   // all per-page chunks individually capped
-  { glob: 'nodes/*.js',        maxKbGz: 20 },
+  { glob: "nodes/*.js", maxKbGz: 20 },
 ];
 ```
 
@@ -5202,6 +5751,7 @@ underlying file path.)
 ```bash
 cd site && npm run check:budget 2>&1 | tail -10
 ```
+
 Expected: clean, with `OK chunks/cmd-k-<hash>.js: <X> KB gz` printed (matching the `chunks/cmd-k-*.js` glob from the budget config — NOT a `CommandPalette` substring; the chunk filename is renamed by the `chunkFileNames` callback in vite.config.ts to `cmd-k-[hash].js`).
 
 - [ ] **Step 4: Commit**
@@ -5216,6 +5766,7 @@ git -C /u/Git/CentralGauge commit -m "fix(site/bundle): split CommandPalette int
 ### Task I1: Canary route handler (`/_canary/[sha]/[...path]`)
 
 **Files:**
+
 - Create: `site/src/routes/_canary/[sha]/[...path]/+page.server.ts`
 - Create: `site/src/routes/_canary/[sha]/[...path]/+page.svelte`
 - Modify: `site/src/hooks.server.ts`
@@ -5229,9 +5780,9 @@ git -C /u/Git/CentralGauge commit -m "fix(site/bundle): split CommandPalette int
 - [ ] **Step 1: Implement `+page.server.ts`**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { error } from '@sveltejs/kit';
-import { extractCanaryPath } from '$lib/server/canary';
+import type { PageServerLoad } from "./$types";
+import { error } from "@sveltejs/kit";
+import { extractCanaryPath } from "$lib/server/canary";
 
 export const prerender = false;
 export const ssr = true;
@@ -5239,7 +5790,7 @@ export const csr = true;
 
 export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
   const parts = extractCanaryPath(url);
-  if (!parts) throw error(400, 'Invalid canary URL');
+  if (!parts) throw error(400, "Invalid canary URL");
 
   // Re-fetch the wrapped route's HTML server-side. event.fetch() routes
   // through the same worker, so cache headers and SSE bindings work.
@@ -5251,10 +5802,10 @@ export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
   }
   const html = await res.text();
   // Propagate cache-control from the wrapped route, but layer X-Canary on top.
-  const wrappedCache = res.headers.get('cache-control');
+  const wrappedCache = res.headers.get("cache-control");
   setHeaders({
-    'cache-control': wrappedCache ?? 'no-store',
-    'x-canary': '1',
+    "cache-control": wrappedCache ?? "no-store",
+    "x-canary": "1",
   });
   return {
     canary: { sha: parts.sha, path: parts.path },
@@ -5321,8 +5872,8 @@ export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
 - [ ] **Step 3: Wire `event.locals.canary` in `hooks.server.ts`**
 
 ```ts
-import type { Handle } from '@sveltejs/kit';
-import { isCanary } from '$lib/server/canary';
+import type { Handle } from "@sveltejs/kit";
+import { isCanary } from "$lib/server/canary";
 // ... existing imports ...
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -5339,7 +5890,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   // Surface canary-ness as a response header on every canary request.
   if (event.locals.canary) {
-    response.headers.set('x-canary', '1');
+    response.headers.set("x-canary", "1");
   }
 
   // ... existing logging ...
@@ -5365,29 +5916,29 @@ export {};
 Create `site/tests/api/canary.test.ts`:
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { SELF } from 'cloudflare:test';
+import { describe, expect, it } from "vitest";
+import { SELF } from "cloudflare:test";
 
-describe('canary route handler', () => {
-  it('GET /_canary/<sha>/leaderboard returns the wrapped page wrapped in canary chrome', async () => {
+describe("canary route handler", () => {
+  it("GET /_canary/<sha>/leaderboard returns the wrapped page wrapped in canary chrome", async () => {
     // SELF.fetch routes to the local worker; bare fetch() would either escape
     // the sandbox or 404 against miniflare loopback (silent test no-op).
-    const res = await SELF.fetch('http://x/_canary/abc1234/leaderboard');
+    const res = await SELF.fetch("http://x/_canary/abc1234/leaderboard");
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-canary')).toBe('1');
+    expect(res.headers.get("x-canary")).toBe("1");
     const html = await res.text();
-    expect(html).toContain('Canary build');
-    expect(html).toContain('abc1234');
-    expect(html).toContain('iframe');
+    expect(html).toContain("Canary build");
+    expect(html).toContain("abc1234");
+    expect(html).toContain("iframe");
   });
 
-  it('non-canary route does not emit X-Canary', async () => {
-    const res = await SELF.fetch('http://x/leaderboard');
-    expect(res.headers.get('x-canary')).toBeNull();
+  it("non-canary route does not emit X-Canary", async () => {
+    const res = await SELF.fetch("http://x/leaderboard");
+    expect(res.headers.get("x-canary")).toBeNull();
   });
 
-  it('GET /_canary/abc/no-such-route surfaces the wrapped 404', async () => {
-    const res = await SELF.fetch('http://x/_canary/abc/no-such-page-12345');
+  it("GET /_canary/abc/no-such-route surfaces the wrapped 404", async () => {
+    const res = await SELF.fetch("http://x/_canary/abc/no-such-page-12345");
     expect([404, 500]).toContain(res.status);
   });
 });
@@ -5410,6 +5961,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/canary): /_canary/<sha>/<path> r
 ### Task I2: KV write-counter assertion test
 
 **Files:**
+
 - Create: `site/scripts/check-kv-writes.ts`
 - Create: `site/tests/api/kv-writes.test.ts`
 
@@ -5420,11 +5972,11 @@ The trick: vitest-pool-workers' KV binding is a real KVNamespace. We can't trivi
 - [ ] **Step 1: Implement `site/tests/api/kv-writes.test.ts`**
 
 ```ts
-import { applyD1Migrations, env, SELF } from 'cloudflare:test';
-import { afterAll, beforeAll, describe, it, expect } from 'vitest';
-import { seedSmokeData } from '../utils/seed';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seedSmokeData } from "../utils/seed";
 
-describe('KV write counter — refactor invariant (CLAUDE.md memory)', () => {
+describe("KV write counter — refactor invariant (CLAUDE.md memory)", () => {
   // The leaderboard read path uses the named Cache API, NOT KV. The CACHE
   // KV namespace is retained for legacy callers but should see zero puts
   // from the request paths we exercise. If a regression silently re-routes
@@ -5440,7 +5992,7 @@ describe('KV write counter — refactor invariant (CLAUDE.md memory)', () => {
     originalPut = env.CACHE.put.bind(env.CACHE);
     env.CACHE.put = async (...args: Parameters<typeof originalPut>) => {
       putCount += 1;
-      console.warn('[kv-writes] unexpected CACHE.put:', args[0]);
+      console.warn("[kv-writes] unexpected CACHE.put:", args[0]);
       return originalPut(...args);
     };
   });
@@ -5449,35 +6001,35 @@ describe('KV write counter — refactor invariant (CLAUDE.md memory)', () => {
     env.CACHE.put = originalPut;
   });
 
-  it('GET /api/v1/leaderboard does not write to KV', async () => {
+  it("GET /api/v1/leaderboard does not write to KV", async () => {
     // SELF.fetch routes to the local worker; bare fetch() would escape the
     // sandbox or 404 against miniflare loopback, defeating the invariant.
-    const res = await SELF.fetch('http://x/api/v1/leaderboard');
+    const res = await SELF.fetch("http://x/api/v1/leaderboard");
     expect(res.status).toBe(200);
     expect(putCount).toBe(0);
   });
 
-  it('GET /api/v1/runs does not write to KV', async () => {
-    const res = await SELF.fetch('http://x/api/v1/runs');
+  it("GET /api/v1/runs does not write to KV", async () => {
+    const res = await SELF.fetch("http://x/api/v1/runs");
     expect(res.status).toBe(200);
     expect(putCount).toBe(0);
   });
 
-  it('GET /api/v1/models does not write to KV', async () => {
-    const res = await SELF.fetch('http://x/api/v1/models');
+  it("GET /api/v1/models does not write to KV", async () => {
+    const res = await SELF.fetch("http://x/api/v1/models");
     expect(res.status).toBe(200);
     expect(putCount).toBe(0);
   });
 
-  it('GET /api/v1/internal/search-index.json does not write to KV', async () => {
-    const res = await SELF.fetch('http://x/api/v1/internal/search-index.json');
+  it("GET /api/v1/internal/search-index.json does not write to KV", async () => {
+    const res = await SELF.fetch("http://x/api/v1/internal/search-index.json");
     expect(res.status).toBe(200);
     expect(putCount).toBe(0);
   });
 
-  it('GET /og/index.png does not write to KV (R2 only)', async () => {
+  it("GET /og/index.png does not write to KV (R2 only)", async () => {
     // OG hot path uses R2. Force the request through the worker via SELF.
-    const res = await SELF.fetch('http://x/og/index.png');
+    const res = await SELF.fetch("http://x/og/index.png");
     expect(res.status).toBe(200);
     expect(putCount).toBe(0);
   });
@@ -5507,17 +6059,17 @@ Expected: 5 tests green.
  * Exits non-zero on first observed put. Intended for ops runbook, not
  * CI gating (vitest test above covers CI gating).
  */
-import { createInterface } from 'node:readline';
+import { createInterface } from "node:readline";
 
 const rl = createInterface({ input: process.stdin });
 
 let observed = 0;
 
-rl.on('line', (line) => {
+rl.on("line", (line) => {
   try {
     const ev = JSON.parse(line);
-    if (typeof ev?.message === 'string' && /kv\.put/i.test(ev.message)) {
-      console.error('[kv-writes] OBSERVED PUT:', line);
+    if (typeof ev?.message === "string" && /kv\.put/i.test(ev.message)) {
+      console.error("[kv-writes] OBSERVED PUT:", line);
       observed += 1;
     }
   } catch {
@@ -5525,12 +6077,12 @@ rl.on('line', (line) => {
   }
 });
 
-rl.on('close', () => {
+rl.on("close", () => {
   if (observed > 0) {
     console.error(`Total observed KV puts: ${observed}`);
     process.exit(1);
   }
-  console.log('No KV puts observed.');
+  console.log("No KV puts observed.");
 });
 ```
 
@@ -5546,6 +6098,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/kv): assert leaderboard/runs/mod
 ### Task I3: Update `.github/workflows/site-ci.yml` — seed → preview → E2E + LHCI
 
 **Files:**
+
 - Modify: `.github/workflows/site-ci.yml`
 
 CI flow:
@@ -5561,18 +6114,18 @@ name: Site CI
 
 on:
   pull_request:
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
   push:
-    branches: [ master ]
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    branches: [master]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
 
 defaults:
   run:
     working-directory: site
 
 env:
-  ALLOW_TEST_BROADCAST: 'on'    # gates the test-only /__test_only__/broadcast endpoint
-  CI: '1'
+  ALLOW_TEST_BROADCAST: "on" # gates the test-only /__test_only__/broadcast endpoint
+  CI: "1"
 
 jobs:
   unit-and-build:
@@ -5580,7 +6133,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run check
       - run: npm run test:main
@@ -5595,9 +6152,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           # Required so visual-regression baselines are present for diff.
-          lfs: false   # baselines are NOT in LFS (in-repo per Task G1 design)
+          lfs: false # baselines are NOT in LFS (in-repo per Task G1 design)
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
@@ -5621,7 +6182,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run build
       - run: npm run seed:e2e
@@ -5657,6 +6222,7 @@ git -C /u/Git/CentralGauge commit -m "build(ci/site): seed E2E fixtures + run pr
 ### Task J1: `docs/site/architecture.md`
 
 **Files:**
+
 - Create: `docs/site/architecture.md`
 
 Captures: data flow, module organization, SSR/cache layers, DO usage, worker-isolate hazards. Lifts the headers from spec §4 + spec §8 verbatim where they're stable, then adds the operationalized details (named caches in use, SSE wire format, tested hazards).
@@ -5677,82 +6243,82 @@ Captures: data flow, module organization, SSR/cache layers, DO usage, worker-iso
 - **TypeScript strict** end-to-end via `$shared/api-types.ts`
 
 ## Data flow
-
 ```
+
 Browser ──► Cloudflare edge (centralgauge.sshadows.workers.dev)
-                │
-                ├─► +page.server.ts load() ──► /api/v1/<endpoint>
-                │                                  │
-                │                                  ├─► Cache API (named: cg-<endpoint>)
-                │                                  └─► D1 (centralgauge)
-                │
-                └─► /api/v1/events/live?routes=...
-                       │
-                       ├─► Durable Object (LeaderboardBroadcaster)
-                       │      │
-                       │      ├─► writer set (per-route filtered)
-                       │      └─► recent buffer (last 100)
-                       │
-                       ▼
-                 SSE frames over text/event-stream
-```
+│
+├─► +page.server.ts load() ──► /api/v1/<endpoint>
+│ │
+│ ├─► Cache API (named: cg-<endpoint>)
+│ └─► D1 (centralgauge)
+│
+└─► /api/v1/events/live?routes=...
+│
+├─► Durable Object (LeaderboardBroadcaster)
+│ │
+│ ├─► writer set (per-route filtered)
+│ └─► recent buffer (last 100)
+│
+▼
+SSE frames over text/event-stream
 
+```
 ## Module organization
-
 ```
+
 site/src/
-  routes/                         # SvelteKit pages
-    +layout.svelte                  # Nav + density + theme + RUM beacon
-    +layout.server.ts               # flag loader, build sha, RUM token
-    +page.svelte                    # placeholder home (P5.5 cutover replaces)
-    leaderboard/                    # /leaderboard (P5.5 → renamed to /)
-    models/[slug]/                  # /models/:slug + /runs + /limitations
-    runs/[id]/                      # /runs/:id + /transcripts + /signature
-    families/[slug]/
-    tasks/[...id]/
-    compare/                        # /compare?models=
-    search/                         # /search?q=
-    limitations/                    # /limitations
-    about/
-    og/                             # /og/index.png + /og/models/:slug.png + ...
-    _canary/[sha]/[...path]/        # canary path-prefix preview
-    api/v1/                         # backend (predates P5)
-    api/v1/events/live/             # SSE endpoint
-    api/v1/__test_only__/           # gated test-fixture endpoints (CI only)
-  lib/
-    components/
-      ui/                           # 20 design-system atoms
-      domain/                       # composed widgets (LeaderboardTable, ...)
-      layout/                       # Nav, Footer, SkipToContent
-    server/                         # server-only helpers
-      flags.ts                       # FLAG_* env loader
-      cache.ts                       # named-cache wrappers
-      sse-routes.ts                  # event → route-pattern map
-      og-render.ts                   # @cf-wasm/og + R2 cache
-      canary.ts                      # /_canary/ path utilities
-      model-aggregates.ts            # AVG(score) helper (shared by leaderboard + /models/:slug)
-      severity.ts                    # shortcoming severity bucket
-      loader-helpers.ts              # passthroughLoader factory
-    client/                         # browser-only modules
-      use-event-source.svelte.ts     # SSE hook with backoff (reactive $state)
-      keyboard.ts                    # global chord registry
-      density-bus.svelte.ts          # density rune store (client-only)
-      palette-bus.svelte.ts          # cmd-K rune store (client-only)
-      theme.ts                       # theme controller
-      format.ts                      # number/date formatters
-      fuzzy.ts                       # cmd-K fuzzy match (~80 LOC)
-      use-id.ts                      # SSR-safe id allocator
-    shared/
-      api-types.ts                  # source-of-truth response types
-  do/
-    leaderboard-broadcaster.ts      # SSE Durable Object
-  styles/
-    tokens.css                      # design tokens (light + dark + density)
-    base.css                        # reset + typography
-    utilities.css                   # tiny utility classes
-    print.css                       # @media print rules
-```
+routes/ # SvelteKit pages
++layout.svelte # Nav + density + theme + RUM beacon
++layout.server.ts # flag loader, build sha, RUM token
++page.svelte # placeholder home (P5.5 cutover replaces)
+leaderboard/ # /leaderboard (P5.5 → renamed to /)
+models/[slug]/ # /models/:slug + /runs + /limitations
+runs/[id]/ # /runs/:id + /transcripts + /signature
+families/[slug]/
+tasks/[...id]/
+compare/ # /compare?models=
+search/ # /search?q=
+limitations/ # /limitations
+about/
+og/ # /og/index.png + /og/models/:slug.png + ...
+_canary/[sha]/[...path]/ # canary path-prefix preview
+api/v1/ # backend (predates P5)
+api/v1/events/live/ # SSE endpoint
+api/v1/**test_only**/ # gated test-fixture endpoints (CI only)
+lib/
+components/
+ui/ # 20 design-system atoms
+domain/ # composed widgets (LeaderboardTable, ...)
+layout/ # Nav, Footer, SkipToContent
+server/ # server-only helpers
+flags.ts # FLAG_* env loader
+cache.ts # named-cache wrappers
+sse-routes.ts # event → route-pattern map
+og-render.ts # @cf-wasm/og + R2 cache
+canary.ts # /_canary/ path utilities
+model-aggregates.ts # AVG(score) helper (shared by leaderboard + /models/:slug)
+severity.ts # shortcoming severity bucket
+loader-helpers.ts # passthroughLoader factory
+client/ # browser-only modules
+use-event-source.svelte.ts # SSE hook with backoff (reactive $state)
+keyboard.ts # global chord registry
+density-bus.svelte.ts # density rune store (client-only)
+palette-bus.svelte.ts # cmd-K rune store (client-only)
+theme.ts # theme controller
+format.ts # number/date formatters
+fuzzy.ts # cmd-K fuzzy match (~80 LOC)
+use-id.ts # SSR-safe id allocator
+shared/
+api-types.ts # source-of-truth response types
+do/
+leaderboard-broadcaster.ts # SSE Durable Object
+styles/
+tokens.css # design tokens (light + dark + density)
+base.css # reset + typography
+utilities.css # tiny utility classes
+print.css # @media print rules
 
+```
 ## Cache layers
 
 | Layer | Where | TTL | Invalidation |
@@ -5853,6 +6419,7 @@ git -C /u/Git/CentralGauge commit -m "docs(site): architecture — data flow, mo
 ### Task J2: `docs/site/design-system.md`
 
 **Files:**
+
 - Create: `docs/site/design-system.md`
 
 - [ ] **Step 1: Author**
@@ -5903,29 +6470,29 @@ component CSS).
 
 `site/src/lib/components/ui/`:
 
-| Component | Variants |
-|-----------|----------|
-| Button | primary / secondary / ghost / danger × sm / md / lg |
-| Input | text / number / search / select |
-| Checkbox | default / indeterminate |
-| Radio | default |
-| Tag | neutral / accent / success / warning / danger |
-| Badge | tier-verified / tier-claimed / status |
-| Card | default / elevated |
-| Tabs | default / underline |
-| Toast | info / success / warning / error |
-| Alert | info / success / warning / error |
-| Skeleton | text / table-row / chart |
-| Code | inline / block |
-| Diff | unified / split |
-| Sparkline | line / bar |
-| Modal | — |
-| Dialog | — |
-| Tooltip | — |
-| Spinner | — |
-| Popover | — |
-| KeyHint | — (P5.3) |
-| AttemptCell | pass / fail / null (P5.3) |
+| Component   | Variants                                            |
+| ----------- | --------------------------------------------------- |
+| Button      | primary / secondary / ghost / danger × sm / md / lg |
+| Input       | text / number / search / select                     |
+| Checkbox    | default / indeterminate                             |
+| Radio       | default                                             |
+| Tag         | neutral / accent / success / warning / danger       |
+| Badge       | tier-verified / tier-claimed / status               |
+| Card        | default / elevated                                  |
+| Tabs        | default / underline                                 |
+| Toast       | info / success / warning / error                    |
+| Alert       | info / success / warning / error                    |
+| Skeleton    | text / table-row / chart                            |
+| Code        | inline / block                                      |
+| Diff        | unified / split                                     |
+| Sparkline   | line / bar                                          |
+| Modal       | —                                                   |
+| Dialog      | —                                                   |
+| Tooltip     | —                                                   |
+| Spinner     | —                                                   |
+| Popover     | —                                                   |
+| KeyHint     | — (P5.3)                                            |
+| AttemptCell | pass / fail / null (P5.3)                           |
 
 ## Domain widgets
 
@@ -5979,13 +6546,14 @@ git -C /u/Git/CentralGauge commit -m "docs(site): design-system — tokens, atom
 ### Task J3: `docs/site/operations.md`
 
 **Files:**
+
 - Create: `docs/site/operations.md`
 
 The operations runbook: deploy steps, flag flip procedure, rollback drills, monitoring runbook, RUM review cadence.
 
 - [ ] **Step 1: Author**
 
-```md
+````md
 # Site operations runbook
 
 > Deploy, flag-flip, rollback, monitoring procedures.
@@ -6002,6 +6570,7 @@ npm run check:budget  # bundle-size
 npm run check:contrast # WCAG token pairings
 npx wrangler deploy   # ships to centralgauge.sshadows.workers.dev
 ```
+````
 
 Tag the deploy:
 
@@ -6057,11 +6626,11 @@ Canary review checklist:
 
 ## Rollback
 
-| Speed | Mechanism | When |
-|-------|-----------|------|
-| Seconds | Flip flag `off` via PR + `wrangler deploy` | New feature broke; existing surface unaffected |
-| Minutes | `wrangler rollback` to prior `site-v<sha>` tag | Code regression in shared code |
-| Hours | Revert PR + redeploy | Schema breakage that flag can't bypass |
+| Speed   | Mechanism                                      | When                                           |
+| ------- | ---------------------------------------------- | ---------------------------------------------- |
+| Seconds | Flip flag `off` via PR + `wrangler deploy`     | New feature broke; existing surface unaffected |
+| Minutes | `wrangler rollback` to prior `site-v<sha>` tag | Code regression in shared code                 |
+| Hours   | Revert PR + redeploy                           | Schema breakage that flag can't bypass         |
 
 ```bash
 # Wrangler rollback (immediate)
@@ -6074,11 +6643,11 @@ Public post-mortem for any user-visible incident under
 
 ## Monitoring
 
-| Layer | What | Where |
-|-------|------|-------|
-| L1 | Cloudflare Web Analytics — LCP/FID/CLS/TTFB by route, 7-day | dash.cloudflare.com |
-| L2 | Workers Logs — structured JSON `{ method, path, status, ip, dur_ms }` | `wrangler tail --format=pretty` |
-| L3 | `/_internal/metrics` (admin-gated, future) | (P6) |
+| Layer | What                                                                  | Where                           |
+| ----- | --------------------------------------------------------------------- | ------------------------------- |
+| L1    | Cloudflare Web Analytics — LCP/FID/CLS/TTFB by route, 7-day           | dash.cloudflare.com             |
+| L2    | Workers Logs — structured JSON `{ method, path, status, ip, dur_ms }` | `wrangler tail --format=pretty` |
+| L3    | `/_internal/metrics` (admin-gated, future)                            | (P6)                            |
 
 ## RUM review cadence (weekly while in beta)
 
@@ -6090,12 +6659,12 @@ Public post-mortem for any user-visible incident under
 
 Acceptance threshold per spec §9.2:
 
-| Metric | Target |
-|--------|--------|
-| LCP p75 | < 1.5 s |
-| INP p75 | < 200 ms |
-| CLS p75 | < 0.05 |
-| FCP p75 | < 1.0 s |
+| Metric   | Target   |
+| -------- | -------- |
+| LCP p75  | < 1.5 s  |
+| INP p75  | < 200 ms |
+| CLS p75  | < 0.05   |
+| FCP p75  | < 1.0 s  |
 | TTFB p75 | < 100 ms |
 
 ## KV write-counter assertion (refactor invariant)
@@ -6116,20 +6685,21 @@ write back to Cache API or R2 before merge.
 3. If error rate > 1 % on any route, flip the relevant flag off via the procedure above.
 4. If error rate > 5 % or signed-payload tamper detected, `wrangler rollback`.
 5. Post-mortem within 7 days.
-```
 
+````
 - [ ] **Step 2: Commit**
 
 ```bash
 git -C /u/Git/CentralGauge add docs/site/operations.md
 git -C /u/Git/CentralGauge commit -m "docs(site): operations — deploy, flag-flip, canary review, rollback, RUM cadence, incident response"
-```
+````
 
 ---
 
 ### Task J4: `docs/postmortems/_template.md`
 
 **Files:**
+
 - Create: `docs/postmortems/_template.md`
 
 - [ ] **Step 1: Author**
@@ -6147,13 +6717,13 @@ what they saw.
 
 ## Impact
 
-| Metric | Value |
-|--------|-------|
-| Duration | <X minutes / hours> |
-| Affected routes | <list> |
-| Affected user fraction | <%> |
-| Data loss / corruption | yes / no |
-| Signed-payload tamper | yes / no |
+| Metric                 | Value               |
+| ---------------------- | ------------------- |
+| Duration               | <X minutes / hours> |
+| Affected routes        | <list>              |
+| Affected user fraction | <%>                 |
+| Data loss / corruption | yes / no            |
+| Signed-payload tamper  | yes / no            |
 
 ## Timeline (UTC)
 
@@ -6176,11 +6746,11 @@ What changed and where. Link to the PR. Note any compensating tests added.
 
 ## Action items
 
-| Action | Owner | Due |
-|--------|-------|-----|
-| Add invariant test | <name> | YYYY-MM-DD |
+| Action                             | Owner  | Due        |
+| ---------------------------------- | ------ | ---------- |
+| Add invariant test                 | <name> | YYYY-MM-DD |
 | Document hazard in CONTRIBUTING.md | <name> | YYYY-MM-DD |
-| Update operations runbook | <name> | YYYY-MM-DD |
+| Update operations runbook          | <name> | YYYY-MM-DD |
 
 ## What went well
 
@@ -6207,6 +6777,7 @@ git -C /u/Git/CentralGauge commit -m "docs(postmortems): postmortem template (im
 ### Task J5: `site/CHANGELOG.md` + mkdocs nav entries
 
 **Files:**
+
 - Create: `site/CHANGELOG.md`
 - Modify: `mkdocs.yml`
 
@@ -6273,6 +6844,7 @@ nav:
 ```bash
 mkdocs build 2>&1 | tail -10
 ```
+
 Expected: clean.
 
 - [ ] **Step 4: Commit**
@@ -6287,6 +6859,7 @@ git -C /u/Git/CentralGauge commit -m "docs(site): CHANGELOG + mkdocs nav for new
 ### Task J6: Append "P5.4 implementation notes" to `site/CONTRIBUTING.md`
 
 **Files:**
+
 - Modify: `site/CONTRIBUTING.md`
 
 Skeleton — fill in concrete learnings post-merge.
@@ -6317,18 +6890,20 @@ To update baselines after intentional UI changes:
 1. Seed local D1: `npm run seed:e2e`
 2. Run preview server: `npm run preview` (port 4173, foreground)
 3. In a second terminal:
-   ```
-   CI=1 npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots
-   ```
+```
+
+CI=1 npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots
+
+```
 4. Inspect each updated PNG in `tests/e2e/__screenshots__/`. Confirm:
-   - The change reflects an intentional design decision
-   - No unexpected dimensional drift (rows still 44 px / 32 px)
-   - No regression in token application (colors match expected theme)
+- The change reflects an intentional design decision
+- No unexpected dimensional drift (rows still 44 px / 32 px)
+- No regression in token application (colors match expected theme)
 5. Stage + commit only the snapshots that look correct
 6. Push, wait for CI green
 7. If CI's chromium renders pixel-different from local, that's an Ubuntu-vs-mac
-   font-rendering drift. Bump tolerance ONLY as a last resort; prefer to
-   capture baselines from an Ubuntu container locally.
+font-rendering drift. Bump tolerance ONLY as a last resort; prefer to
+capture baselines from an Ubuntu container locally.
 ```
 
 - [ ] **Step 2: Commit**
@@ -6347,6 +6922,7 @@ Per spec §11.3 P5.4 row, the new flags flip on AFTER the canary smoke. This is 
 ### Task K1: Flip P5.4 flags to `on` in `wrangler.toml`
 
 **Files:**
+
 - Modify: `site/wrangler.toml`
 
 > **Pre-flight checklist (do not flip without all five being green):**

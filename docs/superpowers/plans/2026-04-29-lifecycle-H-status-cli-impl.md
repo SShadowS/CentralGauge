@@ -80,9 +80,9 @@
   import { PRE_P6_TASK_SET_SENTINEL } from "../../src/lifecycle/types.ts";
   import {
     StateResponseSchema,
-    StatusJsonOutputSchema,
     type StateRow,
     type StatusJsonOutput,
+    StatusJsonOutputSchema,
   } from "../../src/lifecycle/status-types.ts";
 
   interface StatusOptions {
@@ -115,7 +115,9 @@
     if (options.keyPath !== undefined) flags.keyPath = options.keyPath;
     if (options.keyId !== undefined) flags.keyId = options.keyId;
     if (options.machineId !== undefined) flags.machineId = options.machineId;
-    if (options.adminKeyPath !== undefined) flags.adminKeyPath = options.adminKeyPath;
+    if (options.adminKeyPath !== undefined) {
+      flags.adminKeyPath = options.adminKeyPath;
+    }
     if (options.adminKeyId !== undefined) flags.adminKeyId = options.adminKeyId;
 
     const cwd = Deno.cwd();
@@ -135,7 +137,9 @@
     if (options.model) params.set("model", options.model);
     if (options.taskSet) params.set("task_set", options.taskSet);
     const qs = params.toString();
-    const url = `${config.url}/api/v1/admin/lifecycle/state${qs ? "?" + qs : ""}`;
+    const url = `${config.url}/api/v1/admin/lifecycle/state${
+      qs ? "?" + qs : ""
+    }`;
 
     const resp = await fetch(url, {
       method: "GET",
@@ -152,7 +156,9 @@
     const parsed = StateResponseSchema.safeParse(body);
     if (!parsed.success) {
       throw new Error(
-        `status response did not match schema: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+        `status response did not match schema: ${
+          parsed.error.issues.map((i) => i.message).join(", ")
+        }`,
       );
     }
     return parsed.data.rows;
@@ -221,15 +227,26 @@
   }
 
   export function registerStatusCommand(cli: Command): void {
-    cli.command("status", "Show per-model lifecycle matrix and next-action hints")
+    cli.command(
+      "status",
+      "Show per-model lifecycle matrix and next-action hints",
+    )
       .option("--model <slug:string>", "Filter to a single model slug")
       .option(
         "--task-set <hashOrCurrent:string>",
         "Task set hash or 'current' (default)",
         { default: "current" },
       )
-      .option("--json", "Emit machine-readable JSON (validated against zod schema)", { default: false })
-      .option("--legacy", "Include pre-P6 sentinel rows in a separate section", { default: false })
+      .option(
+        "--json",
+        "Emit machine-readable JSON (validated against zod schema)",
+        { default: false },
+      )
+      .option(
+        "--legacy",
+        "Include pre-P6 sentinel rows in a separate section",
+        { default: false },
+      )
       .option("--url <url:string>", "Override ingest URL")
       .option("--key-path <path:string>", "Path to ingest signing key")
       .option("--key-id <id:number>", "Ingest key id")
@@ -237,14 +254,20 @@
       .option("--admin-key-path <path:string>", "Path to admin signing key")
       .option("--admin-key-id <id:number>", "Admin key id")
       .example("Full matrix", "centralgauge status")
-      .example("Filter to one model", "centralgauge status --model anthropic/claude-opus-4-7")
+      .example(
+        "Filter to one model",
+        "centralgauge status --model anthropic/claude-opus-4-7",
+      )
       .example("CI-friendly output", "centralgauge status --json")
       .example("Include legacy rows", "centralgauge status --legacy")
       .action(async (options: StatusOptions) => {
         try {
           await handleStatus(options);
         } catch (err) {
-          console.error(colors.red("[FAIL]"), err instanceof Error ? err.message : String(err));
+          console.error(
+            colors.red("[FAIL]"),
+            err instanceof Error ? err.message : String(err),
+          );
           Deno.exit(1);
         }
       });
@@ -287,7 +310,13 @@
    */
   import { z } from "zod";
 
-  export const StepSchema = z.enum(["bench", "debug", "analyze", "publish", "cycle"]);
+  export const StepSchema = z.enum([
+    "bench",
+    "debug",
+    "analyze",
+    "publish",
+    "cycle",
+  ]);
   export type Step = z.infer<typeof StepSchema>;
 
   export const StateRowSchema = z.object({
@@ -380,10 +409,14 @@
   ): string {
     if (!color) return text;
     switch (state) {
-      case "ok":          return colors.green(text);
-      case "stale":       return colors.yellow(text);
-      case "in_progress": return colors.yellow(text);
-      case "missing":     return colors.gray(text);
+      case "ok":
+        return colors.green(text);
+      case "stale":
+        return colors.yellow(text);
+      case "in_progress":
+        return colors.yellow(text);
+      case "missing":
+        return colors.gray(text);
     }
   }
 
@@ -460,7 +493,9 @@
     if (color) {
       lines.push("");
       lines.push(
-        `${colors.gray("Legend:")} ${colors.green("OK")} ok   ${colors.yellow("...")} in-progress / stale (>${STALE_DAYS}d)   ${colors.gray("--")} missing`,
+        `${colors.gray("Legend:")} ${colors.green("OK")} ok   ${
+          colors.yellow("...")
+        } in-progress / stale (>${STALE_DAYS}d)   ${colors.gray("--")} missing`,
       );
     }
 
@@ -507,7 +542,7 @@
     });
 
     await t.step("stale row (> STALE_DAYS) renders as ... not OK", () => {
-      const stale = Date.now() - 30 * 24 * 60 * 60 * 1000;  // 30 days ago
+      const stale = Date.now() - 30 * 24 * 60 * 60 * 1000; // 30 days ago
       const s = renderMatrix(
         [row({ step: "bench", last_ts: stale })],
         { color: false },
@@ -526,7 +561,10 @@
     await t.step("output fits 80 columns", () => {
       const s = renderMatrix(
         [
-          row({ model_slug: "anthropic/claude-opus-4-7-very-long-name", step: "bench" }),
+          row({
+            model_slug: "anthropic/claude-opus-4-7-very-long-name",
+            step: "bench",
+          }),
         ],
         { color: false },
       );
@@ -633,7 +671,8 @@
       return {
         model_slug: model,
         severity: "warn",
-        text: `${model}: missing debug capture run; run cycle --from debug-capture`,
+        text:
+          `${model}: missing debug capture run; run cycle --from debug-capture`,
         command: `centralgauge cycle --llms ${model} --from debug-capture`,
       };
     }
@@ -669,13 +708,17 @@
         command: `centralgauge cycle --llms ${model} --from publish`,
       };
     }
-    return null;  // model is fully current
+    return null; // model is fully current
   }
 
   export function generateHints(rows: StateRow[]): Hint[] {
     const grouped = groupByModel(rows);
     const out: Hint[] = [];
-    for (const [model, st] of Array.from(grouped.entries()).sort((a, b) => a[0].localeCompare(b[0]))) {
+    for (
+      const [model, st] of Array.from(grouped.entries()).sort((a, b) =>
+        a[0].localeCompare(b[0])
+      )
+    ) {
       const h = hintFor(model, st);
       if (h) out.push(h);
     }
@@ -707,50 +750,94 @@
   Deno.test("generateHints", async (t) => {
     await t.step("model with no events suggests cycle --llms", () => {
       const hints = generateHints([]);
-      assertEquals(hints.length, 0);  // no rows = no models known to status
+      assertEquals(hints.length, 0); // no rows = no models known to status
     });
 
     await t.step("benched-only model suggests --from debug-capture", () => {
       const hints = generateHints([row({ step: "bench" })]);
       assertEquals(hints.length, 1);
       assertEquals(hints[0]!.model_slug, "a/x");
-      assertEquals(hints[0]!.command, "centralgauge cycle --llms a/x --from debug-capture");
+      assertEquals(
+        hints[0]!.command,
+        "centralgauge cycle --llms a/x --from debug-capture",
+      );
     });
 
     await t.step("benched + debugged suggests --from analyze", () => {
       const hints = generateHints([
         row({ step: "bench", last_event_id: 1 }),
-        row({ step: "debug", last_event_id: 2, last_event_type: "debug.captured" }),
+        row({
+          step: "debug",
+          last_event_id: 2,
+          last_event_type: "debug.captured",
+        }),
       ]);
       assertEquals(hints.length, 1);
-      assertEquals(hints[0]!.command, "centralgauge cycle --llms a/x --from analyze");
+      assertEquals(
+        hints[0]!.command,
+        "centralgauge cycle --llms a/x --from analyze",
+      );
     });
 
-    await t.step("analyze in progress emits info severity (no rerun command)", () => {
-      const hints = generateHints([
-        row({ step: "bench", last_event_id: 1 }),
-        row({ step: "debug", last_event_id: 2, last_event_type: "debug.captured" }),
-        row({ step: "analyze", last_event_id: 3, last_event_type: "analysis.started" }),
-      ]);
-      assertEquals(hints[0]!.severity, "info");
-    });
+    await t.step(
+      "analyze in progress emits info severity (no rerun command)",
+      () => {
+        const hints = generateHints([
+          row({ step: "bench", last_event_id: 1 }),
+          row({
+            step: "debug",
+            last_event_id: 2,
+            last_event_type: "debug.captured",
+          }),
+          row({
+            step: "analyze",
+            last_event_id: 3,
+            last_event_type: "analysis.started",
+          }),
+        ]);
+        assertEquals(hints[0]!.severity, "info");
+      },
+    );
 
     await t.step("missing publish step emits warn + --from publish", () => {
       const hints = generateHints([
         row({ step: "bench", last_event_id: 1 }),
-        row({ step: "debug", last_event_id: 2, last_event_type: "debug.captured" }),
-        row({ step: "analyze", last_event_id: 3, last_event_type: "analysis.completed" }),
+        row({
+          step: "debug",
+          last_event_id: 2,
+          last_event_type: "debug.captured",
+        }),
+        row({
+          step: "analyze",
+          last_event_id: 3,
+          last_event_type: "analysis.completed",
+        }),
       ]);
       assertEquals(hints[0]!.severity, "warn");
-      assertEquals(hints[0]!.command, "centralgauge cycle --llms a/x --from publish");
+      assertEquals(
+        hints[0]!.command,
+        "centralgauge cycle --llms a/x --from publish",
+      );
     });
 
     await t.step("fully current model produces no hint", () => {
       const hints = generateHints([
         row({ step: "bench", last_event_id: 1 }),
-        row({ step: "debug", last_event_id: 2, last_event_type: "debug.captured" }),
-        row({ step: "analyze", last_event_id: 3, last_event_type: "analysis.completed" }),
-        row({ step: "publish", last_event_id: 4, last_event_type: "publish.completed" }),
+        row({
+          step: "debug",
+          last_event_id: 2,
+          last_event_type: "debug.captured",
+        }),
+        row({
+          step: "analyze",
+          last_event_id: 3,
+          last_event_type: "analysis.completed",
+        }),
+        row({
+          step: "publish",
+          last_event_id: 4,
+          last_event_type: "publish.completed",
+        }),
       ]);
       assertEquals(hints.length, 0);
     });
@@ -759,16 +846,27 @@
       const oldTs = Date.now() - 30 * 24 * 60 * 60 * 1000;
       const hints = generateHints([
         row({ step: "bench", last_event_id: 1 }),
-        row({ step: "debug", last_event_id: 2, last_event_type: "debug.captured" }),
+        row({
+          step: "debug",
+          last_event_id: 2,
+          last_event_type: "debug.captured",
+        }),
         row({
           step: "analyze",
           last_event_id: 3,
           last_event_type: "analysis.completed",
           last_ts: oldTs,
         }),
-        row({ step: "publish", last_event_id: 4, last_event_type: "publish.completed" }),
+        row({
+          step: "publish",
+          last_event_id: 4,
+          last_event_type: "publish.completed",
+        }),
       ]);
-      assertEquals(hints[0]!.command, "centralgauge cycle --llms a/x --force-rerun analyze");
+      assertEquals(
+        hints[0]!.command,
+        "centralgauge cycle --llms a/x --force-rerun analyze",
+      );
     });
   });
   ```
@@ -782,12 +880,17 @@
   ```typescript
   import { assertEquals } from "@std/assert";
   import {
-    StatusJsonOutputSchema,
     type StatusJsonOutput,
+    StatusJsonOutputSchema,
   } from "../../../src/lifecycle/status-types.ts";
 
   Deno.test("StatusJsonOutputSchema rejects malformed payload", () => {
-    const bad = { as_of_ts: "not-a-number", rows: [], legacy_rows: [], hints: [] };
+    const bad = {
+      as_of_ts: "not-a-number",
+      rows: [],
+      legacy_rows: [],
+      hints: [],
+    };
     const r = StatusJsonOutputSchema.safeParse(bad);
     assertEquals(r.success, false);
   });
@@ -810,7 +913,8 @@
         model_slug: "anthropic/claude-opus-4-7",
         severity: "warn",
         text: "missing analyze",
-        command: "centralgauge cycle --llms anthropic/claude-opus-4-7 --from analyze",
+        command:
+          "centralgauge cycle --llms anthropic/claude-opus-4-7 --from analyze",
       }],
     };
     const r = StatusJsonOutputSchema.parse(ok);
@@ -821,7 +925,7 @@
 
 - [ ] **H4.2** — Document the `--json` shape in `docs/site/operations.md` (or whichever runbook Phase G's CI workflow references). Snippet:
 
-  ```markdown
+  ````markdown
   ### `centralgauge status --json` schema (Phase G consumers)
 
   ```json
@@ -846,11 +950,13 @@
     }]
   }
   ```
+  ````
 
   Schema is exported from `src/lifecycle/status-types.ts` as
   `StatusJsonOutputSchema`. Re-validation against this schema is a hard
   invariant inside `status --json` itself; output that fails to parse
   surfaces as a `[FAIL]` exit and never reaches stdout.
+  ```
   ```
 
 ---
@@ -867,30 +973,66 @@
 
   // Fixture: one fully-current model + one missing-analyze model.
   const fixtureRows: StateRow[] = [
-    { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "abc",
-      step: "bench", last_ts: Date.now() - 60_000, last_event_id: 1,
+    {
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "abc",
+      step: "bench",
+      last_ts: Date.now() - 60_000,
+      last_event_id: 1,
       last_event_type: "bench.completed",
-      last_payload_hash: "h1", last_envelope_json: null },
-    { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "abc",
-      step: "debug", last_ts: Date.now() - 50_000, last_event_id: 2,
+      last_payload_hash: "h1",
+      last_envelope_json: null,
+    },
+    {
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "abc",
+      step: "debug",
+      last_ts: Date.now() - 50_000,
+      last_event_id: 2,
       last_event_type: "debug.captured",
-      last_payload_hash: "h2", last_envelope_json: null },
-    { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "abc",
-      step: "analyze", last_ts: Date.now() - 40_000, last_event_id: 3,
+      last_payload_hash: "h2",
+      last_envelope_json: null,
+    },
+    {
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "abc",
+      step: "analyze",
+      last_ts: Date.now() - 40_000,
+      last_event_id: 3,
       last_event_type: "analysis.completed",
-      last_payload_hash: "h3", last_envelope_json: null },
-    { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "abc",
-      step: "publish", last_ts: Date.now() - 30_000, last_event_id: 4,
+      last_payload_hash: "h3",
+      last_envelope_json: null,
+    },
+    {
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "abc",
+      step: "publish",
+      last_ts: Date.now() - 30_000,
+      last_event_id: 4,
       last_event_type: "publish.completed",
-      last_payload_hash: "h4", last_envelope_json: null },
-    { model_slug: "anthropic/claude-opus-4-7", task_set_hash: "abc",
-      step: "bench", last_ts: Date.now() - 60_000, last_event_id: 5,
+      last_payload_hash: "h4",
+      last_envelope_json: null,
+    },
+    {
+      model_slug: "anthropic/claude-opus-4-7",
+      task_set_hash: "abc",
+      step: "bench",
+      last_ts: Date.now() - 60_000,
+      last_event_id: 5,
       last_event_type: "bench.completed",
-      last_payload_hash: "h5", last_envelope_json: null },
-    { model_slug: "anthropic/claude-opus-4-7", task_set_hash: "abc",
-      step: "debug", last_ts: Date.now() - 50_000, last_event_id: 6,
+      last_payload_hash: "h5",
+      last_envelope_json: null,
+    },
+    {
+      model_slug: "anthropic/claude-opus-4-7",
+      task_set_hash: "abc",
+      step: "debug",
+      last_ts: Date.now() - 50_000,
+      last_event_id: 6,
       last_event_type: "debug.captured",
-      last_payload_hash: "h6", last_envelope_json: null },
+      last_payload_hash: "h6",
+      last_envelope_json: null,
+    },
   ];
 
   Deno.test("status snapshot — matrix + hints for partial-state fixture", () => {
@@ -918,14 +1060,24 @@
       "../../../src/lifecycle/types.ts"
     );
     const legacyRows: StateRow[] = [
-      { model_slug: "anthropic/claude-opus-4-5", task_set_hash: PRE_P6_TASK_SET_SENTINEL,
-        step: "bench", last_ts: Date.now() - 365 * 24 * 60 * 60 * 1000,
-        last_event_id: 100, last_event_type: "bench.completed",
-        last_payload_hash: null, last_envelope_json: null },
+      {
+        model_slug: "anthropic/claude-opus-4-5",
+        task_set_hash: PRE_P6_TASK_SET_SENTINEL,
+        step: "bench",
+        last_ts: Date.now() - 365 * 24 * 60 * 60 * 1000,
+        last_event_id: 100,
+        last_event_type: "bench.completed",
+        last_payload_hash: null,
+        last_envelope_json: null,
+      },
     ];
     const all = [...fixtureRows, ...legacyRows];
-    const current = all.filter((r) => r.task_set_hash !== PRE_P6_TASK_SET_SENTINEL);
-    const legacy = all.filter((r) => r.task_set_hash === PRE_P6_TASK_SET_SENTINEL);
+    const current = all.filter((r) =>
+      r.task_set_hash !== PRE_P6_TASK_SET_SENTINEL
+    );
+    const legacy = all.filter((r) =>
+      r.task_set_hash === PRE_P6_TASK_SET_SENTINEL
+    );
     assertEquals(current.length, 6);
     assertEquals(legacy.length, 1);
 

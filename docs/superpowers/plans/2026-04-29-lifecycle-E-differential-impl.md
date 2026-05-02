@@ -9,11 +9,13 @@
 **Tech Stack:** SvelteKit Cloudflare Worker, D1 (`family_diffs` table, JOINs against `lifecycle_events` + `shortcomings` + `concepts`), Cache API (`caches.open('lifecycle')`), R2 (HEAD on `r2_key` from `debug.captured` via the `LIFECYCLE_BLOBS` binding), Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`), Vitest.
 
 **Depends on:**
+
 - **Phase A** (event log + canonical `appendEvent` + `v_lifecycle_state` + the `LIFECYCLE_BLOBS` R2 binding declared in `wrangler.toml` + `PUT|GET /api/v1/admin/lifecycle/r2/<key>` endpoints). Plan A also relaxes its INDEX invariant to permit additive lifecycle migrations beyond `0006_lifecycle.sql` — this plan ships `0007_family_diffs.sql` under that relaxation.
 - **Phase C** (writes `analysis.completed` events; **Plan C is the contractual emitter of the `analyzer_model` field on the `analysis.completed` event's `payload_json`** — Plan E's `parseAnalyzerModel` reads from there).
 - **Phase D** (canonical `concepts` registry + `shortcomings.concept_id`).
 
 **Cross-plan contracts this plan depends on:**
+
 - `appendEvent({ model_slug, task_set_hash, event_type, payload, tool_versions, envelope }) → { id }` (canonical signature from Plan A; both worker-side `(db, input)` and CLI-side `(input, opts)` consume the same `AppendEventInput`).
 - `queryEvents({ model_slug, task_set_hash, event_type_prefix, limit })` with `event_type_prefix` snake_case prefix-filter — used by Plan E to find prior `analysis.*` events. Same canonical signature Plan C uses.
 - `analysis.completed.payload_json.analyzer_model: string` — the analyzer model identifier. Plan C's verify-step emission contract puts this on the payload; Plan E reads it. If absent the diff function throws (tested in E1.3).
@@ -89,35 +91,41 @@
 - [ ] **E0.3** — Add migration test in `site/tests/migrations.test.ts` so the schema invariant is exercised by every CI run. The test asserts (a) all expected columns; (b) `from_gen_event_id` is NULLABLE; (c) the `status` CHECK constraint rejects bogus values; (d) **two `baseline_missing` rows for the same `(family_slug, task_set_hash, to_gen_event_id)` insert successfully at the SQL level** (no UNIQUE) — app-level dedup is responsible for keeping that tuple unique:
 
   ```typescript
-  it('0007 creates family_diffs with NULLABLE from_gen_event_id (no UNIQUE)', async () => {
+  it("0007 creates family_diffs with NULLABLE from_gen_event_id (no UNIQUE)", async () => {
     const cols = await env.DB.prepare(
-      `PRAGMA table_info(family_diffs)`
+      `PRAGMA table_info(family_diffs)`,
     ).all<{ name: string; type: string; notnull: number }>();
     const colNames = cols.results.map((c) => c.name);
     expect(colNames).toEqual(expect.arrayContaining([
-      'id', 'family_slug', 'task_set_hash',
-      'from_gen_event_id', 'to_gen_event_id',
-      'from_model_slug', 'to_model_slug',
-      'status', 'payload_json', 'computed_at',
+      "id",
+      "family_slug",
+      "task_set_hash",
+      "from_gen_event_id",
+      "to_gen_event_id",
+      "from_model_slug",
+      "to_model_slug",
+      "status",
+      "payload_json",
+      "computed_at",
     ]));
     // from_gen_event_id is NULLABLE
-    const fromCol = cols.results.find((c) => c.name === 'from_gen_event_id');
+    const fromCol = cols.results.find((c) => c.name === "from_gen_event_id");
     expect(fromCol?.notnull).toBe(0);
 
     // Seed a real lifecycle_events row to satisfy the to_gen_event_id FK.
     await env.DB.prepare(
       `INSERT INTO lifecycle_events(ts, model_slug, task_set_hash, event_type, payload_json, actor)
-       VALUES (?, 'a/x', 'h', 'analysis.completed', '{"analyzer_model":"a/o"}', 'operator')`
+       VALUES (?, 'a/x', 'h', 'analysis.completed', '{"analyzer_model":"a/o"}', 'operator')`,
     ).bind(Date.now()).run();
     const ev = await env.DB.prepare(
-      `SELECT id FROM lifecycle_events ORDER BY id DESC LIMIT 1`
+      `SELECT id FROM lifecycle_events ORDER BY id DESC LIMIT 1`,
     ).first<{ id: number }>();
 
     // baseline_missing row inserts with NULL from_gen_event_id
     await env.DB.prepare(
       `INSERT INTO family_diffs(family_slug, task_set_hash, from_gen_event_id,
          to_gen_event_id, from_model_slug, to_model_slug, status, payload_json, computed_at)
-       VALUES ('a/x','h', NULL, ?, NULL, 'a/x-4-7', 'baseline_missing', '{}', ?)`
+       VALUES ('a/x','h', NULL, ?, NULL, 'a/x-4-7', 'baseline_missing', '{}', ?)`,
     ).bind(ev!.id, Date.now()).run();
 
     // status CHECK constraint enforced
@@ -125,8 +133,8 @@
       env.DB.prepare(
         `INSERT INTO family_diffs(family_slug, task_set_hash, from_gen_event_id,
          to_gen_event_id, from_model_slug, to_model_slug, status, payload_json,
-         computed_at) VALUES ('x','y', NULL, ?, NULL,'b','bogus','{}',0)`
-      ).bind(ev!.id).run()
+         computed_at) VALUES ('x','y', NULL, ?, NULL,'b','bogus','{}',0)`,
+      ).bind(ev!.id).run(),
     ).rejects.toThrow();
   });
   ```
@@ -164,9 +172,9 @@
   }
 
   export type DiffStatus =
-    | 'comparable'
-    | 'analyzer_mismatch'
-    | 'baseline_missing';
+    | "comparable"
+    | "analyzer_mismatch"
+    | "baseline_missing";
 
   export interface DiffResult {
     status: DiffStatus;
@@ -221,7 +229,7 @@
     args: {
       family_slug: string;
       task_set_hash: string;
-      from_gen_event_id: number | null;  // null when no baseline exists
+      from_gen_event_id: number | null; // null when no baseline exists
       to_gen_event_id: number;
     },
   ): Promise<DiffResult> {
@@ -231,7 +239,9 @@
          FROM lifecycle_events
         WHERE id = ? AND event_type = 'analysis.completed'`,
     ).bind(args.to_gen_event_id).first<{
-      id: number; model_slug: string; payload_json: string;
+      id: number;
+      model_slug: string;
+      payload_json: string;
     }>();
     if (!toEvent) {
       throw new Error(
@@ -244,7 +254,7 @@
     // Baseline missing: first generation in the family, no comparison possible.
     if (args.from_gen_event_id == null) {
       return {
-        status: 'baseline_missing',
+        status: "baseline_missing",
         family_slug: args.family_slug,
         task_set_hash: args.task_set_hash,
         from_gen_event_id: null,
@@ -261,7 +271,9 @@
          FROM lifecycle_events
         WHERE id = ? AND event_type = 'analysis.completed'`,
     ).bind(args.from_gen_event_id).first<{
-      id: number; model_slug: string; payload_json: string;
+      id: number;
+      model_slug: string;
+      payload_json: string;
     }>();
     if (!fromEvent) {
       throw new Error(
@@ -274,7 +286,7 @@
     // Analyzer-mismatch short-circuit: omit buckets entirely.
     if (fromAnalyzer !== toAnalyzer) {
       return {
-        status: 'analyzer_mismatch',
+        status: "analyzer_mismatch",
         family_slug: args.family_slug,
         task_set_hash: args.task_set_hash,
         from_gen_event_id: args.from_gen_event_id,
@@ -326,7 +338,7 @@
     }
 
     return {
-      status: 'comparable',
+      status: "comparable",
       family_slug: args.family_slug,
       task_set_hash: args.task_set_hash,
       from_gen_event_id: args.from_gen_event_id,
@@ -362,13 +374,17 @@
   function parseAnalyzerModel(payloadJson: string): string {
     try {
       const p = JSON.parse(payloadJson) as { analyzer_model?: string };
-      if (typeof p.analyzer_model !== 'string' || p.analyzer_model.length === 0) {
-        throw new Error('payload_json missing analyzer_model');
+      if (
+        typeof p.analyzer_model !== "string" || p.analyzer_model.length === 0
+      ) {
+        throw new Error("payload_json missing analyzer_model");
       }
       return p.analyzer_model;
     } catch (err) {
       throw new Error(
-        `parseAnalyzerModel: ${err instanceof Error ? err.message : String(err)}`,
+        `parseAnalyzerModel: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
       );
     }
   }
@@ -427,8 +443,11 @@
 
   ```typescript
   // tests/unit/lifecycle/diff.test.ts
-  import { assertEquals, assertExists, assertRejects } from '@std/assert';
-  import { computeGenerationDiff, type DiffDb } from '../../../src/lifecycle/diff.ts';
+  import { assertEquals, assertExists, assertRejects } from "@std/assert";
+  import {
+    computeGenerationDiff,
+    type DiffDb,
+  } from "../../../src/lifecycle/diff.ts";
 
   type Row = Record<string, unknown>;
 
@@ -457,108 +476,186 @@
     params: unknown[],
     table: Map<string, Row[]>,
   ): Row[] {
-    if (sql.includes('FROM lifecycle_events')) {
-      return (table.get('lifecycle_events') ?? []).filter((r) => r.id === params[0]);
+    if (sql.includes("FROM lifecycle_events")) {
+      return (table.get("lifecycle_events") ?? []).filter((r) =>
+        r.id === params[0]
+      );
     }
-    if (sql.includes('FROM shortcomings s')) {
-      return (table.get('shortcoming_counts') ?? []).filter(
+    if (sql.includes("FROM shortcomings s")) {
+      return (table.get("shortcoming_counts") ?? []).filter(
         (r) => r.analysis_event_id === params[0],
       );
     }
     return [];
   }
 
-  Deno.test('computeGenerationDiff', async (t) => {
-    await t.step('returns analyzer_mismatch when analyzers differ', async () => {
-      const db = makeDb(new Map([
-        ['lifecycle_events', [
-          { id: 100, model_slug: 'a/x-4-6', payload_json: JSON.stringify({ analyzer_model: 'a/opus-4-6' }) },
-          { id: 200, model_slug: 'a/x-4-7', payload_json: JSON.stringify({ analyzer_model: 'o/gpt-5.5' }) },
-        ]],
-      ]));
-      const r = await computeGenerationDiff(db, {
-        family_slug: 'a/x',
-        task_set_hash: 'h',
-        from_gen_event_id: 100,
-        to_gen_event_id: 200,
-      });
-      assertEquals(r.status, 'analyzer_mismatch');
-      assertEquals(r.resolved, undefined);
-      assertEquals(r.persisting, undefined);
-      assertEquals(r.regressed, undefined);
-      assertEquals(r.new, undefined);
-      assertEquals(r.analyzer_model_a, 'a/opus-4-6');
-      assertEquals(r.analyzer_model_b, 'o/gpt-5.5');
-    });
+  Deno.test("computeGenerationDiff", async (t) => {
+    await t.step(
+      "returns analyzer_mismatch when analyzers differ",
+      async () => {
+        const db = makeDb(
+          new Map([
+            ["lifecycle_events", [
+              {
+                id: 100,
+                model_slug: "a/x-4-6",
+                payload_json: JSON.stringify({ analyzer_model: "a/opus-4-6" }),
+              },
+              {
+                id: 200,
+                model_slug: "a/x-4-7",
+                payload_json: JSON.stringify({ analyzer_model: "o/gpt-5.5" }),
+              },
+            ]],
+          ]),
+        );
+        const r = await computeGenerationDiff(db, {
+          family_slug: "a/x",
+          task_set_hash: "h",
+          from_gen_event_id: 100,
+          to_gen_event_id: 200,
+        });
+        assertEquals(r.status, "analyzer_mismatch");
+        assertEquals(r.resolved, undefined);
+        assertEquals(r.persisting, undefined);
+        assertEquals(r.regressed, undefined);
+        assertEquals(r.new, undefined);
+        assertEquals(r.analyzer_model_a, "a/opus-4-6");
+        assertEquals(r.analyzer_model_b, "o/gpt-5.5");
+      },
+    );
 
-    await t.step('returns baseline_missing when from_gen_event_id is null', async () => {
-      const db = makeDb(new Map([
-        ['lifecycle_events', [
-          { id: 200, model_slug: 'a/x-4-7', payload_json: JSON.stringify({ analyzer_model: 'a/opus-4-6' }) },
-        ]],
-      ]));
-      const r = await computeGenerationDiff(db, {
-        family_slug: 'a/x',
-        task_set_hash: 'h',
-        from_gen_event_id: null,
-        to_gen_event_id: 200,
-      });
-      assertEquals(r.status, 'baseline_missing');
-      assertEquals(r.from_gen_event_id, null);
-    });
-
-    await t.step('comparable: 4 buckets correct on synthetic 2-gen fixture', async () => {
-      // gen_a (event 100) hit concepts {1: 5, 2: 3}
-      // gen_b (event 200) hit concepts {1: 1, 3: 4}
-      // resolved = {2}, persisting = {1: delta -4}, new = {3}, regressed = {}
-      // (concept 3 first_seen > 100 → bucketed as 'new')
-      const db = makeDb(new Map([
-        ['lifecycle_events', [
-          { id: 100, model_slug: 'a/x-4-6', payload_json: JSON.stringify({ analyzer_model: 'a/opus-4-6' }) },
-          { id: 200, model_slug: 'a/x-4-7', payload_json: JSON.stringify({ analyzer_model: 'a/opus-4-6' }) },
-        ]],
-        ['shortcoming_counts', [
-          { analysis_event_id: 100, concept_id: 1, slug: 'c1', display_name: 'C1',
-            description: '', al_concept: 'al', first_seen: 50, count: 5 },
-          { analysis_event_id: 100, concept_id: 2, slug: 'c2', display_name: 'C2',
-            description: '', al_concept: 'al', first_seen: 60, count: 3 },
-          { analysis_event_id: 200, concept_id: 1, slug: 'c1', display_name: 'C1',
-            description: '', al_concept: 'al', first_seen: 50, count: 1 },
-          { analysis_event_id: 200, concept_id: 3, slug: 'c3', display_name: 'C3',
-            description: '', al_concept: 'al', first_seen: 150, count: 4 },
-        ]],
-      ]));
-      const r = await computeGenerationDiff(db, {
-        family_slug: 'a/x',
-        task_set_hash: 'h',
-        from_gen_event_id: 100,
-        to_gen_event_id: 200,
-      });
-      assertEquals(r.status, 'comparable');
-      assertExists(r.resolved); assertExists(r.persisting);
-      assertExists(r.regressed); assertExists(r.new);
-      assertEquals(r.resolved!.map((c) => c.slug), ['c2']);
-      assertEquals(r.persisting!.map((c) => c.slug), ['c1']);
-      assertEquals(r.persisting![0]!.delta, -4);
-      assertEquals(r.new!.map((c) => c.slug), ['c3']);
-      assertEquals(r.regressed!.length, 0);
-    });
-
-    await t.step('throws on missing analyzer_model in payload', async () => {
-      const db = makeDb(new Map([
-        ['lifecycle_events', [
-          { id: 100, model_slug: 'a/x-4-6', payload_json: JSON.stringify({}) },
-        ]],
-      ]));
-      await assertRejects(
-        () => computeGenerationDiff(db, {
-          family_slug: 'a/x',
-          task_set_hash: 'h',
+    await t.step(
+      "returns baseline_missing when from_gen_event_id is null",
+      async () => {
+        const db = makeDb(
+          new Map([
+            ["lifecycle_events", [
+              {
+                id: 200,
+                model_slug: "a/x-4-7",
+                payload_json: JSON.stringify({ analyzer_model: "a/opus-4-6" }),
+              },
+            ]],
+          ]),
+        );
+        const r = await computeGenerationDiff(db, {
+          family_slug: "a/x",
+          task_set_hash: "h",
           from_gen_event_id: null,
-          to_gen_event_id: 100,
-        }),
+          to_gen_event_id: 200,
+        });
+        assertEquals(r.status, "baseline_missing");
+        assertEquals(r.from_gen_event_id, null);
+      },
+    );
+
+    await t.step(
+      "comparable: 4 buckets correct on synthetic 2-gen fixture",
+      async () => {
+        // gen_a (event 100) hit concepts {1: 5, 2: 3}
+        // gen_b (event 200) hit concepts {1: 1, 3: 4}
+        // resolved = {2}, persisting = {1: delta -4}, new = {3}, regressed = {}
+        // (concept 3 first_seen > 100 → bucketed as 'new')
+        const db = makeDb(
+          new Map([
+            ["lifecycle_events", [
+              {
+                id: 100,
+                model_slug: "a/x-4-6",
+                payload_json: JSON.stringify({ analyzer_model: "a/opus-4-6" }),
+              },
+              {
+                id: 200,
+                model_slug: "a/x-4-7",
+                payload_json: JSON.stringify({ analyzer_model: "a/opus-4-6" }),
+              },
+            ]],
+            ["shortcoming_counts", [
+              {
+                analysis_event_id: 100,
+                concept_id: 1,
+                slug: "c1",
+                display_name: "C1",
+                description: "",
+                al_concept: "al",
+                first_seen: 50,
+                count: 5,
+              },
+              {
+                analysis_event_id: 100,
+                concept_id: 2,
+                slug: "c2",
+                display_name: "C2",
+                description: "",
+                al_concept: "al",
+                first_seen: 60,
+                count: 3,
+              },
+              {
+                analysis_event_id: 200,
+                concept_id: 1,
+                slug: "c1",
+                display_name: "C1",
+                description: "",
+                al_concept: "al",
+                first_seen: 50,
+                count: 1,
+              },
+              {
+                analysis_event_id: 200,
+                concept_id: 3,
+                slug: "c3",
+                display_name: "C3",
+                description: "",
+                al_concept: "al",
+                first_seen: 150,
+                count: 4,
+              },
+            ]],
+          ]),
+        );
+        const r = await computeGenerationDiff(db, {
+          family_slug: "a/x",
+          task_set_hash: "h",
+          from_gen_event_id: 100,
+          to_gen_event_id: 200,
+        });
+        assertEquals(r.status, "comparable");
+        assertExists(r.resolved);
+        assertExists(r.persisting);
+        assertExists(r.regressed);
+        assertExists(r.new);
+        assertEquals(r.resolved!.map((c) => c.slug), ["c2"]);
+        assertEquals(r.persisting!.map((c) => c.slug), ["c1"]);
+        assertEquals(r.persisting![0]!.delta, -4);
+        assertEquals(r.new!.map((c) => c.slug), ["c3"]);
+        assertEquals(r.regressed!.length, 0);
+      },
+    );
+
+    await t.step("throws on missing analyzer_model in payload", async () => {
+      const db = makeDb(
+        new Map([
+          ["lifecycle_events", [
+            {
+              id: 100,
+              model_slug: "a/x-4-6",
+              payload_json: JSON.stringify({}),
+            },
+          ]],
+        ]),
+      );
+      await assertRejects(
+        () =>
+          computeGenerationDiff(db, {
+            family_slug: "a/x",
+            task_set_hash: "h",
+            from_gen_event_id: null,
+            to_gen_event_id: 100,
+          }),
         Error,
-        'analyzer_model',
+        "analyzer_model",
       );
     });
   });
@@ -573,8 +670,8 @@
 - [ ] **E2.1** — Locate Phase A's lifecycle event POST handler at `site/src/routes/api/v1/admin/lifecycle/events/+server.ts` (this exists post-Phase-A). Add the diff trigger in a new module `site/src/lib/server/lifecycle-diff-trigger.ts`:
 
   ```typescript
-  import type { ExecutionContext } from '@cloudflare/workers-types';
-  import { computeGenerationDiff } from '../../../../src/lifecycle/diff.ts';
+  import type { ExecutionContext } from "@cloudflare/workers-types";
+  import { computeGenerationDiff } from "../../../../src/lifecycle/diff.ts";
   // NOTE: cross-package import — Phase A's `tsconfig.json` already adds the
   // CLI src/ to the SvelteKit project's path map. If not, mirror the pure
   // function into site/src/lib/lifecycle/diff.ts and re-export from the CLI
@@ -591,7 +688,7 @@
       event_type: string;
     },
   ): Promise<void> {
-    if (event.event_type !== 'analysis.completed') return;
+    if (event.event_type !== "analysis.completed") return;
 
     // Resolve family_slug for the model (JOIN models.family_id → model_families.slug).
     const fam = await db.prepare(
@@ -600,7 +697,7 @@
          JOIN model_families mf ON mf.id = m.family_id
         WHERE m.slug = ?`,
     ).bind(event.model_slug).first<{ family_slug: string }>();
-    if (!fam) return;  // model not in catalog yet — diff is a no-op
+    if (!fam) return; // model not in catalog yet — diff is a no-op
 
     // Find the prior analysis.completed event for any model in the same
     // family + task_set, strictly earlier than `event.id`.
@@ -672,7 +769,7 @@
             result.status,
             JSON.stringify(result),
             Date.now(),
-            result.from_model_slug,           // NULL allowed for baseline_missing
+            result.from_model_slug, // NULL allowed for baseline_missing
             result.to_model_slug,
             existing.id,
           ).run();
@@ -685,9 +782,9 @@
           ).bind(
             result.family_slug,
             result.task_set_hash,
-            result.from_gen_event_id,        // NULL when baseline_missing — NO sentinel
+            result.from_gen_event_id, // NULL when baseline_missing — NO sentinel
             result.to_gen_event_id,
-            result.from_model_slug,           // NULL when baseline_missing
+            result.from_model_slug, // NULL when baseline_missing
             result.to_model_slug,
             result.status,
             JSON.stringify(result),
@@ -699,15 +796,17 @@
         //   - the family-diff endpoint (Cache API entry keyed by URL)
         //   - the parent family page's data endpoint (already cached for 60s)
         // Cache API has no purge-by-tag; we delete by exact URL.
-        const baseUrl = 'https://cache.lifecycle/family-diff';
+        const baseUrl = "https://cache.lifecycle/family-diff";
         await cache.delete(`${baseUrl}/${fam.family_slug}/latest`);
         await cache.delete(
-          `${baseUrl}/${fam.family_slug}/${result.from_gen_event_id ?? 'baseline'}/${result.to_gen_event_id}`,
+          `${baseUrl}/${fam.family_slug}/${
+            result.from_gen_event_id ?? "baseline"
+          }/${result.to_gen_event_id}`,
         );
       } catch (err) {
         // Failure is non-fatal — the API endpoint will recompute on demand
         // when the cache miss happens. Log for observability.
-        console.error('[lifecycle-diff-trigger] failed', {
+        console.error("[lifecycle-diff-trigger] failed", {
           model_slug: event.model_slug,
           to_gen_event_id: event.id,
           error: err instanceof Error ? err.message : String(err),
@@ -720,10 +819,10 @@
 - [ ] **E2.2** — Wire the trigger into Phase A's lifecycle events POST handler. Open `site/src/routes/api/v1/admin/lifecycle/events/+server.ts` and after the successful `INSERT INTO lifecycle_events` call, invoke:
 
   ```typescript
-  import { maybeTriggerFamilyDiff } from '$lib/server/lifecycle-diff-trigger';
+  import { maybeTriggerFamilyDiff } from "$lib/server/lifecycle-diff-trigger";
 
   // ... inside POST after the insert returns the new row id:
-  const cache = await caches.open('lifecycle');
+  const cache = await caches.open("lifecycle");
   await maybeTriggerFamilyDiff(
     platform!.context,
     platform!.env.DB,
@@ -742,56 +841,65 @@
 - [ ] **E2.3** — Tests in `site/tests/api/lifecycle-diff-trigger.test.ts`:
 
   ```typescript
-  import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-  import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-  import { createSignedPayload } from '../fixtures/keys';
-  import { registerMachineKey } from '../fixtures/ingest-helpers';
-  import { resetDb } from '../utils/reset-db';
+  import { applyD1Migrations, env, SELF } from "cloudflare:test";
+  import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+  import { createSignedPayload } from "../fixtures/keys";
+  import { registerMachineKey } from "../fixtures/ingest-helpers";
+  import { resetDb } from "../utils/reset-db";
 
-  beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-  beforeEach(async () => { await resetDb(); });
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
 
-  describe('lifecycle diff trigger on analysis.completed', () => {
-    it('writes family_diffs row with status=baseline_missing for first gen', async () => {
+  describe("lifecycle diff trigger on analysis.completed", () => {
+    it("writes family_diffs row with status=baseline_missing for first gen", async () => {
       // Seed family + model
       await env.DB.prepare(
-        `INSERT INTO model_families(slug, vendor, display_name) VALUES ('a/x','A','A X')`
+        `INSERT INTO model_families(slug, vendor, display_name) VALUES ('a/x','A','A X')`,
       ).run();
       const fam = await env.DB.prepare(
-        `SELECT id FROM model_families WHERE slug='a/x'`
+        `SELECT id FROM model_families WHERE slug='a/x'`,
       ).first<{ id: number }>();
       await env.DB.prepare(
         `INSERT INTO models(family_id, slug, api_model_id, display_name)
-         VALUES (?, 'a/x-4-6', 'x-4-6', 'A X 4-6')`
+         VALUES (?, 'a/x-4-6', 'x-4-6', 'A X 4-6')`,
       ).bind(fam!.id).run();
 
-      const { keyId, keypair } = await registerMachineKey('admin', 'admin');
-      const { signedRequest } = await createSignedPayload({
-        model_slug: 'a/x-4-6',
-        task_set_hash: 'h',
-        event_type: 'analysis.completed',
-        ts: Date.now(),
-        payload_json: JSON.stringify({ analyzer_model: 'a/opus-4-6' }),
-      }, keyId, undefined, keypair);
+      const { keyId, keypair } = await registerMachineKey("admin", "admin");
+      const { signedRequest } = await createSignedPayload(
+        {
+          model_slug: "a/x-4-6",
+          task_set_hash: "h",
+          event_type: "analysis.completed",
+          ts: Date.now(),
+          payload_json: JSON.stringify({ analyzer_model: "a/opus-4-6" }),
+        },
+        keyId,
+        undefined,
+        keypair,
+      );
 
-      const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
+      const resp = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(signedRequest),
       });
       expect(resp.status).toBe(200);
 
       // Wait for ctx.waitUntil to settle. The miniflare test runner drains it
       // automatically before the next request, so a no-op fetch is sufficient.
-      await SELF.fetch('https://x/api/v1/health');
+      await SELF.fetch("https://x/api/v1/health");
 
       const row = await env.DB.prepare(
-        `SELECT status FROM family_diffs WHERE family_slug = 'a/x'`
+        `SELECT status FROM family_diffs WHERE family_slug = 'a/x'`,
       ).first<{ status: string }>();
-      expect(row?.status).toBe('baseline_missing');
+      expect(row?.status).toBe("baseline_missing");
     });
 
-    it('writes status=analyzer_mismatch when analyzers differ', async () => {
+    it("writes status=analyzer_mismatch when analyzers differ", async () => {
       // ... seed two models, write two analysis.completed events with
       // different analyzer_model values, assert family_diffs.status
       // === 'analyzer_mismatch'.
@@ -810,10 +918,10 @@
 - [ ] **E3.1** — Create `U:\Git\CentralGauge\site\src\routes\api\v1\families\[slug]\diff\+server.ts`:
 
   ```typescript
-  import type { RequestHandler } from './$types';
-  import { cachedJson } from '$lib/server/cache';
-  import { getFirst, getAll } from '$lib/server/db';
-  import { ApiError, errorResponse } from '$lib/server/errors';
+  import type { RequestHandler } from "./$types";
+  import { cachedJson } from "$lib/server/cache";
+  import { getAll, getFirst } from "$lib/server/db";
+  import { ApiError, errorResponse } from "$lib/server/errors";
 
   /**
    * GET /api/v1/families/<slug>/diff?from=<event_id>&to=<event_id>&task_set=<hash>
@@ -823,13 +931,15 @@
    * current task_set. When only `to` is given, finds the prior event
    * automatically.
    */
-  export const GET: RequestHandler = async ({ request, params, url, platform }) => {
+  export const GET: RequestHandler = async (
+    { request, params, url, platform },
+  ) => {
     const env = platform!.env;
     try {
       const slug = params.slug!;
-      const fromQ = url.searchParams.get('from');
-      const toQ = url.searchParams.get('to');
-      const taskSetQ = url.searchParams.get('task_set');
+      const fromQ = url.searchParams.get("from");
+      const toQ = url.searchParams.get("to");
+      const taskSetQ = url.searchParams.get("task_set");
 
       // Resolve task_set: explicit param > current.
       let taskSetHash: string;
@@ -841,7 +951,13 @@
           `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
           [],
         );
-        if (!ts) throw new ApiError(404, 'no_current_task_set', 'no task_set is is_current');
+        if (!ts) {
+          throw new ApiError(
+            404,
+            "no_current_task_set",
+            "no task_set is is_current",
+          );
+        }
         taskSetHash = ts.hash;
       }
 
@@ -866,7 +982,7 @@
         if (!latest) {
           // Family has zero analysis events — return baseline_missing shell.
           return cachedJson(request, {
-            status: 'baseline_missing',
+            status: "baseline_missing",
             family_slug: slug,
             task_set_hash: taskSetHash,
             from_gen_event_id: null,
@@ -920,7 +1036,7 @@
       if (!row) {
         // Trigger may not have run yet (slow waitUntil) — recompute inline.
         const { computeGenerationDiff } = await import(
-          '../../../../../../../../src/lifecycle/diff.ts'
+          "../../../../../../../../src/lifecycle/diff.ts"
         );
         const result = await computeGenerationDiff(env.DB as never, {
           family_slug: slug,
@@ -929,11 +1045,11 @@
           to_gen_event_id: toEventId,
         });
         return cachedJson(request, result, {
-          cacheControl: 'private, max-age=60',
+          cacheControl: "private, max-age=60",
         });
       }
       return cachedJson(request, JSON.parse(row.payload_json), {
-        cacheControl: 'private, max-age=300',
+        cacheControl: "private, max-age=300",
       });
     } catch (err) {
       return errorResponse(err);
@@ -954,7 +1070,10 @@
     delta: number;
   }
 
-  export type FamilyDiffStatus = 'comparable' | 'analyzer_mismatch' | 'baseline_missing';
+  export type FamilyDiffStatus =
+    | "comparable"
+    | "analyzer_mismatch"
+    | "baseline_missing";
 
   export interface FamilyDiff {
     status: FamilyDiffStatus;
@@ -976,36 +1095,40 @@
 - [ ] **E3.3** — Tests in `site/tests/api/families-diff.test.ts`:
 
   ```typescript
-  import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-  import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-  import { resetDb } from '../utils/reset-db';
+  import { applyD1Migrations, env, SELF } from "cloudflare:test";
+  import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+  import { resetDb } from "../utils/reset-db";
 
-  beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-  beforeEach(async () => { await resetDb(); });
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
 
-  describe('GET /api/v1/families/:slug/diff', () => {
-    it('returns baseline_missing shell when family has zero analysis events', async () => {
+  describe("GET /api/v1/families/:slug/diff", () => {
+    it("returns baseline_missing shell when family has zero analysis events", async () => {
       await env.DB.prepare(
-        `INSERT INTO model_families(slug, vendor, display_name) VALUES ('a/x','A','A X')`
+        `INSERT INTO model_families(slug, vendor, display_name) VALUES ('a/x','A','A X')`,
       ).run();
       await env.DB.prepare(
         `INSERT INTO task_sets(hash, is_current, task_count, created_at)
-         VALUES ('h', 1, 0, ?)`
+         VALUES ('h', 1, 0, ?)`,
       ).bind(Date.now()).run();
 
-      const r = await SELF.fetch('https://x/api/v1/families/a/x/diff');
+      const r = await SELF.fetch("https://x/api/v1/families/a/x/diff");
       expect(r.status).toBe(200);
       const body = await r.json() as { status: string };
-      expect(body.status).toBe('baseline_missing');
+      expect(body.status).toBe("baseline_missing");
     });
 
-    it('returns analyzer_mismatch with all four buckets undefined', async () => {
+    it("returns analyzer_mismatch with all four buckets undefined", async () => {
       // seed two analysis.completed events with different analyzer_model
       // values; assert response.status === 'analyzer_mismatch' and
       // resolved/persisting/regressed/new are absent from the JSON body.
     });
 
-    it('honours explicit ?from= and ?to= query params', async () => {
+    it("honours explicit ?from= and ?to= query params", async () => {
       // seed three events; request from=event1&to=event3; assert
       // the diff is computed across that pair, not the default latest two.
     });
@@ -1021,13 +1144,16 @@
 - [ ] **E4.1** — Update the family page server loader to fetch the diff alongside the existing family detail. Edit `U:\Git\CentralGauge\site\src\routes\families\[slug]\+page.server.ts`:
 
   ```typescript
-  import type { FamilyDetail, FamilyDiff } from '$shared/api-types';
-  import { passthroughLoader } from '$lib/server/loader-helpers';
+  import type { FamilyDetail, FamilyDiff } from "$shared/api-types";
+  import { passthroughLoader } from "$lib/server/loader-helpers";
 
-  export const load = passthroughLoader<{ family: FamilyDetail; diff: FamilyDiff }, never>({
+  export const load = passthroughLoader<
+    { family: FamilyDetail; diff: FamilyDiff },
+    never
+  >({
     depTag: (params) => `app:family:${params.slug}`,
     fetchPath: (_url, params) => `/api/v1/families/${params.slug}`,
-    resultKey: undefined,  // we hand-roll the assembly below
+    resultKey: undefined, // we hand-roll the assembly below
     transform: async ({ params, fetch }) => {
       const [famR, diffR] = await Promise.all([
         fetch(`/api/v1/families/${params.slug}`),
@@ -1044,7 +1170,7 @@
   });
   ```
 
-  *Note:* If the existing `passthroughLoader` doesn't accept `transform`, expand it into an explicit `load` function that does the parallel fetch directly. The point is one `load` callback returning `{ family, diff }`.
+  _Note:_ If the existing `passthroughLoader` doesn't accept `transform`, expand it into an explicit `load` function that does the parallel fetch directly. The point is one `load` callback returning `{ family, diff }`.
 
 - [ ] **E4.2** — Create `U:\Git\CentralGauge\site\src\lib\components\domain\ConceptTrajectorySection.svelte` (Svelte 5 runes throughout):
 
@@ -1291,7 +1417,7 @@
   ```typescript
   // Inside the load function, after fetching the diff:
   let r2BundleAvailable = false;
-  if (diff.status === 'analyzer_mismatch' && diff.from_gen_event_id) {
+  if (diff.status === "analyzer_mismatch" && diff.from_gen_event_id) {
     // Look up the debug.captured event for the prior generation's session.
     // The CLI Phase C plan writes the session_id and r2_prefix on the
     // debug.captured event keyed to the same model_slug + task_set_hash that
@@ -1310,15 +1436,21 @@
 - [ ] **E4.5** — Add the supporting endpoint `site/src/routes/api/v1/admin/lifecycle/debug-bundle-exists/+server.ts`:
 
   ```typescript
-  import type { RequestHandler } from './$types';
-  import { jsonResponse, errorResponse, ApiError } from '$lib/server/errors';
-  import { getFirst } from '$lib/server/db';
+  import type { RequestHandler } from "./$types";
+  import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+  import { getFirst } from "$lib/server/db";
 
   export const GET: RequestHandler = async ({ url, platform }) => {
-    if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    if (!platform) {
+      return errorResponse(
+        new ApiError(500, "no_platform", "platform env missing"),
+      );
+    }
     try {
-      const eventId = +(url.searchParams.get('event_id') ?? 0);
-      if (!eventId) throw new ApiError(400, 'bad_event_id', 'event_id required');
+      const eventId = +(url.searchParams.get("event_id") ?? 0);
+      if (!eventId) {
+        throw new ApiError(400, "bad_event_id", "event_id required");
+      }
 
       // Pull r2_prefix from the most-recent debug.captured event for the same
       // model + task_set as the supplied analysis.completed event.
@@ -1327,7 +1459,13 @@
         `SELECT model_slug, task_set_hash FROM lifecycle_events WHERE id = ?`,
         [eventId],
       );
-      if (!ev) throw new ApiError(404, 'event_not_found', `event ${eventId} not found`);
+      if (!ev) {
+        throw new ApiError(
+          404,
+          "event_not_found",
+          `event ${eventId} not found`,
+        );
+      }
 
       const dbg = await getFirst<{ payload_json: string }>(
         platform.env.DB,
@@ -1365,33 +1503,42 @@
 - [ ] **E5.1** — Vitest test `site/tests/api/families-diff-trigger-fixtures.test.ts` covering the four fixture scenarios from the strategic plan acceptance:
 
   ```typescript
-  import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-  import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-  import { resetDb } from '../utils/reset-db';
-  import { createSignedPayload } from '../fixtures/keys';
-  import { registerMachineKey } from '../fixtures/ingest-helpers';
+  import { applyD1Migrations, env, SELF } from "cloudflare:test";
+  import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+  import { resetDb } from "../utils/reset-db";
+  import { createSignedPayload } from "../fixtures/keys";
+  import { registerMachineKey } from "../fixtures/ingest-helpers";
 
-  beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-  beforeEach(async () => { await resetDb(); });
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+  });
 
   async function seedAnalysisEvent(opts: {
     keyId: number;
-    keypair: Awaited<ReturnType<typeof registerMachineKey>>['keypair'];
+    keypair: Awaited<ReturnType<typeof registerMachineKey>>["keypair"];
     model_slug: string;
     task_set_hash: string;
     analyzer_model: string;
   }): Promise<number> {
-    const { signedRequest } = await createSignedPayload({
-      model_slug: opts.model_slug,
-      task_set_hash: opts.task_set_hash,
-      event_type: 'analysis.completed',
-      ts: Date.now(),
-      payload_json: JSON.stringify({ analyzer_model: opts.analyzer_model }),
-    }, opts.keyId, undefined, opts.keypair);
+    const { signedRequest } = await createSignedPayload(
+      {
+        model_slug: opts.model_slug,
+        task_set_hash: opts.task_set_hash,
+        event_type: "analysis.completed",
+        ts: Date.now(),
+        payload_json: JSON.stringify({ analyzer_model: opts.analyzer_model }),
+      },
+      opts.keyId,
+      undefined,
+      opts.keypair,
+    );
 
-    const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const r = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(signedRequest),
     });
     expect(r.status).toBe(200);
@@ -1399,26 +1546,26 @@
     return body.id;
   }
 
-  describe('Phase E acceptance fixtures', () => {
-    it('synthetic 2-gen fixture: diff buckets correct', async () => {
+  describe("Phase E acceptance fixtures", () => {
+    it("synthetic 2-gen fixture: diff buckets correct", async () => {
       // seed family + 2 models + 2 analysis.completed events with same analyzer
       // verify family_diffs row materialised with status=comparable
       // GET /api/v1/families/<slug>/diff returns the expected buckets
     });
 
-    it('3-gen fixture: transitive resolution detected', async () => {
+    it("3-gen fixture: transitive resolution detected", async () => {
       // gen1 has concept C; gen2 absent; gen3 absent →
       // diff(gen2 → gen3) shows C as resolved (via gen1 baseline)
       // diff(gen1 → gen3) shows C as resolved
     });
 
-    it('analyzer-mismatch case: status returned, no buckets', async () => {
+    it("analyzer-mismatch case: status returned, no buckets", async () => {
       // two events, different analyzer_model values
       // GET response.status === 'analyzer_mismatch'
       // resolved/persisting/regressed/new are not present in the JSON body
     });
 
-    it('R2-missing case: re-analyze button disabled', async () => {
+    it("R2-missing case: re-analyze button disabled", async () => {
       // analyzer-mismatch + no debug.captured event in R2 → r2BundleAvailable=false
       // (asserted via the debug-bundle-exists endpoint returning {exists:false})
     });

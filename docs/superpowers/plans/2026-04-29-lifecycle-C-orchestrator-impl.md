@@ -17,6 +17,7 @@
 ## Task C1 — Cliffy command skeleton + sub-types
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\orchestrator-types.ts` (new)
 - `U:\Git\CentralGauge\cli\commands\cycle-command.ts` (new)
 - `U:\Git\CentralGauge\cli\commands\mod.ts` (edit)
@@ -24,13 +25,13 @@
 
 **Goal:** Land a Cliffy command that parses every flag, validates step names, and prints "not yet implemented" for the action body. No orchestrator logic yet.
 
-- [ ] 1. Verify the parent directory exists:
+- 1. [ ] Verify the parent directory exists:
   ```bash
   ls -d U:/Git/CentralGauge/src/lifecycle 2>/dev/null || echo "MISSING"
   ```
   If `MISSING`, create it: `mkdir -p U:/Git/CentralGauge/src/lifecycle/steps`. (Phase A is supposed to land `src/lifecycle/event-log.ts`; if that hasn't been merged yet, this plan blocks on Plan A.)
 
-- [ ] 2. Write `U:\Git\CentralGauge\src\lifecycle\orchestrator-types.ts` with the step state machine types:
+- 2. [ ] Write `U:\Git\CentralGauge\src\lifecycle\orchestrator-types.ts` with the step state machine types:
   ```typescript
   /**
    * Orchestrator types for the `centralgauge cycle` command.
@@ -92,7 +93,7 @@
   }
   ```
 
-- [ ] 3. Write `U:\Git\CentralGauge\cli\commands\cycle-command.ts` with the Cliffy skeleton (no action logic yet — just flag parsing + dispatch shell):
+- 3. [ ] Write `U:\Git\CentralGauge\cli\commands\cycle-command.ts` with the Cliffy skeleton (no action logic yet — just flag parsing + dispatch shell):
   ```typescript
   /**
    * `centralgauge cycle` — orchestrated bench → debug-capture → analyze → publish
@@ -242,20 +243,20 @@
   }
   ```
 
-- [ ] 4. Add `cycle-command.ts` to the barrel export at `U:\Git\CentralGauge\cli\commands\mod.ts` (alphabetical, after `config-command`):
+- 4. [ ] Add `cycle-command.ts` to the barrel export at `U:\Git\CentralGauge\cli\commands\mod.ts` (alphabetical, after `config-command`):
   ```typescript
   export { registerCycleCommand } from "./cycle-command.ts";
   ```
 
-- [ ] 5. Register the command in `U:\Git\CentralGauge\cli\centralgauge.ts`. Add to the import block (alphabetical) and to the `registerXxxCommand(cliAny)` calls. Place the call right after `registerCompileTestCommands(cliAny);`:
+- 5. [ ] Register the command in `U:\Git\CentralGauge\cli\centralgauge.ts`. Add to the import block (alphabetical) and to the `registerXxxCommand(cliAny)` calls. Place the call right after `registerCompileTestCommands(cliAny);`:
   ```typescript
   // import block addition:
   registerCycleCommand,
-  // call addition:
-  registerCycleCommand(cliAny);
+    // call addition:
+    registerCycleCommand(cliAny);
   ```
 
-- [ ] 6. Stub `src/lifecycle/orchestrator.ts` so the dynamic import resolves. Write `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts`:
+- 6. [ ] Stub `src/lifecycle/orchestrator.ts` so the dynamic import resolves. Write `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts`:
   ```typescript
   import type { CycleOptions } from "./orchestrator-types.ts";
 
@@ -266,26 +267,26 @@
   }
   ```
 
-- [ ] 7. Run `deno check`, `deno lint`, `deno fmt`:
+- 7. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check cli/commands/cycle-command.ts src/lifecycle/orchestrator-types.ts src/lifecycle/orchestrator.ts
   deno lint cli/commands/cycle-command.ts src/lifecycle/orchestrator-types.ts src/lifecycle/orchestrator.ts
   deno fmt cli/commands/cycle-command.ts src/lifecycle/orchestrator-types.ts src/lifecycle/orchestrator.ts cli/commands/mod.ts cli/centralgauge.ts
   ```
 
-- [ ] 8. Smoke-test the registration:
+- 8. [ ] Smoke-test the registration:
   ```bash
   deno task start cycle --help
   ```
   Expected: cliffy renders the command, lists every flag.
 
-- [ ] 9. Smoke-test option parsing:
+- 9. [ ] Smoke-test option parsing:
   ```bash
   deno task start cycle --llms anthropic/claude-opus-4-7 --dry-run
   ```
   Expected stdout contains `"fromStep": "bench"`, `"toStep": "publish"`, `"taskSet": "current"`.
 
-- [ ] 10. Smoke-test invalid-step rejection:
+- 10. [ ] Smoke-test invalid-step rejection:
   ```bash
   deno task start cycle --llms x --from foo
   ```
@@ -296,12 +297,13 @@
 ## Task C2 — Step `bench` wrapper
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\steps\bench-step.ts` (new)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\steps\bench-step.test.ts` (new)
 
 **Goal:** A pure step module that invokes `centralgauge bench --llms <slug> --debug` via `Deno.Command`, parses the resulting `results/<file>.json` to extract `runs_count`/`tasks_count`/`results_count`, and returns a `StepResult` with the appropriate event type. No skip/retry decisions — that's C6's job.
 
-- [ ] 1. Write the helper for parsing the bench output's results file. Create `U:\Git\CentralGauge\src\lifecycle\steps\bench-step.ts`:
+- 1. [ ] Write the helper for parsing the bench output's results file. Create `U:\Git\CentralGauge\src\lifecycle\steps\bench-step.ts`:
   ```typescript
   /**
    * Cycle step: bench. Invokes `centralgauge bench --llms <slug> --debug` and
@@ -311,10 +313,7 @@
    */
 
   import * as colors from "@std/fmt/colors";
-  import type {
-    StepContext,
-    StepResult,
-  } from "../orchestrator-types.ts";
+  import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
   interface BenchResultsFile {
     schemaVersion?: string;
@@ -482,7 +481,7 @@
   }
   ```
 
-- [ ] 2. Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\bench-step.test.ts`. Stub `Deno.Command` via injection of the `benchCmd` array — point at `cmd /c echo`/`bash -c true` and use a fixture results file:
+- 2. [ ] Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\bench-step.test.ts`. Stub `Deno.Command` via injection of the `benchCmd` array — point at `cmd /c echo`/`bash -c true` and use a fixture results file:
   ```typescript
   import { assertEquals } from "@std/assert";
   import { runBenchStep } from "../../../../src/lifecycle/steps/bench-step.ts";
@@ -516,7 +515,9 @@
         ? [
           "cmd",
           "/c",
-          `echo ${fixtureJson} > ${tmp.replaceAll("/", "\\")}\\results\\run.json`,
+          `echo ${fixtureJson} > ${
+            tmp.replaceAll("/", "\\")
+          }\\results\\run.json`,
         ]
         : ["bash", "-c", `echo '${fixtureJson}' > ${tmp}/results/run.json`];
       const result = await runBenchStep(
@@ -586,13 +587,13 @@
   });
   ```
 
-- [ ] 3. Run unit tests for the new step:
+- 3. [ ] Run unit tests for the new step:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/steps/bench-step.test.ts
   ```
   Expected: 3 tests pass.
 
-- [ ] 4. Run `deno check`, `deno lint`, `deno fmt`:
+- 4. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/steps/bench-step.ts tests/unit/lifecycle/steps/bench-step.test.ts
   deno lint src/lifecycle/steps/bench-step.ts tests/unit/lifecycle/steps/bench-step.test.ts
@@ -604,6 +605,7 @@
 ## Task C3 — Step `debug-capture` with R2 upload
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\steps\debug-capture-step.ts` (new)
 - `U:\Git\CentralGauge\src\ingest\r2.ts` (new — extends the existing `blobs.ts` for `lifecycle/` prefix)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\steps\debug-capture-step.test.ts` (new)
@@ -612,13 +614,13 @@
 
 > **Note for executor:** The strategic plan refers to `src/ingest/r2.ts`. That file does not exist today — `src/ingest/blobs.ts` does. This task creates `r2.ts` as a thin wrapper that handles the lifecycle/ key prefix; future R2 lifecycle uploads consolidate here.
 
-- [ ] 1. Inspect existing R2 upload pattern:
+- 1. [ ] Inspect existing R2 upload pattern:
   ```bash
   ls U:/Git/CentralGauge/src/ingest/blobs.ts
   ```
   Read `src/ingest/blobs.ts` — confirm it uses `signBlobUpload(path, sha256, ...)` to PUT `/api/v1/blobs/<sha256>`. The lifecycle path needs a different endpoint (`/api/v1/admin/lifecycle/r2/<key>`) because lifecycle blobs are not content-addressed by sha256 (the key is the session ID). The Plan A worker endpoint is assumed already to exist; if not, this task adds a TODO to land it as part of A4.
 
-- [ ] 2. Write `U:\Git\CentralGauge\src\ingest\r2.ts`:
+- 2. [ ] Write `U:\Git\CentralGauge\src\ingest\r2.ts`:
   ```typescript
   /**
    * R2 lifecycle blob upload — uploads compressed debug bundles to R2 under
@@ -693,9 +695,13 @@
         continue;
       }
       if (resp.status >= 400 && resp.status < 500) {
-        throw new Error(`r2 upload failed: ${resp.status} ${await resp.text()}`);
+        throw new Error(
+          `r2 upload failed: ${resp.status} ${await resp.text()}`,
+        );
       }
-      lastError = new Error(`r2 upload failed: ${resp.status} ${await resp.text()}`);
+      lastError = new Error(
+        `r2 upload failed: ${resp.status} ${await resp.text()}`,
+      );
       if (attempt < max) await sleep(base * Math.pow(4, attempt - 1));
     }
     throw lastError ?? new Error("uploadLifecycleBlob: exhausted attempts");
@@ -717,7 +723,7 @@
   }
   ```
 
-- [ ] 3. Write `U:\Git\CentralGauge\src\lifecycle\steps\debug-capture-step.ts`:
+- 3. [ ] Write `U:\Git\CentralGauge\src\lifecycle\steps\debug-capture-step.ts`:
   ```typescript
   /**
    * Cycle step: debug-capture. Tars + zstd-compresses the most recent
@@ -730,14 +736,8 @@
   import * as colors from "@std/fmt/colors";
   import { findLatestSession } from "../../verify/debug-parser.ts";
   import { uploadLifecycleBlob } from "../../ingest/r2.ts";
-  import {
-    loadIngestConfig,
-    readPrivateKey,
-  } from "../../ingest/config.ts";
-  import type {
-    StepContext,
-    StepResult,
-  } from "../orchestrator-types.ts";
+  import { loadIngestConfig, readPrivateKey } from "../../ingest/config.ts";
+  import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
   async function fileCountAndSize(
     dir: string,
@@ -869,8 +869,7 @@
       const keyId = config.adminKeyId;
       const privKey = await readPrivateKey(keyPath);
 
-      const r2Key =
-        `lifecycle/debug/${ctx.modelSlug}/${sessionId}.tar.zst`;
+      const r2Key = `lifecycle/debug/${ctx.modelSlug}/${sessionId}.tar.zst`;
       const upload = opts.uploader ?? uploadLifecycleBlob;
       const result = await upload(
         config.url,
@@ -900,7 +899,7 @@
   }
   ```
 
-- [ ] 4. Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\debug-capture-step.test.ts`:
+- 4. [ ] Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\debug-capture-step.test.ts`:
   ```typescript
   import { assertEquals } from "@std/assert";
   import { runDebugCaptureStep } from "../../../../src/lifecycle/steps/debug-capture-step.ts";
@@ -1011,13 +1010,13 @@
   });
   ```
 
-- [ ] 5. Run unit tests:
+- 5. [ ] Run unit tests:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/steps/debug-capture-step.test.ts
   ```
   Expected: 2 tests pass.
 
-- [ ] 6. Run `deno check`, `deno lint`, `deno fmt`:
+- 6. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/steps/debug-capture-step.ts src/ingest/r2.ts tests/unit/lifecycle/steps/debug-capture-step.test.ts
   deno lint src/lifecycle/steps/debug-capture-step.ts src/ingest/r2.ts tests/unit/lifecycle/steps/debug-capture-step.test.ts
@@ -1029,6 +1028,7 @@
 ## Task C4 — Step `analyze`
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\steps\analyze-step.ts` (new)
 - `U:\Git\CentralGauge\src\lifecycle\analyzer-schema.ts` (new — zod schema for `ModelShortcomingsFile`)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\steps\analyze-step.test.ts` (new)
@@ -1037,7 +1037,7 @@
 
 > **Strategic-plan amendment (issue #10).** The strategic plan's Event-types appendix originally specified `analysis.completed` payload as `{ entries_count, min_confidence, payload_hash }`. Phase E's family-diff job reads `analyzer_model` from this event to compute generation diffs (it cannot infer the analyzer from elsewhere — different cycles for the same target model can use different analyzer models). Plan C therefore adds `analyzer_model` to the `analysis.completed` payload. Agent 1 has been asked to update the strategic plan's appendix; if that update has not landed yet, treat this paragraph as the source of truth.
 
-- [ ] 1. Define the analyzer JSON schema via zod. Write `U:\Git\CentralGauge\src\lifecycle\analyzer-schema.ts`:
+- 1. [ ] Define the analyzer JSON schema via zod. Write `U:\Git\CentralGauge\src\lifecycle\analyzer-schema.ts`:
   ```typescript
   /**
    * Zod schema for model-shortcomings/<slug>.json output produced by
@@ -1074,7 +1074,7 @@
   export type AnalyzerOutput = z.infer<typeof ModelShortcomingsFileSchema>;
   ```
 
-- [ ] 2. Write `U:\Git\CentralGauge\src\lifecycle\steps\analyze-step.ts`:
+- 2. [ ] Write `U:\Git\CentralGauge\src\lifecycle\steps\analyze-step.ts`:
   ```typescript
   /**
    * Cycle step: analyze. Invokes `centralgauge verify --shortcomings-only` and
@@ -1090,10 +1090,7 @@
     type AnalyzerOutput,
     ModelShortcomingsFileSchema,
   } from "../analyzer-schema.ts";
-  import type {
-    StepContext,
-    StepResult,
-  } from "../orchestrator-types.ts";
+  import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
   /** slug → filesystem-safe filename (matches B2 rename rule: '/' → '_'). */
   function slugToFile(slug: string): string {
@@ -1195,7 +1192,9 @@
       };
     }
 
-    const normalized = canonicalJSON(parsed as unknown as Record<string, unknown>);
+    const normalized = canonicalJSON(
+      parsed as unknown as Record<string, unknown>,
+    );
     const payloadHash = await sha256Hex(normalized);
     const confidences = parsed.shortcomings
       .map((s) => s.confidence ?? 1)
@@ -1226,7 +1225,7 @@
   }
   ```
 
-- [ ] 3. Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\analyze-step.test.ts`:
+- 3. [ ] Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\analyze-step.test.ts`:
   ```typescript
   import { assertEquals } from "@std/assert";
   import { runAnalyzeStep } from "../../../../src/lifecycle/steps/analyze-step.ts";
@@ -1332,12 +1331,12 @@
   });
   ```
 
-- [ ] 4. Run unit tests:
+- 4. [ ] Run unit tests:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/steps/analyze-step.test.ts
   ```
 
-- [ ] 5. Run `deno check`, `deno lint`, `deno fmt`:
+- 5. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/steps/analyze-step.ts src/lifecycle/analyzer-schema.ts tests/unit/lifecycle/steps/analyze-step.test.ts
   deno lint src/lifecycle/steps/analyze-step.ts src/lifecycle/analyzer-schema.ts tests/unit/lifecycle/steps/analyze-step.test.ts
@@ -1349,12 +1348,13 @@
 ## Task C5 — Step `publish`
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\steps\publish-step.ts` (new)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\steps\publish-step.test.ts` (new)
 
 **Goal:** Convert the analyzer JSON to the `BatchPayload` shape (existing `populate-shortcomings-command.ts` knows this), signed-POST to `/api/v1/shortcomings/batch`, capture `{upserted, occurrences}` from response. Skip when the prior analysis's `payload_hash` matches an already-published one.
 
-- [ ] 1. Write `U:\Git\CentralGauge\src\lifecycle\steps\publish-step.ts`:
+- 1. [ ] Write `U:\Git\CentralGauge\src\lifecycle\steps\publish-step.ts`:
   ```typescript
   /**
    * Cycle step: publish. Reads model-shortcomings JSON, builds the batch
@@ -1366,20 +1366,14 @@
   import * as colors from "@std/fmt/colors";
   import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
   import { canonicalJSON } from "../../ingest/canonical.ts";
-  import {
-    loadIngestConfig,
-    readPrivateKey,
-  } from "../../ingest/config.ts";
+  import { loadIngestConfig, readPrivateKey } from "../../ingest/config.ts";
   import { signPayload } from "../../ingest/sign.ts";
   import { postWithRetry } from "../../ingest/client.ts";
   import {
     type AnalyzerOutput,
     ModelShortcomingsFileSchema,
   } from "../analyzer-schema.ts";
-  import type {
-    StepContext,
-    StepResult,
-  } from "../orchestrator-types.ts";
+  import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
   function slugToFile(slug: string): string {
     return slug.replaceAll("/", "_") + ".json";
@@ -1470,7 +1464,9 @@
     }
 
     const payload = await buildPayload(parsed);
-    const canonical = canonicalJSON(payload as unknown as Record<string, unknown>);
+    const canonical = canonicalJSON(
+      payload as unknown as Record<string, unknown>,
+    );
     const payloadHash = await sha256Hex(canonical);
 
     if (
@@ -1568,7 +1564,7 @@
   }
   ```
 
-- [ ] 2. Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\publish-step.test.ts`:
+- 2. [ ] Write `U:\Git\CentralGauge\tests\unit\lifecycle\steps\publish-step.test.ts`:
   ```typescript
   import { assertEquals } from "@std/assert";
   import { runPublishStep } from "../../../../src/lifecycle/steps/publish-step.ts";
@@ -1706,12 +1702,12 @@
   });
   ```
 
-- [ ] 3. Run unit tests:
+- 3. [ ] Run unit tests:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/steps/publish-step.test.ts
   ```
 
-- [ ] 4. Run `deno check`, `deno lint`, `deno fmt`:
+- 4. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/steps/publish-step.ts tests/unit/lifecycle/steps/publish-step.test.ts
   deno lint src/lifecycle/steps/publish-step.ts tests/unit/lifecycle/steps/publish-step.test.ts
@@ -1723,12 +1719,13 @@
 ## Task C6 — Resume logic + step decision table
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` (replace stub)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-decisions.test.ts` (new)
 
 **Goal:** A pure decision function `decideStep(step, priorEvents, options, now)` returning `StepDecision`. The orchestrator iterates from `fromStep` to `toStep`, queries `currentState` (from Plan A's event-log reader), decides per step, dispatches to the step modules, and writes the resulting events.
 
-- [ ] 1. Replace `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` with the real implementation:
+- 1. [ ] Replace `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` with the real implementation:
   ```typescript
   /**
    * Cycle orchestrator: resume-aware dispatcher across bench → debug-capture →
@@ -1738,10 +1735,7 @@
    */
 
   import * as colors from "@std/fmt/colors";
-  import {
-    appendEvent,
-    queryEvents,
-  } from "./event-log.ts"; // Plan A
+  import { appendEvent, queryEvents } from "./event-log.ts"; // Plan A
   import { collectEnvelope } from "./envelope.ts"; // Plan A
   import { loadIngestConfig } from "../ingest/config.ts";
   // Note: cycle-command.ts (C1) reads `lifecycle.analyzer_model` from the
@@ -1865,9 +1859,11 @@
     }>,
   ): PriorStepEvents {
     // Map step → prefix used by event_type.
-    const prefix = step === "debug-capture" ? "debug" :
-      step === "analyze" ? "analysis" :
-      step; // 'bench' or 'publish'
+    const prefix = step === "debug-capture"
+      ? "debug"
+      : step === "analyze"
+      ? "analysis"
+      : step; // 'bench' or 'publish'
     const out: PriorStepEvents = {};
     // events expected sorted DESC by ts; pick first of each kind.
     for (const e of events) {
@@ -1971,7 +1967,9 @@
         actor_id: actorId,
       }, ingestOpts);
       throw new Error(
-        `cycle: lost lock race for ${modelSlug} (winner token: ${winner?.lockToken ?? "unknown"})`,
+        `cycle: lost lock race for ${modelSlug} (winner token: ${
+          winner?.lockToken ?? "unknown"
+        })`,
       );
     }
     return { lockToken, cycleStartedEventId: startedEvent.id };
@@ -2239,13 +2237,15 @@
   }
 
   function stepEventName(step: CycleStep, kind: string): string {
-    if (step === "debug-capture") return `debug.${kind === "completed" ? "captured" : kind}`;
+    if (step === "debug-capture") {
+      return `debug.${kind === "completed" ? "captured" : kind}`;
+    }
     if (step === "analyze") return `analysis.${kind}`;
     return `${step}.${kind}`;
   }
   ```
 
-- [ ] 2. Write decision-table tests at `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-decisions.test.ts`:
+- 2. [ ] Write decision-table tests at `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-decisions.test.ts`:
   ```typescript
   import { assertEquals } from "@std/assert";
   import { decideStep } from "../../../src/lifecycle/orchestrator.ts";
@@ -2267,9 +2267,15 @@
   });
 
   Deno.test("decideStep skip when prior completed + envelope match", () => {
-    const d = decideStep("bench", {
-      completed: { id: 1, ts: 100, payload: {}, envelope: env },
-    }, false, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        completed: { id: 1, ts: 100, payload: {}, envelope: env },
+      },
+      false,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "skip");
     assertEquals(d.reason, "envelope_unchanged");
   });
@@ -2283,58 +2289,88 @@
       git_sha: "old",
       settings_hash: "h",
     };
-    const d = decideStep("bench", {
-      completed: { id: 1, ts: 100, payload: {}, envelope: oldEnv },
-    }, false, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        completed: { id: 1, ts: 100, payload: {}, envelope: oldEnv },
+      },
+      false,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "run");
   });
 
   Deno.test("decideStep retry when prior failed", () => {
-    const d = decideStep("bench", {
-      failed: { id: 1, ts: 100, payload: {} },
-    }, false, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        failed: { id: 1, ts: 100, payload: {} },
+      },
+      false,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "retry");
     assertEquals(d.reason, "prior_failure");
   });
 
   Deno.test("decideStep skip-within-ttl when prior started recently", () => {
-    const d = decideStep("bench", {
-      started: { id: 1, ts: 1000 - 30 * 60 * 1000 },
-    }, false, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        started: { id: 1, ts: 1000 - 30 * 60 * 1000 },
+      },
+      false,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "skip");
     assertEquals(d.reason, "started_within_ttl");
   });
 
   Deno.test("decideStep retry-after-ttl when started long ago", () => {
-    const d = decideStep("bench", {
-      started: { id: 1, ts: 1000 - 90 * 60 * 1000 },
-    }, false, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        started: { id: 1, ts: 1000 - 90 * 60 * 1000 },
+      },
+      false,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "retry");
     assertEquals(d.reason, "started_event_ttl_expired");
   });
 
   Deno.test("decideStep run on force_rerun regardless of completed", () => {
-    const d = decideStep("bench", {
-      completed: { id: 1, ts: 100, payload: {}, envelope: env },
-    }, true, env, 1000);
+    const d = decideStep(
+      "bench",
+      {
+        completed: { id: 1, ts: 100, payload: {}, envelope: env },
+      },
+      true,
+      env,
+      1000,
+    );
     assertEquals(d.kind, "run");
     assertEquals(d.reason, "force_rerun_flag");
   });
   ```
 
-- [ ] 3. Run unit tests:
+- 3. [ ] Run unit tests:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/orchestrator-decisions.test.ts
   ```
   Expected: 7 tests pass.
 
-- [ ] 4. Smoke-test the dry-run path end-to-end:
+- 4. [ ] Smoke-test the dry-run path end-to-end:
   ```bash
   deno task start cycle --llms anthropic/claude-opus-4-7 --dry-run
   ```
   Expected: prints `[DRY] step bench: would run (no_prior_events)` (or similar) for each step; no D1 writes.
 
-- [ ] 5. Run `deno check`, `deno lint`, `deno fmt`:
+- 5. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/orchestrator.ts tests/unit/lifecycle/orchestrator-decisions.test.ts
   deno lint src/lifecycle/orchestrator.ts tests/unit/lifecycle/orchestrator-decisions.test.ts
@@ -2346,12 +2382,13 @@
 ## Task C7 — Lock-token tiebreaker + force-unlock + TTL expiry
 
 **Files:**
+
 - `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` (already implements `acquireLock` from C6 — this task adds the TTL detection helper + force-unlock test scenario)
 - `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-lock.test.ts` (new)
 
 **Goal:** Verify the lock-token race tiebreaker. Two concurrent `runCycle` invocations against the same `(model_slug, task_set_hash)` resolve so that exactly one wins. TTL expiry produces `cycle.timed_out`. `--force-unlock` writes `cycle.aborted` with `reason='manual_unlock'`.
 
-- [ ] 1. Add a TTL-detection pass at orchestrator entry. Edit `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` to insert this near the top of `runCycle` before lock acquisition (replace the first `if (!opts.dryRun)` block in the per-model loop with the version below):
+- 1. [ ] Add a TTL-detection pass at orchestrator entry. Edit `U:\Git\CentralGauge\src\lifecycle\orchestrator.ts` to insert this near the top of `runCycle` before lock acquisition (replace the first `if (!opts.dryRun)` block in the per-model loop with the version below):
   ```typescript
   // TTL expiry detection: if there's an active cycle.started older than
   // CYCLE_TTL_SECONDS without a terminal, emit cycle.timed_out before we
@@ -2405,7 +2442,7 @@
   }
   ```
 
-- [ ] 2. Write `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-lock.test.ts`. Inject a fake `appendEvent` + `queryEvents` to simulate the D1 store. Use a shared `MockEventStore` that orders inserts by autoincrement id; test that of two concurrent `acquireLock` calls only one survives the read-back:
+- 2. [ ] Write `U:\Git\CentralGauge\tests\unit\lifecycle\orchestrator-lock.test.ts`. Inject a fake `appendEvent` + `queryEvents` to simulate the D1 store. Use a shared `MockEventStore` that orders inserts by autoincrement id; test that of two concurrent `acquireLock` calls only one survives the read-back:
   ```typescript
   import { assertEquals, assertRejects } from "@std/assert";
 
@@ -2484,12 +2521,12 @@
   });
   ```
 
-- [ ] 3. Run unit tests:
+- 3. [ ] Run unit tests:
   ```bash
   deno task test:unit -- tests/unit/lifecycle/orchestrator-lock.test.ts
   ```
 
-- [ ] 4. Run `deno check`, `deno lint`, `deno fmt`:
+- 4. [ ] Run `deno check`, `deno lint`, `deno fmt`:
   ```bash
   deno check src/lifecycle/orchestrator.ts tests/unit/lifecycle/orchestrator-lock.test.ts
   deno lint src/lifecycle/orchestrator.ts tests/unit/lifecycle/orchestrator-lock.test.ts
@@ -2501,16 +2538,17 @@
 ## Task C8 — Integration tests + dry-run + force-unlock end-to-end
 
 **Files:**
+
 - `U:\Git\CentralGauge\tests\integration\lifecycle\cycle-end-to-end.test.ts` (new)
 
 **Goal:** End-to-end coverage with all step modules mocked: skip-on-success, resume-on-failure, force-rerun, dry-run, force-unlock. Confirm event sequence written to a fake event store matches expectations.
 
-- [ ] 1. Create the integration test directory:
+- 1. [ ] Create the integration test directory:
   ```bash
   ls -d U:/Git/CentralGauge/tests/integration/lifecycle 2>/dev/null || mkdir -p U:/Git/CentralGauge/tests/integration/lifecycle
   ```
 
-- [ ] 2. Write `U:\Git\CentralGauge\tests\integration\lifecycle\cycle-end-to-end.test.ts`:
+- 2. [ ] Write `U:\Git\CentralGauge\tests\integration\lifecycle\cycle-end-to-end.test.ts`:
   ```typescript
   /**
    * Integration tests for runCycle. The orchestrator is wired against an
@@ -2521,10 +2559,7 @@
    * not the step internals (covered by C2..C5 unit tests).
    */
   import { assert, assertEquals } from "@std/assert";
-  import {
-    cleanupTempDir,
-    createTempDir,
-  } from "../../utils/test-helpers.ts";
+  import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
   interface FakeEvent {
     id: number;
@@ -2634,11 +2669,17 @@
       );
       setEventStore({
         appendEvent: (e, _opts) => {
-          writes.push({ id: priorEvents.length + writes.length + 1, ts: e.ts, ...e });
+          writes.push({
+            id: priorEvents.length + writes.length + 1,
+            ts: e.ts,
+            ...e,
+          });
           return Promise.resolve({ id: priorEvents.length + writes.length });
         },
         queryEvents: (_filter, _opts) =>
-          Promise.resolve([...writes, ...priorEvents].sort((a, b) => b.id - a.id)),
+          Promise.resolve(
+            [...writes, ...priorEvents].sort((a, b) => b.id - a.id),
+          ),
       });
       // Patch envelope.collectEnvelope to return the same envelope as prior.
       const envMod = await import("../../../src/lifecycle/envelope.ts");
@@ -2666,9 +2707,13 @@
           forceUnlock: false,
           yes: true,
         });
-        const benchSkipped = writes.find((w) => w.event_type === "bench.skipped");
+        const benchSkipped = writes.find((w) =>
+          w.event_type === "bench.skipped"
+        );
         assert(benchSkipped, "expected bench.skipped event");
-        const cycleCompleted = writes.find((w) => w.event_type === "cycle.completed");
+        const cycleCompleted = writes.find((w) =>
+          w.event_type === "cycle.completed"
+        );
         assert(cycleCompleted, "expected cycle.completed event");
       } finally {
         Deno.chdir(oldCwd);
@@ -2716,7 +2761,10 @@
         assertEquals(payload.reason, "manual_unlock");
         // Strategic-plan appendix requires actor_id on cycle.aborted; the
         // orchestrator threads operator's machine_id through.
-        assertEquals(typeof payload.actor_id === "string" || payload.actor_id === null, true);
+        assertEquals(
+          typeof payload.actor_id === "string" || payload.actor_id === null,
+          true,
+        );
       } finally {
         Deno.chdir(oldCwd);
       }
@@ -2754,11 +2802,17 @@
       );
       setEventStore({
         appendEvent: (e, _opts) => {
-          writes.push({ id: priorEvents.length + writes.length + 1, ts: e.ts, ...e });
+          writes.push({
+            id: priorEvents.length + writes.length + 1,
+            ts: e.ts,
+            ...e,
+          });
           return Promise.resolve({ id: priorEvents.length + writes.length });
         },
         queryEvents: (_filter, _opts) =>
-          Promise.resolve([...writes, ...priorEvents].sort((a, b) => b.id - a.id)),
+          Promise.resolve(
+            [...writes, ...priorEvents].sort((a, b) => b.id - a.id),
+          ),
       });
       // Stub the bench step to succeed this time.
       const benchMod = await import(
@@ -2789,7 +2843,9 @@
           yes: true,
         });
         const started = writes.find((w) => w.event_type === "bench.started");
-        const completed = writes.find((w) => w.event_type === "bench.completed");
+        const completed = writes.find((w) =>
+          w.event_type === "bench.completed"
+        );
         assert(started, "expected bench.started after prior failure");
         assert(completed, "expected bench.completed after retry");
       } finally {
@@ -2801,7 +2857,7 @@
   });
   ```
 
-- [ ] 3. Add the swappable backend to `src/lifecycle/event-log.ts` to enable the integration tests. Edit the Plan A file to expose `setEventStore`. Note: the canonical signatures are `appendEvent(input, opts)` and `queryEvents(filter, opts)` — Plan A's writer signs+POSTs to the admin endpoint based on `opts={url, keyPath, keyId}`, so the backend hook must accept the same arity:
+- 3. [ ] Add the swappable backend to `src/lifecycle/event-log.ts` to enable the integration tests. Edit the Plan A file to expose `setEventStore`. Note: the canonical signatures are `appendEvent(input, opts)` and `queryEvents(filter, opts)` — Plan A's writer signs+POSTs to the admin endpoint based on `opts={url, keyPath, keyId}`, so the backend hook must accept the same arity:
   ```typescript
   // Add near the top of src/lifecycle/event-log.ts (after imports):
   export interface EventStoreBackend {
@@ -2836,32 +2892,32 @@
   ```
   > **Coordination note:** This change overlaps with Plan A's event-log writer. If Plan A already lands `event-log.ts` without the backend hook, add the hook in this task as a small, additive PR onto `master` ahead of the C-COMMIT. The integration-test stubs ignore `opts` (they don't need URL/key plumbing).
 
-- [ ] 4. Run integration tests:
+- 4. [ ] Run integration tests:
   ```bash
   deno task test -- tests/integration/lifecycle/cycle-end-to-end.test.ts
   ```
   Expected: 4 tests pass.
 
-- [ ] 5. Run the full unit + integration test sweep for lifecycle:
+- 5. [ ] Run the full unit + integration test sweep for lifecycle:
   ```bash
   deno task test:unit
   deno task test -- tests/integration/lifecycle/
   ```
 
-- [ ] 6. Run `deno check`, `deno lint`, `deno fmt` across all new files:
+- 6. [ ] Run `deno check`, `deno lint`, `deno fmt` across all new files:
   ```bash
   deno check src/lifecycle/ cli/commands/cycle-command.ts tests/unit/lifecycle/ tests/integration/lifecycle/
   deno lint src/lifecycle/ cli/commands/cycle-command.ts tests/unit/lifecycle/ tests/integration/lifecycle/
   deno fmt src/lifecycle/ cli/commands/cycle-command.ts tests/unit/lifecycle/ tests/integration/lifecycle/
   ```
 
-- [ ] 7. End-to-end smoke against staging (manual; do NOT run against production unless coordinating with operator):
+- 7. [ ] End-to-end smoke against staging (manual; do NOT run against production unless coordinating with operator):
   ```bash
   deno task start cycle --llms anthropic/claude-opus-4-7 --dry-run
   ```
   Expected: prints plan, no writes.
 
-- [ ] 8. **C-COMMIT** — Stage and commit:
+- 8. [ ] **C-COMMIT** — Stage and commit:
   ```bash
   git add cli/commands/cycle-command.ts cli/commands/mod.ts cli/centralgauge.ts \
     src/lifecycle/orchestrator.ts src/lifecycle/orchestrator-types.ts \

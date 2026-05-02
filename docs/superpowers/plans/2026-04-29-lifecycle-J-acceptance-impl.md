@@ -24,6 +24,7 @@
 **Tech Stack:** Markdown (no toolchain change); existing project Deno test runner (`deno task test:integration`) with miniflare-style in-memory D1 used by other integration tests; existing Playwright visual-regression rig (per `site/CHANGELOG.md`'s P5.4 section — "Visual regression suite (5 pages × 2 themes × 2 densities × 1 viewport, 0.1% tolerance)"). No new dependencies.
 
 **Depends on:**
+
 - All of A–H landed and green.
 - Phase G — referenced by the operator guide (weekly cycle + digest issue).
 - The `centralgauge cycle` command's `--dry-run` flag from Phase C1.
@@ -59,7 +60,7 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
 
 - [ ] **1.1 Write `docs/site/lifecycle.md`.**
 
-  ```markdown
+  ````markdown
   # Lifecycle — operator + reviewer guide
 
   > How to run the bench → analyze → publish pipeline as a single
@@ -75,11 +76,11 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
   derived by reduction over the `lifecycle_events` table — the table is
   the source of truth, status columns do not exist:
 
-  | State | Predicate (in plain English) |
-  |---|---|
-  | `BENCHED` | At least one `bench.completed` event under the current `task_set_hash`. |
-  | `DEBUGGED` | Most-recent `bench.completed` is paired with a `debug.captured` event whose `r2_key` resolves. |
-  | `ANALYZED` | At least one `analysis.completed` event with `payload_hash` referenced by no later `analysis.failed`. |
+  | State       | Predicate (in plain English)                                                                              |
+  | ----------- | --------------------------------------------------------------------------------------------------------- |
+  | `BENCHED`   | At least one `bench.completed` event under the current `task_set_hash`.                                   |
+  | `DEBUGGED`  | Most-recent `bench.completed` is paired with a `debug.captured` event whose `r2_key` resolves.            |
+  | `ANALYZED`  | At least one `analysis.completed` event with `payload_hash` referenced by no later `analysis.failed`.     |
   | `PUBLISHED` | At least one `publish.completed` event whose `payload_hash` matches the most-recent `analysis.completed`. |
 
   States are NOT exclusive; a model can be `BENCHED + ANALYZED` without
@@ -95,6 +96,7 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
   centralgauge status --model anthropic/claude-opus-4-7
   centralgauge status --json                # machine-readable, used by weekly CI
   ```
+  ````
 
   Prints rows for every (model, task_set) with one column per state. The
   next-action hint column suggests the exact command to advance the state.
@@ -243,11 +245,11 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
   concept slug per shortcoming entry; the system clusters against
   existing concepts using a three-tier threshold:
 
-  | Cosine similarity | Action |
-  |---|---|
-  | ≥ 0.85 OR slug-equal | Auto-merge into existing concept (`concept.aliased` event). |
-  | 0.70–0.85 | Mandatory review queue (`lifecycle cluster review` interactive CLI; operator decides). |
-  | < 0.70 | Auto-create new concept (`concept.created` event). |
+  | Cosine similarity    | Action                                                                                 |
+  | -------------------- | -------------------------------------------------------------------------------------- |
+  | ≥ 0.85 OR slug-equal | Auto-merge into existing concept (`concept.aliased` event).                            |
+  | 0.70–0.85            | Mandatory review queue (`lifecycle cluster review` interactive CLI; operator decides). |
+  | < 0.70               | Auto-create new concept (`concept.created` event).                                     |
 
   Concepts are append-only — they are never DELETEd. A merge sets
   `superseded_by` on the loser; a split writes a `concept.split` event +
@@ -256,12 +258,12 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
 
   ## Configuration (`.centralgauge.yml`)
 
-  | Key | Default | Purpose |
-  |---|---|---|
-  | `lifecycle.confidence_threshold` | `0.7` | Entries below this are routed to the review queue instead of auto-publishing. |
-  | `lifecycle.cross_llm_sample_rate` | `0.2` | Fraction of analyzer entries re-checked by a second LLM. Range 0.0–1.0. |
-  | `lifecycle.weekly_stale_after_days` | `7` | Used by the weekly CI to decide which models need re-cycling. |
-  | `lifecycle.analyzer_model` | `anthropic/claude-opus-4-6` | Default analyzer model (overridable per-cycle via `--analyzer-model`). The default is set by Plan F's lifecycle config zod schema (`analyzer_model` field). |
+  | Key                                 | Default                     | Purpose                                                                                                                                                     |
+  | ----------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `lifecycle.confidence_threshold`    | `0.7`                       | Entries below this are routed to the review queue instead of auto-publishing.                                                                               |
+  | `lifecycle.cross_llm_sample_rate`   | `0.2`                       | Fraction of analyzer entries re-checked by a second LLM. Range 0.0–1.0.                                                                                     |
+  | `lifecycle.weekly_stale_after_days` | `7`                         | Used by the weekly CI to decide which models need re-cycling.                                                                                               |
+  | `lifecycle.analyzer_model`          | `anthropic/claude-opus-4-6` | Default analyzer model (overridable per-cycle via `--analyzer-model`). The default is set by Plan F's lifecycle config zod schema (`analyzer_model` field). |
 
   Pricing: at 20% sample rate, the cross-LLM second-pass adds about $3 to
   a typical 150-entry release. Cranking to 1.0 raises this to ~$15.
@@ -326,6 +328,7 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
   - Weekly CI implementation: `docs/superpowers/plans/2026-04-29-lifecycle-G-ci-impl.md`
   - Operations runbook: `docs/site/operations.md`
   ```
+  ```
 
 - [ ] **1.2 Add the file to the mkdocs nav.** Edit `mkdocs.yml`. Insert under the existing "Site" section:
 
@@ -335,7 +338,7 @@ The operator + reviewer guide. Tone: runbook, not architecture. Cross-references
         - Architecture: site/architecture.md
         - Design system: site/design-system.md
         - Operations: site/operations.md
-        - Lifecycle: site/lifecycle.md      # NEW
+        - Lifecycle: site/lifecycle.md # NEW
         - Changelog: site/changelog.md
   ```
 
@@ -389,7 +392,7 @@ Three new entries: authorize a new operator, triage a stuck cycle lock, recover 
 
 - [ ] **3.1 Edit `docs/site/operations.md`.** Append a new top-level section before the `## P5.4 final-acceptance ledger` section (which is historical):
 
-  ```markdown
+  ````markdown
   ## Lifecycle runbooks
 
   > Operator procedures for the lifecycle event log + admin surfaces
@@ -433,7 +436,8 @@ Three new entries: authorize a new operator, triage a stuck cycle lock, recover 
      ```bash
      ps aux | grep -E "centralgauge.*cycle" | grep -v grep
      ```
-     If a process is running, wait for it. Do NOT proceed.
+  ````
+  If a process is running, wait for it. Do NOT proceed.
 
   2. Confirm the stuck lock by reading the event log:
      ```bash
@@ -503,6 +507,7 @@ Three new entries: authorize a new operator, triage a stuck cycle lock, recover 
   Never DELETE from `concepts` directly. Direct deletion breaks the foreign-key
   joins from `shortcomings.concept_id` and is impossible to audit. The
   append-only invariant is the ONLY safe recovery path.
+  ```
   ```
 
 - [ ] **3.2 Verify links resolve.** `grep -E '\(docs/' docs/site/operations.md` lists in-tree references; spot-check that each target file exists.
@@ -624,8 +629,15 @@ A test that runs `cycle --dry-run` against an in-memory D1 and asserts the synth
         // see src/lifecycle/orchestrator.ts test-only options.
         stubSteps: {
           bench: { runs_count: 1, tasks_count: 50 },
-          debug: { session_id: "fixture-session", r2_key: "lifecycle/debug/.../fixture.tar.zst" },
-          analyze: { entries_count: 5, min_confidence: 0.91, payload_hash: "abc123" },
+          debug: {
+            session_id: "fixture-session",
+            r2_key: "lifecycle/debug/.../fixture.tar.zst",
+          },
+          analyze: {
+            entries_count: 5,
+            min_confidence: 0.91,
+            payload_hash: "abc123",
+          },
           publish: { upserted: 5, occurrences: 7 },
         },
       });
@@ -644,7 +656,7 @@ A test that runs `cycle --dry-run` against an in-memory D1 and asserts the synth
         analyzerModel: "anthropic/claude-opus-4-6",
         dryRun: false,
         nonInteractive: true,
-        stubSteps: r1.stubSteps,    // identical envelope
+        stubSteps: r1.stubSteps, // identical envelope
       });
       assertEquals(r2.exitCode, 0);
 
@@ -661,9 +673,15 @@ A test that runs `cycle --dry-run` against an in-memory D1 and asserts the synth
 
       // Both skipped events carry reason='envelope_unchanged' (or
       // reason='payload_unchanged' for publish — see Event types appendix).
-      const benchPayload = JSON.parse(skipped.find((e) => e.event_type === "bench.skipped")!.payload_json ?? "{}");
+      const benchPayload = JSON.parse(
+        skipped.find((e) => e.event_type === "bench.skipped")!.payload_json ??
+          "{}",
+      );
       assertEquals(benchPayload.reason, "envelope_unchanged");
-      const publishPayload = JSON.parse(skipped.find((e) => e.event_type === "publish.skipped")!.payload_json ?? "{}");
+      const publishPayload = JSON.parse(
+        skipped.find((e) => e.event_type === "publish.skipped")!.payload_json ??
+          "{}",
+      );
       assertEquals(publishPayload.reason, "payload_unchanged");
     } finally {
       await d1.close();
@@ -730,6 +748,7 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
   same view.
 
   ### Added
+
   - D1 migration `0006_lifecycle.sql` — `lifecycle_events`, `concepts`,
     `concept_aliases`, `pending_review`, `v_lifecycle_state` view; FK
     columns on `shortcomings` (Phase A1).
@@ -760,12 +779,13 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
     stuck cycle lock, recover from a bad concept merge (Phase J3).
 
   ### Changed
+
   - `verify` writes the production-vendor-prefixed slug into
     `model-shortcomings/*.json` directly (no transformation at populate
     time) (Phase B3).
   - `populate-shortcomings` is pass-through; the legacy `VENDOR_PREFIX_MAP`
-    + the 4 hardcoded mappings + the 6 unmapped legacy snapshots all retired
-    (Phase B2 + B4).
+    - the 4 hardcoded mappings + the 6 unmapped legacy snapshots all retired
+      (Phase B2 + B4).
   - `/api/v1/shortcomings/batch` accepts `concept_slug_proposed`; resolves
     to `concept_id` server-side; the legacy per-model `concept` field is
     deprecated and accepted only during the transition window (Phase D3).
@@ -773,6 +793,7 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
     filters out superseded concepts.
 
   ### Backfilled
+
   - ~64 synthetic lifecycle events for every (model, task_set) pair with
     historical bench / analysis / publish artifacts (Phase B1, B5, B6).
     Pre-P6 runs use sentinel `task_set_hash='pre-p6-unknown'` and surface
@@ -781,12 +802,14 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
     slugs (Phase B2). The 6 previously-unmapped files are now uploadable.
 
   ### Operator
+
   - `CLAUDE.md` gained a `## Lifecycle` section (Phase J2).
   - `docs/site/operations.md` gained the three runbooks (Phase J3).
   - The recommended onboarding command for a new model is now
     `centralgauge cycle --llms <slug>` (replaces the manual six-step flow).
 
   ### Out of scope (deferred to follow-up)
+
   - `/concepts/<slug>` public page (the schema work is done; route + UI
     are a separate plan).
   - Reproduction-bundle download UX.
@@ -845,7 +868,7 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
   matrix that public pages get).
 
 - [ ] **6.3 Manually verify each rendered screenshot matches design intent
-  before committing.** Open each `.png`. Check:
+      before committing.** Open each `.png`. Check:
   - `/admin/lifecycle/status` — matrix renders, no missing cells, color
     legend visible.
   - `/admin/lifecycle/review` — pending row visible (seeded by `seed:e2e`),
@@ -883,16 +906,16 @@ Two files: `site/CHANGELOG.md` (project-level, all changes) and `docs/site/chang
 
 - [ ] **7.1 Cross-cut acceptance — full A–H sweep.**
 
-  | Phase | Acceptance assertion |
-  |---|---|
-  | A | `centralgauge lifecycle event-log --model anthropic/claude-opus-4-6` returns events. |
-  | B | All 15 `model-shortcomings/*.json` files use vendor-prefixed slugs. `populate-shortcomings --only openrouter/deepseek/deepseek-v3.2` succeeds. |
-  | C | `centralgauge cycle --llms anthropic/claude-opus-4-7 --dry-run` prints the plan; without `--dry-run` runs end-to-end; killed mid-run + restarted resumes from last successful step. |
-  | D | `SELECT COUNT(DISTINCT concept_id) FROM shortcomings` matches `concepts` count. `/api/v1/concepts/flowfield-calcfields-requirement` lists every model that hit it. |
-  | E | `/families/anthropic/claude-opus` shows a "Concept trajectory" section when both gen-4-6 and gen-4-7 have analysis events with the same analyzer. |
-  | F | A hallucinated entry routes to `/admin/lifecycle/review`; accepting writes `analysis.accepted` event + `shortcomings` row; rejecting writes `analysis.rejected` event. |
-  | G | Manual `gh workflow run weekly-cycle.yml` completes; sticky issue created with the digest. |
-  | H | `centralgauge status` prints the matrix; `centralgauge status --json` validates against the documented schema. |
+  | Phase | Acceptance assertion                                                                                                                                                                |
+  | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | A     | `centralgauge lifecycle event-log --model anthropic/claude-opus-4-6` returns events.                                                                                                |
+  | B     | All 15 `model-shortcomings/*.json` files use vendor-prefixed slugs. `populate-shortcomings --only openrouter/deepseek/deepseek-v3.2` succeeds.                                      |
+  | C     | `centralgauge cycle --llms anthropic/claude-opus-4-7 --dry-run` prints the plan; without `--dry-run` runs end-to-end; killed mid-run + restarted resumes from last successful step. |
+  | D     | `SELECT COUNT(DISTINCT concept_id) FROM shortcomings` matches `concepts` count. `/api/v1/concepts/flowfield-calcfields-requirement` lists every model that hit it.                  |
+  | E     | `/families/anthropic/claude-opus` shows a "Concept trajectory" section when both gen-4-6 and gen-4-7 have analysis events with the same analyzer.                                   |
+  | F     | A hallucinated entry routes to `/admin/lifecycle/review`; accepting writes `analysis.accepted` event + `shortcomings` row; rejecting writes `analysis.rejected` event.              |
+  | G     | Manual `gh workflow run weekly-cycle.yml` completes; sticky issue created with the digest.                                                                                          |
+  | H     | `centralgauge status` prints the matrix; `centralgauge status --json` validates against the documented schema.                                                                      |
 
 - [ ] **7.2 Run the full check suite.**
 

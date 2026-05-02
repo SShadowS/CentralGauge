@@ -55,29 +55,29 @@ P5 builds the public-facing UI: a SvelteKit app on the same Cloudflare Worker, r
 
 All pinned to latest available 2026-04-27. New deps in **bold**.
 
-| Package | Version | Type |
-|---------|---------|------|
-| svelte | ^5.55.5 | bump |
-| @sveltejs/kit | ^2.58.0 | bump |
-| @sveltejs/adapter-cloudflare | ^7.2.8 | current |
-| @sveltejs/vite-plugin-svelte | ^7.0.0 | current |
-| vite | ^8.0.10 | bump |
-| vitest | ^4.1.5 | bump |
-| @cloudflare/vitest-pool-workers | ^0.15.0 | bump (explicit, 0.x caret doesn't auto) |
-| svelte-check | ^4.4.6 | current |
-| typescript | ^6.0.3 | current |
-| wrangler | ^4.85.0 | bump |
-| @types/node | ^25.6.0 | current |
-| **d3-shape** | **^3.2.0** | new runtime |
-| **marked** | **^18.0.2** | new runtime |
-| **dompurify** | **^3.4.1** | new runtime |
-| **@cf-wasm/og** | **^0.3.7** | new runtime (server-only) |
-| **@playwright/test** | **^1.59.1** | new dev |
-| **@axe-core/playwright** | **^4.11.2** | new dev |
-| **@testing-library/svelte** | **^5.3.1** | new dev |
-| **@types/d3-shape** | **^3.1.8** | new dev |
-| **@types/dompurify** | **^3.2.0** | new dev |
-| **@lhci/cli** | **^0.15.1** | new dev |
+| Package                         | Version     | Type                                    |
+| ------------------------------- | ----------- | --------------------------------------- |
+| svelte                          | ^5.55.5     | bump                                    |
+| @sveltejs/kit                   | ^2.58.0     | bump                                    |
+| @sveltejs/adapter-cloudflare    | ^7.2.8      | current                                 |
+| @sveltejs/vite-plugin-svelte    | ^7.0.0      | current                                 |
+| vite                            | ^8.0.10     | bump                                    |
+| vitest                          | ^4.1.5      | bump                                    |
+| @cloudflare/vitest-pool-workers | ^0.15.0     | bump (explicit, 0.x caret doesn't auto) |
+| svelte-check                    | ^4.4.6      | current                                 |
+| typescript                      | ^6.0.3      | current                                 |
+| wrangler                        | ^4.85.0     | bump                                    |
+| @types/node                     | ^25.6.0     | current                                 |
+| **d3-shape**                    | **^3.2.0**  | new runtime                             |
+| **marked**                      | **^18.0.2** | new runtime                             |
+| **dompurify**                   | **^3.4.1**  | new runtime                             |
+| **@cf-wasm/og**                 | **^0.3.7**  | new runtime (server-only)               |
+| **@playwright/test**            | **^1.59.1** | new dev                                 |
+| **@axe-core/playwright**        | **^4.11.2** | new dev                                 |
+| **@testing-library/svelte**     | **^5.3.1**  | new dev                                 |
+| **@types/d3-shape**             | **^3.1.8**  | new dev                                 |
+| **@types/dompurify**            | **^3.2.0**  | new dev                                 |
+| **@lhci/cli**                   | **^0.15.1** | new dev                                 |
 
 **Versioning rule for the project:** when adding deps, run `npm view <pkg> version` first; pin `^<latest>`. Document the latest-known version in commit messages.
 
@@ -202,17 +202,17 @@ Refactor as the first task of P5.1 implementation: extract every read-endpoint r
 
 ### 5.4 URL parameter conventions
 
-| Param | Form | Default | Routes |
-|-------|------|---------|--------|
-| `set` | `current\|all` | `current` | leaderboard, models |
-| `tier` | `all\|verified\|claimed` | `all` | leaderboard, runs |
-| `difficulty` | `easy\|medium\|hard` | absent (all) | leaderboard, tasks |
-| `family` | slug | absent | leaderboard, models |
-| `since` | ISO date | absent | leaderboard, runs |
-| `sort` | `field:dir` | per-page default | leaderboard, models, runs |
-| `cursor` | opaque | absent | any paginated list |
-| `models` | comma-list of slugs | n/a | `/compare` |
-| `q` | URL-encoded | required | `/search` |
+| Param        | Form                     | Default          | Routes                    |
+| ------------ | ------------------------ | ---------------- | ------------------------- |
+| `set`        | `current\|all`           | `current`        | leaderboard, models       |
+| `tier`       | `all\|verified\|claimed` | `all`            | leaderboard, runs         |
+| `difficulty` | `easy\|medium\|hard`     | absent (all)     | leaderboard, tasks        |
+| `family`     | slug                     | absent           | leaderboard, models       |
+| `since`      | ISO date                 | absent           | leaderboard, runs         |
+| `sort`       | `field:dir`              | per-page default | leaderboard, models, runs |
+| `cursor`     | opaque                   | absent           | any paginated list        |
+| `models`     | comma-list of slugs      | n/a              | `/compare`                |
+| `q`          | URL-encoded              | required         | `/search`                 |
 
 State NOT in URL: theme, density, expanded sections, palette open. These live in localStorage or component state.
 
@@ -266,27 +266,49 @@ Synthesis of `pkg.go.dev` (clarity), `Linear` (restraint), `gwern.net` (density)
 
 ```css
 /* light (default) — :root */
---bg: #ffffff;             --surface: #fafafa;          --surface-elevated: #ffffff;
---text: #0a0a0a;           --text-muted: #525252;       --text-faint: #a3a3a3;
---border: #e5e5e5;         --border-strong: #a3a3a3;
---accent: #0a4dff;         --accent-fg: #ffffff;        --accent-soft: #ebf1ff;
---success: #0a7d3a;        --warning: #d97706;          --danger: #c2261c;
---tier-verified: #0a7d3a;  --tier-claimed: #525252;
+--bg: #ffffff;
+--surface: #fafafa;
+--surface-elevated: #ffffff;
+--text: #0a0a0a;
+--text-muted: #525252;
+--text-faint: #a3a3a3;
+--border: #e5e5e5;
+--border-strong: #a3a3a3;
+--accent: #0a4dff;
+--accent-fg: #ffffff;
+--accent-soft: #ebf1ff;
+--success: #0a7d3a;
+--warning: #d97706;
+--danger: #c2261c;
+--tier-verified: #0a7d3a;
+--tier-claimed: #525252;
 --code-bg: #f5f5f5;
---diff-add: #d4f5dd;       --diff-remove: #fce0e0;
+--diff-add: #d4f5dd;
+--diff-remove: #fce0e0;
 --selection: #c5d6ff;
 ```
 
 ```css
 /* dark — [data-theme="dark"] */
---bg: #0a0a0a;             --surface: #141414;          --surface-elevated: #1a1a1a;
---text: #fafafa;           --text-muted: #a3a3a3;       --text-faint: #525252;
---border: #2a2a2a;         --border-strong: #525252;
---accent: #4d7fff;         --accent-fg: #0a0a0a;        --accent-soft: #1a2a52;
---success: #4dbb6f;        --warning: #f59f0e;          --danger: #ef5046;
---tier-verified: #4dbb6f;  --tier-claimed: #a3a3a3;
+--bg: #0a0a0a;
+--surface: #141414;
+--surface-elevated: #1a1a1a;
+--text: #fafafa;
+--text-muted: #a3a3a3;
+--text-faint: #525252;
+--border: #2a2a2a;
+--border-strong: #525252;
+--accent: #4d7fff;
+--accent-fg: #0a0a0a;
+--accent-soft: #1a2a52;
+--success: #4dbb6f;
+--warning: #f59f0e;
+--danger: #ef5046;
+--tier-verified: #4dbb6f;
+--tier-claimed: #a3a3a3;
 --code-bg: #1a1a1a;
---diff-add: #1a3a26;       --diff-remove: #3a1a1a;
+--diff-add: #1a3a26;
+--diff-remove: #3a1a1a;
 --selection: #1a3a7d;
 ```
 
@@ -295,44 +317,90 @@ Synthesis of `pkg.go.dev` (clarity), `Linear` (restraint), `gwern.net` (density)
 #### Typography (system stacks)
 
 ```css
---font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
---font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+--font-sans:
+  -apple-system,
+  BlinkMacSystemFont,
+  "Segoe UI",
+  system-ui,
+  sans-serif;
+--font-mono:
+  ui-monospace,
+  SFMono-Regular,
+  "SF Mono",
+  Menlo,
+  Consolas,
+  monospace;
 
 /* modular scale, ratio 1.25 */
---text-xs:   0.75rem;  /* 12 */   --leading-xs:   1rem;
---text-sm:   0.875rem; /* 14 */   --leading-sm:   1.25rem;
---text-base: 1rem;     /* 16 */   --leading-base: 1.5rem;
---text-lg:   1.125rem; /* 18 */   --leading-lg:   1.75rem;
---text-xl:   1.25rem;  /* 20 */   --leading-xl:   1.75rem;
---text-2xl:  1.5rem;   /* 24 */   --leading-2xl:  2rem;
---text-3xl:  2rem;     /* 32 */   --leading-3xl:  2.5rem;
+--text-xs: 0.75rem; /* 12 */
+--leading-xs: 1rem;
+--text-sm: 0.875rem; /* 14 */
+--leading-sm: 1.25rem;
+--text-base: 1rem; /* 16 */
+--leading-base: 1.5rem;
+--text-lg: 1.125rem; /* 18 */
+--leading-lg: 1.75rem;
+--text-xl: 1.25rem; /* 20 */
+--leading-xl: 1.75rem;
+--text-2xl: 1.5rem; /* 24 */
+--leading-2xl: 2rem;
+--text-3xl: 2rem; /* 32 */
+--leading-3xl: 2.5rem;
 
---weight-regular: 400;  --weight-medium: 500;  --weight-semi: 600;
---tracking-tight: -0.01em;  --tracking-base: 0;  --tracking-wide: 0.02em;
+--weight-regular: 400;
+--weight-medium: 500;
+--weight-semi: 600;
+--tracking-tight: -0.01em;
+--tracking-base: 0;
+--tracking-wide: 0.02em;
 ```
 
 #### Space (4 px base)
 
 ```css
---space-0: 0;          --space-1: 0.125rem;   --space-2: 0.25rem;
---space-3: 0.5rem;     --space-4: 0.75rem;    --space-5: 1rem;
---space-6: 1.5rem;     --space-7: 2rem;       --space-8: 3rem;
---space-9: 4rem;       --space-10: 6rem;
+--space-0: 0;
+--space-1: 0.125rem;
+--space-2: 0.25rem;
+--space-3: 0.5rem;
+--space-4: 0.75rem;
+--space-5: 1rem;
+--space-6: 1.5rem;
+--space-7: 2rem;
+--space-8: 3rem;
+--space-9: 4rem;
+--space-10: 6rem;
 ```
 
 #### Radius, motion, z-index, layout
 
 ```css
---radius-0: 0;  --radius-1: 2px;  --radius-2: 4px;  --radius-pill: 9999px;
---duration-fast: 100ms;  --duration-base: 150ms;  --duration-slow: 250ms;
+--radius-0: 0;
+--radius-1: 2px;
+--radius-2: 4px;
+--radius-pill: 9999px;
+--duration-fast: 100ms;
+--duration-base: 150ms;
+--duration-slow: 250ms;
 --ease: cubic-bezier(0.16, 1, 0.3, 1);
---z-base: 0; --z-sticky: 10; --z-nav: 50; --z-popover: 60;
---z-toast: 100; --z-modal: 200; --z-tooltip: 300;
---container-narrow: 768px; --container-base: 1280px; --container-wide: 1536px;
---nav-h: 56px; --filter-rail-w: 320px;
+--z-base: 0;
+--z-sticky: 10;
+--z-nav: 50;
+--z-popover: 60;
+--z-toast: 100;
+--z-modal: 200;
+--z-tooltip: 300;
+--container-narrow: 768px;
+--container-base: 1280px;
+--container-wide: 1536px;
+--nav-h: 56px;
+--filter-rail-w: 320px;
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --duration-fast: 0ms; --duration-base: 0ms; --duration-slow: 0ms; }
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
 }
 ```
 
@@ -342,27 +410,27 @@ Breakpoints (used in `@media`): `sm: 640`, `md: 768`, `lg: 1024`, `xl: 1280`, `2
 
 `src/lib/components/ui/`:
 
-| Component | Variants | Notes |
-|-----------|----------|-------|
-| Button | primary / secondary / ghost / danger × sm / md / lg | `<a>`-as-button via `as` prop; loading state; disabled honors aria-disabled |
-| Input | text / number / search / select | Inline/floating label; error state; mono variant for sha/keys |
-| Checkbox | default / indeterminate | Native `<input>` + custom-painted indicator |
-| Radio | default | Grouped via `<fieldset>` |
-| Tag | neutral / accent / success / warning / danger | Read-only label |
-| Badge | tier-verified / tier-claimed / status | Tier badges show ✓ when verified |
-| Card | default / elevated | Bordered surface; optional header/footer slots |
-| Tabs | default / underline | Keyboard arrow nav, aria-tabpanel |
-| Toast | info / success / warning / error | Auto-dismiss, polite live region |
-| Alert | info / success / warning / error | Inline, persistent |
-| Skeleton | text / table-row / chart | Shimmer disabled by reduced-motion |
-| Code | inline / block | Mono, code-bg surface; block has copy |
-| Diff | unified / split | `+`/`-` lines via diff-add/remove tokens |
-| Sparkline | line / bar | SVG primitive; aria-label with summary stats |
-| Modal | — | Focus-trap, esc, scroll lock, focus restore |
-| Dialog | — | Modal variant for confirmations (reserved for P6+ writes) |
-| Tooltip | — | `aria-describedby`; 500 ms hover; touch shows on tap |
-| Spinner | — | SVG, opacity pulse under reduced-motion |
-| Popover | — | Hand-rolled positioner |
+| Component | Variants                                            | Notes                                                                       |
+| --------- | --------------------------------------------------- | --------------------------------------------------------------------------- |
+| Button    | primary / secondary / ghost / danger × sm / md / lg | `<a>`-as-button via `as` prop; loading state; disabled honors aria-disabled |
+| Input     | text / number / search / select                     | Inline/floating label; error state; mono variant for sha/keys               |
+| Checkbox  | default / indeterminate                             | Native `<input>` + custom-painted indicator                                 |
+| Radio     | default                                             | Grouped via `<fieldset>`                                                    |
+| Tag       | neutral / accent / success / warning / danger       | Read-only label                                                             |
+| Badge     | tier-verified / tier-claimed / status               | Tier badges show ✓ when verified                                            |
+| Card      | default / elevated                                  | Bordered surface; optional header/footer slots                              |
+| Tabs      | default / underline                                 | Keyboard arrow nav, aria-tabpanel                                           |
+| Toast     | info / success / warning / error                    | Auto-dismiss, polite live region                                            |
+| Alert     | info / success / warning / error                    | Inline, persistent                                                          |
+| Skeleton  | text / table-row / chart                            | Shimmer disabled by reduced-motion                                          |
+| Code      | inline / block                                      | Mono, code-bg surface; block has copy                                       |
+| Diff      | unified / split                                     | `+`/`-` lines via diff-add/remove tokens                                    |
+| Sparkline | line / bar                                          | SVG primitive; aria-label with summary stats                                |
+| Modal     | —                                                   | Focus-trap, esc, scroll lock, focus restore                                 |
+| Dialog    | —                                                   | Modal variant for confirmations (reserved for P6+ writes)                   |
+| Tooltip   | —                                                   | `aria-describedby`; 500 ms hover; touch shows on tap                        |
+| Spinner   | —                                                   | SVG, opacity pulse under reduced-motion                                     |
+| Popover   | —                                                   | Hand-rolled positioner                                                      |
 
 ### 6.5 Domain widgets (composed)
 
@@ -525,24 +593,24 @@ Every page uses `+page.server.ts` with `event.fetch` for internal API calls. `de
 
 ### 8.3 Per-route loaders + invalidation tags
 
-| Route | Loader | Tracked dep |
-|-------|--------|-------------|
-| `/` | `/api/v1/leaderboard?...` | `app:leaderboard` |
-| `/models` | `/api/v1/models` | `app:models` |
-| `/models/:slug` | `/api/v1/models/:slug` | `app:model:<slug>` |
-| `/models/:slug/limitations` | `/api/v1/models/:slug/limitations` | static |
-| `/families` | `/api/v1/families` | `app:families` |
-| `/families/:slug` | `/api/v1/families/:slug` | `app:family:<slug>` |
-| `/runs` | `/api/v1/runs?...` | `app:runs` |
-| `/runs/:id` | `/api/v1/runs/:id` | `app:run:<id>` |
-| `/runs/:id/transcripts/...` | `/api/v1/transcripts/:key` | static (content-addressed) |
-| `/runs/:id/signature` | `/api/v1/runs/:id/signature` | static (content-addressed) |
-| `/tasks` | `/api/v1/tasks?...` | `app:tasks` |
-| `/tasks/:id` | `/api/v1/tasks/:id` | `app:task:<id>` |
-| `/compare` | `/api/v1/compare?models=...` | `app:compare:<sorted>` |
-| `/search` | `/api/v1/search?q=...` | `app:search:<q>` |
-| `/limitations` | `/api/v1/shortcomings/batch` | `app:shortcomings` |
-| `/about` | (none — prerender) | static |
+| Route                       | Loader                             | Tracked dep                |
+| --------------------------- | ---------------------------------- | -------------------------- |
+| `/`                         | `/api/v1/leaderboard?...`          | `app:leaderboard`          |
+| `/models`                   | `/api/v1/models`                   | `app:models`               |
+| `/models/:slug`             | `/api/v1/models/:slug`             | `app:model:<slug>`         |
+| `/models/:slug/limitations` | `/api/v1/models/:slug/limitations` | static                     |
+| `/families`                 | `/api/v1/families`                 | `app:families`             |
+| `/families/:slug`           | `/api/v1/families/:slug`           | `app:family:<slug>`        |
+| `/runs`                     | `/api/v1/runs?...`                 | `app:runs`                 |
+| `/runs/:id`                 | `/api/v1/runs/:id`                 | `app:run:<id>`             |
+| `/runs/:id/transcripts/...` | `/api/v1/transcripts/:key`         | static (content-addressed) |
+| `/runs/:id/signature`       | `/api/v1/runs/:id/signature`       | static (content-addressed) |
+| `/tasks`                    | `/api/v1/tasks?...`                | `app:tasks`                |
+| `/tasks/:id`                | `/api/v1/tasks/:id`                | `app:task:<id>`            |
+| `/compare`                  | `/api/v1/compare?models=...`       | `app:compare:<sorted>`     |
+| `/search`                   | `/api/v1/search?q=...`             | `app:search:<q>`           |
+| `/limitations`              | `/api/v1/shortcomings/batch`       | `app:shortcomings`         |
+| `/about`                    | (none — prerender)                 | static                     |
 
 ### 8.4 Client-side update triggers
 
@@ -556,34 +624,34 @@ No `setInterval` polling. No client-only fetches outside these paths.
 
 ### 8.5 SSE per-route subscription
 
-| Route | Subscribes? | Trigger |
-|-------|-------------|---------|
-| `/` | yes | `run_finalized` → invalidate `app:leaderboard` + animate row |
-| `/runs` | yes | `run_finalized` → prepend row + invalidate |
-| `/runs/:id` | yes (only if pending/running) | status updates → invalidate `app:run:<id>` |
-| `/models/:slug` | yes | `run_finalized` matching `model_slug` → invalidate |
-| `/families/:slug` | yes | `run_finalized` matching family member → invalidate |
-| Others | no | static or query-driven |
+| Route             | Subscribes?                   | Trigger                                                      |
+| ----------------- | ----------------------------- | ------------------------------------------------------------ |
+| `/`               | yes                           | `run_finalized` → invalidate `app:leaderboard` + animate row |
+| `/runs`           | yes                           | `run_finalized` → prepend row + invalidate                   |
+| `/runs/:id`       | yes (only if pending/running) | status updates → invalidate `app:run:<id>`                   |
+| `/models/:slug`   | yes                           | `run_finalized` matching `model_slug` → invalidate           |
+| `/families/:slug` | yes                           | `run_finalized` matching family member → invalidate          |
+| Others            | no                            | static or query-driven                                       |
 
 ### 8.6 SSE connection management
 
 Single shared `EventSource` per page. 3-retry exponential backoff (1 s, 3 s, 10 s). Status indicator next to "Last run":
 
-| State | Indicator | Behaviour |
-|-------|-----------|-----------|
-| `connected` | green dot | Live updates flowing |
-| `reconnecting` | yellow dot + spinner | Page functional with last-known data |
+| State          | Indicator            | Behaviour                                 |
+| -------------- | -------------------- | ----------------------------------------- |
+| `connected`    | green dot            | Live updates flowing                      |
+| `reconnecting` | yellow dot + spinner | Page functional with last-known data      |
 | `disconnected` | gray dot, no spinner | Page passive, manual refresh button shown |
 
 Reduced-motion: row-highlight animations disabled; new rows just appear.
 
 ### 8.7 Caching layers
 
-| Layer | Location | TTL | Invalidation |
-|-------|----------|-----|--------------|
-| L1: Cache API (`caches.open(...)`) | Per-colo, edge | 60 s s-maxage | None cross-colo; TTL only |
-| L2: SvelteKit `load` deduping | Per-request | Single request | Automatic |
-| L3: Browser HTTP cache + ETag | Per-client | `private, max-age=60` | `If-None-Match` 304 |
+| Layer                              | Location       | TTL                   | Invalidation              |
+| ---------------------------------- | -------------- | --------------------- | ------------------------- |
+| L1: Cache API (`caches.open(...)`) | Per-colo, edge | 60 s s-maxage         | None cross-colo; TTL only |
+| L2: SvelteKit `load` deduping      | Per-request    | Single request        | Automatic                 |
+| L3: Browser HTTP cache + ETag      | Per-client     | `private, max-age=60` | `If-None-Match` 304       |
 
 Each read endpoint gets its own named cache (`cg-leaderboard`, `cg-models`, `cg-runs`, etc.) to avoid the `caches.default` adapter-cloudflare collision documented in `CLAUDE.md`. `await cache.put(...)` inline (not `ctx.waitUntil`) for test determinism.
 
@@ -598,6 +666,7 @@ Read-only site. Every UI action is either navigation (URL change → load → se
 **Loading:** SSR-first — no skeleton on first paint. Filter/sort change shows in-place skeleton via `$navigating`. Lazy sections show `Skeleton` component while fetch resolves. Skeletons match real content dimensions; no layout shift.
 
 **Errors:**
+
 - API 4xx/5xx → `error()` in load → `+error.svelte`
 - Network error → caught in load → "Couldn't reach server. Retrying…" with auto-retry
 - Component crash → root error boundary → generic error page
@@ -610,12 +679,12 @@ Read-only site. Every UI action is either navigation (URL change → load → se
 export default {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter({ routes: { include: ['/*'], exclude: ['<all>'] } }),
-    alias: { $lib: 'src/lib', $shared: 'src/lib/shared' },
+    adapter: adapter({ routes: { include: ["/*"], exclude: ["<all>"] } }),
+    alias: { $lib: "src/lib", $shared: "src/lib/shared" },
     csrf: { checkOrigin: true },
     inlineStyleThreshold: 4096,
-    output: { preloadStrategy: 'modulepreload' },
-    prerender: { entries: ['/about'] },
+    output: { preloadStrategy: "modulepreload" },
+    prerender: { entries: ["/about"] },
   },
 };
 ```
@@ -626,35 +695,35 @@ Vite adds `build.target: 'es2022'`, `build.cssMinify: 'lightningcss'`.
 
 ### 9.1 Lighthouse targets (CI-enforced)
 
-| Metric | Min |
-|--------|-----|
-| Performance | 95 |
-| Accessibility | 100 |
-| Best Practices | 95 |
-| SEO | 95 |
+| Metric         | Min |
+| -------------- | --- |
+| Performance    | 95  |
+| Accessibility  | 100 |
+| Best Practices | 95  |
+| SEO            | 95  |
 
 ### 9.2 Core Web Vitals (p75 RUM + Lighthouse)
 
-| Metric | Target | Stretch |
-|--------|--------|---------|
-| LCP | < 1.5 s | < 1.0 s |
-| INP | < 200 ms | < 100 ms |
-| CLS | < 0.05 | 0 |
-| FCP | < 1.0 s | < 0.5 s |
-| TTFB | < 100 ms | < 50 ms |
+| Metric | Target   | Stretch  |
+| ------ | -------- | -------- |
+| LCP    | < 1.5 s  | < 1.0 s  |
+| INP    | < 200 ms | < 100 ms |
+| CLS    | < 0.05   | 0        |
+| FCP    | < 1.0 s  | < 0.5 s  |
+| TTFB   | < 100 ms | < 50 ms  |
 
 ### 9.3 Bundle budgets
 
-| Asset | Limit |
-|-------|-------|
-| Initial JS (homepage) | 50 KB gz |
-| Initial CSS (all pages) | 20 KB gz |
-| Per-page JS | 20 KB gz |
-| `marked` + `DOMPurify` (lazy) | 30 KB gz |
-| `@noble/ed25519` (lazy) | 12 KB gz |
-| `d3-shape` (lazy) | 10 KB gz |
-| `fzstd` (lazy) | 6 KB gz |
-| `@cf-wasm/og` | 0 KB on client (server-only) |
+| Asset                         | Limit                        |
+| ----------------------------- | ---------------------------- |
+| Initial JS (homepage)         | 50 KB gz                     |
+| Initial CSS (all pages)       | 20 KB gz                     |
+| Per-page JS                   | 20 KB gz                     |
+| `marked` + `DOMPurify` (lazy) | 30 KB gz                     |
+| `@noble/ed25519` (lazy)       | 12 KB gz                     |
+| `d3-shape` (lazy)             | 10 KB gz                     |
+| `fzstd` (lazy)                | 6 KB gz                      |
+| `@cf-wasm/og`                 | 0 KB on client (server-only) |
 
 `scripts/check-bundle-budget.ts` parses `vite build` manifest; CI fails on excess.
 
@@ -682,13 +751,13 @@ SSR everywhere · Cache API L1 · HTTP/3 + Brotli · inline critical CSS · modu
 
 ### 9.6 axe-core + checks in CI
 
-| Check | Tool |
-|-------|------|
-| Contrast pairs | `scripts/check-contrast.ts` |
-| Full a11y audit | `@axe-core/playwright` per page |
-| Keyboard nav | Playwright tab-driven flows |
+| Check               | Tool                             |
+| ------------------- | -------------------------------- |
+| Contrast pairs      | `scripts/check-contrast.ts`      |
+| Full a11y audit     | `@axe-core/playwright` per page  |
+| Keyboard nav        | Playwright tab-driven flows      |
 | Screen reader smoke | Playwright + `aria-live` capture |
-| Lighthouse a11y | `@lhci/cli` |
+| Lighthouse a11y     | `@lhci/cli`                      |
 
 axe-core fails the build on any **serious** or **critical** violation. **Moderate** logged as PR comment, non-blocking.
 
@@ -704,13 +773,13 @@ All targets above apply to mobile (Lighthouse default Moto G Power Slow 4G). Tou
 
 ### 10.1 Five layers
 
-| Layer | Tooling | Purpose |
-|-------|---------|---------|
-| Unit | vitest | Pure logic (formatters, fuzzy match, type guards, signature helpers) |
-| Component | `@testing-library/svelte` | Behavior-bearing components (Modal, Tabs, Tooltip, CommandPalette, LeaderboardTable, TranscriptViewer, SignaturePanel) |
-| Integration | `@cloudflare/vitest-pool-workers` | Worker endpoints (existing pattern, ≥ 234 tests) |
-| E2E | `@playwright/test` | Full user flows (golden-path / cmd-k / sse / keyboard / a11y / visual / responsive / print) |
-| Lighthouse CI | `@lhci/cli` | Performance + a11y budgets per deploy |
+| Layer         | Tooling                           | Purpose                                                                                                                |
+| ------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Unit          | vitest                            | Pure logic (formatters, fuzzy match, type guards, signature helpers)                                                   |
+| Component     | `@testing-library/svelte`         | Behavior-bearing components (Modal, Tabs, Tooltip, CommandPalette, LeaderboardTable, TranscriptViewer, SignaturePanel) |
+| Integration   | `@cloudflare/vitest-pool-workers` | Worker endpoints (existing pattern, ≥ 234 tests)                                                                       |
+| E2E           | `@playwright/test`                | Full user flows (golden-path / cmd-k / sse / keyboard / a11y / visual / responsive / print)                            |
+| Lighthouse CI | `@lhci/cli`                       | Performance + a11y budgets per deploy                                                                                  |
 
 ### 10.2 E2E suite list
 
@@ -749,9 +818,9 @@ Baselines in `tests/e2e/__screenshots__/`. Updates require deliberate human comm
 
 Single worker. Two URL surfaces:
 
-| URL | Purpose |
-|-----|---------|
-| `https://centralgauge.sshadows.workers.dev/` | Production |
+| URL                                                           | Purpose                                                                            |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `https://centralgauge.sshadows.workers.dev/`                  | Production                                                                         |
 | `https://centralgauge.sshadows.workers.dev/_canary/<sha>/...` | Canary (path-prefixed; sets `event.locals.canary = true`; emits `X-Canary` header) |
 
 No separate canary worker — would require re-provisioning bindings.
@@ -761,6 +830,7 @@ No separate canary worker — would require re-provisioning bindings.
 `site/src/lib/server/flags.ts` reads env vars (`FLAG_<NAME>=on|off`) with production defaults set to `false` for new features. Canary path always sees the bleeding edge. Layout passes flags to client via `+layout.server.ts` data. Promotion: edit `wrangler.toml` `[vars]` + `wrangler deploy` — no code change.
 
 Flags:
+
 - `cmd_k_palette`
 - `sse_live_updates`
 - `og_dynamic`
@@ -769,15 +839,15 @@ Flags:
 
 ### 11.3 Rollout sequence
 
-| Phase | Lands | Flags on |
-|-------|-------|----------|
-| **P5.1 Foundation** | Tokens + atoms + layout + leaderboard MVP | none |
-| **P5.2 Detail surfaces** | `/models/:slug`, `/runs/:id`, transcripts, signature | `print_stylesheet` |
-| **P5.3 Cross-cuts** | `/compare`, `/search`, `/families/:slug`, `/tasks/:id`, `/limitations` | `trajectory_charts` |
-| **P5.4 Live + polish** | SSE, cmd-K, OG, full E2E + a11y suite | `cmd_k_palette`, `sse_live_updates`, `og_dynamic` |
-| **P5.5 Cutover** | Replace placeholder homepage with leaderboard; publish sitemap + robots | n/a |
+| Phase                    | Lands                                                                   | Flags on                                          |
+| ------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------- |
+| **P5.1 Foundation**      | Tokens + atoms + layout + leaderboard MVP                               | none                                              |
+| **P5.2 Detail surfaces** | `/models/:slug`, `/runs/:id`, transcripts, signature                    | `print_stylesheet`                                |
+| **P5.3 Cross-cuts**      | `/compare`, `/search`, `/families/:slug`, `/tasks/:id`, `/limitations`  | `trajectory_charts`                               |
+| **P5.4 Live + polish**   | SSE, cmd-K, OG, full E2E + a11y suite                                   | `cmd_k_palette`, `sse_live_updates`, `og_dynamic` |
+| **P5.5 Cutover**         | Replace placeholder homepage with leaderboard; publish sitemap + robots | n/a                                               |
 
-Until P5.5, every P5.x route deploys *alongside* the placeholder, accessible at its own URL for internal review (`/leaderboard`, `/models`, etc.). At cutover: rename `/leaderboard` route to `/`, replace placeholder. Single atomic change.
+Until P5.5, every P5.x route deploys _alongside_ the placeholder, accessible at its own URL for internal review (`/leaderboard`, `/models`, etc.). At cutover: rename `/leaderboard` route to `/`, replace placeholder. Single atomic change.
 
 ### 11.4 Pre-cutover gates (per phase)
 
@@ -791,20 +861,20 @@ Until P5.5, every P5.x route deploys *alongside* the placeholder, accessible at 
 
 ### 11.5 Observability
 
-| Layer | What |
-|-------|------|
-| L1 — Cloudflare Web Analytics | LCP/FID/CLS/TTFB by route, 7-day rolling, free, no cookies |
-| L2 — Workers Logs | Existing structured JSON in `hooks.server.ts`; new: `{ route, render_ms, data_load_ms, flags }` per P5 route |
-| L3 — `/_internal/metrics` | Admin-gated; counters by route × status, cache-hit rates per named cache, SSE active connections |
-| L4 — RUM CTAs | Out of scope for P5 (P6+) |
+| Layer                         | What                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| L1 — Cloudflare Web Analytics | LCP/FID/CLS/TTFB by route, 7-day rolling, free, no cookies                                                   |
+| L2 — Workers Logs             | Existing structured JSON in `hooks.server.ts`; new: `{ route, render_ms, data_load_ms, flags }` per P5 route |
+| L3 — `/_internal/metrics`     | Admin-gated; counters by route × status, cache-hit rates per named cache, SSE active connections             |
+| L4 — RUM CTAs                 | Out of scope for P5 (P6+)                                                                                    |
 
 ### 11.6 Rollback
 
-| Speed | Mechanism | When |
-|-------|-----------|------|
+| Speed   | Mechanism               | When                                           |
+| ------- | ----------------------- | ---------------------------------------------- |
 | Seconds | Flip feature flag `off` | New feature broke; existing surface unaffected |
-| Minutes | `wrangler rollback` | Code regression in shared code |
-| Hours | Revert PR + redeploy | Schema breakage that flag can't bypass |
+| Minutes | `wrangler rollback`     | Code regression in shared code                 |
+| Hours   | Revert PR + redeploy    | Schema breakage that flag can't bypass         |
 
 Rollback drill before P5.5 cutover: flip `cmd_k_palette` on for 5 minutes, then off. Verify no client-side errors. Public post-mortem for any user-visible incident under `docs/postmortems/`.
 
@@ -820,14 +890,14 @@ Per deploy: tag `site-v<sha>` in git; archive bundle manifest to R2 (`build-mani
 
 ### 11.9 Documentation deliverables
 
-| Doc | Lives in |
-|-----|----------|
-| `docs/site/architecture.md` | mkdocs |
-| `docs/site/design-system.md` | mkdocs (auto-generated from `*.stories.svelte`) |
-| `docs/site/operations.md` | mkdocs (deploy + rollback runbook) |
-| `docs/postmortems/_template.md` | mkdocs |
-| `site/CONTRIBUTING.md` | site root |
-| `site/CHANGELOG.md` | site root |
+| Doc                             | Lives in                                        |
+| ------------------------------- | ----------------------------------------------- |
+| `docs/site/architecture.md`     | mkdocs                                          |
+| `docs/site/design-system.md`    | mkdocs (auto-generated from `*.stories.svelte`) |
+| `docs/site/operations.md`       | mkdocs (deploy + rollback runbook)              |
+| `docs/postmortems/_template.md` | mkdocs                                          |
+| `site/CONTRIBUTING.md`          | site root                                       |
+| `site/CHANGELOG.md`             | site root                                       |
 
 mkdocs auto-deploys via existing `.github/workflows/docs.yml`.
 

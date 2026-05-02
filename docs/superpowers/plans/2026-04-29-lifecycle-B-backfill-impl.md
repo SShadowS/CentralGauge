@@ -13,6 +13,7 @@
 ## Task B1: Backfill script `scripts/backfill-lifecycle.ts`
 
 **Files:**
+
 - Create: `scripts/backfill-lifecycle.ts`
 - Create: `tests/unit/lifecycle/backfill.test.ts`
 
@@ -26,8 +27,8 @@ Create `tests/unit/lifecycle/backfill.test.ts`:
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 import {
-  buildBenchEvents,
   buildAnalysisEvents,
+  buildBenchEvents,
   buildPublishEvents,
 } from "../../../scripts/backfill-lifecycle.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
@@ -35,20 +36,43 @@ import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 describe("backfill-lifecycle", () => {
   it("synthesizes one bench.completed per runs row", () => {
     const runs = [
-      { id: "r1", model_slug: "anthropic/claude-opus-4-6", task_set_hash: "h1", started_at: "2026-04-01T00:00:00Z" },
-      { id: "r2", model_slug: "anthropic/claude-opus-4-6", task_set_hash: "h1", started_at: "2026-04-15T00:00:00Z" },
-      { id: "r3", model_slug: "openai/gpt-5.5", task_set_hash: "h1", started_at: "2026-04-10T00:00:00Z" },
+      {
+        id: "r1",
+        model_slug: "anthropic/claude-opus-4-6",
+        task_set_hash: "h1",
+        started_at: "2026-04-01T00:00:00Z",
+      },
+      {
+        id: "r2",
+        model_slug: "anthropic/claude-opus-4-6",
+        task_set_hash: "h1",
+        started_at: "2026-04-15T00:00:00Z",
+      },
+      {
+        id: "r3",
+        model_slug: "openai/gpt-5.5",
+        task_set_hash: "h1",
+        started_at: "2026-04-10T00:00:00Z",
+      },
     ];
     const events = buildBenchEvents(runs);
     assertEquals(events.length, 3);
     assertEquals(events.every((e) => e.event_type === "bench.completed"), true);
     assertEquals(events.every((e) => e.actor === "migration"), true);
-    assertEquals(events.every((e) => e.migration_note?.startsWith("backfilled at")), true);
+    assertEquals(
+      events.every((e) => e.migration_note?.startsWith("backfilled at")),
+      true,
+    );
   });
 
   it("uses pre-p6-unknown sentinel when task_set_hash is null", () => {
     const runs = [
-      { id: "r1", model_slug: "m/x", task_set_hash: null, started_at: "2025-01-01T00:00:00Z" },
+      {
+        id: "r1",
+        model_slug: "m/x",
+        task_set_hash: null,
+        started_at: "2025-01-01T00:00:00Z",
+      },
     ];
     const events = buildBenchEvents(runs);
     assertEquals(events[0]!.task_set_hash, PRE_P6_TASK_SET_SENTINEL);
@@ -57,9 +81,21 @@ describe("backfill-lifecycle", () => {
 
   it("synthesizes one analysis.completed per (model_slug, task_set_hash) shortcoming pair", () => {
     const shortcomings = [
-      { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "h1", first_seen: "2026-04-20T00:00:00Z" },
-      { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "h1", first_seen: "2026-04-21T00:00:00Z" },
-      { model_slug: "anthropic/claude-opus-4-6", task_set_hash: "h2", first_seen: "2026-04-22T00:00:00Z" },
+      {
+        model_slug: "anthropic/claude-opus-4-6",
+        task_set_hash: "h1",
+        first_seen: "2026-04-20T00:00:00Z",
+      },
+      {
+        model_slug: "anthropic/claude-opus-4-6",
+        task_set_hash: "h1",
+        first_seen: "2026-04-21T00:00:00Z",
+      },
+      {
+        model_slug: "anthropic/claude-opus-4-6",
+        task_set_hash: "h2",
+        first_seen: "2026-04-22T00:00:00Z",
+      },
     ];
     const events = buildAnalysisEvents(shortcomings);
     assertEquals(events.length, 2); // dedupe by (model_slug, task_set_hash)
@@ -69,14 +105,27 @@ describe("backfill-lifecycle", () => {
 
   it("synthesizes publish events with occurrences_count from groups", () => {
     const occGroups = [
-      { model_slug: "m/a", task_set_hash: "h", last_seen: "2026-04-25T00:00:00Z", occurrences_count: 5 },
-      { model_slug: "m/b", task_set_hash: "h", last_seen: "2026-04-26T00:00:00Z", occurrences_count: 0, cascaded: true },
+      {
+        model_slug: "m/a",
+        task_set_hash: "h",
+        last_seen: "2026-04-25T00:00:00Z",
+        occurrences_count: 5,
+      },
+      {
+        model_slug: "m/b",
+        task_set_hash: "h",
+        last_seen: "2026-04-26T00:00:00Z",
+        occurrences_count: 0,
+        cascaded: true,
+      },
     ];
     const events = buildPublishEvents(occGroups);
     assertEquals(events.length, 2);
     assertEquals(events[0]!.event_type, "publish.completed");
     assertEquals(events[1]!.migration_note, "occurrences cascaded");
-    assertEquals(JSON.parse(events[1]!.payload_json!), { occurrences_count: 0 });
+    assertEquals(JSON.parse(events[1]!.payload_json!), {
+      occurrences_count: 0,
+    });
   });
 });
 ```
@@ -327,16 +376,26 @@ async function main() {
     .name("backfill-lifecycle")
     .description("Synthesize lifecycle_events for existing rows.")
     .option("--d1-database <name:string>", "D1 db", { default: "centralgauge" })
-    .option("--remote", "Query production D1 (default: local)", { default: false })
-    .option("--dry-run", "Print event count without writing", { default: false })
-    .option("--site-dir <dir:string>", "site/ dir", { default: `${Deno.cwd()}/site` })
+    .option("--remote", "Query production D1 (default: local)", {
+      default: false,
+    })
+    .option("--dry-run", "Print event count without writing", {
+      default: false,
+    })
+    .option("--site-dir <dir:string>", "site/ dir", {
+      default: `${Deno.cwd()}/site`,
+    })
     .action(async (opts) => {
       const queryOpts: QueryD1Options = {
         siteDir: opts.siteDir,
         dbName: opts.d1Database,
         remote: opts.remote,
       };
-      console.log(colors.gray(`[INFO] reading runs from ${opts.remote ? "remote" : "local"} D1`));
+      console.log(
+        colors.gray(
+          `[INFO] reading runs from ${opts.remote ? "remote" : "local"} D1`,
+        ),
+      );
       const runs = await fetchRuns(queryOpts);
       const shortcomings = await fetchShortcomings(queryOpts);
       const occGroups = await fetchOccurrenceGroups(queryOpts);
@@ -346,7 +405,11 @@ async function main() {
       const publishEvents = buildPublishEvents(occGroups);
       const all = [...benchEvents, ...analysisEvents, ...publishEvents];
 
-      console.log(colors.cyan(`[PLAN] bench=${benchEvents.length} analysis=${analysisEvents.length} publish=${publishEvents.length} total=${all.length}`));
+      console.log(
+        colors.cyan(
+          `[PLAN] bench=${benchEvents.length} analysis=${analysisEvents.length} publish=${publishEvents.length} total=${all.length}`,
+        ),
+      );
       if (opts.dryRun) {
         console.log(colors.yellow("[DRY] no events written"));
         return;
@@ -359,7 +422,11 @@ async function main() {
       const privKey = await readPrivateKey(config.adminKeyPath);
       let written = 0;
       for (const ev of all) {
-        await appendEvent(ev, { url: config.url, privateKey: privKey, keyId: config.adminKeyId });
+        await appendEvent(ev, {
+          url: config.url,
+          privateKey: privKey,
+          keyId: config.adminKeyId,
+        });
         written++;
         if (written % 10 === 0) {
           console.log(colors.gray(`[PROGRESS] ${written}/${all.length}`));
@@ -394,6 +461,7 @@ deno fmt scripts/backfill-lifecycle.ts tests/unit/lifecycle/backfill.test.ts && 
 ## Task B2: Slug migration script `scripts/migrate-shortcomings-slugs.ts`
 
 **Files:**
+
 - Create: `scripts/migrate-shortcomings-slugs.ts`
 - Create: `tests/unit/lifecycle/migrate-slugs.test.ts`
 
@@ -407,9 +475,9 @@ Create `tests/unit/lifecycle/migrate-slugs.test.ts`:
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertExists } from "@std/assert";
 import {
-  SLUG_MIGRATION_TABLE,
-  resolveTargetSlug,
   resolveTargetFilename,
+  resolveTargetSlug,
+  SLUG_MIGRATION_TABLE,
 } from "../../../scripts/migrate-shortcomings-slugs.ts";
 
 describe("migrate-shortcomings-slugs", () => {
@@ -418,28 +486,61 @@ describe("migrate-shortcomings-slugs", () => {
   });
 
   it("maps the 2 known JSONs (claude-opus-4-6, gpt-5.3-codex)", () => {
-    assertEquals(resolveTargetSlug("claude-opus-4-6"), "anthropic/claude-opus-4-6");
+    assertEquals(
+      resolveTargetSlug("claude-opus-4-6"),
+      "anthropic/claude-opus-4-6",
+    );
     assertEquals(resolveTargetSlug("gpt-5.3-codex"), "openai/gpt-5.3-codex");
   });
 
   it("collapses date suffix from claude-opus-4-5-20251101 to anthropic/claude-opus-4-5", () => {
-    assertEquals(resolveTargetSlug("claude-opus-4-5-20251101"), "anthropic/claude-opus-4-5");
-    assertEquals(resolveTargetSlug("claude-sonnet-4-5-20250929"), "anthropic/claude-sonnet-4-5");
+    assertEquals(
+      resolveTargetSlug("claude-opus-4-5-20251101"),
+      "anthropic/claude-opus-4-5",
+    );
+    assertEquals(
+      resolveTargetSlug("claude-sonnet-4-5-20250929"),
+      "anthropic/claude-sonnet-4-5",
+    );
     assertEquals(resolveTargetSlug("gpt-5.2-2025-12-11"), "openai/gpt-5.2");
   });
 
   it("maps gemini snapshots to google/", () => {
-    assertEquals(resolveTargetSlug("gemini-3-pro-preview"), "google/gemini-3-pro-preview");
-    assertEquals(resolveTargetSlug("gemini-3.1-pro-preview"), "google/gemini-3.1-pro-preview");
+    assertEquals(
+      resolveTargetSlug("gemini-3-pro-preview"),
+      "google/gemini-3-pro-preview",
+    );
+    assertEquals(
+      resolveTargetSlug("gemini-3.1-pro-preview"),
+      "google/gemini-3.1-pro-preview",
+    );
   });
 
   it("converts underscore-separated vendor slugs to openrouter/<vendor>/<model>", () => {
-    assertEquals(resolveTargetSlug("deepseek_deepseek-v3.2"), "openrouter/deepseek/deepseek-v3.2");
-    assertEquals(resolveTargetSlug("minimax_minimax-m2.5"), "openrouter/minimax/minimax-m2.5");
-    assertEquals(resolveTargetSlug("moonshotai_kimi-k2.5"), "openrouter/moonshotai/kimi-k2.5");
-    assertEquals(resolveTargetSlug("qwen_qwen3-coder-next"), "openrouter/qwen/qwen3-coder-next");
-    assertEquals(resolveTargetSlug("qwen_qwen3-max-thinking"), "openrouter/qwen/qwen3-max-thinking");
-    assertEquals(resolveTargetSlug("x-ai_grok-code-fast-1"), "openrouter/x-ai/grok-code-fast-1");
+    assertEquals(
+      resolveTargetSlug("deepseek_deepseek-v3.2"),
+      "openrouter/deepseek/deepseek-v3.2",
+    );
+    assertEquals(
+      resolveTargetSlug("minimax_minimax-m2.5"),
+      "openrouter/minimax/minimax-m2.5",
+    );
+    assertEquals(
+      resolveTargetSlug("moonshotai_kimi-k2.5"),
+      "openrouter/moonshotai/kimi-k2.5",
+    );
+    assertEquals(
+      resolveTargetSlug("qwen_qwen3-coder-next"),
+      "openrouter/qwen/qwen3-coder-next",
+    );
+    assertEquals(
+      resolveTargetSlug("qwen_qwen3-max-thinking"),
+      "openrouter/qwen/qwen3-max-thinking",
+    );
+    assertEquals(
+      resolveTargetSlug("x-ai_grok-code-fast-1"),
+      "openrouter/x-ai/grok-code-fast-1",
+    );
     assertEquals(resolveTargetSlug("z-ai_glm-5"), "openrouter/z-ai/glm-5");
   });
 
@@ -504,23 +605,83 @@ export interface SlugMigrationRow {
  */
 export const SLUG_MIGRATION_TABLE: SlugMigrationRow[] = [
   // 2 mapped JSONs
-  { legacy: "claude-opus-4-6", legacyFile: "claude-opus-4-6.json", target: "anthropic/claude-opus-4-6" },
-  { legacy: "gpt-5.3-codex", legacyFile: "gpt-5.3-codex.json", target: "openai/gpt-5.3-codex" },
+  {
+    legacy: "claude-opus-4-6",
+    legacyFile: "claude-opus-4-6.json",
+    target: "anthropic/claude-opus-4-6",
+  },
+  {
+    legacy: "gpt-5.3-codex",
+    legacyFile: "gpt-5.3-codex.json",
+    target: "openai/gpt-5.3-codex",
+  },
   // 6 unmapped legacy snapshots (collapse date suffix)
-  { legacy: "claude-opus-4-5-20251101", legacyFile: "claude-opus-4-5-20251101.json", target: "anthropic/claude-opus-4-5" },
-  { legacy: "claude-sonnet-4-6", legacyFile: "claude-sonnet-4-6.json", target: "anthropic/claude-sonnet-4-6" },
-  { legacy: "claude-sonnet-4-5-20250929", legacyFile: "claude-sonnet-4-5-20250929.json", target: "anthropic/claude-sonnet-4-5" },
-  { legacy: "gpt-5.2-2025-12-11", legacyFile: "gpt-5.2-2025-12-11.json", target: "openai/gpt-5.2" },
-  { legacy: "gemini-3-pro-preview", legacyFile: "gemini-3-pro-preview.json", target: "google/gemini-3-pro-preview" },
-  { legacy: "gemini-3.1-pro-preview", legacyFile: "gemini-3.1-pro-preview.json", target: "google/gemini-3.1-pro-preview" },
+  {
+    legacy: "claude-opus-4-5-20251101",
+    legacyFile: "claude-opus-4-5-20251101.json",
+    target: "anthropic/claude-opus-4-5",
+  },
+  {
+    legacy: "claude-sonnet-4-6",
+    legacyFile: "claude-sonnet-4-6.json",
+    target: "anthropic/claude-sonnet-4-6",
+  },
+  {
+    legacy: "claude-sonnet-4-5-20250929",
+    legacyFile: "claude-sonnet-4-5-20250929.json",
+    target: "anthropic/claude-sonnet-4-5",
+  },
+  {
+    legacy: "gpt-5.2-2025-12-11",
+    legacyFile: "gpt-5.2-2025-12-11.json",
+    target: "openai/gpt-5.2",
+  },
+  {
+    legacy: "gemini-3-pro-preview",
+    legacyFile: "gemini-3-pro-preview.json",
+    target: "google/gemini-3-pro-preview",
+  },
+  {
+    legacy: "gemini-3.1-pro-preview",
+    legacyFile: "gemini-3.1-pro-preview.json",
+    target: "google/gemini-3.1-pro-preview",
+  },
   // 7 vendor-prefixed via underscore (convert _ → / and prepend openrouter/)
-  { legacy: "deepseek_deepseek-v3.2", legacyFile: "deepseek_deepseek-v3.2.json", target: "openrouter/deepseek/deepseek-v3.2" },
-  { legacy: "minimax_minimax-m2.5", legacyFile: "minimax_minimax-m2.5.json", target: "openrouter/minimax/minimax-m2.5" },
-  { legacy: "moonshotai_kimi-k2.5", legacyFile: "moonshotai_kimi-k2.5.json", target: "openrouter/moonshotai/kimi-k2.5" },
-  { legacy: "qwen_qwen3-max-thinking", legacyFile: "qwen_qwen3-max-thinking.json", target: "openrouter/qwen/qwen3-max-thinking" },
-  { legacy: "qwen_qwen3-coder-next", legacyFile: "qwen_qwen3-coder-next.json", target: "openrouter/qwen/qwen3-coder-next" },
-  { legacy: "x-ai_grok-code-fast-1", legacyFile: "x-ai_grok-code-fast-1.json", target: "openrouter/x-ai/grok-code-fast-1" },
-  { legacy: "z-ai_glm-5", legacyFile: "z-ai_glm-5.json", target: "openrouter/z-ai/glm-5" },
+  {
+    legacy: "deepseek_deepseek-v3.2",
+    legacyFile: "deepseek_deepseek-v3.2.json",
+    target: "openrouter/deepseek/deepseek-v3.2",
+  },
+  {
+    legacy: "minimax_minimax-m2.5",
+    legacyFile: "minimax_minimax-m2.5.json",
+    target: "openrouter/minimax/minimax-m2.5",
+  },
+  {
+    legacy: "moonshotai_kimi-k2.5",
+    legacyFile: "moonshotai_kimi-k2.5.json",
+    target: "openrouter/moonshotai/kimi-k2.5",
+  },
+  {
+    legacy: "qwen_qwen3-max-thinking",
+    legacyFile: "qwen_qwen3-max-thinking.json",
+    target: "openrouter/qwen/qwen3-max-thinking",
+  },
+  {
+    legacy: "qwen_qwen3-coder-next",
+    legacyFile: "qwen_qwen3-coder-next.json",
+    target: "openrouter/qwen/qwen3-coder-next",
+  },
+  {
+    legacy: "x-ai_grok-code-fast-1",
+    legacyFile: "x-ai_grok-code-fast-1.json",
+    target: "openrouter/x-ai/grok-code-fast-1",
+  },
+  {
+    legacy: "z-ai_glm-5",
+    legacyFile: "z-ai_glm-5.json",
+    target: "openrouter/z-ai/glm-5",
+  },
 ];
 
 export function resolveTargetSlug(legacy: string): string | null {
@@ -568,7 +729,11 @@ async function migrate(opts: CliOptions): Promise<{
     json.model = row.target;
     const out = JSON.stringify(json, null, 2);
     if (opts.dryRun) {
-      console.log(colors.yellow(`[DRY] ${oldPath} → ${newPath} (model: ${row.legacy} → ${row.target})`));
+      console.log(
+        colors.yellow(
+          `[DRY] ${oldPath} → ${newPath} (model: ${row.legacy} → ${row.target})`,
+        ),
+      );
     } else {
       await Deno.writeTextFile(newPath, out);
       if (newPath !== oldPath) {
@@ -586,11 +751,17 @@ if (import.meta.main) {
   await new Command()
     .name("migrate-shortcomings-slugs")
     .description("Rewrite model-shortcomings/*.json to vendor-prefixed slugs.")
-    .option("--dir <dir:string>", "Directory", { default: "model-shortcomings" })
+    .option("--dir <dir:string>", "Directory", {
+      default: "model-shortcomings",
+    })
     .option("--dry-run", "Preview without writing", { default: false })
     .action(async (opts) => {
       const result = await migrate({ dir: opts.dir, dryRun: opts.dryRun });
-      console.log(colors.cyan(`migrated=${result.migrated.length} missing=${result.missing.length} already=${result.alreadyMigrated.length}`));
+      console.log(
+        colors.cyan(
+          `migrated=${result.migrated.length} missing=${result.missing.length} already=${result.alreadyMigrated.length}`,
+        ),
+      );
       if (result.missing.length > 0) {
         console.log(colors.yellow("[WARN] missing files (not found in dir):"));
         for (const m of result.missing) console.log(`  - ${m}`);
@@ -619,6 +790,7 @@ deno fmt scripts/migrate-shortcomings-slugs.ts tests/unit/lifecycle/migrate-slug
 ## Task B3: Update `verify` command to write production slug directly
 
 **Files:**
+
 - Modify: `cli/commands/verify-command.ts`
 - Create: `tests/unit/cli/commands/verify-slug-default.test.ts`
 
@@ -663,9 +835,9 @@ Expected: `Expected: "anthropic/claude-opus-4-6", Actual: "claude-opus-4-6"`. Te
 Edit `cli/commands/verify-command.ts` line ~144-146 (the `--model` option):
 
 ```typescript
-    .option("--model <model:string>", "LLM for analysis (vendor-prefixed prod slug)", {
-      default: "anthropic/claude-opus-4-6",
-    })
+.option("--model <model:string>", "LLM for analysis (vendor-prefixed prod slug)", {
+  default: "anthropic/claude-opus-4-6",
+})
 ```
 
 (Replaces the current `default: "claude-opus-4-6"`.)
@@ -689,6 +861,7 @@ deno fmt cli/commands/verify-command.ts tests/unit/cli/commands/verify-slug-defa
 ## Task B4: Delete `VENDOR_PREFIX_MAP` from `populate-shortcomings`
 
 **Files:**
+
 - Modify: `cli/commands/populate-shortcomings-command.ts`
 - Modify (or create): `tests/unit/cli/commands/populate-shortcomings-passthrough.test.ts`
 
@@ -700,12 +873,15 @@ Create `tests/unit/cli/commands/populate-shortcomings-passthrough.test.ts`:
 
 ```typescript
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 
 describe("populate-shortcomings VENDOR_PREFIX_MAP removal", () => {
   it("source no longer contains VENDOR_PREFIX_MAP literal", async () => {
     const src = await Deno.readTextFile(
-      new URL("../../../../cli/commands/populate-shortcomings-command.ts", import.meta.url),
+      new URL(
+        "../../../../cli/commands/populate-shortcomings-command.ts",
+        import.meta.url,
+      ),
     );
     assert(
       !src.includes("VENDOR_PREFIX_MAP"),
@@ -715,7 +891,10 @@ describe("populate-shortcomings VENDOR_PREFIX_MAP removal", () => {
 
   it("mapToProductionSlug now passes through vendor-prefixed inputs unchanged", async () => {
     const mod = await import(
-      new URL("../../../../cli/commands/populate-shortcomings-command.ts", import.meta.url).href
+      new URL(
+        "../../../../cli/commands/populate-shortcomings-command.ts",
+        import.meta.url,
+      ).href
     ) as { mapToProductionSlug?: (s: string) => string | null };
     if (!mod.mapToProductionSlug) {
       // export was removed entirely (acceptable end state)
@@ -780,6 +959,7 @@ deno fmt cli/commands/populate-shortcomings-command.ts tests/unit/cli/commands/p
 ## Task B5: Run B1 + B2 against staging copy + invariant assertions
 
 **Files:**
+
 - Create: `scripts/verify-backfill-invariants.ts`
 - Create: `tests/unit/lifecycle/invariants.test.ts`
 
@@ -804,8 +984,16 @@ describe("backfill invariants", () => {
       { model_slug: "m/y", task_set_hash: "h" },
     ];
     const events = [
-      { model_slug: "m/x", task_set_hash: "h", event_type: "analysis.completed" },
-      { model_slug: "m/y", task_set_hash: "h", event_type: "analysis.completed" },
+      {
+        model_slug: "m/x",
+        task_set_hash: "h",
+        event_type: "analysis.completed",
+      },
+      {
+        model_slug: "m/y",
+        task_set_hash: "h",
+        event_type: "analysis.completed",
+      },
     ];
     const result = assertAnalysisCoversShortcomings(shortcomings, events);
     assertEquals(result.missing, []);
@@ -817,7 +1005,11 @@ describe("backfill invariants", () => {
       { model_slug: "m/y", task_set_hash: "h" },
     ];
     const events = [
-      { model_slug: "m/x", task_set_hash: "h", event_type: "analysis.completed" },
+      {
+        model_slug: "m/x",
+        task_set_hash: "h",
+        event_type: "analysis.completed",
+      },
     ];
     const result = assertAnalysisCoversShortcomings(shortcomings, events);
     assertEquals(result.missing, ["m/y\x1fh"]);
@@ -826,7 +1018,11 @@ describe("backfill invariants", () => {
   it("publish invariant requires every (model, task_set) with occurrences to have publish event", () => {
     const occGroups = [{ model_slug: "m/a", task_set_hash: "h" }];
     const events = [
-      { model_slug: "m/a", task_set_hash: "h", event_type: "publish.completed" },
+      {
+        model_slug: "m/a",
+        task_set_hash: "h",
+        event_type: "publish.completed",
+      },
     ];
     const result = assertPublishCoversOccurrences(occGroups, events);
     assertEquals(result.missing, []);
@@ -941,6 +1137,7 @@ deno fmt scripts/verify-backfill-invariants.ts tests/unit/lifecycle/invariants.t
 ## Task B6: Run B1 + B2 against production (with backup)
 
 **Files:**
+
 - Modify: none (operational task)
 
 ### Steps

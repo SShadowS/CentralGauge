@@ -61,6 +61,7 @@ After P7 lands:
 > **Design rationale: investigations BEFORE features.** Phases B–E build UIs that consume CC-1 (tasks table) and CC-2 (shortcomings table) data. If we ship the UI first and discover the data path is broken, we have an empty pretty page in production. Phase A diagnoses + fixes both data paths first; B–E then ship widgets backed by real data. The diagnosis steps (`d1 query` against production via `wrangler d1 execute centralgauge --remote --command`) are non-destructive read-only — safe to run.
 
 > **Design rationale: Pass@1 / Pass@2 SQL semantics — multi-run "best across runs" aggregation.** The legacy bench reports four numbers per model: `1st: N` (passed on first try, no retry needed), `2nd: M` (additionally passed after one retry), `tasks_passed = N + M`, `tasks_attempted`. With multi-run data (same model run multiple times), the naive per-run definition no longer holds — the same task can have conflicting outcomes across runs. P7 picks **"best across runs per task"** semantics for invariant-preservation:
+>
 > - `tasks_passed_attempt_1` = COUNT(DISTINCT task_id) WHERE EXISTS (any run for this model where attempt=1 AND passed=1 for this task).
 > - `tasks_passed_attempt_2_only` = COUNT(DISTINCT task_id) WHERE EXISTS (any run for this model where attempt=2 AND passed=1 for this task) AND NOT EXISTS (any run for this model where attempt=1 AND passed=1 for this task).
 > - `tasks_passed_overall` = COUNT(DISTINCT task_id) WHERE EXISTS (any run for this model where any attempt passed=1) — the union.
@@ -93,28 +94,29 @@ After P7 lands:
 
 **Tech Stack:** Same as P6. No new runtime deps. One new dev/test util (matrix component sticky-left CSS pattern — pure CSS). No new D1 migrations (the data is already there; only the queries are new). One new admin/runbook step (CC-1 and CC-2 operator paths).
 
-**Spec:** `docs/superpowers/specs/2026-04-27-p5-site-ui-design.md` §6 (leaderboard surfaces — extends to attempt breakdown), §10 (categories — newly implemented), §11 (matrix — newly implemented). P7 has no new top-level spec; this plan is *parity restoration plus polish*.
+**Spec:** `docs/superpowers/specs/2026-04-27-p5-site-ui-design.md` §6 (leaderboard surfaces — extends to attempt breakdown), §10 (categories — newly implemented), §11 (matrix — newly implemented). P7 has no new top-level spec; this plan is _parity restoration plus polish_.
 
 **Audit map:** Each finding from the audit appears in exactly one mini-phase. Cross-reference table below — every audit ID maps to a Task ID:
 
-| Audit ID | Severity | Mini-phase / Task | Notes |
-|----------|----------|-------------------|-------|
-| C-1 (Pass@1 / Pass@2 split missing) | Critical | A3 + A4 (types) + B1 (SQL) + B2 (mini-bar) + B3 (page) + B4 (model detail) | Five sub-tasks; types-first |
-| C-2 (Categories — index + drill-down) | Critical | A6 (categories endpoint) + C1 (leaderboard `?category=`) + C2 (/categories) + C3 (/categories/[slug]) + C4 (tasks col) + C5 (filter rail) | Six sub-tasks |
-| C-3 (Shortcomings UI on model detail) | Critical | A2 (CC-2 empty-state requirement) + E1 (section widget w/ empty-state) + E2 (detail row, no R2 fetch in P7) + E4 (wire to page) | Four sub-tasks (E3 dropped — incorrect_pattern R2 deferred to P8 per CR-1) |
-| C-4 (Task Results Matrix) | Critical | A5 (types) + D1 (endpoint) + D2 (widget) + D3 (route) + D4 (filter integration) | Five sub-tasks |
-| I-1 (Summary band) | Important | A7 (endpoint) + F1 (widget) | Two sub-tasks |
-| I-2 (Performance vs Cost chart) | Important | F2 (widget) | One task |
-| I-3 (Settings transparency) | Important | G1 (API) + G2 (leaderboard suffix) + G3 (badge widget) + G4 (model detail) | Four sub-tasks |
-| I-4 (Changelog) | Important | H1 (markdown) + H2 (route) + H3 (banner callout) | Three sub-tasks |
-| CC-1 (`/api/v1/tasks` empty in production) | Cross-cutting | A1 (reference P6 A4 runbook + ensure UI handles empty) | Operator action; documented in P6, not re-investigated in P7 |
-| CC-2 (shortcomings empty globally) | Cross-cutting | A2 (document empty-state requirement; analyzer = P8) | UI shell ships in E with empty-state |
-| CC-3 (Score metric divergence + tasks_attempted semantics) | Cross-cutting | J1 (/about#scoring docs incl. multi-run rule) + B5 (sort toggle) + B1 (add `tasks_attempted_distinct` alongside legacy field) | Documentation + UX + back-compat |
-| CC-4 (R2 transcript no UI consumer) | Cross-cutting | I2 (transcript link via existing TranscriptViewer) | One sub-task (I1 dropped — incorrect_pattern deferred to P8 per CR-1) |
-| (Visual regression) | Test | J4 (baseline regen post-leaderboard) | One task |
-| (Documentation) | Test | J1, J2, J3 (about, CONTRIBUTING, CHANGELOG) | Three sub-tasks |
+| Audit ID                                                   | Severity      | Mini-phase / Task                                                                                                                         | Notes                                                                      |
+| ---------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| C-1 (Pass@1 / Pass@2 split missing)                        | Critical      | A3 + A4 (types) + B1 (SQL) + B2 (mini-bar) + B3 (page) + B4 (model detail)                                                                | Five sub-tasks; types-first                                                |
+| C-2 (Categories — index + drill-down)                      | Critical      | A6 (categories endpoint) + C1 (leaderboard `?category=`) + C2 (/categories) + C3 (/categories/[slug]) + C4 (tasks col) + C5 (filter rail) | Six sub-tasks                                                              |
+| C-3 (Shortcomings UI on model detail)                      | Critical      | A2 (CC-2 empty-state requirement) + E1 (section widget w/ empty-state) + E2 (detail row, no R2 fetch in P7) + E4 (wire to page)           | Four sub-tasks (E3 dropped — incorrect_pattern R2 deferred to P8 per CR-1) |
+| C-4 (Task Results Matrix)                                  | Critical      | A5 (types) + D1 (endpoint) + D2 (widget) + D3 (route) + D4 (filter integration)                                                           | Five sub-tasks                                                             |
+| I-1 (Summary band)                                         | Important     | A7 (endpoint) + F1 (widget)                                                                                                               | Two sub-tasks                                                              |
+| I-2 (Performance vs Cost chart)                            | Important     | F2 (widget)                                                                                                                               | One task                                                                   |
+| I-3 (Settings transparency)                                | Important     | G1 (API) + G2 (leaderboard suffix) + G3 (badge widget) + G4 (model detail)                                                                | Four sub-tasks                                                             |
+| I-4 (Changelog)                                            | Important     | H1 (markdown) + H2 (route) + H3 (banner callout)                                                                                          | Three sub-tasks                                                            |
+| CC-1 (`/api/v1/tasks` empty in production)                 | Cross-cutting | A1 (reference P6 A4 runbook + ensure UI handles empty)                                                                                    | Operator action; documented in P6, not re-investigated in P7               |
+| CC-2 (shortcomings empty globally)                         | Cross-cutting | A2 (document empty-state requirement; analyzer = P8)                                                                                      | UI shell ships in E with empty-state                                       |
+| CC-3 (Score metric divergence + tasks_attempted semantics) | Cross-cutting | J1 (/about#scoring docs incl. multi-run rule) + B5 (sort toggle) + B1 (add `tasks_attempted_distinct` alongside legacy field)             | Documentation + UX + back-compat                                           |
+| CC-4 (R2 transcript no UI consumer)                        | Cross-cutting | I2 (transcript link via existing TranscriptViewer)                                                                                        | One sub-task (I1 dropped — incorrect_pattern deferred to P8 per CR-1)      |
+| (Visual regression)                                        | Test          | J4 (baseline regen post-leaderboard)                                                                                                      | One task                                                                   |
+| (Documentation)                                            | Test          | J1, J2, J3 (about, CONTRIBUTING, CHANGELOG)                                                                                               | Three sub-tasks                                                            |
 
 **Prior plans:**
+
 - `docs/superpowers/plans/2026-04-28-p6-stabilization.md` (P6 — completed; production hotfixes)
 - `docs/superpowers/plans/2026-04-30-p5-5-cutover.md` (P5.5 — completed; cutover live)
 - `docs/superpowers/plans/2026-04-29-p5-4-live-and-polish.md` (P5.4 — completed; SSE + DO live)
@@ -123,6 +125,7 @@ After P7 lands:
 - `docs/superpowers/plans/2026-04-27-p5-1-foundation-leaderboard.md` (P5.1 — completed; foundation)
 
 **Out of scope (deferred to P8+):**
+
 - Reproduction-bundle UX (download → unzip → re-bench locally; today the link is bare R2)
 - Per-task historical chart (score-over-time per task, per model) — future when 100+ runs accumulate
 - Cross-task contamination analysis (which tasks correlate in success across models)
@@ -139,6 +142,7 @@ After P7 lands:
 Before any task begins, plan executors must understand the production state these phases consume. This is fixed information at plan-author time (2026-04-27); it is NOT something to re-investigate.
 
 **Production data size (verified 2026-04-27):**
+
 - 4 models, 15 runs, ~1135 results referencing 64 distinct task_ids.
 - 0 rows in `tasks` table (CC-1, see below).
 - 0 rows in `shortcomings` and `shortcoming_occurrences` tables (CC-2).
@@ -153,6 +157,7 @@ Before any task begins, plan executors must understand the production state thes
 **P6 Phase G held.** The custom-domain flip (`benchmark.al-app.dev` → production worker) remains gated. P7 does NOT touch DNS or `SITE_BASE_URL`. The site continues to live at `https://centralgauge.sshadows.workers.dev`.
 
 **Tooling caveats:**
+
 - All worker tests run against the built `.svelte-kit/output/` bundle. Site changes require `cd site && npm run build` before `npm test` or you'll be debugging stale code.
 - `deno fmt` must NOT run on `site/` (it conflicts with site prettier config).
 - New API endpoint integration tests live in `site/tests/api/<name>.test.ts` — NOT in `__test__/` subdirectories beside the routes (those would land in the jsdom unit pool or be skipped silently per existing vitest.config.ts include patterns).
@@ -163,90 +168,90 @@ Before any task begins, plan executors must understand the production state thes
 
 ### New files
 
-| Path | Responsibility |
-|------|----------------|
-| `site/src/routes/api/v1/categories/+server.ts` | `GET /api/v1/categories` — index of `task_categories` joined with `tasks` for per-category counts. Returns `CategoriesIndexItem[]`. Cache-API backed (60s s-maxage), named cache `cg-categories`. |
-| `site/src/routes/api/v1/categories/[slug]/+server.ts` | `GET /api/v1/categories/:slug` — category detail (name, task_count, model_count, task_ids, top_models). Cache-API backed. |
-| `site/src/routes/api/v1/summary/+server.ts` | `GET /api/v1/summary` — site-wide aggregates (runs, models, tasks, total_cost_usd, total_tokens, latest_changelog_entry). Read-only D1 SELECTs. Named cache `cg-summary`. |
-| `site/src/routes/api/v1/matrix/+server.ts` | `GET /api/v1/matrix?set=current[&category=<slug>][&difficulty=<easy\|medium\|hard>]` — dense matrix `{tasks: TaskRow[], models: ModelCol[], cells: Cell[][]}` for the current task set. Named cache `cg-matrix`. ~375KB payload. |
-| `site/src/lib/server/categories.ts` | `computeCategoriesIndex(db, opts)` + `computeCategoryDetail(db, slug, opts)` — pure functions returning the typed index/detail objects. Used by both /api/v1/categories endpoints + /categories page server loaders. |
-| `site/src/lib/server/matrix.ts` | `computeMatrix(db, opts)` — returns `{tasks, models, cells}`. Cell color bucket logic lives in `cellColorBucket(passed_count, attempted_count)` (pure helper, unit-testable). |
-| `site/src/lib/server/summary.ts` | `computeSummaryStats(db)` — returns `{runs, models, tasks, total_cost_usd, total_tokens, latest_changelog: { title, slug, date }}`. Reads `latest_changelog` from `docs/site/changelog.md` at build time via Vite import; not a runtime read. |
-| `site/src/lib/server/settings-suffix.ts` | `formatSettingsSuffix(profile: SettingsProfileRow): string` — pure formatter. Examples: `(50K, t0.1)` (max_tokens=50000, temperature=0.1), `(t0)` (temperature only), `()` returned as `''`. Single-source-of-truth so leaderboard/model-detail/runs/compare all render identically. |
-| `site/src/lib/server/settings-suffix.test.ts` | Unit tests covering all suffix combinations: temperature only, max_tokens only, both, neither, thinking enabled, prompt_version skipped (not part of suffix). |
-| `site/src/lib/server/categories.test.ts` | Unit tests for index + detail SQL — fixtures with 3 categories, 5 tasks, 2 models, asserts counts. |
-| `site/src/lib/server/matrix.test.ts` | Unit tests for cell color bucket logic; matrix shape (rectangular); category-filtered matrix returns subset. |
-| `site/src/lib/server/summary.test.ts` | Unit tests for `computeSummaryStats` — fixtures with 3 runs, 2 models, 5 tasks, sum tokens + cost. |
-| `site/src/lib/components/domain/AttemptStackedBar.svelte` | Per-row mini stacked bar widget for the leaderboard. 80px wide; three segments (Pass@1 green / Pass@2-only amber / Failed red); aria-label summarizes the breakdown. Pure presentational. |
-| `site/src/lib/components/domain/AttemptStackedBar.test.svelte.ts` | Unit tests: zero values render zero-width segments; aria-label matches `"3 passed first try, 1 passed after retry, 6 failed of 10 attempted"`; segment widths sum to 100%. |
-| `site/src/lib/components/domain/AttemptBreakdownTile.svelte` | Replaces the current `<StatTile label="Tasks pass" value={ratio}/>` on the model detail page with a richer breakdown widget: small icon + ratio + "1st: N · 2nd: M · Failed: K" subtitle. Reuses `<StatTile>` skeleton internally. |
-| `site/src/lib/components/domain/AttemptBreakdownTile.test.svelte.ts` | Unit tests: renders all three numbers; reads `tasks_attempted` for denominator; handles zero-attempts case. |
-| `site/src/lib/components/domain/SummaryBand.svelte` | Top-of-leaderboard summary widget: 5 stat boxes (Runs, Models, Tasks, Total Cost, Total Tokens) + 1 callout (latest changelog entry). Uses `<StatTile>` for the stat boxes. |
-| `site/src/lib/components/domain/SummaryBand.test.svelte.ts` | Unit tests: renders 5 stat values; renders changelog callout when present; gracefully omits callout when null. |
-| `site/src/lib/components/domain/PerformanceVsCostChart.svelte` | Dual-axis chart: y1 = avg_score (bar), y2 = avg_cost_usd (scatter point); x = model rank. Axis labels, legend, hover tooltip. Pure SVG; no chart-library dep. |
-| `site/src/lib/components/domain/PerformanceVsCostChart.test.svelte.ts` | Unit tests: data with 3 models renders 3 bars + 3 dots; empty array renders empty-state message; hover shows model display name. |
-| `site/src/lib/components/domain/TaskResultsMatrix.svelte` | Sticky-left matrix renderer. Header row = model columns; left column = task IDs (sticky); cells = color-bucketed rectangles (3px borders, 24×24px). Hover on fail cell shows shortcoming tooltip. Optional category filter prop. Lazy renders rows out-of-viewport via Intersection Observer. |
-| `site/src/lib/components/domain/TaskResultsMatrix.test.svelte.ts` | Unit tests: 3-task × 2-model matrix renders 6 cells; sticky-left class applied to first column; tooltip shows on hover for fail cell. |
-| `site/src/lib/components/domain/ShortcomingsSection.svelte` | Model-detail section listing all shortcomings for the model. Each row is `<ShortcomingDetail>`. Uses `/api/v1/models/[slug]/limitations?accept=application/json` (existing endpoint, returns `correct_pattern` populated). Empty-state UX is REQUIRED — production has 0 rows globally; CC-2 analyzer is P8 scope. Uses `<EmptyState>` from `$lib/components/ui/` (P6 C3). |
-| `site/src/lib/components/domain/ShortcomingsSection.test.svelte.ts` | Unit tests: 3 shortcomings render 3 rows; empty array renders `<EmptyState>` with messaging "Shortcomings analysis pending — first analyzer run scheduled for P8"; loads from prop, not API call. |
-| `site/src/lib/components/domain/ShortcomingDetail.svelte` | Expandable row: collapsed shows AL concept + occurrence_count + severity badge; expanded shows description (markdown) + correct_pattern (code block) + error_codes_json (formatted list). Incorrect-pattern rendering is OUT OF P7 SCOPE (deferred to P8 — needs new server endpoint with `fzstd` decompression). |
-| `site/src/lib/components/domain/ShortcomingDetail.test.svelte.ts` | Unit tests: collapsed by default; click expands; correct_pattern renders inline (no lazy-fetch needed); error_codes_json renders as bullet list when present. |
-| `site/src/lib/components/domain/CategoryCard.svelte` | Card for `/categories` index. Shows category name, task_count, top-3 models by avg_score (mini sparkline), "View →" link. |
-| `site/src/lib/components/domain/CategoryCard.test.svelte.ts` | Unit tests: renders category name and task count; renders top-3 models when present; renders empty state when category has zero runs. |
-| `site/src/lib/components/domain/SettingsBadge.svelte` | Inline badge rendered next to model display name. Receives `settings_suffix: string`; renders as `<span class="settings-badge">{suffix}</span>`. Empty string → no render. |
-| `site/src/lib/components/domain/SettingsBadge.test.svelte.ts` | Unit tests: renders given suffix; renders nothing for empty string; aria-label is descriptive. |
-| `site/src/lib/components/domain/ChangelogEntry.svelte` | Renders one changelog entry: title (h2), date, body (markdown). Used by `/changelog` route. |
-| `site/src/lib/components/domain/ChangelogEntry.test.svelte.ts` | Unit tests: title renders as h2; date formats correctly; markdown body renders via `<MarkdownRenderer>`. |
-| `site/src/routes/categories/+page.server.ts` | Server loader for `/categories`. Calls `computeCategoriesIndex(db, ...)`. |
-| `site/src/routes/categories/+page.svelte` | `/categories` page: card grid of all categories. |
-| `site/src/routes/categories/[slug]/+page.server.ts` | Server loader for `/categories/[slug]`. Calls `computeCategoryDetail(db, slug, ...)` + `computeLeaderboard(db, { ...filters, category: slug })` + `computeMatrix(db, { category: slug })`. |
-| `site/src/routes/categories/[slug]/+page.svelte` | Category detail: scoped leaderboard + performance chart + matrix. |
-| `site/src/routes/matrix/+page.server.ts` | Server loader for `/matrix`. Calls `computeMatrix(db, ...)`. |
-| `site/src/routes/matrix/+page.svelte` | `/matrix` page: full task-results matrix with optional category/difficulty filter rail. |
-| `site/src/routes/changelog/+page.server.ts` | Server loader for `/changelog`. Reads `docs/site/changelog.md` via Vite `?raw` import; parses entries. |
-| `site/src/routes/changelog/+page.svelte` | `/changelog` page: list of `<ChangelogEntry>` widgets, newest first. |
-| `docs/site/changelog.md` | Source-of-truth changelog. P7 initial entry: "Stat parity (Pass@1/2, categories, matrix, shortcomings)". One entry per ship. |
-| `site/src/lib/parse-changelog.ts` | Pure function `parseChangelog(markdown: string): ChangelogEntry[]`. Splits on `## ` headers, extracts title/date/body. Unit-testable without filesystem. |
-| `site/src/lib/parse-changelog.test.ts` | Unit tests: 3-entry markdown parses to 3 entries; date format `(YYYY-MM-DD)` extracted; body is everything between header and next header; trailing whitespace trimmed. |
-| `site/tests/api/categories.test.ts` | Worker-pool integration tests for `/api/v1/categories` + `/api/v1/categories/[slug]`: seeds 3 categories, 6 tasks, 4 results across 2 models; asserts counts. (Tests live under `site/tests/api/` per repo convention — vitest's worker-pool include pattern matches `tests/**/*.test.ts`; tests in `src/routes/.../__test__/` would be skipped or run in the jsdom pool.) |
-| `site/tests/api/matrix.test.ts` | Worker-pool integration tests for `/api/v1/matrix`: seeds 3 tasks × 2 models × 2 attempts each; asserts cells matrix shape; asserts category filter narrows. |
-| `site/tests/api/summary.test.ts` | Worker-pool integration test for `/api/v1/summary`: asserts shape + values. |
-| `site/tests/build/p7-pass-attempt-fields.test.ts` | CI invariant: assert `LeaderboardRow` exposes `tasks_passed_attempt_1`, `tasks_passed_attempt_2_only`, `pass_at_n` fields (TypeScript-level test using `Pick<>`). Compile failure if API drifts back to collapsed schema. |
-| `site/tests/build/p7-shortcomings-non-empty.test.ts` | CI invariant: when `CI_PROD_PROBE=1` (separate dedicated workflow, off by default), fetch `/api/v1/shortcomings` and assert at least 1 row (non-empty). Caught CC-2 regression early. |
-| (CC-1 diagnose script: NOT NEEDED) | Production diagnosed by plan-author 2026-04-27. Fix is operator action documented in P6 A4 §"Catalog reconciliation" runbook in `docs/site/operations.md`. P7 just cross-links it. |
-| (CC-2 diagnose script: NOT NEEDED) | Production diagnosed by plan-author 2026-04-27. Analyzer build deferred to P8. |
+| Path                                                                   | Responsibility                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/src/routes/api/v1/categories/+server.ts`                         | `GET /api/v1/categories` — index of `task_categories` joined with `tasks` for per-category counts. Returns `CategoriesIndexItem[]`. Cache-API backed (60s s-maxage), named cache `cg-categories`.                                                                                                                                                                          |
+| `site/src/routes/api/v1/categories/[slug]/+server.ts`                  | `GET /api/v1/categories/:slug` — category detail (name, task_count, model_count, task_ids, top_models). Cache-API backed.                                                                                                                                                                                                                                                  |
+| `site/src/routes/api/v1/summary/+server.ts`                            | `GET /api/v1/summary` — site-wide aggregates (runs, models, tasks, total_cost_usd, total_tokens, latest_changelog_entry). Read-only D1 SELECTs. Named cache `cg-summary`.                                                                                                                                                                                                  |
+| `site/src/routes/api/v1/matrix/+server.ts`                             | `GET /api/v1/matrix?set=current[&category=<slug>][&difficulty=<easy\|medium\|hard>]` — dense matrix `{tasks: TaskRow[], models: ModelCol[], cells: Cell[][]}` for the current task set. Named cache `cg-matrix`. ~375KB payload.                                                                                                                                           |
+| `site/src/lib/server/categories.ts`                                    | `computeCategoriesIndex(db, opts)` + `computeCategoryDetail(db, slug, opts)` — pure functions returning the typed index/detail objects. Used by both /api/v1/categories endpoints + /categories page server loaders.                                                                                                                                                       |
+| `site/src/lib/server/matrix.ts`                                        | `computeMatrix(db, opts)` — returns `{tasks, models, cells}`. Cell color bucket logic lives in `cellColorBucket(passed_count, attempted_count)` (pure helper, unit-testable).                                                                                                                                                                                              |
+| `site/src/lib/server/summary.ts`                                       | `computeSummaryStats(db)` — returns `{runs, models, tasks, total_cost_usd, total_tokens, latest_changelog: { title, slug, date }}`. Reads `latest_changelog` from `docs/site/changelog.md` at build time via Vite import; not a runtime read.                                                                                                                              |
+| `site/src/lib/server/settings-suffix.ts`                               | `formatSettingsSuffix(profile: SettingsProfileRow): string` — pure formatter. Examples: `(50K, t0.1)` (max_tokens=50000, temperature=0.1), `(t0)` (temperature only), `()` returned as `''`. Single-source-of-truth so leaderboard/model-detail/runs/compare all render identically.                                                                                       |
+| `site/src/lib/server/settings-suffix.test.ts`                          | Unit tests covering all suffix combinations: temperature only, max_tokens only, both, neither, thinking enabled, prompt_version skipped (not part of suffix).                                                                                                                                                                                                              |
+| `site/src/lib/server/categories.test.ts`                               | Unit tests for index + detail SQL — fixtures with 3 categories, 5 tasks, 2 models, asserts counts.                                                                                                                                                                                                                                                                         |
+| `site/src/lib/server/matrix.test.ts`                                   | Unit tests for cell color bucket logic; matrix shape (rectangular); category-filtered matrix returns subset.                                                                                                                                                                                                                                                               |
+| `site/src/lib/server/summary.test.ts`                                  | Unit tests for `computeSummaryStats` — fixtures with 3 runs, 2 models, 5 tasks, sum tokens + cost.                                                                                                                                                                                                                                                                         |
+| `site/src/lib/components/domain/AttemptStackedBar.svelte`              | Per-row mini stacked bar widget for the leaderboard. 80px wide; three segments (Pass@1 green / Pass@2-only amber / Failed red); aria-label summarizes the breakdown. Pure presentational.                                                                                                                                                                                  |
+| `site/src/lib/components/domain/AttemptStackedBar.test.svelte.ts`      | Unit tests: zero values render zero-width segments; aria-label matches `"3 passed first try, 1 passed after retry, 6 failed of 10 attempted"`; segment widths sum to 100%.                                                                                                                                                                                                 |
+| `site/src/lib/components/domain/AttemptBreakdownTile.svelte`           | Replaces the current `<StatTile label="Tasks pass" value={ratio}/>` on the model detail page with a richer breakdown widget: small icon + ratio + "1st: N · 2nd: M · Failed: K" subtitle. Reuses `<StatTile>` skeleton internally.                                                                                                                                         |
+| `site/src/lib/components/domain/AttemptBreakdownTile.test.svelte.ts`   | Unit tests: renders all three numbers; reads `tasks_attempted` for denominator; handles zero-attempts case.                                                                                                                                                                                                                                                                |
+| `site/src/lib/components/domain/SummaryBand.svelte`                    | Top-of-leaderboard summary widget: 5 stat boxes (Runs, Models, Tasks, Total Cost, Total Tokens) + 1 callout (latest changelog entry). Uses `<StatTile>` for the stat boxes.                                                                                                                                                                                                |
+| `site/src/lib/components/domain/SummaryBand.test.svelte.ts`            | Unit tests: renders 5 stat values; renders changelog callout when present; gracefully omits callout when null.                                                                                                                                                                                                                                                             |
+| `site/src/lib/components/domain/PerformanceVsCostChart.svelte`         | Dual-axis chart: y1 = avg_score (bar), y2 = avg_cost_usd (scatter point); x = model rank. Axis labels, legend, hover tooltip. Pure SVG; no chart-library dep.                                                                                                                                                                                                              |
+| `site/src/lib/components/domain/PerformanceVsCostChart.test.svelte.ts` | Unit tests: data with 3 models renders 3 bars + 3 dots; empty array renders empty-state message; hover shows model display name.                                                                                                                                                                                                                                           |
+| `site/src/lib/components/domain/TaskResultsMatrix.svelte`              | Sticky-left matrix renderer. Header row = model columns; left column = task IDs (sticky); cells = color-bucketed rectangles (3px borders, 24×24px). Hover on fail cell shows shortcoming tooltip. Optional category filter prop. Lazy renders rows out-of-viewport via Intersection Observer.                                                                              |
+| `site/src/lib/components/domain/TaskResultsMatrix.test.svelte.ts`      | Unit tests: 3-task × 2-model matrix renders 6 cells; sticky-left class applied to first column; tooltip shows on hover for fail cell.                                                                                                                                                                                                                                      |
+| `site/src/lib/components/domain/ShortcomingsSection.svelte`            | Model-detail section listing all shortcomings for the model. Each row is `<ShortcomingDetail>`. Uses `/api/v1/models/[slug]/limitations?accept=application/json` (existing endpoint, returns `correct_pattern` populated). Empty-state UX is REQUIRED — production has 0 rows globally; CC-2 analyzer is P8 scope. Uses `<EmptyState>` from `$lib/components/ui/` (P6 C3). |
+| `site/src/lib/components/domain/ShortcomingsSection.test.svelte.ts`    | Unit tests: 3 shortcomings render 3 rows; empty array renders `<EmptyState>` with messaging "Shortcomings analysis pending — first analyzer run scheduled for P8"; loads from prop, not API call.                                                                                                                                                                          |
+| `site/src/lib/components/domain/ShortcomingDetail.svelte`              | Expandable row: collapsed shows AL concept + occurrence_count + severity badge; expanded shows description (markdown) + correct_pattern (code block) + error_codes_json (formatted list). Incorrect-pattern rendering is OUT OF P7 SCOPE (deferred to P8 — needs new server endpoint with `fzstd` decompression).                                                          |
+| `site/src/lib/components/domain/ShortcomingDetail.test.svelte.ts`      | Unit tests: collapsed by default; click expands; correct_pattern renders inline (no lazy-fetch needed); error_codes_json renders as bullet list when present.                                                                                                                                                                                                              |
+| `site/src/lib/components/domain/CategoryCard.svelte`                   | Card for `/categories` index. Shows category name, task_count, top-3 models by avg_score (mini sparkline), "View →" link.                                                                                                                                                                                                                                                  |
+| `site/src/lib/components/domain/CategoryCard.test.svelte.ts`           | Unit tests: renders category name and task count; renders top-3 models when present; renders empty state when category has zero runs.                                                                                                                                                                                                                                      |
+| `site/src/lib/components/domain/SettingsBadge.svelte`                  | Inline badge rendered next to model display name. Receives `settings_suffix: string`; renders as `<span class="settings-badge">{suffix}</span>`. Empty string → no render.                                                                                                                                                                                                 |
+| `site/src/lib/components/domain/SettingsBadge.test.svelte.ts`          | Unit tests: renders given suffix; renders nothing for empty string; aria-label is descriptive.                                                                                                                                                                                                                                                                             |
+| `site/src/lib/components/domain/ChangelogEntry.svelte`                 | Renders one changelog entry: title (h2), date, body (markdown). Used by `/changelog` route.                                                                                                                                                                                                                                                                                |
+| `site/src/lib/components/domain/ChangelogEntry.test.svelte.ts`         | Unit tests: title renders as h2; date formats correctly; markdown body renders via `<MarkdownRenderer>`.                                                                                                                                                                                                                                                                   |
+| `site/src/routes/categories/+page.server.ts`                           | Server loader for `/categories`. Calls `computeCategoriesIndex(db, ...)`.                                                                                                                                                                                                                                                                                                  |
+| `site/src/routes/categories/+page.svelte`                              | `/categories` page: card grid of all categories.                                                                                                                                                                                                                                                                                                                           |
+| `site/src/routes/categories/[slug]/+page.server.ts`                    | Server loader for `/categories/[slug]`. Calls `computeCategoryDetail(db, slug, ...)` + `computeLeaderboard(db, { ...filters, category: slug })` + `computeMatrix(db, { category: slug })`.                                                                                                                                                                                 |
+| `site/src/routes/categories/[slug]/+page.svelte`                       | Category detail: scoped leaderboard + performance chart + matrix.                                                                                                                                                                                                                                                                                                          |
+| `site/src/routes/matrix/+page.server.ts`                               | Server loader for `/matrix`. Calls `computeMatrix(db, ...)`.                                                                                                                                                                                                                                                                                                               |
+| `site/src/routes/matrix/+page.svelte`                                  | `/matrix` page: full task-results matrix with optional category/difficulty filter rail.                                                                                                                                                                                                                                                                                    |
+| `site/src/routes/changelog/+page.server.ts`                            | Server loader for `/changelog`. Reads `docs/site/changelog.md` via Vite `?raw` import; parses entries.                                                                                                                                                                                                                                                                     |
+| `site/src/routes/changelog/+page.svelte`                               | `/changelog` page: list of `<ChangelogEntry>` widgets, newest first.                                                                                                                                                                                                                                                                                                       |
+| `docs/site/changelog.md`                                               | Source-of-truth changelog. P7 initial entry: "Stat parity (Pass@1/2, categories, matrix, shortcomings)". One entry per ship.                                                                                                                                                                                                                                               |
+| `site/src/lib/parse-changelog.ts`                                      | Pure function `parseChangelog(markdown: string): ChangelogEntry[]`. Splits on `##` headers, extracts title/date/body. Unit-testable without filesystem.                                                                                                                                                                                                                    |
+| `site/src/lib/parse-changelog.test.ts`                                 | Unit tests: 3-entry markdown parses to 3 entries; date format `(YYYY-MM-DD)` extracted; body is everything between header and next header; trailing whitespace trimmed.                                                                                                                                                                                                    |
+| `site/tests/api/categories.test.ts`                                    | Worker-pool integration tests for `/api/v1/categories` + `/api/v1/categories/[slug]`: seeds 3 categories, 6 tasks, 4 results across 2 models; asserts counts. (Tests live under `site/tests/api/` per repo convention — vitest's worker-pool include pattern matches `tests/**/*.test.ts`; tests in `src/routes/.../__test__/` would be skipped or run in the jsdom pool.) |
+| `site/tests/api/matrix.test.ts`                                        | Worker-pool integration tests for `/api/v1/matrix`: seeds 3 tasks × 2 models × 2 attempts each; asserts cells matrix shape; asserts category filter narrows.                                                                                                                                                                                                               |
+| `site/tests/api/summary.test.ts`                                       | Worker-pool integration test for `/api/v1/summary`: asserts shape + values.                                                                                                                                                                                                                                                                                                |
+| `site/tests/build/p7-pass-attempt-fields.test.ts`                      | CI invariant: assert `LeaderboardRow` exposes `tasks_passed_attempt_1`, `tasks_passed_attempt_2_only`, `pass_at_n` fields (TypeScript-level test using `Pick<>`). Compile failure if API drifts back to collapsed schema.                                                                                                                                                  |
+| `site/tests/build/p7-shortcomings-non-empty.test.ts`                   | CI invariant: when `CI_PROD_PROBE=1` (separate dedicated workflow, off by default), fetch `/api/v1/shortcomings` and assert at least 1 row (non-empty). Caught CC-2 regression early.                                                                                                                                                                                      |
+| (CC-1 diagnose script: NOT NEEDED)                                     | Production diagnosed by plan-author 2026-04-27. Fix is operator action documented in P6 A4 §"Catalog reconciliation" runbook in `docs/site/operations.md`. P7 just cross-links it.                                                                                                                                                                                         |
+| (CC-2 diagnose script: NOT NEEDED)                                     | Production diagnosed by plan-author 2026-04-27. Analyzer build deferred to P8.                                                                                                                                                                                                                                                                                             |
 
 ### Modified files
 
-| Path | Change |
-|------|--------|
-| `site/src/lib/server/leaderboard.ts` | SQL extends `SUM(r.passed)` (single value) into multiple aggregates; result shape gains `tasks_passed_attempt_1`, `tasks_passed_attempt_2_only`, `tasks_attempted_distinct` (NEW per-task count, alongside legacy per-attempt `tasks_attempted`), `pass_at_n`, `settings_suffix`. Joins `settings_profiles` via `runs.settings_hash`; suffix only emitted when COUNT(DISTINCT settings_hash)=1. Uses "best across runs per task" semantics for attempt fields (see B1 SQL design rationale). |
-| `site/src/lib/server/model-aggregates.ts` | `Aggregate` interface gains the 3 attempt fields + `tasks_attempted_distinct` + `settings_suffix`. `computeModelAggregates` SQL extends to compute them; falls back to nulls when no data. |
-| `site/src/lib/shared/api-types.ts` | `LeaderboardRow` gains `tasks_passed_attempt_1: number`, `tasks_passed_attempt_2_only: number`, `tasks_attempted_distinct: number` (NEW; alongside legacy `tasks_attempted`), `pass_at_n: number`, `settings_suffix: string`. JSDoc on each field explains semantics. `ModelDetail.aggregates` gains the parallel 5 fields. New types: `CategoriesIndexItem`, `CategoryDetail`, `MatrixResponse`, `MatrixCell`, `SummaryStats`, `ChangelogEntry`. |
-| `site/src/lib/components/domain/LeaderboardTable.svelte` | Replaces `tasks_passed/tasks_attempted` cell with `<AttemptStackedBar>` widget. Replaces `model.display_name` text with `model.display_name + <SettingsBadge suffix={row.model.settings_suffix} />`. Adds optional `?sort=pass_at_n` column-header click handler. |
-| `site/src/lib/components/domain/LeaderboardTable.test.svelte.ts` | Updates: assert AttemptStackedBar renders with breakdown values; assert SettingsBadge renders when suffix present. |
-| `site/src/routes/+page.svelte` | Above leaderboard, render `<SummaryBand stats={data.summary} />`; below band but above table, render `<PerformanceVsCostChart rows={data.leaderboard.data} />`. Existing leaderboard table unchanged below those. |
-| `site/src/routes/+page.server.ts` | Loader calls `computeSummaryStats(env.DB)` (cache via `caches.open('cg-summary')`) and pushes onto `data.summary`. |
-| `site/src/routes/models/[...slug]/+page.svelte` | Replaces `<StatTile label="Tasks pass" value={tasksRatio}/>` with `<AttemptBreakdownTile aggregates={m.aggregates} />`. Below `<FailureModesList>`, adds `<ShortcomingsSection slug={m.model.slug} />`. Adds Settings sub-section showing `m.aggregates.settings_suffix` decoded into bullet list. Updates breadcrumbs: `m.model.display_name + suffix`. |
-| `site/src/routes/api/v1/models/[...slug]/+server.ts` | Endpoint extends to fetch shortcomings via `getAll` against `shortcomings WHERE model_id = ?`; injects into payload. Or — keep separate endpoint, ShortcomingsSection client-fetches. (Decision in Task A2.) |
-| `site/src/routes/api/v1/leaderboard/+server.ts` | Accepts `?category=<slug>` query param; threads to `computeLeaderboard`. Cache key includes category. |
-| `site/src/lib/shared/api-types.ts` | `LeaderboardQuery` gains `category: string \| null`. |
-| `site/src/routes/tasks/+page.svelte` | Add Category column (renders `<a href="/categories/{slug}">{name}</a>`); add Category filter chip in filter rail (multi-select). |
-| `site/src/routes/tasks/+page.server.ts` | Loader threads `?category=` into `getAll`. |
-| `site/src/routes/runs/[...id]/+page.svelte` | Adds "View transcript" link per attempt (R2 lazy-load via existing `/api/v1/transcripts/<sha>` — `<TranscriptViewer>` already exists). Code R2 link removed (no consumer; covered by ShortcomingDetail). |
-| `site/src/routes/+layout.svelte` | Adds nav link "Categories" (between "Models" and "Tasks") and "Matrix" (after "Tasks"). Adds nav link "Changelog" (in footer). |
-| `site/src/routes/about/+page.svelte` | Add §"Scoring metrics" subsection: explains divergence between `avg_score` (per-attempt) and `pass_at_n` (per-task). Anchor `#scoring`. |
-| `site/src/lib/parse-settings.ts` | New module: `parseSettingsProfile(extra_json: string): { thinking_budget?: number; consistency?: string }`. Pure function; consumed by `formatSettingsSuffix` and `Settings` sub-section on model detail. |
-| `docs/site/architecture.md` | New §"Pass@1/Pass@2 SQL semantics" + §"Categories surface" + §"Matrix endpoint shape" + §"Settings suffix derivation". |
-| `docs/site/operations.md` | Append §"Tasks-empty diagnosis (CC-1)" + §"Shortcomings-empty diagnosis (CC-2)" + §"Changelog editor workflow" runbooks. |
-| `site/CONTRIBUTING.md` | Add P7 lessons section: "Per-row stacked bar charts go in widget components, not inline. Settings suffixes are API-side. Markdown changelog is build-time, not runtime." |
-| `site/CHANGELOG.md` | Add P7 entry. |
-| `docs/site/changelog.md` | Add P7 entry as the new latest. |
+| Path                                                             | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/src/lib/server/leaderboard.ts`                             | SQL extends `SUM(r.passed)` (single value) into multiple aggregates; result shape gains `tasks_passed_attempt_1`, `tasks_passed_attempt_2_only`, `tasks_attempted_distinct` (NEW per-task count, alongside legacy per-attempt `tasks_attempted`), `pass_at_n`, `settings_suffix`. Joins `settings_profiles` via `runs.settings_hash`; suffix only emitted when COUNT(DISTINCT settings_hash)=1. Uses "best across runs per task" semantics for attempt fields (see B1 SQL design rationale). |
+| `site/src/lib/server/model-aggregates.ts`                        | `Aggregate` interface gains the 3 attempt fields + `tasks_attempted_distinct` + `settings_suffix`. `computeModelAggregates` SQL extends to compute them; falls back to nulls when no data.                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/shared/api-types.ts`                               | `LeaderboardRow` gains `tasks_passed_attempt_1: number`, `tasks_passed_attempt_2_only: number`, `tasks_attempted_distinct: number` (NEW; alongside legacy `tasks_attempted`), `pass_at_n: number`, `settings_suffix: string`. JSDoc on each field explains semantics. `ModelDetail.aggregates` gains the parallel 5 fields. New types: `CategoriesIndexItem`, `CategoryDetail`, `MatrixResponse`, `MatrixCell`, `SummaryStats`, `ChangelogEntry`.                                            |
+| `site/src/lib/components/domain/LeaderboardTable.svelte`         | Replaces `tasks_passed/tasks_attempted` cell with `<AttemptStackedBar>` widget. Replaces `model.display_name` text with `model.display_name + <SettingsBadge suffix={row.model.settings_suffix} />`. Adds optional `?sort=pass_at_n` column-header click handler.                                                                                                                                                                                                                            |
+| `site/src/lib/components/domain/LeaderboardTable.test.svelte.ts` | Updates: assert AttemptStackedBar renders with breakdown values; assert SettingsBadge renders when suffix present.                                                                                                                                                                                                                                                                                                                                                                           |
+| `site/src/routes/+page.svelte`                                   | Above leaderboard, render `<SummaryBand stats={data.summary} />`; below band but above table, render `<PerformanceVsCostChart rows={data.leaderboard.data} />`. Existing leaderboard table unchanged below those.                                                                                                                                                                                                                                                                            |
+| `site/src/routes/+page.server.ts`                                | Loader calls `computeSummaryStats(env.DB)` (cache via `caches.open('cg-summary')`) and pushes onto `data.summary`.                                                                                                                                                                                                                                                                                                                                                                           |
+| `site/src/routes/models/[...slug]/+page.svelte`                  | Replaces `<StatTile label="Tasks pass" value={tasksRatio}/>` with `<AttemptBreakdownTile aggregates={m.aggregates} />`. Below `<FailureModesList>`, adds `<ShortcomingsSection slug={m.model.slug} />`. Adds Settings sub-section showing `m.aggregates.settings_suffix` decoded into bullet list. Updates breadcrumbs: `m.model.display_name + suffix`.                                                                                                                                     |
+| `site/src/routes/api/v1/models/[...slug]/+server.ts`             | Endpoint extends to fetch shortcomings via `getAll` against `shortcomings WHERE model_id = ?`; injects into payload. Or — keep separate endpoint, ShortcomingsSection client-fetches. (Decision in Task A2.)                                                                                                                                                                                                                                                                                 |
+| `site/src/routes/api/v1/leaderboard/+server.ts`                  | Accepts `?category=<slug>` query param; threads to `computeLeaderboard`. Cache key includes category.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `site/src/lib/shared/api-types.ts`                               | `LeaderboardQuery` gains `category: string \| null`.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `site/src/routes/tasks/+page.svelte`                             | Add Category column (renders `<a href="/categories/{slug}">{name}</a>`); add Category filter chip in filter rail (multi-select).                                                                                                                                                                                                                                                                                                                                                             |
+| `site/src/routes/tasks/+page.server.ts`                          | Loader threads `?category=` into `getAll`.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/routes/runs/[...id]/+page.svelte`                      | Adds "View transcript" link per attempt (R2 lazy-load via existing `/api/v1/transcripts/<sha>` — `<TranscriptViewer>` already exists). Code R2 link removed (no consumer; covered by ShortcomingDetail).                                                                                                                                                                                                                                                                                     |
+| `site/src/routes/+layout.svelte`                                 | Adds nav link "Categories" (between "Models" and "Tasks") and "Matrix" (after "Tasks"). Adds nav link "Changelog" (in footer).                                                                                                                                                                                                                                                                                                                                                               |
+| `site/src/routes/about/+page.svelte`                             | Add §"Scoring metrics" subsection: explains divergence between `avg_score` (per-attempt) and `pass_at_n` (per-task). Anchor `#scoring`.                                                                                                                                                                                                                                                                                                                                                      |
+| `site/src/lib/parse-settings.ts`                                 | New module: `parseSettingsProfile(extra_json: string): { thinking_budget?: number; consistency?: string }`. Pure function; consumed by `formatSettingsSuffix` and `Settings` sub-section on model detail.                                                                                                                                                                                                                                                                                    |
+| `docs/site/architecture.md`                                      | New §"Pass@1/Pass@2 SQL semantics" + §"Categories surface" + §"Matrix endpoint shape" + §"Settings suffix derivation".                                                                                                                                                                                                                                                                                                                                                                       |
+| `docs/site/operations.md`                                        | Append §"Tasks-empty diagnosis (CC-1)" + §"Shortcomings-empty diagnosis (CC-2)" + §"Changelog editor workflow" runbooks.                                                                                                                                                                                                                                                                                                                                                                     |
+| `site/CONTRIBUTING.md`                                           | Add P7 lessons section: "Per-row stacked bar charts go in widget components, not inline. Settings suffixes are API-side. Markdown changelog is build-time, not runtime."                                                                                                                                                                                                                                                                                                                     |
+| `site/CHANGELOG.md`                                              | Add P7 entry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `docs/site/changelog.md`                                         | Add P7 entry as the new latest.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ### Deleted files
 
-| Path | Reason |
-|------|--------|
+| Path   | Reason                                                                                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none) | P7 is additive — no file deletions. The legacy `tasks_passed`/`tasks_attempted` columns remain on `LeaderboardRow` (deprecated but kept) so external API consumers don't break. |
 
 ### Out of scope (deferred to P8+)
@@ -266,6 +271,7 @@ Phase A diagnoses the two cross-cutting investigations (CC-1, CC-2) and lays the
 ### Task A1: CC-1 acknowledgment — reference P6 runbook; ensure UI handles empty data
 
 **Files:**
+
 - Modify: `docs/site/operations.md` (cross-link the existing P6 §"Catalog reconciliation" runbook into a new §"Tasks-empty symptom (CC-1)" pointer)
 
 > **Design rationale: do NOT re-investigate.** Production diagnostics on 2026-04-27 (run by plan-author before writing this plan) confirmed: 64 distinct task_ids in `results`, 0 rows in `tasks`. The `/api/v1/health/catalog-drift` endpoint shipped in P6 reports `drift_count: 64`. The fix is a single operator command — `centralgauge sync-catalog --apply` from the bench machine — and is documented in P6 Task A4's runbook in `docs/site/operations.md` §"Catalog reconciliation". P7 does NOT add a new diagnostic script; that would duplicate work and risk drift between two runbooks.
@@ -297,6 +303,7 @@ git -C /u/Git/CentralGauge add docs/site/operations.md
 ### Task A2: CC-2 acknowledgment — empty-state requirement; analyzer is P8 scope
 
 **Files:**
+
 - Modify: `docs/site/operations.md` (append §"Shortcomings empty (CC-2)")
 - Modify: `docs/site/methodology.md` or `/about#methodology` content (add a callout about analyzer status)
 
@@ -329,6 +336,7 @@ git -C /u/Git/CentralGauge add docs/site/methodology.md  # or wherever /about#me
 ### Task A3: Extend `LeaderboardRow` interface — Pass@1/Pass@2/tasks_attempted_distinct/settings_suffix fields
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 
 This is types-only; SQL changes ship in B1.
@@ -384,6 +392,7 @@ Capture the list — these are touch points B-phase tasks must update.
 ### Task A4: Extend `ModelDetail.aggregates` — Pass@1/Pass@2/tasks_attempted_distinct/settings_suffix fields
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 
 Mirrors A3 but on the model-detail interface.
@@ -399,6 +408,7 @@ Mirrors A3 but on the model-detail interface.
 ### Task A5: New types — `CategoriesIndexItem`, `CategoryDetail`, `MatrixResponse`, `MatrixCell`, `SummaryStats`, `ChangelogEntry`
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 
 Add the new types under section comments matching existing patterns.
@@ -414,6 +424,7 @@ Add the new types under section comments matching existing patterns.
 ### Task A6: New API endpoint `/api/v1/categories` (TDD)
 
 **Files:**
+
 - Create: `site/src/lib/server/categories.ts`
 - Create: `site/src/lib/server/categories.test.ts`
 - Create: `site/src/routes/api/v1/categories/+server.ts`
@@ -425,6 +436,7 @@ Add the new types under section comments matching existing patterns.
 - [ ] **Step 1: TDD — author `categories.test.ts`**
 
 Seed fixture: 3 categories (tables/pages/permissions), 6 tasks (2 per category), 2 models, 4 results. Tests:
+
 - index returns 3 categories with task_count
 - top_models sorted by avg_score desc, capped at 3
 - categories ordered by task_count desc
@@ -452,6 +464,7 @@ cd /u/Git/CentralGauge/site && npm run build && npx vitest run src/lib/server/ca
 ### Task A7: New API endpoint `/api/v1/summary` (TDD)
 
 **Files:**
+
 - Create: `site/src/lib/server/summary.ts`
 - Create: `site/src/lib/server/summary.test.ts`
 - Create: `site/src/routes/api/v1/summary/+server.ts`
@@ -462,7 +475,7 @@ cd /u/Git/CentralGauge/site && npm run build && npx vitest run src/lib/server/ca
 
 > **Design rationale:** `latest_changelog` is read at build time, NOT runtime. Reading the markdown at request time would couple a markdown parse to every site visit. Parse at build via Vite `?raw` import (`import changelogMarkdown from '../../../../docs/site/changelog.md?raw'`); snapshot to a constant; inject into runtime payload.
 
-- [ ] **Step 1: Author `parse-changelog.ts`** — pure function `parseChangelog(markdown: string): ChangelogEntry[]`. Splits on `## ` headers; extracts `## Title (YYYY-MM-DD)` (date in parens after title); body is everything between this header and next `## `. Order: newest first (matches markdown source-order convention).
+- [ ] **Step 1: Author `parse-changelog.ts`** — pure function `parseChangelog(markdown: string): ChangelogEntry[]`. Splits on `##` headers; extracts `## Title (YYYY-MM-DD)` (date in parens after title); body is everything between this header and next `##`. Order: newest first (matches markdown source-order convention).
 
 - [ ] **Step 2: Author `parse-changelog.test.ts`** — 3-entry markdown parses to 3 entries; date format extracted; body trimmed; out-of-order dates handled (preserve source order); empty markdown returns empty array.
 
@@ -558,6 +571,7 @@ The flagship feature. Phase A added the type fields; Phase B fills them with rea
 ### Task B1: Update leaderboard SQL — compute attempt breakdown + settings_suffix
 
 **Files:**
+
 - Modify: `site/src/lib/server/leaderboard.ts`
 - Modify: `site/src/lib/server/model-aggregates.ts`
 - Create: `site/src/lib/server/settings-suffix.ts`
@@ -565,6 +579,7 @@ The flagship feature. Phase A added the type fields; Phase B fills them with rea
 - Modify: `site/tests/api/leaderboard.test.ts` (assertions for new fields)
 
 > **Design rationale: pass@1 / pass@2 SQL — multi-run "best across runs per task" semantics.** The legacy bench reports per-run numbers; with multi-run data, naive per-attempt aggregation produces incoherent results. P7 picks "best across runs per task" semantics (CR-4):
+>
 > - `tasks_passed_attempt_1` = COUNT(DISTINCT r.task_id) WHERE EXISTS (some attempt-1 row for this (model, task) with passed=1).
 > - `tasks_passed_attempt_2_only` = COUNT(DISTINCT r.task_id) WHERE EXISTS (some attempt-2 row passed=1) AND NOT EXISTS (any attempt-1 row passed=1) for the same (model, task).
 > - `tasks_attempted_distinct` = COUNT(DISTINCT r.task_id) — per-task denominator (NEW field, alongside legacy `tasks_attempted` = COUNT(*)).
@@ -584,8 +599,10 @@ export interface SettingsProfileLike {
   extra_json: string | null;
 }
 
-export function formatSettingsSuffix(profile: SettingsProfileLike | null): string {
-  if (!profile) return '';
+export function formatSettingsSuffix(
+  profile: SettingsProfileLike | null,
+): string {
+  if (!profile) return "";
   const parts: string[] = [];
   if (profile.max_tokens !== null && profile.max_tokens > 0) {
     const k = Math.round(profile.max_tokens / 1000);
@@ -596,8 +613,8 @@ export function formatSettingsSuffix(profile: SettingsProfileLike | null): strin
     const t = Math.round(profile.temperature * 10) / 10;
     parts.push(`t${t}`);
   }
-  if (parts.length === 0) return '';
-  return ` (${parts.join(', ')})`;
+  if (parts.length === 0) return "";
+  return ` (${parts.join(", ")})`;
 }
 ```
 
@@ -675,6 +692,7 @@ LIMIT ?
 ```
 
 Where:
+
 - `categoryJoin` is `JOIN tasks t ON t.task_id = r.task_id AND t.task_set_hash = runs.task_set_hash JOIN task_categories tc ON tc.id = t.category_id` (added when `q.category` is set).
 - `categoryClauseSubA1` / `categoryClauseSubA2` mirror the same filter inside the correlated subqueries (so attempt counts respect the category filter).
 - `taskSetClauseSubA1` / `taskSetClauseSubA2` / `taskSetClauseSubA2NotExists` mirror the OUTER `task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)` filter (cf. `leaderboard.ts:14-16`) inside each correlated subquery — including the `NOT EXISTS` subquery that classifies attempt-2-only outcomes. Without this scoping, a model that solved T1 first-try in an OLD task_set but failed T1 first-try in the CURRENT set would still count as `attempt_1` on the current-set leaderboard (cross-task-set bleed-through). This mirrors the same fix applied to D1 matrix and the category filter — task-set scoping must mirror identically across all correlated subqueries that aggregate over `runs`.
@@ -691,10 +709,14 @@ return rows.map((r, idx) => {
   const passedA2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
   const attemptedDistinct = Number(r.tasks_attempted_distinct ?? 0);
   const attemptedLegacy = Number(r.tasks_attempted ?? 0); // back-compat: per-attempt count
-  const passAtN = attemptedDistinct > 0 ? (passedA1 + passedA2Only) / attemptedDistinct : 0;
+  const passAtN = attemptedDistinct > 0
+    ? (passedA1 + passedA2Only) / attemptedDistinct
+    : 0;
 
   // settings_profile_json is NULL when settings differ across runs (ambiguous suffix).
-  const profile = r.settings_profile_json ? JSON.parse(r.settings_profile_json) : null;
+  const profile = r.settings_profile_json
+    ? JSON.parse(r.settings_profile_json)
+    : null;
   const settingsSuffix = formatSettingsSuffix(profile);
 
   return {
@@ -707,9 +729,9 @@ return rows.map((r, idx) => {
     },
     family_slug: r.family_slug,
     run_count: r.run_count,
-    tasks_attempted: attemptedLegacy,                  // @deprecated per-attempt count
-    tasks_passed: Number(r.tasks_passed ?? 0),          // @deprecated per-attempt sum
-    tasks_attempted_distinct: attemptedDistinct,       // NEW per-task count
+    tasks_attempted: attemptedLegacy, // @deprecated per-attempt count
+    tasks_passed: Number(r.tasks_passed ?? 0), // @deprecated per-attempt sum
+    tasks_attempted_distinct: attemptedDistinct, // NEW per-task count
     tasks_passed_attempt_1: passedA1,
     tasks_passed_attempt_2_only: passedA2Only,
     pass_at_n: Math.round(passAtN * 1e6) / 1e6,
@@ -822,6 +844,7 @@ git -C /u/Git/CentralGauge add \
 ### Task B2: AttemptStackedBar widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/AttemptStackedBar.svelte`
 - Create: `site/src/lib/components/domain/AttemptStackedBar.test.svelte.ts`
 
@@ -887,6 +910,7 @@ git -C /u/Git/CentralGauge add \
 - [ ] **Step 2: TDD — `AttemptStackedBar.test.svelte.ts`**
 
 Tests:
+
 - `attempted=10, attempt1=3, attempt2Only=1` → bar shows 3 segments; widths sum to 100%; aria-label = "3 passed first try, 1 passed after retry, 6 failed of 10 attempted".
 - `attempted=0` → seg-empty rendered with "—"; aria-label = "0 passed first try, 0 passed after retry, 0 failed of 0 attempted".
 - `attempt1=10, attempt2Only=0, attempted=10` → only seg-a1 rendered (100% width); failed=0.
@@ -905,6 +929,7 @@ cd /u/Git/CentralGauge/site && npx vitest run src/lib/components/domain/AttemptS
 ### Task B3: Update `LeaderboardTable` to render `<AttemptStackedBar>` + `<SettingsBadge>`
 
 **Files:**
+
 - Modify: `site/src/lib/components/domain/LeaderboardTable.svelte`
 - Modify: `site/src/lib/components/domain/LeaderboardTable.test.svelte.ts`
 - Create: `site/src/lib/components/domain/SettingsBadge.svelte`
@@ -957,7 +982,6 @@ Replace the existing `tasks_passed/tasks_attempted` cell:
 
 <!-- Note: AttemptStackedBar takes the per-task denominator. The legacy `row.tasks_attempted`
      remains on the API for back-compat consumers but the UI uses `tasks_attempted_distinct`. -->
-
 ```
 
 Replace the existing model-name cell:
@@ -975,6 +999,7 @@ Add CSS for `.attempts-cell` (column gap, align bar above ratio).
 - [ ] **Step 4: Update existing tests**
 
 `LeaderboardTable.test.svelte.ts` fixtures need the new fields. Add assertions:
+
 - `<AttemptStackedBar>` is rendered for each row (query `.bar`).
 - `<SettingsBadge>` renders when `row.model.settings_suffix` is non-empty.
 
@@ -998,6 +1023,7 @@ cd /u/Git/CentralGauge/site && npx vitest run src/lib/components/domain/Leaderbo
 ### Task B4: Update model detail — `<AttemptBreakdownTile>` replaces "Tasks pass" StatTile
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/AttemptBreakdownTile.svelte`
 - Create: `site/src/lib/components/domain/AttemptBreakdownTile.test.svelte.ts`
 - Modify: `site/src/routes/models/[...slug]/+page.svelte`
@@ -1090,6 +1116,7 @@ cd /u/Git/CentralGauge/site && npm run build 2>&1 | tail -5
 ### Task B5: Score / Pass@N sort toggle on leaderboard
 
 **Files:**
+
 - Modify: `site/src/routes/+page.svelte`
 - Modify: `site/src/routes/+page.server.ts`
 - Modify: `site/src/lib/components/domain/LeaderboardTable.svelte`
@@ -1104,6 +1131,7 @@ Default `'avg_score'` (preserves legacy behavior).
 - [ ] **Step 2: Modify `leaderboard.ts` SQL `ORDER BY` based on sort param**
 
 `tasks_attempted_distinct` is the per-task denominator. The `tasks_passed_attempt_1` and `tasks_passed_attempt_2_only` columns in the SELECT are correlated subqueries; they cannot be referenced by alias inside ORDER BY in SQLite. Two options:
+
 - (a) Sort in TypeScript after fetching all rows (simpler; `LIMIT` is then post-sort — fine for small N).
 - (b) Repeat the subquery expression in ORDER BY.
 
@@ -1111,12 +1139,18 @@ Pick (a) for clarity:
 
 ```ts
 // After mapping rows to LeaderboardRow[], apply final sort:
-if (q.sort === 'pass_at_n') {
-  rows.sort((a, b) => b.pass_at_n - a.pass_at_n || a.model.slug.localeCompare(b.model.slug));
-} else if (q.sort === 'pass_at_1') {
-  const ratio = (r: LeaderboardRow) => r.tasks_attempted_distinct > 0
-    ? r.tasks_passed_attempt_1 / r.tasks_attempted_distinct : 0;
-  rows.sort((a, b) => ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug));
+if (q.sort === "pass_at_n") {
+  rows.sort((a, b) =>
+    b.pass_at_n - a.pass_at_n || a.model.slug.localeCompare(b.model.slug)
+  );
+} else if (q.sort === "pass_at_1") {
+  const ratio = (r: LeaderboardRow) =>
+    r.tasks_attempted_distinct > 0
+      ? r.tasks_passed_attempt_1 / r.tasks_attempted_distinct
+      : 0;
+  rows.sort((a, b) =>
+    ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug)
+  );
 }
 // avg_score sort is handled by SQL ORDER BY (default).
 ```
@@ -1186,6 +1220,7 @@ Categories were a flagship of the legacy site (drill-down by theme: Tables, Page
 ### Task C1: Extend `/api/v1/leaderboard` with `?category=` filter
 
 **Files:**
+
 - Modify: `site/src/lib/server/leaderboard.ts`
 - Modify: `site/src/routes/api/v1/leaderboard/+server.ts`
 - Modify: `site/tests/api/leaderboard.test.ts`
@@ -1205,7 +1240,7 @@ return { ..., category };
 const categoryJoin = q.category
   ? `JOIN tasks t_cat ON t_cat.task_id = r.task_id AND t_cat.task_set_hash = runs.task_set_hash
      JOIN task_categories tc ON tc.id = t_cat.category_id`
-  : '';
+  : "";
 if (q.category) {
   wheres.push(`tc.slug = ?`);
   params.push(q.category);
@@ -1221,6 +1256,7 @@ The leaderboard endpoint uses `caches.open('cg-leaderboard')` and a synthetic GE
 - [ ] **Step 4: TDD — extend `leaderboard.test.ts`**
 
 Fixture: 3 categories, 6 tasks (2 per cat), 3 models with distinct results across categories. Assert:
+
 - Without `?category` → 3 models with task_count=6.
 - With `?category=tables` → models with task_count=2.
 - With `?category=nonexistent` → empty data.
@@ -1234,6 +1270,7 @@ Fixture: 3 categories, 6 tasks (2 per cat), 3 models with distinct results acros
 ### Task C2: `/categories` index page
 
 **Files:**
+
 - Create: `site/src/routes/categories/+page.server.ts`
 - Create: `site/src/routes/categories/+page.svelte`
 - Create: `site/src/lib/components/domain/CategoryCard.svelte`
@@ -1308,12 +1345,14 @@ Fixture: 3 categories, 6 tasks (2 per cat), 3 models with distinct results acros
 - [ ] **Step 3: Author `categories/+page.server.ts`**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { computeCategoriesIndex } from '$lib/server/categories';
+import type { PageServerLoad } from "./$types";
+import { computeCategoriesIndex } from "$lib/server/categories";
 
 export const load: PageServerLoad = async ({ platform, depends }) => {
-  depends('app:categories');
-  const data = await computeCategoriesIndex(platform!.env.DB, { taskSetCurrent: true });
+  depends("app:categories");
+  const data = await computeCategoriesIndex(platform!.env.DB, {
+    taskSetCurrent: true,
+  });
   return { categories: data, generated_at: new Date().toISOString() };
 };
 ```
@@ -1384,6 +1423,7 @@ cd /u/Git/CentralGauge/site && npm run build && npm run dev
 ### Task C3: `/categories/[slug]` detail page (leaderboard + chart + matrix)
 
 **Files:**
+
 - Create: `site/src/routes/categories/[slug]/+page.server.ts`
 - Create: `site/src/routes/categories/[slug]/+page.svelte`
 
@@ -1392,17 +1432,19 @@ cd /u/Git/CentralGauge/site && npm run build && npm run dev
 - [ ] **Step 1: Author `+page.server.ts`**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { computeCategoryDetail } from '$lib/server/categories';
-import { computeMatrix } from '$lib/server/matrix';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import { computeCategoryDetail } from "$lib/server/categories";
+import { computeMatrix } from "$lib/server/matrix";
+import { error } from "@sveltejs/kit";
 
 export const load: PageServerLoad = async ({ params, platform }) => {
-  const detail = await computeCategoryDetail(platform!.env.DB, params.slug, { taskSetCurrent: true });
+  const detail = await computeCategoryDetail(platform!.env.DB, params.slug, {
+    taskSetCurrent: true,
+  });
   if (!detail) throw error(404, `Category "${params.slug}" not found`);
 
   const matrix = await computeMatrix(platform!.env.DB, {
-    set: 'current',
+    set: "current",
     category: params.slug,
     difficulty: null,
   });
@@ -1480,6 +1522,7 @@ export const load: PageServerLoad = async ({ params, platform }) => {
 ### Task C4: Add Category column + filter to `/tasks` page
 
 **Files:**
+
 - Modify: `site/src/routes/tasks/+page.svelte`
 - Modify: `site/src/routes/tasks/+page.server.ts`
 
@@ -1527,6 +1570,7 @@ The endpoint already accepts category (verified). Just thread.
 ### Task C5: Leaderboard sidebar — category-filter rail
 
 **Files:**
+
 - Modify: `site/src/routes/+page.svelte` (filter rail extension)
 - Modify: `site/src/routes/+page.server.ts` (load categories list for the sidebar)
 
@@ -1608,6 +1652,7 @@ The most-missed legacy view: every task × every model with color-bucketed pass/
 ### Task D1: New `/api/v1/matrix` endpoint (TDD)
 
 **Files:**
+
 - Create: `site/src/lib/server/matrix.ts`
 - Create: `site/src/lib/server/matrix.test.ts`
 - Create: `site/src/routes/api/v1/matrix/+server.ts`
@@ -1622,15 +1667,20 @@ The most-missed legacy view: every task × every model with color-bucketed pass/
 - [ ] **Step 1: Author `cellColorBucket` pure helper**
 
 ```ts
-export type CellBucket = 'pass-all' | 'pass-most' | 'pass-some' | 'fail-all' | 'no-data';
+export type CellBucket =
+  | "pass-all"
+  | "pass-most"
+  | "pass-some"
+  | "fail-all"
+  | "no-data";
 
 export function cellColorBucket(passed: number, attempted: number): CellBucket {
-  if (attempted === 0) return 'no-data';
+  if (attempted === 0) return "no-data";
   const ratio = passed / attempted;
-  if (ratio === 1) return 'pass-all';
-  if (ratio >= 0.5) return 'pass-most';
-  if (ratio > 0) return 'pass-some';
-  return 'fail-all';
+  if (ratio === 1) return "pass-all";
+  if (ratio >= 0.5) return "pass-most";
+  if (ratio > 0) return "pass-some";
+  return "fail-all";
 }
 ```
 
@@ -1647,14 +1697,19 @@ export function cellColorBucket(passed: number, attempted: number): CellBucket {
 - [ ] **Step 3: Author `matrix.ts`**
 
 ```ts
-import type { MatrixResponse, MatrixTaskRow, MatrixModelCol, MatrixCell } from '$shared/api-types';
-import { getAll } from './db';
-import { formatSettingsSuffix } from './settings-suffix';
+import type {
+  MatrixCell,
+  MatrixModelCol,
+  MatrixResponse,
+  MatrixTaskRow,
+} from "$shared/api-types";
+import { getAll } from "./db";
+import { formatSettingsSuffix } from "./settings-suffix";
 
 export interface ComputeMatrixOpts {
-  set: 'current' | 'all';
+  set: "current" | "all";
   category: string | null;
-  difficulty: 'easy' | 'medium' | 'hard' | null;
+  difficulty: "easy" | "medium" | "hard" | null;
 }
 
 export async function computeMatrix(
@@ -1664,8 +1719,10 @@ export async function computeMatrix(
   // 1. Load tasks
   const taskWheres: string[] = [];
   const taskParams: (string | number)[] = [];
-  if (opts.set === 'current') {
-    taskWheres.push(`t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+  if (opts.set === "current") {
+    taskWheres.push(
+      `t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
+    );
   }
   if (opts.category) {
     taskWheres.push(`tc.slug = ?`);
@@ -1676,29 +1733,67 @@ export async function computeMatrix(
     taskParams.push(opts.difficulty);
   }
 
-  const tasks = await getAll<{ task_id: string; difficulty: string; category_slug: string | null; category_name: string | null }>(db, `
+  const tasks = await getAll<
+    {
+      task_id: string;
+      difficulty: string;
+      category_slug: string | null;
+      category_name: string | null;
+    }
+  >(
+    db,
+    `
     SELECT t.task_id, t.difficulty, tc.slug AS category_slug, tc.name AS category_name
     FROM tasks t
     LEFT JOIN task_categories tc ON tc.id = t.category_id
-    ${taskWheres.length ? `WHERE ${taskWheres.join(' AND ')}` : ''}
+    ${taskWheres.length ? `WHERE ${taskWheres.join(" AND ")}` : ""}
     ORDER BY t.task_id ASC
-  `, taskParams);
+  `,
+    taskParams,
+  );
 
   // 2. Load models with at least one result for any task in our set
   const taskIds = tasks.map((t) => t.task_id);
   if (taskIds.length === 0) {
-    return { filters: { set: opts.set, category: opts.category, difficulty: opts.difficulty }, tasks: [], models: [], cells: [], generated_at: new Date().toISOString() };
+    return {
+      filters: {
+        set: opts.set,
+        category: opts.category,
+        difficulty: opts.difficulty,
+      },
+      tasks: [],
+      models: [],
+      cells: [],
+      generated_at: new Date().toISOString(),
+    };
   }
-  const taskIdsPlaceholders = taskIds.map(() => '?').join(',');
+  const taskIdsPlaceholders = taskIds.map(() => "?").join(",");
 
   // Models query also filters by current task_set so old-task-set-only models don't appear.
-  const models = await getAll<{ model_id: number; slug: string; display_name: string; settings_profile_json: string }>(db, `
+  const models = await getAll<
+    {
+      model_id: number;
+      slug: string;
+      display_name: string;
+      settings_profile_json: string;
+    }
+  >(
+    db,
+    `
     SELECT m.id AS model_id, m.slug, m.display_name,
            CASE
-             WHEN (SELECT COUNT(DISTINCT settings_hash) FROM runs WHERE model_id = m.id ${opts.set === 'current' ? 'AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)' : ''}) = 1
+             WHEN (SELECT COUNT(DISTINCT settings_hash) FROM runs WHERE model_id = m.id ${
+      opts.set === "current"
+        ? "AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)"
+        : ""
+    }) = 1
              THEN (SELECT json_object('temperature', sp.temperature, 'max_tokens', sp.max_tokens, 'extra_json', sp.extra_json)
                    FROM settings_profiles sp
-                   WHERE sp.hash = (SELECT MAX(settings_hash) FROM runs WHERE model_id = m.id ${opts.set === 'current' ? 'AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)' : ''}))
+                   WHERE sp.hash = (SELECT MAX(settings_hash) FROM runs WHERE model_id = m.id ${
+      opts.set === "current"
+        ? "AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)"
+        : ""
+    }))
              ELSE NULL
            END AS settings_profile_json
     FROM models m
@@ -1706,17 +1801,33 @@ export async function computeMatrix(
       SELECT DISTINCT runs.model_id FROM runs
       JOIN results r ON r.run_id = runs.id
       WHERE r.task_id IN (${taskIdsPlaceholders})
-        ${opts.set === 'current' ? 'AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)' : ''}
+        ${
+      opts.set === "current"
+        ? "AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)"
+        : ""
+    }
     )
     ORDER BY m.id ASC
-  `, taskIds);
+  `,
+    taskIds,
+  );
 
   // 3. Load cells — IMPORTANT: filter by current task_set to prevent old-task-set runs from
   // polluting the current matrix (CR-5). Match the same hash filter the tasks query used.
-  const taskSetFilter = opts.set === 'current'
+  const taskSetFilter = opts.set === "current"
     ? `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-    : '';
-  const cellRows = await getAll<{ task_id: string; model_id: number; passed: number; attempted: number; concept: string | null }>(db, `
+    : "";
+  const cellRows = await getAll<
+    {
+      task_id: string;
+      model_id: number;
+      passed: number;
+      attempted: number;
+      concept: string | null;
+    }
+  >(
+    db,
+    `
     SELECT r.task_id, runs.model_id,
            SUM(CASE WHEN r.passed = 1 THEN 1 ELSE 0 END) AS passed,
            COUNT(*) AS attempted,
@@ -1729,7 +1840,9 @@ export async function computeMatrix(
     WHERE r.task_id IN (${taskIdsPlaceholders})
     ${taskSetFilter}
     GROUP BY r.task_id, runs.model_id
-  `, taskIds);
+  `,
+    taskIds,
+  );
 
   // 4. Build dense matrix
   const cellMap = new Map<string, MatrixCell>();
@@ -1742,21 +1855,32 @@ export async function computeMatrix(
   }
 
   const matrixCells: MatrixCell[][] = tasks.map((t) =>
-    models.map((m) => cellMap.get(`${t.task_id}|${m.model_id}`) ?? { passed: 0, attempted: 0, shortcoming_concept: null }),
+    models.map((m) =>
+      cellMap.get(`${t.task_id}|${m.model_id}`) ??
+        { passed: 0, attempted: 0, shortcoming_concept: null }
+    )
   );
 
   return {
-    filters: { set: opts.set, category: opts.category, difficulty: opts.difficulty },
+    filters: {
+      set: opts.set,
+      category: opts.category,
+      difficulty: opts.difficulty,
+    },
     tasks: tasks.map((t) => ({
       task_id: t.task_id,
-      difficulty: t.difficulty as 'easy' | 'medium' | 'hard',
-      category: t.category_slug ? { slug: t.category_slug, name: t.category_name! } : null,
+      difficulty: t.difficulty as "easy" | "medium" | "hard",
+      category: t.category_slug
+        ? { slug: t.category_slug, name: t.category_name! }
+        : null,
     })),
     models: models.map((m) => ({
       model_id: m.model_id,
       slug: m.slug,
       display_name: m.display_name,
-      settings_suffix: formatSettingsSuffix(m.settings_profile_json ? JSON.parse(m.settings_profile_json) : null),
+      settings_suffix: formatSettingsSuffix(
+        m.settings_profile_json ? JSON.parse(m.settings_profile_json) : null,
+      ),
     })),
     cells: matrixCells,
     generated_at: new Date().toISOString(),
@@ -1767,39 +1891,43 @@ export async function computeMatrix(
 - [ ] **Step 4: Author endpoint**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { computeMatrix } from '$lib/server/matrix';
-import { errorResponse, ApiError } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { computeMatrix } from "$lib/server/matrix";
+import { ApiError, errorResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const set = url.searchParams.get('set') ?? 'current';
-    if (set !== 'current' && set !== 'all') {
-      throw new ApiError(400, 'invalid_set', 'set must be current or all');
+    const set = url.searchParams.get("set") ?? "current";
+    if (set !== "current" && set !== "all") {
+      throw new ApiError(400, "invalid_set", "set must be current or all");
     }
-    const category = url.searchParams.get('category')?.trim() || null;
-    const difficulty = url.searchParams.get('difficulty');
-    if (difficulty && !['easy', 'medium', 'hard'].includes(difficulty)) {
-      throw new ApiError(400, 'invalid_difficulty', 'difficulty must be easy, medium, or hard');
+    const category = url.searchParams.get("category")?.trim() || null;
+    const difficulty = url.searchParams.get("difficulty");
+    if (difficulty && !["easy", "medium", "hard"].includes(difficulty)) {
+      throw new ApiError(
+        400,
+        "invalid_difficulty",
+        "difficulty must be easy, medium, or hard",
+      );
     }
 
-    const cache = await caches.open('cg-matrix');
+    const cache = await caches.open("cg-matrix");
     const cached = await cache.match(request);
     if (cached) return cached;
 
     const matrix = await computeMatrix(env.DB, {
-      set: set as 'current' | 'all',
+      set: set as "current" | "all",
       category,
-      difficulty: difficulty as 'easy' | 'medium' | 'hard' | null,
+      difficulty: difficulty as "easy" | "medium" | "hard" | null,
     });
 
     const body = JSON.stringify(matrix);
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json',
-        'cache-control': 'public, s-maxage=60, stale-while-revalidate=300',
+        "content-type": "application/json",
+        "cache-control": "public, s-maxage=60, stale-while-revalidate=300",
       },
     });
     await cache.put(request, response.clone());
@@ -1826,6 +1954,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 ### Task D2: TaskResultsMatrix widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/TaskResultsMatrix.svelte`
 - Create: `site/src/lib/components/domain/TaskResultsMatrix.test.svelte.ts`
 
@@ -1926,6 +2055,7 @@ Just re-exports `cellColorBucket` from server-side (or copies the pure logic). S
 ### Task D3: New route `/matrix`
 
 **Files:**
+
 - Create: `site/src/routes/matrix/+page.server.ts`
 - Create: `site/src/routes/matrix/+page.svelte`
 - Modify: `site/src/routes/+layout.svelte` (nav link)
@@ -1933,14 +2063,18 @@ Just re-exports `cellColorBucket` from server-side (or copies the pure logic). S
 - [ ] **Step 1: Author `matrix/+page.server.ts`**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { computeMatrix } from '$lib/server/matrix';
+import type { PageServerLoad } from "./$types";
+import { computeMatrix } from "$lib/server/matrix";
 
 export const load: PageServerLoad = async ({ url, platform }) => {
-  const category = url.searchParams.get('category')?.trim() || null;
-  const difficulty = url.searchParams.get('difficulty') as 'easy' | 'medium' | 'hard' | null;
+  const category = url.searchParams.get("category")?.trim() || null;
+  const difficulty = url.searchParams.get("difficulty") as
+    | "easy"
+    | "medium"
+    | "hard"
+    | null;
   const matrix = await computeMatrix(platform!.env.DB, {
-    set: 'current',
+    set: "current",
     category,
     difficulty,
   });
@@ -2087,6 +2221,7 @@ The pedagogical shortcomings widget that the legacy site shows on each model det
 ### Task E1: ShortcomingsSection widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/ShortcomingsSection.svelte`
 - Create: `site/src/lib/components/domain/ShortcomingsSection.test.svelte.ts`
 
@@ -2148,6 +2283,7 @@ The pedagogical shortcomings widget that the legacy site shows on each model det
 ### Task E2: ShortcomingDetail expandable row
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/ShortcomingDetail.svelte`
 - Create: `site/src/lib/components/domain/ShortcomingDetail.test.svelte.ts`
 
@@ -2257,6 +2393,7 @@ The pedagogical shortcomings widget that the legacy site shows on each model det
 ### Task E3 (REMOVED): R2 blob fetch lazy-load
 
 This task is removed from P7 scope per CR-1. The original plan attempted `await fetch('/api/v1/blobs/<incorrect_pattern_r2_key>').text()`, but:
+
 - `incorrect_pattern_r2_key` is `shortcomings/<sha>.al.zst` — does NOT match the `^[a-f0-9]{64}$` validation in `/api/v1/blobs/[sha256]/+server.ts`.
 - The blob is zstd-compressed; `.text()` would return garbage even if the path matched.
 
@@ -2267,6 +2404,7 @@ Properly surfacing incorrect_pattern requires a new server endpoint with `fzstd`
 ### Task E4: Wire `<ShortcomingsSection>` into model detail page (use existing limitations endpoint)
 
 **Files:**
+
 - Modify: `site/src/routes/models/[...slug]/+page.server.ts`
 - Modify: `site/src/routes/models/[...slug]/+page.svelte`
 
@@ -2357,6 +2495,7 @@ Two top-of-leaderboard widgets: 5-stat summary band (Runs/Models/Tasks/Cost/Toke
 ### Task F1: SummaryBand widget on `/`
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/SummaryBand.svelte`
 - Create: `site/src/lib/components/domain/SummaryBand.test.svelte.ts`
 - Modify: `site/src/routes/+page.server.ts` (load summary)
@@ -2440,6 +2579,7 @@ return { ..., summary };
 ### Task F2: PerformanceVsCostChart widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/PerformanceVsCostChart.svelte`
 - Create: `site/src/lib/components/domain/PerformanceVsCostChart.test.svelte.ts`
 - Modify: `site/src/routes/+page.svelte` (render below summary band)
@@ -2596,6 +2736,7 @@ The settings suffix (`(50K, t0.1)`) was already shipped in Phase B (model displa
 ### Task G1: Extend `/api/v1/models/[slug]` payload with full settings
 
 **Files:**
+
 - Modify: `site/src/routes/api/v1/models/[...slug]/+server.ts`
 - Modify: `site/src/lib/server/model-aggregates.ts`
 - Modify: `site/src/lib/shared/api-types.ts` (add full settings shape to ModelDetail)
@@ -2664,6 +2805,7 @@ No new code — widget shipped in B3. Re-used by all consumers.
 ### Task G4: Settings sub-section on model detail page
 
 **Files:**
+
 - Modify: `site/src/routes/models/[...slug]/+page.svelte`
 
 > **Design rationale: badge is terse; the section has room for the full picture.** The suffix `(50K, t0.1)` shows max_tokens + temperature. The Settings sub-section lists ALL settings (temperature, max_attempts, max_tokens, prompt_version, bc_version, plus parsed extras like thinking_budget and consistency).
@@ -2731,6 +2873,7 @@ A markdown-driven `/changelog` route reading `docs/site/changelog.md`. Latest en
 ### Task H1: Markdown source-of-truth — `docs/site/changelog.md`
 
 **Files:**
+
 - Create: `docs/site/changelog.md` (or extend if already present in A7)
 
 > **Design rationale: file in repo, not D1.** Operators add entries by editing markdown + committing. SvelteKit reads at build time via Vite `?raw`. Zero D1 writes; clean git history.
@@ -2749,6 +2892,7 @@ Already authored in Task A7 step 3. Verify file exists and is checked in.
 P7 closes the parity gap between the new SvelteKit/Cloudflare site and the legacy static dashboard.
 
 **New surfaces:**
+
 - Pass@1 / Pass@2 split visible on leaderboard, model detail, matrix
 - `/categories` index + `/categories/[slug]` drill-down
 - `/matrix` route — every task × every model
@@ -2757,6 +2901,7 @@ P7 closes the parity gap between the new SvelteKit/Cloudflare site and the legac
 - `/changelog` (this page!)
 
 **Behavior changes:**
+
 - Model display names now show settings suffix `(50K, t0.1)`
 - Score column accepts sort toggle: avg_score / pass_at_n / pass_at_1
 - /tasks gains Category column
@@ -2783,6 +2928,7 @@ P5.5 promoted the SvelteKit/Cloudflare site to the canonical URL.
 ### Task H2: `/changelog` route
 
 **Files:**
+
 - Create: `site/src/routes/changelog/+page.server.ts`
 - Create: `site/src/routes/changelog/+page.svelte`
 - Create: `site/src/lib/components/domain/ChangelogEntry.svelte`
@@ -2791,9 +2937,9 @@ P5.5 promoted the SvelteKit/Cloudflare site to the canonical URL.
 - [ ] **Step 1: Author `+page.server.ts`**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { parseChangelog } from '$lib/parse-changelog';
-import changelogMarkdown from '../../../../docs/site/changelog.md?raw';
+import type { PageServerLoad } from "./$types";
+import { parseChangelog } from "$lib/parse-changelog";
+import changelogMarkdown from "../../../../docs/site/changelog.md?raw";
 
 const ENTRIES = parseChangelog(changelogMarkdown);
 
@@ -2921,6 +3067,7 @@ Removed from P7 scope per CR-1. See Phase E and `## Out of scope (deferred to P8
 ### Task I2: "View transcript" link from RunDetail per-attempt expansion
 
 **Files:**
+
 - Modify: `site/src/routes/runs/[...id]/+page.svelte`
 - Verify: `site/src/lib/components/domain/TranscriptViewer.svelte` (already exists; re-use)
 
@@ -2984,6 +3131,7 @@ Closes the loop: documentation updates, CI invariants, visual regression baselin
 ### Task J1: Update `/about#scoring` (CC-3 documentation)
 
 **Files:**
+
 - Modify: `site/src/routes/about/+page.svelte`
 
 > **Design rationale:** the score metric divergence (avg_score per-attempt vs pass_at_n per-task) is documented in CLAUDE.md memory but invisible to readers. The `/about#scoring` anchor needs a clear explanation.
@@ -3042,6 +3190,7 @@ Closes the loop: documentation updates, CI invariants, visual regression baselin
 ### Task J2: Update CONTRIBUTING.md with P7 lessons
 
 **Files:**
+
 - Modify: `site/CONTRIBUTING.md`
 
 - [ ] **Step 1: Append P7 section**
@@ -3069,6 +3218,7 @@ Closes the loop: documentation updates, CI invariants, visual regression baselin
 ### Task J3: CHANGELOG.md P7 entry
 
 **Files:**
+
 - Modify: `site/CHANGELOG.md`
 
 - [ ] **Step 1: Append**
@@ -3079,6 +3229,7 @@ Closes the loop: documentation updates, CI invariants, visual regression baselin
 Closes the parity gap with the legacy dashboard.
 
 ### Added
+
 - Pass@1 / Pass@2 split with multi-run "best across runs per task" semantics (leaderboard mini-bar; model detail breakdown tile)
 - `tasks_attempted_distinct` field on LeaderboardRow + ModelDetail.aggregates (per-task count alongside legacy per-attempt `tasks_attempted`)
 - /categories (index + drill-down)
@@ -3091,20 +3242,24 @@ Closes the parity gap with the legacy dashboard.
 - /about#scoring documents avg_score vs pass_at_n divergence + multi-run aggregation rule
 
 ### Changed
+
 - LeaderboardRow gains tasks_passed_attempt_1, tasks_passed_attempt_2_only, tasks_attempted_distinct, pass_at_n, settings_suffix
 - ModelDetail.aggregates parallel extension
 - /tasks gains Category column
 - Visual regression baselines regenerated per-phase (B/C/D/E/F)
 
 ### Deprecated
+
 - `LeaderboardRow.tasks_attempted` (per-attempt count) — still emitted; superseded by `tasks_attempted_distinct` (per-task). Removal targeted P9+.
 - `LeaderboardRow.tasks_passed` (per-attempt sum) — same.
 
 ### Operator
+
 - docs/site/operations.md §"Tasks-empty symptom (CC-1)" cross-links the existing P6 §"Catalog reconciliation" runbook (run `centralgauge sync-catalog --apply` to populate tasks)
 - docs/site/operations.md §"Shortcomings empty (CC-2)" documents the P8 analyzer-build deferral
 
 ### Out of scope (deferred to P8)
+
 - Shortcomings analyzer build (CC-2 root cause; bench-side LLM-driven classification + signed batch writes)
 - Incorrect-pattern rendering (CR-1; needs new /api/v1/shortcomings/<id>/incorrect-pattern endpoint with fzstd decompression)
 - `tasks_attempted` deprecation (P7 ships co-existence; P9+ may remove the legacy field)
@@ -3117,6 +3272,7 @@ Closes the parity gap with the legacy dashboard.
 ### Task J4: Visual regression baseline final reconciliation
 
 **Files:**
+
 - Modify: `site/tests/e2e/__snapshots__/` (full regen for any pages missed in per-phase regen)
 
 > **Design rationale (IM-6):** Each phase B–F regenerates baselines for its own affected pages in its `*-COMMIT`. J4 is a final reconciliation pass to catch any pages that drifted but weren't covered in the per-phase regen (e.g. cross-cutting layout changes, /about, /models/[slug] when multiple phases touched it).
@@ -3219,6 +3375,7 @@ P7 closes audit findings B-1 through C-4, I-1 through I-4, and the documentation
 Total: 10 atomic commits, one per mini-phase. No commit produces an inconsistent working tree (Phase A's intentional svelte-check red is resolved by Phase B's first task — both phases ship in different commits but each commit's tests pass; svelte-check transition is documented in A-COMMIT).
 
 Each task includes:
+
 - File paths (absolute when in commands; relative when in `**Files:**` headings)
 - TDD steps where applicable
 - Design rationales for non-trivial decisions
@@ -3229,26 +3386,28 @@ Each task includes:
 Phase G of P6 (custom-domain flip) remains held — P7 does NOT touch DNS or `SITE_BASE_URL`.
 
 **Operator vs plan responsibility split:**
+
 - **Operator action** (gates UI population, NOT plan completion): run `centralgauge sync-catalog --apply` to populate `tasks` table (CC-1); ship the P8 shortcomings analyzer (CC-2). P7 ships UI shells that gracefully handle empty data; the CI invariants (Phase J) catch regressions early.
 - **Plan responsibility** (P7 ships): all UI/API surfaces with correct empty-state UX, correct multi-run aggregation semantics, consistent task_set filtering, back-compat preservation of existing fields.
 
 Approximate work breakdown:
 
-| Phase | Tasks | New files | Modified files | New endpoints | New routes |
-|-------|-------|-----------|----------------|---------------|------------|
-| A | 7 | ~13 (no diagnose scripts) | ~3 | 2 (categories, summary) | 0 |
-| B | 5 | ~7 | ~5 | 0 | 0 |
-| C | 5 | ~6 | ~4 | 0 | 2 (categories, categories/[slug]) |
-| D | 4 | ~5 | ~2 | 1 (matrix) | 1 (matrix) |
-| E | 3 (E3 dropped) | ~4 | ~2 | 0 | 0 |
-| F | 2 | ~4 | ~2 | 0 | 0 |
-| G | 4 | 0 | ~3 | 0 | 0 |
-| H | 3 | ~4 | ~2 | 0 | 1 (changelog) |
-| I | 1 (I1 dropped) | 0 | ~1 | 0 | 0 |
-| J | 5 | 0 | ~5 | 0 | 0 |
-| **Total** | **39** | **~43** | **~29** | **3** | **4** |
+| Phase     | Tasks          | New files                 | Modified files | New endpoints           | New routes                        |
+| --------- | -------------- | ------------------------- | -------------- | ----------------------- | --------------------------------- |
+| A         | 7              | ~13 (no diagnose scripts) | ~3             | 2 (categories, summary) | 0                                 |
+| B         | 5              | ~7                        | ~5             | 0                       | 0                                 |
+| C         | 5              | ~6                        | ~4             | 0                       | 2 (categories, categories/[slug]) |
+| D         | 4              | ~5                        | ~2             | 1 (matrix)              | 1 (matrix)                        |
+| E         | 3 (E3 dropped) | ~4                        | ~2             | 0                       | 0                                 |
+| F         | 2              | ~4                        | ~2             | 0                       | 0                                 |
+| G         | 4              | 0                         | ~3             | 0                       | 0                                 |
+| H         | 3              | ~4                        | ~2             | 0                       | 1 (changelog)                     |
+| I         | 1 (I1 dropped) | 0                         | ~1             | 0                       | 0                                 |
+| J         | 5              | 0                         | ~5             | 0                       | 0                                 |
+| **Total** | **39**         | **~43**                   | **~29**        | **3**                   | **4**                             |
 
 **Done-criteria** (Task J5):
+
 - Leaderboard shows attempt-stacked-bars driven by `tasks_attempted_distinct` denominator; legacy `tasks_attempted` still emitted for back-compat.
 - Invariant `tasks_passed_attempt_1 + tasks_passed_attempt_2_only ≤ tasks_attempted_distinct` holds for every leaderboard row (jq assertion in J5).
 - Model detail shows breakdown tile + shortcomings section (with EmptyState when items=[]) + settings.
@@ -3259,4 +3418,3 @@ Approximate work breakdown:
 - /api/v1/categories + /api/v1/summary + /api/v1/matrix shape correct (data may be empty if CC-1 unresolved).
 - /about#scoring documents avg_score vs pass_at_n divergence, multi-run "best across runs" rule, and tasks_attempted_distinct vs legacy tasks_attempted distinction.
 - svelte-check 0 errors.
-

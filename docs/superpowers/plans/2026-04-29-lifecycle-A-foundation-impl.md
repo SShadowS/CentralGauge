@@ -13,6 +13,7 @@
 ## Task A1: Write D1 migration `0006_lifecycle.sql`
 
 **Files:**
+
 - Create: `site/migrations/0006_lifecycle.sql`
 - Create: `site/tests/migrations/lifecycle-schema.test.ts`
 
@@ -23,59 +24,88 @@
 Create `site/tests/migrations/lifecycle-schema.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-describe('0006_lifecycle.sql migration', () => {
-  it('creates lifecycle_events table with required columns', async () => {
-    const cols = await env.DB.prepare(`PRAGMA table_info(lifecycle_events)`).all();
+describe("0006_lifecycle.sql migration", () => {
+  it("creates lifecycle_events table with required columns", async () => {
+    const cols = await env.DB.prepare(`PRAGMA table_info(lifecycle_events)`)
+      .all();
     const names = cols.results.map((r: { name: string }) => r.name);
     expect(names).toEqual(expect.arrayContaining([
-      'id', 'ts', 'model_slug', 'task_set_hash', 'event_type', 'source_id',
-      'payload_hash', 'tool_versions_json', 'envelope_json', 'payload_json',
-      'actor', 'actor_id', 'migration_note',
+      "id",
+      "ts",
+      "model_slug",
+      "task_set_hash",
+      "event_type",
+      "source_id",
+      "payload_hash",
+      "tool_versions_json",
+      "envelope_json",
+      "payload_json",
+      "actor",
+      "actor_id",
+      "migration_note",
     ]));
   });
 
-  it('creates concepts table with append-only columns', async () => {
+  it("creates concepts table with append-only columns", async () => {
     const cols = await env.DB.prepare(`PRAGMA table_info(concepts)`).all();
     const names = cols.results.map((r: { name: string }) => r.name);
     expect(names).toEqual(expect.arrayContaining([
-      'id', 'slug', 'display_name', 'al_concept', 'description',
-      'canonical_correct_pattern', 'first_seen', 'last_seen',
-      'superseded_by', 'split_into_event_id', 'provenance_event_id',
+      "id",
+      "slug",
+      "display_name",
+      "al_concept",
+      "description",
+      "canonical_correct_pattern",
+      "first_seen",
+      "last_seen",
+      "superseded_by",
+      "split_into_event_id",
+      "provenance_event_id",
     ]));
   });
 
-  it('creates concept_aliases table', async () => {
-    const cols = await env.DB.prepare(`PRAGMA table_info(concept_aliases)`).all();
+  it("creates concept_aliases table", async () => {
+    const cols = await env.DB.prepare(`PRAGMA table_info(concept_aliases)`)
+      .all();
     const names = cols.results.map((r: { name: string }) => r.name);
     expect(names).toEqual(expect.arrayContaining([
-      'alias_slug', 'concept_id', 'noted_at', 'similarity',
-      'reviewer_actor_id', 'alias_event_id',
+      "alias_slug",
+      "concept_id",
+      "noted_at",
+      "similarity",
+      "reviewer_actor_id",
+      "alias_event_id",
     ]));
   });
 
-  it('creates pending_review table with status default pending', async () => {
-    const cols = await env.DB.prepare(`PRAGMA table_info(pending_review)`).all();
-    const statusCol = cols.results.find((r: { name: string }) => r.name === 'status') as
-      | { name: string; dflt_value: string } | undefined;
+  it("creates pending_review table with status default pending", async () => {
+    const cols = await env.DB.prepare(`PRAGMA table_info(pending_review)`)
+      .all();
+    const statusCol = cols.results.find((r: { name: string }) =>
+      r.name === "status"
+    ) as { name: string; dflt_value: string } | undefined;
     expect(statusCol?.dflt_value).toBe("'pending'");
   });
 
-  it('adds concept_id, analysis_event_id, published_event_id, confidence to shortcomings', async () => {
+  it("adds concept_id, analysis_event_id, published_event_id, confidence to shortcomings", async () => {
     const cols = await env.DB.prepare(`PRAGMA table_info(shortcomings)`).all();
     const names = cols.results.map((r: { name: string }) => r.name);
     expect(names).toEqual(expect.arrayContaining([
-      'concept_id', 'analysis_event_id', 'published_event_id', 'confidence',
+      "concept_id",
+      "analysis_event_id",
+      "published_event_id",
+      "confidence",
     ]));
   });
 
-  it('creates v_lifecycle_state view with step buckets', async () => {
+  it("creates v_lifecycle_state view with step buckets", async () => {
     await env.DB.prepare(
       `INSERT INTO lifecycle_events(ts, model_slug, task_set_hash, event_type, actor)
        VALUES (1000, 'test/m', 'h', 'bench.completed', 'operator')`,
@@ -83,15 +113,15 @@ describe('0006_lifecycle.sql migration', () => {
     const row = await env.DB.prepare(
       `SELECT step, last_ts FROM v_lifecycle_state WHERE model_slug = 'test/m'`,
     ).first<{ step: string; last_ts: number }>();
-    expect(row?.step).toBe('bench');
+    expect(row?.step).toBe("bench");
     expect(row?.last_ts).toBe(1000);
   });
 
-  it('creates idx_lifecycle_events_lookup index', async () => {
+  it("creates idx_lifecycle_events_lookup index", async () => {
     const idx = await env.DB.prepare(
       `SELECT name FROM sqlite_master WHERE type='index' AND name='idx_lifecycle_events_lookup'`,
     ).first<{ name: string }>();
-    expect(idx?.name).toBe('idx_lifecycle_events_lookup');
+    expect(idx?.name).toBe("idx_lifecycle_events_lookup");
   });
 });
 ```
@@ -259,6 +289,7 @@ git add site/migrations/0006_lifecycle.sql site/tests/migrations/lifecycle-schem
 ## Task A1.5: Worker-side `appendEvent` helper (`site/src/lib/server/lifecycle-event-log.ts`)
 
 **Files:**
+
 - Create: `site/src/lib/server/lifecycle-event-log.ts`
 - Create: `site/tests/api/lifecycle-event-log-helper.test.ts`
 
@@ -273,74 +304,107 @@ The CLI path (Plan A's `src/lifecycle/event-log.ts`, task A3) signs and POSTs to
 Create `site/tests/api/lifecycle-event-log-helper.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import { appendEvent, queryEvents } from '../../src/lib/server/lifecycle-event-log';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import {
+  appendEvent,
+  queryEvents,
+} from "../../src/lib/server/lifecycle-event-log";
 
-beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await resetDb(); });
+beforeAll(async () => {
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+});
+beforeEach(async () => {
+  await resetDb();
+});
 
-describe('worker-side appendEvent helper', () => {
-  it('inserts a row with object payload (helper stringifies)', async () => {
+describe("worker-side appendEvent helper", () => {
+  it("inserts a row with object payload (helper stringifies)", async () => {
     const { id } = await appendEvent(env.DB, {
-      event_type: 'bench.completed',
-      model_slug: 'm/x',
-      task_set_hash: 'h',
-      actor: 'operator',
+      event_type: "bench.completed",
+      model_slug: "m/x",
+      task_set_hash: "h",
+      actor: "operator",
       payload: { runs_count: 1, tasks_count: 50 },
-      tool_versions: { deno: '1.46.3' },
-      envelope: { git_sha: 'abc1234' },
+      tool_versions: { deno: "1.46.3" },
+      envelope: { git_sha: "abc1234" },
     });
     expect(id).toBeGreaterThan(0);
     const row = await env.DB.prepare(
       `SELECT payload_json, tool_versions_json, envelope_json FROM lifecycle_events WHERE id = ?`,
-    ).bind(id).first<{ payload_json: string; tool_versions_json: string; envelope_json: string }>();
-    expect(JSON.parse(row!.payload_json)).toEqual({ runs_count: 1, tasks_count: 50 });
-    expect(JSON.parse(row!.tool_versions_json)).toEqual({ deno: '1.46.3' });
-    expect(JSON.parse(row!.envelope_json)).toEqual({ git_sha: 'abc1234' });
+    ).bind(id).first<
+      {
+        payload_json: string;
+        tool_versions_json: string;
+        envelope_json: string;
+      }
+    >();
+    expect(JSON.parse(row!.payload_json)).toEqual({
+      runs_count: 1,
+      tasks_count: 50,
+    });
+    expect(JSON.parse(row!.tool_versions_json)).toEqual({ deno: "1.46.3" });
+    expect(JSON.parse(row!.envelope_json)).toEqual({ git_sha: "abc1234" });
   });
 
-  it('defaults ts to Date.now() when omitted', async () => {
+  it("defaults ts to Date.now() when omitted", async () => {
     const before = Date.now();
     const { id } = await appendEvent(env.DB, {
-      event_type: 'bench.started',
-      model_slug: 'm/x',
-      task_set_hash: 'h',
-      actor: 'ci',
+      event_type: "bench.started",
+      model_slug: "m/x",
+      task_set_hash: "h",
+      actor: "ci",
       payload: {},
     });
     const after = Date.now();
-    const row = await env.DB.prepare(`SELECT ts FROM lifecycle_events WHERE id = ?`).bind(id).first<{ ts: number }>();
+    const row = await env.DB.prepare(
+      `SELECT ts FROM lifecycle_events WHERE id = ?`,
+    ).bind(id).first<{ ts: number }>();
     expect(row!.ts).toBeGreaterThanOrEqual(before);
     expect(row!.ts).toBeLessThanOrEqual(after);
   });
 
-  it('computes payload_hash when not provided', async () => {
+  it("computes payload_hash when not provided", async () => {
     const { id } = await appendEvent(env.DB, {
-      event_type: 'analysis.completed',
-      model_slug: 'm/y',
-      task_set_hash: 'h',
-      actor: 'operator',
-      payload: { foo: 'bar' },
+      event_type: "analysis.completed",
+      model_slug: "m/y",
+      task_set_hash: "h",
+      actor: "operator",
+      payload: { foo: "bar" },
     });
-    const row = await env.DB.prepare(`SELECT payload_hash FROM lifecycle_events WHERE id = ?`).bind(id).first<{ payload_hash: string }>();
+    const row = await env.DB.prepare(
+      `SELECT payload_hash FROM lifecycle_events WHERE id = ?`,
+    ).bind(id).first<{ payload_hash: string }>();
     expect(row!.payload_hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('queryEvents filters by event_type_prefix and limit', async () => {
-    for (const t of ['bench.started', 'bench.completed', 'analysis.started', 'analysis.completed']) {
+  it("queryEvents filters by event_type_prefix and limit", async () => {
+    for (
+      const t of [
+        "bench.started",
+        "bench.completed",
+        "analysis.started",
+        "analysis.completed",
+      ]
+    ) {
       await appendEvent(env.DB, {
         event_type: t,
-        model_slug: 'm/q',
-        task_set_hash: 'hq',
-        actor: 'operator',
+        model_slug: "m/q",
+        task_set_hash: "hq",
+        actor: "operator",
         payload: {},
       });
     }
-    const benchOnly = await queryEvents(env.DB, { model_slug: 'm/q', event_type_prefix: 'bench.' });
-    expect(benchOnly.map((e) => e.event_type)).toEqual(['bench.started', 'bench.completed']);
-    const limited = await queryEvents(env.DB, { model_slug: 'm/q', limit: 1 });
+    const benchOnly = await queryEvents(env.DB, {
+      model_slug: "m/q",
+      event_type_prefix: "bench.",
+    });
+    expect(benchOnly.map((e) => e.event_type)).toEqual([
+      "bench.started",
+      "bench.completed",
+    ]);
+    const limited = await queryEvents(env.DB, { model_slug: "m/q", limit: 1 });
     expect(limited.length).toBe(1);
   });
 });
@@ -364,7 +428,7 @@ import type {
   LifecycleEnvelope,
   LifecycleEvent,
   ToolVersions,
-} from '../../../../src/lifecycle/types';
+} from "../../../../src/lifecycle/types";
 
 /**
  * Worker-side `appendEvent` — direct D1 INSERT. Used by the lifecycle POST
@@ -381,14 +445,23 @@ export async function appendEvent(
   db: D1Database,
   input: AppendEventInput,
 ): Promise<{ id: number }> {
-  if (!input.model_slug) throw new Error('appendEvent: model_slug must be non-empty');
-  if (!input.task_set_hash) throw new Error('appendEvent: task_set_hash must be non-empty');
-  if (!input.event_type) throw new Error('appendEvent: event_type must be non-empty');
+  if (!input.model_slug) {
+    throw new Error("appendEvent: model_slug must be non-empty");
+  }
+  if (!input.task_set_hash) {
+    throw new Error("appendEvent: task_set_hash must be non-empty");
+  }
+  if (!input.event_type) {
+    throw new Error("appendEvent: event_type must be non-empty");
+  }
 
   const ts = input.ts ?? Date.now();
-  const payload_hash = input.payload_hash ?? await computePayloadHash(input.payload);
+  const payload_hash = input.payload_hash ??
+    await computePayloadHash(input.payload);
   const payload_json = JSON.stringify(input.payload);
-  const tool_versions_json = input.tool_versions ? JSON.stringify(input.tool_versions) : null;
+  const tool_versions_json = input.tool_versions
+    ? JSON.stringify(input.tool_versions)
+    : null;
   const envelope_json = input.envelope ? JSON.stringify(input.envelope) : null;
 
   const res = await db.prepare(
@@ -397,11 +470,18 @@ export async function appendEvent(
        tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
-    ts, input.model_slug, input.task_set_hash, input.event_type,
-    input.source_id ?? null, payload_hash,
-    tool_versions_json, envelope_json,
-    payload_json, input.actor,
-    input.actor_id ?? null, input.migration_note ?? null,
+    ts,
+    input.model_slug,
+    input.task_set_hash,
+    input.event_type,
+    input.source_id ?? null,
+    payload_hash,
+    tool_versions_json,
+    envelope_json,
+    payload_json,
+    input.actor,
+    input.actor_id ?? null,
+    input.migration_note ?? null,
   ).run();
   return { id: Number(res.meta?.last_row_id ?? 0) };
 }
@@ -421,39 +501,66 @@ export async function queryEvents(
   filter: QueryEventsFilter,
 ): Promise<LifecycleEvent[]> {
   const params: (string | number)[] = [filter.model_slug];
-  let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
+  let sql =
+    `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                     tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
                FROM lifecycle_events WHERE model_slug = ?`;
-  if (filter.task_set_hash) { sql += ' AND task_set_hash = ?'; params.push(filter.task_set_hash); }
-  if (filter.since !== undefined) { sql += ' AND ts >= ?'; params.push(filter.since); }
-  if (filter.event_type_prefix) { sql += ' AND event_type LIKE ?'; params.push(`${filter.event_type_prefix}%`); }
-  sql += ' ORDER BY ts ASC, id ASC';
-  if (filter.limit !== undefined) { sql += ' LIMIT ?'; params.push(filter.limit); }
+  if (filter.task_set_hash) {
+    sql += " AND task_set_hash = ?";
+    params.push(filter.task_set_hash);
+  }
+  if (filter.since !== undefined) {
+    sql += " AND ts >= ?";
+    params.push(filter.since);
+  }
+  if (filter.event_type_prefix) {
+    sql += " AND event_type LIKE ?";
+    params.push(`${filter.event_type_prefix}%`);
+  }
+  sql += " ORDER BY ts ASC, id ASC";
+  if (filter.limit !== undefined) {
+    sql += " LIMIT ?";
+    params.push(filter.limit);
+  }
   const rows = await db.prepare(sql).bind(...params).all<LifecycleEvent>();
   // Populate parsed `payload`/`tool_versions`/`envelope` so consumers don't
   // re-parse JSON at every call site (Plan C lock-token tiebreaker, Plan E
   // diff trigger, Plan H matrix renderer all read these).
   return rows.results.map((r) => ({
     ...r,
-    payload: r.payload_json ? JSON.parse(r.payload_json) as Record<string, unknown> : undefined,
-    tool_versions: r.tool_versions_json ? JSON.parse(r.tool_versions_json) as ToolVersions : null,
-    envelope: r.envelope_json ? JSON.parse(r.envelope_json) as LifecycleEnvelope : null,
+    payload: r.payload_json
+      ? JSON.parse(r.payload_json) as Record<string, unknown>
+      : undefined,
+    tool_versions: r.tool_versions_json
+      ? JSON.parse(r.tool_versions_json) as ToolVersions
+      : null,
+    envelope: r.envelope_json
+      ? JSON.parse(r.envelope_json) as LifecycleEnvelope
+      : null,
   }));
 }
 
-async function computePayloadHash(payload: Record<string, unknown>): Promise<string> {
+async function computePayloadHash(
+  payload: Record<string, unknown>,
+): Promise<string> {
   // Canonical JSON: sort keys recursively for stable hashes.
   const canon = canonicalJSON(payload);
   const bytes = new TextEncoder().encode(canon);
-  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function canonicalJSON(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonicalJSON).join(',') + ']';
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return "[" + value.map(canonicalJSON).join(",") + "]";
+  }
   const keys = Object.keys(value as Record<string, unknown>).sort();
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJSON((value as Record<string, unknown>)[k])).join(',') + '}';
+  return "{" + keys.map((k) =>
+    JSON.stringify(k) + ":" +
+    canonicalJSON((value as Record<string, unknown>)[k])
+  ).join(",") + "}";
 }
 ```
 
@@ -476,6 +583,7 @@ git add site/src/lib/server/lifecycle-event-log.ts site/tests/api/lifecycle-even
 ## Task A2: Apply migration to staging + production D1
 
 **Files:**
+
 - Modify: none (operational task; verification command)
 - Create: `docs/superpowers/plans/2026-04-29-lifecycle-A-rollback-runbook.md` (rollback notes)
 
@@ -486,34 +594,40 @@ git add site/src/lib/server/lifecycle-event-log.ts site/tests/api/lifecycle-even
 Create `site/tests/migrations/lifecycle-smoke.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, expect, it, beforeAll } from 'vitest';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-describe('0006_lifecycle smoke (post-apply)', () => {
-  it('inserts a synthetic event and reads it back', async () => {
+describe("0006_lifecycle smoke (post-apply)", () => {
+  it("inserts a synthetic event and reads it back", async () => {
     await env.DB.prepare(
       `INSERT INTO lifecycle_events(ts, model_slug, task_set_hash, event_type, actor)
        VALUES (?, ?, ?, ?, ?)`,
-    ).bind(Date.now(), 'anthropic/claude-opus-4-6', 'h-test', 'bench.completed', 'migration').run();
+    ).bind(
+      Date.now(),
+      "anthropic/claude-opus-4-6",
+      "h-test",
+      "bench.completed",
+      "migration",
+    ).run();
     const row = await env.DB.prepare(
       `SELECT model_slug FROM lifecycle_events WHERE task_set_hash = 'h-test'`,
     ).first<{ model_slug: string }>();
-    expect(row?.model_slug).toBe('anthropic/claude-opus-4-6');
+    expect(row?.model_slug).toBe("anthropic/claude-opus-4-6");
   });
 
-  it('v_lifecycle_state aggregates by step', async () => {
+  it("v_lifecycle_state aggregates by step", async () => {
     await env.DB.prepare(
       `INSERT INTO lifecycle_events(ts, model_slug, task_set_hash, event_type, actor)
        VALUES (?, ?, ?, ?, ?)`,
-    ).bind(2000, 'm/x', 'h-state', 'analysis.completed', 'operator').run();
+    ).bind(2000, "m/x", "h-state", "analysis.completed", "operator").run();
     const rows = await env.DB.prepare(
       `SELECT step FROM v_lifecycle_state WHERE task_set_hash = 'h-state'`,
     ).all<{ step: string }>();
-    expect(rows.results.map((r) => r.step)).toContain('analyze');
+    expect(rows.results.map((r) => r.step)).toContain("analyze");
   });
 });
 ```
@@ -567,6 +681,7 @@ git add site/tests/migrations/lifecycle-smoke.test.ts && git commit -m "test(sit
 ## Task A3: Implement `src/lifecycle/event-log.ts`
 
 **Files:**
+
 - Create: `src/lifecycle/types.ts`
 - Create: `src/lifecycle/event-log.ts`
 - Create: `tests/unit/lifecycle/event-log.test.ts`
@@ -601,8 +716,17 @@ describe("event-log", () => {
       task_set_hash: "h",
       event_type: "bench.completed",
       payload: { runs_count: 1, tasks_count: 50, results_count: 50 },
-      tool_versions: { deno: "1.46.3", wrangler: "3.114.0", claude_code: "0.4.0", bc_compiler: "27.0" },
-      envelope: { git_sha: "abc1234", machine_id: "test-mach", settings_hash: "s" },
+      tool_versions: {
+        deno: "1.46.3",
+        wrangler: "3.114.0",
+        claude_code: "0.4.0",
+        bc_compiler: "27.0",
+      },
+      envelope: {
+        git_sha: "abc1234",
+        machine_id: "test-mach",
+        settings_hash: "s",
+      },
       actor: "operator",
       actor_id: "key-1",
     });
@@ -613,9 +737,30 @@ describe("event-log", () => {
 
   it("reduceCurrentState picks the most recent terminal event per step", () => {
     const events: LifecycleEvent[] = [
-      { id: 1, ts: 100, model_slug: "m", task_set_hash: "h", event_type: "bench.started", actor: "operator" },
-      { id: 2, ts: 200, model_slug: "m", task_set_hash: "h", event_type: "bench.completed", actor: "operator" },
-      { id: 3, ts: 300, model_slug: "m", task_set_hash: "h", event_type: "analysis.started", actor: "operator" },
+      {
+        id: 1,
+        ts: 100,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.started",
+        actor: "operator",
+      },
+      {
+        id: 2,
+        ts: 200,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.completed",
+        actor: "operator",
+      },
+      {
+        id: 3,
+        ts: 300,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "analysis.started",
+        actor: "operator",
+      },
     ];
     const state = reduceCurrentState(events);
     assertEquals(state.bench?.event_type, "bench.completed");
@@ -625,8 +770,22 @@ describe("event-log", () => {
 
   it("reduceCurrentState breaks ts ties by id (highest wins)", () => {
     const events: LifecycleEvent[] = [
-      { id: 1, ts: 100, model_slug: "m", task_set_hash: "h", event_type: "bench.completed", actor: "operator" },
-      { id: 2, ts: 100, model_slug: "m", task_set_hash: "h", event_type: "bench.failed", actor: "operator" },
+      {
+        id: 1,
+        ts: 100,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.completed",
+        actor: "operator",
+      },
+      {
+        id: 2,
+        ts: 100,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.failed",
+        actor: "operator",
+      },
     ];
     const state = reduceCurrentState(events);
     assertEquals(state.bench?.event_type, "bench.failed");
@@ -838,7 +997,8 @@ export async function buildAppendBody(
   if (!input.event_type) throw new Error("event_type must be non-empty");
 
   const ts = input.ts ?? Date.now();
-  const payload_hash = input.payload_hash ?? await computePayloadHash(input.payload);
+  const payload_hash = input.payload_hash ??
+    await computePayloadHash(input.payload);
   return {
     version: 1,
     payload: {
@@ -848,7 +1008,9 @@ export async function buildAppendBody(
       event_type: input.event_type,
       source_id: input.source_id ?? null,
       payload_hash,
-      tool_versions_json: input.tool_versions ? JSON.stringify(input.tool_versions) : null,
+      tool_versions_json: input.tool_versions
+        ? JSON.stringify(input.tool_versions)
+        : null,
       envelope_json: input.envelope ? JSON.stringify(input.envelope) : null,
       payload_json: JSON.stringify(input.payload),
       actor: input.actor,
@@ -905,7 +1067,11 @@ export async function appendEvent(
   opts: AppendOptions,
 ): Promise<{ id: number }> {
   const body = await buildAppendBody(input);
-  const signature = await signPayload(body.payload, opts.privateKey, opts.keyId);
+  const signature = await signPayload(
+    body.payload,
+    opts.privateKey,
+    opts.keyId,
+  );
   const resp = await postWithRetry(
     `${opts.url}/api/v1/admin/lifecycle/events`,
     { ...body, signature },
@@ -941,11 +1107,17 @@ export async function queryEvents(
   const params = new URLSearchParams({ model: filter.model_slug });
   if (filter.task_set_hash) params.set("task_set", filter.task_set_hash);
   if (filter.since !== undefined) params.set("since", String(filter.since));
-  if (filter.event_type_prefix) params.set("event_type_prefix", filter.event_type_prefix);
+  if (filter.event_type_prefix) {
+    params.set("event_type_prefix", filter.event_type_prefix);
+  }
   if (filter.limit !== undefined) params.set("limit", String(filter.limit));
   // Read endpoint accepts a signed empty payload + the query params for filtering.
   const body = { version: 1 as const, payload: { model: filter.model_slug } };
-  const signature = await signPayload(body.payload, opts.privateKey, opts.keyId);
+  const signature = await signPayload(
+    body.payload,
+    opts.privateKey,
+    opts.keyId,
+  );
   const resp = await fetch(
     `${opts.url}/api/v1/admin/lifecycle/events?${params}`,
     {
@@ -965,9 +1137,15 @@ export async function queryEvents(
   // must parse here.
   return raw.map((r) => ({
     ...r,
-    payload: r.payload_json ? JSON.parse(r.payload_json) as Record<string, unknown> : undefined,
-    tool_versions: r.tool_versions_json ? JSON.parse(r.tool_versions_json) as ToolVersions : null,
-    envelope: r.envelope_json ? JSON.parse(r.envelope_json) as LifecycleEnvelope : null,
+    payload: r.payload_json
+      ? JSON.parse(r.payload_json) as Record<string, unknown>
+      : undefined,
+    tool_versions: r.tool_versions_json
+      ? JSON.parse(r.tool_versions_json) as ToolVersions
+      : null,
+    envelope: r.envelope_json
+      ? JSON.parse(r.envelope_json) as LifecycleEnvelope
+      : null,
   }));
 }
 
@@ -1003,6 +1181,7 @@ deno fmt src/lifecycle/ tests/unit/lifecycle/ && deno check src/lifecycle/event-
 ## Task A4: Worker endpoints `/api/v1/admin/lifecycle/{events,state,r2/<key>}`
 
 **Files:**
+
 - Create: `site/src/routes/api/v1/admin/lifecycle/events/+server.ts`
 - Create: `site/src/routes/api/v1/admin/lifecycle/state/+server.ts`
 - Create: `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts`
@@ -1027,107 +1206,134 @@ i.e. the canonical `AppendEventInput` shape from `src/lifecycle/types.ts` direct
 Create `site/tests/api/lifecycle.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-import { createSignedPayload } from '../fixtures/keys';
-import { registerMachineKey } from '../fixtures/ingest-helpers';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createSignedPayload } from "../fixtures/keys";
+import { registerMachineKey } from "../fixtures/ingest-helpers";
+import { resetDb } from "../utils/reset-db";
 
-beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await resetDb(); });
+beforeAll(async () => {
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+});
+beforeEach(async () => {
+  await resetDb();
+});
 
-describe('POST /api/v1/admin/lifecycle/events', () => {
-  it('appends a lifecycle event with admin signature (canonical AppendEventInput shape)', async () => {
-    const { keyId, keypair } = await registerMachineKey('cli', 'admin');
+describe("POST /api/v1/admin/lifecycle/events", () => {
+  it("appends a lifecycle event with admin signature (canonical AppendEventInput shape)", async () => {
+    const { keyId, keypair } = await registerMachineKey("cli", "admin");
     // Canonical shape: payload / tool_versions / envelope are OBJECTS, not pre-stringified JSON.
     const payload = {
       ts: Date.now(),
-      model_slug: 'anthropic/claude-opus-4-6',
-      task_set_hash: 'h',
-      event_type: 'bench.completed',
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "h",
+      event_type: "bench.completed",
       source_id: null,
-      payload_hash: 'a'.repeat(64),
-      tool_versions: { deno: '1.46.3' },
-      envelope: { git_sha: 'abc1234' },
+      payload_hash: "a".repeat(64),
+      tool_versions: { deno: "1.46.3" },
+      envelope: { git_sha: "abc1234" },
       payload: { runs_count: 1 },
-      actor: 'operator',
+      actor: "operator",
       actor_id: null,
       migration_note: null,
     };
-    const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
-    const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
+    const { signedRequest } = await createSignedPayload(
+      payload,
+      keyId,
+      undefined,
+      keypair,
+    );
+    const resp = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(signedRequest),
     });
     expect(resp.status).toBe(200);
     const row = await env.DB.prepare(
       `SELECT model_slug, event_type, payload_json FROM lifecycle_events WHERE task_set_hash = 'h'`,
     ).first<{ model_slug: string; event_type: string; payload_json: string }>();
-    expect(row?.event_type).toBe('bench.completed');
+    expect(row?.event_type).toBe("bench.completed");
     expect(JSON.parse(row!.payload_json)).toEqual({ runs_count: 1 });
   });
 
-  it('rejects duplicate (payload_hash, ts, event_type) for idempotency', async () => {
-    const { keyId, keypair } = await registerMachineKey('cli2', 'admin');
+  it("rejects duplicate (payload_hash, ts, event_type) for idempotency", async () => {
+    const { keyId, keypair } = await registerMachineKey("cli2", "admin");
     const payload = {
       ts: 12345,
-      model_slug: 'm/x',
-      task_set_hash: 'h2',
-      event_type: 'bench.completed',
+      model_slug: "m/x",
+      task_set_hash: "h2",
+      event_type: "bench.completed",
       source_id: null,
-      payload_hash: 'b'.repeat(64),
+      payload_hash: "b".repeat(64),
       tool_versions: {},
       envelope: {},
       payload: {},
-      actor: 'operator',
+      actor: "operator",
       actor_id: null,
       migration_note: null,
     };
     const a = await createSignedPayload(payload, keyId, undefined, keypair);
-    const r1 = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(a.signedRequest),
+    const r1 = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(a.signedRequest),
     });
     expect(r1.status).toBe(200);
     const b = await createSignedPayload(payload, keyId, undefined, keypair);
-    const r2 = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b.signedRequest),
+    const r2 = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(b.signedRequest),
     });
     expect(r2.status).toBe(409);
   });
 
-  it('rejects unsigned requests with 401', async () => {
-    const resp = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ version: 1, payload: {}, signature: { alg: 'Ed25519', key_id: 999, signed_at: new Date().toISOString(), value: 'AA' } }),
+  it("rejects unsigned requests with 401", async () => {
+    const resp = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        payload: {},
+        signature: {
+          alg: "Ed25519",
+          key_id: 999,
+          signed_at: new Date().toISOString(),
+          value: "AA",
+        },
+      }),
     });
     expect(resp.status).toBe(401);
   });
 });
 
-describe('GET /api/v1/admin/lifecycle/state', () => {
-  it('returns the reduced state per step', async () => {
-    const { keyId, keypair } = await registerMachineKey('cli3', 'admin');
+describe("GET /api/v1/admin/lifecycle/state", () => {
+  it("returns the reduced state per step", async () => {
+    const { keyId, keypair } = await registerMachineKey("cli3", "admin");
     await env.DB.prepare(
       `INSERT INTO lifecycle_events(ts, model_slug, task_set_hash, event_type, actor)
        VALUES (?, ?, ?, ?, ?)`,
-    ).bind(1, 'm/y', 'h3', 'bench.completed', 'operator').run();
-    const { signedRequest } = await createSignedPayload({ model: 'm/y' }, keyId, undefined, keypair);
+    ).bind(1, "m/y", "h3", "bench.completed", "operator").run();
+    const { signedRequest } = await createSignedPayload(
+      { model: "m/y" },
+      keyId,
+      undefined,
+      keypair,
+    );
     const resp = await SELF.fetch(
       `https://x/api/v1/admin/lifecycle/state?model=m/y&task_set=h3`,
       {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'X-CG-Signature': signedRequest.signature.value,
-          'X-CG-Key-Id': String(signedRequest.signature.key_id),
-          'X-CG-Signed-At': signedRequest.signature.signed_at,
+          "X-CG-Signature": signedRequest.signature.value,
+          "X-CG-Key-Id": String(signedRequest.signature.key_id),
+          "X-CG-Signed-At": signedRequest.signature.signed_at,
         },
       },
     );
     expect(resp.status).toBe(200);
     const json = await resp.json() as Record<string, { event_type: string }>;
-    expect(json.bench?.event_type).toBe('bench.completed');
+    expect(json.bench?.event_type).toBe("bench.completed");
   });
 });
 ```
@@ -1145,11 +1351,14 @@ Expected: `404` from missing routes; tests fail.
 Create `site/src/routes/api/v1/admin/lifecycle/events/+server.ts`:
 
 ```typescript
-import type { RequestHandler } from './$types';
-import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { appendEvent, queryEvents } from '$lib/server/lifecycle-event-log';
-import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
+import type { RequestHandler } from "./$types";
+import {
+  type SignedAdminRequest,
+  verifySignedRequest,
+} from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { appendEvent, queryEvents } from "$lib/server/lifecycle-event-log";
+import type { AppendEventInput } from "../../../../../../../src/lifecycle/types";
 
 /**
  * Wire body matches the canonical `AppendEventInput` shape from
@@ -1166,24 +1375,46 @@ import type { AppendEventInput } from '../../../../../../../src/lifecycle/types'
  */
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as { version: number; signature: unknown; payload: AppendEventInput & { payload_hash?: string | null } };
-    if (body.version !== 1) throw new ApiError(400, 'bad_version', 'only version 1 supported');
+    const body = await request.json() as {
+      version: number;
+      signature: unknown;
+      payload: AppendEventInput & { payload_hash?: string | null };
+    };
+    if (body.version !== 1) {
+      throw new ApiError(400, "bad_version", "only version 1 supported");
+    }
     // TODO(Plan F / F5): replace with `await authenticateAdminRequest(request, platform.env)`
     // for the dual CF-Access + Ed25519 path. Today: Ed25519 only.
-    await verifySignedRequest(db, body as unknown as SignedAdminRequest, 'admin');
+    await verifySignedRequest(
+      db,
+      body as unknown as SignedAdminRequest,
+      "admin",
+    );
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
-      throw new ApiError(400, 'missing_field', 'model_slug, task_set_hash, event_type required');
+      throw new ApiError(
+        400,
+        "missing_field",
+        "model_slug, task_set_hash, event_type required",
+      );
     }
     if (p.payload_hash && p.ts !== undefined) {
       const dup = await db.prepare(
         `SELECT id FROM lifecycle_events WHERE payload_hash = ? AND ts = ? AND event_type = ?`,
       ).bind(p.payload_hash, p.ts, p.event_type).first<{ id: number }>();
       if (dup) {
-        throw new ApiError(409, 'duplicate_event', `event already recorded with id=${dup.id}`);
+        throw new ApiError(
+          409,
+          "duplicate_event",
+          `event already recorded with id=${dup.id}`,
+        );
       }
     }
     const { id } = await appendEvent(db, p);
@@ -1194,37 +1425,69 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 };
 
 export const GET: RequestHandler = async ({ request, platform, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
     // Header-based signature path (no JSON body for GET).
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
+    const sigVal = request.headers.get("X-CG-Signature");
+    const keyId = request.headers.get("X-CG-Key-Id");
+    const signedAt = request.headers.get("X-CG-Signed-At");
     if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing X-CG-Signature/X-CG-Key-Id/X-CG-Signed-At');
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "missing X-CG-Signature/X-CG-Key-Id/X-CG-Signed-At",
+      );
     }
-    const model = url.searchParams.get('model');
-    if (!model) throw new ApiError(400, 'missing_model', 'model query param required');
+    const model = url.searchParams.get("model");
+    if (!model) {
+      throw new ApiError(400, "missing_model", "model query param required");
+    }
     const fakeBody = {
       version: 1,
       payload: { model },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
+      signature: {
+        alg: "Ed25519" as const,
+        key_id: Number(keyId),
+        signed_at: signedAt,
+        value: sigVal,
+      },
     };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
-    const taskSet = url.searchParams.get('task_set');
-    const since = url.searchParams.get('since');
-    const eventTypePrefix = url.searchParams.get('event_type_prefix');
-    const limit = url.searchParams.get('limit');
+    await verifySignedRequest(
+      db,
+      fakeBody as unknown as SignedAdminRequest,
+      "admin",
+    );
+    const taskSet = url.searchParams.get("task_set");
+    const since = url.searchParams.get("since");
+    const eventTypePrefix = url.searchParams.get("event_type_prefix");
+    const limit = url.searchParams.get("limit");
     const params: (string | number)[] = [model];
-    let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
+    let sql =
+      `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                       tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
                  FROM lifecycle_events WHERE model_slug = ?`;
-    if (taskSet) { sql += ' AND task_set_hash = ?'; params.push(taskSet); }
-    if (since) { sql += ' AND ts >= ?'; params.push(Number(since)); }
-    if (eventTypePrefix) { sql += ' AND event_type LIKE ?'; params.push(`${eventTypePrefix}%`); }
-    sql += ' ORDER BY ts ASC, id ASC';
-    if (limit) { sql += ' LIMIT ?'; params.push(Number(limit)); }
+    if (taskSet) {
+      sql += " AND task_set_hash = ?";
+      params.push(taskSet);
+    }
+    if (since) {
+      sql += " AND ts >= ?";
+      params.push(Number(since));
+    }
+    if (eventTypePrefix) {
+      sql += " AND event_type LIKE ?";
+      params.push(`${eventTypePrefix}%`);
+    }
+    sql += " ORDER BY ts ASC, id ASC";
+    if (limit) {
+      sql += " LIMIT ?";
+      params.push(Number(limit));
+    }
     const rows = await db.prepare(sql).bind(...params).all();
     return jsonResponse(rows.results, 200);
   } catch (err) {
@@ -1236,29 +1499,47 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
 Create `site/src/routes/api/v1/admin/lifecycle/state/+server.ts`:
 
 ```typescript
-import type { RequestHandler } from './$types';
-import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import {
+  type SignedAdminRequest,
+  verifySignedRequest,
+} from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, platform, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
+    const sigVal = request.headers.get("X-CG-Signature");
+    const keyId = request.headers.get("X-CG-Key-Id");
+    const signedAt = request.headers.get("X-CG-Signed-At");
     if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing signature headers');
+      throw new ApiError(401, "unauthenticated", "missing signature headers");
     }
-    const model = url.searchParams.get('model');
-    const taskSet = url.searchParams.get('task_set');
-    if (!model || !taskSet) throw new ApiError(400, 'missing_params', 'model and task_set required');
+    const model = url.searchParams.get("model");
+    const taskSet = url.searchParams.get("task_set");
+    if (!model || !taskSet) {
+      throw new ApiError(400, "missing_params", "model and task_set required");
+    }
     const fakeBody = {
       version: 1,
       payload: { model },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
+      signature: {
+        alg: "Ed25519" as const,
+        key_id: Number(keyId),
+        signed_at: signedAt,
+        value: sigVal,
+      },
     };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
+    await verifySignedRequest(
+      db,
+      fakeBody as unknown as SignedAdminRequest,
+      "admin",
+    );
     // v_lifecycle_state gives last_ts + last_event_id per step; JOIN back for the row.
     const rows = await db.prepare(
       `SELECT v.step, e.id, e.ts, e.model_slug, e.task_set_hash, e.event_type,
@@ -1266,7 +1547,15 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
          FROM v_lifecycle_state v
          JOIN lifecycle_events e ON e.id = v.last_event_id
         WHERE v.model_slug = ? AND v.task_set_hash = ?`,
-    ).bind(model, taskSet).all<{ step: string; id: number; ts: number; event_type: string; [k: string]: unknown }>();
+    ).bind(model, taskSet).all<
+      {
+        step: string;
+        id: number;
+        ts: number;
+        event_type: string;
+        [k: string]: unknown;
+      }
+    >();
     const out: Record<string, unknown> = {};
     for (const r of rows.results) {
       const { step, ...rest } = r;
@@ -1282,9 +1571,12 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
 Create `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts`:
 
 ```typescript
-import type { RequestHandler } from './$types';
-import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import {
+  type SignedAdminRequest,
+  verifySignedRequest,
+} from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 /**
  * R2 proxy for lifecycle blob storage. Plan C uploads debug bundles via PUT
@@ -1297,29 +1589,53 @@ import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
  * so the orchestrator can replay deterministically.
  */
 export const PUT: RequestHandler = async ({ request, platform, params }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const bucket = platform.env.LIFECYCLE_BLOBS;
-  if (!bucket) return errorResponse(new ApiError(500, 'no_bucket', 'LIFECYCLE_BLOBS binding missing'));
+  if (!bucket) {
+    return errorResponse(
+      new ApiError(500, "no_bucket", "LIFECYCLE_BLOBS binding missing"),
+    );
+  }
   try {
     // Signature lives in headers (raw-body endpoint, no JSON envelope).
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
+    const sigVal = request.headers.get("X-CG-Signature");
+    const keyId = request.headers.get("X-CG-Key-Id");
+    const signedAt = request.headers.get("X-CG-Signed-At");
     if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing X-CG-Signature/X-CG-Key-Id/X-CG-Signed-At');
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "missing X-CG-Signature/X-CG-Key-Id/X-CG-Signed-At",
+      );
     }
     const key = params.key;
-    if (!key) throw new ApiError(400, 'missing_key', 'r2 key required');
+    if (!key) throw new ApiError(400, "missing_key", "r2 key required");
     const fakeBody = {
       version: 1,
       payload: { key },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
+      signature: {
+        alg: "Ed25519" as const,
+        key_id: Number(keyId),
+        signed_at: signedAt,
+        value: sigVal,
+      },
     };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
+    await verifySignedRequest(
+      db,
+      fakeBody as unknown as SignedAdminRequest,
+      "admin",
+    );
     const body = await request.arrayBuffer();
     await bucket.put(key, body, {
-      httpMetadata: { contentType: request.headers.get('content-type') ?? 'application/octet-stream' },
+      httpMetadata: {
+        contentType: request.headers.get("content-type") ??
+          "application/octet-stream",
+      },
     });
     return jsonResponse({ key, size: body.byteLength }, 200);
   } catch (err) {
@@ -1328,34 +1644,52 @@ export const PUT: RequestHandler = async ({ request, platform, params }) => {
 };
 
 export const GET: RequestHandler = async ({ request, platform, params }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const bucket = platform.env.LIFECYCLE_BLOBS;
-  if (!bucket) return errorResponse(new ApiError(500, 'no_bucket', 'LIFECYCLE_BLOBS binding missing'));
+  if (!bucket) {
+    return errorResponse(
+      new ApiError(500, "no_bucket", "LIFECYCLE_BLOBS binding missing"),
+    );
+  }
   try {
     // Plan F's review UI uses CF Access; CLI replay uses Ed25519. Until Plan F
     // ships authenticateAdminRequest, only Ed25519 is accepted.
-    const sigVal = request.headers.get('X-CG-Signature');
-    const keyId = request.headers.get('X-CG-Key-Id');
-    const signedAt = request.headers.get('X-CG-Signed-At');
+    const sigVal = request.headers.get("X-CG-Signature");
+    const keyId = request.headers.get("X-CG-Key-Id");
+    const signedAt = request.headers.get("X-CG-Signed-At");
     if (!sigVal || !keyId || !signedAt) {
-      throw new ApiError(401, 'unauthenticated', 'missing signature headers');
+      throw new ApiError(401, "unauthenticated", "missing signature headers");
     }
     const key = params.key;
-    if (!key) throw new ApiError(400, 'missing_key', 'r2 key required');
+    if (!key) throw new ApiError(400, "missing_key", "r2 key required");
     const fakeBody = {
       version: 1,
       payload: { key },
-      signature: { alg: 'Ed25519' as const, key_id: Number(keyId), signed_at: signedAt, value: sigVal },
+      signature: {
+        alg: "Ed25519" as const,
+        key_id: Number(keyId),
+        signed_at: signedAt,
+        value: sigVal,
+      },
     };
-    await verifySignedRequest(db, fakeBody as unknown as SignedAdminRequest, 'admin');
+    await verifySignedRequest(
+      db,
+      fakeBody as unknown as SignedAdminRequest,
+      "admin",
+    );
     const obj = await bucket.get(key);
-    if (!obj) throw new ApiError(404, 'not_found', `no blob at key=${key}`);
+    if (!obj) throw new ApiError(404, "not_found", `no blob at key=${key}`);
     return new Response(obj.body, {
       status: 200,
       headers: {
-        'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
-        'content-length': String(obj.size),
+        "content-type": obj.httpMetadata?.contentType ??
+          "application/octet-stream",
+        "content-length": String(obj.size),
       },
     });
   } catch (err) {
@@ -1383,6 +1717,7 @@ git add site/src/routes/api/v1/admin/lifecycle/ site/tests/api/lifecycle.test.ts
 ## Task A5: Reproducibility envelope helper
 
 **Files:**
+
 - Create: `src/lifecycle/envelope.ts`
 - Create: `tests/unit/lifecycle/envelope.test.ts`
 
@@ -1409,7 +1744,10 @@ describe("envelope", () => {
   });
 
   it("collectEnvelope contains machine_id and settings_hash", async () => {
-    const e = await collectEnvelope({ machineId: "test-mach", settings: { temperature: 0 } });
+    const e = await collectEnvelope({
+      machineId: "test-mach",
+      settings: { temperature: 0 },
+    });
     assertEquals(e.machine_id, "test-mach");
     assertExists(e.settings_hash);
   });
@@ -1488,7 +1826,9 @@ export async function collectEnvelope(
   const env: LifecycleEnvelope = {};
   env.git_sha = opts.gitSha ?? await readGitSha();
   if (opts.machineId) env.machine_id = opts.machineId;
-  if (opts.settings) env.settings_hash = await computeSettingsHash(opts.settings);
+  if (opts.settings) {
+    env.settings_hash = await computeSettingsHash(opts.settings);
+  }
   return env;
 }
 
@@ -1541,6 +1881,7 @@ deno fmt src/lifecycle/envelope.ts tests/unit/lifecycle/envelope.test.ts && deno
 ## Task A6: Integration test — full append → query → reduce roundtrip
 
 **Files:**
+
 - Create: `site/tests/api/lifecycle-roundtrip.test.ts`
 
 ### Steps
@@ -1550,64 +1891,83 @@ deno fmt src/lifecycle/envelope.ts tests/unit/lifecycle/envelope.test.ts && deno
 Create `site/tests/api/lifecycle-roundtrip.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-import { createSignedPayload } from '../fixtures/keys';
-import { registerMachineKey } from '../fixtures/ingest-helpers';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createSignedPayload } from "../fixtures/keys";
+import { registerMachineKey } from "../fixtures/ingest-helpers";
+import { resetDb } from "../utils/reset-db";
 
-beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await resetDb(); });
+beforeAll(async () => {
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+});
+beforeEach(async () => {
+  await resetDb();
+});
 
-describe('lifecycle roundtrip', () => {
-  it('appends 5 events and reduces to bench.completed + analysis.completed', async () => {
-    const { keyId, keypair } = await registerMachineKey('rt', 'admin');
+describe("lifecycle roundtrip", () => {
+  it("appends 5 events and reduces to bench.completed + analysis.completed", async () => {
+    const { keyId, keypair } = await registerMachineKey("rt", "admin");
     const sequence = [
-      { ts: 1, event_type: 'bench.started' },
-      { ts: 2, event_type: 'bench.completed' },
-      { ts: 3, event_type: 'analysis.started' },
-      { ts: 4, event_type: 'analysis.completed' },
-      { ts: 5, event_type: 'analysis.failed' }, // most recent in `analyze` step
+      { ts: 1, event_type: "bench.started" },
+      { ts: 2, event_type: "bench.completed" },
+      { ts: 3, event_type: "analysis.started" },
+      { ts: 4, event_type: "analysis.completed" },
+      { ts: 5, event_type: "analysis.failed" }, // most recent in `analyze` step
     ];
     for (const ev of sequence) {
       // Canonical AppendEventInput shape: payload object, no `*_json` wire fields.
       const payload = {
         ts: ev.ts,
-        model_slug: 'm/r',
-        task_set_hash: 'hr',
+        model_slug: "m/r",
+        task_set_hash: "hr",
         event_type: ev.event_type,
         source_id: null,
         payload_hash: null,
         tool_versions: null,
         envelope: null,
         payload: {},
-        actor: 'operator',
+        actor: "operator",
         actor_id: null,
         migration_note: null,
       };
-      const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(signedRequest),
+      const { signedRequest } = await createSignedPayload(
+        payload,
+        keyId,
+        undefined,
+        keypair,
+      );
+      const r = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(signedRequest),
       });
       expect(r.status).toBe(200);
     }
 
-    const { signedRequest } = await createSignedPayload({ model: 'm/r' }, keyId, undefined, keypair);
+    const { signedRequest } = await createSignedPayload(
+      { model: "m/r" },
+      keyId,
+      undefined,
+      keypair,
+    );
     const stateResp = await SELF.fetch(
       `https://x/api/v1/admin/lifecycle/state?model=m/r&task_set=hr`,
       {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'X-CG-Signature': signedRequest.signature.value,
-          'X-CG-Key-Id': String(signedRequest.signature.key_id),
-          'X-CG-Signed-At': signedRequest.signature.signed_at,
+          "X-CG-Signature": signedRequest.signature.value,
+          "X-CG-Key-Id": String(signedRequest.signature.key_id),
+          "X-CG-Signed-At": signedRequest.signature.signed_at,
         },
       },
     );
     expect(stateResp.status).toBe(200);
-    const state = await stateResp.json() as Record<string, { event_type: string }>;
-    expect(state.bench?.event_type).toBe('bench.completed');
-    expect(state.analyze?.event_type).toBe('analysis.failed');
+    const state = await stateResp.json() as Record<
+      string,
+      { event_type: string }
+    >;
+    expect(state.bench?.event_type).toBe("bench.completed");
+    expect(state.analyze?.event_type).toBe("analysis.failed");
   });
 });
 ```
@@ -1631,6 +1991,7 @@ git add site/tests/api/lifecycle-roundtrip.test.ts && git commit -m "test(site):
 ## Task A7: Throughput acceptance test (100 events tight loop)
 
 **Files:**
+
 - Create: `site/tests/api/lifecycle-throughput.test.ts`
 
 ### Steps
@@ -1640,18 +2001,22 @@ git add site/tests/api/lifecycle-roundtrip.test.ts && git commit -m "test(site):
 Create `site/tests/api/lifecycle-throughput.test.ts`:
 
 ```typescript
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
-import { createSignedPayload } from '../fixtures/keys';
-import { registerMachineKey } from '../fixtures/ingest-helpers';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { createSignedPayload } from "../fixtures/keys";
+import { registerMachineKey } from "../fixtures/ingest-helpers";
+import { resetDb } from "../utils/reset-db";
 
-beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
-beforeEach(async () => { await resetDb(); });
+beforeAll(async () => {
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+});
+beforeEach(async () => {
+  await resetDb();
+});
 
-describe('lifecycle throughput', () => {
-  it('writes 100 events without rate-limit or quota errors', async () => {
-    const { keyId, keypair } = await registerMachineKey('tp', 'admin');
+describe("lifecycle throughput", () => {
+  it("writes 100 events without rate-limit or quota errors", async () => {
+    const { keyId, keypair } = await registerMachineKey("tp", "admin");
     let okCount = 0;
     for (let i = 0; i < 100; i++) {
       // Canonical AppendEventInput shape — see A1.5 helper.
@@ -1659,24 +2024,33 @@ describe('lifecycle throughput', () => {
         ts: i,
         model_slug: `m/${i % 5}`,
         task_set_hash: `h${i % 3}`,
-        event_type: 'bench.completed',
+        event_type: "bench.completed",
         source_id: null,
-        payload_hash: `p${i.toString().padStart(63, '0')}`,
+        payload_hash: `p${i.toString().padStart(63, "0")}`,
         tool_versions: null,
         envelope: null,
         payload: {},
-        actor: 'ci',
-        actor_id: 'github-actions',
+        actor: "ci",
+        actor_id: "github-actions",
         migration_note: null,
       };
-      const { signedRequest } = await createSignedPayload(payload, keyId, undefined, keypair);
-      const r = await SELF.fetch('https://x/api/v1/admin/lifecycle/events', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(signedRequest),
+      const { signedRequest } = await createSignedPayload(
+        payload,
+        keyId,
+        undefined,
+        keypair,
+      );
+      const r = await SELF.fetch("https://x/api/v1/admin/lifecycle/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(signedRequest),
       });
       if (r.status === 200) okCount++;
     }
     expect(okCount).toBe(100);
-    const total = await env.DB.prepare(`SELECT COUNT(*) AS c FROM lifecycle_events`).first<{ c: number }>();
+    const total = await env.DB.prepare(
+      `SELECT COUNT(*) AS c FROM lifecycle_events`,
+    ).first<{ c: number }>();
     expect(total?.c).toBe(100);
   }, 60_000); // 60s timeout — generous for the 100-event loop
 });
@@ -1701,6 +2075,7 @@ git add site/tests/api/lifecycle-throughput.test.ts && git commit -m "test(site)
 ## Task A-COMMIT: Final integration check + Phase A close
 
 **Files:**
+
 - Modify: none (operational; ensure clean tree)
 
 ### Steps
@@ -1765,20 +2140,20 @@ Phase B (backfill + slug migration) consumes `LifecycleEvent`/`AppendEventInput`
 
 Stable surface for downstream phases:
 
-| Surface | Module / Path | Used by |
-|---|---|---|
-| `AppendEventInput`, `LifecycleEvent`, `LifecycleEventType`, `LifecycleActor`, `CurrentStateMap` | `src/lifecycle/types.ts` | All later plans |
-| CLI `appendEvent(input, opts)` (signs + POSTs) | `src/lifecycle/event-log.ts` | B (backfill), C (orchestrator), H (status CLI) |
-| CLI `queryEvents(filter, opts)` w/ `event_type_prefix` + `limit` | `src/lifecycle/event-log.ts` | C, H, J |
-| CLI `currentState(modelSlug, taskSetHash, opts)` | `src/lifecycle/event-log.ts` | C, H |
-| Worker `appendEvent(db, input)` (direct INSERT) | `site/src/lib/server/lifecycle-event-log.ts` | A4 POST handler, C (in-worker), D-data, F |
-| Worker `queryEvents(db, filter)` w/ `event_type_prefix` + `limit` | `site/src/lib/server/lifecycle-event-log.ts` | E (differentials), F (review UI), `/families` payload |
-| `collectEnvelope(opts)`, `collectToolVersions()`, `computeSettingsHash(...)` | `src/lifecycle/envelope.ts` | C (per-step envelope), B (synthetic backfill envelope) |
-| `POST /api/v1/admin/lifecycle/events` (object payload, dual-auth contract) | `site/src/routes/api/v1/admin/lifecycle/events/+server.ts` | CLI `appendEvent` |
-| `GET  /api/v1/admin/lifecycle/events?model=&task_set=&since=&event_type_prefix=&limit=` | same file | CLI `queryEvents`, H |
-| `GET  /api/v1/admin/lifecycle/state?model=&task_set=` | `site/src/routes/api/v1/admin/lifecycle/state/+server.ts` | CLI `currentState`, H |
-| `PUT  /api/v1/admin/lifecycle/r2/<key>` (raw bytes, signed) | `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts` | C `uploadLifecycleBlob` |
-| `GET  /api/v1/admin/lifecycle/r2/<key>` | same file | F (review UI debug bundle proxy), CLI replay |
-| R2 binding `LIFECYCLE_BLOBS` (bucket `centralgauge-lifecycle`) | `site/wrangler.toml` | C, F |
+| Surface                                                                                         | Module / Path                                                   | Used by                                                |
+| ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------ |
+| `AppendEventInput`, `LifecycleEvent`, `LifecycleEventType`, `LifecycleActor`, `CurrentStateMap` | `src/lifecycle/types.ts`                                        | All later plans                                        |
+| CLI `appendEvent(input, opts)` (signs + POSTs)                                                  | `src/lifecycle/event-log.ts`                                    | B (backfill), C (orchestrator), H (status CLI)         |
+| CLI `queryEvents(filter, opts)` w/ `event_type_prefix` + `limit`                                | `src/lifecycle/event-log.ts`                                    | C, H, J                                                |
+| CLI `currentState(modelSlug, taskSetHash, opts)`                                                | `src/lifecycle/event-log.ts`                                    | C, H                                                   |
+| Worker `appendEvent(db, input)` (direct INSERT)                                                 | `site/src/lib/server/lifecycle-event-log.ts`                    | A4 POST handler, C (in-worker), D-data, F              |
+| Worker `queryEvents(db, filter)` w/ `event_type_prefix` + `limit`                               | `site/src/lib/server/lifecycle-event-log.ts`                    | E (differentials), F (review UI), `/families` payload  |
+| `collectEnvelope(opts)`, `collectToolVersions()`, `computeSettingsHash(...)`                    | `src/lifecycle/envelope.ts`                                     | C (per-step envelope), B (synthetic backfill envelope) |
+| `POST /api/v1/admin/lifecycle/events` (object payload, dual-auth contract)                      | `site/src/routes/api/v1/admin/lifecycle/events/+server.ts`      | CLI `appendEvent`                                      |
+| `GET  /api/v1/admin/lifecycle/events?model=&task_set=&since=&event_type_prefix=&limit=`         | same file                                                       | CLI `queryEvents`, H                                   |
+| `GET  /api/v1/admin/lifecycle/state?model=&task_set=`                                           | `site/src/routes/api/v1/admin/lifecycle/state/+server.ts`       | CLI `currentState`, H                                  |
+| `PUT  /api/v1/admin/lifecycle/r2/<key>` (raw bytes, signed)                                     | `site/src/routes/api/v1/admin/lifecycle/r2/[...key]/+server.ts` | C `uploadLifecycleBlob`                                |
+| `GET  /api/v1/admin/lifecycle/r2/<key>`                                                         | same file                                                       | F (review UI debug bundle proxy), CLI replay           |
+| R2 binding `LIFECYCLE_BLOBS` (bucket `centralgauge-lifecycle`)                                  | `site/wrangler.toml`                                            | C, F                                                   |
 
 Plan F (Phase F5) replaces the per-endpoint `verifySignedRequest` calls with `authenticateAdminRequest(request, env)` (CF Access JWT OR Ed25519). Until then, all admin lifecycle endpoints accept Ed25519 only.

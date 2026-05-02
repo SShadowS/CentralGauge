@@ -4,7 +4,7 @@
 **Status:** Draft — pending review
 **Owner:** @SShadowS
 
-> **Design mantra:** *best, not easiest.* Every decision below was evaluated against "what gives a skeptical reader of the public scoreboard the most trustworthy, legible, durable experience?" — not "what ships fastest."
+> **Design mantra:** _best, not easiest._ Every decision below was evaluated against "what gives a skeptical reader of the public scoreboard the most trustworthy, legible, durable experience?" — not "what ships fastest."
 
 ## 1. Problem
 
@@ -378,40 +378,41 @@ All endpoints on one Pages project. Public read, signed write.
 
 ### Write endpoints (require signed payload)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/v1/runs` | Ingest run header + results. Payload signed with machine's Ed25519 key. Returns `{ missing_blobs }`. Idempotent by `run_id`. |
-| `PUT` | `/api/v1/blobs/:sha256` | Upload one zstd-compressed blob. Body-hash must match key. |
-| `POST` | `/api/v1/runs/:id/finalize` | Marks run complete. Invalidates caches. Triggers SSE broadcast. |
-| `POST` | `/api/v1/task-sets` | Register a task set. Idempotent by hash. |
-| `POST` | `/api/v1/task-sets/:hash/current` | Promote task set to current. `admin` scope. |
-| `POST` | `/api/v1/shortcomings/batch` | Upsert analyzed shortcomings (from `analyze` command). |
-| `POST` | `/api/v1/verify` | Submit a verification result: "I re-ran `run_id` and got matching results." `verifier` scope. |
-| `POST` | `/api/v1/pricing` | Register a pricing version. `admin` scope. |
+| Method | Path                              | Purpose                                                                                                                      |
+| ------ | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/api/v1/runs`                    | Ingest run header + results. Payload signed with machine's Ed25519 key. Returns `{ missing_blobs }`. Idempotent by `run_id`. |
+| `PUT`  | `/api/v1/blobs/:sha256`           | Upload one zstd-compressed blob. Body-hash must match key.                                                                   |
+| `POST` | `/api/v1/runs/:id/finalize`       | Marks run complete. Invalidates caches. Triggers SSE broadcast.                                                              |
+| `POST` | `/api/v1/task-sets`               | Register a task set. Idempotent by hash.                                                                                     |
+| `POST` | `/api/v1/task-sets/:hash/current` | Promote task set to current. `admin` scope.                                                                                  |
+| `POST` | `/api/v1/shortcomings/batch`      | Upsert analyzed shortcomings (from `analyze` command).                                                                       |
+| `POST` | `/api/v1/verify`                  | Submit a verification result: "I re-ran `run_id` and got matching results." `verifier` scope.                                |
+| `POST` | `/api/v1/pricing`                 | Register a pricing version. `admin` scope.                                                                                   |
 
 ### Read endpoints (public, edge-cached, ETag-aware, cursor-paginated)
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/v1/leaderboard?set=current\|all&tier=verified\|claimed\|all&difficulty=&family=&since=&cursor=` | Leaderboard. Default: `set=current, tier=all`. |
-| `GET` | `/api/v1/families` | Model families with trajectory data |
-| `GET` | `/api/v1/families/:slug` | Family trajectory: all generations with score over time |
-| `GET` | `/api/v1/models` | All known models |
-| `GET` | `/api/v1/models/:slug` | Model detail (aggregates + history + cost + failure modes + consistency score) |
-| `GET` | `/api/v1/models/:slug/limitations` | Shortcomings as markdown or JSON |
-| `GET` | `/api/v1/tasks?cursor=` | Task list (current set) |
-| `GET` | `/api/v1/tasks/:id` | Per-task detail |
-| `GET` | `/api/v1/runs?cursor=` | Paginated runs, filterable |
-| `GET` | `/api/v1/runs/:id` | Run detail + results |
-| `GET` | `/api/v1/runs/:id/reproduce.tar.gz` | Download reproduction bundle |
-| `GET` | `/api/v1/runs/:id/signature` | Raw signed payload + signature (for independent verification) |
-| `GET` | `/api/v1/transcripts/:key` | Proxies zstd R2 object with decompression |
-| `GET` | `/api/v1/compare?models=a,b,c` | Side-by-side 2–4 models |
-| `GET` | `/api/v1/search?q=AL0132` | FTS over failure messages |
-| `GET` | `/api/v1/sync/health` | Per-machine last-seen + lag |
-| `GET` | `/api/v1/events/live` | SSE stream: new run, new shortcoming, task-set promotion |
+| Method | Path                                                                                                  | Purpose                                                                        |
+| ------ | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `GET`  | `/api/v1/leaderboard?set=current\|all&tier=verified\|claimed\|all&difficulty=&family=&since=&cursor=` | Leaderboard. Default: `set=current, tier=all`.                                 |
+| `GET`  | `/api/v1/families`                                                                                    | Model families with trajectory data                                            |
+| `GET`  | `/api/v1/families/:slug`                                                                              | Family trajectory: all generations with score over time                        |
+| `GET`  | `/api/v1/models`                                                                                      | All known models                                                               |
+| `GET`  | `/api/v1/models/:slug`                                                                                | Model detail (aggregates + history + cost + failure modes + consistency score) |
+| `GET`  | `/api/v1/models/:slug/limitations`                                                                    | Shortcomings as markdown or JSON                                               |
+| `GET`  | `/api/v1/tasks?cursor=`                                                                               | Task list (current set)                                                        |
+| `GET`  | `/api/v1/tasks/:id`                                                                                   | Per-task detail                                                                |
+| `GET`  | `/api/v1/runs?cursor=`                                                                                | Paginated runs, filterable                                                     |
+| `GET`  | `/api/v1/runs/:id`                                                                                    | Run detail + results                                                           |
+| `GET`  | `/api/v1/runs/:id/reproduce.tar.gz`                                                                   | Download reproduction bundle                                                   |
+| `GET`  | `/api/v1/runs/:id/signature`                                                                          | Raw signed payload + signature (for independent verification)                  |
+| `GET`  | `/api/v1/transcripts/:key`                                                                            | Proxies zstd R2 object with decompression                                      |
+| `GET`  | `/api/v1/compare?models=a,b,c`                                                                        | Side-by-side 2–4 models                                                        |
+| `GET`  | `/api/v1/search?q=AL0132`                                                                             | FTS over failure messages                                                      |
+| `GET`  | `/api/v1/sync/health`                                                                                 | Per-machine last-seen + lag                                                    |
+| `GET`  | `/api/v1/events/live`                                                                                 | SSE stream: new run, new shortcoming, task-set promotion                       |
 
 All read responses include:
+
 - `ETag: "sha256-of-body"` — supports `If-None-Match` → 304
 - `Cache-Control: public, s-maxage=60, stale-while-revalidate=600`
 - `X-API-Version: v1`
@@ -431,9 +432,18 @@ All read responses include:
   },
   "payload": {
     "task_set_hash": "sha256:...",
-    "model": { "slug": "sonnet-4.7", "api_model_id": "claude-sonnet-4-7", "family_slug": "claude" },
-    "settings": { "temperature": 0.0, "max_attempts": 2, "max_tokens": 8192,
-                  "prompt_version": "v3", "bc_version": "Cronus28" },
+    "model": {
+      "slug": "sonnet-4.7",
+      "api_model_id": "claude-sonnet-4-7",
+      "family_slug": "claude"
+    },
+    "settings": {
+      "temperature": 0.0,
+      "max_attempts": 2,
+      "max_tokens": 8192,
+      "prompt_version": "v3",
+      "bc_version": "Cronus28"
+    },
     "machine_id": "home-rig",
     "started_at": "2026-04-17T10:00:00Z",
     "completed_at": "2026-04-17T12:34:56Z",
@@ -447,10 +457,21 @@ All read responses include:
         "passed": false,
         "score": 0,
         "compile_success": false,
-        "compile_errors": [{ "code": "AL0132", "message": "...", "file": "...", "line": 5, "column": 1 }],
-        "tests_total": 0, "tests_passed": 0,
-        "tokens_in": 4321, "tokens_out": 987,
-        "tokens_cache_read": 0, "tokens_cache_write": 0,
+        "compile_errors": [
+          {
+            "code": "AL0132",
+            "message": "...",
+            "file": "...",
+            "line": 5,
+            "column": 1
+          }
+        ],
+        "tests_total": 0,
+        "tests_passed": 0,
+        "tokens_in": 4321,
+        "tokens_out": 987,
+        "tokens_cache_read": 0,
+        "tokens_cache_write": 0,
         "durations_ms": { "llm": 12340, "compile": 3400, "test": 0 },
         "failure_reasons": ["compile_failed"],
         "transcript_sha256": "...",
@@ -591,6 +612,7 @@ Env overrides: `CENTRALGAUGE_API_URL`, `CENTRALGAUGE_MACHINE_ID`, `CENTRALGAUGE_
 ### Reproduction bundle
 
 Before signing the run payload, bench produces `reproductions/<run_id>.tar.zst` containing:
+
 - `tasks/` — the exact task YAMLs used (from `task_set_hash`)
 - `settings.json` — the exact settings object
 - `model.json` — api_model_id + any provider-specific config
@@ -691,19 +713,20 @@ No polling. No refresh. The leaderboard visibly reacts to ingest.
 
 P1–P7 are sequential; P1–P4 ship without breaking the existing flow.
 
-| Phase | Ships | Success criteria |
-|---|---|---|
-| **P1. Schema + API skeleton** | D1 + R2 + KV + DO provisioned. Migrations in `wrangler d1 migrations`. All endpoints with signature verification + tests. | Fixture ingest succeeds + signature verified; `GET /api/v1/leaderboard` returns it; invalid signatures rejected. |
-| **P2. Outbox + sync** | Local SQLite outbox; bench queues into outbox; worker processes it with resumable blob uploads. `centralgauge sync` and `keys` commands. | Fresh run lands end-to-end; kill -9 mid-upload + restart recovers and finishes. Simulated network failure at each step → retry succeeds. |
-| **P3. Legacy import** | `migrate-results` imports all `results/*.json` with `source='legacy_import'`. Reproduction bundles synthesized from historical task-set files in git. | All historical runs queryable via API; re-running is a no-op. |
-| **P4. Analyzer integration** | `centralgauge analyze` writes shortcomings to D1. `rules` command reads from DB. Backfill existing per-model JSON files. | Shortcomings page renders live markdown; rules markdown byte-identical to current output. |
-| **P5. Site launch (beta)** | SvelteKit site on Pages preview environment. Internal-only URL. | All pages render. E2E Playwright suite green. Lighthouse budgets met. |
-| **P6. Verification + pricing infra** | `verifier-*` machines run; `run_verifications` populated. `cost_snapshots` table backfilled for all known pricing versions. Tier badges visible on site. | ≥ 25% of current-set runs have at least one verification. Historical cost reports via view match pre-migration numbers. |
-| **P7. Public launch** | Pages production environment swapped for scoreboard domain. Old static report retires as public artifact. Security review + load test. | Scoreboard at public URL. Cache hit > 90%. Signed-ingest end-to-end demonstrated. |
+| Phase                                | Ships                                                                                                                                                    | Success criteria                                                                                                                         |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **P1. Schema + API skeleton**        | D1 + R2 + KV + DO provisioned. Migrations in `wrangler d1 migrations`. All endpoints with signature verification + tests.                                | Fixture ingest succeeds + signature verified; `GET /api/v1/leaderboard` returns it; invalid signatures rejected.                         |
+| **P2. Outbox + sync**                | Local SQLite outbox; bench queues into outbox; worker processes it with resumable blob uploads. `centralgauge sync` and `keys` commands.                 | Fresh run lands end-to-end; kill -9 mid-upload + restart recovers and finishes. Simulated network failure at each step → retry succeeds. |
+| **P3. Legacy import**                | `migrate-results` imports all `results/*.json` with `source='legacy_import'`. Reproduction bundles synthesized from historical task-set files in git.    | All historical runs queryable via API; re-running is a no-op.                                                                            |
+| **P4. Analyzer integration**         | `centralgauge analyze` writes shortcomings to D1. `rules` command reads from DB. Backfill existing per-model JSON files.                                 | Shortcomings page renders live markdown; rules markdown byte-identical to current output.                                                |
+| **P5. Site launch (beta)**           | SvelteKit site on Pages preview environment. Internal-only URL.                                                                                          | All pages render. E2E Playwright suite green. Lighthouse budgets met.                                                                    |
+| **P6. Verification + pricing infra** | `verifier-*` machines run; `run_verifications` populated. `cost_snapshots` table backfilled for all known pricing versions. Tier badges visible on site. | ≥ 25% of current-set runs have at least one verification. Historical cost reports via view match pre-migration numbers.                  |
+| **P7. Public launch**                | Pages production environment swapped for scoreboard domain. Old static report retires as public artifact. Security review + load test.                   | Scoreboard at public URL. Cache hit > 90%. Signed-ingest end-to-end demonstrated.                                                        |
 
 ## 10. Testing Strategy
 
 ### Unit
+
 - Payload builder: result JSON → canonical signed payload (round-trip equality; byte-stable)
 - Ed25519 sign/verify (Noble or tweetnacl; WebCrypto on server)
 - Outbox state machine (property-based via `fast-check`)
@@ -711,6 +734,7 @@ P1–P7 are sequential; P1–P4 ship without breaking the existing flow.
 - Cost view: synthetic cost_snapshots + results → assert computed cost
 
 ### Integration (miniflare)
+
 - `wrangler dev` spawns miniflare with D1 + R2 + KV + DO
 - End-to-end ingest with signature verification
 - Legacy import fixture → expected row counts
@@ -720,17 +744,20 @@ P1–P7 are sequential; P1–P4 ship without breaking the existing flow.
 - FTS5 queries return expected rows
 
 ### Chaos
+
 - Inject random network failures at each step of the outbox worker
 - Kill the CLI mid-upload; restart; assert successful completion
 - Simulate clock skew (≥ 10 min) and expect rejection
 
 ### Site E2E (Playwright against `wrangler pages dev`)
+
 - Landing renders with seeded data; filters work; drill-downs reach transcripts
 - SSE connection receives broadcast when a fake run is finalized
 - Reproduction bundle download produces valid tarball
 - Signature verification panel displays + validates
 
 ### CI
+
 - `deno task test` (existing)
 - `cd site && npm test`
 - `wrangler d1 migrations apply --local` + integration tests
@@ -762,17 +789,18 @@ P1–P7 are sequential; P1–P4 ship without breaking the existing flow.
 
 ## 13. Cost Estimate (free tier at launch)
 
-| Resource | Expected | Free tier |
-|---|---|---|
-| D1 reads | ~5 k/day (cached) | 5 M/day |
-| D1 writes | ~500/run × 10 runs/week = 5 k/week | 100 k/day |
-| D1 storage | ~100 KB/run × 2000 runs = 200 MB | 5 GB |
-| R2 storage | ~15 MB/run (zstd 19) × 2000 runs = 30 GB | 10 GB — exceeds at ~650 runs |
-| Workers requests | ~20 k/day | 100 k/day |
-| Durable Objects | ~100 k messages/day | 1 M/day free |
-| Cron triggers | 30 invocations/month | 10 M/month free |
+| Resource         | Expected                                 | Free tier                    |
+| ---------------- | ---------------------------------------- | ---------------------------- |
+| D1 reads         | ~5 k/day (cached)                        | 5 M/day                      |
+| D1 writes        | ~500/run × 10 runs/week = 5 k/week       | 100 k/day                    |
+| D1 storage       | ~100 KB/run × 2000 runs = 200 MB         | 5 GB                         |
+| R2 storage       | ~15 MB/run (zstd 19) × 2000 runs = 30 GB | 10 GB — exceeds at ~650 runs |
+| Workers requests | ~20 k/day                                | 100 k/day                    |
+| Durable Objects  | ~100 k messages/day                      | 1 M/day free                 |
+| Cron triggers    | 30 invocations/month                     | 10 M/month free              |
 
 When R2 exceeds 10 GB:
+
 - Pay-as-you-go: $0.015/GB/month (50 GB ≈ $0.60/month — trivial)
 - Content-addressing + zstd already dedupe identical outputs
 - Lifecycle rule can archive transcripts > 180 days old to R2 Infrequent Access ($0.01/GB/month)

@@ -14,18 +14,18 @@ queue, the per-model event timeline, and the lifecycle status matrix.
 
 ## Phases shipped
 
-| Wave | Plan        | Deliverable                                                                                                                  |
-| ---- | ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| 1    | A           | Schema migration `0006_lifecycle.sql`; `appendEvent` / `queryEvents` / `currentState` primitives; reproducibility envelope.  |
-| 2    | B           | Backfill of historical events; vendor-prefixed slug standardization; `VENDOR_PREFIX_MAP` retired.                            |
-| 2    | D-prompt    | Analyzer prompt + `concept_slug_proposed` field on the batch endpoint; concepts API endpoints.                               |
-| 3    | C           | `centralgauge cycle` orchestrator with checkpointing, lock-token tiebreaker, R2-resident debug bundles, TTL handling.        |
-| 4    | D-data      | Concept registry + three-tier clustering (auto-merge / 0.70–0.85 review band / auto-create); transactional mutations.        |
-| 5    | E           | Schema migration `0007_family_diffs.sql`; `/api/v1/families/<slug>/diff`; family page Concept trajectory section.            |
-| 5    | F           | Confidence-score quality gating; `/admin/lifecycle/{review,events,status}` UI; CF Access + Ed25519 dual-auth on admin paths. |
-| 5    | H           | `centralgauge lifecycle status` CLI matrix with per-model partial-failure handling and zod-validated `--json` schema.        |
-| 6    | G           | Weekly CI workflow (`weekly-cycle.yml`); `centralgauge lifecycle digest`; sticky GitHub issue with auto-close.               |
-| 7    | J           | Operator + reviewer guide; CLAUDE.md ## Lifecycle section; six new operations runbooks; integration test; changelogs.        |
+| Wave | Plan     | Deliverable                                                                                                                  |
+| ---- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1    | A        | Schema migration `0006_lifecycle.sql`; `appendEvent` / `queryEvents` / `currentState` primitives; reproducibility envelope.  |
+| 2    | B        | Backfill of historical events; vendor-prefixed slug standardization; `VENDOR_PREFIX_MAP` retired.                            |
+| 2    | D-prompt | Analyzer prompt + `concept_slug_proposed` field on the batch endpoint; concepts API endpoints.                               |
+| 3    | C        | `centralgauge cycle` orchestrator with checkpointing, lock-token tiebreaker, R2-resident debug bundles, TTL handling.        |
+| 4    | D-data   | Concept registry + three-tier clustering (auto-merge / 0.70–0.85 review band / auto-create); transactional mutations.        |
+| 5    | E        | Schema migration `0007_family_diffs.sql`; `/api/v1/families/<slug>/diff`; family page Concept trajectory section.            |
+| 5    | F        | Confidence-score quality gating; `/admin/lifecycle/{review,events,status}` UI; CF Access + Ed25519 dual-auth on admin paths. |
+| 5    | H        | `centralgauge lifecycle status` CLI matrix with per-model partial-failure handling and zod-validated `--json` schema.        |
+| 6    | G        | Weekly CI workflow (`weekly-cycle.yml`); `centralgauge lifecycle digest`; sticky GitHub issue with auto-close.               |
+| 7    | J        | Operator + reviewer guide; CLAUDE.md ## Lifecycle section; six new operations runbooks; integration test; changelogs.        |
 
 ## Key contracts pinned (cross-plan invariants)
 
@@ -54,17 +54,17 @@ every follow-on change:
 
 ## Volume
 
-| Metric                          | Value          |
-| ------------------------------- | -------------- |
-| Phases shipped                  | 10 (A–H + J)   |
-| Waves                           | 7              |
-| Lifecycle commits to master     | ~70 across all phases (≥35 carrying `lifecycle/X` scope; rest are surrounding fixes / merge commits) |
-| Wave 7 commits                  | 7 (this PR)    |
-| Wave 7 LoC                      | +1,005 (docs + 1 integration test + visual-regression placeholders) |
-| Worker endpoints added          | 11 admin + 3 public |
-| CLI commands added              | 5 (`cycle`, `lifecycle status`, `lifecycle cluster-review`, `lifecycle digest`, `verify --shortcomings-only` default) |
-| D1 migrations                   | 2 (`0006`, `0007`) |
-| D1 tables added                 | 4 (`lifecycle_events`, `concepts`, `concept_aliases`, `pending_review`, `family_diffs`) plus the `v_lifecycle_state` view |
+| Metric                      | Value                                                                                                                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Phases shipped              | 10 (A–H + J)                                                                                                              |
+| Waves                       | 7                                                                                                                         |
+| Lifecycle commits to master | ~70 across all phases (≥35 carrying `lifecycle/X` scope; rest are surrounding fixes / merge commits)                      |
+| Wave 7 commits              | 7 (this PR)                                                                                                               |
+| Wave 7 LoC                  | +1,005 (docs + 1 integration test + visual-regression placeholders)                                                       |
+| Worker endpoints added      | 11 admin + 3 public                                                                                                       |
+| CLI commands added          | 5 (`cycle`, `lifecycle status`, `lifecycle cluster-review`, `lifecycle digest`, `verify --shortcomings-only` default)     |
+| D1 migrations               | 2 (`0006`, `0007`)                                                                                                        |
+| D1 tables added             | 4 (`lifecycle_events`, `concepts`, `concept_aliases`, `pending_review`, `family_diffs`) plus the `v_lifecycle_state` view |
 
 ## Acceptance assertions (cross-cut)
 
@@ -72,16 +72,16 @@ The strategic plan's J-COMMIT acceptance gate enumerated 8 assertions
 across phases A–H. Each phase's acceptance bar held at merge time;
 Wave 7 doesn't re-test them but documents the handoff:
 
-| Phase | Acceptance assertion                                                                                                                 | Status (where verified)                                                                              |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| A     | `centralgauge lifecycle event-log --model <slug>` returns events.                                                                    | Plan A acceptance + tests/integration/lifecycle/                                                     |
-| B     | All `model-shortcomings/*.json` files use vendor-prefixed slugs; `populate-shortcomings --only openrouter/...` succeeds.            | Plan B acceptance                                                                                     |
-| C     | `centralgauge cycle --llms <slug>` runs end-to-end; killed mid-run + restarted resumes from last successful step.                    | Plan C acceptance + tests/integration/lifecycle/cycle-end-to-end.test.ts                            |
-| D     | `SELECT COUNT(DISTINCT concept_id) FROM shortcomings` matches `concepts` count; `/api/v1/concepts/<slug>` lists every model.        | Plans D-prompt + D-data acceptance                                                                    |
-| E     | `/families/<vendor>/<family>` shows a "Concept trajectory" section when both gen-N and gen-N-1 have analysis events.                | Plan E acceptance + integration tests                                                                |
-| F     | A hallucinated entry routes to `/admin/lifecycle/review`; accepting writes `analysis.accepted` event + `shortcomings` row.           | Plan F acceptance                                                                                     |
-| G     | `gh workflow run weekly-cycle.yml` completes; sticky issue created with the digest.                                                  | Plan G acceptance                                                                                     |
-| H     | `centralgauge lifecycle status` prints the matrix; `--json` validates against `StatusJsonOutputSchema`.                              | Plan H acceptance + zod-validate test                                                                |
+| Phase | Acceptance assertion                                                                                                         | Status (where verified)                                                  |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| A     | `centralgauge lifecycle event-log --model <slug>` returns events.                                                            | Plan A acceptance + tests/integration/lifecycle/                         |
+| B     | All `model-shortcomings/*.json` files use vendor-prefixed slugs; `populate-shortcomings --only openrouter/...` succeeds.     | Plan B acceptance                                                        |
+| C     | `centralgauge cycle --llms <slug>` runs end-to-end; killed mid-run + restarted resumes from last successful step.            | Plan C acceptance + tests/integration/lifecycle/cycle-end-to-end.test.ts |
+| D     | `SELECT COUNT(DISTINCT concept_id) FROM shortcomings` matches `concepts` count; `/api/v1/concepts/<slug>` lists every model. | Plans D-prompt + D-data acceptance                                       |
+| E     | `/families/<vendor>/<family>` shows a "Concept trajectory" section when both gen-N and gen-N-1 have analysis events.         | Plan E acceptance + integration tests                                    |
+| F     | A hallucinated entry routes to `/admin/lifecycle/review`; accepting writes `analysis.accepted` event + `shortcomings` row.   | Plan F acceptance                                                        |
+| G     | `gh workflow run weekly-cycle.yml` completes; sticky issue created with the digest.                                          | Plan G acceptance                                                        |
+| H     | `centralgauge lifecycle status` prints the matrix; `--json` validates against `StatusJsonOutputSchema`.                      | Plan H acceptance + zod-validate test                                    |
 
 Wave 7's own acceptance bar:
 

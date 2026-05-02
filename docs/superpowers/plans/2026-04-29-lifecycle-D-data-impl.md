@@ -12,7 +12,7 @@
 async function appendEvent(
   db: D1Database,
   input: AppendEventInput,
-): Promise<{ id: number }>
+): Promise<{ id: number }>;
 ```
 
 where `AppendEventInput` carries `{ event_type, model_slug, task_set_hash, actor, actor_id, payload, tool_versions?, envelope? }` — `payload` is a **plain object** (not a JSON-string). The helper serializes `payload` / `tool_versions` / `envelope` and computes `payload_hash` internally. Every `*Tx` worker function in this plan therefore writes objects, not strings; do NOT pre-`JSON.stringify(payload)` before calling `appendEvent`, and do NOT inline `db.prepare('INSERT INTO lifecycle_events ...').run()` — every event flows through this helper. CLI code (the interactive `lifecycle cluster review` command at the bottom of this plan) does NOT call the worker helper directly; it imports `appendEvent` from `src/lifecycle/event-log.ts`, which signs the payload with the admin Ed25519 key and POSTs to `/api/v1/admin/lifecycle/events` (or, for clustering operations, to `/api/v1/admin/lifecycle/concepts/{merge,create,review-enqueue}` and `/api/v1/admin/lifecycle/cluster-review/decide`). Same input shape, different transport.
@@ -29,6 +29,7 @@ For `concept.created` specifically, the order is slightly more nuanced because t
 **Tech Stack:** Deno 1.46+, TypeScript 5, Cliffy (`@cliffy/command`, `@cliffy/prompt`), `@openai/openai` (`embeddings.create({ model: 'text-embedding-3-small' })` for the embedding pass), `@db/sqlite` (already-imported local DB driver — used as embedding cache at `~/.cache/centralgauge/concept-embeddings.sqlite`), `zod` for payload schemas, `@std/fmt/colors` for output, and the Cloudflare D1 binding accessed inside the worker via `db.batch([db.prepare(...).bind(...), ...])`.
 
 **Depends on:**
+
 - Plan A (event log + concepts schema) — `lifecycle_events`, `concepts`, `concept_aliases`, `pending_review` tables exist; **canonical `appendEvent(db, AppendEventInput)`** exported from `site/src/lib/server/lifecycle-event-log.ts`; `currentState` reader, envelope helper available; `shortcomings.concept_id` column added.
 - Plan B (slug migration done) — all 15 `model-shortcomings/*.json` files have vendor-prefixed slugs and matching `models.slug` rows in D1; backfilled `bench.completed`/`analysis.completed`/`publish.completed` events present.
 - Plan D-prompt (analyzer + endpoint) — `src/lib/server/concept-cache.ts` exports `invalidateConcept(slug, aliases?)`; `/api/v1/concepts` + `/api/v1/concepts/<slug>` exist; `/api/v1/shortcomings/batch` accepts `concept_id`; analyzer prompt produces `concept_slug_proposed`. **`AnalyzerEntrySchema` is owned by Plan D-prompt at `src/verify/schema.ts`; this plan does NOT redefine it.**
@@ -50,7 +51,7 @@ For `concept.created` specifically, the order is slightly more nuanced because t
 ```typescript
 import { assertEquals, assertExists } from "@std/assert";
 import { EmbeddingCache } from "../../../src/lifecycle/embedding-cache.ts";
-import { createTempDir, cleanupTempDir } from "../../utils/test-helpers.ts";
+import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 Deno.test("EmbeddingCache: returns null on miss, stores on put, returns vector on hit", async () => {
   const tmp = await createTempDir("emb-cache");
@@ -143,7 +144,11 @@ export class EmbeddingCache {
     return new Float32Array(u8.buffer, u8.byteOffset, row.dim);
   }
 
-  async put(key: string, vec: Float32Array, model = "text-embedding-3-small"): Promise<void> {
+  async put(
+    key: string,
+    vec: Float32Array,
+    model = "text-embedding-3-small",
+  ): Promise<void> {
     if (!this.db) throw new Error("EmbeddingCache not initialized");
     const u8 = new Uint8Array(vec.buffer, vec.byteOffset, vec.byteLength);
     this.db
@@ -168,8 +173,8 @@ export class EmbeddingCache {
 - [ ] **Write the failing test** at `tests/unit/lifecycle/embedder.test.ts`:
 
 ```typescript
-import { assertEquals, assertAlmostEquals } from "@std/assert";
-import { Embedder, cosineSimilarity } from "../../../src/lifecycle/embedder.ts";
+import { assertAlmostEquals, assertEquals } from "@std/assert";
+import { cosineSimilarity, Embedder } from "../../../src/lifecycle/embedder.ts";
 
 class MockOpenAIEmbeddings {
   public calls = 0;
@@ -179,8 +184,9 @@ class MockOpenAIEmbeddings {
     return {
       data: opts.input.map((s, i) => ({
         index: i,
-        embedding: Array.from({ length: 8 }, (_, k) =>
-          ((s.charCodeAt(k % s.length) % 17) - 8) / 8,
+        embedding: Array.from(
+          { length: 8 },
+          (_, k) => ((s.charCodeAt(k % s.length) % 17) - 8) / 8,
         ),
       })),
     };
@@ -246,9 +252,10 @@ export class Embedder {
     private readonly client: OpenAI,
     options: EmbedderOptions = {},
   ) {
-    const cachePath =
-      options.tableName ??
-      `${Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "."}/.cache/centralgauge/concept-embeddings.sqlite`;
+    const cachePath = options.tableName ??
+      `${
+        Deno.env.get("HOME") ?? Deno.env.get("USERPROFILE") ?? "."
+      }/.cache/centralgauge/concept-embeddings.sqlite`;
     this.cache = new EmbeddingCache(cachePath);
     this.model = options.model ?? "text-embedding-3-small";
   }
@@ -327,19 +334,32 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 ```typescript
 import { assertEquals } from "@std/assert";
-import { decideCluster, type ClusterCandidate } from "../../../src/lifecycle/cluster-decide.ts";
+import {
+  type ClusterCandidate,
+  decideCluster,
+} from "../../../src/lifecycle/cluster-decide.ts";
 
 const baseCands: ClusterCandidate[] = [
   { conceptId: 1, slug: "flowfield-calcfields-requirement", similarity: 0.92 },
-  { conceptId: 2, slug: "reserved-keyword-as-parameter-name", similarity: 0.41 },
+  {
+    conceptId: 2,
+    slug: "reserved-keyword-as-parameter-name",
+    similarity: 0.41,
+  },
 ];
 
 Deno.test("decideCluster: slug-equal forces auto-merge regardless of similarity", () => {
   const decision = decideCluster("flowfield-calcfields-requirement", [
-    { conceptId: 5, slug: "flowfield-calcfields-requirement", similarity: 0.10 },
+    {
+      conceptId: 5,
+      slug: "flowfield-calcfields-requirement",
+      similarity: 0.10,
+    },
   ]);
   assertEquals(decision.kind, "auto-merge");
-  if (decision.kind === "auto-merge") assertEquals(decision.target.conceptId, 5);
+  if (decision.kind === "auto-merge") {
+    assertEquals(decision.target.conceptId, 5);
+  }
 });
 
 Deno.test("decideCluster: cosine ≥ 0.85 → auto-merge to nearest", () => {
@@ -348,12 +368,20 @@ Deno.test("decideCluster: cosine ≥ 0.85 → auto-merge to nearest", () => {
 });
 
 Deno.test("decideCluster: 0.70 ≤ cosine < 0.85 → review", () => {
-  const d = decideCluster("foo", [{ conceptId: 9, slug: "x", similarity: 0.78 }]);
+  const d = decideCluster("foo", [{
+    conceptId: 9,
+    slug: "x",
+    similarity: 0.78,
+  }]);
   assertEquals(d.kind, "review");
 });
 
 Deno.test("decideCluster: cosine < 0.70 → auto-create", () => {
-  const d = decideCluster("foo", [{ conceptId: 9, slug: "x", similarity: 0.50 }]);
+  const d = decideCluster("foo", [{
+    conceptId: 9,
+    slug: "x",
+    similarity: 0.50,
+  }]);
   assertEquals(d.kind, "auto-create");
 });
 
@@ -422,7 +450,11 @@ The mutation primitives (`mergeConceptTx`, `aliasConceptTx`, `createConceptTx`, 
 
 ```typescript
 import { describe, expect, it } from "vitest";
-import { mergeConceptTx, createConceptTx, enqueueReviewTx } from "$lib/server/concepts";
+import {
+  createConceptTx,
+  enqueueReviewTx,
+  mergeConceptTx,
+} from "$lib/server/concepts";
 import { makeMockEnv } from "../helpers/mock-env";
 
 describe("lifecycle/concepts mutations", () => {
@@ -443,7 +475,9 @@ describe("lifecycle/concepts mutations", () => {
     expect(result.aliasInserted).toBe(true);
     expect(result.eventId).toBeTypeOf("number");
 
-    const aliases = await env.DB.prepare("SELECT * FROM concept_aliases WHERE alias_slug = ?")
+    const aliases = await env.DB.prepare(
+      "SELECT * FROM concept_aliases WHERE alias_slug = ?",
+    )
       .bind("flowfield-calc-required").all();
     expect(aliases.results.length).toBe(1);
     expect((aliases.results[0] as { concept_id: number }).concept_id).toBe(1);
@@ -482,8 +516,12 @@ describe("lifecycle/concepts mutations", () => {
     expect(result.eventId).toBeTypeOf("number");
 
     // Concept row exists; provenance_event_id is back-patched to result.eventId.
-    const concept = await env.DB.prepare("SELECT slug, provenance_event_id FROM concepts WHERE id = ?")
-      .bind(result.conceptId).first<{ slug: string; provenance_event_id: number }>();
+    const concept = await env.DB.prepare(
+      "SELECT slug, provenance_event_id FROM concepts WHERE id = ?",
+    )
+      .bind(result.conceptId).first<
+      { slug: string; provenance_event_id: number }
+    >();
     expect(concept?.slug).toBe("new-concept-x");
     expect(concept?.provenance_event_id).toBe(result.eventId);
 
@@ -491,7 +529,9 @@ describe("lifecycle/concepts mutations", () => {
     // Per strategic appendix: payload = { concept_id, slug, llm_proposed_slug, similarity_to_nearest, analyzer_model }
     // concept_id MUST be present in the payload (it was missing in an earlier draft).
     const ev = await env.DB
-      .prepare("SELECT event_type, payload_json FROM lifecycle_events WHERE id = ?")
+      .prepare(
+        "SELECT event_type, payload_json FROM lifecycle_events WHERE id = ?",
+      )
       .bind(result.eventId)
       .first<{ event_type: string; payload_json: string }>();
     expect(ev?.event_type).toBe("concept.created");
@@ -527,16 +567,28 @@ describe("lifecycle/concepts mutations", () => {
       ts: 1700000000000,
     });
     const row = await env.DB
-      .prepare("SELECT status, concept_slug_proposed, payload_json, analysis_event_id FROM pending_review WHERE id = ?")
+      .prepare(
+        "SELECT status, concept_slug_proposed, payload_json, analysis_event_id FROM pending_review WHERE id = ?",
+      )
       .bind(id)
-      .first<{ status: string; concept_slug_proposed: string; payload_json: string; analysis_event_id: number }>();
+      .first<
+        {
+          status: string;
+          concept_slug_proposed: string;
+          payload_json: string;
+          analysis_event_id: number;
+        }
+      >();
     expect(row?.status).toBe("pending");
     expect(row?.concept_slug_proposed).toBe("ambiguous-x");
     expect(row?.analysis_event_id).toBe(1);
 
     // Plan F's reader does: JSON.parse(payload_json) as { entry, confidence }.
     // The outer shape MUST be { entry, confidence } so Plan F's cast does not trip.
-    const parsed = JSON.parse(row!.payload_json) as { entry: Record<string, unknown>; confidence: number };
+    const parsed = JSON.parse(row!.payload_json) as {
+      entry: Record<string, unknown>;
+      confidence: number;
+    };
     expect(parsed.entry).toBeTypeOf("object");
     expect(parsed.confidence).toBeTypeOf("number");
     // Cluster metadata is nested under entry._cluster (NOT at the top level).
@@ -558,9 +610,18 @@ describe("lifecycle/concepts mutations", () => {
     const env = await makeMockEnv();
     await expect(
       enqueueReviewTx(env.DB, {
-        entry: { concept_slug_proposed: "x", concept_slug_existing_match: null, similarity_score: 0.5 },
-        proposedSlug: "x", nearestConceptId: 1, similarity: 0.78, modelSlug: "m",
-        shortcomingIds: [], analysisEventId: 0, ts: 1,
+        entry: {
+          concept_slug_proposed: "x",
+          concept_slug_existing_match: null,
+          similarity_score: 0.5,
+        },
+        proposedSlug: "x",
+        nearestConceptId: 1,
+        similarity: 0.78,
+        modelSlug: "m",
+        shortcomingIds: [],
+        analysisEventId: 0,
+        ts: 1,
       } as never),
     ).rejects.toThrow(/analysisEventId.*real lifecycle_events\.id/);
   });
@@ -622,12 +683,10 @@ export async function mergeConceptTx(
     .prepare(`SELECT slug FROM concepts WHERE id = ?`)
     .bind(args.winnerConceptId)
     .first<{ slug: string }>())!;
-  const loser = args.loserConceptId == null
-    ? null
-    : await db
-        .prepare(`SELECT slug FROM concepts WHERE id = ?`)
-        .bind(args.loserConceptId)
-        .first<{ slug: string }>();
+  const loser = args.loserConceptId == null ? null : await db
+    .prepare(`SELECT slug FROM concepts WHERE id = ?`)
+    .bind(args.loserConceptId)
+    .first<{ slug: string }>();
 
   const placeholders = args.shortcomingIds.map(() => "?").join(",");
   const isTrueMerge = args.loserConceptId != null;
@@ -642,19 +701,19 @@ export async function mergeConceptTx(
     actor_id: args.actorId,
     payload: isTrueMerge
       ? {
-          // Strategic plan event-types appendix: { winner_concept_id, loser_concept_id, similarity, reviewer_actor_id }
-          winner_concept_id: args.winnerConceptId,
-          loser_concept_id: args.loserConceptId,
-          similarity: args.similarity,
-          reviewer_actor_id: args.reviewerActorId ?? null,
-        }
+        // Strategic plan event-types appendix: { winner_concept_id, loser_concept_id, similarity, reviewer_actor_id }
+        winner_concept_id: args.winnerConceptId,
+        loser_concept_id: args.loserConceptId,
+        similarity: args.similarity,
+        reviewer_actor_id: args.reviewerActorId ?? null,
+      }
       : {
-          // concept.aliased payload: { alias_slug, concept_id, similarity, reviewer_actor_id }
-          alias_slug: args.proposedSlug,
-          concept_id: args.winnerConceptId,
-          similarity: args.similarity,
-          reviewer_actor_id: args.reviewerActorId ?? null,
-        },
+        // concept.aliased payload: { alias_slug, concept_id, similarity, reviewer_actor_id }
+        alias_slug: args.proposedSlug,
+        concept_id: args.winnerConceptId,
+        similarity: args.similarity,
+        reviewer_actor_id: args.reviewerActorId ?? null,
+      },
   });
   const eventId = ev.id;
 
@@ -848,7 +907,14 @@ export async function splitConceptTx(
             first_seen, last_seen, superseded_by, split_into_event_id, provenance_event_id)
          VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, NULL, NULL)`,
       )
-      .bind(row.slug, row.displayName, row.alConcept, row.description, args.ts, args.ts)
+      .bind(
+        row.slug,
+        row.displayName,
+        row.alConcept,
+        row.description,
+        args.ts,
+        args.ts,
+      )
       .run();
     newConceptIds.push(r.meta.last_row_id);
   }
@@ -889,7 +955,10 @@ export async function splitConceptTx(
     .prepare(`SELECT slug FROM concepts WHERE id = ?`)
     .bind(args.originalConceptId)
     .first<{ slug: string }>();
-  await invalidateConcept(original!.slug, args.newConceptRows.map((r) => r.slug));
+  await invalidateConcept(
+    original!.slug,
+    args.newConceptRows.map((r) => r.slug),
+  );
 
   return { eventId, newConceptIds };
 }
@@ -946,8 +1015,8 @@ export async function enqueueReviewTx(
   if (args.analysisEventId == null || args.analysisEventId === 0) {
     throw new Error(
       "enqueueReviewTx: analysisEventId must be a real lifecycle_events.id; " +
-      "the legacy 0 placeholder violated the NOT NULL REFERENCES FK. " +
-      "Caller must emit analysis.completed via appendEvent first and pass the captured id.",
+        "the legacy 0 placeholder violated the NOT NULL REFERENCES FK. " +
+        "Caller must emit analysis.completed via appendEvent first and pass the captured id.",
     );
   }
   const confidence = args.confidence ?? args.similarity;
@@ -998,7 +1067,7 @@ The backfill script does NOT touch D1 directly; it POSTs through signed admin en
 ```typescript
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
-import { verifySignature, requireScope } from "$lib/server/admin-auth";
+import { requireScope, verifySignature } from "$lib/server/admin-auth";
 import { mergeConceptTx } from "$lib/server/concepts";
 import { ApiError, errorResponse } from "$lib/server/errors";
 
@@ -1086,8 +1155,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
 import OpenAI from "@openai/openai";
-import { Embedder, cosineSimilarity } from "../src/lifecycle/embedder.ts";
-import { decideCluster, type ClusterCandidate } from "../src/lifecycle/cluster-decide.ts";
+import { cosineSimilarity, Embedder } from "../src/lifecycle/embedder.ts";
+import {
+  type ClusterCandidate,
+  decideCluster,
+} from "../src/lifecycle/cluster-decide.ts";
 import { collectEnvelope } from "../src/lifecycle/envelope.ts";
 import { loadIngestConfig, readPrivateKey } from "../src/ingest/config.ts";
 import { signPayload } from "../src/ingest/sign.ts";
@@ -1103,15 +1175,27 @@ interface ShortcomingRow {
   concept_id: number | null;
 }
 
-async function fetchUnclassified(siteUrl: string, signed: { payload: unknown; signature: unknown }): Promise<ShortcomingRow[]> {
-  const resp = await postWithRetry(`${siteUrl}/api/v1/admin/lifecycle/shortcomings/unclassified`, signed);
+async function fetchUnclassified(
+  siteUrl: string,
+  signed: { payload: unknown; signature: unknown },
+): Promise<ShortcomingRow[]> {
+  const resp = await postWithRetry(
+    `${siteUrl}/api/v1/admin/lifecycle/shortcomings/unclassified`,
+    signed,
+  );
   if (!resp.ok) throw new Error(`fetch failed: ${resp.status}`);
   const body = (await resp.json()) as { rows: ShortcomingRow[] };
   return body.rows;
 }
 
-async function fetchConcepts(siteUrl: string, signed: { payload: unknown; signature: unknown }): Promise<{ id: number; slug: string }[]> {
-  const resp = await postWithRetry(`${siteUrl}/api/v1/admin/lifecycle/concepts/list`, signed);
+async function fetchConcepts(
+  siteUrl: string,
+  signed: { payload: unknown; signature: unknown },
+): Promise<{ id: number; slug: string }[]> {
+  const resp = await postWithRetry(
+    `${siteUrl}/api/v1/admin/lifecycle/concepts/list`,
+    signed,
+  );
   const body = (await resp.json()) as { rows: { id: number; slug: string }[] };
   return body.rows;
 }
@@ -1121,20 +1205,30 @@ await new Command()
   .option("--dry-run", "plan only, no writes", { default: false })
   .option("--actor <a:string>", "actor", { default: "migration" })
   .option("--limit <n:integer>", "cap iterations")
-  .option("--threshold-merge <n:number>", "auto-merge cosine threshold", { default: 0.85 })
-  .option("--threshold-review <n:number>", "review-band lower bound", { default: 0.70 })
+  .option("--threshold-merge <n:number>", "auto-merge cosine threshold", {
+    default: 0.85,
+  })
+  .option("--threshold-review <n:number>", "review-band lower bound", {
+    default: 0.70,
+  })
   .action(async (opts) => {
     const cwd = Deno.cwd();
     const config = await loadIngestConfig(cwd, {});
     if (!config.adminKeyPath || config.adminKeyId == null) {
-      console.error(colors.red("[ERR] admin_key_path + admin_key_id required in .centralgauge.yml"));
+      console.error(
+        colors.red(
+          "[ERR] admin_key_path + admin_key_id required in .centralgauge.yml",
+        ),
+      );
       Deno.exit(1);
     }
     const adminPriv = await readPrivateKey(config.adminKeyPath);
 
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     if (!apiKey) {
-      console.error(colors.red("[ERR] OPENAI_API_KEY required for embedding pass"));
+      console.error(
+        colors.red("[ERR] OPENAI_API_KEY required for embedding pass"),
+      );
       Deno.exit(1);
     }
     const openai = new OpenAI({ apiKey });
@@ -1146,16 +1240,35 @@ await new Command()
     const ts = Date.now();
 
     // Pull unclassified shortcomings (concept_id IS NULL) and the current concepts list.
-    const listSig = await signPayload({ scope: "list", ts }, adminPriv, config.adminKeyId);
-    const unclassified = await fetchUnclassified(config.url, { payload: { scope: "list", ts }, signature: listSig });
-    const concepts = await fetchConcepts(config.url, { payload: { scope: "list", ts }, signature: listSig });
+    const listSig = await signPayload(
+      { scope: "list", ts },
+      adminPriv,
+      config.adminKeyId,
+    );
+    const unclassified = await fetchUnclassified(config.url, {
+      payload: { scope: "list", ts },
+      signature: listSig,
+    });
+    const concepts = await fetchConcepts(config.url, {
+      payload: { scope: "list", ts },
+      signature: listSig,
+    });
 
-    console.log(colors.cyan(`[INFO] ${unclassified.length} unclassified shortcomings, ${concepts.length} existing concepts`));
+    console.log(
+      colors.cyan(
+        `[INFO] ${unclassified.length} unclassified shortcomings, ${concepts.length} existing concepts`,
+      ),
+    );
 
     // Embed all distinct concept strings (cache hits are free; misses are batched).
-    const distinctSlugs = new Set<string>([...unclassified.map((r) => r.concept), ...concepts.map((c) => c.slug)]);
+    const distinctSlugs = new Set<string>([
+      ...unclassified.map((r) => r.concept),
+      ...concepts.map((c) => c.slug),
+    ]);
     const slugList = [...distinctSlugs];
-    console.log(colors.gray(`[INFO] embedding ${slugList.length} distinct slugs...`));
+    console.log(
+      colors.gray(`[INFO] embedding ${slugList.length} distinct slugs...`),
+    );
     const embeddings = await embedder.embedMany(slugList);
 
     // Group rows by (model_slug, task_set_hash, concept) so all shortcomings sharing
@@ -1172,10 +1285,16 @@ await new Command()
     let merged = 0, created = 0, queued = 0;
     for (const [key, rows] of groups) {
       if (opts.limit && processed >= opts.limit) break;
-      const [modelSlug, taskSetHash, proposedSlug] = key.split("|") as [string, string, string];
+      const [modelSlug, taskSetHash, proposedSlug] = key.split("|") as [
+        string,
+        string,
+        string,
+      ];
       const propVec = embeddings.get(proposedSlug);
       if (!propVec) {
-        console.error(colors.red(`[ERR] no embedding for '${proposedSlug}' — skip`));
+        console.error(
+          colors.red(`[ERR] no embedding for '${proposedSlug}' — skip`),
+        );
         continue;
       }
 
@@ -1208,14 +1327,29 @@ await new Command()
           envelope_json: envelopeJson,
           ts: Date.now(),
         };
-        const sig = await signPayload(payload as unknown as Record<string, unknown>, adminPriv, config.adminKeyId);
-        const resp = await postWithRetry(`${config.url}/api/v1/admin/lifecycle/concepts/merge`, { payload, signature: sig });
+        const sig = await signPayload(
+          payload as unknown as Record<string, unknown>,
+          adminPriv,
+          config.adminKeyId,
+        );
+        const resp = await postWithRetry(
+          `${config.url}/api/v1/admin/lifecycle/concepts/merge`,
+          { payload, signature: sig },
+        );
         if (!resp.ok) {
-          console.error(colors.red(`[ERR ${resp.status}] merge failed for ${proposedSlug}`));
+          console.error(
+            colors.red(`[ERR ${resp.status}] merge failed for ${proposedSlug}`),
+          );
           continue;
         }
         merged++;
-        console.log(colors.green(`[MERGE] ${proposedSlug} → #${decision.target.conceptId} (${decision.target.similarity.toFixed(3)})`));
+        console.log(
+          colors.green(
+            `[MERGE] ${proposedSlug} → #${decision.target.conceptId} (${
+              decision.target.similarity.toFixed(3)
+            })`,
+          ),
+        );
       } else if (decision.kind === "review") {
         // Review-band entries need a real analysis_event_id (FK NOT NULL). For the
         // backfill walk, the script first POSTs an analysis.completed event for the
@@ -1224,7 +1358,14 @@ await new Command()
         // server-side validates analysis_event_id refers to a real lifecycle_events row.
         // (For brevity the per-chunk analysis.completed event is emitted upstream of
         // this loop; see Task D1.6 helper `ensureAnalysisEvent(modelSlug, taskSetHash)`.)
-        const analysisEventId = await ensureAnalysisEvent(config.url, adminPriv, config.adminKeyId, modelSlug, taskSetHash, envelopeJson);
+        const analysisEventId = await ensureAnalysisEvent(
+          config.url,
+          adminPriv,
+          config.adminKeyId,
+          modelSlug,
+          taskSetHash,
+          envelopeJson,
+        );
         // Outer payload shape matches Plan F's `decide` reader contract:
         //   payload_json = JSON.stringify({ entry, confidence })
         // with cluster metadata nested under entry._cluster.
@@ -1250,14 +1391,31 @@ await new Command()
           analysis_event_id: analysisEventId, // real id, NOT null and NOT 0
           ts: Date.now(),
         };
-        const sig = await signPayload(payload as unknown as Record<string, unknown>, adminPriv, config.adminKeyId);
-        const resp = await postWithRetry(`${config.url}/api/v1/admin/lifecycle/concepts/review-enqueue`, { payload, signature: sig });
+        const sig = await signPayload(
+          payload as unknown as Record<string, unknown>,
+          adminPriv,
+          config.adminKeyId,
+        );
+        const resp = await postWithRetry(
+          `${config.url}/api/v1/admin/lifecycle/concepts/review-enqueue`,
+          { payload, signature: sig },
+        );
         if (!resp.ok) {
-          console.error(colors.red(`[ERR ${resp.status}] review-enqueue failed for ${proposedSlug}`));
+          console.error(
+            colors.red(
+              `[ERR ${resp.status}] review-enqueue failed for ${proposedSlug}`,
+            ),
+          );
           continue;
         }
         queued++;
-        console.log(colors.yellow(`[REVIEW] ${proposedSlug} ~ ${decision.target.slug} (${decision.target.similarity.toFixed(3)})`));
+        console.log(
+          colors.yellow(
+            `[REVIEW] ${proposedSlug} ~ ${decision.target.slug} (${
+              decision.target.similarity.toFixed(3)
+            })`,
+          ),
+        );
       } else {
         // auto-create
         const payload = {
@@ -1275,23 +1433,40 @@ await new Command()
           ts: Date.now(),
           analyzer_model: null,
         };
-        const sig = await signPayload(payload as unknown as Record<string, unknown>, adminPriv, config.adminKeyId);
-        const resp = await postWithRetry(`${config.url}/api/v1/admin/lifecycle/concepts/create`, { payload, signature: sig });
+        const sig = await signPayload(
+          payload as unknown as Record<string, unknown>,
+          adminPriv,
+          config.adminKeyId,
+        );
+        const resp = await postWithRetry(
+          `${config.url}/api/v1/admin/lifecycle/concepts/create`,
+          { payload, signature: sig },
+        );
         if (!resp.ok) {
-          console.error(colors.red(`[ERR ${resp.status}] create failed for ${proposedSlug}`));
+          console.error(
+            colors.red(
+              `[ERR ${resp.status}] create failed for ${proposedSlug}`,
+            ),
+          );
           continue;
         }
         created++;
         // Add freshly-created concept to in-memory list so subsequent rows can match it.
         const body = (await resp.json()) as { conceptId: number };
         concepts.push({ id: body.conceptId, slug: proposedSlug });
-        console.log(colors.cyan(`[CREATE] ${proposedSlug} (#${body.conceptId})`));
+        console.log(
+          colors.cyan(`[CREATE] ${proposedSlug} (#${body.conceptId})`),
+        );
       }
       processed++;
     }
 
     embedder.close();
-    console.log(colors.bold(`\n[DONE] processed=${processed} merged=${merged} created=${created} queued=${queued}`));
+    console.log(
+      colors.bold(
+        `\n[DONE] processed=${processed} merged=${merged} created=${created} queued=${queued}`,
+      ),
+    );
   })
   .parse(Deno.args);
 
@@ -1325,18 +1500,39 @@ describe("GET /api/v1/models/<slug>/limitations — JOIN through concept_id", ()
       seedShortcomings: [
         // shortcoming row carries stale free-text 'old-slug' but concept_id points
         // to canonical concept #1 with slug 'flowfield-calcfields-requirement'.
-        { id: 100, model_slug: "anthropic/claude-opus-4-6", concept_id: 1, concept: "old-slug" },
+        {
+          id: 100,
+          model_slug: "anthropic/claude-opus-4-6",
+          concept_id: 1,
+          concept: "old-slug",
+        },
       ],
       seedConcepts: [
-        { id: 1, slug: "flowfield-calcfields-requirement", description: "Canonical desc", al_concept: "flowfield" },
+        {
+          id: 1,
+          slug: "flowfield-calcfields-requirement",
+          description: "Canonical desc",
+          al_concept: "flowfield",
+        },
       ],
     });
-    const req = new Request("https://x/api/v1/models/anthropic/claude-opus-4-6/limitations", {
-      headers: { accept: "application/json" },
-    });
-    const res = await GET({ request: req, params: { slug: "anthropic/claude-opus-4-6" }, platform: { env } } as never);
+    const req = new Request(
+      "https://x/api/v1/models/anthropic/claude-opus-4-6/limitations",
+      {
+        headers: { accept: "application/json" },
+      },
+    );
+    const res = await GET(
+      {
+        request: req,
+        params: { slug: "anthropic/claude-opus-4-6" },
+        platform: { env },
+      } as never,
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ concept: string; description: string }> };
+    const body = await res.json() as {
+      data: Array<{ concept: string; description: string }>;
+    };
     expect(body.data[0]!.concept).toBe("flowfield-calcfields-requirement");
     expect(body.data[0]!.description).toBe("Canonical desc");
   });
@@ -1344,23 +1540,50 @@ describe("GET /api/v1/models/<slug>/limitations — JOIN through concept_id", ()
   it("excludes shortcomings whose concept is superseded", async () => {
     const env = await makeMockEnv({
       seedShortcomings: [
-        { id: 200, model_slug: "anthropic/claude-opus-4-6", concept_id: 2, concept: "obsolete" },
+        {
+          id: 200,
+          model_slug: "anthropic/claude-opus-4-6",
+          concept_id: 2,
+          concept: "obsolete",
+        },
       ],
       seedConcepts: [
-        { id: 2, slug: "obsolete-concept", description: "...", al_concept: "x", superseded_by: 3 },
+        {
+          id: 2,
+          slug: "obsolete-concept",
+          description: "...",
+          al_concept: "x",
+          superseded_by: 3,
+        },
         { id: 3, slug: "current-concept", description: "...", al_concept: "x" },
       ],
     });
-    const req = new Request("https://x/api/v1/models/anthropic/claude-opus-4-6/limitations");
-    const res = await GET({ request: req, params: { slug: "anthropic/claude-opus-4-6" }, platform: { env } } as never);
+    const req = new Request(
+      "https://x/api/v1/models/anthropic/claude-opus-4-6/limitations",
+    );
+    const res = await GET(
+      {
+        request: req,
+        params: { slug: "anthropic/claude-opus-4-6" },
+        platform: { env },
+      } as never,
+    );
     const body = await res.json() as { data: unknown[] };
     expect(body.data.length).toBe(0);
   });
 
   it("opus-4-6 returns same 7 entries as before (back-compat)", async () => {
     const env = await makeMockEnv({ scenario: "opus-4-6-backfilled" });
-    const req = new Request("https://x/api/v1/models/anthropic/claude-opus-4-6/limitations");
-    const res = await GET({ request: req, params: { slug: "anthropic/claude-opus-4-6" }, platform: { env } } as never);
+    const req = new Request(
+      "https://x/api/v1/models/anthropic/claude-opus-4-6/limitations",
+    );
+    const res = await GET(
+      {
+        request: req,
+        params: { slug: "anthropic/claude-opus-4-6" },
+        platform: { env },
+      } as never,
+    );
     const body = await res.json() as { data: unknown[] };
     expect(body.data.length).toBe(7);
   });
@@ -1408,6 +1631,7 @@ const rows = await getAll<{
 ```
 
 > **Notes on the refactor:**
+>
 > - `c.al_concept`/`c.slug`/`c.description` win over the free-text fields on `s`. The output shape (`{ al_concept, concept, description, correct_pattern, error_codes, first_seen, last_seen, occurrence_count, severity }`) is unchanged — `concept` is now `c.slug` (was `s.concept`); both are the same string post-D1 backfill, so consumers see no change.
 > - `correct_pattern` falls back to `s.correct_pattern` when `c.canonical_correct_pattern IS NULL` (the registry doesn't always have a curated pattern; the per-occurrence one is still the operator's most-recent observed example).
 > - `INNER JOIN` (not LEFT) intentionally drops rows where `concept_id IS NULL` — those should never exist after backfill; if they do, `lifecycle status` will surface them. Adding `LEFT JOIN` would silently mask backfill bugs.
@@ -1446,10 +1670,26 @@ export const FIXTURE_EXISTING = {
 };
 
 export const FIXTURE_PROPOSED = [
-  { slug: "flowfield-calcfields-requirement", expectedKind: "auto-merge" as const, similarity: 1.0 },
-  { slug: "flowfield-calc-required",          expectedKind: "auto-merge" as const, similarity: 0.91 },
-  { slug: "flowfield-needs-calc-call",        expectedKind: "review"     as const, similarity: 0.78 },
-  { slug: "reserved-keyword-as-param",        expectedKind: "auto-create" as const, similarity: 0.32 },
+  {
+    slug: "flowfield-calcfields-requirement",
+    expectedKind: "auto-merge" as const,
+    similarity: 1.0,
+  },
+  {
+    slug: "flowfield-calc-required",
+    expectedKind: "auto-merge" as const,
+    similarity: 0.91,
+  },
+  {
+    slug: "flowfield-needs-calc-call",
+    expectedKind: "review" as const,
+    similarity: 0.78,
+  },
+  {
+    slug: "reserved-keyword-as-param",
+    expectedKind: "auto-create" as const,
+    similarity: 0.32,
+  },
 ];
 ```
 
@@ -1458,13 +1698,20 @@ export const FIXTURE_PROPOSED = [
 ```typescript
 import { describe, expect, it } from "vitest";
 import { decideCluster } from "../../../src/lifecycle/cluster-decide";
-import { FIXTURE_EXISTING, FIXTURE_PROPOSED } from "../fixtures/cluster-fixture";
+import {
+  FIXTURE_EXISTING,
+  FIXTURE_PROPOSED,
+} from "../fixtures/cluster-fixture";
 
 describe("D6.1: cluster fixture exercises all three branches", () => {
   for (const p of FIXTURE_PROPOSED) {
     it(`${p.slug} → ${p.expectedKind}`, () => {
       const decision = decideCluster(p.slug, [
-        { conceptId: FIXTURE_EXISTING.id, slug: FIXTURE_EXISTING.slug, similarity: p.similarity },
+        {
+          conceptId: FIXTURE_EXISTING.id,
+          slug: FIXTURE_EXISTING.slug,
+          similarity: p.similarity,
+        },
       ]);
       expect(decision.kind).toBe(p.expectedKind);
     });
@@ -1487,11 +1734,19 @@ describe("D6.2: dedup invariants", () => {
 
     // First analyze: creates concept #N.
     const first = await createConceptTx(env.DB, {
-      proposedSlug: "x-concept", displayName: "X", alConcept: "x",
-      description: "d", similarityToNearest: 0,
-      shortcomingIds: [1], modelSlug: "m", taskSetHash: "h",
-      actor: "operator", actorId: "a", envelopeJson: "{}",
-      ts: Date.now(), analyzerModel: null,
+      proposedSlug: "x-concept",
+      displayName: "X",
+      alConcept: "x",
+      description: "d",
+      similarityToNearest: 0,
+      shortcomingIds: [1],
+      modelSlug: "m",
+      taskSetHash: "h",
+      actor: "operator",
+      actorId: "a",
+      envelopeJson: "{}",
+      ts: Date.now(),
+      analyzerModel: null,
     });
 
     // Second analyze: same proposed slug → cluster algorithm sees slug-equal → auto-merge → no duplicate concept.
@@ -1499,27 +1754,48 @@ describe("D6.2: dedup invariants", () => {
       proposedSlug: "x-concept",
       winnerConceptId: first.conceptId,
       similarity: 1.0, // slug-equal
-      shortcomingIds: [2], modelSlug: "m", taskSetHash: "h",
-      actor: "operator", actorId: "a", envelopeJson: "{}",
+      shortcomingIds: [2],
+      modelSlug: "m",
+      taskSetHash: "h",
+      actor: "operator",
+      actorId: "a",
+      envelopeJson: "{}",
       ts: Date.now(),
     });
 
-    const conceptCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM concepts WHERE slug = 'x-concept'").first<{ n: number }>();
+    const conceptCount = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM concepts WHERE slug = 'x-concept'",
+    ).first<{ n: number }>();
     expect(conceptCount!.n).toBe(1);
 
-    const both = await env.DB.prepare("SELECT concept_id FROM shortcomings WHERE id IN (1, 2)").all();
-    for (const r of both.results) expect((r as { concept_id: number }).concept_id).toBe(first.conceptId);
+    const both = await env.DB.prepare(
+      "SELECT concept_id FROM shortcomings WHERE id IN (1, 2)",
+    ).all();
+    for (const r of both.results) {
+      expect((r as { concept_id: number }).concept_id).toBe(first.conceptId);
+    }
     expect(second.aliasInserted).toBe(true);
   });
 
   it("merged concept reachable via alias slug", async () => {
-    const env = await makeMockEnv({ seedConcepts: [{ id: 1, slug: "canonical" }] });
-    await mergeConceptTx(env.DB, {
-      proposedSlug: "alias-1", winnerConceptId: 1, similarity: 0.91,
-      shortcomingIds: [], modelSlug: "m", taskSetHash: "h",
-      actor: "migration", actorId: null, envelopeJson: "{}", ts: Date.now(),
+    const env = await makeMockEnv({
+      seedConcepts: [{ id: 1, slug: "canonical" }],
     });
-    const a = await env.DB.prepare("SELECT concept_id FROM concept_aliases WHERE alias_slug = 'alias-1'").first<{ concept_id: number }>();
+    await mergeConceptTx(env.DB, {
+      proposedSlug: "alias-1",
+      winnerConceptId: 1,
+      similarity: 0.91,
+      shortcomingIds: [],
+      modelSlug: "m",
+      taskSetHash: "h",
+      actor: "migration",
+      actorId: null,
+      envelopeJson: "{}",
+      ts: Date.now(),
+    });
+    const a = await env.DB.prepare(
+      "SELECT concept_id FROM concept_aliases WHERE alias_slug = 'alias-1'",
+    ).first<{ concept_id: number }>();
     expect(a!.concept_id).toBe(1);
   });
 });
@@ -1536,7 +1812,10 @@ import { makeMockEnv } from "../helpers/mock-env";
 
 describe("D6.3: cluster mutations are atomic", () => {
   it("if db.batch throws, no partial state is observable", async () => {
-    const env = await makeMockEnv({ seedConcepts: [{ id: 1, slug: "winner" }], seedShortcomings: [{ id: 5, concept_id: null }] });
+    const env = await makeMockEnv({
+      seedConcepts: [{ id: 1, slug: "winner" }],
+      seedShortcomings: [{ id: 5, concept_id: null }],
+    });
 
     // Wrap env.DB.batch to throw on the second call (mimicking partial commit).
     const realBatch = env.DB.batch.bind(env.DB);
@@ -1549,18 +1828,29 @@ describe("D6.3: cluster mutations are atomic", () => {
 
     await expect(
       mergeConceptTx(env.DB, {
-        proposedSlug: "alias-x", winnerConceptId: 1, similarity: 0.91,
-        shortcomingIds: [5], modelSlug: "m", taskSetHash: "h",
-        actor: "migration", actorId: null, envelopeJson: "{}", ts: Date.now(),
+        proposedSlug: "alias-x",
+        winnerConceptId: 1,
+        similarity: 0.91,
+        shortcomingIds: [5],
+        modelSlug: "m",
+        taskSetHash: "h",
+        actor: "migration",
+        actorId: null,
+        envelopeJson: "{}",
+        ts: Date.now(),
       }),
     ).rejects.toThrow(/simulated D1 failure/);
 
     // Shortcoming row's concept_id MUST still be NULL — the batch rolled back.
-    const sh = await env.DB.prepare("SELECT concept_id FROM shortcomings WHERE id = 5").first<{ concept_id: number | null }>();
+    const sh = await env.DB.prepare(
+      "SELECT concept_id FROM shortcomings WHERE id = 5",
+    ).first<{ concept_id: number | null }>();
     expect(sh!.concept_id).toBeNull();
 
     // Alias must NOT exist.
-    const aliasCount = await env.DB.prepare("SELECT COUNT(*) AS n FROM concept_aliases WHERE alias_slug = 'alias-x'").first<{ n: number }>();
+    const aliasCount = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM concept_aliases WHERE alias_slug = 'alias-x'",
+    ).first<{ n: number }>();
     expect(aliasCount!.n).toBe(0);
   });
 });
@@ -1582,25 +1872,48 @@ describe("D6.4: concept-cache invalidates on every concept.* event", () => {
   it("create → GET shows new concept; another create → GET reflects the second", async () => {
     const env = await makeMockEnv();
     await createConceptTx(env.DB, {
-      proposedSlug: "alpha", displayName: "Alpha", alConcept: "x",
-      description: "first", similarityToNearest: 0, shortcomingIds: [],
-      modelSlug: "m", taskSetHash: "h", actor: "operator", actorId: "a",
-      envelopeJson: "{}", ts: 1, analyzerModel: null,
+      proposedSlug: "alpha",
+      displayName: "Alpha",
+      alConcept: "x",
+      description: "first",
+      similarityToNearest: 0,
+      shortcomingIds: [],
+      modelSlug: "m",
+      taskSetHash: "h",
+      actor: "operator",
+      actorId: "a",
+      envelopeJson: "{}",
+      ts: 1,
+      analyzerModel: null,
     });
 
-    const r1 = await getConcept({ request: new Request("https://x/api/v1/concepts/alpha"), params: { slug: "alpha" }, platform: { env } } as never);
+    const r1 = await getConcept(
+      {
+        request: new Request("https://x/api/v1/concepts/alpha"),
+        params: { slug: "alpha" },
+        platform: { env },
+      } as never,
+    );
     const b1 = await r1.json() as { description: string };
     expect(b1.description).toBe("first");
 
     // Mutate the description through a fresh create on a different slug; ensure cache for 'alpha' is unaffected and a fresh write to 'alpha' invalidates it.
-    await env.DB.prepare("UPDATE concepts SET description = 'second' WHERE slug = 'alpha'").run();
+    await env.DB.prepare(
+      "UPDATE concepts SET description = 'second' WHERE slug = 'alpha'",
+    ).run();
     // Without invalidation, r2 would still show 'first' (5-min cache).
     // mergeConceptTx/createConceptTx call invalidateConcept; here we manually
     // simulate the invalidation that any concept.* event would trigger:
     const { invalidateConcept } = await import("$lib/server/concept-cache");
     await invalidateConcept("alpha", []);
 
-    const r2 = await getConcept({ request: new Request("https://x/api/v1/concepts/alpha"), params: { slug: "alpha" }, platform: { env } } as never);
+    const r2 = await getConcept(
+      {
+        request: new Request("https://x/api/v1/concepts/alpha"),
+        params: { slug: "alpha" },
+        platform: { env },
+      } as never,
+    );
     const b2 = await r2.json() as { description: string };
     expect(b2.description).toBe("second");
   });
@@ -1658,8 +1971,14 @@ interface PendingRow {
   };
 }
 
-async function fetchQueue(siteUrl: string, signed: { payload: unknown; signature: unknown }): Promise<PendingRow[]> {
-  const resp = await postWithRetry(`${siteUrl}/api/v1/admin/lifecycle/cluster-review/queue`, signed);
+async function fetchQueue(
+  siteUrl: string,
+  signed: { payload: unknown; signature: unknown },
+): Promise<PendingRow[]> {
+  const resp = await postWithRetry(
+    `${siteUrl}/api/v1/admin/lifecycle/cluster-review/queue`,
+    signed,
+  );
   if (!resp.ok) throw new Error(`fetch queue failed: ${resp.status}`);
   const body = (await resp.json()) as { rows: PendingRow[] };
   return body.rows;
@@ -1667,7 +1986,10 @@ async function fetchQueue(siteUrl: string, signed: { payload: unknown; signature
 
 async function gitUserEmail(): Promise<string | null> {
   try {
-    const cmd = new Deno.Command("git", { args: ["config", "user.email"], stdout: "piped" });
+    const cmd = new Deno.Command("git", {
+      args: ["config", "user.email"],
+      stdout: "piped",
+    });
     const { stdout, success } = await cmd.output();
     if (!success) return null;
     return new TextDecoder().decode(stdout).trim() || null;
@@ -1680,9 +2002,16 @@ export function registerClusterReviewCommand(parent: Command): void {
   parent.command(
     "cluster-review",
     new Command()
-      .description("Interactive triage of the cluster review queue (0.70–0.85 similarity band)")
-      .option("--actor <id:string>", "actor identifier (defaults to git user.email)")
-      .option("--limit <n:integer>", "process at most N entries", { default: 999 })
+      .description(
+        "Interactive triage of the cluster review queue (0.70–0.85 similarity band)",
+      )
+      .option(
+        "--actor <id:string>",
+        "actor identifier (defaults to git user.email)",
+      )
+      .option("--limit <n:integer>", "process at most N entries", {
+        default: 999,
+      })
       .action(async (opts) => {
         const cwd = Deno.cwd();
         const config = await loadIngestConfig(cwd, {});
@@ -1695,25 +2024,41 @@ export function registerClusterReviewCommand(parent: Command): void {
         if (!config.adminKeyPath || config.adminKeyId == null) {
           console.error(colors.red(
             "[ERR] admin_key_path + admin_key_id required in .centralgauge.yml " +
-            "for cluster-review (admin scope; ingest key is rejected by the endpoint).",
+              "for cluster-review (admin scope; ingest key is rejected by the endpoint).",
           ));
           Deno.exit(1);
         }
         const adminPriv = await readPrivateKey(config.adminKeyPath);
-        const actor = opts.actor ?? (await gitUserEmail()) ?? "operator-unknown";
-        const envelope = JSON.stringify(await collectEnvelope({ taskSetHash: "" }));
+        const actor = opts.actor ?? (await gitUserEmail()) ??
+          "operator-unknown";
+        const envelope = JSON.stringify(
+          await collectEnvelope({ taskSetHash: "" }),
+        );
 
         console.log(colors.cyan(`[INFO] actor: ${actor}`));
 
-        const fetchSig = await signPayload({ scope: "list", ts: Date.now() }, adminPriv, config.adminKeyId);
-        const queue = await fetchQueue(config.url, { payload: { scope: "list", ts: Date.now() }, signature: fetchSig });
+        const fetchSig = await signPayload(
+          { scope: "list", ts: Date.now() },
+          adminPriv,
+          config.adminKeyId,
+        );
+        const queue = await fetchQueue(config.url, {
+          payload: { scope: "list", ts: Date.now() },
+          signature: fetchSig,
+        });
 
         if (queue.length === 0) {
           console.log(colors.green("[OK] queue empty — nothing to review"));
           return;
         }
 
-        console.log(colors.bold(`\n${queue.length} pending entr${queue.length === 1 ? "y" : "ies"}\n`));
+        console.log(
+          colors.bold(
+            `\n${queue.length} pending entr${
+              queue.length === 1 ? "y" : "ies"
+            }\n`,
+          ),
+        );
 
         let processed = 0;
         for (const row of queue) {
@@ -1723,8 +2068,14 @@ export function registerClusterReviewCommand(parent: Command): void {
             message: `Decision for '${row.concept_slug_proposed}'`,
             options: [
               { name: `M  Merge into '${row.nearest.slug}'`, value: "merge" },
-              { name: `C  Create new concept '${row.concept_slug_proposed}'`, value: "create" },
-              { name: `S  Split existing '${row.nearest.slug}' (advanced)`, value: "split" },
+              {
+                name: `C  Create new concept '${row.concept_slug_proposed}'`,
+                value: "create",
+              },
+              {
+                name: `S  Split existing '${row.nearest.slug}' (advanced)`,
+                value: "split",
+              },
               { name: "N  Skip / decide later", value: "skip" },
             ],
           });
@@ -1737,35 +2088,85 @@ export function registerClusterReviewCommand(parent: Command): void {
 
           let reason: string | undefined;
           if (choice !== "merge") {
-            reason = await Input.prompt({ message: "Reason (logged to event)", default: "" });
+            reason = await Input.prompt({
+              message: "Reason (logged to event)",
+              default: "",
+            });
           }
 
           if (choice === "merge") {
-            await postDecision(config.url, adminPriv, config.adminKeyId, "merge", row, actor, envelope, reason);
-            console.log(colors.green(`[MERGE] ${row.concept_slug_proposed} → ${row.nearest.slug}`));
+            await postDecision(
+              config.url,
+              adminPriv,
+              config.adminKeyId,
+              "merge",
+              row,
+              actor,
+              envelope,
+              reason,
+            );
+            console.log(
+              colors.green(
+                `[MERGE] ${row.concept_slug_proposed} → ${row.nearest.slug}`,
+              ),
+            );
           } else if (choice === "create") {
-            await postDecision(config.url, adminPriv, config.adminKeyId, "create", row, actor, envelope, reason);
+            await postDecision(
+              config.url,
+              adminPriv,
+              config.adminKeyId,
+              "create",
+              row,
+              actor,
+              envelope,
+              reason,
+            );
             console.log(colors.cyan(`[CREATE] ${row.concept_slug_proposed}`));
           } else if (choice === "split") {
-            const newCount = parseInt(await Input.prompt({ message: "How many new concept rows from the split?", default: "2" }), 10);
+            const newCount = parseInt(
+              await Input.prompt({
+                message: "How many new concept rows from the split?",
+                default: "2",
+              }),
+              10,
+            );
             if (!Number.isFinite(newCount) || newCount < 2) {
-              console.log(colors.yellow("[ABORT] split needs ≥2 children — skipped"));
+              console.log(
+                colors.yellow("[ABORT] split needs ≥2 children — skipped"),
+              );
               continue;
             }
             const newSlugs: string[] = [];
             for (let i = 0; i < newCount; i++) {
-              newSlugs.push(await Input.prompt({ message: `New concept slug #${i + 1}` }));
+              newSlugs.push(
+                await Input.prompt({ message: `New concept slug #${i + 1}` }),
+              );
             }
             const confirmed = await Confirm.prompt({
-              message: `Split '${row.nearest.slug}' into [${newSlugs.join(", ")}] — confirm?`,
+              message: `Split '${row.nearest.slug}' into [${
+                newSlugs.join(", ")
+              }] — confirm?`,
               default: false,
             });
             if (!confirmed) {
               console.log(colors.yellow("[ABORT] split cancelled"));
               continue;
             }
-            await postSplit(config.url, adminPriv, config.adminKeyId, row, newSlugs, actor, envelope, reason ?? "");
-            console.log(colors.cyan(`[SPLIT] ${row.nearest.slug} → ${newSlugs.length} new`));
+            await postSplit(
+              config.url,
+              adminPriv,
+              config.adminKeyId,
+              row,
+              newSlugs,
+              actor,
+              envelope,
+              reason ?? "",
+            );
+            console.log(
+              colors.cyan(
+                `[SPLIT] ${row.nearest.slug} → ${newSlugs.length} new`,
+              ),
+            );
           }
           processed++;
         }
@@ -1777,15 +2178,25 @@ export function registerClusterReviewCommand(parent: Command): void {
 function renderRow(row: PendingRow): void {
   console.log(colors.bold("─".repeat(72)));
   console.log(`Proposed:   ${colors.yellow(row.concept_slug_proposed)}`);
-  console.log(`Nearest:    ${colors.cyan(row.nearest.slug)}  (similarity ${row.payload.similarity.toFixed(3)})`);
+  console.log(
+    `Nearest:    ${colors.cyan(row.nearest.slug)}  (similarity ${
+      row.payload.similarity.toFixed(3)
+    })`,
+  );
   console.log(`Model:      ${row.model_slug}`);
   console.log(`AL concept: ${row.payload.al_concept}`);
   console.log();
   console.log(colors.bold("Proposed sample descriptions:"));
-  for (const d of row.payload.sample_descriptions.slice(0, 3)) console.log(colors.gray(`  - ${truncate(d, 200)}`));
+  for (const d of row.payload.sample_descriptions.slice(0, 3)) {
+    console.log(colors.gray(`  - ${truncate(d, 200)}`));
+  }
   console.log();
-  console.log(colors.bold(`Existing '${row.nearest.slug}' sample descriptions:`));
-  for (const d of row.nearest.sample_descriptions.slice(0, 3)) console.log(colors.gray(`  - ${truncate(d, 200)}`));
+  console.log(
+    colors.bold(`Existing '${row.nearest.slug}' sample descriptions:`),
+  );
+  for (const d of row.nearest.sample_descriptions.slice(0, 3)) {
+    console.log(colors.gray(`  - ${truncate(d, 200)}`));
+  }
   console.log(colors.bold("─".repeat(72)));
 }
 
@@ -1811,9 +2222,18 @@ async function postDecision(
     envelope_json: envelopeJson,
     ts: Date.now(),
   };
-  const sig = await signPayload(payload as unknown as Record<string, unknown>, privKey, keyId);
-  const resp = await postWithRetry(`${url}/api/v1/admin/lifecycle/cluster-review/decide`, { payload, signature: sig });
-  if (!resp.ok) throw new Error(`decide failed: ${resp.status} ${await resp.text()}`);
+  const sig = await signPayload(
+    payload as unknown as Record<string, unknown>,
+    privKey,
+    keyId,
+  );
+  const resp = await postWithRetry(
+    `${url}/api/v1/admin/lifecycle/cluster-review/decide`,
+    { payload, signature: sig },
+  );
+  if (!resp.ok) {
+    throw new Error(`decide failed: ${resp.status} ${await resp.text()}`);
+  }
 }
 
 async function postSplit(
@@ -1835,9 +2255,18 @@ async function postSplit(
     envelope_json: envelopeJson,
     ts: Date.now(),
   };
-  const sig = await signPayload(payload as unknown as Record<string, unknown>, privKey, keyId);
-  const resp = await postWithRetry(`${url}/api/v1/admin/lifecycle/cluster-review/decide`, { payload, signature: sig });
-  if (!resp.ok) throw new Error(`split failed: ${resp.status} ${await resp.text()}`);
+  const sig = await signPayload(
+    payload as unknown as Record<string, unknown>,
+    privKey,
+    keyId,
+  );
+  const resp = await postWithRetry(
+    `${url}/api/v1/admin/lifecycle/cluster-review/decide`,
+    { payload, signature: sig },
+  );
+  if (!resp.ok) {
+    throw new Error(`split failed: ${resp.status} ${await resp.text()}`);
+  }
 }
 ```
 
@@ -1849,7 +2278,11 @@ async function postSplit(
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
 import { authenticateAdminRequest } from "$lib/server/cf-access"; // Plan F dual-auth helper
-import { mergeConceptTx, createConceptTx, splitConceptTx } from "$lib/server/concepts";
+import {
+  createConceptTx,
+  mergeConceptTx,
+  splitConceptTx,
+} from "$lib/server/concepts";
 import { ApiError, errorResponse } from "$lib/server/errors";
 
 const Body = z.object({
@@ -1880,15 +2313,25 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const auth = await authenticateAdminRequest(
       request,
       env,
-      parsed.signature ? { payload: parsed.payload, signature: parsed.signature } : null,
+      parsed.signature
+        ? { payload: parsed.payload, signature: parsed.signature }
+        : null,
     );
     if (auth.kind === "unauthenticated") {
-      throw new ApiError(401, "unauthenticated", "no valid CF Access JWT or admin signature");
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "no valid CF Access JWT or admin signature",
+      );
     }
-    const verifiedActorId = auth.kind === "cf-access" ? auth.email : `key:${auth.key_id}`;
+    const verifiedActorId = auth.kind === "cf-access"
+      ? auth.email
+      : `key:${auth.key_id}`;
 
     const row = await env.DB
-      .prepare(`SELECT * FROM pending_review WHERE id = ? AND status = 'pending'`)
+      .prepare(
+        `SELECT * FROM pending_review WHERE id = ? AND status = 'pending'`,
+      )
       .bind(parsed.payload.pending_review_id)
       .first<{
         id: number;
@@ -1902,12 +2345,22 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // metadata under entry._cluster (per enqueueReviewTx above). Read both shapes.
     const parsedPayload = JSON.parse(row.payload_json) as {
       entry?: Record<string, unknown> & {
-        _cluster?: { nearest_concept_id: number; similarity: number; shortcoming_ids: number[] };
+        _cluster?: {
+          nearest_concept_id: number;
+          similarity: number;
+          shortcoming_ids: number[];
+        };
       };
       confidence?: number;
     };
     const cluster = parsedPayload.entry?._cluster;
-    if (!cluster) throw new ApiError(500, "bad_payload", "pending_review.payload_json missing entry._cluster");
+    if (!cluster) {
+      throw new ApiError(
+        500,
+        "bad_payload",
+        "pending_review.payload_json missing entry._cluster",
+      );
+    }
     const rowPayload = {
       nearest_concept_id: cluster.nearest_concept_id,
       similarity: cluster.similarity,
@@ -1956,7 +2409,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
     if (parsed.payload.decision === "split") {
       const newSlugs = parsed.payload.new_slugs ?? [];
-      if (newSlugs.length < 2) throw new ApiError(400, "bad_request", "split needs ≥2 new slugs");
+      if (newSlugs.length < 2) {
+        throw new ApiError(400, "bad_request", "split needs ≥2 new slugs");
+      }
       // Delegate to splitConceptTx in $lib/server/concepts (defined above), which
       // owns the two-step pattern: emit concept.split via canonical appendEvent
       // (capturing eventId), then db.batch the back-patches. No inline INSERT INTO
@@ -1982,7 +2437,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         `UPDATE pending_review SET status='accepted', reviewer_decision_event_id=? WHERE id=?`,
       ).bind(r.eventId, row.id).run();
 
-      return jsonResponse({ event_id: r.eventId, new_concept_ids: r.newConceptIds });
+      return jsonResponse({
+        event_id: r.eventId,
+        new_concept_ids: r.newConceptIds,
+      });
     }
     throw new ApiError(400, "bad_decision", parsed.payload.decision);
   } catch (err) {
@@ -1991,10 +2449,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 };
 
 function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
 }
 function humanize(slug: string): string {
-  return slug.split("-").map((w) => (w[0]?.toUpperCase() ?? "") + w.slice(1)).join(" ");
+  return slug.split("-").map((w) => (w[0]?.toUpperCase() ?? "") + w.slice(1))
+    .join(" ");
 }
 ```
 

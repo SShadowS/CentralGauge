@@ -19,72 +19,72 @@
 
 ### New files
 
-| Path | Responsibility |
-|------|----------------|
-| `site/src/lib/components/ui/Diff.svelte` | Diff atom (unified add/remove rendering) |
-| `site/src/lib/components/ui/Popover.svelte` | Popover atom (positioned floater for filter menus, settings JSON) |
-| `site/src/lib/components/ui/Dialog.svelte` | Dialog atom (confirmation variant of Modal — used by repro download confirmation) |
-| `site/src/lib/components/ui/icons/Download.svelte` | Lucide download |
-| `site/src/lib/components/ui/icons/Copy.svelte` | Lucide copy |
-| `site/src/lib/components/ui/icons/ExternalLink.svelte` | Lucide external-link |
-| `site/src/lib/components/ui/icons/Lock.svelte` | Lucide lock (signature panel) |
-| `site/src/lib/components/ui/icons/Info.svelte` | Lucide info |
-| `site/src/lib/components/ui/icons/AlertTriangle.svelte` | Lucide alert-triangle |
-| `site/src/lib/components/ui/icons/AlertCircle.svelte` | Lucide alert-circle |
-| `site/src/lib/components/ui/icons/CheckCircle.svelte` | Lucide check-circle |
-| `site/src/lib/components/ui/icons/ChevronRight.svelte` | Lucide chevron-right |
-| `site/src/lib/components/ui/icons/Eye.svelte` | Lucide eye |
-| `site/src/lib/components/ui/icons/Code.svelte` | Lucide code (separate from Code atom) |
-| `site/src/lib/components/domain/MarkdownRenderer.svelte` | Lazy-loads marked + DOMPurify; renders sanitized HTML |
-| `site/src/lib/components/domain/RunStatusBadge.svelte` | Status pill: pending/running/completed/failed × tier overlay |
-| `site/src/lib/components/domain/TableOfContents.svelte` | Sticky right-rail TOC with active-section highlighting |
-| `site/src/lib/components/domain/StatTile.svelte` | Stat card with label, value, optional sparkline + delta |
-| `site/src/lib/components/domain/RunsTable.svelte` | Paginated runs table (used by `/runs` later, `/models/:slug/runs` here) |
-| `site/src/lib/components/domain/RunsCursorPager.svelte` | Cursor-based pagination control (Previous/Next/count) |
-| `site/src/lib/components/domain/PerTaskResultsTable.svelte` | Run detail Results tab — task ID × attempt × score table |
-| `site/src/lib/components/domain/SignaturePanel.svelte` | Ed25519 verify panel (lazy-loads @noble/ed25519) |
-| `site/src/lib/components/domain/ReproductionBlock.svelte` | Bundle SHA + download button + CLI snippet |
-| `site/src/lib/components/domain/SettingsPanel.svelte` | Settings tab content (temperature, max_tokens, etc., raw JSON copy) |
-| `site/src/lib/components/domain/TranscriptViewer.svelte` | Section parser + collapsible blocks + line numbers + copy |
-| `site/src/lib/components/domain/CopyButton.svelte` | Click-to-copy button with success toast |
-| `site/src/lib/components/domain/TaskHistoryChart.svelte` | Line chart of model score over time (uses Sparkline-larger variant) |
-| `site/src/lib/components/domain/CostBarChart.svelte` | Bar chart of cost per run with mean + p95 lines (d3-shape) |
-| `site/src/lib/components/domain/FailureModesList.svelte` | Failure modes with frequency + AL/BC code links |
-| `site/src/routes/models/[slug]/+page.server.ts` | Loader: GET /api/v1/models/:slug |
-| `site/src/routes/models/[slug]/+page.svelte` | Model detail page |
-| `site/src/routes/models/[slug]/runs/+page.server.ts` | Loader: GET /api/v1/runs?model=:slug&cursor= |
-| `site/src/routes/models/[slug]/runs/+page.svelte` | Runs feed for this model |
-| `site/src/routes/models/[slug]/limitations/+page.server.ts` | Loader: GET /api/v1/models/:slug/limitations (markdown) |
-| `site/src/routes/models/[slug]/limitations/+page.svelte` | Markdown-rendered limitations |
-| `site/src/routes/runs/[id]/+page.server.ts` | Loader: GET /api/v1/runs/:id |
-| `site/src/routes/runs/[id]/+page.svelte` | Run detail page (4 tabs) |
-| `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.server.ts` | Loader: derive transcript key + GET /api/v1/transcripts/:key |
-| `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.svelte` | Transcript viewer page |
-| `site/src/routes/runs/[id]/signature/+page.server.ts` | Loader: GET /api/v1/runs/:id/signature |
-| `site/src/routes/runs/[id]/signature/+page.svelte` | Signature permalink page (reuses SignaturePanel) |
-| `site/src/styles/print.css` | Print stylesheet (hides nav/footer/filters, light theme, link URLs after) |
-| `site/tests/e2e/model-detail.spec.ts` | E2E: /models/:slug renders, sections collapse, links work |
-| `site/tests/e2e/run-detail.spec.ts` | E2E: /runs/:id tabs, signature verify, repro download URL |
-| `site/tests/e2e/transcript.spec.ts` | E2E: transcript page renders, sections collapse, copy works |
-| `site/tests/e2e/print.spec.ts` | E2E: print-emulation hides nav/footer, shows link URLs |
-| `site/tests/fixtures/model-detail.json` | Frozen model detail fixture |
-| `site/tests/fixtures/run-detail.json` | Frozen run detail fixture |
-| `site/tests/fixtures/signed-payload.json` | Known-good signed payload + verify key |
-| `site/tests/fixtures/markdown-sample.md` | Limitations markdown sample |
-| `site/tests/fixtures/transcript-sample.txt` | Annotated transcript sample (already-decompressed) |
+| Path                                                                       | Responsibility                                                                    |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `site/src/lib/components/ui/Diff.svelte`                                   | Diff atom (unified add/remove rendering)                                          |
+| `site/src/lib/components/ui/Popover.svelte`                                | Popover atom (positioned floater for filter menus, settings JSON)                 |
+| `site/src/lib/components/ui/Dialog.svelte`                                 | Dialog atom (confirmation variant of Modal — used by repro download confirmation) |
+| `site/src/lib/components/ui/icons/Download.svelte`                         | Lucide download                                                                   |
+| `site/src/lib/components/ui/icons/Copy.svelte`                             | Lucide copy                                                                       |
+| `site/src/lib/components/ui/icons/ExternalLink.svelte`                     | Lucide external-link                                                              |
+| `site/src/lib/components/ui/icons/Lock.svelte`                             | Lucide lock (signature panel)                                                     |
+| `site/src/lib/components/ui/icons/Info.svelte`                             | Lucide info                                                                       |
+| `site/src/lib/components/ui/icons/AlertTriangle.svelte`                    | Lucide alert-triangle                                                             |
+| `site/src/lib/components/ui/icons/AlertCircle.svelte`                      | Lucide alert-circle                                                               |
+| `site/src/lib/components/ui/icons/CheckCircle.svelte`                      | Lucide check-circle                                                               |
+| `site/src/lib/components/ui/icons/ChevronRight.svelte`                     | Lucide chevron-right                                                              |
+| `site/src/lib/components/ui/icons/Eye.svelte`                              | Lucide eye                                                                        |
+| `site/src/lib/components/ui/icons/Code.svelte`                             | Lucide code (separate from Code atom)                                             |
+| `site/src/lib/components/domain/MarkdownRenderer.svelte`                   | Lazy-loads marked + DOMPurify; renders sanitized HTML                             |
+| `site/src/lib/components/domain/RunStatusBadge.svelte`                     | Status pill: pending/running/completed/failed × tier overlay                      |
+| `site/src/lib/components/domain/TableOfContents.svelte`                    | Sticky right-rail TOC with active-section highlighting                            |
+| `site/src/lib/components/domain/StatTile.svelte`                           | Stat card with label, value, optional sparkline + delta                           |
+| `site/src/lib/components/domain/RunsTable.svelte`                          | Paginated runs table (used by `/runs` later, `/models/:slug/runs` here)           |
+| `site/src/lib/components/domain/RunsCursorPager.svelte`                    | Cursor-based pagination control (Previous/Next/count)                             |
+| `site/src/lib/components/domain/PerTaskResultsTable.svelte`                | Run detail Results tab — task ID × attempt × score table                          |
+| `site/src/lib/components/domain/SignaturePanel.svelte`                     | Ed25519 verify panel (lazy-loads @noble/ed25519)                                  |
+| `site/src/lib/components/domain/ReproductionBlock.svelte`                  | Bundle SHA + download button + CLI snippet                                        |
+| `site/src/lib/components/domain/SettingsPanel.svelte`                      | Settings tab content (temperature, max_tokens, etc., raw JSON copy)               |
+| `site/src/lib/components/domain/TranscriptViewer.svelte`                   | Section parser + collapsible blocks + line numbers + copy                         |
+| `site/src/lib/components/domain/CopyButton.svelte`                         | Click-to-copy button with success toast                                           |
+| `site/src/lib/components/domain/TaskHistoryChart.svelte`                   | Line chart of model score over time (uses Sparkline-larger variant)               |
+| `site/src/lib/components/domain/CostBarChart.svelte`                       | Bar chart of cost per run with mean + p95 lines (d3-shape)                        |
+| `site/src/lib/components/domain/FailureModesList.svelte`                   | Failure modes with frequency + AL/BC code links                                   |
+| `site/src/routes/models/[slug]/+page.server.ts`                            | Loader: GET /api/v1/models/:slug                                                  |
+| `site/src/routes/models/[slug]/+page.svelte`                               | Model detail page                                                                 |
+| `site/src/routes/models/[slug]/runs/+page.server.ts`                       | Loader: GET /api/v1/runs?model=:slug&cursor=                                      |
+| `site/src/routes/models/[slug]/runs/+page.svelte`                          | Runs feed for this model                                                          |
+| `site/src/routes/models/[slug]/limitations/+page.server.ts`                | Loader: GET /api/v1/models/:slug/limitations (markdown)                           |
+| `site/src/routes/models/[slug]/limitations/+page.svelte`                   | Markdown-rendered limitations                                                     |
+| `site/src/routes/runs/[id]/+page.server.ts`                                | Loader: GET /api/v1/runs/:id                                                      |
+| `site/src/routes/runs/[id]/+page.svelte`                                   | Run detail page (4 tabs)                                                          |
+| `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.server.ts` | Loader: derive transcript key + GET /api/v1/transcripts/:key                      |
+| `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.svelte`    | Transcript viewer page                                                            |
+| `site/src/routes/runs/[id]/signature/+page.server.ts`                      | Loader: GET /api/v1/runs/:id/signature                                            |
+| `site/src/routes/runs/[id]/signature/+page.svelte`                         | Signature permalink page (reuses SignaturePanel)                                  |
+| `site/src/styles/print.css`                                                | Print stylesheet (hides nav/footer/filters, light theme, link URLs after)         |
+| `site/tests/e2e/model-detail.spec.ts`                                      | E2E: /models/:slug renders, sections collapse, links work                         |
+| `site/tests/e2e/run-detail.spec.ts`                                        | E2E: /runs/:id tabs, signature verify, repro download URL                         |
+| `site/tests/e2e/transcript.spec.ts`                                        | E2E: transcript page renders, sections collapse, copy works                       |
+| `site/tests/e2e/print.spec.ts`                                             | E2E: print-emulation hides nav/footer, shows link URLs                            |
+| `site/tests/fixtures/model-detail.json`                                    | Frozen model detail fixture                                                       |
+| `site/tests/fixtures/run-detail.json`                                      | Frozen run detail fixture                                                         |
+| `site/tests/fixtures/signed-payload.json`                                  | Known-good signed payload + verify key                                            |
+| `site/tests/fixtures/markdown-sample.md`                                   | Limitations markdown sample                                                       |
+| `site/tests/fixtures/transcript-sample.txt`                                | Annotated transcript sample (already-decompressed)                                |
 
 ### Modified files
 
-| Path | Change |
-|------|--------|
-| `site/src/lib/shared/api-types.ts` | Add `ModelDetail`, `RunDetail`, `RunsListResponse`, `Transcript`, `SignedRunPayload` (move from existing types.ts), `ModelLimitations` types |
-| `site/src/lib/components/ui/icons/index.ts` | Re-export 11 new icons |
-| `site/src/lib/components/ui/Modal.svelte` | Add focus-trap (was deferred from P5.1) — NEEDED here because Run detail's Reproduction tab uses a Dialog (Modal variant) for download confirmation |
-| `site/src/lib/components/ui/Tabs.svelte` | Add keyboard arrow nav (left/right/home/end) — NEEDED here because Run detail uses 4 tabs heavily |
-| `site/src/lib/components/ui/Tooltip.svelte` | Add lightweight Floating-UI-style positioner (top/bottom/left/right) — NEEDED for Settings tab tooltips on numeric values |
-| `site/wrangler.toml` | Add `FLAG_PRINT_STYLESHEET = "on"` to `[vars]` (Phase G) |
-| `site/lighthouserc.json` | Add 3 new URLs (model detail, run detail, transcripts) to LHCI URL list |
-| `site/svelte.config.js` | Investigate tightening `prerender.handleHttpError` once nav routes link-resolve |
+| Path                                        | Change                                                                                                                                              |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/src/lib/shared/api-types.ts`          | Add `ModelDetail`, `RunDetail`, `RunsListResponse`, `Transcript`, `SignedRunPayload` (move from existing types.ts), `ModelLimitations` types        |
+| `site/src/lib/components/ui/icons/index.ts` | Re-export 11 new icons                                                                                                                              |
+| `site/src/lib/components/ui/Modal.svelte`   | Add focus-trap (was deferred from P5.1) — NEEDED here because Run detail's Reproduction tab uses a Dialog (Modal variant) for download confirmation |
+| `site/src/lib/components/ui/Tabs.svelte`    | Add keyboard arrow nav (left/right/home/end) — NEEDED here because Run detail uses 4 tabs heavily                                                   |
+| `site/src/lib/components/ui/Tooltip.svelte` | Add lightweight Floating-UI-style positioner (top/bottom/left/right) — NEEDED for Settings tab tooltips on numeric values                           |
+| `site/wrangler.toml`                        | Add `FLAG_PRINT_STYLESHEET = "on"` to `[vars]` (Phase G)                                                                                            |
+| `site/lighthouserc.json`                    | Add 3 new URLs (model detail, run detail, transcripts) to LHCI URL list                                                                             |
+| `site/svelte.config.js`                     | Investigate tightening `prerender.handleHttpError` once nav routes link-resolve                                                                     |
 
 ### Out of scope (deferred to P5.3-5.5)
 
@@ -103,6 +103,7 @@ Lays the groundwork: 3 new atoms, 11 new icons, 12 new domain widgets, 5 new sha
 ### Task A1: Extend `$shared/api-types.ts` with detail types
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 
 - [ ] **Step 1: Append to `site/src/lib/shared/api-types.ts`**
@@ -117,18 +118,24 @@ export interface ModelHistoryPoint {
   ts: string;
   score: number;
   cost_usd: number;
-  tier: 'verified' | 'claimed';
+  tier: "verified" | "claimed";
 }
 
 export interface FailureMode {
-  code: string;        // e.g., "AL0132"
+  code: string; // e.g., "AL0132"
   count: number;
-  pct: number;         // 0..1
+  pct: number; // 0..1
   example_message: string;
 }
 
 export interface ModelDetail {
-  model: { slug: string; display_name: string; api_model_id: string; family_slug: string; added_at: string };
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    family_slug: string;
+    added_at: string;
+  };
   aggregates: {
     avg_score: number;
     tasks_attempted: number;
@@ -140,8 +147,13 @@ export interface ModelDetail {
   };
   history: ModelHistoryPoint[];
   failure_modes: FailureMode[];
-  recent_runs: ModelHistoryPoint[];   // last 20
-  predecessor?: { slug: string; display_name: string; avg_score: number; avg_cost_usd: number };
+  recent_runs: ModelHistoryPoint[]; // last 20
+  predecessor?: {
+    slug: string;
+    display_name: string;
+    avg_score: number;
+    avg_cost_usd: number;
+  };
 }
 
 // =============================================================================
@@ -151,8 +163,8 @@ export interface ModelDetail {
 export interface RunsListItem {
   id: string;
   model: { slug: string; display_name: string; family_slug: string };
-  tier: 'verified' | 'claimed';
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  tier: "verified" | "claimed";
+  status: "pending" | "running" | "completed" | "failed";
   tasks_attempted: number;
   tasks_passed: number;
   avg_score: number;
@@ -174,13 +186,21 @@ export interface RunsListResponse {
 
 export interface PerTaskResult {
   task_id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   attempts: Array<{
     attempt: number;
     passed: boolean;
     score: number;
     compile_success: boolean;
-    compile_errors: Array<{ code: string; message: string; file?: string; line?: number; column?: number }>;
+    compile_errors: Array<
+      {
+        code: string;
+        message: string;
+        file?: string;
+        line?: number;
+        column?: number;
+      }
+    >;
     tests_total: number;
     tests_passed: number;
     duration_ms: number;
@@ -192,9 +212,14 @@ export interface PerTaskResult {
 
 export interface RunDetail {
   id: string;
-  model: { slug: string; display_name: string; api_model_id: string; family_slug: string };
-  tier: 'verified' | 'claimed';
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  model: {
+    slug: string;
+    display_name: string;
+    api_model_id: string;
+    family_slug: string;
+  };
+  tier: "verified" | "claimed";
+  status: "pending" | "running" | "completed" | "failed";
   machine_id: string;
   task_set_hash: string;
   pricing_version: string;
@@ -225,14 +250,14 @@ export interface RunDetail {
 
 export interface RunSignature {
   run_id: string;
-  payload_b64: string;       // base64-encoded canonical signed payload
+  payload_b64: string; // base64-encoded canonical signed payload
   signature: {
-    alg: 'Ed25519';
+    alg: "Ed25519";
     key_id: number;
     signed_at: string;
-    value_b64: string;       // base64 signature
+    value_b64: string; // base64 signature
   };
-  public_key_hex: string;    // hex-encoded public key
+  public_key_hex: string; // hex-encoded public key
   machine_id: string;
 }
 
@@ -243,7 +268,7 @@ export interface RunSignature {
 export interface Transcript {
   key: string;
   size_bytes: number;
-  text: string;              // already decoded UTF-8
+  text: string; // already decoded UTF-8
   meta?: {
     run_id?: string;
     task_id?: string;
@@ -257,7 +282,7 @@ export interface Transcript {
 
 export interface LimitationItem {
   al_concept: string;
-  severity: 'low' | 'medium' | 'high';
+  severity: "low" | "medium" | "high";
   description: string;
   first_seen_at: string;
   example_run_id: string;
@@ -289,6 +314,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): extend \$shared/api-types with
 ### Task A2: Vendor 11 new Lucide icons
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/icons/Download.svelte`
 - Create: `site/src/lib/components/ui/icons/Copy.svelte`
 - Create: `site/src/lib/components/ui/icons/ExternalLink.svelte`
@@ -317,36 +343,36 @@ git -C /u/Git/CentralGauge commit -m "feat(site): extend \$shared/api-types with
 
 - [ ] **Step 2: Inner SVG paths (Lucide MIT)**
 
-| Icon | Inner content |
-|------|---------------|
-| Download | `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" />` |
-| Copy | `<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />` |
-| ExternalLink | `<path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />` |
-| Lock | `<rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />` |
-| Info | `<circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />` |
-| AlertTriangle | `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />` |
-| AlertCircle | `<circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />` |
-| CheckCircle | `<circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" />` |
-| ChevronRight | `<path d="m9 18 6-6-6-6" />` |
-| Eye | `<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />` |
-| Code | `<polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />` |
+| Icon          | Inner content                                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Download      | `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" />` |
+| Copy          | `<rect width="14" height="14" x="8" y="8" rx="2" ry="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />`       |
+| ExternalLink  | `<path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />`                 |
+| Lock          | `<rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />`                                     |
+| Info          | `<circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />`                                                       |
+| AlertTriangle | `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" /><path d="M12 9v4" /><path d="M12 17h.01" />`   |
+| AlertCircle   | `<circle cx="12" cy="12" r="10" /><line x1="12" x2="12" y1="8" y2="12" /><line x1="12" x2="12.01" y1="16" y2="16" />`                 |
+| CheckCircle   | `<circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" />`                                                                         |
+| ChevronRight  | `<path d="m9 18 6-6-6-6" />`                                                                                                          |
+| Eye           | `<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" />`                                           |
+| Code          | `<polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />`                                                           |
 
 - [ ] **Step 3: Update `site/src/lib/components/ui/icons/index.ts`**
 
 Append the 11 new exports:
 
 ```ts
-export { default as Download } from './Download.svelte';
-export { default as Copy } from './Copy.svelte';
-export { default as ExternalLink } from './ExternalLink.svelte';
-export { default as Lock } from './Lock.svelte';
-export { default as Info } from './Info.svelte';
-export { default as AlertTriangle } from './AlertTriangle.svelte';
-export { default as AlertCircle } from './AlertCircle.svelte';
-export { default as CheckCircle } from './CheckCircle.svelte';
-export { default as ChevronRight } from './ChevronRight.svelte';
-export { default as Eye } from './Eye.svelte';
-export { default as Code } from './Code.svelte';
+export { default as Download } from "./Download.svelte";
+export { default as Copy } from "./Copy.svelte";
+export { default as ExternalLink } from "./ExternalLink.svelte";
+export { default as Lock } from "./Lock.svelte";
+export { default as Info } from "./Info.svelte";
+export { default as AlertTriangle } from "./AlertTriangle.svelte";
+export { default as AlertCircle } from "./AlertCircle.svelte";
+export { default as CheckCircle } from "./CheckCircle.svelte";
+export { default as ChevronRight } from "./ChevronRight.svelte";
+export { default as Eye } from "./Eye.svelte";
+export { default as Code } from "./Code.svelte";
 ```
 
 (Existing 8 exports stay above.)
@@ -368,38 +394,45 @@ git -C /u/Git/CentralGauge commit -m "feat(site): vendor 11 more Lucide icons (d
 ### Task A3: Diff atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Diff.svelte`
 - Test: `site/src/lib/components/ui/Diff.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Diff from './Diff.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Diff from "./Diff.svelte";
 
-describe('Diff', () => {
-  it('renders unified diff with + and - lines', () => {
+describe("Diff", () => {
+  it("renders unified diff with + and - lines", () => {
     const { container } = render(Diff, {
       lines: [
-        { type: 'context', text: 'unchanged' },
-        { type: 'add',     text: 'new line' },
-        { type: 'remove',  text: 'old line' },
+        { type: "context", text: "unchanged" },
+        { type: "add", text: "new line" },
+        { type: "remove", text: "old line" },
       ],
     });
-    expect(container.querySelector('.line.add')?.textContent).toContain('new line');
-    expect(container.querySelector('.line.remove')?.textContent).toContain('old line');
-    expect(container.querySelector('.line.context')?.textContent).toContain('unchanged');
+    expect(container.querySelector(".line.add")?.textContent).toContain(
+      "new line",
+    );
+    expect(container.querySelector(".line.remove")?.textContent).toContain(
+      "old line",
+    );
+    expect(container.querySelector(".line.context")?.textContent).toContain(
+      "unchanged",
+    );
   });
-  it('uses tokens for diff colours', () => {
+  it("uses tokens for diff colours", () => {
     const { container } = render(Diff, {
-      lines: [{ type: 'add', text: 'x' }],
+      lines: [{ type: "add", text: "x" }],
     });
-    const add = container.querySelector('.line.add') as HTMLElement;
+    const add = container.querySelector(".line.add") as HTMLElement;
     expect(add).toBeDefined();
     // token reference rendered into computed style is jsdom-limited;
     // assert class presence instead.
-    expect(add.classList.contains('add')).toBe(true);
+    expect(add.classList.contains("add")).toBe(true);
   });
 });
 ```
@@ -459,45 +492,46 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Diff atom (unified add/remove/
 ### Task A4: Popover atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Popover.svelte`
 - Test: `site/src/lib/components/ui/Popover.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import Popover from './Popover.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import Popover from "./Popover.svelte";
 
-describe('Popover', () => {
-  it('renders trigger always; content only when open', async () => {
+describe("Popover", () => {
+  it("renders trigger always; content only when open", async () => {
     render(Popover, {
-      trigger: 'Open',
-      children: 'Hidden content',
+      trigger: "Open",
+      children: "Hidden content",
     });
-    expect(screen.getByText('Open')).toBeDefined();
-    expect(screen.queryByText('Hidden content')).toBeNull();
+    expect(screen.getByText("Open")).toBeDefined();
+    expect(screen.queryByText("Hidden content")).toBeNull();
   });
 
-  it('shows content after clicking trigger', async () => {
+  it("shows content after clicking trigger", async () => {
     const { container } = render(Popover, {
-      trigger: 'Open',
-      children: 'Visible content',
+      trigger: "Open",
+      children: "Visible content",
     });
-    const btn = container.querySelector('button.trigger') as HTMLButtonElement;
+    const btn = container.querySelector("button.trigger") as HTMLButtonElement;
     await fireEvent.click(btn);
-    expect(screen.getByText('Visible content')).toBeDefined();
+    expect(screen.getByText("Visible content")).toBeDefined();
   });
 
-  it('hides content on Escape', async () => {
+  it("hides content on Escape", async () => {
     const { container } = render(Popover, {
-      trigger: 'Open',
-      children: 'X',
+      trigger: "Open",
+      children: "X",
     });
-    const btn = container.querySelector('button.trigger') as HTMLButtonElement;
+    const btn = container.querySelector("button.trigger") as HTMLButtonElement;
     await fireEvent.click(btn);
-    await fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByText('X')).toBeNull();
+    await fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("X")).toBeNull();
   });
 });
 ```
@@ -597,52 +631,57 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Popover atom (4-corner placeme
 ### Task A5: Dialog atom (confirmation variant of Modal)
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Dialog.svelte`
 - Test: `site/src/lib/components/ui/Dialog.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import Dialog from './Dialog.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import Dialog from "./Dialog.svelte";
 
-describe('Dialog', () => {
-  it('renders title and message when open', () => {
+describe("Dialog", () => {
+  it("renders title and message when open", () => {
     render(Dialog, {
       open: true,
-      title: 'Confirm',
-      message: 'Are you sure?',
-      confirmLabel: 'Yes',
-      cancelLabel: 'No',
+      title: "Confirm",
+      message: "Are you sure?",
+      confirmLabel: "Yes",
+      cancelLabel: "No",
     });
-    expect(screen.getByText('Confirm')).toBeDefined();
-    expect(screen.getByText('Are you sure?')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'Yes' })).toBeDefined();
-    expect(screen.getByRole('button', { name: 'No' })).toBeDefined();
+    expect(screen.getByText("Confirm")).toBeDefined();
+    expect(screen.getByText("Are you sure?")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Yes" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "No" })).toBeDefined();
   });
 
-  it('emits onconfirm when confirm clicked', async () => {
+  it("emits onconfirm when confirm clicked", async () => {
     let confirmed = false;
     render(Dialog, {
       open: true,
-      title: 'X',
-      message: 'Y',
-      onconfirm: () => { confirmed = true; },
+      title: "X",
+      message: "Y",
+      onconfirm: () => {
+        confirmed = true;
+      },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
     expect(confirmed).toBe(true);
   });
 
-  it('emits oncancel when cancel clicked', async () => {
+  it("emits oncancel when cancel clicked", async () => {
     let cancelled = false;
     render(Dialog, {
       open: true,
-      title: 'X',
-      message: 'Y',
-      oncancel: () => { cancelled = true; },
+      title: "X",
+      message: "Y",
+      oncancel: () => {
+        cancelled = true;
+      },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(cancelled).toBe(true);
   });
 });
@@ -758,6 +797,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Dialog atom (alertdialog with 
 ### Task A6: Upgrade Modal with focus-trap (was deferred from P5.1)
 
 **Files:**
+
 - Modify: `site/src/lib/components/ui/Modal.svelte`
 - Modify: `site/src/lib/components/ui/Modal.test.svelte.ts` (add focus-trap test)
 
@@ -854,18 +894,22 @@ Replace the existing Modal.svelte contents with:
 Append to `site/src/lib/components/ui/Modal.test.svelte.ts` (or recreate with both tests):
 
 ```ts
-  it('focuses the first focusable element after opening', async () => {
-    const { container, rerender } = render(Modal, {
-      open: false,
-      title: 'X',
-      children: '<button>One</button><button>Two</button>',
-    });
-    await rerender({ open: true, title: 'X', children: '<button>One</button><button>Two</button>' });
-    // microtask resolves; in jsdom we approximate by waiting a tick
-    await new Promise((r) => setTimeout(r, 0));
-    const first = container.querySelector('button') as HTMLButtonElement;
-    expect(first).toBeDefined();
+it("focuses the first focusable element after opening", async () => {
+  const { container, rerender } = render(Modal, {
+    open: false,
+    title: "X",
+    children: "<button>One</button><button>Two</button>",
   });
+  await rerender({
+    open: true,
+    title: "X",
+    children: "<button>One</button><button>Two</button>",
+  });
+  // microtask resolves; in jsdom we approximate by waiting a tick
+  await new Promise((r) => setTimeout(r, 0));
+  const first = container.querySelector("button") as HTMLButtonElement;
+  expect(first).toBeDefined();
+});
 ```
 
 (If the existing Modal test file has different shape, just add the assertion case alongside.)
@@ -887,60 +931,69 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Modal focus-trap + return-focu
 ### Task A7: Upgrade Tabs with keyboard arrow nav
 
 **Files:**
+
 - Modify: `site/src/lib/components/ui/Tabs.svelte`
 - Create: `site/src/lib/components/ui/Tabs.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/svelte';
-import { createRawSnippet } from 'svelte';
-import Tabs from './Tabs.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
+import Tabs from "./Tabs.svelte";
 
 const tabs = [
-  { id: 'a', label: 'Alpha' },
-  { id: 'b', label: 'Beta' },
-  { id: 'c', label: 'Gamma' },
+  { id: "a", label: "Alpha" },
+  { id: "b", label: "Beta" },
+  { id: "c", label: "Gamma" },
 ];
 
 const childrenSnippet = createRawSnippet((active) => ({
   render: () => `<div>panel: ${active()}</div>`,
 }));
 
-describe('Tabs', () => {
-  it('renders tabs and the initial active panel', () => {
-    render(Tabs, { tabs, active: 'a', children: childrenSnippet });
-    expect(screen.getByRole('tab', { name: 'Alpha' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Beta' }).getAttribute('aria-selected')).toBe('false');
+describe("Tabs", () => {
+  it("renders tabs and the initial active panel", () => {
+    render(Tabs, { tabs, active: "a", children: childrenSnippet });
+    expect(
+      screen.getByRole("tab", { name: "Alpha" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      screen.getByRole("tab", { name: "Beta" }).getAttribute("aria-selected"),
+    ).toBe("false");
   });
 
-  it('arrow-right moves active to the next tab', async () => {
-    let activeNow = 'a';
+  it("arrow-right moves active to the next tab", async () => {
+    let activeNow = "a";
     render(Tabs, {
       tabs,
-      active: 'a',
-      onchange: (id: string) => { activeNow = id; },
+      active: "a",
+      onchange: (id: string) => {
+        activeNow = id;
+      },
       children: childrenSnippet,
     });
-    const tabA = screen.getByRole('tab', { name: 'Alpha' });
+    const tabA = screen.getByRole("tab", { name: "Alpha" });
     tabA.focus();
-    await fireEvent.keyDown(tabA, { key: 'ArrowRight' });
-    expect(activeNow).toBe('b');
+    await fireEvent.keyDown(tabA, { key: "ArrowRight" });
+    expect(activeNow).toBe("b");
   });
 
-  it('Home key jumps to first tab', async () => {
-    let activeNow = 'c';
+  it("Home key jumps to first tab", async () => {
+    let activeNow = "c";
     render(Tabs, {
       tabs,
-      active: 'c',
-      onchange: (id: string) => { activeNow = id; },
+      active: "c",
+      onchange: (id: string) => {
+        activeNow = id;
+      },
       children: childrenSnippet,
     });
-    const tabC = screen.getByRole('tab', { name: 'Gamma' });
+    const tabC = screen.getByRole("tab", { name: "Gamma" });
     tabC.focus();
-    await fireEvent.keyDown(tabC, { key: 'Home' });
-    expect(activeNow).toBe('a');
+    await fireEvent.keyDown(tabC, { key: "Home" });
+    expect(activeNow).toBe("a");
   });
 });
 ```
@@ -1052,33 +1105,43 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Tabs keyboard arrow/Home/End n
 ### Task A8: Upgrade Tooltip with placement positioner
 
 **Files:**
+
 - Modify: `site/src/lib/components/ui/Tooltip.svelte`
 - Create: `site/src/lib/components/ui/Tooltip.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Tooltip from './Tooltip.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Tooltip from "./Tooltip.svelte";
 
-describe('Tooltip', () => {
-  it('renders trigger content + tooltip span with role=tooltip', () => {
-    const { container } = render(Tooltip, { label: 'Helpful text', children: 'trigger' });
-    expect(screen.getByText('trigger')).toBeDefined();
-    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe('Helpful text');
+describe("Tooltip", () => {
+  it("renders trigger content + tooltip span with role=tooltip", () => {
+    const { container } = render(Tooltip, {
+      label: "Helpful text",
+      children: "trigger",
+    });
+    expect(screen.getByText("trigger")).toBeDefined();
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "Helpful text",
+    );
   });
 
-  it('applies placement class when provided', () => {
-    const { container } = render(Tooltip, { label: 'X', placement: 'top', children: 't' });
-    expect(container.querySelector('.tip.placement-top')).not.toBeNull();
+  it("applies placement class when provided", () => {
+    const { container } = render(Tooltip, {
+      label: "X",
+      placement: "top",
+      children: "t",
+    });
+    expect(container.querySelector(".tip.placement-top")).not.toBeNull();
   });
 
-  it('aria-describedby links trigger to tooltip', () => {
-    const { container } = render(Tooltip, { label: 'X', children: 't' });
-    const wrap = container.querySelector('.wrap') as HTMLElement;
+  it("aria-describedby links trigger to tooltip", () => {
+    const { container } = render(Tooltip, { label: "X", children: "t" });
+    const wrap = container.querySelector(".wrap") as HTMLElement;
     const tip = container.querySelector('[role="tooltip"]') as HTMLElement;
-    expect(wrap.getAttribute('aria-describedby')).toBe(tip.id);
+    expect(wrap.getAttribute("aria-describedby")).toBe(tip.id);
   });
 });
 ```
@@ -1163,28 +1226,29 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Tooltip 4-placement positioner
 ### Task A9: CopyButton domain widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/CopyButton.svelte`
 - Test: `site/src/lib/components/domain/CopyButton.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import CopyButton from './CopyButton.svelte';
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import CopyButton from "./CopyButton.svelte";
 
-describe('CopyButton', () => {
-  it('calls clipboard.writeText on click', async () => {
+describe("CopyButton", () => {
+  it("calls clipboard.writeText on click", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
-    render(CopyButton, { value: 'hello' });
-    await fireEvent.click(screen.getByRole('button'));
-    expect(writeText).toHaveBeenCalledWith('hello');
+    render(CopyButton, { value: "hello" });
+    await fireEvent.click(screen.getByRole("button"));
+    expect(writeText).toHaveBeenCalledWith("hello");
   });
 
-  it('renders an aria-label', () => {
-    render(CopyButton, { value: 'x', label: 'Copy SHA' });
-    expect(screen.getByRole('button', { name: 'Copy SHA' })).toBeDefined();
+  it("renders an aria-label", () => {
+    render(CopyButton, { value: "x", label: "Copy SHA" });
+    expect(screen.getByRole("button", { name: "Copy SHA" })).toBeDefined();
   });
 });
 ```
@@ -1254,6 +1318,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): CopyButton domain widget (clip
 ### Task A10: RunStatusBadge domain widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/RunStatusBadge.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1289,6 +1354,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): RunStatusBadge domain widget (
 ### Task A11: TableOfContents widget (sticky right rail)
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/TableOfContents.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1371,6 +1437,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): TableOfContents widget (sticky
 ### Task A12: StatTile widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/StatTile.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1430,32 +1497,35 @@ git -C /u/Git/CentralGauge commit -m "feat(site): StatTile widget (label + value
 ### Task A13: MarkdownRenderer widget (lazy-loads marked + DOMPurify)
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/MarkdownRenderer.svelte`
 - Test: `site/src/lib/components/domain/MarkdownRenderer.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import MarkdownRenderer from './MarkdownRenderer.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import MarkdownRenderer from "./MarkdownRenderer.svelte";
 
-describe('MarkdownRenderer', () => {
-  it('renders markdown headings', async () => {
-    const { container } = render(MarkdownRenderer, { source: '# Hello\n\nworld' });
+describe("MarkdownRenderer", () => {
+  it("renders markdown headings", async () => {
+    const { container } = render(MarkdownRenderer, {
+      source: "# Hello\n\nworld",
+    });
     // Wait microtask for the dynamic import to resolve
     await new Promise((r) => setTimeout(r, 50));
-    expect(container.querySelector('h1')?.textContent).toBe('Hello');
-    expect(container.querySelector('p')?.textContent).toBe('world');
+    expect(container.querySelector("h1")?.textContent).toBe("Hello");
+    expect(container.querySelector("p")?.textContent).toBe("world");
   });
 
-  it('sanitizes inline html', async () => {
+  it("sanitizes inline html", async () => {
     const { container } = render(MarkdownRenderer, {
-      source: '<script>alert(1)</script><b>bold</b>',
+      source: "<script>alert(1)</script><b>bold</b>",
     });
     await new Promise((r) => setTimeout(r, 50));
-    expect(container.querySelector('script')).toBeNull();
-    expect(container.querySelector('b')?.textContent).toBe('bold');
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("b")?.textContent).toBe("bold");
   });
 });
 ```
@@ -1540,6 +1610,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): MarkdownRenderer (lazy-loaded 
 ### Task A14: RunsCursorPager widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/RunsCursorPager.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1599,39 +1670,44 @@ git -C /u/Git/CentralGauge commit -m "feat(site): RunsCursorPager widget (Previo
 ### Task A15: RunsTable widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/RunsTable.svelte`
 - Test: `site/src/lib/components/domain/RunsTable.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import RunsTable from './RunsTable.svelte';
-import type { RunsListItem } from '$shared/api-types';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import RunsTable from "./RunsTable.svelte";
+import type { RunsListItem } from "$shared/api-types";
 
 const rows: RunsListItem[] = [
   {
-    id: 'r1',
-    model: { slug: 'sonnet-4-7', display_name: 'Sonnet 4.7', family_slug: 'claude' },
-    tier: 'verified',
-    status: 'completed',
+    id: "r1",
+    model: {
+      slug: "sonnet-4-7",
+      display_name: "Sonnet 4.7",
+      family_slug: "claude",
+    },
+    tier: "verified",
+    status: "completed",
     tasks_attempted: 24,
     tasks_passed: 24,
     avg_score: 0.84,
     cost_usd: 0.12,
     duration_ms: 252_000,
-    started_at: '2026-04-27T10:00:00Z',
-    completed_at: '2026-04-27T10:04:12Z',
+    started_at: "2026-04-27T10:00:00Z",
+    completed_at: "2026-04-27T10:04:12Z",
   },
 ];
 
-describe('RunsTable', () => {
-  it('renders one row per run', () => {
+describe("RunsTable", () => {
+  it("renders one row per run", () => {
     render(RunsTable, { rows });
-    expect(screen.getByText('Sonnet 4.7')).toBeDefined();
-    expect(screen.getByText('24/24')).toBeDefined();
-    expect(screen.getByText('$0.12')).toBeDefined();
+    expect(screen.getByText("Sonnet 4.7")).toBeDefined();
+    expect(screen.getByText("24/24")).toBeDefined();
+    expect(screen.getByText("$0.12")).toBeDefined();
   });
 });
 ```
@@ -1737,6 +1813,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): RunsTable widget (8-column run
 ### Task B1: TaskHistoryChart widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/TaskHistoryChart.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1805,6 +1882,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): TaskHistoryChart widget (d3-sh
 ### Task B2: CostBarChart widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/CostBarChart.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1866,6 +1944,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): CostBarChart widget (bar chart
 ### Task B3: FailureModesList widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/FailureModesList.svelte`
 
 - [ ] **Step 1: Implement**
@@ -1930,27 +2009,37 @@ git -C /u/Git/CentralGauge commit -m "feat(site): FailureModesList widget (frequ
 ### Task B4: Model detail loader (`/models/:slug/+page.server.ts`)
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { ModelDetail } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { ModelDetail } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, fetch, setHeaders, depends },
+) => {
   depends(`app:model:${params.slug}`);
 
   const res = await fetch(`/api/v1/models/${params.slug}`);
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? `model ${params.slug} not found`);
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ?? `model ${params.slug} not found`,
+    );
   }
 
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     model: (await res.json()) as ModelDetail,
@@ -1970,6 +2059,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug +page.server.ts 
 ### Task B5: Model detail page (`/models/:slug/+page.svelte`)
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2157,35 +2247,45 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug page (header + 4
 ### Task C1: Model runs feed loader
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/runs/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { RunsListResponse } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { RunsListResponse } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, url, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, url, fetch, setHeaders, depends },
+) => {
   depends(`app:model:${params.slug}:runs`);
 
   const sp = new URLSearchParams(url.searchParams);
-  sp.set('model', params.slug);
+  sp.set("model", params.slug);
 
   const res = await fetch(`/api/v1/runs?${sp.toString()}`);
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? 'runs load failed');
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ?? "runs load failed",
+    );
   }
 
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     slug: params.slug,
     runs: (await res.json()) as RunsListResponse,
-    cursor: url.searchParams.get('cursor'),
+    cursor: url.searchParams.get("cursor"),
   };
 };
 ```
@@ -2202,6 +2302,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug/runs +page.serve
 ### Task C2: Model runs feed page
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/runs/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2258,29 +2359,39 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug/runs page (RunsT
 ### Task C3: Model limitations loader
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/limitations/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, fetch, setHeaders, depends },
+) => {
   depends(`app:model:${params.slug}:limitations`);
 
   // Fetch as markdown text (the API supports content negotiation)
   const res = await fetch(`/api/v1/models/${params.slug}/limitations`, {
-    headers: { 'accept': 'text/markdown' },
+    headers: { "accept": "text/markdown" },
   });
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? 'limitations load failed');
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ?? "limitations load failed",
+    );
   }
 
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     slug: params.slug,
@@ -2301,6 +2412,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug/limitations +pag
 ### Task C4: Model limitations page
 
 **Files:**
+
 - Create: `site/src/routes/models/[slug]/limitations/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2347,6 +2459,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /models/:slug/limitations page
 ### Task D1: SettingsPanel widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/SettingsPanel.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2420,6 +2533,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): SettingsPanel widget (key-valu
 ### Task D2: ReproductionBlock widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/ReproductionBlock.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2487,6 +2601,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): ReproductionBlock widget (bund
 ### Task D3: PerTaskResultsTable widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/PerTaskResultsTable.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2660,36 +2775,42 @@ git -C /u/Git/CentralGauge commit -m "feat(site): PerTaskResultsTable widget (fi
 ### Task D4: SignaturePanel widget (lazy-loads @noble/ed25519)
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/SignaturePanel.svelte`
 - Test: `site/src/lib/components/domain/SignaturePanel.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import SignaturePanel from './SignaturePanel.svelte';
-import type { RunSignature } from '$shared/api-types';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import SignaturePanel from "./SignaturePanel.svelte";
+import type { RunSignature } from "$shared/api-types";
 
 const fakeSig: RunSignature = {
-  run_id: 'r1',
-  payload_b64: 'ZXhhbXBsZQ==',
-  signature: { alg: 'Ed25519', key_id: 1, signed_at: '2026-04-27T10:00:00Z', value_b64: 'YmFkc2ln' },
-  public_key_hex: '00'.repeat(32),
-  machine_id: 'rig-01',
+  run_id: "r1",
+  payload_b64: "ZXhhbXBsZQ==",
+  signature: {
+    alg: "Ed25519",
+    key_id: 1,
+    signed_at: "2026-04-27T10:00:00Z",
+    value_b64: "YmFkc2ln",
+  },
+  public_key_hex: "00".repeat(32),
+  machine_id: "rig-01",
 };
 
-describe('SignaturePanel', () => {
-  it('renders payload, signature, key fields with copy buttons', () => {
+describe("SignaturePanel", () => {
+  it("renders payload, signature, key fields with copy buttons", () => {
     render(SignaturePanel, { signature: fakeSig });
     expect(screen.getByText(/payload/i)).toBeDefined();
     expect(screen.getByText(/public key/i)).toBeDefined();
     expect(screen.getByText(/machine/i)).toBeDefined();
   });
 
-  it('verify button is initially shown', () => {
+  it("verify button is initially shown", () => {
     render(SignaturePanel, { signature: fakeSig });
-    expect(screen.getByRole('button', { name: /verify/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /verify/i })).toBeDefined();
   });
 });
 ```
@@ -2865,27 +2986,37 @@ git -C /u/Git/CentralGauge commit -m "feat(site): SignaturePanel widget (lazy ed
 ### Task D5: Run detail loader
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { RunDetail } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { RunDetail } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, fetch, setHeaders, depends },
+) => {
   depends(`app:run:${params.id}`);
 
   const res = await fetch(`/api/v1/runs/${params.id}`);
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? `run ${params.id} not found`);
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ?? `run ${params.id} not found`,
+    );
   }
 
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     run: (await res.json()) as RunDetail,
@@ -2905,6 +3036,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /runs/:id +page.server.ts load
 ### Task D6: Run detail page (4 tabs)
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3047,27 +3179,38 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /runs/:id page (4-tab Results/
 ### Task E1: Signature permalink loader
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/signature/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { RunSignature } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { RunSignature } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, fetch, setHeaders, depends },
+) => {
   depends(`app:run:${params.id}:signature`);
 
   const res = await fetch(`/api/v1/runs/${params.id}/signature`);
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? `signature for run ${params.id} not found`);
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ??
+        `signature for run ${params.id} not found`,
+    );
   }
 
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     runId: params.id,
@@ -3088,6 +3231,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /runs/:id/signature +page.serv
 ### Task E2: Signature permalink page
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/signature/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3135,6 +3279,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /runs/:id/signature page (perm
 ### Task F1: TranscriptViewer widget
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/TranscriptViewer.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3248,16 +3393,19 @@ git -C /u/Git/CentralGauge commit -m "feat(site): TranscriptViewer widget (parse
 ### Task F2: Transcript loader
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { RunDetail, Transcript } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { RunDetail, Transcript } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends }) => {
+export const load: PageServerLoad = async (
+  { params, fetch, setHeaders, depends },
+) => {
   depends(`app:transcript:${params.id}:${params.taskId}:${params.attempt}`);
 
   // First fetch run detail to find the transcript_key for this task+attempt
@@ -3266,17 +3414,24 @@ export const load: PageServerLoad = async ({ params, fetch, setHeaders, depends 
   const run = await runRes.json() as RunDetail;
 
   const taskResult = run.results.find((r) => r.task_id === params.taskId);
-  if (!taskResult) throw error(404, `task ${params.taskId} not in run ${params.id}`);
+  if (!taskResult) {
+    throw error(404, `task ${params.taskId} not in run ${params.id}`);
+  }
 
   const attemptNum = parseInt(params.attempt, 10);
   const attempt = taskResult.attempts.find((a) => a.attempt === attemptNum);
-  if (!attempt) throw error(404, `attempt ${params.attempt} not in run ${params.id} task ${params.taskId}`);
+  if (!attempt) {
+    throw error(
+      404,
+      `attempt ${params.attempt} not in run ${params.id} task ${params.taskId}`,
+    );
+  }
 
   const tRes = await fetch(`/api/v1/transcripts/${attempt.transcript_key}`);
-  if (!tRes.ok) throw error(tRes.status, 'transcript fetch failed');
+  if (!tRes.ok) throw error(tRes.status, "transcript fetch failed");
 
-  const apiCache = tRes.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = tRes.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   return {
     runId: params.id,
@@ -3302,6 +3457,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /runs/:id/transcripts/:taskId/
 ### Task F3: Transcript page
 
 **Files:**
+
 - Create: `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3368,6 +3524,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): transcript page (header + Tran
 ### Task G1: Print stylesheet
 
 **Files:**
+
 - Create: `site/src/styles/print.css`
 
 - [ ] **Step 1: Implement**
@@ -3420,11 +3577,17 @@ git -C /u/Git/CentralGauge commit -m "feat(site): transcript page (header + Tran
   }
 
   /* Tables full width */
-  table { width: 100%; }
+  table {
+    width: 100%;
+  }
 
   /* Avoid breaking sections across pages where possible */
-  section, table, figure { page-break-inside: avoid; }
-  h1, h2, h3 { page-break-after: avoid; }
+  section, table, figure {
+    page-break-inside: avoid;
+  }
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
 
   /* Code blocks: no borders, plain mono */
   pre, code {
@@ -3447,6 +3610,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): print stylesheet (hides chrome
 ### Task G2: Conditionally import print.css in +layout.svelte
 
 **Files:**
+
 - Modify: `site/src/routes/+layout.svelte`
 
 - [ ] **Step 1: Edit**
@@ -3454,15 +3618,15 @@ git -C /u/Git/CentralGauge commit -m "feat(site): print stylesheet (hides chrome
 Find the imports at the top of `<script>`:
 
 ```ts
-  import '../styles/tokens.css';
-  import '../styles/base.css';
-  import '../styles/utilities.css';
+import "../styles/tokens.css";
+import "../styles/base.css";
+import "../styles/utilities.css";
 ```
 
 Add (unconditionally — print stylesheet only matches @media print, so it's safe to always include; the flag-gating is intentional but not required for correctness):
 
 ```ts
-  import '../styles/print.css';
+import "../styles/print.css";
 ```
 
 Why unconditional: the print stylesheet body is wrapped in `@media print`, which only applies on print. The bundle size cost is ~1 KB gz. The flag is conceptually still meaningful for routes that want to skip it (none today).
@@ -3484,6 +3648,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): import print.css in root layou
 ### Task G3: Flip print_stylesheet flag in wrangler.toml
 
 **Files:**
+
 - Modify: `site/wrangler.toml`
 
 - [ ] **Step 1: Edit**
@@ -3517,6 +3682,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): flip FLAG_PRINT_STYLESHEET=on 
 ### Task H1: Add new routes to Lighthouse CI
 
 **Files:**
+
 - Modify: `site/lighthouserc.json`
 
 - [ ] **Step 1: Edit**
@@ -3524,13 +3690,13 @@ git -C /u/Git/CentralGauge commit -m "feat(site): flip FLAG_PRINT_STYLESHEET=on 
 Replace the `"url": [...]` line with:
 
 ```json
-      "url": [
-        "http://127.0.0.1:4173/leaderboard",
-        "http://127.0.0.1:4173/about",
-        "http://127.0.0.1:4173/models/sonnet-4-7",
-        "http://127.0.0.1:4173/runs/seeded-run-id-1",
-        "http://127.0.0.1:4173/runs/seeded-run-id-1/transcripts/CG-AL-E001/1"
-      ],
+"url": [
+  "http://127.0.0.1:4173/leaderboard",
+  "http://127.0.0.1:4173/about",
+  "http://127.0.0.1:4173/models/sonnet-4-7",
+  "http://127.0.0.1:4173/runs/seeded-run-id-1",
+  "http://127.0.0.1:4173/runs/seeded-run-id-1/transcripts/CG-AL-E001/1"
+],
 ```
 
 (The `seeded-run-id-1` and `sonnet-4-7` slugs assume seeded fixture data is present in the preview build. If not, replace with whatever slug/run-id the seeding fixture uses; check `tests/utils/reset-db.ts` or the equivalent for actual values.)
@@ -3547,6 +3713,7 @@ git -C /u/Git/CentralGauge commit -m "build(site/ci): add /about, /models/:slug,
 ### Task H2: New E2E specs for P5.2 routes
 
 **Files:**
+
 - Create: `site/tests/e2e/model-detail.spec.ts`
 - Create: `site/tests/e2e/run-detail.spec.ts`
 - Create: `site/tests/e2e/transcript.spec.ts`
@@ -3555,19 +3722,19 @@ git -C /u/Git/CentralGauge commit -m "build(site/ci): add /about, /models/:slug,
 - [ ] **Step 1: Create `model-detail.spec.ts`**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('/models/:slug', () => {
-  test('renders header + stat tiles + history chart', async ({ page }) => {
-    await page.goto('/models/sonnet-4-7');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    await expect(page.getByText('Score')).toBeVisible();
-    await expect(page.getByText('History')).toBeVisible();
+test.describe("/models/:slug", () => {
+  test("renders header + stat tiles + history chart", async ({ page }) => {
+    await page.goto("/models/sonnet-4-7");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByText("Score")).toBeVisible();
+    await expect(page.getByText("History")).toBeVisible();
   });
 
-  test('navigates to runs feed', async ({ page }) => {
-    await page.goto('/models/sonnet-4-7');
-    await page.getByText('See all').click();
+  test("navigates to runs feed", async ({ page }) => {
+    await page.goto("/models/sonnet-4-7");
+    await page.getByText("See all").click();
     await expect(page).toHaveURL(/\/models\/sonnet-4-7\/runs/);
   });
 });
@@ -3576,32 +3743,38 @@ test.describe('/models/:slug', () => {
 - [ ] **Step 2: Create `run-detail.spec.ts`**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('/runs/:id', () => {
-  test('renders 4 tabs + Results active by default', async ({ page }) => {
-    await page.goto('/runs/seeded-run-id-1');
-    await expect(page.getByRole('tab', { name: 'Results' })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('tab', { name: 'Settings' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Signature' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'Reproduction' })).toBeVisible();
+test.describe("/runs/:id", () => {
+  test("renders 4 tabs + Results active by default", async ({ page }) => {
+    await page.goto("/runs/seeded-run-id-1");
+    await expect(page.getByRole("tab", { name: "Results" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.getByRole("tab", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Signature" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Reproduction" })).toBeVisible();
   });
 
-  test('arrow-right cycles tabs', async ({ page }) => {
-    await page.goto('/runs/seeded-run-id-1');
-    await page.getByRole('tab', { name: 'Results' }).focus();
-    await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
+  test("arrow-right cycles tabs", async ({ page }) => {
+    await page.goto("/runs/seeded-run-id-1");
+    await page.getByRole("tab", { name: "Results" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Settings" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
   });
 
-  test('signature tab loads and verify works', async ({ page }) => {
-    await page.goto('/runs/seeded-run-id-1');
-    await page.getByRole('tab', { name: 'Signature' }).click();
-    await expect(page.getByRole('button', { name: /verify/i })).toBeVisible();
-    await page.getByRole('button', { name: /verify/i }).click();
+  test("signature tab loads and verify works", async ({ page }) => {
+    await page.goto("/runs/seeded-run-id-1");
+    await page.getByRole("tab", { name: "Signature" }).click();
+    await expect(page.getByRole("button", { name: /verify/i })).toBeVisible();
+    await page.getByRole("button", { name: /verify/i }).click();
     // Either valid (✓) or invalid (✗) — both are valid outcomes; we just want
     // confirmation the button responded
-    await expect(page.locator('.ok, .bad')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator(".ok, .bad")).toBeVisible({ timeout: 5000 });
   });
 });
 ```
@@ -3609,13 +3782,13 @@ test.describe('/runs/:id', () => {
 - [ ] **Step 3: Create `transcript.spec.ts`**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test('/runs/:id/transcripts/:taskId/:attempt renders + copies', async ({ page }) => {
-  await page.goto('/runs/seeded-run-id-1/transcripts/CG-AL-E001/1');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+test("/runs/:id/transcripts/:taskId/:attempt renders + copies", async ({ page }) => {
+  await page.goto("/runs/seeded-run-id-1/transcripts/CG-AL-E001/1");
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   // Section headers visible (== HEADER == parsed)
-  const sections = page.locator('.block .name');
+  const sections = page.locator(".block .name");
   await expect(sections.first()).toBeVisible();
 });
 ```
@@ -3623,13 +3796,13 @@ test('/runs/:id/transcripts/:taskId/:attempt renders + copies', async ({ page })
 - [ ] **Step 4: Create `print.spec.ts`**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test('/runs/:id hides nav + footer in print media', async ({ page }) => {
-  await page.goto('/runs/seeded-run-id-1');
-  await page.emulateMedia({ media: 'print' });
-  await expect(page.locator('nav').first()).toBeHidden();
-  await expect(page.locator('footer')).toBeHidden();
+test("/runs/:id hides nav + footer in print media", async ({ page }) => {
+  await page.goto("/runs/seeded-run-id-1");
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator("nav").first()).toBeHidden();
+  await expect(page.locator("footer")).toBeHidden();
 });
 ```
 
@@ -3645,6 +3818,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): model-detail / run-detail 
 ### Task H3: Tighten `prerender.handleHttpError` (optional)
 
 **Files:**
+
 - Modify: `site/svelte.config.js`
 
 The plan-author `'warn'` setting in P5.1 was a temporary measure while nav linked to non-existent routes. P5.2 ships `/models/:slug` and `/runs/:id`. Other Nav links (`/tasks`, `/compare`, `/search`, plain `/models` and `/runs` index) STILL don't exist. So we keep `'warn'` for now.
@@ -3654,26 +3828,26 @@ The plan-author `'warn'` setting in P5.1 was a temporary measure while nav linke
 Edit `site/svelte.config.js`. Find the `prerender` block:
 
 ```js
-    prerender: {
-      entries: ['/about'],
-      handleHttpError: 'warn'
-    }
+prerender: {
+  entries: ['/about'],
+  handleHttpError: 'warn'
+}
 ```
 
 Replace with:
 
 ```js
-    prerender: {
-      entries: ['/about'],
-      // 'warn' permits prerender crawl to skip 404s on Nav links not yet shipped:
-      //   - /models (index)            — P5.3
-      //   - /tasks (index + /:id)      — P5.3
-      //   - /compare                   — P5.3
-      //   - /search                    — P5.3
-      //   - /runs (index)              — P5.2 ships /runs/:id but not /runs index
-      // Switch to 'fail' once all Nav targets resolve (target: P5.4 polish).
-      handleHttpError: 'warn'
-    }
+prerender: {
+  entries: ['/about'],
+  // 'warn' permits prerender crawl to skip 404s on Nav links not yet shipped:
+  //   - /models (index)            — P5.3
+  //   - /tasks (index + /:id)      — P5.3
+  //   - /compare                   — P5.3
+  //   - /search                    — P5.3
+  //   - /runs (index)              — P5.2 ships /runs/:id but not /runs index
+  // Switch to 'fail' once all Nav targets resolve (target: P5.4 polish).
+  handleHttpError: 'warn'
+}
 ```
 
 - [ ] **Step 2: Commit**

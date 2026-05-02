@@ -12,6 +12,7 @@
 **Tech Stack:** GitHub Actions (`actions/checkout@v4`, `denoland/setup-deno@v2`); Deno 1.46+ (matches the project's pinned task runner); Cliffy `Command`; `gh` CLI (preinstalled on `ubuntu-latest`); the lifecycle endpoints from Phase A and the orchestrator from Phase C. No new runtime dependencies in the worker.
 
 **Depends on:**
+
 - Phase A — event log endpoints (`/api/v1/admin/lifecycle/events`, `/api/v1/admin/lifecycle/state`).
 - Phase C — `centralgauge cycle` command with `--yes` non-interactive flag and `--analyzer-model`.
 - Phase E — family-diff endpoint (`/api/v1/families/<slug>/diff`) for regression counting in the digest.
@@ -53,42 +54,52 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
 
   export const FIXTURE_EVENTS: LifecycleEvent[] = [
     {
-      id: 1, ts: NOW - 6 * DAY,
+      id: 1,
+      ts: NOW - 6 * DAY,
       model_slug: "anthropic/claude-opus-4-7",
       task_set_hash: "ts-current",
       event_type: "bench.completed",
       payload_json: JSON.stringify({ runs_count: 1, tasks_count: 50 }),
-      actor: "ci", actor_id: "github-actions",
+      actor: "ci",
+      actor_id: "github-actions",
     },
     {
-      id: 2, ts: NOW - 6 * DAY + 600_000,
+      id: 2,
+      ts: NOW - 6 * DAY + 600_000,
       model_slug: "anthropic/claude-opus-4-7",
       task_set_hash: "ts-current",
       event_type: "analysis.completed",
       payload_json: JSON.stringify({ entries_count: 7, min_confidence: 0.82 }),
-      actor: "ci", actor_id: "github-actions",
+      actor: "ci",
+      actor_id: "github-actions",
     },
     {
-      id: 3, ts: NOW - 6 * DAY + 660_000,
+      id: 3,
+      ts: NOW - 6 * DAY + 660_000,
       model_slug: "anthropic/claude-opus-4-7",
       task_set_hash: "ts-current",
       event_type: "concept.created",
       payload_json: JSON.stringify({
-        concept_id: 42, slug: "tableextension-fields-merge",
+        concept_id: 42,
+        slug: "tableextension-fields-merge",
         analyzer_model: "anthropic/claude-opus-4-6",
       }),
-      actor: "ci", actor_id: "github-actions",
+      actor: "ci",
+      actor_id: "github-actions",
     },
     {
-      id: 4, ts: NOW - 6 * DAY + 720_000,
+      id: 4,
+      ts: NOW - 6 * DAY + 720_000,
       model_slug: "anthropic/claude-opus-4-7",
       task_set_hash: "ts-current",
       event_type: "publish.completed",
       payload_json: JSON.stringify({ upserted: 7, occurrences: 12 }),
-      actor: "ci", actor_id: "github-actions",
+      actor: "ci",
+      actor_id: "github-actions",
     },
     {
-      id: 5, ts: NOW - 4 * DAY,
+      id: 5,
+      ts: NOW - 4 * DAY,
       model_slug: "openai/gpt-5.5",
       task_set_hash: "ts-current",
       event_type: "cycle.failed",
@@ -97,10 +108,12 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
         error_code: "ANALYZER_TIMEOUT",
         error_message: "verify --shortcomings-only timed out after 1800s",
       }),
-      actor: "ci", actor_id: "github-actions",
+      actor: "ci",
+      actor_id: "github-actions",
     },
     {
-      id: 6, ts: NOW - DAY,
+      id: 6,
+      ts: NOW - DAY,
       model_slug: "anthropic/claude-sonnet-4-6",
       task_set_hash: "ts-current",
       event_type: "analysis.rejected",
@@ -109,7 +122,8 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
         reviewer: "operator@example.com",
         reason: "concept slug hallucinated",
       }),
-      actor: "reviewer", actor_id: "operator@example.com",
+      actor: "reviewer",
+      actor_id: "operator@example.com",
     },
   ];
 
@@ -138,9 +152,12 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
   export const FIXTURE_REVIEW_QUEUE = {
     pending_count: 1,
     rows: [{
-      id: 11, model_slug: "anthropic/claude-sonnet-4-6",
-      concept_slug_proposed: "interface-procedure-without-implementation-section",
-      confidence: 0.42, created_at: NOW - 2 * DAY,
+      id: 11,
+      model_slug: "anthropic/claude-sonnet-4-6",
+      concept_slug_proposed:
+        "interface-procedure-without-implementation-section",
+      confidence: 0.42,
+      created_at: NOW - 2 * DAY,
     }],
   };
   ```
@@ -284,14 +301,18 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
     const recent = input.events.filter((e) => e.ts >= input.sinceMs);
 
     const models = aggregatePerModel(recent);
-    const newConcepts = recent.filter((e) => e.event_type === "concept.created");
+    const newConcepts = recent.filter((e) =>
+      e.event_type === "concept.created"
+    );
     const regressions = input.familyDiffs.flatMap((d) =>
-      d.status === "comparable" ? (d.regressed ?? []).map((c) => ({
-        family_slug: d.family_slug,
-        from_model_slug: d.from_model_slug ?? "(unknown)",
-        to_model_slug: d.to_model_slug ?? "(unknown)",
-        concept_slug: c.slug,
-      })) : []
+      d.status === "comparable"
+        ? (d.regressed ?? []).map((c) => ({
+          family_slug: d.family_slug,
+          from_model_slug: d.from_model_slug ?? "(unknown)",
+          to_model_slug: d.to_model_slug ?? "(unknown)",
+          concept_slug: c.slug,
+        }))
+        : []
     );
     const failures = recent.filter((e) =>
       e.event_type === "cycle.failed" ||
@@ -301,27 +322,35 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
     );
 
     if (input.format === "json") {
-      return JSON.stringify({
-        since_ms: input.sinceMs,
-        models,
-        new_concepts: newConcepts.map((e) => ({
-          model_slug: e.model_slug,
-          ts: e.ts,
-          ...(JSON.parse(e.payload_json ?? "{}")),
-        })),
-        regressions,
-        failures: failures.map((e) => ({
-          model_slug: e.model_slug,
-          event_type: e.event_type,
-          ts: e.ts,
-          ...(JSON.parse(e.payload_json ?? "{}")),
-        })),
-        review_queue: input.reviewQueue,
-      }, null, 2);
+      return JSON.stringify(
+        {
+          since_ms: input.sinceMs,
+          models,
+          new_concepts: newConcepts.map((e) => ({
+            model_slug: e.model_slug,
+            ts: e.ts,
+            ...(JSON.parse(e.payload_json ?? "{}")),
+          })),
+          regressions,
+          failures: failures.map((e) => ({
+            model_slug: e.model_slug,
+            event_type: e.event_type,
+            ts: e.ts,
+            ...(JSON.parse(e.payload_json ?? "{}")),
+          })),
+          review_queue: input.reviewQueue,
+        },
+        null,
+        2,
+      );
     }
 
     return renderMarkdown({
-      models, newConcepts, regressions, failures, reviewQueue: input.reviewQueue,
+      models,
+      newConcepts,
+      regressions,
+      failures,
+      reviewQueue: input.reviewQueue,
     });
   }
 
@@ -353,7 +382,12 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
   function renderMarkdown(args: {
     models: ModelStateRow[];
     newConcepts: LifecycleEvent[];
-    regressions: { family_slug: string; from_model_slug: string; to_model_slug: string; concept_slug: string }[];
+    regressions: {
+      family_slug: string;
+      from_model_slug: string;
+      to_model_slug: string;
+      concept_slug: string;
+    }[];
     failures: LifecycleEvent[];
     reviewQueue: ReviewQueueSummary;
   }): string {
@@ -396,7 +430,11 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
     } else {
       for (const e of newConcepts) {
         const p = JSON.parse(e.payload_json ?? "{}");
-        lines.push(`- \`${p.slug}\` (model: ${e.model_slug}, analyzer: ${p.analyzer_model ?? "n/a"})`);
+        lines.push(
+          `- \`${p.slug}\` (model: ${e.model_slug}, analyzer: ${
+            p.analyzer_model ?? "n/a"
+          })`,
+        );
       }
     }
     lines.push("");
@@ -407,7 +445,9 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
       lines.push("_No regressions._");
     } else {
       for (const r of regressions) {
-        lines.push(`- \`${r.concept_slug}\` (${r.family_slug}: ${r.from_model_slug} → ${r.to_model_slug})`);
+        lines.push(
+          `- \`${r.concept_slug}\` (${r.family_slug}: ${r.from_model_slug} → ${r.to_model_slug})`,
+        );
       }
     }
     lines.push("");
@@ -420,7 +460,9 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
       for (const e of failures) {
         const p = JSON.parse(e.payload_json ?? "{}");
         lines.push(
-          `- **${e.model_slug}** — ${e.event_type}: \`${p.error_code ?? "?"}\` ${p.error_message ?? ""}`.trim(),
+          `- **${e.model_slug}** — ${e.event_type}: \`${
+            p.error_code ?? "?"
+          }\` ${p.error_message ?? ""}`.trim(),
         );
       }
     }
@@ -432,7 +474,11 @@ TDD: write the digest unit test before the digest implementation. Red → Green.
       lines.push("_Review queue empty._");
     } else {
       for (const r of reviewQueue.rows) {
-        lines.push(`- ${r.model_slug}: \`${r.concept_slug_proposed}\` (confidence ${r.confidence.toFixed(2)})`);
+        lines.push(
+          `- ${r.model_slug}: \`${r.concept_slug_proposed}\` (confidence ${
+            r.confidence.toFixed(2)
+          })`,
+        );
       }
     }
     lines.push("");
@@ -462,14 +508,20 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
       const u = typeof url === "string" ? url : url.toString();
       calls.push(u);
       if (u.includes("/lifecycle/events")) {
-        return Promise.resolve(new Response(JSON.stringify({ events: [] }), { status: 200 }));
+        return Promise.resolve(
+          new Response(JSON.stringify({ events: [] }), { status: 200 }),
+        );
       }
       if (u.includes("/families/") && u.includes("/diff")) {
-        return Promise.resolve(new Response(JSON.stringify({}), { status: 404 }));
+        return Promise.resolve(
+          new Response(JSON.stringify({}), { status: 404 }),
+        );
       }
       if (u.includes("/lifecycle/review/queue")) {
         return Promise.resolve(
-          new Response(JSON.stringify({ pending_count: 0, rows: [] }), { status: 200 }),
+          new Response(JSON.stringify({ pending_count: 0, rows: [] }), {
+            status: 200,
+          }),
         );
       }
       throw new Error(`Unexpected URL: ${u}`);
@@ -479,18 +531,25 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
       siteUrl: "https://centralgauge.example",
       sinceMs: 0,
       // Returns the canonical signed-headers triple (Plan A pattern).
-      signHeaders: () => Promise.resolve({
-        "X-CG-Signature": "sig-stub",
-        "X-CG-Key-Id": "1",
-        "X-CG-Signed-At": "2026-04-29T00:00:00.000Z",
-      }),
+      signHeaders: () =>
+        Promise.resolve({
+          "X-CG-Signature": "sig-stub",
+          "X-CG-Key-Id": "1",
+          "X-CG-Signed-At": "2026-04-29T00:00:00.000Z",
+        }),
       fetchFn: mockFetch,
     });
 
     assertEquals(inputs.events.length, 0);
     assertEquals(inputs.reviewQueue.pending_count, 0);
-    assertEquals(calls.some((c) => c.includes("/lifecycle/events?since=0")), true);
-    assertEquals(calls.some((c) => c.includes("/lifecycle/review/queue")), true);
+    assertEquals(
+      calls.some((c) => c.includes("/lifecycle/events?since=0")),
+      true,
+    );
+    assertEquals(
+      calls.some((c) => c.includes("/lifecycle/review/queue")),
+      true,
+    );
   });
   ```
 
@@ -541,7 +600,8 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
     // `queryEvents` shape.
     const eventsHeaders = await args.signHeaders({});
 
-    const eventsUrl = `${args.siteUrl}/api/v1/admin/lifecycle/events?since=${args.sinceMs}`;
+    const eventsUrl =
+      `${args.siteUrl}/api/v1/admin/lifecycle/events?since=${args.sinceMs}`;
     const eventsRes = await fetchFn(eventsUrl, {
       method: "GET",
       headers: { ...eventsHeaders },
@@ -552,9 +612,11 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
     const { events } = await eventsRes.json() as { events: LifecycleEvent[] };
 
     const familyDiffs: FamilyDiffRow[] = [];
-    const families = new Set(events
-      .filter((e) => e.event_type === "analysis.completed")
-      .map((e) => e.model_slug.split("/").slice(0, 2).join("/")));
+    const families = new Set(
+      events
+        .filter((e) => e.event_type === "analysis.completed")
+        .map((e) => e.model_slug.split("/").slice(0, 2).join("/")),
+    );
     for (const family of families) {
       const diffUrl = `${args.siteUrl}/api/v1/families/${family}/diff`;
       // /api/v1/families/<slug>/diff is a public endpoint (Phase E3) — no
@@ -585,17 +647,26 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
   ```typescript
   // cli/commands/lifecycle-command.ts (additions)
   import { Command } from "@cliffy/command";
-  import { fetchDigestInputs, generateDigest } from "../../src/lifecycle/digest.ts";
+  import {
+    fetchDigestInputs,
+    generateDigest,
+  } from "../../src/lifecycle/digest.ts";
   import { loadIngestConfig, readPrivateKey } from "../../src/ingest/config.ts";
   import { signPayload } from "../../src/ingest/sign.ts";
 
   export function registerDigestSubcommand(parent: Command): void {
     parent.command("digest", "Generate a lifecycle activity digest")
-      .option("--since <duration:string>", "Time window (e.g. '7d', '24h')", { default: "7d" })
-      .option("--format <format:string>", "Output format", { default: "markdown" })
+      .option("--since <duration:string>", "Time window (e.g. '7d', '24h')", {
+        default: "7d",
+      })
+      .option("--format <format:string>", "Output format", {
+        default: "markdown",
+      })
       .action(async ({ since, format }) => {
         if (format !== "markdown" && format !== "json") {
-          throw new Error(`--format must be 'markdown' or 'json', got: ${format}`);
+          throw new Error(
+            `--format must be 'markdown' or 'json', got: ${format}`,
+          );
         }
         const config = await loadIngestConfig(Deno.cwd(), {});
         if (config.adminKeyId == null || !config.adminKeyPath) {
@@ -627,7 +698,9 @@ The digest generator is a pure function; the CLI wraps it with the HTTP fetches 
 
   function parseDuration(s: string): number {
     const m = /^(\d+)([dh])$/.exec(s);
-    if (!m) throw new Error(`Invalid duration: ${s} (expected e.g. '7d' or '24h')`);
+    if (!m) {
+      throw new Error(`Invalid duration: ${s} (expected e.g. '7d' or '24h')`);
+    }
     const n = parseInt(m[1], 10);
     return m[2] === "d" ? n * 86_400_000 : n * 3_600_000;
   }
@@ -666,12 +739,18 @@ The workflow YAML stays small; the per-model fan-out logic lives in a Deno scrip
         {
           model_slug: "anthropic/claude-opus-4-7",
           task_set_hash: "ts-current",
-          analyze: { last_ts: NOW - 3 * DAY, last_event_type: "analysis.completed" },
+          analyze: {
+            last_ts: NOW - 3 * DAY,
+            last_event_type: "analysis.completed",
+          },
         },
         {
           model_slug: "anthropic/claude-opus-4-6",
           task_set_hash: "ts-current",
-          analyze: { last_ts: NOW - 14 * DAY, last_event_type: "analysis.completed" },
+          analyze: {
+            last_ts: NOW - 14 * DAY,
+            last_event_type: "analysis.completed",
+          },
         },
         {
           model_slug: "openai/gpt-5.5",
@@ -681,7 +760,10 @@ The workflow YAML stays small; the per-model fan-out logic lives in a Deno scrip
       ],
     };
 
-    const stale = selectStaleModels(status, { now: NOW, staleAfterMs: 7 * DAY });
+    const stale = selectStaleModels(status, {
+      now: NOW,
+      staleAfterMs: 7 * DAY,
+    });
     assertEquals(stale.map((m) => m.model_slug).sort(), [
       "anthropic/claude-opus-4-6",
       "openai/gpt-5.5",
@@ -698,7 +780,10 @@ The workflow YAML stays small; the per-model fan-out logic lives in a Deno scrip
         },
       ],
     };
-    const stale = selectStaleModels(status, { now: NOW, staleAfterMs: 7 * DAY });
+    const stale = selectStaleModels(status, {
+      now: NOW,
+      staleAfterMs: 7 * DAY,
+    });
     assertEquals(stale.length, 0);
   });
   ```
@@ -746,13 +831,19 @@ The workflow YAML stays small; the per-model fan-out logic lives in a Deno scrip
     });
   }
 
-  async function runCycle(modelSlug: string): Promise<{ exitCode: number; durationMs: number }> {
+  async function runCycle(
+    modelSlug: string,
+  ): Promise<{ exitCode: number; durationMs: number }> {
     const start = Date.now();
     const cmd = new Deno.Command("deno", {
       args: [
-        "task", "start", "cycle",
-        "--llms", modelSlug,
-        "--analyzer-model", "anthropic/claude-opus-4-6",
+        "task",
+        "start",
+        "cycle",
+        "--llms",
+        modelSlug,
+        "--analyzer-model",
+        "anthropic/claude-opus-4-6",
         "--yes",
       ],
       stdout: "inherit",
@@ -783,30 +874,57 @@ The workflow YAML stays small; the per-model fan-out logic lives in a Deno scrip
     console.log(colors.cyan(`[weekly-cycle] ${stale.length} stale model(s):`));
     for (const m of stale) console.log(`  - ${m.model_slug}`);
 
-    const results: Array<{ model_slug: string; exit_code: number; duration_ms: number }> = [];
+    const results: Array<
+      { model_slug: string; exit_code: number; duration_ms: number }
+    > = [];
     for (const m of stale) {
       console.log(colors.cyan(`[weekly-cycle] cycling ${m.model_slug}...`));
       try {
         const r = await runCycle(m.model_slug);
-        results.push({ model_slug: m.model_slug, exit_code: r.exitCode, duration_ms: r.durationMs });
+        results.push({
+          model_slug: m.model_slug,
+          exit_code: r.exitCode,
+          duration_ms: r.durationMs,
+        });
         if (r.exitCode === 0) {
-          console.log(colors.green(`[OK] ${m.model_slug} (${(r.durationMs / 1000).toFixed(0)}s)`));
+          console.log(
+            colors.green(
+              `[OK] ${m.model_slug} (${(r.durationMs / 1000).toFixed(0)}s)`,
+            ),
+          );
         } else {
           console.log(colors.red(`[FAIL] ${m.model_slug} exit ${r.exitCode}`));
         }
       } catch (e) {
-        console.log(colors.red(`[FAIL] ${m.model_slug} ${e instanceof Error ? e.message : String(e)}`));
-        results.push({ model_slug: m.model_slug, exit_code: 99, duration_ms: 0 });
+        console.log(
+          colors.red(
+            `[FAIL] ${m.model_slug} ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          ),
+        );
+        results.push({
+          model_slug: m.model_slug,
+          exit_code: 99,
+          duration_ms: 0,
+        });
       }
     }
 
-    await Deno.writeTextFile("weekly-cycle-result.json", JSON.stringify({
-      ran_at: new Date().toISOString(),
-      total: results.length,
-      succeeded: results.filter((r) => r.exit_code === 0).length,
-      failed: results.filter((r) => r.exit_code !== 0).length,
-      results,
-    }, null, 2));
+    await Deno.writeTextFile(
+      "weekly-cycle-result.json",
+      JSON.stringify(
+        {
+          ran_at: new Date().toISOString(),
+          total: results.length,
+          succeeded: results.filter((r) => r.exit_code === 0).length,
+          failed: results.filter((r) => r.exit_code !== 0).length,
+          results,
+        },
+        null,
+        2,
+      ),
+    );
 
     const anyFailed = results.some((r) => r.exit_code !== 0);
     Deno.exit(anyFailed ? 1 : 0);

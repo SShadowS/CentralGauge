@@ -40,39 +40,39 @@ Wire the CentralGauge CLI to the signed ingest API and deploy the leaderboard wo
 ## Architecture overview
 
 ```
-                    repo (source of truth)
-   +-------------------------------------------------+
-   |  site/catalog/models.yml      tasks/**/*.yml    |
-   |  site/catalog/pricing.yml     shared/canonical.ts|
-   +------------------------------+------------------+
-                                  | checked in
-   +------------------------------+------------------+
-   |                    Deno CLI                     |
-   |  +------------------------------------------+   |
-   |  | bench-command.ts                         |   |
-   |  |  -> runs benchmark -> writes JSON        |   |
-   |  |      -> src/ingest/                      |   |
-   |  |          + catalog.ts    (read yml)      |   |
-   |  |          + register.ts   (interactive)   |   |
-   |  |          + envelope.ts   (build payload) |   |
-   |  |          + sign.ts       (Ed25519)       |   |
-   |  |          + blobs.ts      (R2 upload)     |   |
-   |  |          + client.ts     (HTTP + retry)  |   |
-   |  +------------------------------------------+   |
-   +------------------------------+------------------+
-                                  | HTTPS (signed)
-   +------------------------------+------------------+
-   |  Cloudflare Worker (centralgauge.sshadows.*)    |
-   |  +------------------------------------------+   |
-   |  | PUT  /api/v1/blobs/:sha256               |   |
-   |  | POST /api/v1/runs/precheck               |   |
-   |  | POST /api/v1/runs                        |   |
-   |  | GET  /api/v1/...                         |   |
-   |  +------------------------------------------+   |
-   |  D1 (catalog + runs + results)                  |
-   |  R2 (blobs: transcripts, code, bundles)         |
-   |  KV (cache), DO (leaderboard broadcast)         |
-   +-------------------------------------------------+
+                 repo (source of truth)
++-------------------------------------------------+
+|  site/catalog/models.yml      tasks/**/*.yml    |
+|  site/catalog/pricing.yml     shared/canonical.ts|
++------------------------------+------------------+
+                               | checked in
++------------------------------+------------------+
+|                    Deno CLI                     |
+|  +------------------------------------------+   |
+|  | bench-command.ts                         |   |
+|  |  -> runs benchmark -> writes JSON        |   |
+|  |      -> src/ingest/                      |   |
+|  |          + catalog.ts    (read yml)      |   |
+|  |          + register.ts   (interactive)   |   |
+|  |          + envelope.ts   (build payload) |   |
+|  |          + sign.ts       (Ed25519)       |   |
+|  |          + blobs.ts      (R2 upload)     |   |
+|  |          + client.ts     (HTTP + retry)  |   |
+|  +------------------------------------------+   |
++------------------------------+------------------+
+                               | HTTPS (signed)
++------------------------------+------------------+
+|  Cloudflare Worker (centralgauge.sshadows.*)    |
+|  +------------------------------------------+   |
+|  | PUT  /api/v1/blobs/:sha256               |   |
+|  | POST /api/v1/runs/precheck               |   |
+|  | POST /api/v1/runs                        |   |
+|  | GET  /api/v1/...                         |   |
+|  +------------------------------------------+   |
+|  D1 (catalog + runs + results)                  |
+|  R2 (blobs: transcripts, code, bundles)         |
+|  KV (cache), DO (leaderboard broadcast)         |
++-------------------------------------------------+
 ```
 
 **Data flow:** repo holds source-of-truth catalogs. CLI reads them to decide what's known, prompts for anything unknown (pricing must come from a provider API or manual entry), writes updates back to catalog YAMLs AND D1 atomically. Bench produces a signed payload, uploads blobs to R2 by content hash, POSTs the run. Server validates references against D1 catalogs and writes immutable run + results rows.
@@ -115,7 +115,12 @@ Returns a discriminated union:
 ```ts
 type IngestOutcome =
   | { kind: "success"; runId: string; bytesUploaded: number }
-  | { kind: "retryable-failure"; attempts: number; lastError: Error; replayCommand: string }
+  | {
+    kind: "retryable-failure";
+    attempts: number;
+    lastError: Error;
+    replayCommand: string;
+  }
   | { kind: "fatal-failure"; code: string; message: string };
 ```
 
@@ -159,7 +164,7 @@ if (!flags.noIngest) {
   cache_read_per_mtoken: 1.50
   cache_write_per_mtoken: 18.75
   effective_from: 2026-04-20T00:00:00Z
-  source: anthropic-api        # adapter that supplied the numbers
+  source: anthropic-api # adapter that supplied the numbers
   fetched_at: 2026-04-20T10:15:22Z
 
 # site/catalog/model-families.yml
@@ -226,10 +231,10 @@ $ centralgauge bench --llms anthropic/claude-opus-4-8 ...
 
 ```ts
 // Worker side: site/src/lib/shared/canonical.ts
-export { canonicalJSON } from '../../../../shared/canonical';
+export { canonicalJSON } from "../../../../shared/canonical";
 
 // CLI side: src/ingest/canonical.ts
-export { canonicalJSON } from '../../shared/canonical.ts';
+export { canonicalJSON } from "../../shared/canonical.ts";
 ```
 
 Deno resolves the relative path directly. Vite follows the import at bundle time. One source, zero runtime duplication.
@@ -326,11 +331,11 @@ Existing `results.transcript_r2_key`, `results.code_r2_key`, `runs.reproduction_
 
 ### Three failure categories
 
-| Category | Examples | Response |
-|---|---|---|
-| **Transient** | 5xx, network timeout, `fetch` throws, 429 | Retry with exponential backoff (3 attempts: 1s, 4s, 16s). All fail → `retryable-failure`; log + replay command; exit 0. |
-| **Fatal (client bug)** | 400 bad_version, bad canonical, bad signature, hash mismatch | No retry. Surface the server error verbatim; exit non-zero. Indicates a code bug. |
-| **Fatal (reference missing)** | 400 unknown_task_set / unknown_model / unknown_pricing | No retry. Message: "Catalog out of sync — run `centralgauge sync-catalog`, then replay." Exit non-zero. |
+| Category                      | Examples                                                     | Response                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| **Transient**                 | 5xx, network timeout, `fetch` throws, 429                    | Retry with exponential backoff (3 attempts: 1s, 4s, 16s). All fail → `retryable-failure`; log + replay command; exit 0. |
+| **Fatal (client bug)**        | 400 bad_version, bad canonical, bad signature, hash mismatch | No retry. Surface the server error verbatim; exit non-zero. Indicates a code bug.                                       |
+| **Fatal (reference missing)** | 400 unknown_task_set / unknown_model / unknown_pricing       | No retry. Message: "Catalog out of sync — run `centralgauge sync-catalog`, then replay." Exit non-zero.                 |
 
 ### Retry scope is per-request, not per-run
 

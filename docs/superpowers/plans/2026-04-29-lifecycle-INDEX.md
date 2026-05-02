@@ -13,35 +13,35 @@ The strategic plan [`2026-04-29-model-lifecycle-event-sourcing.md`](./2026-04-29
 
 ## Wavefront table
 
-| Wave | Plan | Depends-On | Parallel-with | Est. lines | File | Status |
-|------|------|------------|---------------|------------|------|--------|
-| 1 | A — Foundation (schema + event log + envelope) | — | — | ~450 | [lifecycle-A-foundation-impl.md](./2026-04-29-lifecycle-A-foundation-impl.md) | shipped |
-| 2 | B — Backfill + slug migration | A | D-prompt | ~400 | [lifecycle-B-backfill-impl.md](./2026-04-29-lifecycle-B-backfill-impl.md) | shipped |
-| 2 | D-prompt — Analyzer prompt + batch endpoint | A | B | ~350 | [lifecycle-D-prompt-impl.md](./2026-04-29-lifecycle-D-prompt-impl.md) | shipped |
-| 3 | C — Orchestrator (`cycle` command + checkpointing) | A, B, D-prompt | — | ~600 | [lifecycle-C-orchestrator-impl.md](./2026-04-29-lifecycle-C-orchestrator-impl.md) | shipped |
-| 4 | D-data — Concept clustering + registry backfill | C | — | ~450 | [lifecycle-D-data-impl.md](./2026-04-29-lifecycle-D-data-impl.md) | shipped |
-| 5 | E — Differential analysis (gen-N vs gen-N-1) | D-data | F, H | ~400 | [lifecycle-E-differential-impl.md](./2026-04-29-lifecycle-E-differential-impl.md) | shipped |
-| 5 | F — Quality scoring + `/admin/lifecycle/review` UI | D-data | E, H | ~550 | [lifecycle-F-quality-review-impl.md](./2026-04-29-lifecycle-F-quality-review-impl.md) | shipped |
-| 5 | H — `centralgauge status` CLI matrix | D-data | E, F | ~350 | [lifecycle-H-status-cli-impl.md](./2026-04-29-lifecycle-H-status-cli-impl.md) | shipped |
-| 6 | G — Weekly CI cron + digest | E, F, H | — | ~300 | [lifecycle-G-ci-impl.md](./2026-04-29-lifecycle-G-ci-impl.md) | shipped |
-| 7 | J — Docs + acceptance | G | — | ~250 | [lifecycle-J-acceptance-impl.md](./2026-04-29-lifecycle-J-acceptance-impl.md) | shipped |
+| Wave | Plan                                               | Depends-On     | Parallel-with | Est. lines | File                                                                                  | Status  |
+| ---- | -------------------------------------------------- | -------------- | ------------- | ---------- | ------------------------------------------------------------------------------------- | ------- |
+| 1    | A — Foundation (schema + event log + envelope)     | —              | —             | ~450       | [lifecycle-A-foundation-impl.md](./2026-04-29-lifecycle-A-foundation-impl.md)         | shipped |
+| 2    | B — Backfill + slug migration                      | A              | D-prompt      | ~400       | [lifecycle-B-backfill-impl.md](./2026-04-29-lifecycle-B-backfill-impl.md)             | shipped |
+| 2    | D-prompt — Analyzer prompt + batch endpoint        | A              | B             | ~350       | [lifecycle-D-prompt-impl.md](./2026-04-29-lifecycle-D-prompt-impl.md)                 | shipped |
+| 3    | C — Orchestrator (`cycle` command + checkpointing) | A, B, D-prompt | —             | ~600       | [lifecycle-C-orchestrator-impl.md](./2026-04-29-lifecycle-C-orchestrator-impl.md)     | shipped |
+| 4    | D-data — Concept clustering + registry backfill    | C              | —             | ~450       | [lifecycle-D-data-impl.md](./2026-04-29-lifecycle-D-data-impl.md)                     | shipped |
+| 5    | E — Differential analysis (gen-N vs gen-N-1)       | D-data         | F, H          | ~400       | [lifecycle-E-differential-impl.md](./2026-04-29-lifecycle-E-differential-impl.md)     | shipped |
+| 5    | F — Quality scoring + `/admin/lifecycle/review` UI | D-data         | E, H          | ~550       | [lifecycle-F-quality-review-impl.md](./2026-04-29-lifecycle-F-quality-review-impl.md) | shipped |
+| 5    | H — `centralgauge status` CLI matrix               | D-data         | E, F          | ~350       | [lifecycle-H-status-cli-impl.md](./2026-04-29-lifecycle-H-status-cli-impl.md)         | shipped |
+| 6    | G — Weekly CI cron + digest                        | E, F, H        | —             | ~300       | [lifecycle-G-ci-impl.md](./2026-04-29-lifecycle-G-ci-impl.md)                         | shipped |
+| 7    | J — Docs + acceptance                              | G              | —             | ~250       | [lifecycle-J-acceptance-impl.md](./2026-04-29-lifecycle-J-acceptance-impl.md)         | shipped |
 
 ## Dependency graph (ASCII)
 
 ```
-              A
-             / \
-            B  D-prompt
-             \ /
-              C
-              |
-            D-data
-            / | \
-           E  F  H
-            \ | /
-              G
-              |
-              J
+   A
+  / \
+ B  D-prompt
+  \ /
+   C
+   |
+ D-data
+ / | \
+E  F  H
+ \ | /
+   G
+   |
+   J
 ```
 
 ## Execution recipe
@@ -114,7 +114,7 @@ Unsafe pause points (do NOT yield mid-wave): Wave 2 (backfill half-done leaves s
 These rules cross plan boundaries; every implementer subagent must honor them.
 
 1. **Type names from Plan A's `LifecycleEvent` propagate unchanged through all plans.** No subsequent plan defines a parallel type, re-exports under a renamed alias, or adds fields without amending Plan A first. Type lives at `src/lifecycle/types.ts`; all consumers import from there.
-2. **Event-type strings come from the strategic plan's Event types appendix; no plan invents new ones without amending the strategic plan first.** Canonical strings: `bench.started`, `bench.completed`, `bench.failed`, `bench.skipped`, `debug.captured`, `analysis.started`, `analysis.completed`, `analysis.failed`, `analysis.accepted`, `analysis.rejected`, `publish.started`, `publish.completed`, `publish.failed`, `publish.skipped`, `cycle.started`, `cycle.completed`, `cycle.failed`, `cycle.timed_out`, `cycle.aborted`, `concept.created`, `concept.merged`, `concept.split`, `concept.aliased`, `model.released`, `task_set.changed`. Note `analysis.*` (NOT `analyze.*`); the `analyze` token is the *step bucket* in `v_lifecycle_state`, not an event-type prefix. New event types require a strategic-plan amendment + Plan A patch + index regeneration.
+2. **Event-type strings come from the strategic plan's Event types appendix; no plan invents new ones without amending the strategic plan first.** Canonical strings: `bench.started`, `bench.completed`, `bench.failed`, `bench.skipped`, `debug.captured`, `analysis.started`, `analysis.completed`, `analysis.failed`, `analysis.accepted`, `analysis.rejected`, `publish.started`, `publish.completed`, `publish.failed`, `publish.skipped`, `cycle.started`, `cycle.completed`, `cycle.failed`, `cycle.timed_out`, `cycle.aborted`, `concept.created`, `concept.merged`, `concept.split`, `concept.aliased`, `model.released`, `task_set.changed`. Note `analysis.*` (NOT `analyze.*`); the `analyze` token is the _step bucket_ in `v_lifecycle_state`, not an event-type prefix. New event types require a strategic-plan amendment + Plan A patch + index regeneration.
 3. **All Phase A schema lands in `0006_lifecycle.sql`. Phase E adds `0007_family_diffs.sql` (the only follow-on migration). No other plan adds migrations.** Plans B, C, D-data, F, G, H, J do NOT add migrations — if any of those plans needs schema, the strategic plan + Plan A get patched and re-applied, not a parallel SQL file slipped in. Plan E's `0007_family_diffs.sql` is deliberate (different concern: per-release differential snapshots; folding it into 0006 would force a retroactive edit to a prod-applied migration). Rollback story: drop the four lifecycle tables + the family-diffs table + revert columns on shortcomings — two migrations, two reverse migrations.
 4. **All concept-write SQL uses `db.batch([...])` for transactionality.** Merge/split/alias paths write `UPDATE shortcomings SET concept_id = ...`, `INSERT INTO concept_aliases ...`, `INSERT INTO lifecycle_events ...`, `UPDATE concepts SET superseded_by ...` as a single batch. Partial-merge states (shortcomings point at new concept but alias row missing) must be impossible. Plans D-data and F enforce this; Plan E reads only and is exempt.
 5. **All admin endpoints accept BOTH CF Access JWT AND Ed25519 admin signature.** `/api/v1/admin/lifecycle/*` (Plan A), `/api/v1/admin/lifecycle/review/*` (Plan F), `/api/v1/admin/lifecycle/concepts/*` (Plan D-data) all check `CF-Access-Jwt-Assertion` first; if absent or invalid, fall back to Ed25519 signature verification. Either auth path succeeding admits the request. Browser sessions go through CF Access; CLI traffic goes through Ed25519. Two identities, separate revocation paths.

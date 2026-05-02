@@ -27,7 +27,7 @@
 > - **Layer 1 (hotfix)**: stop the bleeding. `SearchResultRow.svelte` guards null. `_canary/+page.server.ts` rewrites Location. `tasks` table backfilled by operator. Each is 1–10 LOC.
 > - **Layer 2 (architectural)**: prevent recurrence. FTS5 `snippet_text` column means snippet ownership is explicit. Catalog-drift admin endpoint + cron probe means tasks-empty-but-results-present surfaces in 24h, not 30d. Canary Location rewrite is a generic redirect normalizer, not a one-off. `passthroughLoader<TKey, TVal>` precise-type fix prevents the next "Record<string, T>" drift.
 >
-> Layer 1 ships in the same commit as Layer 2 — they're not phase-staged. The phasing is by *file family*, not by safety. Architect concerns about half-states are addressed by making each mini-phase atomic: each commit leaves the working tree in a green state.
+> Layer 1 ships in the same commit as Layer 2 — they're not phase-staged. The phasing is by _file family_, not by safety. Architect concerns about half-states are addressed by making each mini-phase atomic: each commit leaves the working tree in a green state.
 
 > **Design rationale: FTS5 architectural choice — precomputed `snippet_text` column.** The FTS5 contentless mode (`content=''` in `migrations/0002_fts.sql:5`) is the ROOT cause of the search 500. With `content=''`, the FTS table indexes tokens but stores no copy of the source text — so `snippet()` returns `NULL`. Two options:
 >
@@ -60,34 +60,35 @@
 
 **Tech Stack:** Same as P5.5. No new runtime deps. One new dev/test util (`tests/setup-unit.ts` Snippet helper widening — pure TypeScript). One new admin endpoint pattern. One new D1 column + migration.
 
-**Spec:** `docs/superpowers/specs/2026-04-27-p5-site-ui-design.md` §11.7 (custom domain), §13 (P5 done-criteria — confirm met), §5.7 (404), §5.8 (SEO + structured data — already shipped P5.5). P6 has no new spec; this plan is *post-shipping correctness*.
+**Spec:** `docs/superpowers/specs/2026-04-27-p5-site-ui-design.md` §11.7 (custom domain), §13 (P5 done-criteria — confirm met), §5.7 (404), §5.8 (SEO + structured data — already shipped P5.5). P6 has no new spec; this plan is _post-shipping correctness_.
 
 **Audit map:** Each finding from the audit appears in exactly one mini-phase. Cross-reference table below — every audit ID maps to a Task ID:
 
-| Audit ID | Severity | Mini-phase / Task | Notes |
-|----------|----------|-------------------|-------|
-| C-1 (search 500, null snippet) | Critical | A1 (hotfix) + A2 (FTS schema) | Two-layer; both same commit |
-| C-2 (tasks empty) | Critical | A4 (operator) + A5 (health endpoint) + A6 (inline cron probe) | Three-layer; A5 path is `/api/v1/health/catalog-drift` (NOT `/admin/`); A6 calls `runDailyDriftProbe(env)` directly from `scheduled()` — no HTTP self-fetch |
-| C-3 (redirect-sunset.test.ts) | Critical (audit said "doesn't exist") | A3 (verify exists; CI step assert) | **Audit was wrong — file exists at `site/tests/build/redirect-sunset.test.ts`**. P6 confirms it runs in CI and documents the playbook. |
-| C-4 (canary scope leak) | Critical | A7 | `<base href>` injection in canary proxy + absolute-link rewrite in wrapped HTML |
-| I-1 (passthroughLoader Record<string,T>) | Important | B1 | Single-edit fix, 17+ errors resolve |
-| I-2 (Input missing label on /runs, /compare) | Important | B2 | 2 callsites |
-| I-3 (Lucide aria-hidden ~30 errors) | Important | B3 (IconBase) + B4 (migrate icons) | Architectural |
-| I-4 (Snippet typing in *.test.svelte.ts) | Important | B5 | `tests/setup-unit.ts` widening |
-| I-5 (health.test.ts body unknown) | Important | B6 | Type guard |
-| I-6 (CommandPalette unused @ts-expect-error) | Important | B7 | Trivial |
-| L-1 (RunDetail.completed_at nullable) | Latent | C1 | Type fix + API change |
-| L-2 (ModelLimitations.LimitationItem dead) | Latent | C2 | Drop dead path |
-| L-3 (empty-state UX) | Latent | C3 (atom) + C4 (callsites) | New `<EmptyState>` atom |
-| M-1 (wrangler.toml stale comment) | Minor | D1 | One-line edit |
-| M-2 (TaskDetailPanel unused CSS) | Minor | D2 | CSS pruning |
-| T-1 (OG WASM cold-init flake) | Test | E1 | `beforeAll` warmup |
-| (catalog-drift invariant) | Test | E2 | New CI test |
-| (visual-regression baseline) | Test | E3 | Ubuntu workflow |
-| (DNS playbook) | Pre-flip | F1, F2, F3 | Documentation only |
-| D-1 (custom domain flip) | FINAL | G1, G2, G3 | **Held until user trigger** |
+| Audit ID                                     | Severity                              | Mini-phase / Task                                             | Notes                                                                                                                                                       |
+| -------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-1 (search 500, null snippet)               | Critical                              | A1 (hotfix) + A2 (FTS schema)                                 | Two-layer; both same commit                                                                                                                                 |
+| C-2 (tasks empty)                            | Critical                              | A4 (operator) + A5 (health endpoint) + A6 (inline cron probe) | Three-layer; A5 path is `/api/v1/health/catalog-drift` (NOT `/admin/`); A6 calls `runDailyDriftProbe(env)` directly from `scheduled()` — no HTTP self-fetch |
+| C-3 (redirect-sunset.test.ts)                | Critical (audit said "doesn't exist") | A3 (verify exists; CI step assert)                            | **Audit was wrong — file exists at `site/tests/build/redirect-sunset.test.ts`**. P6 confirms it runs in CI and documents the playbook.                      |
+| C-4 (canary scope leak)                      | Critical                              | A7                                                            | `<base href>` injection in canary proxy + absolute-link rewrite in wrapped HTML                                                                             |
+| I-1 (passthroughLoader Record<string,T>)     | Important                             | B1                                                            | Single-edit fix, 17+ errors resolve                                                                                                                         |
+| I-2 (Input missing label on /runs, /compare) | Important                             | B2                                                            | 2 callsites                                                                                                                                                 |
+| I-3 (Lucide aria-hidden ~30 errors)          | Important                             | B3 (IconBase) + B4 (migrate icons)                            | Architectural                                                                                                                                               |
+| I-4 (Snippet typing in *.test.svelte.ts)     | Important                             | B5                                                            | `tests/setup-unit.ts` widening                                                                                                                              |
+| I-5 (health.test.ts body unknown)            | Important                             | B6                                                            | Type guard                                                                                                                                                  |
+| I-6 (CommandPalette unused @ts-expect-error) | Important                             | B7                                                            | Trivial                                                                                                                                                     |
+| L-1 (RunDetail.completed_at nullable)        | Latent                                | C1                                                            | Type fix + API change                                                                                                                                       |
+| L-2 (ModelLimitations.LimitationItem dead)   | Latent                                | C2                                                            | Drop dead path                                                                                                                                              |
+| L-3 (empty-state UX)                         | Latent                                | C3 (atom) + C4 (callsites)                                    | New `<EmptyState>` atom                                                                                                                                     |
+| M-1 (wrangler.toml stale comment)            | Minor                                 | D1                                                            | One-line edit                                                                                                                                               |
+| M-2 (TaskDetailPanel unused CSS)             | Minor                                 | D2                                                            | CSS pruning                                                                                                                                                 |
+| T-1 (OG WASM cold-init flake)                | Test                                  | E1                                                            | `beforeAll` warmup                                                                                                                                          |
+| (catalog-drift invariant)                    | Test                                  | E2                                                            | New CI test                                                                                                                                                 |
+| (visual-regression baseline)                 | Test                                  | E3                                                            | Ubuntu workflow                                                                                                                                             |
+| (DNS playbook)                               | Pre-flip                              | F1, F2, F3                                                    | Documentation only                                                                                                                                          |
+| D-1 (custom domain flip)                     | FINAL                                 | G1, G2, G3                                                    | **Held until user trigger**                                                                                                                                 |
 
 **Prior plans:**
+
 - `docs/superpowers/plans/2026-04-30-p5-5-cutover.md` (P5.5 — completed; cutover live)
 - `docs/superpowers/plans/2026-04-29-p5-4-live-and-polish.md` (P5.4 — completed; SSE + DO live)
 - `docs/superpowers/plans/2026-04-28-p5-3-cross-cuts.md` (P5.3 — completed; 8 cross-cut surfaces)
@@ -95,6 +96,7 @@
 - `docs/superpowers/plans/2026-04-27-p5-1-foundation-leaderboard.md` (P5.1 — completed; foundation)
 
 **Out of scope:**
+
 - P7+ structured-data per-page schemas (Article, Dataset, SoftwareApplication) — deferred from P5.5
 - P7+ FTS5 contentless → explicit-content migration (option (a) above) — only if per-column snippets become a UX need
 - P7+ RUM regression alerting (Workers Analytics Engine + alarm)
@@ -109,84 +111,84 @@
 
 ### New files
 
-| Path | Responsibility |
-|------|----------------|
-| `site/migrations/0004_snippet_text.sql` | Add `snippet_text TEXT` column to `results`; backfill from existing `compile_errors_json` + `failure_reasons_json`; rewrite `results_fts` triggers to write the value (not derive on the fly). |
-| `site/src/lib/components/ui/IconBase.svelte` | Shared SVG container component. Receives `viewBox`, `size`, optional `label`, and a children snippet for the inner SVG markup. Owns the `aria-hidden` / `role="img"` + `aria-label` switch. All 25+ Lucide icons delegate to it. |
-| `site/src/lib/components/ui/IconBase.test.svelte.ts` | Unit test: `aria-hidden="true"` when no label; `role="img" aria-label="..."` when label set; `width`/`height` reflect `size`; viewBox passes through. |
-| `site/src/lib/components/ui/EmptyState.svelte` | Empty-state atom: title, body slot, optional CTA `<a>` slot. Used by /tasks, /limitations, /runs (filter-empty), /compare (no-selection), /models/<slug>/limitations. |
-| `site/src/lib/components/ui/EmptyState.test.svelte.ts` | Unit test: renders title; renders body slot; CTA slot renders only when href provided; aria-labelledby ties heading to region. |
-| `site/src/routes/api/v1/health/catalog-drift/+server.ts` | New read-only health endpoint (NOT under `/admin/` because every admin endpoint requires `verifySignedRequest` — verified across `keys/`, `keys/[id]/`, `catalog/models/`, `catalog/pricing/`, `catalog/task-sets/`). Path-namespace is `/api/v1/health/*`: read-only, operator-friendly, auto-exempt from rate limiting (the rate limiter at `hooks.server.ts:71` only gates `WRITE_METHODS`). Returns `{ tasks_referenced: N, tasks_in_catalog: M, drift: N > M, drift_count: N - M, generated_at: ISO }`. |
-| `site/tests/api/health-catalog-drift.test.ts` | Worker-pool test: seeds 5 results referencing 3 task IDs but 1 row in `tasks`; asserts response shape; asserts drift = true when N > M, false when N = M. Uses the established `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)` pattern from `cloudflare:test` (verified used by `tests/fts.test.ts`, `tests/signature.test.ts`, etc.) — NOT a fictional `tests/helpers/migrations` module. |
-| `site/migrations/0005_catalog_health.sql` | Create `catalog_health` table: `(drift_detected_at TEXT, tasks_referenced INTEGER, tasks_in_catalog INTEGER)`. Single-row table — UPSERT pattern. Cron writes; admin endpoint reads. |
-| `site/src/lib/server/canary-scope.ts` | Pure helpers: `injectBaseHref(html: string, sha: string): string` (inserts `<base href="/_canary/<sha>/">` into `<head>`; idempotent if a `<base>` tag already exists for the same sha) and `rewriteAbsoluteLinks(html: string, sha: string): string` (rewrites `href="/foo"` → `href="/_canary/<sha>/foo"` for internal absolute paths only — external `https://`, protocol-relative `//`, mailto/tel/data/javascript URIs, and already-canary paths pass through unchanged). Pure string transforms; unit-testable without spinning the proxy. |
-| `site/src/lib/server/canary-scope.test.ts` | Unit tests: (a) `injectBaseHref` — with `<head>` present (insertion point), without `<head>` (graceful no-op or `<html><head>...</head></html>` synthesis), idempotency when `<base>` already present; (b) `rewriteAbsoluteLinks` — internal `/foo`, internal `/foo?x=1` (query preserved), root `/`, external `https://github.com/...` (unchanged), protocol-relative `//cdn.example.com/...` (unchanged), `mailto:`, `tel:`, `javascript:`, `data:` (all unchanged), already-canary `/_canary/<sha>/foo` (idempotent — unchanged), `href` with double quotes vs single quotes vs no quotes (cover the parsing cases the regex must handle), case sensitivity of `HREF=`. |
-| `site/tests/api/canary-scope.test.ts` | Worker-pool integration test: `GET /_canary/<sha>/leaderboard` returns 200 with HTML body containing `<base href="/_canary/<sha>/">`; absolute `<a href="/runs">` in the wrapped HTML emerges as `<a href="/_canary/<sha>/runs">`; external `<a href="https://github.com/...">` is preserved unchanged. Hits the full proxy round-trip end-to-end. |
-| `site/tests/build/catalog-drift-invariant.test.ts` | CI invariant: queries production endpoint at build time (only when `CI_PROD_PROBE=1`); fails if drift > 0. Off by default — enabled in a dedicated GitHub workflow that runs daily, not per-PR. |
-| `site/tests/build/og-wasm-warmup.test.ts` | Documents the warmup pattern; asserts that `og` import resolves (smoke). The actual warmup lives in `tests/api/og-*.test.ts` `beforeAll`. |
-| `site/scripts/verify-domain-flip.sh` | Operator script (Phase F2): curl-tests both old (workers.dev) and new (custom domain) domains post-flip. Asserts 200 on `/`, correct canonical URL, sitemap reachable, X-Robots-Tag absent. **NOT executed in this plan** — staged for Phase G. |
+| Path                                                     | Responsibility                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/migrations/0004_snippet_text.sql`                  | Add `snippet_text TEXT` column to `results`; backfill from existing `compile_errors_json` + `failure_reasons_json`; rewrite `results_fts` triggers to write the value (not derive on the fly).                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `site/src/lib/components/ui/IconBase.svelte`             | Shared SVG container component. Receives `viewBox`, `size`, optional `label`, and a children snippet for the inner SVG markup. Owns the `aria-hidden` / `role="img"` + `aria-label` switch. All 25+ Lucide icons delegate to it.                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `site/src/lib/components/ui/IconBase.test.svelte.ts`     | Unit test: `aria-hidden="true"` when no label; `role="img" aria-label="..."` when label set; `width`/`height` reflect `size`; viewBox passes through.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `site/src/lib/components/ui/EmptyState.svelte`           | Empty-state atom: title, body slot, optional CTA `<a>` slot. Used by /tasks, /limitations, /runs (filter-empty), /compare (no-selection), /models/<slug>/limitations.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `site/src/lib/components/ui/EmptyState.test.svelte.ts`   | Unit test: renders title; renders body slot; CTA slot renders only when href provided; aria-labelledby ties heading to region.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `site/src/routes/api/v1/health/catalog-drift/+server.ts` | New read-only health endpoint (NOT under `/admin/` because every admin endpoint requires `verifySignedRequest` — verified across `keys/`, `keys/[id]/`, `catalog/models/`, `catalog/pricing/`, `catalog/task-sets/`). Path-namespace is `/api/v1/health/*`: read-only, operator-friendly, auto-exempt from rate limiting (the rate limiter at `hooks.server.ts:71` only gates `WRITE_METHODS`). Returns `{ tasks_referenced: N, tasks_in_catalog: M, drift: N > M, drift_count: N - M, generated_at: ISO }`.                                                                                                                                                               |
+| `site/tests/api/health-catalog-drift.test.ts`            | Worker-pool test: seeds 5 results referencing 3 task IDs but 1 row in `tasks`; asserts response shape; asserts drift = true when N > M, false when N = M. Uses the established `applyD1Migrations(env.DB, env.TEST_MIGRATIONS)` pattern from `cloudflare:test` (verified used by `tests/fts.test.ts`, `tests/signature.test.ts`, etc.) — NOT a fictional `tests/helpers/migrations` module.                                                                                                                                                                                                                                                                                |
+| `site/migrations/0005_catalog_health.sql`                | Create `catalog_health` table: `(drift_detected_at TEXT, tasks_referenced INTEGER, tasks_in_catalog INTEGER)`. Single-row table — UPSERT pattern. Cron writes; admin endpoint reads.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `site/src/lib/server/canary-scope.ts`                    | Pure helpers: `injectBaseHref(html: string, sha: string): string` (inserts `<base href="/_canary/<sha>/">` into `<head>`; idempotent if a `<base>` tag already exists for the same sha) and `rewriteAbsoluteLinks(html: string, sha: string): string` (rewrites `href="/foo"` → `href="/_canary/<sha>/foo"` for internal absolute paths only — external `https://`, protocol-relative `//`, mailto/tel/data/javascript URIs, and already-canary paths pass through unchanged). Pure string transforms; unit-testable without spinning the proxy.                                                                                                                           |
+| `site/src/lib/server/canary-scope.test.ts`               | Unit tests: (a) `injectBaseHref` — with `<head>` present (insertion point), without `<head>` (graceful no-op or `<html><head>...</head></html>` synthesis), idempotency when `<base>` already present; (b) `rewriteAbsoluteLinks` — internal `/foo`, internal `/foo?x=1` (query preserved), root `/`, external `https://github.com/...` (unchanged), protocol-relative `//cdn.example.com/...` (unchanged), `mailto:`, `tel:`, `javascript:`, `data:` (all unchanged), already-canary `/_canary/<sha>/foo` (idempotent — unchanged), `href` with double quotes vs single quotes vs no quotes (cover the parsing cases the regex must handle), case sensitivity of `HREF=`. |
+| `site/tests/api/canary-scope.test.ts`                    | Worker-pool integration test: `GET /_canary/<sha>/leaderboard` returns 200 with HTML body containing `<base href="/_canary/<sha>/">`; absolute `<a href="/runs">` in the wrapped HTML emerges as `<a href="/_canary/<sha>/runs">`; external `<a href="https://github.com/...">` is preserved unchanged. Hits the full proxy round-trip end-to-end.                                                                                                                                                                                                                                                                                                                         |
+| `site/tests/build/catalog-drift-invariant.test.ts`       | CI invariant: queries production endpoint at build time (only when `CI_PROD_PROBE=1`); fails if drift > 0. Off by default — enabled in a dedicated GitHub workflow that runs daily, not per-PR.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `site/tests/build/og-wasm-warmup.test.ts`                | Documents the warmup pattern; asserts that `og` import resolves (smoke). The actual warmup lives in `tests/api/og-*.test.ts` `beforeAll`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `site/scripts/verify-domain-flip.sh`                     | Operator script (Phase F2): curl-tests both old (workers.dev) and new (custom domain) domains post-flip. Asserts 200 on `/`, correct canonical URL, sitemap reachable, X-Robots-Tag absent. **NOT executed in this plan** — staged for Phase G.                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ### Modified files
 
-| Path | Change |
-|------|--------|
-| `site/src/lib/components/domain/SearchResultRow.svelte` | Null-snippet guard: `function sanitizeSnippet(s: string \| null): string { if (!s) return ''; return s.replace(/<(?!\/?mark>)[^>]*>/g, ''); }`; `safe = $derived(sanitizeSnippet(item.snippet))` (no .replace on null); `{@html safe}` unchanged. |
-| `site/src/lib/shared/api-types.ts` | `SearchResultItem.snippet: string` → `string \| null`; `RunDetail.completed_at: string` → `string \| null`; `LimitationItem` interface deleted (dead code, see C2). |
-| `site/src/routes/api/v1/runs/[id]/+server.ts` | Emit `completed_at: null` (not `''`) when run not yet finished. Mirror change in any other endpoint that returns `''` for a nullable timestamp. |
-| `site/src/lib/server/loader-helpers.ts` | `passthroughLoader<TKey extends string, TVal>(opts: { resultKey: TKey; ... })` → returns `Promise<{[K in TKey]: TVal}>` (default `TKey = 'data'`). Single edit; consumer code unchanged. |
-| `site/src/routes/_canary/[sha]/[...path]/+page.server.ts` | After fetching wrapped HTML, run `injectBaseHref(html, sha)` then `rewriteAbsoluteLinks(html, sha)` before returning to the page component. The wrapped iframe then renders scope-locked content. (No `+page.svelte` change needed — the existing `<iframe srcdoc={data.wrappedHtml}>` is preserved.) |
-| `site/src/routes/runs/+page.svelte` | Add `label="Model slug"` (or `labelHidden: true`) to `<Input ...>` at line ~144. |
-| `site/src/routes/compare/+page.svelte` | Add `label="Model slug"` to `<Input ...>` at line ~78. |
-| `site/src/lib/components/domain/TaskDetailPanel.svelte` | Remove unused `.attempt.pass` and `.attempt.fail` selectors (lines ~125–126); they are not referenced in the markup. Confirm via `npm run build` — Svelte CSS-warning gone. |
-| `site/src/routes/tasks/+page.svelte` | `if filteredRows.length === 0` block uses `<EmptyState>` with route-specific messaging: "Task catalog populates after `centralgauge sync-catalog --apply`. If you're an operator, see `docs/site/operations.md`." |
-| `site/src/routes/limitations/+page.svelte` | `if items.length === 0` uses `<EmptyState>` with body "Limitations are derived from compile errors and accumulate as runs land. None observed yet." |
-| `site/src/routes/models/[slug]/limitations/+page.svelte` | (if exists per audit; verify) — uses `<EmptyState>`. |
-| `site/src/lib/components/ui/icons/Activity.svelte` | Refactor to wrap `<IconBase>`. (Pattern: 25+ icons all change.) |
-| `site/src/lib/components/ui/icons/AlertCircle.svelte` | Same refactor. |
-| `site/src/lib/components/ui/icons/AlertTriangle.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Check.svelte` | Same. |
-| `site/src/lib/components/ui/icons/CheckCircle.svelte` | Same. |
-| `site/src/lib/components/ui/icons/ChevronDown.svelte` | Same. |
-| `site/src/lib/components/ui/icons/ChevronRight.svelte` | Same. |
-| `site/src/lib/components/ui/icons/ChevronUp.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Code.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Command.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Copy.svelte` | Same. |
-| `site/src/lib/components/ui/icons/CornerDownLeft.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Download.svelte` | Same. |
-| `site/src/lib/components/ui/icons/ExternalLink.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Eye.svelte` | Same. |
-| `site/src/lib/components/ui/icons/GitCompare.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Github.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Image.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Info.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Layers.svelte` | Same. |
-| `site/src/lib/components/ui/icons/ListChecks.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Lock.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Maximize2.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Minimize2.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Moon.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Search.svelte` | Same. |
-| `site/src/lib/components/ui/icons/SearchX.svelte` | Same. |
-| `site/src/lib/components/ui/icons/Sun.svelte` | Same. |
-| `site/src/lib/components/ui/icons/X.svelte` | Same. |
-| `site/tests/api/health.test.ts` | Tighten `body` narrowing: `const body = (await resp.json()) as { ok: boolean; service: string; now: string };` or zod parse. |
-| `site/src/lib/components/domain/CommandPalette.test.svelte.ts` | Remove unused `@ts-expect-error` on lines 23 and 60 — the `global.fetch = ...` pattern is type-correct under modern jsdom typings. |
-| `site/tests/setup-unit.ts` | Widen Snippet typing: add a type-erase helper for SNIPPET_PROPS so `*.test.svelte.ts` consumers don't need per-test casts. |
-| `site/wrangler.toml` | Update `LeaderboardBroadcaster is in-memory only` comment block (lines 61–66) — clarify that P5.4 added persistence. |
-| `site/tests/api/og-images.test.ts` | Add a single `beforeAll` to the existing top-level `describe` (all OG tests live in this one file — verified `ls tests/api/og-*` returns only `og-images.test.ts`): render a throwaway image so the `@cf-wasm/og` ~600ms cold-init is paid once per test isolate. |
-| `site/src/hooks.server.ts` | Extend the existing `scheduled` handler. On `event.cron === '0 3 * * *'`, dispatch to `runDailyDriftProbe(env)` (imported from `src/cron/catalog-drift.ts`) via `ctx.waitUntil(...)`. No HTTP self-fetch — the drift query runs inline against `env.DB`. No new endpoint, no shared secret, no rate-limit interaction. |
-| `site/wrangler.toml` | Add second cron entry: `crons = ["0 2 * * *", "0 3 * * *"]` (catalog-drift probe at 03:00 UTC, 1 hour after the existing backup cron). |
-| `site/src/cron/catalog-drift.ts` | New module exporting `runDailyDriftProbe(env: { DB: D1Database }): Promise<void>`. Inline drift query (same SQL as the `/api/v1/health/catalog-drift` endpoint) → if `drift_count > 0`, INSERT into `catalog_health`. No HTTP indirection. Mirrors the existing `src/cron/nightly-backup.ts` pattern (verified at `hooks.server.ts:5`). |
-| `docs/site/architecture.md` | Update FTS5 section to document the precomputed `snippet_text` column; add catalog-drift section. |
-| `docs/site/operations.md` | Add §"Catalog drift detection" with operator runbook; add §"Custom-domain flip playbook" with Phase F/G content; add §"Visual-regression baseline first-capture"; add §"OG WASM warmup invariant" note. |
-| `site/CONTRIBUTING.md` | Add P6 lessons section: "When adding a new D1 migration that fixes a production bug, prefer additive (new column) over destructive (rebuild). When adding loose generic helpers, use literal-typed generics not Record<string, T>." |
-| `site/CHANGELOG.md` | Add P6 entry. |
+| Path                                                           | Change                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `site/src/lib/components/domain/SearchResultRow.svelte`        | Null-snippet guard: `function sanitizeSnippet(s: string \| null): string { if (!s) return ''; return s.replace(/<(?!\/?mark>)[^>]*>/g, ''); }`; `safe = $derived(sanitizeSnippet(item.snippet))` (no .replace on null); `{@html safe}` unchanged.                                                                                       |
+| `site/src/lib/shared/api-types.ts`                             | `SearchResultItem.snippet: string` → `string \| null`; `RunDetail.completed_at: string` → `string \| null`; `LimitationItem` interface deleted (dead code, see C2).                                                                                                                                                                     |
+| `site/src/routes/api/v1/runs/[id]/+server.ts`                  | Emit `completed_at: null` (not `''`) when run not yet finished. Mirror change in any other endpoint that returns `''` for a nullable timestamp.                                                                                                                                                                                         |
+| `site/src/lib/server/loader-helpers.ts`                        | `passthroughLoader<TKey extends string, TVal>(opts: { resultKey: TKey; ... })` → returns `Promise<{[K in TKey]: TVal}>` (default `TKey = 'data'`). Single edit; consumer code unchanged.                                                                                                                                                |
+| `site/src/routes/_canary/[sha]/[...path]/+page.server.ts`      | After fetching wrapped HTML, run `injectBaseHref(html, sha)` then `rewriteAbsoluteLinks(html, sha)` before returning to the page component. The wrapped iframe then renders scope-locked content. (No `+page.svelte` change needed — the existing `<iframe srcdoc={data.wrappedHtml}>` is preserved.)                                   |
+| `site/src/routes/runs/+page.svelte`                            | Add `label="Model slug"` (or `labelHidden: true`) to `<Input ...>` at line ~144.                                                                                                                                                                                                                                                        |
+| `site/src/routes/compare/+page.svelte`                         | Add `label="Model slug"` to `<Input ...>` at line ~78.                                                                                                                                                                                                                                                                                  |
+| `site/src/lib/components/domain/TaskDetailPanel.svelte`        | Remove unused `.attempt.pass` and `.attempt.fail` selectors (lines ~125–126); they are not referenced in the markup. Confirm via `npm run build` — Svelte CSS-warning gone.                                                                                                                                                             |
+| `site/src/routes/tasks/+page.svelte`                           | `if filteredRows.length === 0` block uses `<EmptyState>` with route-specific messaging: "Task catalog populates after `centralgauge sync-catalog --apply`. If you're an operator, see `docs/site/operations.md`."                                                                                                                       |
+| `site/src/routes/limitations/+page.svelte`                     | `if items.length === 0` uses `<EmptyState>` with body "Limitations are derived from compile errors and accumulate as runs land. None observed yet."                                                                                                                                                                                     |
+| `site/src/routes/models/[slug]/limitations/+page.svelte`       | (if exists per audit; verify) — uses `<EmptyState>`.                                                                                                                                                                                                                                                                                    |
+| `site/src/lib/components/ui/icons/Activity.svelte`             | Refactor to wrap `<IconBase>`. (Pattern: 25+ icons all change.)                                                                                                                                                                                                                                                                         |
+| `site/src/lib/components/ui/icons/AlertCircle.svelte`          | Same refactor.                                                                                                                                                                                                                                                                                                                          |
+| `site/src/lib/components/ui/icons/AlertTriangle.svelte`        | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Check.svelte`                | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/CheckCircle.svelte`          | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/ChevronDown.svelte`          | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/ChevronRight.svelte`         | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/ChevronUp.svelte`            | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Code.svelte`                 | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Command.svelte`              | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Copy.svelte`                 | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/CornerDownLeft.svelte`       | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Download.svelte`             | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/ExternalLink.svelte`         | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Eye.svelte`                  | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/GitCompare.svelte`           | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Github.svelte`               | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Image.svelte`                | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Info.svelte`                 | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Layers.svelte`               | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/ListChecks.svelte`           | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Lock.svelte`                 | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Maximize2.svelte`            | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Minimize2.svelte`            | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Moon.svelte`                 | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Search.svelte`               | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/SearchX.svelte`              | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/Sun.svelte`                  | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/src/lib/components/ui/icons/X.svelte`                    | Same.                                                                                                                                                                                                                                                                                                                                   |
+| `site/tests/api/health.test.ts`                                | Tighten `body` narrowing: `const body = (await resp.json()) as { ok: boolean; service: string; now: string };` or zod parse.                                                                                                                                                                                                            |
+| `site/src/lib/components/domain/CommandPalette.test.svelte.ts` | Remove unused `@ts-expect-error` on lines 23 and 60 — the `global.fetch = ...` pattern is type-correct under modern jsdom typings.                                                                                                                                                                                                      |
+| `site/tests/setup-unit.ts`                                     | Widen Snippet typing: add a type-erase helper for SNIPPET_PROPS so `*.test.svelte.ts` consumers don't need per-test casts.                                                                                                                                                                                                              |
+| `site/wrangler.toml`                                           | Update `LeaderboardBroadcaster is in-memory only` comment block (lines 61–66) — clarify that P5.4 added persistence.                                                                                                                                                                                                                    |
+| `site/tests/api/og-images.test.ts`                             | Add a single `beforeAll` to the existing top-level `describe` (all OG tests live in this one file — verified `ls tests/api/og-*` returns only `og-images.test.ts`): render a throwaway image so the `@cf-wasm/og` ~600ms cold-init is paid once per test isolate.                                                                       |
+| `site/src/hooks.server.ts`                                     | Extend the existing `scheduled` handler. On `event.cron === '0 3 * * *'`, dispatch to `runDailyDriftProbe(env)` (imported from `src/cron/catalog-drift.ts`) via `ctx.waitUntil(...)`. No HTTP self-fetch — the drift query runs inline against `env.DB`. No new endpoint, no shared secret, no rate-limit interaction.                  |
+| `site/wrangler.toml`                                           | Add second cron entry: `crons = ["0 2 * * *", "0 3 * * *"]` (catalog-drift probe at 03:00 UTC, 1 hour after the existing backup cron).                                                                                                                                                                                                  |
+| `site/src/cron/catalog-drift.ts`                               | New module exporting `runDailyDriftProbe(env: { DB: D1Database }): Promise<void>`. Inline drift query (same SQL as the `/api/v1/health/catalog-drift` endpoint) → if `drift_count > 0`, INSERT into `catalog_health`. No HTTP indirection. Mirrors the existing `src/cron/nightly-backup.ts` pattern (verified at `hooks.server.ts:5`). |
+| `docs/site/architecture.md`                                    | Update FTS5 section to document the precomputed `snippet_text` column; add catalog-drift section.                                                                                                                                                                                                                                       |
+| `docs/site/operations.md`                                      | Add §"Catalog drift detection" with operator runbook; add §"Custom-domain flip playbook" with Phase F/G content; add §"Visual-regression baseline first-capture"; add §"OG WASM warmup invariant" note.                                                                                                                                 |
+| `site/CONTRIBUTING.md`                                         | Add P6 lessons section: "When adding a new D1 migration that fixes a production bug, prefer additive (new column) over destructive (rebuild). When adding loose generic helpers, use literal-typed generics not Record<string, T>."                                                                                                     |
+| `site/CHANGELOG.md`                                            | Add P6 entry.                                                                                                                                                                                                                                                                                                                           |
 
 ### Deleted files
 
-| Path | Reason |
-|------|--------|
+| Path   | Reason                                                                                                                                                                             |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | (none) | P6 is additive + corrective; no file deletions. The audit's `LimitationItem` interface is removed but the type lives inside `api-types.ts` — type-deletion only, no file deletion. |
 
 ### Out of scope (deferred to P7+)
@@ -206,11 +208,13 @@ Lays the groundwork for production correctness. Each task addresses a specific a
 ### Task A1: Hotfix `/search` HTTP 500 — null-snippet guard in `SearchResultRow.svelte`
 
 **Files:**
+
 - Modify: `site/src/lib/components/domain/SearchResultRow.svelte`
 - Modify: `site/src/lib/shared/api-types.ts`
 - Modify: `site/src/lib/components/domain/SearchResultRow.test.svelte.ts`
 
 The audit confirms `/search` returns HTTP 500 in production. Root cause:
+
 1. FTS5 contentless mode (`migrations/0002_fts.sql:5`) makes `snippet()` return `NULL`.
 2. `SearchResultRow.svelte:18` does `s.replace(...)` — crashes on null.
 3. `SearchResultItem.snippet: string` (api-types.ts:358) is a type lie.
@@ -247,44 +251,44 @@ export interface SearchResultItem {
 Add a new test case to the existing describe block (preserve existing tests):
 
 ```ts
-import { render } from '@testing-library/svelte';
-import { describe, it, expect } from 'vitest';
-import SearchResultRow from './SearchResultRow.svelte';
+import { render } from "@testing-library/svelte";
+import { describe, expect, it } from "vitest";
+import SearchResultRow from "./SearchResultRow.svelte";
 
-describe('SearchResultRow', () => {
+describe("SearchResultRow", () => {
   // ... existing tests (do not modify) ...
 
-  it('renders without crashing when snippet is null', () => {
+  it("renders without crashing when snippet is null", () => {
     const item = {
       result_id: 1,
-      run_id: 'run-1',
-      task_id: 'CG-AL-E001',
-      model_slug: 'sonnet-4-7',
-      started_at: '2026-04-28T00:00:00Z',
+      run_id: "run-1",
+      task_id: "CG-AL-E001",
+      model_slug: "sonnet-4-7",
+      started_at: "2026-04-28T00:00:00Z",
       snippet: null,
     };
     const { container } = render(SearchResultRow, { props: { item } });
     // Snippet paragraph renders empty, but the row itself renders.
-    const p = container.querySelector('p.snippet');
+    const p = container.querySelector("p.snippet");
     expect(p).not.toBeNull();
-    expect(p?.textContent).toBe('');
+    expect(p?.textContent).toBe("");
     // The header (task/model/run links) still renders.
-    expect(container.querySelector('a.task')).not.toBeNull();
+    expect(container.querySelector("a.task")).not.toBeNull();
   });
 
-  it('still sanitizes script tags when snippet is non-null', () => {
+  it("still sanitizes script tags when snippet is non-null", () => {
     const item = {
       result_id: 1,
-      run_id: 'run-1',
-      task_id: 'CG-AL-E001',
-      model_slug: 'sonnet-4-7',
-      started_at: '2026-04-28T00:00:00Z',
-      snippet: '<mark>ok</mark><script>x</script>',
+      run_id: "run-1",
+      task_id: "CG-AL-E001",
+      model_slug: "sonnet-4-7",
+      started_at: "2026-04-28T00:00:00Z",
+      snippet: "<mark>ok</mark><script>x</script>",
     };
     const { container } = render(SearchResultRow, { props: { item } });
-    const p = container.querySelector('p.snippet');
-    expect(p?.innerHTML).toContain('<mark>ok</mark>');
-    expect(p?.innerHTML).not.toContain('<script>');
+    const p = container.querySelector("p.snippet");
+    expect(p?.innerHTML).toContain("<mark>ok</mark>");
+    expect(p?.innerHTML).not.toContain("<script>");
   });
 });
 ```
@@ -372,6 +376,7 @@ git -C /u/Git/CentralGauge add \
 ### Task A2: FTS5 schema — precomputed `snippet_text` column on `results`
 
 **Files:**
+
 - Create: `site/migrations/0004_snippet_text.sql`
 - Modify: `site/src/routes/api/v1/search/+server.ts`
 
@@ -476,8 +481,12 @@ Non-trivial logic deserves dedicated tests (today there are zero tests for the r
  * snippet() returns NULL for contentless tables. See P6 plan A2 design
  * rationale.
  */
-export function applyMarkHighlighting(text: string, tokens: string[], maxLen = 200): string {
-  if (!text) return '';
+export function applyMarkHighlighting(
+  text: string,
+  tokens: string[],
+  maxLen = 200,
+): string {
+  if (!text) return "";
   // Find earliest match in text (case-insensitive); center window there.
   let earliest = -1;
   const lowerText = text.toLowerCase();
@@ -489,17 +498,21 @@ export function applyMarkHighlighting(text: string, tokens: string[], maxLen = 2
   if (text.length > maxLen) {
     const start = earliest === -1 ? 0 : Math.max(0, earliest - 30);
     const end = Math.min(text.length, start + maxLen);
-    window = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+    window = (start > 0 ? "…" : "") + text.slice(start, end) +
+      (end < text.length ? "…" : "");
   }
   // Escape HTML in the window first; then wrap exact (case-insensitive) token matches.
   const escaped = window
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
   let result = escaped;
   for (const t of tokens) {
-    const escTok = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp(escTok, 'gi'), (m) => `<mark>${m}</mark>`);
+    const escTok = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(
+      new RegExp(escTok, "gi"),
+      (m) => `<mark>${m}</mark>`,
+    );
   }
   return result;
 }
@@ -508,73 +521,80 @@ export function applyMarkHighlighting(text: string, tokens: string[], maxLen = 2
 Add `site/src/lib/server/search-highlight.test.ts`:
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { applyMarkHighlighting } from './search-highlight';
+import { describe, expect, it } from "vitest";
+import { applyMarkHighlighting } from "./search-highlight";
 
-describe('applyMarkHighlighting', () => {
-  it('returns empty string for empty input', () => {
-    expect(applyMarkHighlighting('', ['foo'])).toBe('');
+describe("applyMarkHighlighting", () => {
+  it("returns empty string for empty input", () => {
+    expect(applyMarkHighlighting("", ["foo"])).toBe("");
   });
 
-  it('returns escaped text unchanged when no tokens match', () => {
-    expect(applyMarkHighlighting('hello world', ['xyz'])).toBe('hello world');
+  it("returns escaped text unchanged when no tokens match", () => {
+    expect(applyMarkHighlighting("hello world", ["xyz"])).toBe("hello world");
   });
 
-  it('wraps a literal match with <mark>', () => {
-    expect(applyMarkHighlighting('hello world', ['world'])).toBe('hello <mark>world</mark>');
+  it("wraps a literal match with <mark>", () => {
+    expect(applyMarkHighlighting("hello world", ["world"])).toBe(
+      "hello <mark>world</mark>",
+    );
   });
 
-  it('wraps case-insensitively but preserves source case', () => {
-    expect(applyMarkHighlighting('Hello World', ['world'])).toBe('Hello <mark>World</mark>');
+  it("wraps case-insensitively but preserves source case", () => {
+    expect(applyMarkHighlighting("Hello World", ["world"])).toBe(
+      "Hello <mark>World</mark>",
+    );
   });
 
-  it('HTML-escapes the text BEFORE wrapping', () => {
+  it("HTML-escapes the text BEFORE wrapping", () => {
     // Adversarial: query text is already escaped inside the source.
     // Make sure the caller cannot inject <script> by matching escaped-form text.
-    const out = applyMarkHighlighting('<script>alert(1)</script>', ['script']);
-    expect(out).not.toContain('<script>');     // raw < > are escaped
-    expect(out).toContain('&lt;');
-    expect(out).toContain('<mark>script</mark>'); // mark wraps the literal token
+    const out = applyMarkHighlighting("<script>alert(1)</script>", ["script"]);
+    expect(out).not.toContain("<script>"); // raw < > are escaped
+    expect(out).toContain("&lt;");
+    expect(out).toContain("<mark>script</mark>"); // mark wraps the literal token
   });
 
-  it('treats regex-metachar tokens as literals (no regex injection)', () => {
+  it("treats regex-metachar tokens as literals (no regex injection)", () => {
     // ".*" must match the literal ".*" — not "any chars".
-    const out = applyMarkHighlighting('foo.*bar', ['.*']);
-    expect(out).toBe('foo<mark>.*</mark>bar');
+    const out = applyMarkHighlighting("foo.*bar", [".*"]);
+    expect(out).toBe("foo<mark>.*</mark>bar");
   });
 
-  it('handles parens and brackets in tokens', () => {
-    const out = applyMarkHighlighting('AL0132 (E001)', ['(E001)']);
-    expect(out).toContain('<mark>(E001)</mark>');
+  it("handles parens and brackets in tokens", () => {
+    const out = applyMarkHighlighting("AL0132 (E001)", ["(E001)"]);
+    expect(out).toContain("<mark>(E001)</mark>");
   });
 
-  it('handles unicode tokens (multibyte boundary)', () => {
-    const out = applyMarkHighlighting('café résumé', ['résumé']);
-    expect(out).toContain('<mark>résumé</mark>');
+  it("handles unicode tokens (multibyte boundary)", () => {
+    const out = applyMarkHighlighting("café résumé", ["résumé"]);
+    expect(out).toContain("<mark>résumé</mark>");
   });
 
-  it('truncates around the first match with ellipsis when text exceeds maxLen', () => {
-    const long = 'x'.repeat(500) + ' MATCHTOKEN ' + 'y'.repeat(500);
-    const out = applyMarkHighlighting(long, ['MATCHTOKEN'], 100);
-    expect(out.length).toBeLessThan(200);   // tight bound; allow for ellipsis + <mark>
-    expect(out).toContain('<mark>MATCHTOKEN</mark>');
-    expect(out).toMatch(/^…/);  // leading ellipsis
-    expect(out).toMatch(/…$/);  // trailing ellipsis
+  it("truncates around the first match with ellipsis when text exceeds maxLen", () => {
+    const long = "x".repeat(500) + " MATCHTOKEN " + "y".repeat(500);
+    const out = applyMarkHighlighting(long, ["MATCHTOKEN"], 100);
+    expect(out.length).toBeLessThan(200); // tight bound; allow for ellipsis + <mark>
+    expect(out).toContain("<mark>MATCHTOKEN</mark>");
+    expect(out).toMatch(/^…/); // leading ellipsis
+    expect(out).toMatch(/…$/); // trailing ellipsis
   });
 
-  it('starts from index 0 when no token matches and text is long', () => {
-    const long = 'x'.repeat(500);
-    const out = applyMarkHighlighting(long, ['nope'], 100);
+  it("starts from index 0 when no token matches and text is long", () => {
+    const long = "x".repeat(500);
+    const out = applyMarkHighlighting(long, ["nope"], 100);
     expect(out).not.toMatch(/^…/);
     expect(out).toMatch(/…$/);
-    expect(out.startsWith('xxx')).toBe(true);
+    expect(out.startsWith("xxx")).toBe(true);
   });
 
-  it('handles multiple tokens', () => {
-    const out = applyMarkHighlighting('alpha bravo charlie', ['alpha', 'charlie']);
-    expect(out).toContain('<mark>alpha</mark>');
-    expect(out).toContain('<mark>charlie</mark>');
-    expect(out).not.toContain('<mark>bravo</mark>');
+  it("handles multiple tokens", () => {
+    const out = applyMarkHighlighting("alpha bravo charlie", [
+      "alpha",
+      "charlie",
+    ]);
+    expect(out).toContain("<mark>alpha</mark>");
+    expect(out).toContain("<mark>charlie</mark>");
+    expect(out).not.toContain("<mark>bravo</mark>");
   });
 });
 ```
@@ -584,30 +604,36 @@ describe('applyMarkHighlighting', () => {
 The endpoint imports the extracted helper, drops the FTS column reads (`compile_errors_text`/`failure_reasons_text` are NULL on contentless schema and unused by the UI — verified `SearchResultRow.svelte` only renders `task_id`/`model_slug`/`run_id`/`started_at`/`snippet`).
 
 ```ts
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { applyMarkHighlighting } from '$lib/server/search-highlight';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { applyMarkHighlighting } from "$lib/server/search-highlight";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const q = (url.searchParams.get('q') ?? '').trim();
-    if (!q) throw new ApiError(400, 'missing_query', 'q is required');
-    if (q.length > 200) throw new ApiError(400, 'query_too_long', 'q must be ≤ 200 chars');
+    const q = (url.searchParams.get("q") ?? "").trim();
+    if (!q) throw new ApiError(400, "missing_query", "q is required");
+    if (q.length > 200) {
+      throw new ApiError(400, "query_too_long", "q must be ≤ 200 chars");
+    }
 
     const tokens = q.split(/\s+/).filter(Boolean);
     const matchExpr = tokens
-      .map((t) => `"${t.replace(/"/g, '')}"`)
-      .join(' ');
+      .map((t) => `"${t.replace(/"/g, "")}"`)
+      .join(" ");
 
     // Note: FTS columns (compile_errors_text, failure_reasons_text) are NULL
     // under contentless mode and are NOT rendered by SearchResultRow.svelte —
     // dropped from the projection (P6 IM-7).
     const rows = await getAll<{
-      result_id: number; run_id: string; task_id: string;
-      model_slug: string; started_at: string; snippet_text: string | null;
+      result_id: number;
+      run_id: string;
+      task_id: string;
+      model_slug: string;
+      started_at: string;
+      snippet_text: string | null;
     }>(
       env.DB,
       `SELECT r.id AS result_id, r.run_id, r.task_id,
@@ -630,7 +656,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       task_id: r.task_id,
       model_slug: r.model_slug,
       started_at: r.started_at,
-      snippet: r.snippet_text === null ? null : applyMarkHighlighting(r.snippet_text, tokens, 200),
+      snippet: r.snippet_text === null
+        ? null
+        : applyMarkHighlighting(r.snippet_text, tokens, 200),
     }));
 
     return cachedJson(request, { query: q, data });
@@ -685,6 +713,7 @@ git -C /u/Git/CentralGauge add \
 ### Task A3: Wire `redirect-sunset.test.ts` (and the rest of `tests/build/`) into CI
 
 **Files:**
+
 - Modify: `.github/workflows/site-ci.yml`
 - Modify: `site/CONTRIBUTING.md` (operator playbook)
 
@@ -765,6 +794,7 @@ git -C /u/Git/CentralGauge add \
 ### Task A4: Backfill `tasks` table — operator action `centralgauge sync-catalog --apply`
 
 **Files:**
+
 - Modify: `docs/site/operations.md` (operator runbook)
 
 The audit confirms `tasks` is empty in production despite 1135 result rows referencing task IDs. This is an operator action (run a CLI command), not a code change. This task documents it; A5 + A6 add detection/prevention.
@@ -808,7 +838,7 @@ Expected: `data: [...]` array non-empty. If still empty, escalate.
 
 Append a section:
 
-```markdown
+````markdown
 ## Catalog drift remediation
 
 ### Symptom
@@ -833,6 +863,7 @@ To check manually:
 ```bash
 curl -s 'https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift'
 ```
+````
 
 Expected response: `{"tasks_referenced": 38, "tasks_in_catalog": 38, "drift": false, ...}`.
 
@@ -849,19 +880,20 @@ curl -s 'https://centralgauge.sshadows.workers.dev/api/v1/tasks?set=current' | j
 ```
 
 Expected: > 0.
-```
 
+````
 - [ ] **Step 4: Stage**
 
 ```bash
 git -C /u/Git/CentralGauge add docs/site/operations.md
-```
+````
 
 ---
 
 ### Task A5: Health endpoint `/api/v1/health/catalog-drift`
 
 **Files:**
+
 - Create: `site/src/routes/api/v1/health/catalog-drift/+server.ts`
 - Create: `site/tests/api/health-catalog-drift.test.ts`
 
@@ -874,78 +906,114 @@ Read-only endpoint that surfaces drift on demand. Path-namespace choice: `/api/v
 Use the established `applyD1Migrations` pattern from `cloudflare:test` (verified used in `tests/fts.test.ts`, `tests/signature.test.ts`, `tests/cron/nightly-backup.test.ts`, `tests/utils/seed-fixtures.test.ts`, `tests/server/model-aggregates.test.ts`). NOT a fictional `tests/helpers/migrations` import.
 
 ```ts
-import { env, SELF, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
 
-describe('GET /api/v1/health/catalog-drift', () => {
+describe("GET /api/v1/health/catalog-drift", () => {
   beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
-    await env.DB.prepare('DELETE FROM results').run();
-    await env.DB.prepare('DELETE FROM tasks').run();
-    await env.DB.prepare('DELETE FROM runs').run();
-    await env.DB.prepare('DELETE FROM models').run();
-    await env.DB.prepare('DELETE FROM task_sets').run();
+    await env.DB.prepare("DELETE FROM results").run();
+    await env.DB.prepare("DELETE FROM tasks").run();
+    await env.DB.prepare("DELETE FROM runs").run();
+    await env.DB.prepare("DELETE FROM models").run();
+    await env.DB.prepare("DELETE FROM task_sets").run();
   });
 
   async function seedRun(taskIds: string[], catalogIds: string[]) {
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES('h1', '2026-01-01T00:00:00Z', ${catalogIds.length}, 1)`),
-      env.DB.prepare(`INSERT INTO models(slug, display_name, api_model_id, family_slug, generation, added_at) VALUES('m1', 'Model 1', 'm1', 'f1', 1, '2026-01-01T00:00:00Z')`),
-      env.DB.prepare(`INSERT INTO runs(id, model_id, tier, status, machine_id, task_set_hash, pricing_version, started_at) VALUES('run1', 1, 'verified', 'completed', 'mach1', 'h1', '2026-01-01', '2026-01-01T00:00:00Z')`),
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES('h1', '2026-01-01T00:00:00Z', ${catalogIds.length}, 1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(slug, display_name, api_model_id, family_slug, generation, added_at) VALUES('m1', 'Model 1', 'm1', 'f1', 1, '2026-01-01T00:00:00Z')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id, model_id, tier, status, machine_id, task_set_hash, pricing_version, started_at) VALUES('run1', 1, 'verified', 'completed', 'mach1', 'h1', '2026-01-01', '2026-01-01T00:00:00Z')`,
+      ),
     ]);
     for (const tid of catalogIds) {
-      await env.DB.prepare(`INSERT INTO tasks(id, difficulty, content_hash, task_set_hash) VALUES(?, 'easy', 'ch1', 'h1')`).bind(tid).run();
+      await env.DB.prepare(
+        `INSERT INTO tasks(id, difficulty, content_hash, task_set_hash) VALUES(?, 'easy', 'ch1', 'h1')`,
+      ).bind(tid).run();
     }
     for (const tid of taskIds) {
-      await env.DB.prepare(`INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success) VALUES('run1', ?, 1, 1, 1, 1)`).bind(tid).run();
+      await env.DB.prepare(
+        `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success) VALUES('run1', ?, 1, 1, 1, 1)`,
+      ).bind(tid).run();
     }
   }
 
-  it('returns drift=false when every task_id in results is in tasks', async () => {
-    await seedRun(['T1', 'T2', 'T3'], ['T1', 'T2', 'T3']);
-    const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
+  it("returns drift=false when every task_id in results is in tasks", async () => {
+    await seedRun(["T1", "T2", "T3"], ["T1", "T2", "T3"]);
+    const res = await SELF.fetch(
+      "http://localhost/api/v1/health/catalog-drift",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { tasks_referenced: number; tasks_in_catalog: number; drift: boolean; drift_count: number };
+    const body = await res.json() as {
+      tasks_referenced: number;
+      tasks_in_catalog: number;
+      drift: boolean;
+      drift_count: number;
+    };
     expect(body.tasks_referenced).toBe(3);
     expect(body.tasks_in_catalog).toBe(3);
     expect(body.drift).toBe(false);
     expect(body.drift_count).toBe(0);
   });
 
-  it('returns drift=true when results reference tasks not in catalog', async () => {
-    await seedRun(['T1', 'T2', 'T3'], ['T1']);
-    const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
-    const body = await res.json() as { tasks_referenced: number; tasks_in_catalog: number; drift: boolean; drift_count: number };
+  it("returns drift=true when results reference tasks not in catalog", async () => {
+    await seedRun(["T1", "T2", "T3"], ["T1"]);
+    const res = await SELF.fetch(
+      "http://localhost/api/v1/health/catalog-drift",
+    );
+    const body = await res.json() as {
+      tasks_referenced: number;
+      tasks_in_catalog: number;
+      drift: boolean;
+      drift_count: number;
+    };
     expect(body.tasks_referenced).toBe(3);
     expect(body.tasks_in_catalog).toBe(1);
     expect(body.drift).toBe(true);
     expect(body.drift_count).toBe(2);
   });
 
-  it('returns drift=false when both tables are empty (clean install)', async () => {
-    const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
-    const body = await res.json() as { tasks_referenced: number; tasks_in_catalog: number; drift: boolean };
+  it("returns drift=false when both tables are empty (clean install)", async () => {
+    const res = await SELF.fetch(
+      "http://localhost/api/v1/health/catalog-drift",
+    );
+    const body = await res.json() as {
+      tasks_referenced: number;
+      tasks_in_catalog: number;
+      drift: boolean;
+    };
     expect(body.tasks_referenced).toBe(0);
     expect(body.tasks_in_catalog).toBe(0);
     expect(body.drift).toBe(false);
   });
 
-  it('emits ISO 8601 generated_at', async () => {
-    const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
+  it("emits ISO 8601 generated_at", async () => {
+    const res = await SELF.fetch(
+      "http://localhost/api/v1/health/catalog-drift",
+    );
     const body = await res.json() as { generated_at: string };
     expect(body.generated_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
-  it('returns content-type application/json', async () => {
-    const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
-    expect(res.headers.get('content-type')).toMatch(/application\/json/);
+  it("returns content-type application/json", async () => {
+    const res = await SELF.fetch(
+      "http://localhost/api/v1/health/catalog-drift",
+    );
+    expect(res.headers.get("content-type")).toMatch(/application\/json/);
   });
 
-  it('GETs are NOT rate-limited (sanity — verify hooks.server.ts:71 only gates WRITE_METHODS)', async () => {
+  it("GETs are NOT rate-limited (sanity — verify hooks.server.ts:71 only gates WRITE_METHODS)", async () => {
     // Hammer the endpoint 70x in a row (exceeds the 60/60 ratelimit binding limit).
     // GETs should pass through because shouldLimit = WRITE_METHODS.has(method) && path.startsWith('/api/').
     for (let i = 0; i < 70; i++) {
-      const res = await SELF.fetch('http://localhost/api/v1/health/catalog-drift');
+      const res = await SELF.fetch(
+        "http://localhost/api/v1/health/catalog-drift",
+      );
       expect(res.status).toBe(200);
     }
   });
@@ -963,8 +1031,8 @@ Expected: 6 failures — endpoint not implemented.
 - [ ] **Step 3: Implement `site/src/routes/api/v1/health/catalog-drift/+server.ts`**
 
 ```ts
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 /**
  * Catalog drift probe (read-only health endpoint).
@@ -983,14 +1051,18 @@ import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
  * and operator-friendly, so it belongs alongside the existing health surface.
  */
 export const GET: RequestHandler = async ({ platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
     const refRow = await db.prepare(
-      `SELECT COUNT(DISTINCT task_id) AS n FROM results`
+      `SELECT COUNT(DISTINCT task_id) AS n FROM results`,
     ).first<{ n: number }>();
     const catRow = await db.prepare(
-      `SELECT COUNT(*) AS n FROM tasks`
+      `SELECT COUNT(*) AS n FROM tasks`,
     ).first<{ n: number }>();
 
     const tasks_referenced = refRow?.n ?? 0;
@@ -1033,6 +1105,7 @@ git -C /u/Git/CentralGauge add \
 ### Task A6: Daily catalog-drift cron probe (inline — no HTTP indirection)
 
 **Files:**
+
 - Create: `site/migrations/0005_catalog_health.sql`
 - Create: `site/src/cron/catalog-drift.ts`
 - Create: `site/tests/cron/catalog-drift.test.ts`
@@ -1107,7 +1180,12 @@ export async function runDailyDriftProbe(env: DriftEnv): Promise<void> {
     await env.DB.prepare(
       `INSERT INTO catalog_health(drift_detected_at, tasks_referenced, tasks_in_catalog, drift_count) VALUES(?, ?, ?, ?)`,
     )
-      .bind(new Date().toISOString(), tasks_referenced, tasks_in_catalog, drift_count)
+      .bind(
+        new Date().toISOString(),
+        tasks_referenced,
+        tasks_in_catalog,
+        drift_count,
+      )
       .run();
   }
 }
@@ -1118,14 +1196,14 @@ export async function runDailyDriftProbe(env: DriftEnv): Promise<void> {
 Extend the existing `scheduled` handler (currently dispatches to `runNightlyBackup`). Branch on `controller.cron`:
 
 ```ts
-import type { Handle } from '@sveltejs/kit';
-import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
-import { resetIdCounter } from '$lib/client/use-id';
-import { isCanary } from '$lib/server/canary';
-import { runNightlyBackup } from './cron/nightly-backup';
-import { runDailyDriftProbe } from './cron/catalog-drift';   // P6 A6
+import type { Handle } from "@sveltejs/kit";
+import { isRateLimited, type RateLimitBinding } from "$lib/server/rate-limit";
+import { resetIdCounter } from "$lib/client/use-id";
+import { isCanary } from "$lib/server/canary";
+import { runNightlyBackup } from "./cron/nightly-backup";
+import { runDailyDriftProbe } from "./cron/catalog-drift"; // P6 A6
 
-export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
+export { LeaderboardBroadcaster } from "./do/leaderboard-broadcaster";
 
 interface ScheduledEnv {
   DB: D1Database;
@@ -1137,26 +1215,26 @@ export async function scheduled(
   env: ScheduledEnv,
   ctx: ExecutionContext,
 ): Promise<void> {
-  if (controller.cron === '0 2 * * *') {
+  if (controller.cron === "0 2 * * *") {
     ctx.waitUntil(
       runNightlyBackup(env).catch((err) => {
         console.error(JSON.stringify({
           ts: new Date().toISOString(),
-          level: 'error',
-          msg: 'nightly_backup_failed',
+          level: "error",
+          msg: "nightly_backup_failed",
           err: err instanceof Error ? err.message : String(err),
         }));
       }),
     );
     return;
   }
-  if (controller.cron === '0 3 * * *') {
+  if (controller.cron === "0 3 * * *") {
     ctx.waitUntil(
       runDailyDriftProbe(env).catch((err) => {
         console.error(JSON.stringify({
           ts: new Date().toISOString(),
-          level: 'error',
-          msg: 'catalog_drift_probe_failed',
+          level: "error",
+          msg: "catalog_drift_probe_failed",
           err: err instanceof Error ? err.message : String(err),
         }));
       }),
@@ -1181,57 +1259,77 @@ crons = ["0 2 * * *", "0 3 * * *"]
 Add `site/tests/cron/catalog-drift.test.ts` (sibling pattern to `tests/cron/nightly-backup.test.ts` which already uses `applyD1Migrations`):
 
 ```ts
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeEach } from 'vitest';
-import { runDailyDriftProbe } from '../../src/cron/catalog-drift';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeEach, describe, expect, it } from "vitest";
+import { runDailyDriftProbe } from "../../src/cron/catalog-drift";
 
-describe('runDailyDriftProbe', () => {
+describe("runDailyDriftProbe", () => {
   beforeEach(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
-    await env.DB.prepare('DELETE FROM catalog_health').run();
-    await env.DB.prepare('DELETE FROM results').run();
-    await env.DB.prepare('DELETE FROM tasks').run();
-    await env.DB.prepare('DELETE FROM runs').run();
-    await env.DB.prepare('DELETE FROM models').run();
-    await env.DB.prepare('DELETE FROM task_sets').run();
+    await env.DB.prepare("DELETE FROM catalog_health").run();
+    await env.DB.prepare("DELETE FROM results").run();
+    await env.DB.prepare("DELETE FROM tasks").run();
+    await env.DB.prepare("DELETE FROM runs").run();
+    await env.DB.prepare("DELETE FROM models").run();
+    await env.DB.prepare("DELETE FROM task_sets").run();
   });
 
   async function seedDrift(referenced: number, inCatalog: number) {
     await env.DB.batch([
-      env.DB.prepare(`INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES('h1', '2026-01-01T00:00:00Z', ${inCatalog}, 1)`),
-      env.DB.prepare(`INSERT INTO models(slug, display_name, api_model_id, family_slug, generation, added_at) VALUES('m1', 'Model 1', 'm1', 'f1', 1, '2026-01-01T00:00:00Z')`),
-      env.DB.prepare(`INSERT INTO runs(id, model_id, tier, status, machine_id, task_set_hash, pricing_version, started_at) VALUES('run1', 1, 'verified', 'completed', 'mach1', 'h1', '2026-01-01', '2026-01-01T00:00:00Z')`),
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES('h1', '2026-01-01T00:00:00Z', ${inCatalog}, 1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(slug, display_name, api_model_id, family_slug, generation, added_at) VALUES('m1', 'Model 1', 'm1', 'f1', 1, '2026-01-01T00:00:00Z')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id, model_id, tier, status, machine_id, task_set_hash, pricing_version, started_at) VALUES('run1', 1, 'verified', 'completed', 'mach1', 'h1', '2026-01-01', '2026-01-01T00:00:00Z')`,
+      ),
     ]);
     for (let i = 0; i < inCatalog; i++) {
-      await env.DB.prepare(`INSERT INTO tasks(id, difficulty, content_hash, task_set_hash) VALUES(?, 'easy', 'ch1', 'h1')`).bind(`T${i}`).run();
+      await env.DB.prepare(
+        `INSERT INTO tasks(id, difficulty, content_hash, task_set_hash) VALUES(?, 'easy', 'ch1', 'h1')`,
+      ).bind(`T${i}`).run();
     }
     for (let i = 0; i < referenced; i++) {
-      await env.DB.prepare(`INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success) VALUES('run1', ?, 1, 1, 1, 1)`).bind(`T${i}`).run();
+      await env.DB.prepare(
+        `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success) VALUES('run1', ?, 1, 1, 1, 1)`,
+      ).bind(`T${i}`).run();
     }
   }
 
-  it('writes a catalog_health row when drift > 0', async () => {
+  it("writes a catalog_health row when drift > 0", async () => {
     await seedDrift(5, 2);
     await runDailyDriftProbe(env);
     const rows = await env.DB.prepare(
       `SELECT tasks_referenced, tasks_in_catalog, drift_count FROM catalog_health`,
-    ).all<{ tasks_referenced: number; tasks_in_catalog: number; drift_count: number }>();
+    ).all<
+      {
+        tasks_referenced: number;
+        tasks_in_catalog: number;
+        drift_count: number;
+      }
+    >();
     expect(rows.results.length).toBe(1);
     expect(rows.results[0].tasks_referenced).toBe(5);
     expect(rows.results[0].tasks_in_catalog).toBe(2);
     expect(rows.results[0].drift_count).toBe(3);
   });
 
-  it('does NOT write a catalog_health row when drift = 0', async () => {
+  it("does NOT write a catalog_health row when drift = 0", async () => {
     await seedDrift(3, 3);
     await runDailyDriftProbe(env);
-    const rows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM catalog_health`).first<{ n: number }>();
+    const rows = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM catalog_health`,
+    ).first<{ n: number }>();
     expect(rows?.n ?? 0).toBe(0);
   });
 
-  it('does NOT write a catalog_health row when both tables empty', async () => {
+  it("does NOT write a catalog_health row when both tables empty", async () => {
     await runDailyDriftProbe(env);
-    const rows = await env.DB.prepare(`SELECT COUNT(*) AS n FROM catalog_health`).first<{ n: number }>();
+    const rows = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM catalog_health`,
+    ).first<{ n: number }>();
     expect(rows?.n ?? 0).toBe(0);
   });
 });
@@ -1261,6 +1359,7 @@ git -C /u/Git/CentralGauge add \
 ### Task A7: Canary scope leak — `<base href>` injection + absolute-link rewrite
 
 **Files:**
+
 - Create: `site/src/lib/server/canary-scope.ts`
 - Create: `site/src/lib/server/canary-scope.test.ts`
 - Modify: `site/src/routes/_canary/[sha]/[...path]/+page.server.ts`
@@ -1269,6 +1368,7 @@ git -C /u/Git/CentralGauge add \
 > **Architect verification:** the existing `_canary/[sha]/[...path]/+page.svelte:21` renders `<iframe srcdoc={data.wrappedHtml}>`. The wrapped `event.fetch(wrapped)` call follows redirects automatically (`redirect: 'follow'` is the default), so any 302 from `/leaderboard` → `/` is resolved server-side BEFORE the HTML reaches the iframe. Server-side `Location` rewriting is therefore moot. The actual leak vector is **link-click navigation INSIDE the iframe**: the user clicks an `<a href="/runs">` and the browser navigates the iframe's top frame to production `/runs`.
 
 > **Design rationale: belt-and-braces fix.** Two complementary transforms applied to the wrapped HTML before it lands in `srcdoc`:
+>
 > 1. **`<base href="/_canary/<sha>/">` injection** — the canonical browser-native primitive for scoping a document's relative URLs. Catches all `<a href="runs">`, `<form action="search">`, etc. without any string surgery on the page body.
 > 2. **Absolute-link rewrite** — `<base>` does NOT affect absolute paths (`<a href="/runs">`). Belt-and-braces: also rewrite `href="/foo"` → `href="/_canary/<sha>/foo"` for internal absolute paths only. Pass-through for external (`https://...`), protocol-relative (`//host`), `mailto:`, `tel:`, `javascript:`, `data:`, and already-canary paths.
 
@@ -1288,96 +1388,106 @@ git -C /u/Git/CentralGauge add \
 - [ ] **Step 1: TDD — write `site/src/lib/server/canary-scope.test.ts`**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { injectBaseHref, rewriteAbsoluteLinks } from './canary-scope';
+import { describe, expect, it } from "vitest";
+import { injectBaseHref, rewriteAbsoluteLinks } from "./canary-scope";
 
-describe('injectBaseHref', () => {
-  it('inserts <base> after <head> tag', () => {
-    const html = '<!DOCTYPE html><html><head><title>X</title></head><body></body></html>';
-    const out = injectBaseHref(html, 'sha-abc123');
+describe("injectBaseHref", () => {
+  it("inserts <base> after <head> tag", () => {
+    const html =
+      "<!DOCTYPE html><html><head><title>X</title></head><body></body></html>";
+    const out = injectBaseHref(html, "sha-abc123");
     expect(out).toContain('<base href="/_canary/sha-abc123/">');
     // Inserted as the first child of <head>.
     expect(out).toMatch(/<head>\s*<base href="\/_canary\/sha-abc123\/">/);
   });
 
-  it('is idempotent when matching <base> already present', () => {
-    const html = '<!DOCTYPE html><html><head><base href="/_canary/sha-abc123/"><title>X</title></head><body></body></html>';
-    const out = injectBaseHref(html, 'sha-abc123');
+  it("is idempotent when matching <base> already present", () => {
+    const html =
+      '<!DOCTYPE html><html><head><base href="/_canary/sha-abc123/"><title>X</title></head><body></body></html>';
+    const out = injectBaseHref(html, "sha-abc123");
     // Only one <base> tag.
     expect(out.match(/<base href="\/_canary\/sha-abc123\/">/g)?.length).toBe(1);
   });
 
-  it('replaces a different <base> with the canary one (single-base policy)', () => {
-    const html = '<!DOCTYPE html><html><head><base href="/other/"><title>X</title></head><body></body></html>';
-    const out = injectBaseHref(html, 'sha-abc123');
+  it("replaces a different <base> with the canary one (single-base policy)", () => {
+    const html =
+      '<!DOCTYPE html><html><head><base href="/other/"><title>X</title></head><body></body></html>';
+    const out = injectBaseHref(html, "sha-abc123");
     expect(out).toContain('<base href="/_canary/sha-abc123/">');
     expect(out).not.toContain('<base href="/other/">');
   });
 
-  it('handles HTML without <head> by leaving body unchanged but logging (no throw)', () => {
+  it("handles HTML without <head> by leaving body unchanged but logging (no throw)", () => {
     // Pragmatic: malformed input; do not throw. Return source unchanged.
-    const html = '<p>fragment</p>';
-    expect(() => injectBaseHref(html, 'sha-abc123')).not.toThrow();
+    const html = "<p>fragment</p>";
+    expect(() => injectBaseHref(html, "sha-abc123")).not.toThrow();
   });
 });
 
-describe('rewriteAbsoluteLinks', () => {
+describe("rewriteAbsoluteLinks", () => {
   it('rewrites href="/foo" to href="/_canary/<sha>/foo"', () => {
     const html = '<a href="/foo">x</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toContain('href="/_canary/sha-abc123/foo"');
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toContain(
+      'href="/_canary/sha-abc123/foo"',
+    );
   });
 
-  it('preserves query string', () => {
+  it("preserves query string", () => {
     const html = '<a href="/foo?bar=1">x</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toContain('href="/_canary/sha-abc123/foo?bar=1"');
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toContain(
+      'href="/_canary/sha-abc123/foo?bar=1"',
+    );
   });
 
-  it('rewrites root / to /_canary/<sha>/', () => {
+  it("rewrites root / to /_canary/<sha>/", () => {
     const html = '<a href="/">home</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toContain('href="/_canary/sha-abc123/"');
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toContain(
+      'href="/_canary/sha-abc123/"',
+    );
   });
 
-  it('does NOT rewrite external https URLs', () => {
+  it("does NOT rewrite external https URLs", () => {
     const html = '<a href="https://github.com/anthropics/claude-code">gh</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toBe(html);
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toBe(html);
   });
 
-  it('does NOT rewrite protocol-relative URLs', () => {
+  it("does NOT rewrite protocol-relative URLs", () => {
     const html = '<a href="//cdn.example.com/asset.js">cdn</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toBe(html);
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toBe(html);
   });
 
-  it('does NOT rewrite mailto:, tel:, javascript:, data:', () => {
-    const html = '<a href="mailto:x@y.z">m</a><a href="tel:123">t</a><a href="javascript:void(0)">j</a><a href="data:text/plain,abc">d</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toBe(html);
+  it("does NOT rewrite mailto:, tel:, javascript:, data:", () => {
+    const html =
+      '<a href="mailto:x@y.z">m</a><a href="tel:123">t</a><a href="javascript:void(0)">j</a><a href="data:text/plain,abc">d</a>';
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toBe(html);
   });
 
-  it('does NOT rewrite relative paths', () => {
+  it("does NOT rewrite relative paths", () => {
     const html = '<a href="foo">x</a><a href="../bar">y</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toBe(html);
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toBe(html);
   });
 
-  it('is idempotent — already-canary paths unchanged', () => {
+  it("is idempotent — already-canary paths unchanged", () => {
     const html = '<a href="/_canary/sha-abc123/foo">x</a>';
-    expect(rewriteAbsoluteLinks(html, 'sha-abc123')).toBe(html);
+    expect(rewriteAbsoluteLinks(html, "sha-abc123")).toBe(html);
   });
 
-  it('handles single-quoted href', () => {
+  it("handles single-quoted href", () => {
     const html = "<a href='/foo'>x</a>";
-    const out = rewriteAbsoluteLinks(html, 'sha-abc123');
+    const out = rewriteAbsoluteLinks(html, "sha-abc123");
     expect(out).toContain("href='/_canary/sha-abc123/foo'");
   });
 
-  it('handles HREF= (uppercase) attribute', () => {
+  it("handles HREF= (uppercase) attribute", () => {
     const html = '<a HREF="/foo">x</a>';
-    const out = rewriteAbsoluteLinks(html, 'sha-abc123');
+    const out = rewriteAbsoluteLinks(html, "sha-abc123");
     // Either preserve uppercase or normalize — both acceptable as long as URL is rewritten.
     expect(out.toLowerCase()).toContain('href="/_canary/sha-abc123/foo"');
   });
 
-  it('rewrites multiple links in the same document', () => {
+  it("rewrites multiple links in the same document", () => {
     const html = '<a href="/a">1</a><a href="/b">2</a><a href="/c">3</a>';
-    const out = rewriteAbsoluteLinks(html, 'sha-abc123');
+    const out = rewriteAbsoluteLinks(html, "sha-abc123");
     expect(out).toContain('href="/_canary/sha-abc123/a"');
     expect(out).toContain('href="/_canary/sha-abc123/b"');
     expect(out).toContain('href="/_canary/sha-abc123/c"');
@@ -1438,10 +1548,10 @@ export function rewriteAbsoluteLinks(html: string, sha: string): string {
     /\b(href|HREF|Href)=(["'])([^"']+)(["'])/g,
     (full, attr: string, q1: string, value: string, q2: string) => {
       // Skip non-internal-absolute paths.
-      if (!value.startsWith('/')) return full;            // relative
-      if (value.startsWith('//')) return full;             // protocol-relative
-      if (value.startsWith(canaryPrefix)) return full;     // already canary
-      if (value === `/_canary/${sha}`) return full;        // bare canary root
+      if (!value.startsWith("/")) return full; // relative
+      if (value.startsWith("//")) return full; // protocol-relative
+      if (value.startsWith(canaryPrefix)) return full; // already canary
+      if (value === `/_canary/${sha}`) return full; // bare canary root
 
       const newValue = `${canaryPrefix}${value.slice(1)}`;
       return `${attr}=${q1}${newValue}${q2}`;
@@ -1465,10 +1575,10 @@ Expected: green.
 Apply the two transforms before returning to the page component:
 
 ```ts
-import type { PageServerLoad } from './$types';
-import { error } from '@sveltejs/kit';
-import { extractCanaryPath } from '$lib/server/canary';
-import { injectBaseHref, rewriteAbsoluteLinks } from '$lib/server/canary-scope';
+import type { PageServerLoad } from "./$types";
+import { error } from "@sveltejs/kit";
+import { extractCanaryPath } from "$lib/server/canary";
+import { injectBaseHref, rewriteAbsoluteLinks } from "$lib/server/canary-scope";
 
 export const prerender = false;
 export const ssr = true;
@@ -1476,7 +1586,7 @@ export const csr = true;
 
 export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
   const parts = extractCanaryPath(url);
-  if (!parts) throw error(400, 'Invalid canary URL');
+  if (!parts) throw error(400, "Invalid canary URL");
 
   // event.fetch follows redirects automatically (default redirect: 'follow').
   // Any 3xx from the wrapped route is resolved here; we only see the final
@@ -1493,10 +1603,10 @@ export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
   const withBase = injectBaseHref(rawHtml, parts.sha);
   const html = rewriteAbsoluteLinks(withBase, parts.sha);
 
-  const wrappedCache = res.headers.get('cache-control');
+  const wrappedCache = res.headers.get("cache-control");
   setHeaders({
-    'cache-control': wrappedCache ?? 'no-store',
-    'x-canary': '1',
+    "cache-control": wrappedCache ?? "no-store",
+    "x-canary": "1",
   });
   return {
     canary: { sha: parts.sha, path: parts.path },
@@ -1512,19 +1622,23 @@ export const load: PageServerLoad = async ({ url, fetch, setHeaders }) => {
 End-to-end: confirm the served canary HTML has both transforms applied.
 
 ```ts
-import { SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { SELF } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
 
-describe('canary scope: link-click stays inside /_canary/<sha>/', () => {
+describe("canary scope: link-click stays inside /_canary/<sha>/", () => {
   it('serves wrapped HTML with <base href="/_canary/<sha>/">', async () => {
-    const res = await SELF.fetch('http://localhost/_canary/sha-test/leaderboard');
+    const res = await SELF.fetch(
+      "http://localhost/_canary/sha-test/leaderboard",
+    );
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain('<base href="/_canary/sha-test/">');
   });
 
-  it('rewrites internal absolute hrefs to canary scope', async () => {
-    const res = await SELF.fetch('http://localhost/_canary/sha-test/leaderboard');
+  it("rewrites internal absolute hrefs to canary scope", async () => {
+    const res = await SELF.fetch(
+      "http://localhost/_canary/sha-test/leaderboard",
+    );
     const body = await res.text();
     // The leaderboard page links to /runs, /models, etc.; verify all are canary-scoped.
     // (Adjust the asserted hrefs to match real leaderboard markup.)
@@ -1533,19 +1647,21 @@ describe('canary scope: link-click stays inside /_canary/<sha>/', () => {
     expect(body).not.toMatch(/<a [^>]*href="\/runs"/);
   });
 
-  it('preserves external https links unchanged', async () => {
-    const res = await SELF.fetch('http://localhost/_canary/sha-test/about');
+  it("preserves external https links unchanged", async () => {
+    const res = await SELF.fetch("http://localhost/_canary/sha-test/about");
     const body = await res.text();
     // The site's footer/header has a github link; verify it's unchanged.
-    if (body.includes('https://github.com/')) {
+    if (body.includes("https://github.com/")) {
       expect(body).toContain('href="https://github.com/');
     }
   });
 
-  it('the canary banner remains rendered (regression: not stripped by transforms)', async () => {
-    const res = await SELF.fetch('http://localhost/_canary/sha-test/leaderboard');
+  it("the canary banner remains rendered (regression: not stripped by transforms)", async () => {
+    const res = await SELF.fetch(
+      "http://localhost/_canary/sha-test/leaderboard",
+    );
     const body = await res.text();
-    expect(body).toContain('canary-banner');
+    expect(body).toContain("canary-banner");
   });
 });
 ```
@@ -1705,6 +1821,7 @@ Eliminates type debt that the audit identified across 5 routes (`passthroughLoad
 ### Task B1: `passthroughLoader<TKey, TVal>` precise typing
 
 **Files:**
+
 - Modify: `site/src/lib/server/loader-helpers.ts`
 
 The current signature returns `Record<string, T>` — a wide type that requires every consumer to cast back to `{X: T}`. Single-edit fix: literal-typed `TKey extends string` generic.
@@ -1722,10 +1839,10 @@ Expected: ~17 (the audit number; may vary with codebase state).
 - [ ] **Step 2: Modify `site/src/lib/server/loader-helpers.ts`**
 
 ```ts
-import type { ServerLoadEvent } from '@sveltejs/kit';
-import { error } from '@sveltejs/kit';
+import type { ServerLoadEvent } from "@sveltejs/kit";
+import { error } from "@sveltejs/kit";
 
-interface PassthroughOpts<TKey extends string = 'data'> {
+interface PassthroughOpts<TKey extends string = "data"> {
   depTag: string | ((params: Record<string, string>) => string);
   fetchPath: string | ((url: URL, params: Record<string, string>) => string);
   /** When set, only these query params are forwarded to the API; otherwise all are. */
@@ -1768,39 +1885,50 @@ interface PassthroughOpts<TKey extends string = 'data'> {
  * silently matches — no compile error, but the page sees an unexpected
  * shape. Mitigation: always pass `resultKey` explicitly when not 'data'.
  */
-export function passthroughLoader<TVal, TKey extends string = 'data'>(
+export function passthroughLoader<TVal, TKey extends string = "data">(
   opts: PassthroughOpts<TKey>,
 ) {
   // Cast inside the helper — externally the return type is precise.
-  const key = (opts.resultKey ?? 'data') as TKey;
+  const key = (opts.resultKey ?? "data") as TKey;
   return async (event: ServerLoadEvent): Promise<{ [K in TKey]: TVal }> => {
     const { url, params, fetch, setHeaders, depends } = event;
-    const tag = typeof opts.depTag === 'function' ? opts.depTag(params) : opts.depTag;
+    const tag = typeof opts.depTag === "function"
+      ? opts.depTag(params)
+      : opts.depTag;
     depends(tag);
 
-    let path = typeof opts.fetchPath === 'function' ? opts.fetchPath(url, params) : opts.fetchPath;
+    let path = typeof opts.fetchPath === "function"
+      ? opts.fetchPath(url, params)
+      : opts.fetchPath;
     if (opts.forwardParams) {
       const sp = new URLSearchParams();
       for (const k of opts.forwardParams) {
         const v = url.searchParams.get(k);
-        if (v !== null && v !== '') sp.set(k, v);
+        if (v !== null && v !== "") sp.set(k, v);
       }
       const qs = sp.toString();
       if (qs) path += `?${qs}`;
     } else {
       const qs = url.searchParams.toString();
-      if (qs && !path.includes('?')) path += `?${qs}`;
+      if (qs && !path.includes("?")) path += `?${qs}`;
     }
 
     const res = await fetch(path);
     if (!res.ok) {
       let body: unknown;
-      try { body = await res.json(); } catch { body = {}; }
-      throw error(res.status, (body as { error?: string }).error ?? `${path} failed`);
+      try {
+        body = await res.json();
+      } catch {
+        body = {};
+      }
+      throw error(
+        res.status,
+        (body as { error?: string }).error ?? `${path} failed`,
+      );
     }
 
-    const apiCache = res.headers.get('cache-control');
-    if (apiCache) setHeaders({ 'cache-control': apiCache });
+    const apiCache = res.headers.get("cache-control");
+    if (apiCache) setHeaders({ "cache-control": apiCache });
 
     return { [key]: (await res.json()) as TVal } as { [K in TKey]: TVal };
   };
@@ -1834,6 +1962,7 @@ git -C /u/Git/CentralGauge add site/src/lib/server/loader-helpers.ts
 ### Task B2: Add missing `label` props to Input atoms on /runs and /compare
 
 **Files:**
+
 - Modify: `site/src/routes/runs/+page.svelte`
 - Modify: `site/src/routes/compare/+page.svelte`
 
@@ -1876,6 +2005,7 @@ git -C /u/Git/CentralGauge add \
 ### Task B3: Create `IconBase.svelte` — shared SVG container
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/IconBase.svelte`
 - Create: `site/src/lib/components/ui/IconBase.test.svelte.ts`
 
@@ -1886,41 +2016,47 @@ The architectural fix for the Lucide `aria-hidden` Booleanish typing conflict (~
 - [ ] **Step 1: TDD — write `site/src/lib/components/ui/IconBase.test.svelte.ts`**
 
 ```ts
-import { render } from '@testing-library/svelte';
-import { describe, it, expect } from 'vitest';
-import IconBase from './IconBase.svelte';
-import IconBaseTestHarness from './IconBase.test.harness.svelte';
+import { render } from "@testing-library/svelte";
+import { describe, expect, it } from "vitest";
+import IconBase from "./IconBase.svelte";
+import IconBaseTestHarness from "./IconBase.test.harness.svelte";
 
-describe('IconBase', () => {
+describe("IconBase", () => {
   it('emits aria-hidden="true" when no label is provided', () => {
-    const { container } = render(IconBaseTestHarness, { props: { label: undefined } });
-    const svg = container.querySelector('svg');
+    const { container } = render(IconBaseTestHarness, {
+      props: { label: undefined },
+    });
+    const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
-    expect(svg!.getAttribute('aria-hidden')).toBe('true');
-    expect(svg!.getAttribute('role')).toBe(null);
-    expect(svg!.getAttribute('aria-label')).toBe(null);
+    expect(svg!.getAttribute("aria-hidden")).toBe("true");
+    expect(svg!.getAttribute("role")).toBe(null);
+    expect(svg!.getAttribute("aria-label")).toBe(null);
   });
 
   it('emits role="img" + aria-label when label is provided', () => {
-    const { container } = render(IconBaseTestHarness, { props: { label: 'Search icon' } });
-    const svg = container.querySelector('svg');
+    const { container } = render(IconBaseTestHarness, {
+      props: { label: "Search icon" },
+    });
+    const svg = container.querySelector("svg");
     expect(svg).not.toBeNull();
-    expect(svg!.getAttribute('aria-label')).toBe('Search icon');
-    expect(svg!.getAttribute('role')).toBe('img');
-    expect(svg!.getAttribute('aria-hidden')).toBe(null);
+    expect(svg!.getAttribute("aria-label")).toBe("Search icon");
+    expect(svg!.getAttribute("role")).toBe("img");
+    expect(svg!.getAttribute("aria-hidden")).toBe(null);
   });
 
-  it('reflects size on width/height', () => {
+  it("reflects size on width/height", () => {
     const { container } = render(IconBaseTestHarness, { props: { size: 32 } });
-    const svg = container.querySelector('svg');
-    expect(svg!.getAttribute('width')).toBe('32');
-    expect(svg!.getAttribute('height')).toBe('32');
+    const svg = container.querySelector("svg");
+    expect(svg!.getAttribute("width")).toBe("32");
+    expect(svg!.getAttribute("height")).toBe("32");
   });
 
-  it('passes through viewBox', () => {
-    const { container } = render(IconBaseTestHarness, { props: { viewBox: '0 0 16 16' } });
-    const svg = container.querySelector('svg');
-    expect(svg!.getAttribute('viewBox')).toBe('0 0 16 16');
+  it("passes through viewBox", () => {
+    const { container } = render(IconBaseTestHarness, {
+      props: { viewBox: "0 0 16 16" },
+    });
+    const svg = container.querySelector("svg");
+    expect(svg!.getAttribute("viewBox")).toBe("0 0 16 16");
   });
 });
 ```
@@ -2029,6 +2165,7 @@ git -C /u/Git/CentralGauge add \
 ### Task B4: Migrate all 25+ Lucide icons to delegate to IconBase
 
 **Files:**
+
 - Modify: 25+ files in `site/src/lib/components/ui/icons/`
 
 Each icon becomes 4 lines. The `aria-hidden` Booleanish error vanishes.
@@ -2067,6 +2204,7 @@ Each icon becomes 4 lines. The `aria-hidden` Booleanish error vanishes.
 - [ ] **Step 3: Refactor remaining 23 icons identically**
 
 Apply the same pattern to:
+
 - `AlertCircle.svelte`
 - `AlertTriangle.svelte`
 - `Check.svelte`
@@ -2135,6 +2273,7 @@ git -C /u/Git/CentralGauge add site/src/lib/components/ui/icons/
 ### Task B5: Snippet typing helper in `tests/setup-unit.ts` — extend existing mock
 
 **Files:**
+
 - Modify: `site/tests/setup-unit.ts`
 
 > **Architect verification:** the existing `tests/setup-unit.ts:32–52` already vi-mocks `@testing-library/svelte`'s `render` and auto-converts `children`/`header`/`footer` string props to real snippets via `createRawSnippet`. A NEW `renderWithSnippets()` helper would be redundant — extend the existing mock instead. The remaining ~17 typecheck errors in `*.test.svelte.ts` files mostly stem from snippet-typed props with names that aren't in `SNIPPET_PROPS` yet, OR per-call casts on parameterized snippets (`Snippet<[string]>`).
@@ -2165,7 +2304,7 @@ Capture the prop names that appear. For each NEW prop name (not already in `SNIP
 For the rare `Snippet<[string]>` (or other parameterized) cases that the auto-conversion can't handle, append a minimal helper to `setup-unit.ts`:
 
 ```ts
-import type { Snippet } from 'svelte';
+import type { Snippet } from "svelte";
 
 /**
  * Type-erase a value to Snippet<[]>. For per-test escape hatches when a
@@ -2197,6 +2336,7 @@ git -C /u/Git/CentralGauge add site/tests/setup-unit.ts
 ### Task B6: Tighten body narrowing in `tests/api/health.test.ts`
 
 **Files:**
+
 - Modify: `site/tests/api/health.test.ts`
 
 Pre-existing `body unknown` warnings (3 errors). Cast or zod-parse.
@@ -2204,7 +2344,7 @@ Pre-existing `body unknown` warnings (3 errors). Cast or zod-parse.
 - [ ] **Step 1: Modify**
 
 ```ts
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { GET } from "../../src/routes/health/+server";
 
 interface HealthBody {
@@ -2244,6 +2384,7 @@ git -C /u/Git/CentralGauge add site/tests/api/health.test.ts
 ### Task B7: Drop unused `@ts-expect-error` directives in CommandPalette test
 
 **Files:**
+
 - Modify: `site/src/lib/components/domain/CommandPalette.test.svelte.ts`
 
 Trivial — 2 unused directives on lines 23 and 60.
@@ -2254,13 +2395,23 @@ Remove the comment lines:
 
 ```ts
 // @ts-expect-error - jsdom stub
-global.fetch = vi.fn(async () => new Response(JSON.stringify(fakeIndex), { status: 200, headers: { 'content-type': 'application/json' } }));
+global.fetch = vi.fn(async () =>
+  new Response(JSON.stringify(fakeIndex), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })
+);
 ```
 
 becomes:
 
 ```ts
-global.fetch = vi.fn(async () => new Response(JSON.stringify(fakeIndex), { status: 200, headers: { 'content-type': 'application/json' } }));
+global.fetch = vi.fn(async () =>
+  new Response(JSON.stringify(fakeIndex), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })
+);
 ```
 
 (Same edit on line 60.)
@@ -2290,6 +2441,7 @@ cd /u/Git/CentralGauge && git status --short | grep "^[AMD]"
 ```
 
 Expected files (~30):
+
 - M site/src/lib/server/loader-helpers.ts (B1)
 - M site/src/routes/runs/+page.svelte (B2)
 - M site/src/routes/compare/+page.svelte (B2)
@@ -2368,6 +2520,7 @@ Closes the latent interface-drift findings (L-1, L-2, L-3). No production bugs t
 ### Task C1: `RunDetail.completed_at` → `string | null`
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 - Modify: `site/src/routes/api/v1/runs/[id]/+server.ts` (verify; emit null instead of '')
 - Modify: any consumer that reads `completed_at`
@@ -2414,6 +2567,7 @@ git -C /u/Git/CentralGauge add \
 ### Task C2: Drop dead `LimitationItem` interface
 
 **Files:**
+
 - Modify: `site/src/lib/shared/api-types.ts`
 - Modify: any consumer (likely zero — that's why it's dead)
 
@@ -2454,6 +2608,7 @@ git -C /u/Git/CentralGauge add site/src/lib/shared/api-types.ts
 ### Task C3: Create `<EmptyState>` UI atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/EmptyState.svelte`
 - Create: `site/src/lib/components/ui/EmptyState.test.svelte.ts`
 
@@ -2462,32 +2617,44 @@ Reusable empty-state pattern. Title + body + optional CTA.
 - [ ] **Step 1: TDD — `EmptyState.test.svelte.ts`**
 
 ```ts
-import { render } from '@testing-library/svelte';
-import { describe, it, expect } from 'vitest';
-import EmptyState from './EmptyState.svelte';
-import EmptyStateHarness from './EmptyState.test.harness.svelte';
+import { render } from "@testing-library/svelte";
+import { describe, expect, it } from "vitest";
+import EmptyState from "./EmptyState.svelte";
+import EmptyStateHarness from "./EmptyState.test.harness.svelte";
 
-describe('EmptyState', () => {
-  it('renders title', () => {
-    const { container } = render(EmptyStateHarness, { props: { title: 'No tasks yet' } });
-    expect(container.textContent).toContain('No tasks yet');
+describe("EmptyState", () => {
+  it("renders title", () => {
+    const { container } = render(EmptyStateHarness, {
+      props: { title: "No tasks yet" },
+    });
+    expect(container.textContent).toContain("No tasks yet");
   });
 
-  it('renders body slot', () => {
-    const { container } = render(EmptyStateHarness, { props: { title: 'X', body: 'The catalog populates after sync.' } });
-    expect(container.textContent).toContain('The catalog populates after sync.');
+  it("renders body slot", () => {
+    const { container } = render(EmptyStateHarness, {
+      props: { title: "X", body: "The catalog populates after sync." },
+    });
+    expect(container.textContent).toContain(
+      "The catalog populates after sync.",
+    );
   });
 
-  it('renders CTA when href provided', () => {
-    const { container } = render(EmptyStateHarness, { props: { title: 'X', ctaLabel: 'See operator runbook', ctaHref: '/operations' } });
-    const link = container.querySelector('a');
-    expect(link?.getAttribute('href')).toBe('/operations');
-    expect(link?.textContent).toContain('See operator runbook');
+  it("renders CTA when href provided", () => {
+    const { container } = render(EmptyStateHarness, {
+      props: {
+        title: "X",
+        ctaLabel: "See operator runbook",
+        ctaHref: "/operations",
+      },
+    });
+    const link = container.querySelector("a");
+    expect(link?.getAttribute("href")).toBe("/operations");
+    expect(link?.textContent).toContain("See operator runbook");
   });
 
-  it('omits CTA when ctaHref is undefined', () => {
-    const { container } = render(EmptyStateHarness, { props: { title: 'X' } });
-    expect(container.querySelector('a')).toBeNull();
+  it("omits CTA when ctaHref is undefined", () => {
+    const { container } = render(EmptyStateHarness, { props: { title: "X" } });
+    expect(container.querySelector("a")).toBeNull();
   });
 });
 ```
@@ -2588,6 +2755,7 @@ git -C /u/Git/CentralGauge add \
 ### Task C4: Wire `<EmptyState>` into /tasks, /limitations, /runs, /compare
 
 **Files:**
+
 - Modify: `site/src/routes/tasks/+page.svelte`
 - Modify: `site/src/routes/limitations/+page.svelte`
 - Modify: `site/src/routes/runs/+page.svelte` (filter-empty case)
@@ -2707,6 +2875,7 @@ Closes M-1 (wrangler.toml stale comment) and M-2 (TaskDetailPanel unused CSS). P
 ### Task D1: Update wrangler.toml DO storage comment
 
 **Files:**
+
 - Modify: `site/wrangler.toml`
 
 The comment on lines 61–66 says "LeaderboardBroadcaster is in-memory only ... never writes to state.storage". P5.4 added persistence. Comment now contradicts code.
@@ -2749,6 +2918,7 @@ git -C /u/Git/CentralGauge add site/wrangler.toml
 ### Task D2: TaskDetailPanel — remove unused CSS selectors
 
 **Files:**
+
 - Modify: `site/src/lib/components/domain/TaskDetailPanel.svelte`
 
 Lines ~125–126 declare `.attempt.pass` and `.attempt.fail` selectors that aren't referenced in the markup (the markup uses `<AttemptCell>`, which has its own scoped CSS).
@@ -2758,8 +2928,12 @@ Lines ~125–126 declare `.attempt.pass` and `.attempt.fail` selectors that aren
 Find the `<style>` block and remove:
 
 ```css
-.attempt.pass { color: var(--success); }
-.attempt.fail { color: var(--danger); }
+.attempt.pass {
+  color: var(--success);
+}
+.attempt.fail {
+  color: var(--danger);
+}
 ```
 
 - [ ] **Step 2: Verify**
@@ -2781,6 +2955,7 @@ git -C /u/Git/CentralGauge add site/src/lib/components/domain/TaskDetailPanel.sv
 ### Task D3: Cross-doc audit for any other stale references
 
 **Files:**
+
 - Modify: `docs/site/architecture.md`
 - Modify: `docs/site/operations.md`
 - Modify: `docs/site/design-system.md` (if needed)
@@ -2882,6 +3057,7 @@ Closes T-1 (OG WASM cold-init flake), adds catalog-drift CI invariant, captures 
 ### Task E1: OG WASM `beforeAll` warmup
 
 **Files:**
+
 - Modify: `site/tests/api/og-images.test.ts` (single file — verified `ls tests/api/og-*.test.ts` returns only this one file)
 
 `@cf-wasm/og` cold-init is ~600ms per fresh isolate. Under parallel test load this flakes. `beforeAll` warmup at the top-level describe block amortizes the cost across all OG test cases in the same isolate.
@@ -2934,6 +3110,7 @@ git -C /u/Git/CentralGauge add site/tests/api/og-images.test.ts
 ### Task E2: Catalog-drift CI invariant test
 
 **Files:**
+
 - Create: `site/tests/build/catalog-drift-invariant.test.ts`
 
 Optional gate (off by default; on in dedicated daily workflow). When `CI_PROD_PROBE=1`, queries production endpoint at build time; fails if drift > 0.
@@ -2941,15 +3118,16 @@ Optional gate (off by default; on in dedicated daily workflow). When `CI_PROD_PR
 - [ ] **Step 1: Create**
 
 ```ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-const PROBE_URL = 'https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift';
-const ENABLED = process.env.CI_PROD_PROBE === '1';
+const PROBE_URL =
+  "https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift";
+const ENABLED = process.env.CI_PROD_PROBE === "1";
 
-describe('Catalog drift CI invariant', () => {
-  it('production catalog is in sync with results table', async () => {
+describe("Catalog drift CI invariant", () => {
+  it("production catalog is in sync with results table", async () => {
     if (!ENABLED) {
-      console.log('[catalog-drift-invariant] CI_PROD_PROBE != 1, skipping');
+      console.log("[catalog-drift-invariant] CI_PROD_PROBE != 1, skipping");
       return;
     }
     const res = await fetch(PROBE_URL);
@@ -2963,8 +3141,8 @@ describe('Catalog drift CI invariant', () => {
     if (body.drift) {
       throw new Error(
         `[CATALOG DRIFT] tasks_referenced=${body.tasks_referenced}, ` +
-        `tasks_in_catalog=${body.tasks_in_catalog}, drift_count=${body.drift_count}. ` +
-        `Run \`centralgauge sync-catalog --apply\` and re-deploy.`
+          `tasks_in_catalog=${body.tasks_in_catalog}, drift_count=${body.drift_count}. ` +
+          `Run \`centralgauge sync-catalog --apply\` and re-deploy.`,
       );
     }
   });
@@ -2975,7 +3153,7 @@ describe('Catalog drift CI invariant', () => {
 
 In `docs/site/operations.md`, add:
 
-```markdown
+````markdown
 ### Daily catalog-drift CI probe
 
 A dedicated GitHub Actions workflow (`.github/workflows/catalog-drift.yml`)
@@ -2989,7 +3167,7 @@ The workflow file:
 name: Daily catalog drift probe
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: "0 4 * * *"
   workflow_dispatch:
 
 jobs:
@@ -3002,11 +3180,12 @@ jobs:
       - run: cd site && npm ci
       - name: Run catalog-drift invariant
         env:
-          CI_PROD_PROBE: '1'
+          CI_PROD_PROBE: "1"
         run: cd site && npx vitest run --config vitest.build.config.ts tests/build/catalog-drift-invariant.test.ts
 ```
-```
+````
 
+````
 - [ ] **Step 3: Stage**
 
 ```bash
@@ -3014,13 +3193,14 @@ git -C /u/Git/CentralGauge add \
   site/tests/build/catalog-drift-invariant.test.ts \
   docs/site/operations.md
 # (optional: stage the workflow file when adding it)
-```
+````
 
 ---
 
 ### Task E3: Visual-regression baseline first-capture (Ubuntu CI)
 
 **Files:**
+
 - Modify: `docs/site/operations.md` (playbook only — actual capture happens via CI workflow_dispatch)
 
 The P5.4 visual-regression spec captures on chromium; local Windows vs CI Ubuntu have different font rendering. Plan: first baseline is captured on Ubuntu CI via a manual workflow trigger, committed to the repo. Subsequent runs compare.
@@ -3031,7 +3211,7 @@ The P5.4 visual-regression spec captures on chromium; local Windows vs CI Ubuntu
 
 Append to `operations.md`:
 
-```markdown
+````markdown
 ## Visual-regression baseline capture (one-time, Ubuntu CI)
 
 The P5.4 `tests/e2e/visual-regression.spec.ts` captures PNG snapshots of
@@ -3050,6 +3230,7 @@ playbook here; execute when ready.
    ```bash
    cd /u/Git/CentralGauge/site && grep -n "chromium" tests/e2e/visual-regression.spec.ts
    ```
+````
 
 2. Add a manual GitHub Actions workflow (`.github/workflows/visual-regression-baseline.yml`):
 
@@ -3085,13 +3266,13 @@ playbook here; execute when ready.
    development uses `--update-snapshots` only when an intentional UI
    change is being baselined — and the new baseline must be re-captured
    on Ubuntu CI before merging.
-```
 
+````
 - [ ] **Step 2: Stage**
 
 ```bash
 git -C /u/Git/CentralGauge add docs/site/operations.md
-```
+````
 
 ---
 
@@ -3137,13 +3318,14 @@ Comprehensive checklist + operator playbook for the custom-domain flip. **NO cod
 ### Task F1: Pre-flip checklist
 
 **Files:**
+
 - Modify: `docs/site/operations.md`
 
 - [ ] **Step 1: Add a §"Custom-domain flip pre-flight checklist"**
 
 Before flipping the SITE_BASE_URL, confirm:
 
-```markdown
+````markdown
 ## Custom-domain flip pre-flight checklist
 
 Before executing the SITE_BASE_URL change in Phase G, verify ALL of:
@@ -3195,7 +3377,7 @@ Before executing the SITE_BASE_URL change in Phase G, verify ALL of:
 
 - [ ] **Search Console resubmission**: After deploy, submit the new
       sitemap URL to Google Search Console (one-time operator action).
-```
+````
 
 - [ ] **Step 2: Stage**
 
@@ -3208,6 +3390,7 @@ git -C /u/Git/CentralGauge add docs/site/operations.md
 ### Task F2: Verification script `scripts/verify-domain-flip.sh`
 
 **Files:**
+
 - Create: `site/scripts/verify-domain-flip.sh`
 
 Curl-tests both old (workers.dev) and new (custom domain) domains post-flip.
@@ -3312,11 +3495,12 @@ git -C /u/Git/CentralGauge add site/scripts/verify-domain-flip.sh
 ### Task F3: Operator runbook for Phase G
 
 **Files:**
+
 - Modify: `docs/site/operations.md`
 
 - [ ] **Step 1: Append**
 
-```markdown
+````markdown
 ## Custom-domain flip operator runbook (Phase G)
 
 When ready to flip from `centralgauge.sshadows.workers.dev` to a custom
@@ -3342,6 +3526,7 @@ domain:
    [vars]
    SITE_BASE_URL = "https://<domain>"
    ```
+````
 
 2. Run `cd site && npm run build` — verify the new sitemap regenerates
    with `<domain>` URLs.
@@ -3376,13 +3561,13 @@ domain:
    `<domain>`.
 
 4. Update internal docs (CONTRIBUTING.md, README.md) to reference the new domain.
-```
 
+````
 - [ ] **Step 2: Stage**
 
 ```bash
 git -C /u/Git/CentralGauge add docs/site/operations.md
-```
+````
 
 ---
 
@@ -3422,6 +3607,7 @@ EOF
 ### Task G1: Edit `wrangler.toml` `SITE_BASE_URL`
 
 **Files:**
+
 - Modify: `site/wrangler.toml`
 
 - [ ] **Step 1 (HELD): Edit SITE_BASE_URL**
@@ -3493,6 +3679,7 @@ Cloudflare → Analytics → Web Analytics → token → Add `${SITE_BASE_URL_NE
 
 ```markdown
 ## P6.G — Custom-domain flip
+
 - Site moved from `centralgauge.sshadows.workers.dev` to `${SITE_BASE_URL_NEW}`
 - Old domain remains accessible (no redirect at this time; consider a
   Page Rule if SEO juice loss is observed).

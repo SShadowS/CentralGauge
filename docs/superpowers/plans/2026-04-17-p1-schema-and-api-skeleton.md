@@ -15,6 +15,7 @@
 ## Task 1: Scaffold SvelteKit project under `site/`
 
 **Files:**
+
 - Create: `site/package.json`
 - Create: `site/svelte.config.js`
 - Create: `site/vite.config.ts`
@@ -65,31 +66,31 @@
 - [ ] **Step 2: Write `site/svelte.config.js`**
 
 ```javascript
-import adapter from '@sveltejs/adapter-cloudflare';
-import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import adapter from "@sveltejs/adapter-cloudflare";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 export default {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({
-      routes: { include: ['/*'], exclude: ['<all>'] }
+      routes: { include: ["/*"], exclude: ["<all>"] },
     }),
     alias: {
-      '$lib': 'src/lib',
-      '$lib/*': 'src/lib/*'
-    }
-  }
+      "$lib": "src/lib",
+      "$lib/*": "src/lib/*",
+    },
+  },
 };
 ```
 
 - [ ] **Step 3: Write `site/vite.config.ts`**
 
 ```typescript
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [sveltekit()]
+  plugins: [sveltekit()],
 });
 ```
 
@@ -142,7 +143,7 @@ export {};
 `site/src/app.html`:
 
 ```html
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -200,6 +201,7 @@ git commit -m "chore(site): scaffold SvelteKit project for P1 API"
 ## Task 2: Configure Wrangler bindings (D1, R2, KV, DO)
 
 **Files:**
+
 - Create: `site/wrangler.toml`
 - Create: `site/.dev.vars.example`
 
@@ -283,6 +285,7 @@ git commit -m "chore(site): add Wrangler bindings config for D1/R2/KV/DO"
 ## Task 3: Provisioning script + placeholder resolution
 
 **Files:**
+
 - Create: `site/scripts/provision.sh`
 - Create: `site/scripts/README.md`
 
@@ -338,7 +341,7 @@ Make it executable: `chmod +x site/scripts/provision.sh`
 
 - [ ] **Step 2: Write `site/scripts/README.md`**
 
-```markdown
+````markdown
 # Provisioning
 
 One-time setup per Cloudflare environment.
@@ -348,6 +351,7 @@ cd site
 ./scripts/provision.sh production
 ./scripts/provision.sh preview
 ```
+````
 
 This creates the D1 database, KV namespace, and R2 bucket, then patches
 `wrangler.toml` with the generated IDs.
@@ -358,20 +362,21 @@ Run migrations after provisioning:
 npx wrangler d1 migrations apply centralgauge
 npx wrangler d1 migrations apply centralgauge-preview --env preview
 ```
-```
 
+````
 - [ ] **Step 3: Commit**
 
 ```bash
 git add site/scripts/
 git commit -m "chore(site): add one-time provisioning script"
-```
+````
 
 ---
 
 ## Task 4: Vitest + miniflare testing harness
 
 **Files:**
+
 - Create: `site/vitest.config.ts`
 - Create: `site/tests/setup.ts`
 - Create: `site/tests/smoke.test.ts`
@@ -379,21 +384,21 @@ git commit -m "chore(site): add one-time provisioning script"
 - [ ] **Step 1: Write `site/vitest.config.ts`**
 
 ```typescript
-import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
+import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
 
 export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        wrangler: { configPath: './wrangler.toml' },
+        wrangler: { configPath: "./wrangler.toml" },
         miniflare: {
-          compatibilityDate: '2026-04-17',
-          compatibilityFlags: ['nodejs_compat']
-        }
-      }
+          compatibilityDate: "2026-04-17",
+          compatibilityFlags: ["nodejs_compat"],
+        },
+      },
     },
-    include: ['tests/**/*.test.ts']
-  }
+    include: ["tests/**/*.test.ts"],
+  },
 });
 ```
 
@@ -407,19 +412,19 @@ export {};
 - [ ] **Step 3: Write `site/tests/smoke.test.ts`**
 
 ```typescript
-import { env } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { env } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
 
-describe('smoke', () => {
-  it('exposes D1 binding', () => {
+describe("smoke", () => {
+  it("exposes D1 binding", () => {
     expect(env.DB).toBeDefined();
   });
 
-  it('exposes R2 binding', () => {
+  it("exposes R2 binding", () => {
     expect(env.BLOBS).toBeDefined();
   });
 
-  it('exposes KV binding', () => {
+  it("exposes KV binding", () => {
     expect(env.CACHE).toBeDefined();
   });
 });
@@ -442,14 +447,15 @@ git commit -m "test(site): add Vitest + miniflare harness with smoke test"
 ## Task 5: Core D1 schema migration
 
 **Files:**
+
 - Create: `site/migrations/0001_core.sql`
 - Create: `site/tests/migrations.test.ts`
 
 - [ ] **Step 1: Write failing schema introspection test** `site/tests/migrations.test.ts`
 
 ```typescript
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeAll } from 'vitest';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, describe, expect, it } from "vitest";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -457,30 +463,46 @@ beforeAll(async () => {
 
 async function tableNames(): Promise<string[]> {
   const res = await env.DB.prepare(
-    `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
+    `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`,
   ).all();
-  return (res.results as { name: string }[]).map(r => r.name);
+  return (res.results as { name: string }[]).map((r) => r.name);
 }
 
-describe('migration 0001 core schema', () => {
-  it('creates all core tables', async () => {
+describe("migration 0001 core schema", () => {
+  it("creates all core tables", async () => {
     const names = await tableNames();
-    for (const required of [
-      'model_families', 'models', 'task_sets', 'task_categories', 'tasks',
-      'settings_profiles', 'cost_snapshots', 'runs', 'results',
-      'run_verifications', 'shortcomings', 'shortcoming_occurrences',
-      'machine_keys', 'ingest_events'
-    ]) {
+    for (
+      const required of [
+        "model_families",
+        "models",
+        "task_sets",
+        "task_categories",
+        "tasks",
+        "settings_profiles",
+        "cost_snapshots",
+        "runs",
+        "results",
+        "run_verifications",
+        "shortcomings",
+        "shortcoming_occurrences",
+        "machine_keys",
+        "ingest_events",
+      ]
+    ) {
       expect(names).toContain(required);
     }
   });
 
-  it('enforces exactly-one-current task_set', async () => {
-    await env.DB.prepare(`INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 1)`)
-      .bind('hash-a', '2026-01-01T00:00:00Z', 5).run();
+  it("enforces exactly-one-current task_set", async () => {
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 1)`,
+    )
+      .bind("hash-a", "2026-01-01T00:00:00Z", 5).run();
     await expect(
-      env.DB.prepare(`INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 1)`)
-        .bind('hash-b', '2026-01-02T00:00:00Z', 5).run()
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 1)`,
+      )
+        .bind("hash-b", "2026-01-02T00:00:00Z", 5).run(),
     ).rejects.toThrow();
   });
 });
@@ -491,32 +513,35 @@ Also extend `vitest.config.ts` to pass migrations into tests — add to the work
 ```typescript
 // Inside defineWorkersConfig -> poolOptions.workers:
 bindings: {
-  TEST_MIGRATIONS: [] // filled at runtime via readD1Migrations
+  TEST_MIGRATIONS: []; // filled at runtime via readD1Migrations
 }
 ```
 
 Replace the config with this version that loads migrations:
 
 ```typescript
-import { defineWorkersConfig, readD1Migrations } from '@cloudflare/vitest-pool-workers/config';
+import {
+  defineWorkersConfig,
+  readD1Migrations,
+} from "@cloudflare/vitest-pool-workers/config";
 
 export default defineWorkersConfig(async () => {
-  const migrations = await readD1Migrations('./migrations');
+  const migrations = await readD1Migrations("./migrations");
   return {
     test: {
-      setupFiles: ['./tests/setup.ts'],
+      setupFiles: ["./tests/setup.ts"],
       poolOptions: {
         workers: {
-          wrangler: { configPath: './wrangler.toml' },
+          wrangler: { configPath: "./wrangler.toml" },
           miniflare: {
-            compatibilityDate: '2026-04-17',
-            compatibilityFlags: ['nodejs_compat'],
-            bindings: { TEST_MIGRATIONS: migrations }
-          }
-        }
+            compatibilityDate: "2026-04-17",
+            compatibilityFlags: ["nodejs_compat"],
+            bindings: { TEST_MIGRATIONS: migrations },
+          },
+        },
       },
-      include: ['tests/**/*.test.ts']
-    }
+      include: ["tests/**/*.test.ts"],
+    },
   };
 });
 ```
@@ -769,14 +794,15 @@ git commit -m "feat(site): add core D1 schema migration with tests"
 ## Task 6: FTS5 migration + triggers
 
 **Files:**
+
 - Create: `site/migrations/0002_fts.sql`
 - Create: `site/tests/fts.test.ts`
 
 - [ ] **Step 1: Write failing FTS test** `site/tests/fts.test.ts`
 
 ```typescript
-import { env, applyD1Migrations } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { applyD1Migrations, env } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -785,42 +811,60 @@ beforeAll(async () => {
 beforeEach(async () => {
   // Insert minimal prerequisite rows
   await env.DB.batch([
-    env.DB.prepare(`INSERT OR IGNORE INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`),
-    env.DB.prepare(`INSERT OR IGNORE INTO models(id,family_id,slug,api_model_id,display_name) VALUES (1,1,'sonnet-4.7','claude-sonnet-4-7','Sonnet 4.7')`),
-    env.DB.prepare(`INSERT OR IGNORE INTO task_sets(hash,created_at,task_count) VALUES ('ts1','2026-01-01T00:00:00Z',1)`),
-    env.DB.prepare(`INSERT OR IGNORE INTO settings_profiles(hash) VALUES ('sp1')`),
-    env.DB.prepare(`INSERT OR IGNORE INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'test',X'00','ingest','2026-01-01T00:00:00Z')`),
-    env.DB.prepare(`INSERT OR IGNORE INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
-                    VALUES ('run1','ts1',1,'sp1','test','2026-01-01T00:00:00Z','completed','v2026-04','sig','2026-01-01T00:00:00Z',1,X'00')`)
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO models(id,family_id,slug,api_model_id,display_name) VALUES (1,1,'sonnet-4.7','claude-sonnet-4-7','Sonnet 4.7')`,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO task_sets(hash,created_at,task_count) VALUES ('ts1','2026-01-01T00:00:00Z',1)`,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO settings_profiles(hash) VALUES ('sp1')`,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'test',X'00','ingest','2026-01-01T00:00:00Z')`,
+    ),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,status,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+                    VALUES ('run1','ts1',1,'sp1','test','2026-01-01T00:00:00Z','completed','v2026-04','sig','2026-01-01T00:00:00Z',1,X'00')`,
+    ),
   ]);
 });
 
-describe('FTS5 over failures', () => {
-  it('indexes compile errors and finds them by error code', async () => {
+describe("FTS5 over failures", () => {
+  it("indexes compile errors and finds them by error code", async () => {
     await env.DB.prepare(
       `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json, failure_reasons_json)
-       VALUES ('run1','easy/task-1',1,0,0,0,?,?)`
+       VALUES ('run1','easy/task-1',1,0,0,0,?,?)`,
     ).bind(
-      JSON.stringify([{ code: 'AL0132', message: 'session token missing', file: 'x.al', line: 5, column: 1 }]),
-      JSON.stringify(['compile_failed'])
+      JSON.stringify([{
+        code: "AL0132",
+        message: "session token missing",
+        file: "x.al",
+        line: 5,
+        column: 1,
+      }]),
+      JSON.stringify(["compile_failed"]),
     ).run();
 
     const res = await env.DB.prepare(
-      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
-    ).bind('AL0132').all();
+      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`,
+    ).bind("AL0132").all();
 
     expect(res.results.length).toBeGreaterThan(0);
   });
 
-  it('finds rows by failure reason text', async () => {
+  it("finds rows by failure reason text", async () => {
     await env.DB.prepare(
       `INSERT INTO results(run_id, task_id, attempt, passed, score, compile_success, compile_errors_json, failure_reasons_json)
-       VALUES ('run1','easy/task-2',1,0,0,0,'[]',?)`
-    ).bind(JSON.stringify(['test_timeout'])).run();
+       VALUES ('run1','easy/task-2',1,0,0,0,'[]',?)`,
+    ).bind(JSON.stringify(["test_timeout"])).run();
 
     const res = await env.DB.prepare(
-      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`
-    ).bind('timeout').all();
+      `SELECT rowid FROM results_fts WHERE results_fts MATCH ?`,
+    ).bind("timeout").all();
 
     expect(res.results.length).toBeGreaterThan(0);
   });
@@ -898,43 +942,45 @@ git commit -m "feat(site): add FTS5 virtual table over result failures"
 ## Task 7: Canonical JSON serialization
 
 **Files:**
+
 - Create: `site/src/lib/shared/canonical.ts`
 - Create: `site/tests/canonical.test.ts`
 
 - [ ] **Step 1: Write failing test** `site/tests/canonical.test.ts`
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { canonicalJSON } from '../src/lib/shared/canonical';
+import { describe, expect, it } from "vitest";
+import { canonicalJSON } from "../src/lib/shared/canonical";
 
-describe('canonicalJSON', () => {
-  it('sorts keys alphabetically at every depth', () => {
+describe("canonicalJSON", () => {
+  it("sorts keys alphabetically at every depth", () => {
     const a = canonicalJSON({ b: 1, a: 2, nested: { y: 1, x: 2 } });
     expect(a).toBe('{"a":2,"b":1,"nested":{"x":2,"y":1}}');
   });
 
-  it('produces stable output regardless of insertion order', () => {
+  it("produces stable output regardless of insertion order", () => {
     const a = canonicalJSON({ a: 1, b: 2 });
     const b = canonicalJSON({ b: 2, a: 1 });
     expect(a).toBe(b);
   });
 
-  it('handles arrays in order', () => {
-    expect(canonicalJSON([3, 1, 2])).toBe('[3,1,2]');
+  it("handles arrays in order", () => {
+    expect(canonicalJSON([3, 1, 2])).toBe("[3,1,2]");
   });
 
-  it('serializes nested arrays with objects', () => {
+  it("serializes nested arrays with objects", () => {
     expect(canonicalJSON({ results: [{ b: 2, a: 1 }, { a: 3 }] }))
       .toBe('{"results":[{"a":1,"b":2},{"a":3}]}');
   });
 
-  it('throws on non-finite numbers', () => {
+  it("throws on non-finite numbers", () => {
     expect(() => canonicalJSON({ x: NaN })).toThrow();
     expect(() => canonicalJSON({ x: Infinity })).toThrow();
   });
 
-  it('rejects undefined values', () => {
-    expect(() => canonicalJSON({ x: undefined as unknown as number })).toThrow();
+  it("rejects undefined values", () => {
+    expect(() => canonicalJSON({ x: undefined as unknown as number }))
+      .toThrow();
   });
 });
 ```
@@ -958,19 +1004,19 @@ export function canonicalJSON(value: unknown): string {
 }
 
 function serialize(v: unknown): string {
-  if (v === null) return 'null';
-  if (typeof v === 'boolean') return v ? 'true' : 'false';
-  if (typeof v === 'number') {
+  if (v === null) return "null";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number") {
     if (!Number.isFinite(v)) {
-      throw new Error('canonicalJSON: non-finite number is not serializable');
+      throw new Error("canonicalJSON: non-finite number is not serializable");
     }
     return JSON.stringify(v);
   }
-  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === "string") return JSON.stringify(v);
   if (Array.isArray(v)) {
-    return '[' + v.map(serialize).join(',') + ']';
+    return "[" + v.map(serialize).join(",") + "]";
   }
-  if (typeof v === 'object') {
+  if (typeof v === "object") {
     const obj = v as Record<string, unknown>;
     const keys = Object.keys(obj).sort();
     const parts: string[] = [];
@@ -979,9 +1025,9 @@ function serialize(v: unknown): string {
       if (val === undefined) {
         throw new Error(`canonicalJSON: undefined value at key "${k}"`);
       }
-      parts.push(JSON.stringify(k) + ':' + serialize(val));
+      parts.push(JSON.stringify(k) + ":" + serialize(val));
     }
-    return '{' + parts.join(',') + '}';
+    return "{" + parts.join(",") + "}";
   }
   throw new Error(`canonicalJSON: unsupported type ${typeof v}`);
 }
@@ -1004,33 +1050,38 @@ git commit -m "feat(site): add canonical JSON serializer for signed payloads"
 ## Task 8: SHA-256 + hex helpers
 
 **Files:**
+
 - Create: `site/src/lib/shared/hash.ts`
 - Create: `site/tests/hash.test.ts`
 
 - [ ] **Step 1: Write failing test** `site/tests/hash.test.ts`
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { sha256Hex, hexToBytes, bytesToHex } from '../src/lib/shared/hash';
+import { describe, expect, it } from "vitest";
+import { bytesToHex, hexToBytes, sha256Hex } from "../src/lib/shared/hash";
 
-describe('hash helpers', () => {
+describe("hash helpers", () => {
   it('sha256Hex returns known vector for "abc"', async () => {
-    const h = await sha256Hex('abc');
-    expect(h).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    const h = await sha256Hex("abc");
+    expect(h).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
   });
 
-  it('sha256Hex handles Uint8Array input', async () => {
+  it("sha256Hex handles Uint8Array input", async () => {
     const h = await sha256Hex(new Uint8Array([97, 98, 99])); // "abc"
-    expect(h).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    expect(h).toBe(
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    );
   });
 
-  it('hex<->bytes round trips', () => {
+  it("hex<->bytes round trips", () => {
     const bytes = new Uint8Array([0x00, 0xff, 0xab, 0xcd]);
     expect(hexToBytes(bytesToHex(bytes))).toEqual(bytes);
   });
 
-  it('hexToBytes rejects odd-length strings', () => {
-    expect(() => hexToBytes('abc')).toThrow();
+  it("hexToBytes rejects odd-length strings", () => {
+    expect(() => hexToBytes("abc")).toThrow();
   });
 });
 ```
@@ -1044,24 +1095,24 @@ Expected: FAIL — module not found.
 
 ```typescript
 export async function sha256Hex(input: string | Uint8Array): Promise<string> {
-  const bytes = typeof input === 'string'
+  const bytes = typeof input === "string"
     ? new TextEncoder().encode(input)
     : input;
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return bytesToHex(new Uint8Array(digest));
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
-  let out = '';
+  let out = "";
   for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0');
+    out += bytes[i].toString(16).padStart(2, "0");
   }
   return out;
 }
 
 export function hexToBytes(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {
-    throw new Error('hexToBytes: odd-length string');
+    throw new Error("hexToBytes: odd-length string");
   }
   const out = new Uint8Array(hex.length / 2);
   for (let i = 0; i < out.length; i++) {
@@ -1092,43 +1143,44 @@ git commit -m "feat(site): add SHA-256 + hex helpers"
 ## Task 9: Ed25519 sign/verify helpers
 
 **Files:**
+
 - Create: `site/src/lib/shared/ed25519.ts`
 - Create: `site/tests/ed25519.test.ts`
 
 - [ ] **Step 1: Write failing test** `site/tests/ed25519.test.ts`
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { generateKeypair, sign, verify } from '../src/lib/shared/ed25519';
+import { describe, expect, it } from "vitest";
+import { generateKeypair, sign, verify } from "../src/lib/shared/ed25519";
 
-describe('ed25519', () => {
-  it('sign + verify round-trips', async () => {
+describe("ed25519", () => {
+  it("sign + verify round-trips", async () => {
     const { privateKey, publicKey } = await generateKeypair();
-    const message = new TextEncoder().encode('hello world');
+    const message = new TextEncoder().encode("hello world");
     const signature = await sign(message, privateKey);
     expect(await verify(signature, message, publicKey)).toBe(true);
   });
 
-  it('rejects a tampered message', async () => {
+  it("rejects a tampered message", async () => {
     const { privateKey, publicKey } = await generateKeypair();
-    const message = new TextEncoder().encode('hello');
+    const message = new TextEncoder().encode("hello");
     const signature = await sign(message, privateKey);
-    const tampered = new TextEncoder().encode('HELLO');
+    const tampered = new TextEncoder().encode("HELLO");
     expect(await verify(signature, tampered, publicKey)).toBe(false);
   });
 
-  it('rejects a signature from a different key', async () => {
+  it("rejects a signature from a different key", async () => {
     const k1 = await generateKeypair();
     const k2 = await generateKeypair();
-    const message = new TextEncoder().encode('hello');
+    const message = new TextEncoder().encode("hello");
     const signature = await sign(message, k1.privateKey);
     expect(await verify(signature, message, k2.publicKey)).toBe(false);
   });
 
-  it('produces 64-byte signatures and 32-byte public keys', async () => {
+  it("produces 64-byte signatures and 32-byte public keys", async () => {
     const { publicKey } = await generateKeypair();
     expect(publicKey.byteLength).toBe(32);
-    const message = new TextEncoder().encode('test');
+    const message = new TextEncoder().encode("test");
     const { privateKey } = await generateKeypair();
     const signature = await sign(message, privateKey);
     expect(signature.byteLength).toBe(64);
@@ -1144,15 +1196,15 @@ Expected: FAIL — module not found.
 - [ ] **Step 3: Implement `site/src/lib/shared/ed25519.ts`**
 
 ```typescript
-import * as ed from '@noble/ed25519';
-import { sha512 } from '@noble/hashes/sha512';
+import * as ed from "@noble/ed25519";
+import { sha512 } from "@noble/hashes/sha512";
 
 // @noble/ed25519 requires sha512 injection in non-Node runtimes.
 ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
 
 export interface Keypair {
   privateKey: Uint8Array; // 32 bytes
-  publicKey: Uint8Array;  // 32 bytes
+  publicKey: Uint8Array; // 32 bytes
 }
 
 export async function generateKeypair(): Promise<Keypair> {
@@ -1163,7 +1215,7 @@ export async function generateKeypair(): Promise<Keypair> {
 
 export async function sign(
   message: Uint8Array,
-  privateKey: Uint8Array
+  privateKey: Uint8Array,
 ): Promise<Uint8Array> {
   return await ed.signAsync(message, privateKey);
 }
@@ -1171,7 +1223,7 @@ export async function sign(
 export async function verify(
   signature: Uint8Array,
   message: Uint8Array,
-  publicKey: Uint8Array
+  publicKey: Uint8Array,
 ): Promise<boolean> {
   try {
     return await ed.verifyAsync(signature, message, publicKey);
@@ -1206,6 +1258,7 @@ git commit -m "feat(site): add Ed25519 sign/verify helpers"
 ## Task 10: Shared payload types + base64 helpers
 
 **Files:**
+
 - Create: `site/src/lib/shared/types.ts`
 - Create: `site/src/lib/shared/base64.ts`
 - Create: `site/tests/base64.test.ts`
@@ -1213,25 +1266,25 @@ git commit -m "feat(site): add Ed25519 sign/verify helpers"
 - [ ] **Step 1: Write failing test** `site/tests/base64.test.ts`
 
 ```typescript
-import { describe, it, expect } from 'vitest';
-import { bytesToB64, b64ToBytes } from '../src/lib/shared/base64';
+import { describe, expect, it } from "vitest";
+import { b64ToBytes, bytesToB64 } from "../src/lib/shared/base64";
 
-describe('base64', () => {
-  it('round-trips binary bytes', () => {
+describe("base64", () => {
+  it("round-trips binary bytes", () => {
     const bytes = new Uint8Array([0, 1, 2, 3, 254, 255]);
     expect(b64ToBytes(bytesToB64(bytes))).toEqual(bytes);
   });
 
-  it('encodes known vector', () => {
-    expect(bytesToB64(new TextEncoder().encode('hello'))).toBe('aGVsbG8=');
+  it("encodes known vector", () => {
+    expect(bytesToB64(new TextEncoder().encode("hello"))).toBe("aGVsbG8=");
   });
 
-  it('decodes known vector', () => {
-    expect(new TextDecoder().decode(b64ToBytes('aGVsbG8='))).toBe('hello');
+  it("decodes known vector", () => {
+    expect(new TextDecoder().decode(b64ToBytes("aGVsbG8="))).toBe("hello");
   });
 
-  it('rejects invalid base64', () => {
-    expect(() => b64ToBytes('!!!not-base64!!!')).toThrow();
+  it("rejects invalid base64", () => {
+    expect(() => b64ToBytes("!!!not-base64!!!")).toThrow();
   });
 });
 ```
@@ -1245,7 +1298,7 @@ Expected: FAIL.
 
 ```typescript
 export function bytesToB64(bytes: Uint8Array): string {
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -1254,7 +1307,7 @@ export function bytesToB64(bytes: Uint8Array): string {
 
 export function b64ToBytes(b64: string): Uint8Array {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) {
-    throw new Error('b64ToBytes: invalid base64 characters');
+    throw new Error("b64ToBytes: invalid base64 characters");
   }
   const binary = atob(b64);
   const out = new Uint8Array(binary.length);
@@ -1319,10 +1372,10 @@ export interface SignedRunPayload {
   version: 1;
   run_id: string;
   signature: {
-    alg: 'Ed25519';
+    alg: "Ed25519";
     key_id: number;
     signed_at: string; // ISO 8601
-    value: string;     // base64 Ed25519 signature
+    value: string; // base64 Ed25519 signature
   };
   payload: {
     task_set_hash: string;
@@ -1346,11 +1399,11 @@ export interface IngestResponse {
 
 export interface FinalizeResponse {
   run_id: string;
-  status: 'completed';
+  status: "completed";
   finalized_at: string;
 }
 
-export type Scope = 'ingest' | 'verifier' | 'admin';
+export type Scope = "ingest" | "verifier" | "admin";
 
 export interface ApiErrorBody {
   error: string;

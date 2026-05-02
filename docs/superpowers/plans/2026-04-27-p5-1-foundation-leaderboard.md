@@ -18,75 +18,75 @@
 
 ### New files
 
-| Path | Responsibility |
-|------|----------------|
-| `site/src/styles/tokens.css` | Design tokens (color, type, space, radius, motion, z-index) — light + dark |
-| `site/src/styles/base.css` | Reset, typography defaults, focus styles, selection |
-| `site/src/styles/utilities.css` | Tiny utility classes (`.sr-only`, `.text-mono`, etc.) |
-| `site/src/lib/shared/api-types.ts` | Extracted read-endpoint response types (`LeaderboardResponse`, etc.) |
-| `site/src/lib/client/theme.ts` | Light/dark/system theme controller |
-| `site/src/lib/client/format.ts` | Number/date/duration/relative-time formatters |
-| `site/src/lib/components/ui/Button.svelte` | Button atom |
-| `site/src/lib/components/ui/Input.svelte` | Input atom |
-| `site/src/lib/components/ui/Checkbox.svelte` | Checkbox atom |
-| `site/src/lib/components/ui/Radio.svelte` | Radio atom |
-| `site/src/lib/components/ui/Tag.svelte` | Tag atom |
-| `site/src/lib/components/ui/Badge.svelte` | Badge atom |
-| `site/src/lib/components/ui/Card.svelte` | Card atom |
-| `site/src/lib/components/ui/Tabs.svelte` | Tabs atom (P5.1 ships skeleton; full keyboard a11y in P5.2 when used) |
-| `site/src/lib/components/ui/Toast.svelte` | Toast atom |
-| `site/src/lib/components/ui/Alert.svelte` | Alert atom |
-| `site/src/lib/components/ui/Skeleton.svelte` | Skeleton atom (table-row variant for P5.1) |
-| `site/src/lib/components/ui/Code.svelte` | Code atom (inline + block) |
-| `site/src/lib/components/ui/Spinner.svelte` | Spinner atom |
-| `site/src/lib/components/ui/Sparkline.svelte` | SVG sparkline (uses `d3-shape`) |
-| `site/src/lib/components/ui/Modal.svelte` | Modal atom (used by P5.2+ but ships now to lock the API) |
-| `site/src/lib/components/ui/Tooltip.svelte` | Tooltip atom |
-| `site/src/lib/components/ui/icons/<name>.svelte` | Vendored Lucide icons (~25 files) |
-| `site/src/lib/components/ui/icons/index.ts` | Icon exports |
-| `site/src/lib/components/domain/Breadcrumbs.svelte` | Breadcrumb nav |
-| `site/src/lib/components/domain/ModelLink.svelte` | Model name + family chip + api_model_id |
-| `site/src/lib/components/domain/FamilyBadge.svelte` | Family badge |
-| `site/src/lib/components/domain/TierBadge.svelte` | Tier badge (verified/claimed) |
-| `site/src/lib/components/domain/ScoreCell.svelte` | Score number + visual bar |
-| `site/src/lib/components/domain/CostCell.svelte` | Cost formatting |
-| `site/src/lib/components/domain/DurationCell.svelte` | Duration formatting |
-| `site/src/lib/components/domain/TokensCell.svelte` | Token in/out formatting |
-| `site/src/lib/components/domain/FilterRail.svelte` | Left rail filter container |
-| `site/src/lib/components/domain/FilterChip.svelte` | Selected-filter pill |
-| `site/src/lib/components/domain/LeaderboardTable.svelte` | Sortable leaderboard table |
-| `site/src/lib/components/domain/StatusIndicator.svelte` | Connection status (placeholder for P5.4 SSE) |
-| `site/src/lib/components/layout/Nav.svelte` | Top navigation bar |
-| `site/src/lib/components/layout/Footer.svelte` | Footer |
-| `site/src/lib/components/layout/SkipToContent.svelte` | Skip link (a11y) |
-| `site/src/lib/server/flags.ts` | Feature flag loader |
-| `site/src/routes/leaderboard/+page.server.ts` | Leaderboard data loader |
-| `site/src/routes/leaderboard/+page.svelte` | Leaderboard page |
-| `site/src/routes/leaderboard/leaderboard.test.svelte.ts` | Component-level test for the leaderboard page wrapper |
-| `site/scripts/check-bundle-budget.ts` | CI bundle-size budget checker |
-| `site/scripts/check-contrast.ts` | CI WCAG contrast pair checker |
-| `site/lighthouserc.json` | Lighthouse CI config |
-| `site/playwright.config.ts` | Playwright config |
-| `site/tests/e2e/leaderboard.spec.ts` | E2E: leaderboard renders, filters work, sort works |
-| `site/tests/e2e/a11y.spec.ts` | E2E: axe-core on the leaderboard route, light + dark |
-| `site/tests/e2e/visual-regression.spec.ts` | Visual regression on atoms in both themes |
-| `site/tests/e2e/keyboard.spec.ts` | Keyboard navigation through nav + leaderboard |
-| `site/tests/fixtures/leaderboard-snapshot.json` | Frozen leaderboard payload for E2E |
-| `.github/workflows/site-ci.yml` | New site CI workflow |
-| `site/CONTRIBUTING.md` | How to add components and run tests locally |
+| Path                                                     | Responsibility                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `site/src/styles/tokens.css`                             | Design tokens (color, type, space, radius, motion, z-index) — light + dark |
+| `site/src/styles/base.css`                               | Reset, typography defaults, focus styles, selection                        |
+| `site/src/styles/utilities.css`                          | Tiny utility classes (`.sr-only`, `.text-mono`, etc.)                      |
+| `site/src/lib/shared/api-types.ts`                       | Extracted read-endpoint response types (`LeaderboardResponse`, etc.)       |
+| `site/src/lib/client/theme.ts`                           | Light/dark/system theme controller                                         |
+| `site/src/lib/client/format.ts`                          | Number/date/duration/relative-time formatters                              |
+| `site/src/lib/components/ui/Button.svelte`               | Button atom                                                                |
+| `site/src/lib/components/ui/Input.svelte`                | Input atom                                                                 |
+| `site/src/lib/components/ui/Checkbox.svelte`             | Checkbox atom                                                              |
+| `site/src/lib/components/ui/Radio.svelte`                | Radio atom                                                                 |
+| `site/src/lib/components/ui/Tag.svelte`                  | Tag atom                                                                   |
+| `site/src/lib/components/ui/Badge.svelte`                | Badge atom                                                                 |
+| `site/src/lib/components/ui/Card.svelte`                 | Card atom                                                                  |
+| `site/src/lib/components/ui/Tabs.svelte`                 | Tabs atom (P5.1 ships skeleton; full keyboard a11y in P5.2 when used)      |
+| `site/src/lib/components/ui/Toast.svelte`                | Toast atom                                                                 |
+| `site/src/lib/components/ui/Alert.svelte`                | Alert atom                                                                 |
+| `site/src/lib/components/ui/Skeleton.svelte`             | Skeleton atom (table-row variant for P5.1)                                 |
+| `site/src/lib/components/ui/Code.svelte`                 | Code atom (inline + block)                                                 |
+| `site/src/lib/components/ui/Spinner.svelte`              | Spinner atom                                                               |
+| `site/src/lib/components/ui/Sparkline.svelte`            | SVG sparkline (uses `d3-shape`)                                            |
+| `site/src/lib/components/ui/Modal.svelte`                | Modal atom (used by P5.2+ but ships now to lock the API)                   |
+| `site/src/lib/components/ui/Tooltip.svelte`              | Tooltip atom                                                               |
+| `site/src/lib/components/ui/icons/<name>.svelte`         | Vendored Lucide icons (~25 files)                                          |
+| `site/src/lib/components/ui/icons/index.ts`              | Icon exports                                                               |
+| `site/src/lib/components/domain/Breadcrumbs.svelte`      | Breadcrumb nav                                                             |
+| `site/src/lib/components/domain/ModelLink.svelte`        | Model name + family chip + api_model_id                                    |
+| `site/src/lib/components/domain/FamilyBadge.svelte`      | Family badge                                                               |
+| `site/src/lib/components/domain/TierBadge.svelte`        | Tier badge (verified/claimed)                                              |
+| `site/src/lib/components/domain/ScoreCell.svelte`        | Score number + visual bar                                                  |
+| `site/src/lib/components/domain/CostCell.svelte`         | Cost formatting                                                            |
+| `site/src/lib/components/domain/DurationCell.svelte`     | Duration formatting                                                        |
+| `site/src/lib/components/domain/TokensCell.svelte`       | Token in/out formatting                                                    |
+| `site/src/lib/components/domain/FilterRail.svelte`       | Left rail filter container                                                 |
+| `site/src/lib/components/domain/FilterChip.svelte`       | Selected-filter pill                                                       |
+| `site/src/lib/components/domain/LeaderboardTable.svelte` | Sortable leaderboard table                                                 |
+| `site/src/lib/components/domain/StatusIndicator.svelte`  | Connection status (placeholder for P5.4 SSE)                               |
+| `site/src/lib/components/layout/Nav.svelte`              | Top navigation bar                                                         |
+| `site/src/lib/components/layout/Footer.svelte`           | Footer                                                                     |
+| `site/src/lib/components/layout/SkipToContent.svelte`    | Skip link (a11y)                                                           |
+| `site/src/lib/server/flags.ts`                           | Feature flag loader                                                        |
+| `site/src/routes/leaderboard/+page.server.ts`            | Leaderboard data loader                                                    |
+| `site/src/routes/leaderboard/+page.svelte`               | Leaderboard page                                                           |
+| `site/src/routes/leaderboard/leaderboard.test.svelte.ts` | Component-level test for the leaderboard page wrapper                      |
+| `site/scripts/check-bundle-budget.ts`                    | CI bundle-size budget checker                                              |
+| `site/scripts/check-contrast.ts`                         | CI WCAG contrast pair checker                                              |
+| `site/lighthouserc.json`                                 | Lighthouse CI config                                                       |
+| `site/playwright.config.ts`                              | Playwright config                                                          |
+| `site/tests/e2e/leaderboard.spec.ts`                     | E2E: leaderboard renders, filters work, sort works                         |
+| `site/tests/e2e/a11y.spec.ts`                            | E2E: axe-core on the leaderboard route, light + dark                       |
+| `site/tests/e2e/visual-regression.spec.ts`               | Visual regression on atoms in both themes                                  |
+| `site/tests/e2e/keyboard.spec.ts`                        | Keyboard navigation through nav + leaderboard                              |
+| `site/tests/fixtures/leaderboard-snapshot.json`          | Frozen leaderboard payload for E2E                                         |
+| `.github/workflows/site-ci.yml`                          | New site CI workflow                                                       |
+| `site/CONTRIBUTING.md`                                   | How to add components and run tests locally                                |
 
 ### Modified files
 
-| Path | Change |
-|------|--------|
-| `site/package.json` | Bump existing deps to latest; add new deps + scripts |
-| `site/svelte.config.js` | Add `$shared` alias, `inlineStyleThreshold`, `output.preloadStrategy`, `prerender.entries` |
-| `site/src/app.html` | Inline no-flash theme script, lang attr, viewport, meta theme-color |
-| `site/src/routes/+layout.svelte` | Replace `<slot />` with shell: nav, skip-to-content, main, footer |
-| `site/src/routes/+layout.server.ts` | NEW — global data: feature flags, server time |
-| `site/src/lib/server/leaderboard.ts` | Re-export `LeaderboardResponse` from `$shared/api-types` instead of declaring inline |
-| `site/src/routes/api/v1/leaderboard/+server.ts` | Import response type from `$shared/api-types` |
-| `site/.gitignore` | Add Playwright + Lighthouse output paths |
+| Path                                            | Change                                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `site/package.json`                             | Bump existing deps to latest; add new deps + scripts                                       |
+| `site/svelte.config.js`                         | Add `$shared` alias, `inlineStyleThreshold`, `output.preloadStrategy`, `prerender.entries` |
+| `site/src/app.html`                             | Inline no-flash theme script, lang attr, viewport, meta theme-color                        |
+| `site/src/routes/+layout.svelte`                | Replace `<slot />` with shell: nav, skip-to-content, main, footer                          |
+| `site/src/routes/+layout.server.ts`             | NEW — global data: feature flags, server time                                              |
+| `site/src/lib/server/leaderboard.ts`            | Re-export `LeaderboardResponse` from `$shared/api-types` instead of declaring inline       |
+| `site/src/routes/api/v1/leaderboard/+server.ts` | Import response type from `$shared/api-types`                                              |
+| `site/.gitignore`                               | Add Playwright + Lighthouse output paths                                                   |
 
 ---
 
@@ -95,6 +95,7 @@
 ### Task A1: Bump existing deps + add new deps
 
 **Files:**
+
 - Modify: `site/package.json`
 
 - [ ] **Step 1: Edit `site/package.json`**
@@ -176,31 +177,32 @@ git -C /u/Git/CentralGauge commit -m "chore(site): bump deps to latest + add P5 
 ### Task A2: Add `$shared` alias + SvelteKit config tweaks
 
 **Files:**
+
 - Modify: `site/svelte.config.js`
 
 - [ ] **Step 1: Replace `site/svelte.config.js`**
 
 ```js
-import adapter from '@sveltejs/adapter-cloudflare';
-import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import adapter from "@sveltejs/adapter-cloudflare";
+import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
 export default {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({
-      routes: { include: ['/*'], exclude: ['<all>'] }
+      routes: { include: ["/*"], exclude: ["<all>"] },
     }),
     alias: {
-      '$lib': 'src/lib',
-      '$lib/*': 'src/lib/*',
-      '$shared': 'src/lib/shared',
-      '$shared/*': 'src/lib/shared/*'
+      "$lib": "src/lib",
+      "$lib/*": "src/lib/*",
+      "$shared": "src/lib/shared",
+      "$shared/*": "src/lib/shared/*",
     },
     csrf: { checkOrigin: true },
     inlineStyleThreshold: 4096,
-    output: { preloadStrategy: 'modulepreload' },
-    prerender: { entries: ['/about'] }
-  }
+    output: { preloadStrategy: "modulepreload" },
+    prerender: { entries: ["/about"] },
+  },
 };
 ```
 
@@ -221,6 +223,7 @@ git -C /u/Git/CentralGauge commit -m "build(site): add \$shared alias + inline-s
 ### Task A3: Extract API response types to shared
 
 **Files:**
+
 - Create: `site/src/lib/shared/api-types.ts`
 - Modify: `site/src/lib/server/leaderboard.ts`
 
@@ -236,9 +239,9 @@ git -C /u/Git/CentralGauge commit -m "build(site): add \$shared alias + inline-s
  */
 
 export interface LeaderboardQuery {
-  set: 'current' | 'all';
-  tier: 'verified' | 'claimed' | 'all';
-  difficulty: 'easy' | 'medium' | 'hard' | null;
+  set: "current" | "all";
+  tier: "verified" | "claimed" | "all";
+  difficulty: "easy" | "medium" | "hard" | null;
   family: string | null;
   since: string | null;
   limit: number;
@@ -271,10 +274,14 @@ export interface LeaderboardResponse {
 Replace the type declarations at the top (`LeaderboardQuery`, `LeaderboardRow`, `LeaderboardResponse`) with re-exports:
 
 ```ts
-import type { LeaderboardQuery, LeaderboardRow, LeaderboardResponse } from '$shared/api-types';
-import { getAll } from './db';
+import type {
+  LeaderboardQuery,
+  LeaderboardResponse,
+  LeaderboardRow,
+} from "$shared/api-types";
+import { getAll } from "./db";
 
-export type { LeaderboardQuery, LeaderboardRow, LeaderboardResponse };
+export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
 // Keep the existing computeLeaderboard function unchanged below this line.
 export async function computeLeaderboard(
@@ -309,6 +316,7 @@ git -C /u/Git/CentralGauge commit -m "refactor(site): extract LeaderboardRespons
 ### Task A4: Design tokens — `tokens.css`
 
 **Files:**
+
 - Create: `site/src/styles/tokens.css`
 
 - [ ] **Step 1: Create the file**
@@ -341,15 +349,33 @@ git -C /u/Git/CentralGauge commit -m "refactor(site): extract LeaderboardRespons
   --selection: #c5d6ff;
 
   /* typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --text-xs: 0.75rem;     --leading-xs: 1rem;
-  --text-sm: 0.875rem;    --leading-sm: 1.25rem;
-  --text-base: 1rem;      --leading-base: 1.5rem;
-  --text-lg: 1.125rem;    --leading-lg: 1.75rem;
-  --text-xl: 1.25rem;     --leading-xl: 1.75rem;
-  --text-2xl: 1.5rem;     --leading-2xl: 2rem;
-  --text-3xl: 2rem;       --leading-3xl: 2.5rem;
+  --font-sans:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  --font-mono:
+    ui-monospace,
+    SFMono-Regular,
+    "SF Mono",
+    Menlo,
+    Consolas,
+    monospace;
+  --text-xs: 0.75rem;
+  --leading-xs: 1rem;
+  --text-sm: 0.875rem;
+  --leading-sm: 1.25rem;
+  --text-base: 1rem;
+  --leading-base: 1.5rem;
+  --text-lg: 1.125rem;
+  --leading-lg: 1.75rem;
+  --text-xl: 1.25rem;
+  --leading-xl: 1.75rem;
+  --text-2xl: 1.5rem;
+  --leading-2xl: 2rem;
+  --text-3xl: 2rem;
+  --leading-3xl: 2.5rem;
   --weight-regular: 400;
   --weight-medium: 500;
   --weight-semi: 600;
@@ -468,6 +494,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): add design tokens (color/type/
 ### Task A5: Base styles + utilities
 
 **Files:**
+
 - Create: `site/src/styles/base.css`
 - Create: `site/src/styles/utilities.css`
 
@@ -476,7 +503,9 @@ git -C /u/Git/CentralGauge commit -m "feat(site): add design tokens (color/type/
 ```css
 /* Reset + typography defaults + focus + selection. Imported once from +layout.svelte. */
 
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after {
+  box-sizing: border-box;
+}
 
 html, body {
   margin: 0;
@@ -506,14 +535,18 @@ h1, h2, h3, h4, h5, h6 {
   margin: 0;
 }
 
-p { margin: 0; }
+p {
+  margin: 0;
+}
 
 a {
   color: var(--accent);
   text-decoration: none;
 }
 
-a:hover { text-decoration: underline; }
+a:hover {
+  text-decoration: underline;
+}
 
 a:focus-visible,
 button:focus-visible,
@@ -582,10 +615,17 @@ img, svg, video {
   font-feature-settings: "tnum";
 }
 
-.text-muted { color: var(--text-muted); }
-.text-faint { color: var(--text-faint); }
+.text-muted {
+  color: var(--text-muted);
+}
+.text-faint {
+  color: var(--text-faint);
+}
 
-.tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
 ```
 
 - [ ] **Step 3: Commit**
@@ -600,51 +640,52 @@ git -C /u/Git/CentralGauge commit -m "feat(site): add base reset + utility class
 ### Task A6: Theme controller client module
 
 **Files:**
+
 - Create: `site/src/lib/client/theme.ts`
 - Test: `site/src/lib/client/theme.test.ts`
 
 - [ ] **Step 1: Write the failing test (`site/src/lib/client/theme.test.ts`)**
 
 ```ts
-import { describe, it, expect, beforeEach } from 'vitest';
-import { getTheme, setTheme, cycleTheme, type Theme } from './theme';
+import { beforeEach, describe, expect, it } from "vitest";
+import { cycleTheme, getTheme, setTheme, type Theme } from "./theme";
 
-describe('theme controller', () => {
+describe("theme controller", () => {
   beforeEach(() => {
     localStorage.clear();
-    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.removeAttribute("data-theme");
   });
 
   it('getTheme returns "system" when nothing stored', () => {
-    expect(getTheme()).toBe('system');
+    expect(getTheme()).toBe("system");
   });
 
-  it('getTheme returns the stored value', () => {
-    localStorage.setItem('theme', 'dark');
-    expect(getTheme()).toBe('dark');
+  it("getTheme returns the stored value", () => {
+    localStorage.setItem("theme", "dark");
+    expect(getTheme()).toBe("dark");
   });
 
-  it('setTheme writes to DOM + storage', () => {
-    setTheme('dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-    expect(localStorage.getItem('theme')).toBe('dark');
+  it("setTheme writes to DOM + storage", () => {
+    setTheme("dark");
+    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+    expect(localStorage.getItem("theme")).toBe("dark");
   });
 
   it('setTheme("system") removes the attribute and clears storage', () => {
-    setTheme('dark');
-    setTheme('system');
-    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
-    expect(localStorage.getItem('theme')).toBe(null);
+    setTheme("dark");
+    setTheme("system");
+    expect(document.documentElement.hasAttribute("data-theme")).toBe(false);
+    expect(localStorage.getItem("theme")).toBe(null);
   });
 
-  it('cycleTheme cycles light -> dark -> system -> light', () => {
-    setTheme('light');
+  it("cycleTheme cycles light -> dark -> system -> light", () => {
+    setTheme("light");
     cycleTheme();
-    expect(getTheme()).toBe('dark');
+    expect(getTheme()).toBe("dark");
     cycleTheme();
-    expect(getTheme()).toBe('system');
+    expect(getTheme()).toBe("system");
     cycleTheme();
-    expect(getTheme()).toBe('light');
+    expect(getTheme()).toBe("light");
   });
 });
 ```
@@ -665,29 +706,29 @@ Expected: FAIL with `Cannot find module './theme'`.
  * Companion no-flash inline script lives in app.html and runs before any paint.
  */
 
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = 'theme';
+const STORAGE_KEY = "theme";
 
 export function getTheme(): Theme {
-  if (typeof localStorage === 'undefined') return 'system';
+  if (typeof localStorage === "undefined") return "system";
   const v = localStorage.getItem(STORAGE_KEY);
-  return v === 'light' || v === 'dark' ? v : 'system';
+  return v === "light" || v === "dark" ? v : "system";
 }
 
 export function setTheme(theme: Theme): void {
-  if (typeof document === 'undefined') return;
-  if (theme === 'system') {
-    document.documentElement.removeAttribute('data-theme');
+  if (typeof document === "undefined") return;
+  if (theme === "system") {
+    document.documentElement.removeAttribute("data-theme");
     localStorage.removeItem(STORAGE_KEY);
   } else {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(STORAGE_KEY, theme);
   }
 }
 
 export function cycleTheme(): Theme {
-  const order: Theme[] = ['light', 'dark', 'system'];
+  const order: Theme[] = ["light", "dark", "system"];
   const current = getTheme();
   const next = order[(order.indexOf(current) + 1) % order.length];
   setTheme(next);
@@ -712,98 +753,99 @@ git -C /u/Git/CentralGauge commit -m "feat(site): theme controller (light/dark/s
 ### Task A7: Format helpers (numbers, dates, durations)
 
 **Files:**
+
 - Create: `site/src/lib/client/format.ts`
 - Test: `site/src/lib/client/format.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from "vitest";
 import {
-  formatScore,
   formatCost,
   formatDuration,
-  formatTokens,
   formatRelativeTime,
+  formatScore,
   formatTaskRatio,
-} from './format';
+  formatTokens,
+} from "./format";
 
-describe('format', () => {
-  describe('formatScore', () => {
-    it('formats a 0-1 score as 2-decimal', () => {
-      expect(formatScore(0.84)).toBe('0.84');
-      expect(formatScore(1)).toBe('1.00');
-      expect(formatScore(0)).toBe('0.00');
+describe("format", () => {
+  describe("formatScore", () => {
+    it("formats a 0-1 score as 2-decimal", () => {
+      expect(formatScore(0.84)).toBe("0.84");
+      expect(formatScore(1)).toBe("1.00");
+      expect(formatScore(0)).toBe("0.00");
     });
   });
 
-  describe('formatCost', () => {
-    it('formats USD with $ prefix', () => {
-      expect(formatCost(0.12)).toBe('$0.12');
-      expect(formatCost(0.001)).toBe('$0.001');
-      expect(formatCost(1.23456)).toBe('$1.23');
+  describe("formatCost", () => {
+    it("formats USD with $ prefix", () => {
+      expect(formatCost(0.12)).toBe("$0.12");
+      expect(formatCost(0.001)).toBe("$0.001");
+      expect(formatCost(1.23456)).toBe("$1.23");
     });
-    it('shows < $0.001 for tiny values', () => {
-      expect(formatCost(0.0001)).toBe('<$0.001');
-    });
-  });
-
-  describe('formatDuration', () => {
-    it('milliseconds < 1000', () => {
-      expect(formatDuration(500)).toBe('500ms');
-    });
-    it('seconds < 60', () => {
-      expect(formatDuration(2400)).toBe('2.4s');
-      expect(formatDuration(12400)).toBe('12.4s');
-    });
-    it('minutes', () => {
-      expect(formatDuration(125000)).toBe('2m 5s');
-    });
-    it('hours', () => {
-      expect(formatDuration(3725000)).toBe('1h 2m');
+    it("shows < $0.001 for tiny values", () => {
+      expect(formatCost(0.0001)).toBe("<$0.001");
     });
   });
 
-  describe('formatTokens', () => {
-    it('plain integer < 1000', () => {
-      expect(formatTokens(480)).toBe('480');
+  describe("formatDuration", () => {
+    it("milliseconds < 1000", () => {
+      expect(formatDuration(500)).toBe("500ms");
     });
-    it('thousands with k', () => {
-      expect(formatTokens(2400)).toBe('2.4k');
-      expect(formatTokens(12000)).toBe('12k');
+    it("seconds < 60", () => {
+      expect(formatDuration(2400)).toBe("2.4s");
+      expect(formatDuration(12400)).toBe("12.4s");
     });
-    it('millions with M', () => {
-      expect(formatTokens(1_500_000)).toBe('1.5M');
+    it("minutes", () => {
+      expect(formatDuration(125000)).toBe("2m 5s");
     });
-  });
-
-  describe('formatRelativeTime', () => {
-    it('seconds', () => {
-      const now = new Date('2026-04-27T12:00:00Z');
-      const ts = '2026-04-27T11:59:30Z';
-      expect(formatRelativeTime(ts, now)).toBe('30s ago');
-    });
-    it('minutes', () => {
-      const now = new Date('2026-04-27T12:00:00Z');
-      const ts = '2026-04-27T11:55:00Z';
-      expect(formatRelativeTime(ts, now)).toBe('5m ago');
-    });
-    it('hours', () => {
-      const now = new Date('2026-04-27T12:00:00Z');
-      const ts = '2026-04-27T08:00:00Z';
-      expect(formatRelativeTime(ts, now)).toBe('4h ago');
-    });
-    it('days', () => {
-      const now = new Date('2026-04-27T12:00:00Z');
-      const ts = '2026-04-25T12:00:00Z';
-      expect(formatRelativeTime(ts, now)).toBe('2d ago');
+    it("hours", () => {
+      expect(formatDuration(3725000)).toBe("1h 2m");
     });
   });
 
-  describe('formatTaskRatio', () => {
-    it('formats N/M', () => {
-      expect(formatTaskRatio(24, 24)).toBe('24/24');
-      expect(formatTaskRatio(0, 24)).toBe('0/24');
+  describe("formatTokens", () => {
+    it("plain integer < 1000", () => {
+      expect(formatTokens(480)).toBe("480");
+    });
+    it("thousands with k", () => {
+      expect(formatTokens(2400)).toBe("2.4k");
+      expect(formatTokens(12000)).toBe("12k");
+    });
+    it("millions with M", () => {
+      expect(formatTokens(1_500_000)).toBe("1.5M");
+    });
+  });
+
+  describe("formatRelativeTime", () => {
+    it("seconds", () => {
+      const now = new Date("2026-04-27T12:00:00Z");
+      const ts = "2026-04-27T11:59:30Z";
+      expect(formatRelativeTime(ts, now)).toBe("30s ago");
+    });
+    it("minutes", () => {
+      const now = new Date("2026-04-27T12:00:00Z");
+      const ts = "2026-04-27T11:55:00Z";
+      expect(formatRelativeTime(ts, now)).toBe("5m ago");
+    });
+    it("hours", () => {
+      const now = new Date("2026-04-27T12:00:00Z");
+      const ts = "2026-04-27T08:00:00Z";
+      expect(formatRelativeTime(ts, now)).toBe("4h ago");
+    });
+    it("days", () => {
+      const now = new Date("2026-04-27T12:00:00Z");
+      const ts = "2026-04-25T12:00:00Z";
+      expect(formatRelativeTime(ts, now)).toBe("2d ago");
+    });
+  });
+
+  describe("formatTaskRatio", () => {
+    it("formats N/M", () => {
+      expect(formatTaskRatio(24, 24)).toBe("24/24");
+      expect(formatTaskRatio(0, 24)).toBe("0/24");
     });
   });
 });
@@ -828,10 +870,10 @@ export function formatScore(score: number): string {
 }
 
 export function formatCost(usd: number): string {
-  if (usd === 0) return '$0.00';
-  if (usd < 0.001) return '<$0.001';
-  if (usd < 0.01) return '$' + usd.toFixed(3);
-  return '$' + usd.toFixed(2);
+  if (usd === 0) return "$0.00";
+  if (usd < 0.001) return "<$0.001";
+  if (usd < 0.01) return "$" + usd.toFixed(3);
+  return "$" + usd.toFixed(2);
 }
 
 export function formatDuration(ms: number): string {
@@ -849,12 +891,15 @@ export function formatDuration(ms: number): string {
 
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 10_000) return (n / 1000).toFixed(1) + 'k';
-  if (n < 1_000_000) return Math.round(n / 1000) + 'k';
-  return (n / 1_000_000).toFixed(1) + 'M';
+  if (n < 10_000) return (n / 1000).toFixed(1) + "k";
+  if (n < 1_000_000) return Math.round(n / 1000) + "k";
+  return (n / 1_000_000).toFixed(1) + "M";
 }
 
-export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+export function formatRelativeTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
   const then = new Date(iso);
   const deltaSec = Math.floor((now.getTime() - then.getTime()) / 1000);
   if (deltaSec < 60) return `${deltaSec}s ago`;
@@ -891,19 +936,20 @@ git -C /u/Git/CentralGauge commit -m "feat(site): add formatters (score/cost/dur
 ### Task A8: Feature flag loader (server)
 
 **Files:**
+
 - Create: `site/src/lib/server/flags.ts`
 - Test: `site/src/lib/server/flags.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { loadFlags, type Flags } from './flags';
+import { describe, expect, it } from "vitest";
+import { type Flags, loadFlags } from "./flags";
 
-describe('loadFlags', () => {
+describe("loadFlags", () => {
   const baseEnv = {} as Record<string, string | undefined>;
 
-  it('returns defaults (all off) when no env overrides', () => {
+  it("returns defaults (all off) when no env overrides", () => {
     const flags = loadFlags(baseEnv as never, false);
     expect(flags.cmd_k_palette).toBe(false);
     expect(flags.sse_live_updates).toBe(false);
@@ -912,13 +958,13 @@ describe('loadFlags', () => {
     expect(flags.print_stylesheet).toBe(false);
   });
 
-  it('FLAG_CMD_K_PALETTE=on flips that flag', () => {
-    const flags = loadFlags({ FLAG_CMD_K_PALETTE: 'on' } as never, false);
+  it("FLAG_CMD_K_PALETTE=on flips that flag", () => {
+    const flags = loadFlags({ FLAG_CMD_K_PALETTE: "on" } as never, false);
     expect(flags.cmd_k_palette).toBe(true);
     expect(flags.sse_live_updates).toBe(false);
   });
 
-  it('canary mode flips all flags on regardless of env', () => {
+  it("canary mode flips all flags on regardless of env", () => {
     const flags = loadFlags(baseEnv as never, true);
     expect(flags.cmd_k_palette).toBe(true);
     expect(flags.sse_live_updates).toBe(true);
@@ -927,9 +973,9 @@ describe('loadFlags', () => {
     expect(flags.print_stylesheet).toBe(true);
   });
 
-  it('FLAG_*=off explicitly disables (overrides any default)', () => {
+  it("FLAG_*=off explicitly disables (overrides any default)", () => {
     const flags = loadFlags(
-      { FLAG_PRINT_STYLESHEET: 'off' } as never,
+      { FLAG_PRINT_STYLESHEET: "off" } as never,
       false,
     );
     expect(flags.print_stylesheet).toBe(false);
@@ -970,7 +1016,10 @@ const DEFAULTS: Flags = {
   print_stylesheet: false,
 };
 
-export function loadFlags(env: Record<string, string | undefined>, isCanary: boolean): Flags {
+export function loadFlags(
+  env: Record<string, string | undefined>,
+  isCanary: boolean,
+): Flags {
   if (isCanary) {
     return {
       cmd_k_palette: true,
@@ -983,10 +1032,10 @@ export function loadFlags(env: Record<string, string | undefined>, isCanary: boo
 
   const out: Flags = { ...DEFAULTS };
   for (const k of Object.keys(out) as Array<keyof Flags>) {
-    const envName = 'FLAG_' + (k as string).toUpperCase();
+    const envName = "FLAG_" + (k as string).toUpperCase();
     const v = env[envName];
-    if (v === 'on') out[k] = true;
-    if (v === 'off') out[k] = false;
+    if (v === "on") out[k] = true;
+    if (v === "off") out[k] = false;
   }
   return out;
 }
@@ -1009,12 +1058,13 @@ git -C /u/Git/CentralGauge commit -m "feat(site): feature flag loader (defaults 
 ### Task A9: Update `app.html` with no-flash theme + meta tags
 
 **Files:**
+
 - Modify: `site/src/app.html`
 
 - [ ] **Step 1: Replace `site/src/app.html` contents**
 
 ```html
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -1025,9 +1075,9 @@ git -C /u/Git/CentralGauge commit -m "feat(site): feature flag loader (defaults 
       // No-flash theme application — runs before any paint.
       (function () {
         try {
-          var t = localStorage.getItem('theme');
-          if (t === 'dark' || t === 'light') {
-            document.documentElement.setAttribute('data-theme', t);
+          var t = localStorage.getItem("theme");
+          if (t === "dark" || t === "light") {
+            document.documentElement.setAttribute("data-theme", t);
           }
         } catch (e) { /* localStorage may be unavailable in private mode */ }
       })();
@@ -1056,13 +1106,14 @@ git -C /u/Git/CentralGauge commit -m "feat(site): inline no-flash theme script +
 
 ## Mini-phase B — Atom components
 
-Each atom follows the same TDD micro-cycle: write a `.test.svelte.ts`, run vitest, implement the `.svelte` component, verify, commit. Only the *first* component (Button) shows the full per-step ceremony — subsequent atoms compress duplicate steps to "test → impl → verify → commit". The full code blocks are still given for every component (no "similar to Task X" — every task is self-contained).
+Each atom follows the same TDD micro-cycle: write a `.test.svelte.ts`, run vitest, implement the `.svelte` component, verify, commit. Only the _first_ component (Button) shows the full per-step ceremony — subsequent atoms compress duplicate steps to "test → impl → verify → commit". The full code blocks are still given for every component (no "similar to Task X" — every task is self-contained).
 
 ---
 
 ### Task B1: Button atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Button.svelte`
 - Test: `site/src/lib/components/ui/Button.test.svelte.ts`
 
@@ -1070,42 +1121,50 @@ Each atom follows the same TDD micro-cycle: write a `.test.svelte.ts`, run vites
 
 ```ts
 // site/src/lib/components/ui/Button.test.svelte.ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import Button from './Button.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import Button from "./Button.svelte";
 
-describe('Button', () => {
-  it('renders children', () => {
-    render(Button, { children: 'Click me' });
-    expect(screen.getByRole('button', { name: 'Click me' })).toBeDefined();
+describe("Button", () => {
+  it("renders children", () => {
+    render(Button, { children: "Click me" });
+    expect(screen.getByRole("button", { name: "Click me" })).toBeDefined();
   });
 
-  it('applies variant class', () => {
-    const { container } = render(Button, { variant: 'primary', children: 'Go' });
-    const btn = container.querySelector('button');
-    expect(btn?.className).toContain('variant-primary');
+  it("applies variant class", () => {
+    const { container } = render(Button, {
+      variant: "primary",
+      children: "Go",
+    });
+    const btn = container.querySelector("button");
+    expect(btn?.className).toContain("variant-primary");
   });
 
-  it('respects disabled prop', () => {
-    render(Button, { disabled: true, children: 'X' });
-    const btn = screen.getByRole('button');
-    expect(btn.hasAttribute('disabled')).toBe(true);
-    expect(btn.getAttribute('aria-disabled')).toBe('true');
+  it("respects disabled prop", () => {
+    render(Button, { disabled: true, children: "X" });
+    const btn = screen.getByRole("button");
+    expect(btn.hasAttribute("disabled")).toBe(true);
+    expect(btn.getAttribute("aria-disabled")).toBe("true");
   });
 
-  it('renders as <a> when href is provided', () => {
-    const { container } = render(Button, { href: '/somewhere', children: 'Go' });
+  it("renders as <a> when href is provided", () => {
+    const { container } = render(Button, {
+      href: "/somewhere",
+      children: "Go",
+    });
     expect(container.querySelector('a[href="/somewhere"]')).toBeDefined();
-    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector("button")).toBeNull();
   });
 
-  it('emits click events', async () => {
+  it("emits click events", async () => {
     let clicked = false;
     render(Button, {
-      children: 'X',
-      onclick: () => { clicked = true; },
+      children: "X",
+      onclick: () => {
+        clicked = true;
+      },
     });
-    await fireEvent.click(screen.getByRole('button'));
+    await fireEvent.click(screen.getByRole("button"));
     expect(clicked).toBe(true);
   });
 });
@@ -1238,39 +1297,48 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Button atom (primary/secondary
 ### Task B2: Input atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Input.svelte`
 - Test: `site/src/lib/components/ui/Input.test.svelte.ts`
 
 - [ ] **Step 1: Write the failing test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import Input from './Input.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import Input from "./Input.svelte";
 
-describe('Input', () => {
-  it('renders with a label', () => {
-    render(Input, { label: 'Search', value: '', name: 'q' });
-    expect(screen.getByLabelText('Search')).toBeDefined();
+describe("Input", () => {
+  it("renders with a label", () => {
+    render(Input, { label: "Search", value: "", name: "q" });
+    expect(screen.getByLabelText("Search")).toBeDefined();
   });
 
-  it('reflects value', () => {
-    const { container } = render(Input, { label: 'X', value: 'hello' });
-    const inp = container.querySelector('input') as HTMLInputElement;
-    expect(inp.value).toBe('hello');
+  it("reflects value", () => {
+    const { container } = render(Input, { label: "X", value: "hello" });
+    const inp = container.querySelector("input") as HTMLInputElement;
+    expect(inp.value).toBe("hello");
   });
 
-  it('applies type attribute', () => {
-    const { container } = render(Input, { label: 'N', type: 'number', value: '0' });
-    const inp = container.querySelector('input') as HTMLInputElement;
-    expect(inp.type).toBe('number');
+  it("applies type attribute", () => {
+    const { container } = render(Input, {
+      label: "N",
+      type: "number",
+      value: "0",
+    });
+    const inp = container.querySelector("input") as HTMLInputElement;
+    expect(inp.type).toBe("number");
   });
 
-  it('shows error message and sets aria-invalid', () => {
-    const { container } = render(Input, { label: 'X', value: '', error: 'required' });
-    const inp = container.querySelector('input') as HTMLInputElement;
-    expect(inp.getAttribute('aria-invalid')).toBe('true');
-    expect(screen.getByText('required')).toBeDefined();
+  it("shows error message and sets aria-invalid", () => {
+    const { container } = render(Input, {
+      label: "X",
+      value: "",
+      error: "required",
+    });
+    const inp = container.querySelector("input") as HTMLInputElement;
+    expect(inp.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("required")).toBeDefined();
   });
 });
 ```
@@ -1380,38 +1448,39 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Input atom (text/number/search
 ### Task B3: Checkbox atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Checkbox.svelte`
 - Test: `site/src/lib/components/ui/Checkbox.test.svelte.ts`
 
 - [ ] **Step 1: Write the test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import Checkbox from './Checkbox.svelte';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import Checkbox from "./Checkbox.svelte";
 
-describe('Checkbox', () => {
-  it('renders unchecked by default', () => {
-    render(Checkbox, { label: 'Verified', name: 'v' });
-    const cb = screen.getByRole('checkbox') as HTMLInputElement;
+describe("Checkbox", () => {
+  it("renders unchecked by default", () => {
+    render(Checkbox, { label: "Verified", name: "v" });
+    const cb = screen.getByRole("checkbox") as HTMLInputElement;
     expect(cb.checked).toBe(false);
   });
 
-  it('reflects checked prop', () => {
-    render(Checkbox, { label: 'X', checked: true });
-    const cb = screen.getByRole('checkbox') as HTMLInputElement;
+  it("reflects checked prop", () => {
+    render(Checkbox, { label: "X", checked: true });
+    const cb = screen.getByRole("checkbox") as HTMLInputElement;
     expect(cb.checked).toBe(true);
   });
 
-  it('label associates with input', () => {
-    render(Checkbox, { label: 'Verified', name: 'v' });
-    const cb = screen.getByLabelText('Verified');
+  it("label associates with input", () => {
+    render(Checkbox, { label: "Verified", name: "v" });
+    const cb = screen.getByLabelText("Verified");
     expect(cb).toBeDefined();
   });
 
-  it('handles indeterminate', () => {
-    render(Checkbox, { label: 'X', indeterminate: true });
-    const cb = screen.getByRole('checkbox') as HTMLInputElement;
+  it("handles indeterminate", () => {
+    render(Checkbox, { label: "X", indeterminate: true });
+    const cb = screen.getByRole("checkbox") as HTMLInputElement;
     expect(cb.indeterminate).toBe(true);
   });
 });
@@ -1501,24 +1570,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Checkbox atom (default + indet
 ### Task B4: Radio atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Radio.svelte`
 - Test: `site/src/lib/components/ui/Radio.test.svelte.ts`
 
 - [ ] **Step 1: Write the test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Radio from './Radio.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Radio from "./Radio.svelte";
 
-describe('Radio', () => {
-  it('renders an associated label', () => {
-    render(Radio, { label: 'Current', name: 'set', value: 'current' });
-    expect(screen.getByLabelText('Current')).toBeDefined();
+describe("Radio", () => {
+  it("renders an associated label", () => {
+    render(Radio, { label: "Current", name: "set", value: "current" });
+    expect(screen.getByLabelText("Current")).toBeDefined();
   });
-  it('reflects checked when group value matches', () => {
-    render(Radio, { label: 'X', name: 'g', value: 'a', group: 'a' });
-    const r = screen.getByRole('radio') as HTMLInputElement;
+  it("reflects checked when group value matches", () => {
+    render(Radio, { label: "X", name: "g", value: "a", group: "a" });
+    const r = screen.getByRole("radio") as HTMLInputElement;
     expect(r.checked).toBe(true);
   });
 });
@@ -1588,25 +1658,26 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Radio atom (group-bindable, na
 ### Task B5: Tag atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Tag.svelte`
 - Test: `site/src/lib/components/ui/Tag.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Tag from './Tag.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Tag from "./Tag.svelte";
 
-describe('Tag', () => {
-  it('renders children with neutral variant by default', () => {
-    const { container } = render(Tag, { children: 'beta' });
-    expect(screen.getByText('beta')).toBeDefined();
-    expect(container.querySelector('.tag.variant-neutral')).toBeDefined();
+describe("Tag", () => {
+  it("renders children with neutral variant by default", () => {
+    const { container } = render(Tag, { children: "beta" });
+    expect(screen.getByText("beta")).toBeDefined();
+    expect(container.querySelector(".tag.variant-neutral")).toBeDefined();
   });
-  it('applies variant class', () => {
-    const { container } = render(Tag, { variant: 'success', children: 'ok' });
-    expect(container.querySelector('.tag.variant-success')).toBeDefined();
+  it("applies variant class", () => {
+    const { container } = render(Tag, { variant: "success", children: "ok" });
+    expect(container.querySelector(".tag.variant-success")).toBeDefined();
   });
 });
 ```
@@ -1666,24 +1737,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Tag atom (5 variants)"
 ### Task B6: Badge atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Badge.svelte`
 - Test: `site/src/lib/components/ui/Badge.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Badge from './Badge.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Badge from "./Badge.svelte";
 
-describe('Badge', () => {
-  it('renders text', () => {
-    render(Badge, { children: 'verified', variant: 'tier-verified' });
-    expect(screen.getByText('verified')).toBeDefined();
+describe("Badge", () => {
+  it("renders text", () => {
+    render(Badge, { children: "verified", variant: "tier-verified" });
+    expect(screen.getByText("verified")).toBeDefined();
   });
-  it('applies variant', () => {
-    const { container } = render(Badge, { variant: 'success', children: 'ok' });
-    expect(container.querySelector('.badge.variant-success')).toBeDefined();
+  it("applies variant", () => {
+    const { container } = render(Badge, { variant: "success", children: "ok" });
+    expect(container.querySelector(".badge.variant-success")).toBeDefined();
   });
 });
 ```
@@ -1738,24 +1810,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Badge atom (tier-verified/clai
 ### Task B7: Card atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Card.svelte`
 - Test: `site/src/lib/components/ui/Card.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Card from './Card.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Card from "./Card.svelte";
 
-describe('Card', () => {
-  it('renders children', () => {
-    render(Card, { children: 'hello' });
-    expect(screen.getByText('hello')).toBeDefined();
+describe("Card", () => {
+  it("renders children", () => {
+    render(Card, { children: "hello" });
+    expect(screen.getByText("hello")).toBeDefined();
   });
-  it('applies elevated variant', () => {
-    const { container } = render(Card, { variant: 'elevated', children: 'x' });
-    expect(container.querySelector('.card.variant-elevated')).toBeDefined();
+  it("applies elevated variant", () => {
+    const { container } = render(Card, { variant: "elevated", children: "x" });
+    expect(container.querySelector(".card.variant-elevated")).toBeDefined();
   });
 });
 ```
@@ -1802,23 +1875,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Card atom (default + elevated,
 ### Task B8: Skeleton atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Skeleton.svelte`
 - Test: `site/src/lib/components/ui/Skeleton.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Skeleton from './Skeleton.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Skeleton from "./Skeleton.svelte";
 
-describe('Skeleton', () => {
-  it('renders with given variant', () => {
-    const { container } = render(Skeleton, { variant: 'table-row' });
-    expect(container.querySelector('.skeleton.variant-table-row')).toBeDefined();
+describe("Skeleton", () => {
+  it("renders with given variant", () => {
+    const { container } = render(Skeleton, { variant: "table-row" });
+    expect(container.querySelector(".skeleton.variant-table-row"))
+      .toBeDefined();
   });
-  it('exposes aria-hidden', () => {
-    const { container } = render(Skeleton, { variant: 'text' });
+  it("exposes aria-hidden", () => {
+    const { container } = render(Skeleton, { variant: "text" });
     expect(container.querySelector('[aria-hidden="true"]')).toBeDefined();
   });
 });
@@ -1877,19 +1952,20 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Skeleton atom (text/table-row/
 ### Task B9: Spinner atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Spinner.svelte`
 - Test: `site/src/lib/components/ui/Spinner.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Spinner from './Spinner.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Spinner from "./Spinner.svelte";
 
-describe('Spinner', () => {
-  it('renders an SVG with role status', () => {
-    const { container } = render(Spinner, { label: 'Loading' });
+describe("Spinner", () => {
+  it("renders an SVG with role status", () => {
+    const { container } = render(Spinner, { label: "Loading" });
     expect(container.querySelector('svg[role="status"]')).toBeDefined();
   });
 });
@@ -1937,24 +2013,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Spinner atom (rotating SVG, op
 ### Task B10: Code atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Code.svelte`
 - Test: `site/src/lib/components/ui/Code.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Code from './Code.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Code from "./Code.svelte";
 
-describe('Code', () => {
-  it('renders inline code by default', () => {
-    const { container } = render(Code, { children: 'const x = 1' });
-    expect(container.querySelector('code.inline')).toBeDefined();
+describe("Code", () => {
+  it("renders inline code by default", () => {
+    const { container } = render(Code, { children: "const x = 1" });
+    expect(container.querySelector("code.inline")).toBeDefined();
   });
-  it('renders block when block=true', () => {
-    const { container } = render(Code, { block: true, children: 'multi' });
-    expect(container.querySelector('pre code.block')).toBeDefined();
+  it("renders block when block=true", () => {
+    const { container } = render(Code, { block: true, children: "multi" });
+    expect(container.querySelector("pre code.block")).toBeDefined();
   });
 });
 ```
@@ -2007,31 +2084,35 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Code atom (inline + block, mon
 ### Task B11: Sparkline atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Sparkline.svelte`
 - Test: `site/src/lib/components/ui/Sparkline.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Sparkline from './Sparkline.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Sparkline from "./Sparkline.svelte";
 
-describe('Sparkline', () => {
-  it('renders an SVG path with d3-shape line generator output', () => {
+describe("Sparkline", () => {
+  it("renders an SVG path with d3-shape line generator output", () => {
     const { container } = render(Sparkline, { values: [0.5, 0.6, 0.7, 0.8] });
-    const path = container.querySelector('svg path');
+    const path = container.querySelector("svg path");
     expect(path).not.toBeNull();
-    expect(path?.getAttribute('d')).toMatch(/^M/);
+    expect(path?.getAttribute("d")).toMatch(/^M/);
   });
-  it('exposes aria-label with summary stats', () => {
-    const { container } = render(Sparkline, { values: [0.5, 0.7, 0.6], label: 'Score history' });
-    const svg = container.querySelector('svg');
-    expect(svg?.getAttribute('aria-label')).toContain('Score history');
+  it("exposes aria-label with summary stats", () => {
+    const { container } = render(Sparkline, {
+      values: [0.5, 0.7, 0.6],
+      label: "Score history",
+    });
+    const svg = container.querySelector("svg");
+    expect(svg?.getAttribute("aria-label")).toContain("Score history");
   });
-  it('renders nothing readable when too few values', () => {
+  it("renders nothing readable when too few values", () => {
     const { container } = render(Sparkline, { values: [0.5] });
-    expect(container.querySelector('.sparkline-empty')).not.toBeNull();
+    expect(container.querySelector(".sparkline-empty")).not.toBeNull();
   });
 });
 ```
@@ -2102,21 +2183,22 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Sparkline atom (d3-shape monot
 ### Task B12: Toast atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Toast.svelte`
 - Test: `site/src/lib/components/ui/Toast.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Toast from './Toast.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Toast from "./Toast.svelte";
 
-describe('Toast', () => {
-  it('renders message with role status', () => {
-    render(Toast, { variant: 'info', children: 'Saved' });
-    const t = screen.getByRole('status');
-    expect(t.textContent).toContain('Saved');
+describe("Toast", () => {
+  it("renders message with role status", () => {
+    render(Toast, { variant: "info", children: "Saved" });
+    const t = screen.getByRole("status");
+    expect(t.textContent).toContain("Saved");
   });
 });
 ```
@@ -2164,24 +2246,25 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Toast atom (info/success/warni
 ### Task B13: Alert atom
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Alert.svelte`
 - Test: `site/src/lib/components/ui/Alert.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import Alert from './Alert.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import Alert from "./Alert.svelte";
 
-describe('Alert', () => {
-  it('renders message with role alert when variant=error', () => {
-    render(Alert, { variant: 'error', children: 'failed' });
-    expect(screen.getByRole('alert').textContent).toContain('failed');
+describe("Alert", () => {
+  it("renders message with role alert when variant=error", () => {
+    render(Alert, { variant: "error", children: "failed" });
+    expect(screen.getByRole("alert").textContent).toContain("failed");
   });
-  it('uses role status for non-error', () => {
-    render(Alert, { variant: 'info', children: 'fyi' });
-    expect(screen.getByRole('status').textContent).toContain('fyi');
+  it("uses role status for non-error", () => {
+    render(Alert, { variant: "info", children: "fyi" });
+    expect(screen.getByRole("status").textContent).toContain("fyi");
   });
 });
 ```
@@ -2230,11 +2313,12 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Alert atom (info/success/warni
 ### Task B14: Tabs, Modal, Tooltip — minimal shells
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/Tabs.svelte`
 - Create: `site/src/lib/components/ui/Modal.svelte`
 - Create: `site/src/lib/components/ui/Tooltip.svelte`
 
-These are not used by the leaderboard route in P5.1, but ship now so their public APIs are locked early. Each is the *minimum* implementation: structurally correct ARIA, no styling beyond tokens, no advanced behavior. Full feature work (tab keyboard nav, modal focus-trap, tooltip positioning) lands in P5.2 when these atoms are first consumed.
+These are not used by the leaderboard route in P5.1, but ship now so their public APIs are locked early. Each is the _minimum_ implementation: structurally correct ARIA, no styling beyond tokens, no advanced behavior. Full feature work (tab keyboard nav, modal focus-trap, tooltip positioning) lands in P5.2 when these atoms are first consumed.
 
 - [ ] **Step 1: Implement `Tabs.svelte`**
 
@@ -2402,6 +2486,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Tabs / Modal / Tooltip atoms (
 Initial set used by leaderboard + nav: `chevron-down`, `chevron-up`, `x`, `check`, `search`, `sun`, `moon`, `github`. Other icons land in subsequent phases as they're consumed.
 
 **Files:**
+
 - Create: `site/src/lib/components/ui/icons/ChevronDown.svelte`
 - Create: `site/src/lib/components/ui/icons/ChevronUp.svelte`
 - Create: `site/src/lib/components/ui/icons/X.svelte`
@@ -2472,14 +2557,14 @@ Each follows the template from Step 1.
 - [ ] **Step 4: Create `index.ts` for clean imports**
 
 ```ts
-export { default as ChevronDown } from './ChevronDown.svelte';
-export { default as ChevronUp } from './ChevronUp.svelte';
-export { default as X } from './X.svelte';
-export { default as Check } from './Check.svelte';
-export { default as Search } from './Search.svelte';
-export { default as Sun } from './Sun.svelte';
-export { default as Moon } from './Moon.svelte';
-export { default as Github } from './Github.svelte';
+export { default as ChevronDown } from "./ChevronDown.svelte";
+export { default as ChevronUp } from "./ChevronUp.svelte";
+export { default as X } from "./X.svelte";
+export { default as Check } from "./Check.svelte";
+export { default as Search } from "./Search.svelte";
+export { default as Sun } from "./Sun.svelte";
+export { default as Moon } from "./Moon.svelte";
+export { default as Github } from "./Github.svelte";
 ```
 
 - [ ] **Step 5: Verify build**
@@ -2501,6 +2586,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): vendor 8 Lucide icons (chevron
 ### Task D1: SkipToContent component
 
 **Files:**
+
 - Create: `site/src/lib/components/layout/SkipToContent.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2538,6 +2624,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): SkipToContent layout component
 ### Task D2: Nav component
 
 **Files:**
+
 - Create: `site/src/lib/components/layout/Nav.svelte`
 
 - [ ] **Step 1: Implement** (theme toggle reads from theme controller; uses Sun/Moon/icon swap)
@@ -2662,6 +2749,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Nav layout (logo, links, theme
 ### Task D3: Footer component
 
 **Files:**
+
 - Create: `site/src/lib/components/layout/Footer.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2720,25 +2808,26 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Footer layout (source / transp
 ### Task D4: Root layout — `+layout.svelte` + `+layout.server.ts`
 
 **Files:**
+
 - Modify: `site/src/routes/+layout.svelte`
 - Create: `site/src/routes/+layout.server.ts`
 
 - [ ] **Step 1: Create `site/src/routes/+layout.server.ts`**
 
 ```ts
-import type { LayoutServerLoad } from './$types';
-import { loadFlags, type Flags } from '$lib/server/flags';
+import type { LayoutServerLoad } from "./$types";
+import { type Flags, loadFlags } from "$lib/server/flags";
 
 export const load: LayoutServerLoad = async ({ locals, platform, url }) => {
   const env = (platform?.env ?? {}) as Record<string, string | undefined>;
-  const isCanary = url.pathname.startsWith('/_canary/');
+  const isCanary = url.pathname.startsWith("/_canary/");
   const flags: Flags = loadFlags(env, isCanary);
 
   return {
     flags,
     serverTime: new Date().toISOString(),
-    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? 'dev',
-    buildAt: env.CENTRALGAUGE_BUILD_AT ?? '',
+    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? "dev",
+    buildAt: env.CENTRALGAUGE_BUILD_AT ?? "",
   };
 };
 ```
@@ -2797,23 +2886,24 @@ git -C /u/Git/CentralGauge commit -m "feat(site): root layout — nav + main + f
 ### Task E1: TierBadge
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/TierBadge.svelte`
 - Test: `site/src/lib/components/domain/TierBadge.test.svelte.ts`
 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
-import TierBadge from './TierBadge.svelte';
+import { describe, expect, it } from "vitest";
+import { render, screen } from "@testing-library/svelte";
+import TierBadge from "./TierBadge.svelte";
 
-describe('TierBadge', () => {
-  it('renders verified with checkmark', () => {
-    render(TierBadge, { tier: 'verified' });
+describe("TierBadge", () => {
+  it("renders verified with checkmark", () => {
+    render(TierBadge, { tier: "verified" });
     expect(screen.getByText(/verified/i)).toBeDefined();
   });
-  it('renders claimed', () => {
-    render(TierBadge, { tier: 'claimed' });
+  it("renders claimed", () => {
+    render(TierBadge, { tier: "claimed" });
     expect(screen.getByText(/claimed/i)).toBeDefined();
   });
 });
@@ -2848,6 +2938,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): TierBadge domain widget (verif
 ### Task E2: FamilyBadge
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/FamilyBadge.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2881,6 +2972,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): FamilyBadge domain widget (lin
 ### Task E3: ModelLink
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/ModelLink.svelte`
 
 - [ ] **Step 1: Implement**
@@ -2938,6 +3030,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): ModelLink domain widget (displ
 ### Task E4: ScoreCell, CostCell, DurationCell, TokensCell
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/ScoreCell.svelte`
 - Create: `site/src/lib/components/domain/CostCell.svelte`
 - Create: `site/src/lib/components/domain/DurationCell.svelte`
@@ -3013,6 +3106,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): ScoreCell / CostCell / Duratio
 ### Task E5: Breadcrumbs
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/Breadcrumbs.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3061,6 +3155,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): Breadcrumbs domain widget (sem
 ### Task E6: FilterChip
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/FilterChip.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3115,6 +3210,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): FilterChip domain widget (remo
 ### Task E7: FilterRail
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/FilterRail.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3162,6 +3258,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): FilterRail domain widget (stic
 ### Task E8: StatusIndicator (placeholder for SSE in P5.4)
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/StatusIndicator.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3207,6 +3304,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): StatusIndicator domain widget 
 ### Task E9: LeaderboardTable
 
 **Files:**
+
 - Create: `site/src/lib/components/domain/LeaderboardTable.svelte`
 - Test: `site/src/lib/components/domain/LeaderboardTable.test.svelte.ts`
 
@@ -3215,46 +3313,55 @@ This is the largest domain widget for P5.1. It's table-only — sortable column 
 - [ ] **Step 1: Test**
 
 ```ts
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
-import LeaderboardTable from './LeaderboardTable.svelte';
-import type { LeaderboardRow } from '$shared/api-types';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import LeaderboardTable from "./LeaderboardTable.svelte";
+import type { LeaderboardRow } from "$shared/api-types";
 
 const rows: LeaderboardRow[] = [
   {
     rank: 1,
-    model: { slug: 'sonnet-4-7', display_name: 'Sonnet 4.7', api_model_id: 'claude-sonnet-4-7' },
-    family_slug: 'claude',
+    model: {
+      slug: "sonnet-4-7",
+      display_name: "Sonnet 4.7",
+      api_model_id: "claude-sonnet-4-7",
+    },
+    family_slug: "claude",
     run_count: 142,
     tasks_attempted: 24,
     tasks_passed: 24,
     avg_score: 0.84,
     avg_cost_usd: 0.12,
     verified_runs: 100,
-    last_run_at: '2026-04-27T10:00:00Z',
+    last_run_at: "2026-04-27T10:00:00Z",
   },
 ];
 
-describe('LeaderboardTable', () => {
-  it('renders one row per model', () => {
-    render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
-    expect(screen.getByText('Sonnet 4.7')).toBeDefined();
+describe("LeaderboardTable", () => {
+  it("renders one row per model", () => {
+    render(LeaderboardTable, { rows, sort: "avg_score:desc" });
+    expect(screen.getByText("Sonnet 4.7")).toBeDefined();
   });
-  it('emits sort change when a sortable header is clicked', async () => {
-    let sort = 'avg_score:desc';
+  it("emits sort change when a sortable header is clicked", async () => {
+    let sort = "avg_score:desc";
     render(LeaderboardTable, {
       rows,
       sort,
-      onsort: (next: string) => { sort = next; },
+      onsort: (next: string) => {
+        sort = next;
+      },
     });
-    const scoreHeader = screen.getByRole('columnheader', { name: /score/i });
+    const scoreHeader = screen.getByRole("columnheader", { name: /score/i });
     await fireEvent.click(scoreHeader);
-    expect(sort).toBe('avg_score:asc');
+    expect(sort).toBe("avg_score:asc");
   });
-  it('uses tabular-nums on score cell', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
-    const score = container.querySelector('td.score');
-    expect(score?.textContent).toContain('0.84');
+  it("uses tabular-nums on score cell", () => {
+    const { container } = render(LeaderboardTable, {
+      rows,
+      sort: "avg_score:desc",
+    });
+    const score = container.querySelector("td.score");
+    expect(score?.textContent).toContain("0.84");
   });
 });
 ```
@@ -3396,17 +3503,20 @@ git -C /u/Git/CentralGauge commit -m "feat(site): LeaderboardTable (sortable, st
 ### Task F1: Loader for `/leaderboard`
 
 **Files:**
+
 - Create: `site/src/routes/leaderboard/+page.server.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import type { PageServerLoad } from './$types';
-import type { LeaderboardResponse, LeaderboardQuery } from '$shared/api-types';
-import { error } from '@sveltejs/kit';
+import type { PageServerLoad } from "./$types";
+import type { LeaderboardQuery, LeaderboardResponse } from "$shared/api-types";
+import { error } from "@sveltejs/kit";
 
-export const load: PageServerLoad = async ({ url, fetch, setHeaders, depends }) => {
-  depends('app:leaderboard');
+export const load: PageServerLoad = async (
+  { url, fetch, setHeaders, depends },
+) => {
+  depends("app:leaderboard");
 
   // Pass through user-supplied filter params verbatim to the API.
   const apiUrl = `/api/v1/leaderboard?${url.searchParams.toString()}`;
@@ -3414,16 +3524,23 @@ export const load: PageServerLoad = async ({ url, fetch, setHeaders, depends }) 
 
   if (!res.ok) {
     let body: unknown;
-    try { body = await res.json(); } catch { body = {}; }
-    throw error(res.status, (body as { error?: string }).error ?? 'leaderboard load failed');
+    try {
+      body = await res.json();
+    } catch {
+      body = {};
+    }
+    throw error(
+      res.status,
+      (body as { error?: string }).error ?? "leaderboard load failed",
+    );
   }
 
   // Mirror cache directive from API to SSR'd HTML so the edge caches the page too.
-  const apiCache = res.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = res.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   const payload = (await res.json()) as LeaderboardResponse;
-  const sort = url.searchParams.get('sort') ?? 'avg_score:desc';
+  const sort = url.searchParams.get("sort") ?? "avg_score:desc";
 
   return {
     leaderboard: payload,
@@ -3446,6 +3563,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /leaderboard +page.server.ts l
 ### Task F2: Page for `/leaderboard`
 
 **Files:**
+
 - Create: `site/src/routes/leaderboard/+page.svelte`
 
 - [ ] **Step 1: Implement**
@@ -3600,6 +3718,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /leaderboard page (filter rail
 ### Task G1: Bundle budget script
 
 **Files:**
+
 - Create: `site/scripts/check-bundle-budget.ts`
 
 - [ ] **Step 1: Implement**
@@ -3612,25 +3731,28 @@ git -C /u/Git/CentralGauge commit -m "feat(site): /leaderboard page (filter rail
  *
  * Limits are gzipped sizes. We compute gzipped via zlib on the file contents.
  */
-import { readFileSync, statSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
-import { resolve, join, relative } from 'node:path';
-import { globSync } from 'node:fs';
+import { readFileSync, statSync } from "node:fs";
+import { gzipSync } from "node:zlib";
+import { join, relative, resolve } from "node:path";
+import { globSync } from "node:fs";
 
-const ROOT = resolve(import.meta.dirname ?? process.cwd(), '..');
-const OUT  = join(ROOT, '.svelte-kit/output/client/_app/immutable');
+const ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
+const OUT = join(ROOT, ".svelte-kit/output/client/_app/immutable");
 
-interface Budget { glob: string; maxKbGz: number; }
+interface Budget {
+  glob: string;
+  maxKbGz: number;
+}
 
 const budgets: Budget[] = [
   // initial JS — entry chunks
-  { glob: 'entry/start.*.js',  maxKbGz: 25 },
-  { glob: 'entry/app.*.js',    maxKbGz: 25 },
+  { glob: "entry/start.*.js", maxKbGz: 25 },
+  { glob: "entry/app.*.js", maxKbGz: 25 },
   // root layout/page chunks (initial route shell)
-  { glob: 'nodes/0.*.js',      maxKbGz: 20 },
-  { glob: 'nodes/1.*.js',      maxKbGz: 20 },
+  { glob: "nodes/0.*.js", maxKbGz: 20 },
+  { glob: "nodes/1.*.js", maxKbGz: 20 },
   // all per-page chunks individually capped
-  { glob: 'nodes/*.js',        maxKbGz: 20 },
+  { glob: "nodes/*.js", maxKbGz: 20 },
 ];
 
 let failures: string[] = [];
@@ -3643,7 +3765,11 @@ for (const b of budgets) {
     const gz = gzipSync(raw);
     const kb = gz.length / 1024;
     if (kb > b.maxKbGz) {
-      failures.push(`  ${relative(ROOT, path)}: ${kb.toFixed(1)} KB gz (limit ${b.maxKbGz} KB)`);
+      failures.push(
+        `  ${relative(ROOT, path)}: ${
+          kb.toFixed(1)
+        } KB gz (limit ${b.maxKbGz} KB)`,
+      );
     } else {
       console.log(`OK ${relative(ROOT, path)}: ${kb.toFixed(1)} KB gz`);
     }
@@ -3651,11 +3777,11 @@ for (const b of budgets) {
 }
 
 if (failures.length) {
-  console.error('\nBundle budget exceeded:');
+  console.error("\nBundle budget exceeded:");
   for (const f of failures) console.error(f);
   process.exit(1);
 }
-console.log('\nAll bundle budgets met.');
+console.log("\nAll bundle budgets met.");
 ```
 
 - [ ] **Step 2: Run locally to verify it works**
@@ -3675,6 +3801,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/ci): bundle-budget checker (per-
 ### Task G2: Contrast checker script
 
 **Files:**
+
 - Create: `site/scripts/check-contrast.ts`
 
 - [ ] **Step 1: Implement**
@@ -3687,36 +3814,41 @@ git -C /u/Git/CentralGauge commit -m "feat(site/ci): bundle-budget checker (per-
  * tokens.css change.
  */
 
-interface Pair { name: string; fg: string; bg: string; min: number; }
+interface Pair {
+  name: string;
+  fg: string;
+  bg: string;
+  min: number;
+}
 
 const lightPairs: Pair[] = [
-  { name: 'body / bg',                fg: '#0a0a0a', bg: '#ffffff', min: 7   },
-  { name: 'body-muted / bg',          fg: '#525252', bg: '#ffffff', min: 4.5 },
-  { name: 'body / surface',           fg: '#0a0a0a', bg: '#fafafa', min: 7   },
-  { name: 'accent / bg',              fg: '#0a4dff', bg: '#ffffff', min: 4.5 },
-  { name: 'accent-fg / accent',       fg: '#ffffff', bg: '#0a4dff', min: 4.5 },
-  { name: 'success / bg',             fg: '#0a7d3a', bg: '#ffffff', min: 4.5 },
-  { name: 'warning / bg',             fg: '#d97706', bg: '#ffffff', min: 4.5 },
-  { name: 'danger / bg',              fg: '#c2261c', bg: '#ffffff', min: 4.5 },
-  { name: 'tier-verified / bg',       fg: '#0a7d3a', bg: '#ffffff', min: 4.5 },
+  { name: "body / bg", fg: "#0a0a0a", bg: "#ffffff", min: 7 },
+  { name: "body-muted / bg", fg: "#525252", bg: "#ffffff", min: 4.5 },
+  { name: "body / surface", fg: "#0a0a0a", bg: "#fafafa", min: 7 },
+  { name: "accent / bg", fg: "#0a4dff", bg: "#ffffff", min: 4.5 },
+  { name: "accent-fg / accent", fg: "#ffffff", bg: "#0a4dff", min: 4.5 },
+  { name: "success / bg", fg: "#0a7d3a", bg: "#ffffff", min: 4.5 },
+  { name: "warning / bg", fg: "#d97706", bg: "#ffffff", min: 4.5 },
+  { name: "danger / bg", fg: "#c2261c", bg: "#ffffff", min: 4.5 },
+  { name: "tier-verified / bg", fg: "#0a7d3a", bg: "#ffffff", min: 4.5 },
 ];
 
 const darkPairs: Pair[] = [
-  { name: 'body / bg (dark)',         fg: '#fafafa', bg: '#0a0a0a', min: 7   },
-  { name: 'body-muted / bg (dark)',   fg: '#a3a3a3', bg: '#0a0a0a', min: 4.5 },
-  { name: 'accent / bg (dark)',       fg: '#4d7fff', bg: '#0a0a0a', min: 4.5 },
-  { name: 'success / bg (dark)',      fg: '#4dbb6f', bg: '#0a0a0a', min: 4.5 },
-  { name: 'warning / bg (dark)',      fg: '#f59f0e', bg: '#0a0a0a', min: 4.5 },
-  { name: 'danger / bg (dark)',       fg: '#ef5046', bg: '#0a0a0a', min: 4.5 },
+  { name: "body / bg (dark)", fg: "#fafafa", bg: "#0a0a0a", min: 7 },
+  { name: "body-muted / bg (dark)", fg: "#a3a3a3", bg: "#0a0a0a", min: 4.5 },
+  { name: "accent / bg (dark)", fg: "#4d7fff", bg: "#0a0a0a", min: 4.5 },
+  { name: "success / bg (dark)", fg: "#4dbb6f", bg: "#0a0a0a", min: 4.5 },
+  { name: "warning / bg (dark)", fg: "#f59f0e", bg: "#0a0a0a", min: 4.5 },
+  { name: "danger / bg (dark)", fg: "#ef5046", bg: "#0a0a0a", min: 4.5 },
 ];
 
 function hexToRgb(hex: string): [number, number, number] {
-  const v = parseInt(hex.replace('#', ''), 16);
+  const v = parseInt(hex.replace("#", ""), 16);
   return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
 }
 
 function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const [R, G, B] = [r, g, b].map(c => {
+  const [R, G, B] = [r, g, b].map((c) => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   });
@@ -3733,17 +3865,17 @@ function ratio(fg: string, bg: string): number {
 const failures: string[] = [];
 for (const p of [...lightPairs, ...darkPairs]) {
   const r = ratio(p.fg, p.bg);
-  const status = r >= p.min ? 'OK' : 'FAIL';
+  const status = r >= p.min ? "OK" : "FAIL";
   console.log(`${status} ${p.name}: ${r.toFixed(2)}:1 (min ${p.min}:1)`);
   if (r < p.min) failures.push(`${p.name}: ${r.toFixed(2)}:1 (min ${p.min}:1)`);
 }
 
 if (failures.length) {
-  console.error('\nContrast check failed:');
-  for (const f of failures) console.error('  ' + f);
+  console.error("\nContrast check failed:");
+  for (const f of failures) console.error("  " + f);
   process.exit(1);
 }
-console.log('\nAll contrast pairs meet target.');
+console.log("\nAll contrast pairs meet target.");
 ```
 
 - [ ] **Step 2: Run to verify**
@@ -3763,6 +3895,7 @@ git -C /u/Git/CentralGauge commit -m "feat(site/ci): WCAG contrast checker (AAA 
 ### Task G3: Playwright config
 
 **Files:**
+
 - Create: `site/playwright.config.ts`
 - Modify: `site/.gitignore`
 
@@ -3785,27 +3918,27 @@ build-manifests/
 - [ ] **Step 2: Create `site/playwright.config.ts`**
 
 ```ts
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices } from "@playwright/test";
 
 const PORT = 4173;
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: "./tests/e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
-  reporter: [['html', { open: 'never' }], ['list']],
+  reporter: [["html", { open: "never" }], ["list"]],
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
-    trace: 'on-first-retry',
-    screenshot: 'only-on-failure',
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: 'npm run dev',
+    command: "npm run dev",
     port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
@@ -3830,35 +3963,38 @@ git -C /u/Git/CentralGauge commit -m "build(site/ci): Playwright config + gitign
 ### Task G4: First E2E — leaderboard renders
 
 **Files:**
+
 - Create: `site/tests/e2e/leaderboard.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('/leaderboard', () => {
-  test('renders header + table + filter rail', async ({ page }) => {
-    await page.goto('/leaderboard');
-    await expect(page.getByRole('heading', { level: 1, name: /leaderboard/i })).toBeVisible();
-    await expect(page.getByRole('table')).toBeVisible();
-    await expect(page.getByRole('navigation', { name: /primary/i })).toBeVisible();
+test.describe("/leaderboard", () => {
+  test("renders header + table + filter rail", async ({ page }) => {
+    await page.goto("/leaderboard");
+    await expect(page.getByRole("heading", { level: 1, name: /leaderboard/i }))
+      .toBeVisible();
+    await expect(page.getByRole("table")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: /primary/i }))
+      .toBeVisible();
   });
 
-  test('sort by Score reverses order on second click', async ({ page }) => {
-    await page.goto('/leaderboard');
-    const scoreHeader = page.getByRole('columnheader', { name: /score/i });
+  test("sort by Score reverses order on second click", async ({ page }) => {
+    await page.goto("/leaderboard");
+    const scoreHeader = page.getByRole("columnheader", { name: /score/i });
     await scoreHeader.click();
     await expect(page).toHaveURL(/sort=avg_score%3Aasc/);
     await scoreHeader.click();
     await expect(page).toHaveURL(/sort=avg_score%3Adesc/);
   });
 
-  test('filter chip removal updates URL', async ({ page }) => {
-    await page.goto('/leaderboard?tier=verified');
+  test("filter chip removal updates URL", async ({ page }) => {
+    await page.goto("/leaderboard?tier=verified");
     const chip = page.getByText(/tier: verified/i);
     await expect(chip).toBeVisible();
-    await page.getByRole('button', { name: /remove filter tier/i }).click();
+    await page.getByRole("button", { name: /remove filter tier/i }).click();
     await expect(page).not.toHaveURL(/tier=/);
   });
 });
@@ -3883,24 +4019,27 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): leaderboard renders + sort
 ### Task G5: a11y E2E
 
 **Files:**
+
 - Create: `site/tests/e2e/a11y.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
-test.describe('a11y', () => {
-  for (const theme of ['light', 'dark'] as const) {
+test.describe("a11y", () => {
+  for (const theme of ["light", "dark"] as const) {
     test(`/leaderboard has no serious/critical violations (${theme})`, async ({ page }) => {
-      await page.addInitScript((t) => { localStorage.setItem('theme', t); }, theme);
-      await page.goto('/leaderboard');
+      await page.addInitScript((t) => {
+        localStorage.setItem("theme", t);
+      }, theme);
+      await page.goto("/leaderboard");
       const results = await new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
         .analyze();
-      const blocking = results.violations.filter(v =>
-        v.impact === 'serious' || v.impact === 'critical'
+      const blocking = results.violations.filter((v) =>
+        v.impact === "serious" || v.impact === "critical"
       );
       expect(blocking, JSON.stringify(blocking, null, 2)).toHaveLength(0);
     });
@@ -3925,27 +4064,30 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): axe-core a11y on /leaderbo
 ### Task G6: Keyboard nav E2E
 
 **Files:**
+
 - Create: `site/tests/e2e/keyboard.spec.ts`
 
 - [ ] **Step 1: Implement**
 
 ```ts
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test('/leaderboard skip-link is the first tab target', async ({ page }) => {
-  await page.goto('/leaderboard');
-  await page.keyboard.press('Tab');
-  const focused = await page.evaluate(() => document.activeElement?.textContent);
-  expect(focused?.toLowerCase()).toContain('skip');
+test("/leaderboard skip-link is the first tab target", async ({ page }) => {
+  await page.goto("/leaderboard");
+  await page.keyboard.press("Tab");
+  const focused = await page.evaluate(() =>
+    document.activeElement?.textContent
+  );
+  expect(focused?.toLowerCase()).toContain("skip");
 });
 
-test('/leaderboard sort header activates with Enter', async ({ page }) => {
-  await page.goto('/leaderboard');
+test("/leaderboard sort header activates with Enter", async ({ page }) => {
+  await page.goto("/leaderboard");
   // Tab past skip + nav links + theme toggle to reach the sortable header.
   // We use direct keyboard focus by clicking outside chrome first, then arrow.
-  const scoreHeader = page.getByRole('columnheader', { name: /score/i });
+  const scoreHeader = page.getByRole("columnheader", { name: /score/i });
   await scoreHeader.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/sort=avg_score/);
 });
 ```
@@ -3967,6 +4109,7 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): keyboard nav (skip-link as
 ### Task G7: Lighthouse CI config
 
 **Files:**
+
 - Create: `site/lighthouserc.json`
 
 - [ ] **Step 1: Implement**
@@ -3987,14 +4130,14 @@ git -C /u/Git/CentralGauge commit -m "test(site/e2e): keyboard nav (skip-link as
     },
     "assert": {
       "assertions": {
-        "categories:performance":     ["error", { "minScore": 0.95 }],
-        "categories:accessibility":   ["error", { "minScore": 1.0 }],
-        "categories:best-practices":  ["error", { "minScore": 0.95 }],
-        "categories:seo":             ["error", { "minScore": 0.90 }],
-        "first-contentful-paint":     ["error", { "maxNumericValue": 1000 }],
-        "largest-contentful-paint":   ["error", { "maxNumericValue": 1500 }],
-        "cumulative-layout-shift":    ["error", { "maxNumericValue": 0.05 }],
-        "total-blocking-time":        ["error", { "maxNumericValue": 200 }]
+        "categories:performance": ["error", { "minScore": 0.95 }],
+        "categories:accessibility": ["error", { "minScore": 1.0 }],
+        "categories:best-practices": ["error", { "minScore": 0.95 }],
+        "categories:seo": ["error", { "minScore": 0.90 }],
+        "first-contentful-paint": ["error", { "maxNumericValue": 1000 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 1500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.05 }],
+        "total-blocking-time": ["error", { "maxNumericValue": 200 }]
       }
     },
     "upload": { "target": "filesystem", "outputDir": "./lhci-reports" }
@@ -4021,6 +4164,7 @@ git -C /u/Git/CentralGauge commit -m "build(site/ci): Lighthouse CI config (perf
 ### Task G8: GitHub Actions workflow for site CI
 
 **Files:**
+
 - Create: `.github/workflows/site-ci.yml`
 
 - [ ] **Step 1: Implement**
@@ -4030,10 +4174,10 @@ name: Site CI
 
 on:
   pull_request:
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
   push:
-    branches: [ master ]
-    paths: [ 'site/**', '.github/workflows/site-ci.yml' ]
+    branches: [master]
+    paths: ["site/**", ".github/workflows/site-ci.yml"]
 
 defaults:
   run:
@@ -4045,7 +4189,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run check
       - run: npm run test:main
@@ -4059,7 +4207,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run build
@@ -4076,7 +4228,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm', cache-dependency-path: site/package-lock.json }
+        with: {
+          node-version: "22",
+          cache: "npm",
+          cache-dependency-path: site/package-lock.json,
+        }
       - run: npm ci
       - run: npm run build
       - run: npm run test:lhci
@@ -4106,11 +4262,12 @@ git -C /u/Git/CentralGauge commit -m "build(ci): site CI — unit/build/budget/c
 ### Task H1: Site CONTRIBUTING
 
 **Files:**
+
 - Create: `site/CONTRIBUTING.md`
 
 - [ ] **Step 1: Implement**
 
-```markdown
+````markdown
 # Contributing to the CentralGauge site
 
 ## Setup
@@ -4120,6 +4277,7 @@ cd site
 npm install
 npx playwright install --with-deps chromium
 ```
+````
 
 ## Local development
 
@@ -4174,14 +4332,14 @@ Same as atoms but in `src/lib/components/domain/`. Domain widgets compose atoms;
 - Component CSS is `<style scoped>` (the SvelteKit default).
 - TypeScript strict; no `any`, no `unknown` without explicit narrowing.
 - Test files mirror source 1:1: `Foo.svelte` → `Foo.test.svelte.ts`.
-```
 
+````
 - [ ] **Step 2: Commit**
 
 ```bash
 git -C /u/Git/CentralGauge add site/CONTRIBUTING.md
 git -C /u/Git/CentralGauge commit -m "docs(site): CONTRIBUTING — setup, testing, adding routes/components/flags"
-```
+````
 
 ---
 
