@@ -35,7 +35,7 @@ import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
 import { collectEnvelope } from "../../src/lifecycle/envelope.ts";
 
-interface PendingRow {
+export interface PendingRow {
   id: number;
   model_slug: string;
   concept_slug_proposed: string;
@@ -132,7 +132,7 @@ function renderRow(row: PendingRow): void {
   console.log(colors.bold("─".repeat(72)));
 }
 
-interface PostDeps {
+export interface PostDeps {
   url: string;
   privKey: Uint8Array;
   keyId: number;
@@ -140,11 +140,21 @@ interface PostDeps {
   actor: string;
 }
 
-async function postDecision(
+/**
+ * D7.4 — Injectable POST function. Production callers leave `postFn`
+ * undefined so it falls through to {@link postWithRetry}; tests pass a
+ * stub to capture (url, body) without spinning up a real fetch loop.
+ */
+export interface PostOpts {
+  postFn?: (url: string, body: unknown) => Promise<Response>;
+}
+
+export async function postDecision(
   deps: PostDeps,
   kind: "merge" | "create",
   row: PendingRow,
   reason: string | undefined,
+  opts: PostOpts = {},
 ): Promise<void> {
   const payload = {
     pending_review_id: row.id,
@@ -155,7 +165,8 @@ async function postDecision(
     ts: Date.now(),
   };
   const sig = await signPayload(payload, deps.privKey, deps.keyId);
-  const resp = await postWithRetry(
+  const post = opts.postFn ?? postWithRetry;
+  const resp = await post(
     `${deps.url}/api/v1/admin/lifecycle/cluster-review/decide`,
     { version: 1, payload, signature: sig },
   );
@@ -164,11 +175,12 @@ async function postDecision(
   }
 }
 
-async function postSplit(
+export async function postSplit(
   deps: PostDeps,
   row: PendingRow,
   newSlugs: string[],
   reason: string,
+  opts: PostOpts = {},
 ): Promise<void> {
   const payload = {
     pending_review_id: row.id,
@@ -180,7 +192,8 @@ async function postSplit(
     new_slugs: newSlugs,
   };
   const sig = await signPayload(payload, deps.privKey, deps.keyId);
-  const resp = await postWithRetry(
+  const post = opts.postFn ?? postWithRetry;
+  const resp = await post(
     `${deps.url}/api/v1/admin/lifecycle/cluster-review/decide`,
     { version: 1, payload, signature: sig },
   );
