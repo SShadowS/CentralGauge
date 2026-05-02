@@ -92,12 +92,22 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     }
 
     let fromEventId: number | null;
+    let fromEventTs: number | null;
     if (fromQ) {
       fromEventId = +fromQ;
-    } else {
-      const prior = await getFirst<{ id: number }>(
+      // Caller passed an explicit from event id. Look up its ts so the
+      // bucket discriminator can compare against the right unit (unix-ms,
+      // not autoincrement id — see existedAtFromGen history note).
+      const fromRow = await getFirst<{ ts: number }>(
         env.DB,
-        `SELECT le.id
+        `SELECT ts FROM lifecycle_events WHERE id = ? AND event_type = 'analysis.completed'`,
+        [fromEventId],
+      );
+      fromEventTs = fromRow?.ts ?? null;
+    } else {
+      const prior = await getFirst<{ id: number; ts: number }>(
+        env.DB,
+        `SELECT le.id, le.ts
            FROM lifecycle_events le
            JOIN models m ON m.slug = le.model_slug
            JOIN model_families mf ON mf.id = m.family_id
@@ -110,6 +120,7 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
         [slug, taskSetHash, toEventId],
       );
       fromEventId = prior?.id ?? null;
+      fromEventTs = prior?.ts ?? null;
     }
 
     // Read materialised diff from family_diffs. NULL-aware lookup so both
@@ -139,6 +150,7 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
       family_slug: slug,
       task_set_hash: taskSetHash,
       from_gen_event_id: fromEventId,
+      from_event_ts: fromEventTs,
       to_gen_event_id: toEventId,
     });
     return cachedJson(request, result satisfies DiffResult, {

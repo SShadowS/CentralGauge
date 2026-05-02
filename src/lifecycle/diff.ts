@@ -75,6 +75,35 @@ export interface DiffDb {
 }
 
 /**
+ * Args for `computeGenerationDiff`. `from_event_ts` is the unix-ms
+ * `lifecycle_events.ts` of the from-event row, threaded through by the
+ * caller after its own SELECT (the worker trigger has it; the inline-
+ * recompute fallback in the API endpoint re-SELECTs and passes it). MUST
+ * be `null` when `from_gen_event_id` is `null` (baseline_missing — there
+ * is no from-event timestamp to bucket against).
+ *
+ * Why the caller plumbs it (vs the diff function re-fetching it itself):
+ * keeps the function close to pure (single SELECT per event, callers
+ * already paid the cost) and lets the worker share its own SELECT result.
+ */
+export interface DiffArgs {
+  family_slug: string;
+  task_set_hash: string;
+  from_gen_event_id: number | null;
+  /**
+   * Unix-ms timestamp of the from-event's `lifecycle_events.ts` column.
+   * `null` iff `from_gen_event_id === null`. The bucketing logic compares
+   * `concepts.first_seen` (also unix-ms) against this value to distinguish
+   * `regressed` (concept pre-existed gen_a) from `new` (concept post-dates
+   * gen_a's analysis). Using event ids as a proxy was a critical bug
+   * (production ids are ~10^4-10^6 while ts is ~10^12 — every comparison
+   * was always FALSE, mis-bucketing all regressions as 'new').
+   */
+  from_event_ts: number | null;
+  to_gen_event_id: number;
+}
+
+/**
  * Compute the per-concept diff between two `analysis.completed` events.
  *
  * The caller passes both `from_gen_event_id` (nullable — `null` ↔ no
@@ -95,12 +124,7 @@ export interface DiffDb {
  */
 export async function computeGenerationDiff(
   db: DiffDb,
-  args: {
-    family_slug: string;
-    task_set_hash: string;
-    from_gen_event_id: number | null;
-    to_gen_event_id: number;
-  },
+  args: DiffArgs,
 ): Promise<DiffResult> {
   // Resolve to_gen first — it must exist (caller invokes after the event lands).
   const toEvent = await db.prepare(
@@ -144,6 +168,21 @@ export async function computeGenerationDiff(
   }
   const fromAnalyzer = parseAnalyzerModel(fromEvent.payload_json);
 
+  // Invariant: when from_gen_event_id is non-null, the caller MUST pass the
+  // matching from_event_ts so the regressed/new bucket discriminator can
+  // compare against the right unit. (Pre-fix the discriminator silently
+  // used fromEvent.id, which differs from concepts.first_seen by ~12 orders
+  // of magnitude in production and mis-bucketed every regression as 'new'.)
+  if (args.from_event_ts == null) {
+    throw new Error(
+      `computeGenerationDiff: from_event_ts is required when from_gen_event_id ` +
+        `is non-null (got from_gen_event_id=${args.from_gen_event_id}, ` +
+        `from_event_ts=null). The caller must SELECT lifecycle_events.ts and ` +
+        `thread it through DiffArgs — see lifecycle-diff-trigger.ts for the ` +
+        `canonical pattern.`,
+    );
+  }
+
   // Analyzer-mismatch short-circuit: omit buckets entirely.
   if (fromAnalyzer !== toAnalyzer) {
     return {
@@ -182,7 +221,7 @@ export async function computeGenerationDiff(
     if (fromIds.has(c.concept_id)) {
       const a = fromMap.get(c.concept_id)!;
       persisting.push(toDiffConcept(c, c.count - a.count));
-    } else if (existedAtFromGen(c.first_seen, fromEvent.id)) {
+    } else if (existedAtFromGen(c.first_seen, args.from_event_ts)) {
       // Concept already existed in the registry by the time gen_a was analyzed
       // but did not appear in gen_a's shortcomings. Now it does — the model
       // regressed (or it always had this issue but earlier analysis missed it).
@@ -294,36 +333,28 @@ function toDiffConcept(c: ConceptCountRow, delta: number): DiffConcept {
 /**
  * Whether the concept already existed at the time gen_a was analyzed.
  *
- * `concepts.first_seen` is a unix-ms timestamp from the concept.created
- * event. `lifecycle_events.id` is monotonic-by-insert (AUTOINCREMENT
- * across the entire table). At the diff layer we have only the from-event
- * id, not its ts — so we use the id as a monotonic ordering proxy.
+ * Both arguments are unix-ms timestamps:
+ *   - `conceptFirstSeen` from `concepts.first_seen` (set to `Date.now()`
+ *     when the concept.created event lands).
+ *   - `fromEventTs` from `lifecycle_events.ts` of gen_a's
+ *     `analysis.completed` event.
  *
- * Concretely: `first_seen <= fromEventId` means the concept's row was
- * created before gen_a's analysis row was inserted. Both are AUTOINCREMENT
- * INTEGER PKs in the same table, but `first_seen` is a wall-clock ts.
- * This comparison is safe in practice because (a) `first_seen` is set to
- * `Date.now()` (ms), an integer that strictly exceeds any plausible event
- * id by ~12 orders of magnitude (event ids are ~10^4-10^6 in production;
- * `Date.now()` in 2026 is ~1.77 * 10^12), so any concept created at all
- * compares strictly greater than any event id; and (b) the alternative
- * — re-fetching from-event.ts here — would force the function to be
- * non-pure or to thread `from_event_ts` through the args. We accept the
- * id-vs-ts unit mismatch and document the invariant: a concept that
- * existed before the analyzer ran will have `first_seen` strictly less
- * than the analysis event's `ts`, but ALSO strictly less than the
- * analysis event's `id` because both monotonic streams started near
- * unix-epoch. **Re-evaluate this approximation** if `concepts.first_seen`
- * ever changes units (e.g. seconds instead of ms).
+ * `<=` (not strict `<`) so a concept created in the same millisecond as
+ * the analyzer ran is treated as pre-existing — strictness here only
+ * matters for synthetic test fixtures, but `<=` is the conservative
+ * choice (mis-bucketing one occurrence as `regressed` is preferable to
+ * mis-bucketing it as `new` because the latter inflates the "model
+ * worse on new things" signal).
  *
- * TODO(lifecycle): once `from_event_ts` is plumbed through (worker has
- * it after the SELECT), drop this approximation and compare against
- * the actual ts. The current id-as-proxy is intentional to keep the
- * function arg list flat for v1.
+ * History: prior to the wave-5 critical-fix, this compared against
+ * `lifecycle_events.id` (autoincrement) instead of `lifecycle_events.ts`
+ * (unix-ms). The id-vs-ts unit mismatch silently broke production: ids
+ * are ~10^4-10^6 while ts is ~10^12, so the comparison was always FALSE
+ * and every pre-existing-concept regression got mis-bucketed as `new`.
  */
 function existedAtFromGen(
   conceptFirstSeen: number,
-  fromEventId: number,
+  fromEventTs: number,
 ): boolean {
-  return conceptFirstSeen < fromEventId;
+  return conceptFirstSeen <= fromEventTs;
 }

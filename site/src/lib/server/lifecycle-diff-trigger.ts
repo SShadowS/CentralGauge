@@ -66,8 +66,12 @@ export async function maybeTriggerFamilyDiff(
   // through models → model_families and the trigger runs on the worker
   // side where direct D1 access is faster than re-routing through
   // queryEvents (which is intended for the CLI side).
+  // SELECT both id AND ts here. ts (unix-ms) is plumbed through DiffArgs to
+  // the bucket-discriminator (existedAtFromGen) — without it that function
+  // mis-buckets every regression as 'new' (the old id-vs-ts unit mismatch
+  // was the wave-5 critical bug).
   const prior = await db.prepare(
-    `SELECT le.id
+    `SELECT le.id, le.ts
        FROM lifecycle_events le
        JOIN models m ON m.slug = le.model_slug
        JOIN model_families mf ON mf.id = m.family_id
@@ -78,7 +82,7 @@ export async function maybeTriggerFamilyDiff(
       ORDER BY le.id DESC
       LIMIT 1`,
   ).bind(fam.family_slug, event.task_set_hash, event.id)
-    .first<{ id: number }>();
+    .first<{ id: number; ts: number }>();
 
   // Schedule async diff computation. The ctx.waitUntil wrapper keeps the
   // POST response fast; the diff materialises in the background and the
@@ -97,6 +101,7 @@ export async function maybeTriggerFamilyDiff(
     family_slug: fam.family_slug,
     task_set_hash: event.task_set_hash,
     from_gen_event_id: prior?.id ?? null,
+    from_event_ts: prior?.ts ?? null,
     to_gen_event_id: event.id,
   });
   ctx.waitUntil(job);
@@ -109,6 +114,7 @@ interface DiffJobArgs {
   family_slug: string;
   task_set_hash: string;
   from_gen_event_id: number | null;
+  from_event_ts: number | null;
   to_gen_event_id: number;
 }
 
@@ -118,6 +124,7 @@ async function runDiffJob(args: DiffJobArgs): Promise<void> {
       family_slug: args.family_slug,
       task_set_hash: args.task_set_hash,
       from_gen_event_id: args.from_gen_event_id,
+      from_event_ts: args.from_event_ts,
       to_gen_event_id: args.to_gen_event_id,
     });
 
