@@ -25,7 +25,7 @@ CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTI
 # DO NOT add `CF_ACCESS_AUD = ""` here. Vars and secrets share env.* and a
 # baked-in empty var would shadow the secret at runtime (resolution order
 # is implementation-defined). See docs/site/operations.md for the runbook.
-CF_ACCESS_TEAM_DOMAIN = "centralgauge.cloudflareaccess.com"
+CF_ACCESS_TEAM_DOMAIN = "sshadows.cloudflareaccess.com"
 
 [assets]
 directory = ".svelte-kit/cloudflare"
