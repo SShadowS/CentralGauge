@@ -16,7 +16,7 @@
  *   - missing email/sub claims → 401
  *   - happy path → returns { email, sub }
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetJwksCacheForTests,
   __setJwksCacheForTests,
@@ -231,10 +231,97 @@ describe('verifyCfAccessJwt', () => {
     const req = new Request('https://x/admin/lifecycle/review', {
       headers: { 'cf-access-jwt-assertion': jwt },
     });
-    await expectApiError(
-      () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_unknown_kid',
+    // After Wave 5 / IMPORTANT 2 the verifier force-refreshes JWKs once
+    // when the cache is missing the kid. To assert the *unknown_kid*
+    // failure path here we also stub fetch so the refresh path returns
+    // the same kid-mismatched JWK (still no match → 401).
+    const stub = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ keys: [{ ...kp.publicJwk, kid: 'other' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    try {
+      await expectApiError(
+        () => verifyCfAccessJwt(req, envOk()),
+        'cf_access_unknown_kid',
+      );
+    } finally {
+      stub.mockRestore();
+    }
+  });
+
+  it('IMPORTANT 2 — re-fetches JWKs once when kid is not in cache (CF key rotation)', async () => {
+    // Pre-warm the cache with an OLD kid; the JWT uses a NEW kid (mirrors
+    // a CF key rotation between fetches). Pre-Wave5 this returned 401
+    // cf_access_unknown_kid for up to JWKS_TTL_MS (10 minutes). Post-fix
+    // the verifier force-refreshes JWKs once and retries the lookup.
+    const kpOld = await generateRsaKeypair();
+    const kpNew = await generateRsaKeypair();
+    __setJwksCacheForTests([{ ...kpOld.publicJwk, kid: 'old-kid' }]);
+    const jwt = await signJwt(
+      kpNew.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
     );
+    // Stub fetch so the refresh path returns the NEW key.
+    const stub = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ keys: [{ ...kpNew.publicJwk, kid: KID }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    try {
+      const req = new Request('https://x/admin/lifecycle/review', {
+        headers: { 'cf-access-jwt-assertion': jwt },
+      });
+      const user = await verifyCfAccessJwt(req, envOk());
+      expect(user.email).toBe('op@example.com');
+      // The refresh fetch happened exactly once.
+      expect(stub).toHaveBeenCalledTimes(1);
+      expect(stub.mock.calls[0]?.[0]).toContain('/cdn-cgi/access/certs');
+    } finally {
+      stub.mockRestore();
+    }
+  });
+
+  it('IMPORTANT 2 — does NOT re-fetch when the cache was just-fetched (cold start no double-fetch)', async () => {
+    // Cold start: jwksCache is null. The first fetchJwks call populates the
+    // cache. If the kid still isn't found the verifier MUST NOT re-fetch
+    // (we just got the freshest data possible) — return 401 immediately.
+    __resetJwksCacheForTests();
+    const kp = await generateRsaKeypair();
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
+    );
+    const stub = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        new Response(
+          // Fresh JWKs but with a DIFFERENT kid — JWT will not match.
+          JSON.stringify({ keys: [{ ...kp.publicJwk, kid: 'something-else' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    try {
+      const req = new Request('https://x/admin/lifecycle/review', {
+        headers: { 'cf-access-jwt-assertion': jwt },
+      });
+      await expectApiError(
+        () => verifyCfAccessJwt(req, envOk()),
+        'cf_access_unknown_kid',
+      );
+      // Exactly ONE fetch — no double-fetch on a cold cache.
+      expect(stub).toHaveBeenCalledTimes(1);
+    } finally {
+      stub.mockRestore();
+    }
   });
 
   it('rejects wrong audience even with valid signature (the F5.3 acceptance gate)', async () => {

@@ -52,11 +52,20 @@ let jwksCache: JwksCacheEntry | null = null;
 const JWKS_TTL_MS = 10 * 60 * 1000;
 
 /**
+ * In-flight refresh promise per team domain (Wave 5 / IMPORTANT 2). When
+ * a kid-not-in-cache miss triggers a force-refresh, concurrent requests
+ * share the same fetch promise instead of stampeding the JWKs endpoint.
+ * Cleared as soon as the underlying fetch settles.
+ */
+const inFlightRefresh = new Map<string, Promise<JsonWebKey[]>>();
+
+/**
  * Reset the in-memory JWKs cache. Test-only; production callers must
  * NOT invoke this — the TTL is the entire point of the cache.
  */
 export function __resetJwksCacheForTests(): void {
   jwksCache = null;
+  inFlightRefresh.clear();
 }
 
 /**
@@ -67,22 +76,55 @@ export function __setJwksCacheForTests(keys: JsonWebKey[]): void {
   jwksCache = { fetchedAt: Date.now(), keys };
 }
 
-async function fetchJwks(teamDomain: string): Promise<JsonWebKey[]> {
-  if (jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS) {
-    return jwksCache.keys;
+/**
+ * Discriminated result so callers can branch on whether they got a fresh
+ * fetch (just hit the network) or a cached response. The kid-not-in-cache
+ * retry path uses `fromCache=true` to decide whether a force-refresh is
+ * worth attempting (no point if we just fetched).
+ */
+interface FetchJwksResult {
+  keys: JsonWebKey[];
+  fromCache: boolean;
+}
+
+async function fetchJwks(
+  teamDomain: string,
+  bypassCache = false,
+): Promise<FetchJwksResult> {
+  if (
+    !bypassCache && jwksCache && Date.now() - jwksCache.fetchedAt < JWKS_TTL_MS
+  ) {
+    return { keys: jwksCache.keys, fromCache: true };
+  }
+  // Wave 5 / IMPORTANT 2 — coalesce concurrent refreshes per teamDomain.
+  // A burst of requests during a CF key rotation should fan back into a
+  // single underlying fetch, not stampede the JWKs endpoint.
+  const existing = inFlightRefresh.get(teamDomain);
+  if (existing) {
+    const keys = await existing;
+    return { keys, fromCache: false };
   }
   const url = `https://${teamDomain}/cdn-cgi/access/certs`;
-  const resp = await fetch(url);
-  if (!resp.ok) {
-    throw new ApiError(
-      503,
-      "cf_access_jwks_unreachable",
-      `cf access JWKs fetch ${resp.status}`
-    );
+  const promise = (async () => {
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new ApiError(
+        503,
+        "cf_access_jwks_unreachable",
+        `cf access JWKs fetch ${resp.status}`,
+      );
+    }
+    const body = (await resp.json()) as { keys: JsonWebKey[] };
+    jwksCache = { fetchedAt: Date.now(), keys: body.keys };
+    return body.keys;
+  })();
+  inFlightRefresh.set(teamDomain, promise);
+  try {
+    const keys = await promise;
+    return { keys, fromCache: false };
+  } finally {
+    inFlightRefresh.delete(teamDomain);
   }
-  const body = (await resp.json()) as { keys: JsonWebKey[] };
-  jwksCache = { fetchedAt: Date.now(), keys: body.keys };
-  return body.keys;
 }
 
 function b64UrlDecode(s: string): Uint8Array {
@@ -164,8 +206,19 @@ export async function verifyCfAccessJwt(
     );
   }
 
-  const keys = await fetchJwks(env.CF_ACCESS_TEAM_DOMAIN);
-  const jwk = keys.find((k) => (k as { kid?: string }).kid === header.kid);
+  // Wave 5 / IMPORTANT 2 — kid-not-in-cache retry. CF rotates keys on a
+  // 24h cadence; the in-process JWKs cache TTL is 10 minutes. Inside that
+  // 10-minute window every JWT signed with the new kid would 401 until
+  // the cache expires. Fix: when the kid is missing AND the keys came
+  // from cache, force a single fresh fetch and retry the lookup.
+  let { keys, fromCache } = await fetchJwks(env.CF_ACCESS_TEAM_DOMAIN);
+  let jwk = keys.find((k) => (k as { kid?: string }).kid === header.kid);
+  if (!jwk && fromCache) {
+    const refreshed = await fetchJwks(env.CF_ACCESS_TEAM_DOMAIN, true);
+    keys = refreshed.keys;
+    fromCache = refreshed.fromCache;
+    jwk = keys.find((k) => (k as { kid?: string }).kid === header.kid);
+  }
   if (!jwk) {
     throw new ApiError(401, "cf_access_unknown_kid", `kid=${header.kid}`);
   }
