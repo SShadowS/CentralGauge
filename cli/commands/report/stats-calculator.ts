@@ -98,12 +98,17 @@ export function calculateBenchmarkStats(
   results: BenchmarkResult[],
   perModelMap: Map<string, PerModelStats>,
 ): BenchmarkStats {
+  const totalPassed = results.filter((r) => r.success).length;
+  const totalTasks = results.length;
+
   return {
-    overallPassRate: 0,
-    averageScore: 0,
+    overallPassRate: totalTasks > 0 ? totalPassed / totalTasks : 0,
+    averageScore: totalTasks > 0
+      ? results.reduce((sum, r) => sum + (r.finalScore || 0), 0) / totalTasks
+      : 0,
     totalTokens: results.reduce((sum, r) => sum + (r.totalTokensUsed || 0), 0),
     totalCost: results.reduce((sum, r) => sum + (r.totalCost || 0), 0),
-    totalDuration: 0,
+    totalDuration: results.reduce((sum, r) => sum + (r.totalDuration || 0), 0),
     perModel: Object.fromEntries(perModelMap),
   };
 }

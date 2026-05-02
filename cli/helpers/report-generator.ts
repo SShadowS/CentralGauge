@@ -3,11 +3,7 @@
  * @module cli/helpers/report-generator
  */
 
-import type {
-  BenchmarkResult,
-  BenchmarkStats,
-  PerModelStats,
-} from "../types/cli-types.ts";
+import type { BenchmarkResult, PerModelStats } from "../types/cli-types.ts";
 import type { ResultRecord } from "../../src/stats/types.ts";
 import type {
   ModelShortcomingEntry,
@@ -15,11 +11,13 @@ import type {
 } from "../../src/verify/types.ts";
 import { shortVariantName } from "../../src/utils/formatters.ts";
 import { extractModelName } from "./model-utils.ts";
+export {
+  calculateBenchmarkStats,
+  calculatePerModelStats,
+} from "../commands/report/stats-calculator.ts";
 import {
-  costPerPass as costPerPassFn,
-  percentile,
-  tokensPerPass as tokensPerPassFn,
-  wilsonInterval,
+  calculateBenchmarkStats,
+  calculatePerModelStats,
 } from "../commands/report/stats-calculator.ts";
 
 /**
@@ -132,109 +130,6 @@ export function resultRecordToBenchmarkResult(
   }
 
   return result;
-}
-
-/**
- * Calculate per-model statistics from benchmark results
- */
-export function calculatePerModelStats(
-  results: BenchmarkResult[],
-): Map<string, PerModelStats> {
-  const perModelMap = new Map<string, PerModelStats>();
-
-  for (const result of results) {
-    const variantId = result.context?.variantId ||
-      result.context?.llmModel || "unknown";
-
-    if (!perModelMap.has(variantId)) {
-      perModelMap.set(variantId, {
-        model: variantId.split("/").pop()?.split("@")[0] || variantId,
-        provider: result.context?.llmProvider || "unknown",
-        variantId,
-        tasksPassed: 0,
-        tasksFailed: 0,
-        avgScore: 0,
-        tokens: 0,
-        cost: 0,
-        avgAttempts: 0,
-        passedOnAttempt1: 0,
-        passedOnAttempt2: 0,
-        passedByAttempt: [],
-        compileFailures: 0,
-        testFailures: 0,
-        malformedResponses: 0,
-        variantConfig: result.context?.variantConfig ?? null,
-        passRateCI: { lower: 0, upper: 1 },
-        costPerPass: null,
-        tokensPerPass: null,
-        durations: [],
-        latencyP50: 0,
-        latencyP95: 0,
-      });
-    }
-
-    const m = perModelMap.get(variantId)!;
-    if (result.success) {
-      m.tasksPassed++;
-      // Find which attempt first succeeded
-      const successIndex = result.attempts?.findIndex((a) => a.success) ?? 0;
-      while (m.passedByAttempt.length <= successIndex) {
-        m.passedByAttempt.push(0);
-      }
-      m.passedByAttempt[successIndex] = (m.passedByAttempt[successIndex] ?? 0) +
-        1;
-      // Backward compat
-      if (result.attempts?.[0]?.success) {
-        m.passedOnAttempt1++;
-      }
-      m.passedOnAttempt2++;
-    } else {
-      m.tasksFailed++;
-    }
-    m.tokens += result.totalTokensUsed || 0;
-    m.cost += result.totalCost || 0;
-    m.avgScore += result.finalScore || 0;
-    if (typeof result.totalDuration === "number" && result.totalDuration > 0) {
-      m.durations.push(result.totalDuration);
-    }
-  }
-
-  // Calculate averages
-  for (const m of perModelMap.values()) {
-    const total = m.tasksPassed + m.tasksFailed;
-    if (total > 0) {
-      m.avgScore = m.avgScore / total;
-    }
-    m.passRateCI = wilsonInterval(m.tasksPassed, total);
-    m.costPerPass = costPerPassFn(m.cost, m.tasksPassed);
-    m.tokensPerPass = tokensPerPassFn(m.tokens, m.tasksPassed);
-    m.latencyP50 = percentile(m.durations, 0.5);
-    m.latencyP95 = percentile(m.durations, 0.95);
-  }
-
-  return perModelMap;
-}
-
-/**
- * Calculate overall benchmark statistics
- */
-export function calculateBenchmarkStats(
-  results: BenchmarkResult[],
-  perModelMap: Map<string, PerModelStats>,
-): BenchmarkStats {
-  const totalPassed = results.filter((r) => r.success).length;
-  const totalTasks = results.length;
-
-  return {
-    overallPassRate: totalTasks > 0 ? totalPassed / totalTasks : 0,
-    averageScore: totalTasks > 0
-      ? results.reduce((sum, r) => sum + (r.finalScore || 0), 0) / totalTasks
-      : 0,
-    totalTokens: results.reduce((sum, r) => sum + (r.totalTokensUsed || 0), 0),
-    totalCost: results.reduce((sum, r) => sum + (r.totalCost || 0), 0),
-    totalDuration: results.reduce((sum, r) => sum + (r.totalDuration || 0), 0),
-    perModel: Object.fromEntries(perModelMap),
-  };
 }
 
 // ============================================================================
