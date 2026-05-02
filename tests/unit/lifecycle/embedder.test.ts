@@ -1,6 +1,8 @@
 /**
  * D1.2 — Embedder + cosineSimilarity unit tests.
  */
+// Pre-load @db/sqlite — see note in tests/unit/stats/sqlite-storage.test.ts
+import "@db/sqlite";
 import { assertAlmostEquals, assertEquals } from "@std/assert";
 import { cosineSimilarity, Embedder } from "../../../src/lifecycle/embedder.ts";
 

@@ -8,7 +8,7 @@ import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
-import { loadIngestConfig, readPrivateKey } from "../../src/ingest/config.ts";
+import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
 
@@ -34,13 +34,7 @@ async function handleSyncCatalog(options: SyncCatalogOptions): Promise<void> {
   if (options.adminKeyId !== undefined) flags.adminKeyId = options.adminKeyId;
 
   const cwd = Deno.cwd();
-  const config = await loadIngestConfig(cwd, flags);
-  if (config.adminKeyId == null || !config.adminKeyPath) {
-    throw new Error(
-      "admin_key_id + admin_key_path required (via .centralgauge.yml or " +
-        "--admin-key-path/--admin-key-id flags) for sync",
-    );
-  }
+  const config = await loadAdminConfig(cwd, flags);
   const adminPriv = await readPrivateKey(config.adminKeyPath);
   const cat = await readCatalog(`${cwd}/site/catalog`);
 

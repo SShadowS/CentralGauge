@@ -6,10 +6,12 @@
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
 import {
+  adminSection,
   formatReportAsJson,
   formatReportToTerminal,
   ingestSection,
   runDoctor,
+  type Section,
   type VariantProbe,
 } from "../../src/doctor/mod.ts";
 import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
@@ -69,10 +71,14 @@ function variantProbesFromLlms(
   }));
 }
 
-async function runIngest(options: DoctorOptions): Promise<void> {
-  const variants = variantProbesFromLlms(options.llms);
+async function runSection(
+  section: Section,
+  options: DoctorOptions,
+  benchAware: boolean,
+): Promise<void> {
+  const variants = benchAware ? variantProbesFromLlms(options.llms) : [];
   const opts: Parameters<typeof runDoctor>[0] = {
-    section: ingestSection,
+    section,
   };
   if (variants.length > 0) opts.variants = variants;
   if (options.pricingVersion !== undefined) {
@@ -109,13 +115,22 @@ async function runIngest(options: DoctorOptions): Promise<void> {
   if (!report.ok) Deno.exit(1);
 }
 
+const runIngest = (options: DoctorOptions) =>
+  runSection(ingestSection, options, true);
+
+const runAdmin = (options: DoctorOptions) =>
+  runSection(adminSection, options, false);
+
 export function registerDoctorCommand(cli: Command): void {
   const doctorCmd = new Command()
     .description("Environment health checks")
     .action(() => {
-      console.log("Available sections: ingest");
+      console.log("Available sections: ingest, admin");
       console.log(
-        "Run `centralgauge doctor ingest` to check ingest health.",
+        "Run `centralgauge doctor ingest` to check ingest health (bench/publish).",
+      );
+      console.log(
+        "Run `centralgauge doctor admin` to check admin health (lifecycle status/digest).",
       );
     });
 
@@ -149,6 +164,25 @@ export function registerDoctorCommand(cli: Command): void {
       "Task-set hash to validate is_current",
     )
     .action((opts: DoctorOptions) => runIngest(opts));
+
+  doctorCmd
+    .command(
+      "admin",
+      "Verify admin health (config, keys, connectivity, auth probe with admin key)",
+    )
+    .option("--json", "Emit DoctorReport as JSON for CI/scripts", {
+      default: false,
+    })
+    .option(
+      "--levels <list:string>",
+      "Comma-separated subset of levels (A,B,C,D)",
+    )
+    .option(
+      "--repair",
+      "Run built-in auto-repair allowlist for repairable failures, then re-check",
+      { default: false },
+    )
+    .action((opts: DoctorOptions) => runAdmin(opts));
 
   cli.command("doctor", doctorCmd);
 }

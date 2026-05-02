@@ -1,37 +1,14 @@
-import { parse } from "jsr:@std/yaml@^1.1.0";
+import { mergeConfigSources } from "../../../ingest/config.ts";
 import type { Check, DoctorContext } from "../../types.ts";
 
 const TIMEOUT_MS = 5000;
 
-function homeDir(): string {
-  const override = Deno.env.get("CENTRALGAUGE_TEST_HOME");
-  if (override) return override;
-  return Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME") ?? ".";
-}
-
 async function readUrl(ctx: DoctorContext): Promise<string | null> {
-  for (
-    const path of [
-      `${ctx.cwd}/.centralgauge.yml`,
-      `${homeDir()}/.centralgauge.yml`,
-    ]
-  ) {
-    try {
-      const cfg = parse(await Deno.readTextFile(path)) as Record<
-        string,
-        unknown
-      >;
-      const url = (cfg?.["ingest"] as Record<string, unknown> | undefined)?.[
-        "url"
-      ];
-      if (typeof url === "string" && url.length > 0) {
-        return url.replace(/\/+$/, "");
-      }
-    } catch {
-      // try next
-    }
-  }
-  return null;
+  // CENTRALGAUGE_TEST_HOME is honored by the underlying loader via $HOME
+  // override. mergeConfigSources reads cwd + home YAML and CLI env vars
+  // — net.health gets URL from any of them.
+  const src = await mergeConfigSources(ctx.cwd, {});
+  return src.url ? src.url.replace(/\/+$/, "") : null;
 }
 
 export const checkNetHealth: Check = {

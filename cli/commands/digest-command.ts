@@ -31,7 +31,7 @@ import { z } from "zod";
 import { CentralGaugeError } from "../../src/errors.ts";
 import {
   type IngestCliFlags,
-  loadIngestConfig,
+  loadAdminConfig,
   readPrivateKey,
 } from "../../src/ingest/config.ts";
 import { computeTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
@@ -128,14 +128,7 @@ async function handleDigest(flags: DigestFlags): Promise<void> {
   }
   if (flags.adminKeyId !== undefined) cliFlags.adminKeyId = flags.adminKeyId;
 
-  const config = await loadIngestConfig(Deno.cwd(), cliFlags);
-  if (!config.adminKeyPath || config.adminKeyId == null) {
-    throw new Error(
-      "admin_key_path + admin_key_id required (set in .centralgauge.yml " +
-        "or via --admin-key-path/--admin-key-id) — `lifecycle digest` is " +
-        "admin scope; the ingest key is rejected by the underlying endpoints",
-    );
-  }
+  const config = await loadAdminConfig(Deno.cwd(), cliFlags);
   const adminPriv = await readPrivateKey(config.adminKeyPath);
   const adminKeyId = config.adminKeyId;
   const sinceMs = Date.now() - parseDuration(flags.since);

@@ -30,7 +30,11 @@ import * as colors from "@std/fmt/colors";
 import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import type { ModelShortcomingsFile } from "../../src/verify/types.ts";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
-import { loadIngestConfig, readPrivateKey } from "../../src/ingest/config.ts";
+import {
+  loadAdminConfig,
+  loadIngestConfig,
+  readPrivateKey,
+} from "../../src/ingest/config.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
 
@@ -326,7 +330,32 @@ async function handlePopulateShortcomings(
   if (options.machineId !== undefined) flags.machineId = options.machineId;
 
   const cwd = Deno.cwd();
-  const config = await loadIngestConfig(cwd, flags);
+  // Endpoint requires `verifier` scope. Admin satisfies via hasScope
+  // hierarchy (admin > verifier > ingest); ingest does not. Try admin
+  // first; fall back to ingest with a warning so a misconfigured
+  // operator gets a clear error from the server rather than silent
+  // skip.
+  let url: string;
+  let keyPath: string;
+  let keyId: number;
+  try {
+    const admin = await loadAdminConfig(cwd, flags);
+    url = admin.url;
+    keyPath = admin.adminKeyPath;
+    keyId = admin.adminKeyId;
+  } catch {
+    const ingest = await loadIngestConfig(cwd, flags);
+    url = ingest.url;
+    keyPath = ingest.keyPath;
+    keyId = ingest.keyId;
+    console.log(
+      colors.yellow(
+        `[WARN] no admin key configured; using ingest key id=${keyId}. ` +
+          `If endpoint rejects with insufficient_scope, configure ` +
+          `admin_key_path/admin_key_id in ~/.centralgauge.yml.`,
+      ),
+    );
+  }
   const dirArg = options.shortcomingsDir ?? "./model-shortcomings";
   const shortcomingsDir = dirArg.startsWith("/") || /^[A-Za-z]:/.test(dirArg)
     ? dirArg
@@ -335,31 +364,8 @@ async function handlePopulateShortcomings(
   const siteDir = `${cwd}/site`;
 
   console.log(colors.gray(`[INFO] shortcomings dir: ${shortcomingsDir}`));
-  console.log(colors.gray(`[INFO] ingest URL: ${config.url}`));
+  console.log(colors.gray(`[INFO] ingest URL: ${url}`));
   console.log(colors.gray(`[INFO] D1 database: ${dbName} (via ${siteDir})`));
-
-  // Resolve which key to use. Endpoint requires `verifier` scope. The
-  // ingest key (scope=ingest) cannot satisfy that. Prefer admin key when
-  // available — admin scope outranks verifier per `hasScope`.
-  let keyPath = config.keyPath;
-  let keyId = config.keyId;
-  if (config.adminKeyPath && config.adminKeyId !== undefined) {
-    keyPath = config.adminKeyPath;
-    keyId = config.adminKeyId;
-    console.log(
-      colors.gray(
-        `[INFO] using admin key (id=${keyId}) for verifier-scoped endpoint`,
-      ),
-    );
-  } else {
-    console.log(
-      colors.yellow(
-        `[WARN] no admin_key_path configured; using ingest key id=${keyId}. ` +
-          `If endpoint rejects with insufficient_scope, configure ` +
-          `admin_key_path/admin_key_id in ~/.centralgauge.yml.`,
-      ),
-    );
-  }
 
   const files = await listShortcomingsFiles(shortcomingsDir);
   console.log(colors.gray(`[INFO] discovered ${files.length} JSON files`));
@@ -446,7 +452,7 @@ async function handlePopulateShortcomings(
     const body = { payload, signature };
 
     const resp = await postWithRetry(
-      `${config.url}/api/v1/shortcomings/batch`,
+      `${url}/api/v1/shortcomings/batch`,
       body,
       { maxAttempts: 3 },
     );

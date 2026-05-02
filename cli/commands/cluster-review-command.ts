@@ -30,7 +30,7 @@
 import { Command } from "@cliffy/command";
 import { Confirm, Input, Select } from "@cliffy/prompt";
 import * as colors from "@std/fmt/colors";
-import { loadIngestConfig, readPrivateKey } from "../../src/ingest/config.ts";
+import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
 import { signPayload } from "../../src/ingest/sign.ts";
 import { postWithRetry } from "../../src/ingest/client.ts";
 import { collectEnvelope } from "../../src/lifecycle/envelope.ts";
@@ -209,19 +209,7 @@ interface ClusterReviewFlags {
 
 async function handleClusterReview(flags: ClusterReviewFlags): Promise<void> {
   const cwd = Deno.cwd();
-  const config = await loadIngestConfig(cwd, {});
-  // Cluster-review is admin scope (writes lifecycle_events with reviewer
-  // provenance + mutates concept_aliases / concepts). The ingest key is
-  // rejected — fail-fast if admin key isn't configured.
-  if (!config.adminKeyPath || config.adminKeyId == null) {
-    console.error(
-      colors.red(
-        "[ERR] admin_key_path + admin_key_id required in .centralgauge.yml " +
-          "for cluster-review (admin scope; ingest key is rejected by the endpoint).",
-      ),
-    );
-    Deno.exit(1);
-  }
+  const config = await loadAdminConfig(cwd, {});
   const adminPriv = await readPrivateKey(config.adminKeyPath);
   const adminKeyId = config.adminKeyId;
   const actor = flags.actor ?? (await gitUserEmail()) ?? "operator-unknown";

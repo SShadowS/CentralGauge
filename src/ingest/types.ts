@@ -46,6 +46,19 @@ export interface IngestConfig {
   adminKeyId?: number;
 }
 
+/**
+ * Admin-scoped config — for read-only/admin operations (lifecycle status,
+ * digest, sync-catalog, cluster-review). Required: url + admin key fields.
+ * No ingest fields, since admin-scoped commands don't sign with the ingest
+ * key. The /api/v1/precheck endpoint accepts admin-key signatures via the
+ * server's hasScope hierarchy (admin > verifier > ingest).
+ */
+export interface AdminConfig {
+  url: string;
+  adminKeyPath: string;
+  adminKeyId: number;
+}
+
 export type IngestOutcome =
   | { kind: "success"; runId: string; bytesUploaded: number }
   | {

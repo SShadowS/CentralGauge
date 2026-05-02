@@ -1,4 +1,4 @@
-import { parse } from "jsr:@std/yaml@^1.1.0";
+import { mergeConfigSources } from "../../../ingest/config.ts";
 import type { Check, DoctorContext } from "../../types.ts";
 
 // Matches the worker's verifySignedRequest SKEW_LIMIT_MS in
@@ -6,33 +6,9 @@ import type { Check, DoctorContext } from "../../types.ts";
 // tolerance would false-fail when the server is more lenient.
 const TOLERANCE_MS = 10 * 60 * 1000;
 
-function homeDir(): string {
-  const override = Deno.env.get("CENTRALGAUGE_TEST_HOME");
-  if (override) return override;
-  return Deno.env.get("USERPROFILE") ?? Deno.env.get("HOME") ?? ".";
-}
-
 async function readUrl(ctx: DoctorContext): Promise<string | null> {
-  for (
-    const path of [
-      `${ctx.cwd}/.centralgauge.yml`,
-      `${homeDir()}/.centralgauge.yml`,
-    ]
-  ) {
-    try {
-      const cfg = parse(await Deno.readTextFile(path)) as Record<
-        string,
-        unknown
-      >;
-      const url = (cfg?.["ingest"] as Record<string, unknown> | undefined)?.[
-        "url"
-      ];
-      if (typeof url === "string" && url.length > 0) return url;
-    } catch {
-      // try next
-    }
-  }
-  return null;
+  const src = await mergeConfigSources(ctx.cwd, {});
+  return src.url ?? null;
 }
 
 export const checkClockSkew: Check = {

@@ -46,7 +46,7 @@ export interface DoctorReport {
   };
 }
 
-export type SectionId = "ingest" | "containers" | "llm" | "all";
+export type SectionId = "ingest" | "admin" | "containers" | "llm" | "all";
 
 /**
  * Variant identification passed to the bench-aware catalog check.

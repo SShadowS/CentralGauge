@@ -17,3 +17,4 @@ export type {
   VariantProbe,
 } from "./types.ts";
 export { ingestSection } from "./sections/ingest/mod.ts";
+export { adminSection } from "./sections/admin/mod.ts";
