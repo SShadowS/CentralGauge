@@ -157,3 +157,64 @@ Deno.test("majorityAtN", async (t) => {
     assertEquals(majorityAtN(0, 0), false);
   });
 });
+
+import { calculatePerModelStats } from "../../../../../cli/commands/report/stats-calculator.ts";
+import type { BenchmarkResult } from "../../../../../cli/types/cli-types.ts";
+
+function mkResult(
+  variantId: string,
+  taskId: string,
+  success: boolean,
+  durationMs: number,
+  cost = 0.01,
+  tokens = 100,
+): BenchmarkResult {
+  return {
+    taskId,
+    success,
+    finalScore: success ? 1 : 0,
+    totalDuration: durationMs,
+    totalTokensUsed: tokens,
+    totalCost: cost,
+    attempts: [{ success, tokensUsed: tokens, cost }],
+    context: { variantId, llmModel: variantId, llmProvider: "test" },
+  };
+}
+
+Deno.test("calculatePerModelStats populates new metrics", async (t) => {
+  const results: BenchmarkResult[] = [
+    mkResult("m1", "T1", true, 1000),
+    mkResult("m1", "T2", true, 2000),
+    mkResult("m1", "T3", false, 3000),
+    mkResult("m1", "T4", false, 4000),
+    mkResult("m1", "T5", true, 5000),
+  ];
+
+  const stats = calculatePerModelStats(results).get("m1")!;
+
+  await t.step("passRateCI bounds 3/5 around 0.6", () => {
+    // Wilson 95% CI for 3/5
+    assertAlmostEquals(stats.passRateCI.lower, 0.2316, 1e-3);
+    assertAlmostEquals(stats.passRateCI.upper, 0.8819, 1e-3);
+  });
+
+  await t.step("costPerPass = 0.05 / 3 ≈ 0.01667", () => {
+    assertAlmostEquals(stats.costPerPass!, 0.05 / 3, 1e-9);
+  });
+
+  await t.step("tokensPerPass = 500 / 3 ≈ 166.67", () => {
+    assertAlmostEquals(stats.tokensPerPass!, 500 / 3, 1e-9);
+  });
+
+  await t.step("latencyP50 = median of [1000,2000,3000,4000,5000] = 3000", () => {
+    assertEquals(stats.latencyP50, 3000);
+  });
+
+  await t.step("latencyP95 = p95 of [1000..5000] = 4800", () => {
+    assertEquals(stats.latencyP95, 4800);
+  });
+
+  await t.step("durations preserved", () => {
+    assertEquals(stats.durations.length, 5);
+  });
+});

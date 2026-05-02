@@ -41,6 +41,12 @@ export function calculatePerModelStats(
         testFailures: 0,
         malformedResponses: 0,
         variantConfig: result.context?.variantConfig ?? null,
+        passRateCI: { lower: 0, upper: 1 },
+        costPerPass: null,
+        tokensPerPass: null,
+        durations: [],
+        latencyP50: 0,
+        latencyP95: 0,
       });
     }
 
@@ -48,15 +54,12 @@ export function calculatePerModelStats(
 
     if (result.success) {
       m.tasksPassed++;
-      // Find which attempt first succeeded
       const successIndex = result.attempts?.findIndex((a) => a.success) ?? 0;
-      // Grow array if needed
       while (m.passedByAttempt.length <= successIndex) {
         m.passedByAttempt.push(0);
       }
       m.passedByAttempt[successIndex] = (m.passedByAttempt[successIndex] ?? 0) +
         1;
-      // Backward compat
       if (result.attempts?.[0]?.success) {
         m.passedOnAttempt1++;
       }
@@ -68,14 +71,21 @@ export function calculatePerModelStats(
     m.tokens += result.totalTokensUsed || 0;
     m.cost += result.totalCost || 0;
     m.avgScore += result.finalScore || 0;
+    if (typeof result.totalDuration === "number" && result.totalDuration > 0) {
+      m.durations.push(result.totalDuration);
+    }
   }
 
-  // Calculate averages
   for (const m of perModelMap.values()) {
     const total = m.tasksPassed + m.tasksFailed;
     if (total > 0) {
       m.avgScore = m.avgScore / total;
     }
+    m.passRateCI = wilsonInterval(m.tasksPassed, total);
+    m.costPerPass = costPerPass(m.cost, m.tasksPassed);
+    m.tokensPerPass = tokensPerPass(m.tokens, m.tasksPassed);
+    m.latencyP50 = percentile(m.durations, 0.5);
+    m.latencyP95 = percentile(m.durations, 0.95);
   }
 
   return perModelMap;
@@ -269,6 +279,15 @@ export function calculateMultiRunStats(
     const tasksFailed = totalTasks - tasksPassedAny;
     const totalResults = tasksPassedAny + tasksFailed; // = totalTasks
 
+    const multiDurations: number[] = [];
+    for (const [, runs] of taskMap) {
+      for (const run of runs) {
+        if (typeof run.totalDuration === "number" && run.totalDuration > 0) {
+          multiDurations.push(run.totalDuration);
+        }
+      }
+    }
+
     result.set(variantId, {
       // PerModelStats base fields
       model,
@@ -289,10 +308,19 @@ export function calculateMultiRunStats(
       testFailures,
       malformedResponses,
       variantConfig,
+      passRateCI: wilsonInterval(tasksPassedAny, totalTasks),
+      costPerPass: costPerPass(totalCost, tasksPassedAny),
+      tokensPerPass: tokensPerPass(totalTokens, tasksPassedAny),
+      durations: multiDurations,
+      latencyP50: percentile(multiDurations, 0.5),
+      latencyP95: percentile(multiDurations, 0.95),
       // MultiRun extension fields
       runCount,
       passAtK,
+      passHatK: {},
       consistency,
+      majorityAtN: 0,
+      perTaskPassStddev: 0,
       perTaskRuns,
     });
   }
