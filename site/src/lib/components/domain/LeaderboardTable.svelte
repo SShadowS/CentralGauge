@@ -44,8 +44,15 @@
         <th scope="col" aria-sort={ariaSort('pass_at_n')}>
           <button class="hbtn" onclick={() => clickSort('pass_at_n')}>Pass {#if sortField === 'pass_at_n' || sortField === 'pass_at_1'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
+        <th scope="col" title="95% Wilson confidence interval half-width on pass rate.">CI</th>
         <th scope="col" aria-sort={ariaSort('avg_cost_usd')}>
           <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost {#if sortField === 'avg_cost_usd'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        </th>
+        <th scope="col" aria-sort={ariaSort('cost_per_pass_usd')} title="Total cost divided by number of tasks passed.">
+          <button class="hbtn" onclick={() => clickSort('cost_per_pass_usd')}>$/Pass {#if sortField === 'cost_per_pass_usd'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        </th>
+        <th scope="col" aria-sort={ariaSort('latency_p95_ms')} title="95th percentile per-task wall time.">
+          <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>p95 {#if sortField === 'latency_p95_ms'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
         </th>
         <th scope="col" aria-sort={ariaSort('last_run_at')}>
           <button class="hbtn" onclick={() => clickSort('last_run_at')}>Last seen {#if sortField === 'last_run_at'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
@@ -76,7 +83,10 @@
               {row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only}/{row.tasks_attempted_distinct}
             </span>
           </td>
+          <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2 * 100).toFixed(1)}%</td>
           <td><CostCell usd={row.avg_cost_usd} /></td>
+          <td class="text-mono">{row.cost_per_pass_usd === null ? '—' : `$${row.cost_per_pass_usd.toFixed(4)}`}</td>
+          <td class="text-mono">{(row.latency_p95_ms / 1000).toFixed(1)}s</td>
           <td class="text-muted">{formatRelativeTime(row.last_run_at)}</td>
         </tr>
       {/each}
@@ -107,6 +117,7 @@
   tbody tr:hover { background: var(--surface); }
   .rank { width: 48px; color: var(--text-muted); }
   .score { white-space: nowrap; }
+  .ci { white-space: nowrap; color: var(--text-muted); font-size: var(--text-xs); }
   .attempts-cell {
     min-width: 120px;
     display: flex;

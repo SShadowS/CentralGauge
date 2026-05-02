@@ -24,6 +24,10 @@ const rows: LeaderboardRow[] = [
     avg_cost_usd: 0.12,
     verified_runs: 100,
     last_run_at: '2026-04-27T10:00:00Z',
+    latency_p95_ms: 12500,
+    pass_rate_ci: { lower: 0.88, upper: 0.95 },
+    pass_hat_at_n: 0.99,
+    cost_per_pass_usd: 0.005,
   },
   {
     rank: 2,
@@ -45,6 +49,10 @@ const rows: LeaderboardRow[] = [
     avg_cost_usd: 0.30,
     verified_runs: 60,
     last_run_at: '2026-04-26T10:00:00Z',
+    latency_p95_ms: 18200,
+    pass_rate_ci: { lower: 0.48, upper: 0.84 },
+    pass_hat_at_n: 0.91,
+    cost_per_pass_usd: null,
   },
 ];
 
