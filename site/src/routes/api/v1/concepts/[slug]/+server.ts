@@ -15,19 +15,9 @@ import type { RequestHandler } from './$types';
 import { getAll, getFirst } from '$lib/server/db';
 import { ApiError, errorResponse } from '$lib/server/errors';
 import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
+import { SLUG_REGEX } from '$lib/shared/slug';
 
 const CACHE_TTL_S = 300;
-
-/**
- * Same kebab-case regex used by `shortcomings/batch/+server.ts`. Slugs are
- * reflected in cached responses, so validating up-front prevents cache
- * amplification from junk inputs (Cache API would otherwise create a slot
- * per garbage URL) and returns a typed 400 before any DB call.
- *
- * Parameterised SQL bind already prevents injection — this is a defence-
- * in-depth + cache-hygiene measure, not an injection fix.
- */
-const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
 interface ConceptRow {
   id: number;

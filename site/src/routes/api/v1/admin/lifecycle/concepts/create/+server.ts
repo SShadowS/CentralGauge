@@ -17,9 +17,10 @@ import {
 } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { createConceptTx } from "$lib/server/concepts";
+import { slugSchema } from "$lib/shared/slug";
 
 const Body = z.object({
-  proposed_slug: z.string().min(1),
+  proposed_slug: slugSchema,
   display_name: z.string().min(1),
   al_concept: z.string().min(1),
   description: z.string(),

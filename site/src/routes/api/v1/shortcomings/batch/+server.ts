@@ -5,6 +5,7 @@ import { broadcastEvent } from '$lib/server/broadcaster';
 import { resolveConcept } from '$lib/server/concept-resolver';
 import { invalidateConcept } from '$lib/server/concept-cache';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
+import { SLUG_REGEX } from '$lib/shared/slug';
 
 interface ShortcomingOccurrence {
   result_id: number;
@@ -27,8 +28,6 @@ interface ShortcomingItem {
   concept_slug_existing_match: string | null;
   similarity_score: number | null;
 }
-
-const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
 
 function validateOccurrence(
   occ: unknown,

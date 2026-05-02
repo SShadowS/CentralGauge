@@ -20,6 +20,7 @@ import {
 } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { enqueueReviewTx } from "$lib/server/concepts";
+import { slugSchema } from "$lib/shared/slug";
 
 const Body = z.object({
   // Loosely typed at the wire boundary; enqueueReviewTx canonicalizes the
@@ -27,12 +28,14 @@ const Body = z.object({
   // metadata under entry._cluster.
   entry: z
     .object({
-      concept_slug_proposed: z.string(),
-      concept_slug_existing_match: z.string().nullable(),
+      concept_slug_proposed: slugSchema,
+      // Existing-match is nullable: null when this is a brand-new
+      // proposal with no nearest hit. When present, must be a real slug.
+      concept_slug_existing_match: slugSchema.nullable(),
       similarity_score: z.number().nullable(),
     })
     .passthrough(),
-  proposed_slug: z.string().min(1),
+  proposed_slug: slugSchema,
   nearest_concept_id: z.number().int(),
   similarity: z.number(),
   model_slug: z.string().min(1),

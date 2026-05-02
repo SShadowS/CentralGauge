@@ -27,6 +27,7 @@ import {
   mergeConceptTx,
   splitConceptTx,
 } from "$lib/server/concepts";
+import { slugSchema } from "$lib/shared/slug";
 
 const Body = z.object({
   pending_review_id: z.number().int(),
@@ -35,7 +36,10 @@ const Body = z.object({
   reason: z.string().nullable().optional(),
   envelope_json: z.string(),
   ts: z.number().int(),
-  new_slugs: z.array(z.string().min(1)).optional(),
+  // Split-only: each child slug must be canonical kebab-case so it round-
+  // trips through GET /api/v1/concepts/<slug>. Without this, a malformed
+  // entry in new_slugs would produce an unreachable orphan concept row.
+  new_slugs: z.array(slugSchema).optional(),
 });
 
 interface PendingRow {
