@@ -8,6 +8,7 @@ import { cachedJson } from "$lib/server/cache";
 import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
+import { ServerTimer } from "$lib/server/server-timing";
 
 interface ModelRow {
   id: number;
@@ -66,9 +67,12 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     //    latency_p50_ms, tasks_*, pass_at_n, settings_suffix). Helper now
     //    supplies all per-task counts, so the legacy per-attempt SELECT below
     //    is no longer needed.
+    const timer = new ServerTimer();
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
       includeLatencyP50: true,
+      includePassHatAtN: true,
+      timer,
     });
     const agg = aggMap.get(model.id) ?? null;
 
@@ -189,6 +193,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         pass_at_n: passAtN,
         avg_cost_usd: agg?.avg_cost_usd ?? 0,
         latency_p50_ms: agg?.latency_p50_ms ?? 0,
+        latency_p95_ms: agg?.latency_p95_ms ?? 0,
+        pass_rate_ci: agg?.pass_rate_ci ?? { lower: 0, upper: 1 },
+        pass_hat_at_n: agg?.pass_hat_at_n ?? 0,
+        cost_per_pass_usd: agg?.cost_per_pass_usd ?? null,
         run_count: runCount,
         verified_runs: agg?.verified_runs ?? 0,
       },
@@ -206,7 +214,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       ...(predecessor ? { predecessor } : {}),
     };
 
-    return cachedJson(request, body);
+    return cachedJson(request, body, {
+      extraHeaders: { "server-timing": timer.header() },
+    });
   } catch (err) {
     return errorResponse(err);
   }
