@@ -1,5 +1,11 @@
 # CentralGauge site — changelog
 
+## Unreleased
+
+### Added
+- New leaderboard metrics: pass-rate 95% confidence interval, $/Pass cost efficiency, latency p95.
+- New model-detail metrics: pass^n (strict consistency), pass-rate CI, $/Pass, latency p95.
+
 ## Lifecycle event-sourcing (2026-04-29)
 
 Closes the gap between bench output and the production scoreboard. Every
