@@ -283,6 +283,23 @@ centralgauge report-from-db --current-tasks --tasks "tasks/easy/*.yml"
 centralgauge report-from-db --list-sets
 ```
 
+## Benchmark metrics glossary
+
+| Metric | Definition | Where it appears |
+|---|---|---|
+| **Pass rate** | Tasks passed ÷ tasks attempted (any-of-k attempts within a single run) | All reports |
+| **Pass rate 95% CI** | Wilson score interval on pass rate. Use to judge if a lead over another model is statistically meaningful | Model card |
+| **pass@k** | Probability that *at least one* of k samples passes (HumanEval-style unbiased estimator) | Multi-run reports only |
+| **pass^k** | Probability that *all* k samples pass (strict reliability) | Multi-run reports only |
+| **Majority@n** | Fraction of tasks where strictly more than half of n runs pass | Multi-run reports only |
+| **Pass-count stddev** | Sample stddev of per-task pass counts across runs. Higher = flakier | Multi-run reports only |
+| **Consistency** | Fraction of tasks where every run produced the same outcome (all pass or all fail) | Multi-run reports only |
+| **$/Pass** | Total cost ÷ tasks passed | Model card |
+| **Tokens/Pass** | Total tokens ÷ tasks passed | Model card |
+| **Latency p50/p95** | Median / 95th-percentile per-task wall time (LLM + compile + test) | Model card, latency chart |
+
+Multi-run metrics require `--runs N` (N ≥ 2) when running `bench`, and are only shown in `report` / `report-from-db` output when multiple runs are present for the same model and task set.
+
 ## verify
 
 Analyze and fix failing benchmark tasks.
