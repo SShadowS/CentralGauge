@@ -1,0 +1,166 @@
+name: Weekly lifecycle cycle
+
+# Plan G — runs every Monday 06:00 UTC. Identifies stale models from the
+# production lifecycle event log via `lifecycle status --json`, runs
+# `centralgauge cycle` for each with continue-on-error, and posts a digest
+# to a sticky GitHub issue tagged `weekly-cycle-digest`.
+#
+# Manual trigger:
+#
+#   gh workflow run weekly-cycle.yml
+#
+# Auto-close on full success; sticky open on any per-model failure.
+# Operator triages via the open issue.
+
+on:
+  schedule:
+    - cron: '0 6 * * MON'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # for sticky digest issue create / comment / close
+
+# Two scheduled cycles must never run concurrently — the cycle command's
+# lock-token tiebreaker would correctly serialise them, but the digest
+# would double-post. cancel-in-progress=false: prefer to let an in-flight
+# run finish rather than truncate it mid-cycle.
+concurrency:
+  group: weekly-cycle
+  cancel-in-progress: false
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    # 4h hard cap. Typical 1-3 stale models complete in 30–90 min; the
+    # ceiling guards against a runaway model that keeps failing
+    # max_attempts in cycle.
+    timeout-minutes: 240
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 22c8fbe790464b492d9b178cc0f9255b
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v1.46.x
+
+      - name: Decode admin signing key
+        id: admin-key
+        run: |
+          mkdir -p "$RUNNER_TEMP/cg"
+          printf '%s' '${{ secrets.ADMIN_KEY_PEM }}' | base64 -d > "$RUNNER_TEMP/cg/admin_key.pem"
+          chmod 600 "$RUNNER_TEMP/cg/admin_key.pem"
+          echo "path=$RUNNER_TEMP/cg/admin_key.pem" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Deno deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('deno.lock') }}
+
+      # Fail-fast precheck: validate ingest config + admin key + connectivity
+      # BEFORE the orchestrator fans out N cycle invocations. Without this,
+      # a corrupted ADMIN_KEY_PEM secret causes N×failure with N×digest
+      # noise — the precheck collapses that to a single failure with a
+      # clear root-cause message.
+      #
+      # The doctor command without `--llms` runs auth-only health (no
+      # bench-aware variant probes); equivalent to the plan's intended
+      # `--no-bench` semantics.
+      - name: Doctor ingest precheck
+        env:
+          CENTRALGAUGE_ADMIN_KEY_PATH: ${{ steps.admin-key.outputs.path }}
+          # This step IS the precheck — don't recurse via the bench-aware
+          # auto-precheck that other commands run on startup.
+          CENTRALGAUGE_BENCH_PRECHECK: '0'
+        run: deno task start doctor ingest
+
+      - name: Run weekly cycle orchestrator
+        id: cycle
+        continue-on-error: true
+        env:
+          CENTRALGAUGE_ADMIN_KEY_PATH: ${{ steps.admin-key.outputs.path }}
+          # Bench-aware doctor would gate every cycle invocation; the
+          # precheck above already validated. Disable the per-cycle
+          # repeat so we don't pay the doctor cost ~N times.
+          CENTRALGAUGE_BENCH_PRECHECK: '0'
+        run: deno run --allow-all scripts/weekly-cycle.ts
+
+      - name: Generate digest
+        id: digest
+        if: always()
+        env:
+          CENTRALGAUGE_ADMIN_KEY_PATH: ${{ steps.admin-key.outputs.path }}
+          CENTRALGAUGE_BENCH_PRECHECK: '0'
+        run: |
+          deno task start lifecycle digest --since 7d --format markdown > digest.md
+          cat digest.md
+
+      - name: Post or update sticky digest issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CYCLE_RESULT="${{ steps.cycle.outcome }}"
+          # Build body via printf to handle multi-line markdown safely; gh
+          # issue create/comment passes --body as a single arg.
+          BODY=$(cat digest.md)
+          BODY=$(printf '%s\n\n---\n- Workflow run: %s/%s/actions/runs/%s\n- Cycle outcome: %s\n' \
+            "$BODY" \
+            "${{ github.server_url }}" \
+            "${{ github.repository }}" \
+            "${{ github.run_id }}" \
+            "$CYCLE_RESULT")
+
+          # Find or create the sticky issue.
+          EXISTING=$(gh issue list --label weekly-cycle-digest --state open --json number --jq '.[0].number' || true)
+
+          if [ "$CYCLE_RESULT" = "success" ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue comment "$EXISTING" --body "$BODY"
+              gh issue close "$EXISTING" --comment "All clear — closing sticky digest issue."
+            else
+              # Create + immediately close on success — the issue serves as a
+              # historical record but doesn't hold the operator's attention.
+              gh issue create \
+                --title "Weekly lifecycle digest — $(date -u +%Y-%m-%d)" \
+                --label weekly-cycle-digest \
+                --body "$BODY"
+              NEW_NUM=$(gh issue list --label weekly-cycle-digest --state open --json number --jq '.[0].number')
+              if [ -n "$NEW_NUM" ]; then
+                gh issue close "$NEW_NUM"
+              fi
+            fi
+          else
+            if [ -n "$EXISTING" ]; then
+              gh issue comment "$EXISTING" --body "$BODY"
+            else
+              gh issue create \
+                --title "Weekly lifecycle digest — $(date -u +%Y-%m-%d) (FAILED)" \
+                --label weekly-cycle-digest \
+                --body "$BODY"
+            fi
+          fi
+
+      - name: Upload weekly-cycle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-cycle-${{ github.run_id }}
+          path: |
+            digest.md
+            weekly-cycle-result.json
+          retention-days: 90
+
+      - name: Surface cycle failure to workflow status
+        if: steps.cycle.outcome == 'failure'
+        run: |
+          echo "::error::One or more cycle invocations failed; sticky digest issue stays open."
+          exit 1
