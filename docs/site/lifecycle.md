@@ -1,8 +1,9 @@
 # Lifecycle — operator + reviewer guide
 
 > How to run the bench → debug → analyze → publish pipeline as a single
-> orchestrated cycle, how state transitions are recorded, how to use
-> the web review UI, and how the weekly CI keeps every model current.
+> orchestrated cycle, how state transitions are recorded, and how to use
+> the web review UI. The pipeline is operator-driven (manual) — there
+> is no scheduled CI for it; see "Cadence model" below.
 >
 > **Strategic plan:** `docs/superpowers/plans/2026-04-29-model-lifecycle-event-sourcing.md`
 > **Schema appendix:** same file, end of document.
@@ -18,12 +19,12 @@ source of truth. There is no `state` column anywhere in D1; both the CLI
 matrix and the worker view (`v_lifecycle_state`) compute state from the
 event log.
 
-| State        | Predicate (in plain English)                                                                                                |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `BENCHED`    | At least one `bench.completed` event under the current `task_set_hash`.                                                     |
-| `DEBUGGED`   | Most-recent `bench.completed` is paired with a `debug.captured` event whose `r2_key` resolves.                              |
-| `ANALYZED`   | At least one `analysis.completed` event whose `payload_hash` is not later overridden by an `analysis.failed` for the same. |
-| `PUBLISHED`  | At least one `publish.completed` event whose `payload_hash` matches the most-recent `analysis.completed`.                  |
+| State       | Predicate (in plain English)                                                                                               |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `BENCHED`   | At least one `bench.completed` event under the current `task_set_hash`.                                                    |
+| `DEBUGGED`  | Most-recent `bench.completed` is paired with a `debug.captured` event whose `r2_key` resolves.                             |
+| `ANALYZED`  | At least one `analysis.completed` event whose `payload_hash` is not later overridden by an `analysis.failed` for the same. |
+| `PUBLISHED` | At least one `publish.completed` event whose `payload_hash` matches the most-recent `analysis.completed`.                  |
 
 States are NOT exclusive: a model can be `BENCHED + ANALYZED` without
 `PUBLISHED` (analyzer wrote rows still in the review queue). The CLI
@@ -78,8 +79,9 @@ centralgauge cycle --llms anthropic/claude-opus-4-7 --yes
 
 **Resume semantics.** Re-running `cycle` skips steps whose most-recent
 event is `*.completed` and whose envelope (tool versions + task_set_hash
-+ settings_hash + git_sha) has not changed. To force a fresh run, use
-`--force-rerun <step>`.
+
+- settings_hash + git_sha) has not changed. To force a fresh run, use
+  `--force-rerun <step>`.
 
 **Concurrency.** Same-(model, task_set) parallel cycles are gated by a
 `lock_token` written with the `cycle.started` event. The loser writes
@@ -154,8 +156,7 @@ batch (per the cross-plan transactionality invariant — see
 
 Produces a markdown summary of the last N days of lifecycle activity —
 new concepts, regressions, model state transitions, accept/reject
-decisions. The weekly CI workflow consumes the markdown output and posts
-it to a sticky GitHub issue.
+decisions. Run on demand when you want a snapshot of recent activity.
 
 ```bash
 centralgauge lifecycle digest --since 7d --format markdown
@@ -193,36 +194,48 @@ and "How to authorize a new operator for `/admin/lifecycle/*`".
 All three pages call the admin endpoints with the CF Access cookie
 attached automatically by the browser; there is no client-side key
 handling. The same admin endpoints accept Ed25519-signed CLI traffic
-(used by `lifecycle digest`, `lifecycle status`, and the weekly CI).
-The worker middleware tries CF Access first, falls back to Ed25519, and
-fails closed if neither validates (Plan INDEX invariant 5).
+(used by `lifecycle digest`, `lifecycle status`, and any operator
+script). The worker middleware tries the Ed25519 signature first
+(authoritative `key:<n>` identity), falls back to CF Access JWT for
+browser flows, and fails closed if neither validates. Service-token
+CF Access requests (CLI/CI edge-bypass) carry both — the JWT is just
+edge-bypass and the body signature is the actual auth.
 
-## Weekly CI
+## Cadence model
 
-`.github/workflows/weekly-cycle.yml` runs every Monday at 06:00 UTC and
-on `workflow_dispatch`. Steps:
+The lifecycle pipeline is **operator-driven**, not scheduled:
 
-1. Reads `centralgauge lifecycle status --json` to identify stale
-   models (no `analysis.completed` event under the current `task_set`
-   within `lifecycle.weekly_stale_after_days`, default 7).
-2. Runs `centralgauge cycle --llms <slug> --analyzer-model <default> --yes`
-   for each stale model. Failures do not abort the workflow; they are
-   recorded in a result artifact (`weekly-cycle-result.json`).
-3. Generates a digest via
-   `centralgauge lifecycle digest --since 7d --format markdown`.
-4. Posts the digest to a sticky GitHub issue tagged
-   `weekly-cycle-digest`. The issue auto-closes when all cycles
-   succeeded; it stays open when any failed. The operator's
-   Monday-morning read is the issue.
+- **Bench** requires a Business Central container, which is Windows-only
+  (`bccontainerhelper`). It cannot run on Linux CI.
+- **Debug-capture** writes to a local `debug/` directory created by
+  bench, then uploads a tarball to R2. Tied to bench's substrate.
+- **Analyze** currently reads the local `debug/` directory; it can
+  technically run anywhere given the R2 bundle, but the wiring to pull
+  bundles from R2 to a non-bench machine doesn't exist yet.
+- **Publish** is admin-scope D1 + R2 work; runs anywhere.
 
-Trigger manually:
+There is no scheduled CI workflow for the lifecycle. A previous
+`weekly-cycle.yml` was removed (commit history) — its design ran on
+Linux but called bench, which always failed; the workflow was theater
+behind a `continue-on-error: true` swallow. If a future "catch-up
+analyze on Linux" workflow is added, it would: query
+`lifecycle_events` for `(model, task_set)` pairs with `bench.completed`
+but no `analysis.completed`, pull the matching debug bundle from R2,
+run `verify --shortcomings-only`, and publish — all admin-scope D1 +
+R2 work, fully Linux-runnable.
+
+For now, run the pipeline manually:
 
 ```bash
-gh workflow run weekly-cycle.yml
-```
+# Visibility — current state matrix.
+centralgauge lifecycle status
 
-Implementation rationale: see
-`docs/superpowers/plans/2026-04-29-lifecycle-G-ci-impl.md`.
+# Weekly-style digest of recent activity.
+centralgauge lifecycle digest --since 7d --format markdown
+
+# Drive a specific model through the pipeline.
+centralgauge cycle --llms <vendor>/<model>
+```
 
 ## Slug standardization (the rule)
 
@@ -249,11 +262,11 @@ Plan D introduced canonical concepts. The analyzer proposes a concept
 slug per shortcoming entry; the system clusters against existing
 concepts using a three-tier threshold:
 
-| Cosine similarity   | Action                                                                              |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| ≥ 0.85 OR slug-equal | Auto-merge into existing concept (writes `concept.aliased`).                       |
-| 0.70–0.85           | Mandatory review queue (`lifecycle cluster-review`; operator decides).             |
-| < 0.70              | Auto-create new concept (writes `concept.created`).                                |
+| Cosine similarity    | Action                                                                 |
+| -------------------- | ---------------------------------------------------------------------- |
+| ≥ 0.85 OR slug-equal | Auto-merge into existing concept (writes `concept.aliased`).           |
+| 0.70–0.85            | Mandatory review queue (`lifecycle cluster-review`; operator decides). |
+| < 0.70               | Auto-create new concept (writes `concept.created`).                    |
 
 Concepts are **append-only** — they are never DELETEd. A merge sets
 `superseded_by` on the loser concept; a split writes a `concept.split`
@@ -262,12 +275,11 @@ operations runbook.
 
 ## Configuration (`.centralgauge.yml`)
 
-| Key                                  | Default                          | Purpose                                                                                                            |
-| ------------------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `lifecycle.confidence_threshold`     | `0.7`                            | Entries below this are routed to the review queue instead of auto-publishing.                                      |
-| `lifecycle.cross_llm_sample_rate`    | `0.2`                            | Fraction of analyzer entries re-checked by a second LLM. Range 0.0–1.0.                                            |
-| `lifecycle.weekly_stale_after_days`  | `7`                              | Used by the weekly CI to decide which models need re-cycling.                                                      |
-| `lifecycle.analyzer_model`           | `anthropic/claude-opus-4-6`      | Default analyzer model (override per-cycle via `--analyzer-model`). Defined by Plan F's lifecycle config schema. |
+| Key                                 | Default                     | Purpose                                                                                                          |
+| ----------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.confidence_threshold`    | `0.7`                       | Entries below this are routed to the review queue instead of auto-publishing.                                    |
+| `lifecycle.cross_llm_sample_rate`   | `0.2`                       | Fraction of analyzer entries re-checked by a second LLM. Range 0.0–1.0.                                          |
+| `lifecycle.analyzer_model`          | `anthropic/claude-opus-4-6` | Default analyzer model (override per-cycle via `--analyzer-model`). Defined by Plan F's lifecycle config schema. |
 
 Pricing: at 20% cross-LLM sample rate, the second-pass adds about $3 to a
 typical 150-entry release. Cranking to 1.0 raises this to ~$15.
@@ -319,19 +331,18 @@ centralgauge lifecycle status --model <slug> --json | \
 
 ### Reading a stale digest
 
-The weekly CI's sticky GitHub issue (`weekly-cycle-digest`) stays open
-when any cycle failed. The body lists per-model outcomes plus a
-markdown digest of the last 7 days' events. When triaging:
+Run `centralgauge lifecycle digest --since 7d --format markdown` for a
+snapshot of the last week's lifecycle events — new concepts,
+regressions, accept/reject decisions, model state transitions.
+Triaging stale models:
 
-1. Identify the failed model rows in the result table at the top.
-2. Click into the per-model error message; the format is
-   `<error_code>: <human message>`.
-3. Re-run `centralgauge cycle --llms <slug> --yes` locally to reproduce
-   the failure. Most transient errors (rate limits, container blips)
-   self-resolve on the next Monday tick — but persistent failures
-   indicate a real regression.
-4. After the issue's tracked failures are resolved, the next successful
-   weekly run auto-closes the issue.
+1. `centralgauge lifecycle status` — find rows where the most-recent
+   `analysis.completed` is older than your acceptable window.
+2. For each, run `centralgauge cycle --llms <slug>` locally on a
+   Windows machine with a BC container.
+3. Most transient errors (rate limits, container blips) self-resolve
+   on retry; persistent failures indicate a real regression and
+   warrant investigation per "Investigating a regression" above.
 
 ## See also
 

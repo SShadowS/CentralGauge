@@ -850,16 +850,21 @@ fetch failures should check `.error_rows | length` explicitly. Hard
 failures (config missing, no admin key, network down before any model
 call succeeds) still exit non-zero with `[FAIL]` to stderr.
 
-### CI consumption pattern (Plan G `weekly-cycle.yml`)
+### Scripted consumption pattern
+
+`lifecycle status --json` is designed to be parseable by operator
+scripts (the previous `weekly-cycle.yml` workflow consumed it; that
+workflow was removed but the JSON contract is preserved for any future
+automation, including a manual operator wrapper):
 
 ```bash
 # Get every recommended next-action command across all models.
 centralgauge lifecycle status --json | jq -r '.hints[].command'
 
-# Gate workflow exit on any warn/error severity hint.
+# Surface warnings (operator-driven; no implicit CI gating now).
 WARN_COUNT=$(centralgauge lifecycle status --json | jq '[.hints[] | select(.severity == "warn" or .severity == "error")] | length')
 if [ "$WARN_COUNT" -gt 0 ]; then
-  echo "::warning::lifecycle status has $WARN_COUNT actionable hints"
+  echo "lifecycle status has $WARN_COUNT actionable hints"
 fi
 
 # Detect stale legacy backlog without --legacy.
@@ -965,6 +970,7 @@ same `env.*` namespace and a baked-in empty var would shadow the secret
 at runtime (resolution order is implementation-defined).
 
 Verify post-deploy:
+
 ```bash
 wrangler secret list                   # should include CF_ACCESS_AUD
 wrangler deploy --dry-run | grep AUD   # should NOT print the AUD tag
@@ -987,9 +993,11 @@ for the new user begin on first authenticated visit.
 
 If the CF Access application is recreated (rare, e.g., to add a new
 identity provider), the AUD tag changes. Update the secret:
+
 ```bash
 wrangler secret put CF_ACCESS_AUD   # paste new AUD
 ```
+
 The old tag fails closed at the verifier (`cf_access_bad_aud`). No
 deploy is required — the verifier reads `env.CF_ACCESS_AUD` per request.
 
@@ -1156,41 +1164,30 @@ CLI's `--split` flow:
 foreign-key joins from `shortcomings.concept_id` and is impossible to
 audit. The append-only invariant is the ONLY safe recovery path.
 
-### How to run the weekly CI cycle manually
+### How to refresh stale models manually
 
-`weekly-cycle.yml` runs every Monday at 06:00 UTC and on
-`workflow_dispatch`. To trigger ad-hoc (e.g. after merging a hotfix
-that re-arms a previously-failing model):
+There is no scheduled CI for the lifecycle. The previous
+`weekly-cycle.yml` was removed — its design called bench on a Linux
+runner where bench can never succeed (BC container is Windows-only).
 
-```bash
-gh workflow run weekly-cycle.yml
-gh run watch                       # follow live
-```
-
-The workflow:
-
-1. Calls `centralgauge lifecycle status --json` to identify stale
-   models (no `analysis.completed` under the current `task_set` within
-   `lifecycle.weekly_stale_after_days`).
-2. Fans out a `centralgauge cycle --llms <slug> --yes` per stale model
-   via `Promise.allSettled` (failures isolated per-model — one bad
-   model does not abort the run).
-3. Generates a digest via `centralgauge lifecycle digest --since 7d
-   --format markdown`.
-4. Posts the digest to a sticky GitHub issue tagged
-   `weekly-cycle-digest`.
-
-Inspecting outputs:
-
-- `weekly-cycle-result.json` artifact — per-model outcomes (added by
-  Plan G).
-- `digest.md` artifact — the markdown body posted to the issue.
-
-To re-run only one model without touching the workflow:
+To refresh stale models, run on a Windows machine with bccontainerhelper:
 
 ```bash
+# 1. Find stale models (no recent `analysis.completed`).
+centralgauge lifecycle status
+
+# 2. Drive each stale model through the pipeline.
 centralgauge cycle --llms <vendor>/<model> --yes
+
+# 3. After cycling, snapshot the activity for review.
+centralgauge lifecycle digest --since 7d --format markdown > digest.md
 ```
+
+The previous workflow's value was a weekly Monday-morning prompt. To
+replicate locally, schedule a Windows Task Scheduler job that runs
+the three commands above and emails the digest output, or simply run
+`centralgauge lifecycle status` whenever you sit down to plan a
+release.
 
 ### How to apply Plan E migration to production
 
@@ -1222,35 +1219,21 @@ and `2026-04-29-lifecycle-B-rollback-runbook.md`. The two migrations
 must be applied in order (0006 before 0007 — 0007's family-diff
 foreign keys reference `lifecycle_events`).
 
-### How to interpret a stale digest
+### How to interpret a digest
 
-The weekly CI sticky GitHub issue (`weekly-cycle-digest`) stays open
-when any cycle failed during the last run. The body has two sections:
+`centralgauge lifecycle digest --since 7d --format markdown` produces
+a markdown summary of recent activity — new concepts, regressions,
+model state transitions, and accept/reject decisions over the last
+N days. Use it to plan triage:
 
-- **Result table** at the top — per-model outcomes from
-  `weekly-cycle-result.json`. Failed rows show the error code +
-  human-readable error message.
-- **Markdown digest** below — output of `centralgauge lifecycle digest
-  --since 7d`. Lists new concepts, regressions, model state
-  transitions, and accept/reject decisions over the last 7 days.
-
-Triage flow:
-
-1. Read the result-table failed rows. Single-line errors are usually
+1. Cycle failures listed in the digest. Single-line errors are usually
    transient (rate limit, container blip); multi-line errors are
    usually real regressions.
-2. For each failed model, run
-   `centralgauge cycle --llms <slug> --yes` locally to reproduce. Most
-   transient errors self-resolve on the next Monday tick.
-3. Persistent failures: open a tracking issue, link the
-   `weekly-cycle-digest` issue + the local repro, and triage as a
-   normal bug.
-4. After all tracked failures are resolved, the next successful weekly
-   run auto-closes the digest issue (Plan G's sticky-issue logic
-   detects the empty failure list and closes).
+2. For each failed model, re-run `centralgauge cycle --llms <slug>
+   --yes` locally to reproduce.
+3. Persistent failures: open a tracking issue and triage as a normal
+   bug.
 
-When in doubt: the digest is descriptive, not prescriptive — the
-authoritative state is the `lifecycle_events` table queried via
-`centralgauge lifecycle status`. If the digest and the matrix
-disagree, trust the matrix (digest writes can be truncated at 60 KB
-per Plan G's gh-issue ceiling).
+The digest is descriptive, not prescriptive — the authoritative state
+is the `lifecycle_events` table queried via `centralgauge lifecycle
+status`. If the digest and the matrix disagree, trust the matrix.
