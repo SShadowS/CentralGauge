@@ -1,5 +1,6 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { ModelDetail } from "../../src/lib/shared/api-types";
 import { resetDb } from "../utils/reset-db";
 
 async function seed(): Promise<void> {
@@ -386,6 +387,53 @@ describe("GET /api/v1/models/:slug", () => {
     };
     // Two results with totals [600, 1200] → median = 900.
     expect(body.aggregates.latency_p50_ms).toBe(900);
+  });
+});
+
+// =============================================================================
+// Contract completeness — ModelDetail.aggregates key-set assertion
+// =============================================================================
+//
+// This test detects the regression class where a merge commit silently drops
+// field assignments from the route handler. The expected key list mirrors the
+// `ModelDetail["aggregates"]` TypeScript type declared in api-types.ts.
+//
+// If someone adds a field to the type but forgets the endpoint: the endpoint
+// response will be missing the key → test fails with "expected keys differ".
+// If someone adds a key to the response but not the type: update BOTH here
+// AND the type. The duplication is intentional — a fail-loud contract check.
+
+describe("ModelDetail.aggregates — contract completeness", () => {
+  it("response.aggregates includes exactly every field declared in ModelDetail['aggregates'] type", async () => {
+    const res = await SELF.fetch("https://x/api/v1/models/sonnet-4.7");
+    expect(res.status).toBe(200);
+    const body = await res.json() as { aggregates: Record<string, unknown> };
+
+    // REQUIRED: every key in this array must match ModelDetail["aggregates"]
+    // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
+    const requiredAggregateKeys: ReadonlyArray<keyof ModelDetail["aggregates"]> = [
+      "avg_score",
+      "tasks_attempted",
+      "tasks_passed",
+      "tasks_attempted_distinct",
+      "tasks_passed_attempt_1",
+      "tasks_passed_attempt_2_only",
+      "pass_at_n",
+      "avg_cost_usd",
+      "latency_p50_ms",
+      "latency_p95_ms",
+      "pass_rate_ci",
+      "pass_hat_at_n",
+      "cost_per_pass_usd",
+      "run_count",
+      "verified_runs",
+    ];
+
+    const actualKeys = Object.keys(body.aggregates).sort();
+    const expectedKeys = [...requiredAggregateKeys].sort();
+
+    // toEqual reports both missing AND extra keys.
+    expect(actualKeys).toEqual(expectedKeys);
   });
 });
 

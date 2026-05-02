@@ -1,5 +1,6 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { LeaderboardRow } from "../../src/lib/shared/api-types";
 import { resetDb } from "../utils/reset-db";
 
 async function seed(): Promise<void> {
@@ -116,6 +117,58 @@ beforeEach(async () => {
   // The leaderboard route keys cache entries by URL, so each test's first
   // request to a unique URL is a guaranteed miss → recompute. The dedicated
   // "populates Cache API on miss" test below double-fetches a fresh URL.
+});
+
+// =============================================================================
+// Contract completeness — LeaderboardRow key-set assertion
+// =============================================================================
+//
+// Detects the regression class where a merge commit silently drops field
+// assignments from a route handler. The expected key list mirrors the
+// `LeaderboardRow` TypeScript type declared in api-types.ts.
+//
+// If a field is added to the type but forgotten in the endpoint: the response
+// will be missing the key → test fails. If a key is added to the response but
+// not the type: update BOTH here AND the type. The duplication is intentional.
+
+describe("LeaderboardRow — contract completeness", () => {
+  it("each row in /api/v1/leaderboard includes exactly every field declared in the LeaderboardRow type", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?test=contract");
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(body.data.length).toBeGreaterThan(0);
+
+    // REQUIRED: every key in this array must match LeaderboardRow
+    // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
+    const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
+      "rank",
+      "model",
+      "family_slug",
+      "run_count",
+      "tasks_attempted",
+      "tasks_passed",
+      "tasks_attempted_distinct",
+      "tasks_passed_attempt_1",
+      "tasks_passed_attempt_2_only",
+      "pass_at_n",
+      "latency_p95_ms",
+      "pass_rate_ci",
+      "pass_hat_at_n",
+      "cost_per_pass_usd",
+      "avg_score",
+      "avg_cost_usd",
+      "verified_runs",
+      "last_run_at",
+    ];
+
+    // Check every row — the regression would drop a field from ALL rows.
+    for (const row of body.data) {
+      const actualKeys = Object.keys(row).sort();
+      const expectedKeys = [...requiredRowKeys].sort();
+      // toEqual reports both missing AND extra keys.
+      expect(actualKeys).toEqual(expectedKeys);
+    }
+  });
 });
 
 describe("GET /api/v1/leaderboard", () => {

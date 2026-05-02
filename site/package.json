@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler types && vite dev",
-    "build": "tsx scripts/build-sitemap.ts && wrangler types && vite build && node scripts/wrap-worker-exports.mjs",
+    "build": "tsx scripts/build-sitemap.ts && wrangler types && vite build && node scripts/wrap-worker-exports.mjs && tsx scripts/verify-bundle-integrity.ts",
     "preview": "wrangler dev --port 4173",
     "deploy": "wrangler deploy",
     "check": "wrangler types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
