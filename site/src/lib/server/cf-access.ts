@@ -178,7 +178,23 @@ export async function verifyCfAccessJwt(
     ["verify"]
   );
 
-  const sig = b64UrlDecode(sigB64);
+  // Wave 5 / IMPORTANT 1 — wrap b64UrlDecode in try/catch. Pre-fix,
+  // malformed signature bytes (chars outside base64url) raised DOMException
+  // and propagated as a 500 internal_error. Spec contract: malformed JWT
+  // bytes are an unauthenticated state, NOT a server fault. The header
+  // decode at lines 144-155 already follows this pattern.
+  let sig: Uint8Array;
+  try {
+    sig = b64UrlDecode(sigB64);
+  } catch (err) {
+    throw new ApiError(
+      401,
+      "cf_access_malformed",
+      `JWT signature is not valid base64url: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
   const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
   const ok = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
@@ -190,6 +206,22 @@ export async function verifyCfAccessJwt(
     throw new ApiError(401, "cf_access_bad_sig", "signature failed");
   }
 
+  // Wave 5 / IMPORTANT 1 — same try/catch hardening for the payload decode.
+  // The existing JSON.parse try/catch caught parser errors but the
+  // b64UrlDecode call lived OUTSIDE it, so a DOMException from atob() on
+  // out-of-charset bytes still escaped as 500.
+  let payloadBytes: Uint8Array;
+  try {
+    payloadBytes = b64UrlDecode(payloadB64);
+  } catch (err) {
+    throw new ApiError(
+      401,
+      "cf_access_malformed",
+      `JWT payload is not valid base64url: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    );
+  }
   let claims: {
     aud?: string | string[];
     email?: string;
@@ -197,9 +229,7 @@ export async function verifyCfAccessJwt(
     exp?: number;
   };
   try {
-    claims = JSON.parse(
-      new TextDecoder().decode(b64UrlDecode(payloadB64))
-    ) as typeof claims;
+    claims = JSON.parse(new TextDecoder().decode(payloadBytes)) as typeof claims;
   } catch {
     throw new ApiError(
       401,

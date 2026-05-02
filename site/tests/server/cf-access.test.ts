@@ -140,6 +140,68 @@ describe('verifyCfAccessJwt', () => {
     );
   });
 
+  it('IMPORTANT 1 — malformed signature base64 returns 401, NOT 500', async () => {
+    // Pre-Wave5: b64UrlDecode threw a DOMException for "...!!!" inside the
+    // signature segment, propagating as a 500 internal_error. Spec contract:
+    // malformed JWT bytes are an unauthenticated state, not a server fault.
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    // header is valid base64 (so we get past the header parse), but the
+    // signature segment contains characters outside the base64url charset
+    // *and* outside the standard base64 charset. atob() raises DOMException.
+    const headerB64 = b64url(
+      new TextEncoder().encode(
+        JSON.stringify({ alg: 'RS256', kid: KID, typ: 'JWT' }),
+      ),
+    );
+    const claimsB64 = b64url(
+      new TextEncoder().encode(JSON.stringify({ aud: AUD, email: 'x@x', sub: 'u' })),
+    );
+    const garbageSig = '!!!';
+    const jwt = `${headerB64}.${claimsB64}.${garbageSig}`;
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_malformed',
+    );
+  });
+
+  it('IMPORTANT 1 — malformed payload base64 returns 401, NOT 500', async () => {
+    // Same edge: payloadB64 is decoded after the signature verify path. We
+    // shape a JWT whose signature path can be reached but whose payload
+    // contains undecodable bytes. The fix wraps b64UrlDecode in try/catch
+    // and re-throws as ApiError(401, 'cf_access_malformed', ...).
+    //
+    // We pass garbage in the payload; the signature verify will run on the
+    // raw `headerB64.payloadB64` bytes. We sign valid bytes here so
+    // signature verify passes — that drops control through to the payload
+    // decode path, which is where the DOMException historically escaped.
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const headerB64 = b64url(
+      new TextEncoder().encode(
+        JSON.stringify({ alg: 'RS256', kid: KID, typ: 'JWT' }),
+      ),
+    );
+    const garbagePayload = '!!!';
+    const data = new TextEncoder().encode(`${headerB64}.${garbagePayload}`);
+    const sig = await crypto.subtle.sign(
+      { name: 'RSASSA-PKCS1-v1_5' },
+      kp.privateKey,
+      data,
+    );
+    const jwt = `${headerB64}.${garbagePayload}.${b64url(sig)}`;
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_malformed',
+    );
+  });
+
   it('rejects HS256 (only RS256 accepted)', async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
