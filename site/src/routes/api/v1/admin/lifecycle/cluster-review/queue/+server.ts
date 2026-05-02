@@ -6,10 +6,8 @@
  * (nearest side) so the cluster-review CLI can render rich operator
  * context per row.
  *
- * Dual-auth target: CF Access JWT OR Ed25519 admin signature. Until
- * Plan F ships authenticateAdminRequest, this endpoint accepts Ed25519
- * only and is patched by Plan F's F5.5 retro-patch commit (TODO(Plan F /
- * F5): swap to authenticateAdminRequest for CF Access dual-auth).
+ * Auth: dual — CF Access JWT (browser path) OR Ed25519 admin signature
+ * (CLI path). Wired through `authenticateAdminRequest` per F5.5 retro-patch.
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";

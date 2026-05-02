@@ -7,8 +7,14 @@
  * client only POSTs the proposed alias + winner concept_id + similarity
  * + the shortcomings to repoint.
  *
- * Auth: Ed25519 admin scope. (Plan F's CF Access dual-auth swap is
- * tracked in TODO(Plan F / F5) inside cluster-review/decide.)
+ * Auth: dual — CF Access JWT (browser path) OR Ed25519 admin signature
+ * (CLI path). Wired through `authenticateAdminRequest` per F5.5 retro-patch.
+ *
+ * Auth-trail invariant: the audit row's `actor_id` is ALWAYS derived from
+ * the verified auth identity (CF Access email or `key:<id>` for the CLI
+ * signature), NEVER from the request body. Wave 5 / CRITICAL 1 fixed an
+ * impersonation regression where a body-supplied `actor_id` flowed verbatim
+ * into the concept.aliased / concept.merged event row.
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
