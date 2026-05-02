@@ -315,6 +315,13 @@ Deno.test("generateThemeSummaryHtml", async (t) => {
           compileFailures: 1,
           testFailures: 1,
           malformedResponses: 0,
+          variantConfig: null,
+          passRateCI: { lower: 0, upper: 1 },
+          costPerPass: null,
+          tokensPerPass: null,
+          durations: [],
+          latencyP50: 0,
+          latencyP95: 0,
         },
       ],
     ]);

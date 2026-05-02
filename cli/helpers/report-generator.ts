@@ -15,6 +15,12 @@ import type {
 } from "../../src/verify/types.ts";
 import { shortVariantName } from "../../src/utils/formatters.ts";
 import { extractModelName } from "./model-utils.ts";
+import {
+  costPerPass as costPerPassFn,
+  percentile,
+  tokensPerPass as tokensPerPassFn,
+  wilsonInterval,
+} from "../commands/report/stats-calculator.ts";
 
 /**
  * Transform a ResultRecord from the database to a BenchmarkResult
@@ -158,6 +164,12 @@ export function calculatePerModelStats(
         testFailures: 0,
         malformedResponses: 0,
         variantConfig: result.context?.variantConfig ?? null,
+        passRateCI: { lower: 0, upper: 1 },
+        costPerPass: null,
+        tokensPerPass: null,
+        durations: [],
+        latencyP50: 0,
+        latencyP95: 0,
       });
     }
 
@@ -182,6 +194,9 @@ export function calculatePerModelStats(
     m.tokens += result.totalTokensUsed || 0;
     m.cost += result.totalCost || 0;
     m.avgScore += result.finalScore || 0;
+    if (typeof result.totalDuration === "number" && result.totalDuration > 0) {
+      m.durations.push(result.totalDuration);
+    }
   }
 
   // Calculate averages
@@ -190,6 +205,11 @@ export function calculatePerModelStats(
     if (total > 0) {
       m.avgScore = m.avgScore / total;
     }
+    m.passRateCI = wilsonInterval(m.tasksPassed, total);
+    m.costPerPass = costPerPassFn(m.cost, m.tasksPassed);
+    m.tokensPerPass = tokensPerPassFn(m.tokens, m.tasksPassed);
+    m.latencyP50 = percentile(m.durations, 0.5);
+    m.latencyP95 = percentile(m.durations, 0.95);
   }
 
   return perModelMap;
