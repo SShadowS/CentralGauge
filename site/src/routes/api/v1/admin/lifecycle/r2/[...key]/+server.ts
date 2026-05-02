@@ -43,15 +43,25 @@ export const PUT: RequestHandler = async ({ request, platform, params, url }) =>
       }
     }
 
-    const body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
-
-    // (Plan F / F5.5) Dual-auth PUT. CF Access JWT in the browser is the
-    // primary path; fall back to the existing header-signed Ed25519 path
-    // (binds the URL path AND the body hash into the signed bytes so an
-    // attacker with a single signed envelope can't redirect the upload).
+    // (Plan F / F5.5) Dual-auth PUT. Wave 5 / IMPORTANT 5 — defer body
+    // buffering until AFTER the CF Access auth check to avoid an
+    // unauthenticated DoS that materializes up to MAX_BODY_BYTES per
+    // attempt. The Ed25519 path still reads the body first because the
+    // signature is hash-bound to the body bytes (rebinding the upload
+    // would require a fresh sig).
+    let body: Uint8Array;
     if (request.headers.get('cf-access-jwt-assertion')) {
+      // CF Access path: auth FIRST (JWT validation is body-independent),
+      // then read the body. This caps unauthenticated body buffering at
+      // zero bytes for malformed-JWT attackers.
       await authenticateAdminRequest(request, platform.env, null);
+      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
     } else {
+      // Ed25519 path: body first because verifyLifecycleAdminRequest
+      // hashes the bytes into the signed envelope. Without the hash
+      // binding an attacker could redirect a captured signature to a
+      // different upload.
+      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
       await verifyLifecycleAdminRequest(db, request, {
         signedFields: buildHeaderSignedFields({ method: 'PUT', path: url.pathname }),
         body,
