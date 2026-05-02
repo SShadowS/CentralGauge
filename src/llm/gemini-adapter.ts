@@ -1,4 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
+// Type-only import — runtime load deferred to `ensureClient()` so the npm
+// dep (which reads `process.env.GOOGLE_SDK_NODE_LOGGING` at module-init)
+// only evaluates when Gemini is actually used. Linux Deno CI evaluates
+// the npm graph before `process` is fully wired; lazy-loading dodges that.
+import type { GoogleGenAI } from "@google/genai";
 import type {
   LLMConfig,
   LLMRequest,
@@ -55,8 +59,10 @@ export class GeminiAdapter extends BaseLLMAdapter
 
   configure(config: LLMConfig): void {
     this.config = { ...this.config, ...config };
+    // Eager `new GoogleGenAI(...)` removed — defer to `ensureClient()` so
+    // the npm dep doesn't load until actually needed.
     if (config.apiKey) {
-      this.ai = new GoogleGenAI({ apiKey: config.apiKey });
+      this.ai = null;
     }
   }
 
@@ -166,7 +172,7 @@ export class GeminiAdapter extends BaseLLMAdapter
     includeRaw = false,
   ): Promise<ProviderCallResult> {
     const startTime = Date.now();
-    const ai = this.ensureClient();
+    const ai = await this.ensureClient();
 
     const thinkingBudget = typeof this.config.thinkingBudget === "number"
       ? this.config.thinkingBudget
@@ -233,7 +239,7 @@ export class GeminiAdapter extends BaseLLMAdapter
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-    const ai = this.ensureClient();
+    const ai = await this.ensureClient();
 
     let lastFinishReason: string | undefined;
     let usageMetadata: GeminiUsageMetadata | undefined;
@@ -315,7 +321,7 @@ export class GeminiAdapter extends BaseLLMAdapter
   // Private Gemini-specific helpers
   // ============================================================================
 
-  private ensureClient(): GoogleGenAI {
+  private async ensureClient(): Promise<GoogleGenAI> {
     if (this.ai) {
       return this.ai;
     }
@@ -328,7 +334,8 @@ export class GeminiAdapter extends BaseLLMAdapter
       );
     }
 
-    this.ai = new GoogleGenAI({ apiKey: this.config.apiKey });
+    const { GoogleGenAI: Ctor } = await import("@google/genai");
+    this.ai = new Ctor({ apiKey: this.config.apiKey });
     return this.ai;
   }
 
