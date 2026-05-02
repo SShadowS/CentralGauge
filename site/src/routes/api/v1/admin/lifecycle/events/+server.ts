@@ -3,6 +3,7 @@ import { verifySignedRequest, type SignedAdminRequest } from '$lib/server/signat
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
+import { maybeTriggerFamilyDiff } from '$lib/server/lifecycle-diff-trigger';
 import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
 import {
   CANONICAL_ACTORS,
@@ -63,6 +64,41 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       }
     }
     const { id } = await appendEvent(db, p);
+
+    // Phase E: schedule per-family concept-diff materialisation in the
+    // background. The trigger is a no-op for non-`analysis.completed`
+    // events; for `analysis.completed` it computes the diff against the
+    // family's prior generation (or returns baseline_missing) and
+    // upserts the row into family_diffs so the next family-diff endpoint
+    // read is fast. ctx.waitUntil keeps the POST response immediate while
+    // the background job runs to completion.
+    try {
+      const cache = await caches.open('lifecycle');
+      // Awaited inline (matches concept-cache-invalidation pattern: writers
+      // do the work synchronously and ctx.waitUntil ALSO holds it open for
+      // background completion — this keeps the next read deterministic AND
+      // makes Vitest's miniflare runs observe the materialised row without
+      // needing arbitrary drain hacks). The inline cost is one SELECT + one
+      // INSERT/UPDATE + two cache.delete calls — negligible vs the
+      // signature-verification round-trip we already paid above.
+      await maybeTriggerFamilyDiff(
+        platform.context,
+        db,
+        cache,
+        {
+          id,
+          model_slug: p.model_slug,
+          task_set_hash: p.task_set_hash,
+          event_type: p.event_type,
+        },
+      );
+    } catch (err) {
+      // Cache.open or trigger failure is non-fatal — the event is already
+      // persisted, the diff endpoint recomputes inline on cache miss. Log
+      // for observability.
+      console.error('[lifecycle/events] diff trigger failed', err);
+    }
+
     return jsonResponse({ id }, 200);
   } catch (err) {
     return errorResponse(err);
