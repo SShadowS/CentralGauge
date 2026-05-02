@@ -3,6 +3,7 @@
   import { page } from '$app/state';
   import Breadcrumbs from '$lib/components/domain/Breadcrumbs.svelte';
   import FamilyTrajectoryChart from '$lib/components/domain/FamilyTrajectoryChart.svelte';
+  import ConceptTrajectorySection from '$lib/components/domain/ConceptTrajectorySection.svelte';
   import ModelLink from '$lib/components/domain/ModelLink.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import { formatScore, formatCost, formatRelativeTime } from '$lib/client/format';
@@ -10,6 +11,8 @@
 
   let { data } = $props();
   const f = $derived(data.family);
+  const diff = $derived(data.diff);
+  const r2BundleAvailable = $derived(data.r2BundleAvailable ?? false);
 
   const familyRoute = $derived(`/families/${page.params.slug}`);
 
@@ -67,6 +70,8 @@
     <FamilyTrajectoryChart items={f.trajectory} />
   {/if}
 </section>
+
+<ConceptTrajectorySection {diff} {r2BundleAvailable} />
 
 <section class="members">
   <h2>Members</h2>
