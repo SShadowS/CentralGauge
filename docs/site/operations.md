@@ -736,3 +736,103 @@ first hour:
 5. Open a follow-up issue documenting the regression before
    re-attempting the flip.
 
+## Admin lifecycle UI access (Cloudflare Access)
+
+The `/admin/lifecycle/*` web paths and the matching
+`/api/v1/admin/lifecycle/*` endpoints accept two auth transports per Plan F:
+
+- **Browser** — Cloudflare Access JWT (GitHub OAuth at the edge,
+  `CF-Access-Jwt-Assertion` header, `actor_id = email`).
+- **CLI** — Ed25519 admin signature on the body
+  (`actor_id = key:<key_id>`).
+
+Operators NEVER see the Ed25519 admin key; the key remains a CLI-only
+credential. This is by design — revoking GitHub OAuth via CF Access does
+NOT also revoke the CLI key, and rotating the CLI key does NOT log out
+browser operators. The two identities have separate revocation paths and
+must not be conflated.
+
+### One-time setup (operator)
+
+1. Cloudflare dashboard → **Zero Trust** → **Access** → **Applications**
+   → **Add an application** → **Self-hosted**.
+2. **Application name**: `CentralGauge Admin Lifecycle`.
+3. **Session duration**: 24 hours.
+4. **Application domain**: `centralgauge.sshadows.workers.dev`.
+   - **Path**: `/admin/lifecycle/*`.
+   - Add a second path entry: `/api/v1/admin/lifecycle/*` (so the API
+     endpoints are gated too — without this, the browser UI loads but
+     XHR calls return 401).
+5. **Identity providers**: GitHub OAuth (configure under
+   **Settings → Authentication** if not already present).
+6. **Policies**: add a policy `Operators` with rule
+   `Emails → operator@example.com,...`. Add additional reviewer emails
+   as needed.
+7. Save. Note the **Application Audience (AUD) Tag** — copy it for the
+   next step.
+8. From a shell with `wrangler` and `CLOUDFLARE_API_TOKEN` configured:
+   ```bash
+   cd site
+   wrangler secret put CF_ACCESS_AUD
+   # paste the AUD tag when prompted
+   ```
+9. Verify: `curl -i https://centralgauge.sshadows.workers.dev/admin/lifecycle`
+   should redirect to a CF Access login page in a fresh incognito window.
+   `curl -i .../api/v1/admin/lifecycle/review/queue` should return 401
+   without the `cf-access-jwt-assertion` header.
+
+### Wrangler.toml vs secrets
+
+`CF_ACCESS_TEAM_DOMAIN` is committed to `[vars]` in `site/wrangler.toml`
+(non-secret — the `<team>.cloudflareaccess.com` hostname is public).
+**`CF_ACCESS_AUD` is a secret**, set via `wrangler secret put`. Do NOT
+add `CF_ACCESS_AUD = ""` under `[vars]` — vars and secrets share the
+same `env.*` namespace and a baked-in empty var would shadow the secret
+at runtime (resolution order is implementation-defined).
+
+Verify post-deploy:
+```bash
+wrangler secret list                   # should include CF_ACCESS_AUD
+wrangler deploy --dry-run | grep AUD   # should NOT print the AUD tag
+```
+
+### Revoking access
+
+Cloudflare dashboard → **Access** → **Applications** → **CentralGauge
+Admin Lifecycle** → **Policies** → remove the email. Active sessions
+invalidate on the next request (CF Access does not maintain
+server-side session state — the JWT is the session, and the JWKs cache
+in the worker is bounded by a 10-minute TTL).
+
+### Adding a new reviewer
+
+Same dashboard path; append the email to the `Operators` policy. Sessions
+for the new user begin on first authenticated visit.
+
+### Rotating the AUD tag
+
+If the CF Access application is recreated (rare, e.g., to add a new
+identity provider), the AUD tag changes. Update the secret:
+```bash
+wrangler secret put CF_ACCESS_AUD   # paste new AUD
+```
+The old tag fails closed at the verifier (`cf_access_bad_aud`). No
+deploy is required — the verifier reads `env.CF_ACCESS_AUD` per request.
+
+### Troubleshooting
+
+- **401 `cf_access_misconfigured`** — `CF_ACCESS_AUD` or
+  `CF_ACCESS_TEAM_DOMAIN` is unset. Verify with `wrangler secret list`
+  and `cat site/wrangler.toml | grep CF_ACCESS`.
+- **401 `cf_access_unknown_kid`** — the JWKs cache is stale (>10 min
+  since fetch) AND CF rotated the signing key. Restart the worker
+  (`wrangler deploy --no-build` re-deploys the same bundle to a fresh
+  isolate).
+- **401 `cf_access_bad_aud`** — the JWT was issued for a different
+  CF Access application. Recreate the JWT by signing out and back in,
+  or check that the `wrangler secret put CF_ACCESS_AUD` value matches
+  the dashboard.
+- **503 `cf_access_jwks_unreachable`** — CF Access JWKs endpoint is
+  down or the `CF_ACCESS_TEAM_DOMAIN` is wrong. Verify with
+  `curl https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`.
+

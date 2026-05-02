@@ -1,0 +1,348 @@
+/**
+ * Plan F / F5.3 — Cloudflare Access JWT verifier unit tests.
+ *
+ * Synthesises an RSA-2048 keypair so we can sign valid JWTs without
+ * hitting real CF Access JWKs. Uses `__setJwksCacheForTests` to inject
+ * the matching JWK into the verifier's cache.
+ *
+ * Coverage:
+ *   - misconfigured env (missing AUD or TEAM_DOMAIN) → 500
+ *   - missing JWT header → 401
+ *   - malformed JWT (not 3 parts, bad base64) → 401
+ *   - bad alg (HS256) → 401
+ *   - unknown kid → 401
+ *   - wrong audience → 401 (the F5.3 acceptance gate)
+ *   - expired exp → 401
+ *   - missing email/sub claims → 401
+ *   - happy path → returns { email, sub }
+ */
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  __resetJwksCacheForTests,
+  __setJwksCacheForTests,
+  authenticateAdminRequest,
+  verifyCfAccessJwt,
+} from '../../src/lib/server/cf-access';
+import { ApiError } from '../../src/lib/server/errors';
+
+/**
+ * Assert that `fn` throws an ApiError whose `.code` equals `expectedCode`.
+ * Vitest's `toThrow(/regex/)` matches against `Error.message`, but our
+ * ApiError carries the machine-readable identifier on `.code` — so this
+ * helper unwraps the rejection and asserts on the structured field that
+ * the F5.5 retro-patches and the F4 decide endpoint actually depend on.
+ */
+async function expectApiError(
+  fn: () => Promise<unknown>,
+  expectedCode: string,
+): Promise<void> {
+  let thrown: unknown;
+  try {
+    await fn();
+  } catch (err) {
+    thrown = err;
+  }
+  expect(thrown).toBeInstanceOf(ApiError);
+  expect((thrown as ApiError).code).toBe(expectedCode);
+}
+
+const TEAM = 't.cloudflareaccess.com';
+const AUD = 'aud-tag-123';
+const KID = 'test-kid';
+
+interface RsaKeypair {
+  publicJwk: JsonWebKey;
+  privateKey: CryptoKey;
+}
+
+async function generateRsaKeypair(): Promise<RsaKeypair> {
+  const { publicKey, privateKey } = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  );
+  const publicJwk = await crypto.subtle.exportKey('jwk', publicKey);
+  publicJwk.kid = KID;
+  publicJwk.alg = 'RS256';
+  return { publicJwk, privateKey };
+}
+
+function b64url(buf: ArrayBuffer | Uint8Array): string {
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
+  return btoa(bin).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+async function signJwt(
+  privateKey: CryptoKey,
+  header: Record<string, unknown>,
+  claims: Record<string, unknown>,
+): Promise<string> {
+  const headerB64 = b64url(new TextEncoder().encode(JSON.stringify(header)));
+  const claimsB64 = b64url(new TextEncoder().encode(JSON.stringify(claims)));
+  const data = new TextEncoder().encode(`${headerB64}.${claimsB64}`);
+  const sig = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    privateKey,
+    data,
+  );
+  return `${headerB64}.${claimsB64}.${b64url(sig)}`;
+}
+
+function envOk() {
+  return { CF_ACCESS_AUD: AUD, CF_ACCESS_TEAM_DOMAIN: TEAM };
+}
+
+describe('verifyCfAccessJwt', () => {
+  afterEach(() => __resetJwksCacheForTests());
+
+  it('rejects when CF_ACCESS_AUD is unset', async () => {
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': 'a.b.c' },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, { CF_ACCESS_TEAM_DOMAIN: TEAM }),
+      'cf_access_misconfigured',
+    );
+  });
+
+  it('rejects when CF_ACCESS_TEAM_DOMAIN is unset', async () => {
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': 'a.b.c' },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, { CF_ACCESS_AUD: AUD }),
+      'cf_access_misconfigured',
+    );
+  });
+
+  it('rejects when JWT header is missing', async () => {
+    const req = new Request('https://x/admin/lifecycle/review');
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_missing',
+    );
+  });
+
+  it('rejects malformed JWT (not 3 parts)', async () => {
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': 'a.b' },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_malformed',
+    );
+  });
+
+  it('rejects HS256 (only RS256 accepted)', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'HS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'x@x', sub: 'u' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_bad_alg',
+    );
+  });
+
+  it('rejects unknown kid (signing key not in JWKs)', async () => {
+    const kp = await generateRsaKeypair();
+    // Cache has a key with kid='other', JWT uses our KID — mismatch.
+    __setJwksCacheForTests([{ ...kp.publicJwk, kid: 'other' }]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'x@x', sub: 'u' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_unknown_kid',
+    );
+  });
+
+  it('rejects wrong audience even with valid signature (the F5.3 acceptance gate)', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: 'wrong-aud', email: 'x@x', sub: 'u' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_bad_aud',
+    );
+  });
+
+  it('rejects expired JWT', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      {
+        aud: AUD,
+        email: 'x@x',
+        sub: 'u',
+        exp: Math.floor(Date.now() / 1000) - 60,
+      },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_expired',
+    );
+  });
+
+  it('rejects when email or sub claim missing', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, sub: 'u' }, // missing email
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_missing_claims',
+    );
+  });
+
+  it('rejects tampered signature (signed by a different private key)', async () => {
+    const kp1 = await generateRsaKeypair();
+    const kp2 = await generateRsaKeypair();
+    // JWKs cache holds kp1; JWT signed by kp2 — verify should fail.
+    __setJwksCacheForTests([kp1.publicJwk]);
+    const jwt = await signJwt(
+      kp2.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'x@x', sub: 'u' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      'cf_access_bad_sig',
+    );
+  });
+
+  it('happy path → returns { email, sub } from valid JWT', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      {
+        aud: AUD,
+        email: 'op@example.com',
+        sub: 'u-12345',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    const user = await verifyCfAccessJwt(req, envOk());
+    expect(user.email).toBe('op@example.com');
+    expect(user.sub).toBe('u-12345');
+  });
+
+  it('happy path with array audience containing AUD', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: ['other', AUD], email: 'op@x', sub: 's' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    const user = await verifyCfAccessJwt(req, envOk());
+    expect(user.email).toBe('op@x');
+  });
+});
+
+describe('authenticateAdminRequest', () => {
+  afterEach(() => __resetJwksCacheForTests());
+
+  it('throws unauthenticated when neither CF Access nor signed body is present', async () => {
+    const req = new Request('https://x/admin/lifecycle/review');
+    await expectApiError(
+      () =>
+        authenticateAdminRequest(
+          req,
+          { ...envOk(), DB: {} as D1Database },
+          null,
+        ),
+      'unauthenticated',
+    );
+  });
+
+  it('CF Access path returns kind="cf-access" with email + sub', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    const auth = await authenticateAdminRequest(
+      req,
+      { ...envOk(), DB: {} as D1Database },
+      null,
+    );
+    expect(auth.kind).toBe('cf-access');
+    if (auth.kind === 'cf-access') {
+      expect(auth.email).toBe('op@example.com');
+      expect(auth.sub).toBe('u-1');
+    }
+  });
+
+  it('CF Access takes precedence when both are present', async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { aud: AUD, email: 'cf@example.com', sub: 'u-1' },
+    );
+    const req = new Request('https://x/admin/lifecycle/review', {
+      headers: { 'cf-access-jwt-assertion': jwt },
+    });
+    const auth = await authenticateAdminRequest(
+      req,
+      { ...envOk(), DB: {} as D1Database },
+      // signed body present too — CF Access should win.
+      { signature: { alg: 'Ed25519', key_id: 1, signed_at: 'x', value: 'AA' } },
+    );
+    expect(auth.kind).toBe('cf-access');
+  });
+});
