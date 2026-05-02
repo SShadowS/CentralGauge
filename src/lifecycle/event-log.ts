@@ -46,6 +46,11 @@ export async function buildAppendBody(
   const ts = input.ts ?? Date.now();
   const payload_hash = input.payload_hash ??
     await computePayloadHash(input.payload);
+  // Wire body matches the canonical `AppendEventInput` shape — the worker's
+  // POST handler (`site/src/routes/api/v1/admin/lifecycle/events/+server.ts`)
+  // expects OBJECT-form `payload`/`tool_versions`/`envelope` and stringifies
+  // them server-side. Pre-stringified `*_json` strings are rejected with
+  // a D1 type error because `JSON.stringify(undefined) === undefined`.
   return {
     version: 1,
     payload: {
@@ -55,11 +60,9 @@ export async function buildAppendBody(
       event_type: input.event_type,
       source_id: input.source_id ?? null,
       payload_hash,
-      tool_versions_json: input.tool_versions
-        ? JSON.stringify(input.tool_versions)
-        : null,
-      envelope_json: input.envelope ? JSON.stringify(input.envelope) : null,
-      payload_json: JSON.stringify(input.payload),
+      payload: input.payload,
+      tool_versions: input.tool_versions ?? null,
+      envelope: input.envelope ?? null,
       actor: input.actor,
       actor_id: input.actor_id ?? null,
       migration_note: input.migration_note ?? null,
