@@ -158,7 +158,10 @@ Deno.test("majorityAtN", async (t) => {
   });
 });
 
-import { calculateMultiRunStats, calculatePerModelStats } from "../../../../../cli/commands/report/stats-calculator.ts";
+import {
+  calculateMultiRunStats,
+  calculatePerModelStats,
+} from "../../../../../cli/commands/report/stats-calculator.ts";
 import type { BenchmarkResult } from "../../../../../cli/types/cli-types.ts";
 
 function mkResult(
@@ -186,18 +189,21 @@ Deno.test("calculateMultiRunStats populates passHatK + majorityAtN + variance", 
   // T1: outcomes [true, true, true]   → 3/3 pass → contributes to pass^k for all k
   // T2: outcomes [true, false, true]  → 2/3 pass → majority yes; pass^3 = 0
   const grouped = new Map<string, Map<string, BenchmarkResult[]>>([
-    ["m1", new Map<string, BenchmarkResult[]>([
-      ["T1", [
-        mkResult("m1", "T1", true, 100),
-        mkResult("m1", "T1", true, 110),
-        mkResult("m1", "T1", true, 120),
-      ]],
-      ["T2", [
-        mkResult("m1", "T2", true, 200),
-        mkResult("m1", "T2", false, 210),
-        mkResult("m1", "T2", true, 220),
-      ]],
-    ])],
+    [
+      "m1",
+      new Map<string, BenchmarkResult[]>([
+        ["T1", [
+          mkResult("m1", "T1", true, 100),
+          mkResult("m1", "T1", true, 110),
+          mkResult("m1", "T1", true, 120),
+        ]],
+        ["T2", [
+          mkResult("m1", "T2", true, 200),
+          mkResult("m1", "T2", false, 210),
+          mkResult("m1", "T2", true, 220),
+        ]],
+      ]),
+    ],
   ]);
 
   const stats = calculateMultiRunStats(grouped, 3).get("m1")!;
@@ -247,9 +253,12 @@ Deno.test("calculatePerModelStats populates new metrics", async (t) => {
     assertAlmostEquals(stats.tokensPerPass!, 500 / 3, 1e-9);
   });
 
-  await t.step("latencyP50 = median of [1000,2000,3000,4000,5000] = 3000", () => {
-    assertEquals(stats.latencyP50, 3000);
-  });
+  await t.step(
+    "latencyP50 = median of [1000,2000,3000,4000,5000] = 3000",
+    () => {
+      assertEquals(stats.latencyP50, 3000);
+    },
+  );
 
   await t.step("latencyP95 = p95 of [1000..5000] = 4800", () => {
     assertEquals(stats.latencyP95, 4800);
