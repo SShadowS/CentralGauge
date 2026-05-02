@@ -407,3 +407,48 @@ describe('computePassHatAtN', () => {
     expect(result.has(2)).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-language golden vector tests
+//
+// Shared fixture: tests/fixtures/stats-golden-vectors.json (project root)
+// Counterpart:    tests/unit/cli/commands/report/stats-calculator.test.ts
+//
+// The fixture is injected as __STATS_GOLDEN_VECTORS__ by vitest.config.ts at
+// config-time (outside the miniflare sandbox) so node:fs is not needed.
+// node:fs readFileSync resolves paths under /bundle/ at runtime inside the
+// sandbox, not the project root — hence the config-time injection approach.
+//
+// If either side's wilsonInterval or percentileLinear diverges from these
+// values, the OTHER side's test will also fail — making drift immediately
+// visible regardless of which implementation was changed.
+// ---------------------------------------------------------------------------
+
+declare const __STATS_GOLDEN_VECTORS__: string;
+
+type GoldenVectors = {
+  wilson_interval_95: Array<{ successes: number; trials: number; lower: number; upper: number }>;
+  percentile_linear: Array<{ values: number[]; p: number; expected: number }>;
+  $tolerance_decimal_places: number;
+};
+
+const golden = JSON.parse(__STATS_GOLDEN_VECTORS__) as GoldenVectors;
+
+describe('cross-lang golden vector — wilsonInterval', () => {
+  for (const entry of golden.wilson_interval_95) {
+    it(`${entry.successes}/${entry.trials} → [${entry.lower}, ${entry.upper}]`, () => {
+      const ci = wilsonInterval(entry.successes, entry.trials);
+      expect(ci.lower).toBeCloseTo(entry.lower, golden.$tolerance_decimal_places);
+      expect(ci.upper).toBeCloseTo(entry.upper, golden.$tolerance_decimal_places);
+    });
+  }
+});
+
+describe('cross-lang golden vector — percentileLinear', () => {
+  for (const entry of golden.percentile_linear) {
+    it(`p=${entry.p} of [${entry.values.slice(0, 5).join(',')}${entry.values.length > 5 ? ',...' : ''}] → ${entry.expected}`, () => {
+      const result = percentileLinear(entry.values, entry.p);
+      expect(result).toBeCloseTo(entry.expected, golden.$tolerance_decimal_places);
+    });
+  }
+});

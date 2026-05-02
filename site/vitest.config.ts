@@ -37,6 +37,14 @@ export default defineConfig(async () => {
     'utf8',
   );
 
+  // Inject the cross-language golden vectors fixture so the miniflare sandbox
+  // can access it without node:fs (which resolves paths under /bundle/ at
+  // runtime, not the project root). Config-time read = single source of truth.
+  const statsGoldenVectors = readFileSync(
+    path.resolve('../tests/fixtures/stats-golden-vectors.json'),
+    'utf8',
+  );
+
   return {
     resolve: {
       alias: {
@@ -73,6 +81,7 @@ export default defineConfig(async () => {
     ],
     define: {
       __LIFECYCLE_TYPES_SOURCE__: JSON.stringify(lifecycleTypesSource),
+      __STATS_GOLDEN_VECTORS__: JSON.stringify(statsGoldenVectors),
     },
     test: {
       setupFiles: ['./tests/setup.ts'],

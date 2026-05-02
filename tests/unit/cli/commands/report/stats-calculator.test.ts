@@ -268,3 +268,70 @@ Deno.test("calculatePerModelStats populates new metrics", async (t) => {
     assertEquals(stats.durations.length, 5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cross-language golden vector tests
+//
+// Shared fixture: tests/fixtures/stats-golden-vectors.json (project root)
+// Counterpart:    site/tests/server/aggregates-phase2.test.ts
+//
+// Loaded via JSON import attribute — resolved relative to this file at
+// module-load time, no Deno.cwd() / Deno.readTextFile involved.
+//
+// If either side's wilsonInterval or percentile diverges from these values,
+// the OTHER side's test will also fail — making drift immediately visible.
+// ---------------------------------------------------------------------------
+
+import golden from "../../../../../tests/fixtures/stats-golden-vectors.json" with {
+  type: "json",
+};
+
+type Golden = {
+  wilson_interval_95: Array<{
+    successes: number;
+    trials: number;
+    lower: number;
+    upper: number;
+  }>;
+  percentile_linear: Array<{
+    values: number[];
+    p: number;
+    expected: number;
+  }>;
+  $tolerance_decimal_places: number;
+};
+
+const typedGolden = golden as Golden;
+
+Deno.test(
+  "cross-lang golden: wilsonInterval matches shared fixture",
+  async (t) => {
+    const tol = Math.pow(10, -typedGolden.$tolerance_decimal_places);
+    for (const entry of typedGolden.wilson_interval_95) {
+      await t.step(
+        `${entry.successes}/${entry.trials} → [${entry.lower}, ${entry.upper}]`,
+        () => {
+          const ci = wilsonInterval(entry.successes, entry.trials);
+          assertAlmostEquals(ci.lower, entry.lower, tol);
+          assertAlmostEquals(ci.upper, entry.upper, tol);
+        },
+      );
+    }
+  },
+);
+
+Deno.test(
+  "cross-lang golden: percentile matches shared fixture",
+  async (t) => {
+    const tol = Math.pow(10, -typedGolden.$tolerance_decimal_places);
+    for (const entry of typedGolden.percentile_linear) {
+      await t.step(
+        `p=${entry.p} of [${entry.values.slice(0, 5).join(",")}${entry.values.length > 5 ? ",..." : ""}] → ${entry.expected}`,
+        () => {
+          const result = percentile(entry.values, entry.p);
+          assertAlmostEquals(result, entry.expected, tol);
+        },
+      );
+    }
+  },
+);

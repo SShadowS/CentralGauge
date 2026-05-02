@@ -1,0 +1,20 @@
+{
+  "$comment": "Cross-language golden vectors for wilsonInterval + percentile (linear interpolation, no continuity correction). CLI test imports via JSON import attribute (Deno). Site test receives this file as __STATS_GOLDEN_VECTORS__ injected by vitest.config.ts at config-time — node:fs cannot cross the miniflare /bundle/ root at runtime. Modifications must update BOTH tests/unit/cli/commands/report/stats-calculator.test.ts AND site/tests/server/aggregates-phase2.test.ts. Drift in either implementation will fail the other side's test.",
+  "wilson_interval_95": [
+    { "successes": 0, "trials": 10, "lower": 0, "upper": 0.2775 },
+    { "successes": 3, "trials": 5, "lower": 0.2307, "upper": 0.8824 },
+    { "successes": 5, "trials": 10, "lower": 0.2366, "upper": 0.7634 },
+    { "successes": 10, "trials": 10, "lower": 0.7225, "upper": 1 },
+    { "successes": 70, "trials": 100, "lower": 0.6041, "upper": 0.7811 },
+    { "successes": 0, "trials": 0, "lower": 0, "upper": 1 }
+  ],
+  "percentile_linear": [
+    { "values": [], "p": 0.5, "expected": 0 },
+    { "values": [42], "p": 0.95, "expected": 42 },
+    { "values": [1, 2, 3, 4, 5], "p": 0.5, "expected": 3 },
+    { "values": [1, 2, 3, 4, 5], "p": 0.95, "expected": 4.8 },
+    { "values": [1, 2, 3, 4, 5], "p": 0, "expected": 1 },
+    { "values": [1, 2, 3, 4, 5], "p": 1, "expected": 5 }
+  ],
+  "$tolerance_decimal_places": 4
+}
