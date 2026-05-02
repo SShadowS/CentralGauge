@@ -395,6 +395,61 @@ export interface FamilyDetail {
 }
 
 // =============================================================================
+// Family per-generation concept diff — GET /api/v1/families/:slug/diff
+// (Phase E lifecycle differential analysis)
+// =============================================================================
+//
+// Mirrors `DiffResult` in src/lifecycle/diff.ts. The strategic plan rationale:
+// when the two analysis.completed events were produced by different analyzer
+// models, the four buckets are intentionally OMITTED (cross-analyzer diffs
+// produce phantom regressions). Consumers MUST check `status` before reading
+// resolved/persisting/regressed/new — the four bucket fields are absent in
+// the JSON for `analyzer_mismatch` and `baseline_missing`.
+
+export interface FamilyDiffConcept {
+  concept_id: number;
+  slug: string;
+  display_name: string;
+  description: string;
+  al_concept: string;
+  /**
+   * Per-bucket delta semantics (mirror of DiffConcept in src/lifecycle/diff.ts):
+   * - resolved:   gen_a count (which dropped to zero in gen_b)
+   * - persisting: gen_b_count - gen_a_count (positive = worse)
+   * - regressed:  gen_b count (concept already existed at gen_a's time)
+   * - new:        gen_b count (concept post-dates gen_a)
+   */
+  delta: number;
+}
+
+export type FamilyDiffStatus = 'comparable' | 'analyzer_mismatch' | 'baseline_missing';
+
+export interface FamilyDiff {
+  status: FamilyDiffStatus;
+  family_slug: string;
+  task_set_hash: string;
+  /**
+   * NULL when status === 'baseline_missing' (no prior analysis exists)
+   * OR when the family has zero analysis events yet (the endpoint returns
+   * a baseline-missing shell with both event-id fields NULL).
+   */
+  from_gen_event_id: number | null;
+  /**
+   * NULL only when the family has zero analysis events yet (shell case);
+   * non-NULL for every materialised diff row.
+   */
+  to_gen_event_id: number | null;
+  from_model_slug: string | null;
+  to_model_slug: string | null;
+  analyzer_model_a: string | null;
+  analyzer_model_b: string | null;
+  resolved?: FamilyDiffConcept[];
+  persisting?: FamilyDiffConcept[];
+  regressed?: FamilyDiffConcept[];
+  new?: FamilyDiffConcept[];
+}
+
+// =============================================================================
 // Tasks index — GET /api/v1/tasks?cursor=&set=
 // =============================================================================
 
