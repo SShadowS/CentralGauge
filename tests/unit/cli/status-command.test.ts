@@ -20,9 +20,10 @@
  *
  * @module tests/unit/cli/status-command
  */
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { Command } from "@cliffy/command";
 import {
+  __testing__,
   currentStateToRows,
   partitionRows,
   registerStatusCommand,
@@ -430,5 +431,77 @@ Deno.test(
     };
     const verified = StatusJsonOutputSchema.parse(output);
     assertEquals(verified.legacy_rows.length, 1);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// listAllModels: defensive parsing of /api/v1/models response (IMPORTANT 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Stub `globalThis.fetch` for one test, restoring it on teardown. Mirrors
+ * the pattern used in other CLI tests (e.g. `cycle-command.test.ts`).
+ */
+function withFetchStub(
+  resp: Response | (() => Response | Promise<Response>),
+  fn: () => Promise<void>,
+): Promise<void> {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (() => {
+    const r = typeof resp === "function" ? resp() : resp;
+    return Promise.resolve(r);
+  }) as typeof fetch;
+  return fn().finally(() => {
+    globalThis.fetch = orig;
+  });
+}
+
+Deno.test(
+  "listAllModels rejects malformed response (missing data array)",
+  async () => {
+    const malformed = new Response(JSON.stringify({}), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    await withFetchStub(malformed, async () => {
+      await assertRejects(
+        () => __testing__.listAllModels("https://example"),
+        Error,
+        "invalid_models_response",
+      );
+    });
+  },
+);
+
+Deno.test(
+  "listAllModels rejects malformed response (data items missing slug)",
+  async () => {
+    const bad = new Response(JSON.stringify({ data: [{ name: "no-slug" }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    await withFetchStub(bad, async () => {
+      await assertRejects(
+        () => __testing__.listAllModels("https://example"),
+        Error,
+        "invalid_models_response",
+      );
+    });
+  },
+);
+
+Deno.test(
+  "listAllModels returns slugs from a well-formed response",
+  async () => {
+    const ok = new Response(
+      JSON.stringify({
+        data: [{ slug: "foo/bar" }, { slug: "baz/qux" }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    await withFetchStub(ok, async () => {
+      const slugs = await __testing__.listAllModels("https://example");
+      assertEquals(slugs, ["foo/bar", "baz/qux"]);
+    });
   },
 );

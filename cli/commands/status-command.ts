@@ -37,6 +37,8 @@
  */
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
+import { z } from "zod";
+import { CentralGaugeError } from "../../src/errors.ts";
 import {
   type IngestCliFlags,
   loadIngestConfig,
@@ -137,15 +139,29 @@ export function partitionRows(
   return { current, legacy };
 }
 
-interface ModelListEntry {
-  slug: string;
-}
+/**
+ * Defensive shape for the public `GET /api/v1/models` response. The worker
+ * has historically returned `{ data: [{ slug, family, generation, ... }] }`
+ * but cache misconfig, partial responses, or a future schema rename could
+ * silently break the cast `body.data.map(m => m.slug)` with a cryptic
+ * `TypeError: Cannot read properties of undefined`. zod-validating at the
+ * seam turns the failure into a clean `invalid_models_response` error with
+ * the parse issues attached for triage.
+ */
+const ModelsListResponseSchema = z.object({
+  data: z.array(z.object({ slug: z.string() })),
+});
 
 /**
  * List all model slugs from the public `GET /api/v1/models` endpoint. No
  * auth required (the endpoint is public + cached). Returns slugs in the
  * order the worker emits them (which is `ORDER BY family_slug, slug` per
  * the worker code).
+ *
+ * Throws a `CentralGaugeError` with code `INVALID_MODELS_RESPONSE` (the
+ * lower-cased `invalid_models_response` token appears in `.message` for
+ * substring-matching by tests/operator triage) when the response body
+ * doesn't match {@link ModelsListResponseSchema}.
  */
 async function listAllModels(siteUrl: string): Promise<string[]> {
   const resp = await fetch(`${siteUrl}/api/v1/models`);
@@ -154,8 +170,19 @@ async function listAllModels(siteUrl: string): Promise<string[]> {
       `failed to list models: HTTP ${resp.status} ${resp.statusText}`,
     );
   }
-  const body = await resp.json() as { data: ModelListEntry[] };
-  return body.data.map((m) => m.slug);
+  const rawBody = await resp.json();
+  const parsed = ModelsListResponseSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new CentralGaugeError(
+      `invalid_models_response: GET ${siteUrl}/api/v1/models returned a ` +
+        `payload that does not match the expected shape ` +
+        `({ data: [{ slug: string }] }). ` +
+        `Issues: ${JSON.stringify(parsed.error.issues)}`,
+      "INVALID_MODELS_RESPONSE",
+      { url: `${siteUrl}/api/v1/models`, issues: parsed.error.issues },
+    );
+  }
+  return parsed.data.data.map((m) => m.slug);
 }
 
 /**
@@ -280,6 +307,16 @@ async function handleStatus(flags: StatusFlags): Promise<void> {
     console.log(renderMatrix(legacy, { color: true, dim: true }));
   }
 }
+
+/**
+ * Test-only escape hatch. Exposes internals that should NOT be part of the
+ * production API surface (e.g. `listAllModels` is a private helper but the
+ * unit tests need to assert defensive parsing of the `/api/v1/models`
+ * response). Production callers go through `handleStatus` / `fetchAllRows`.
+ */
+export const __testing__ = {
+  listAllModels,
+};
 
 export function registerStatusCommand(parent: Command): void {
   parent.command(
