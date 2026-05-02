@@ -1,7 +1,7 @@
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import type { CategoriesIndexResponse } from '../../src/lib/shared/api-types';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import type { CategoriesIndexResponse } from "../../src/lib/shared/api-types";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -45,10 +45,20 @@ async function seed(): Promise<void> {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
-      'r1', 'ts', 1, 's', 'r',
-      '2026-04-01T00:00:00Z', '2026-04-01T01:00:00Z',
-      'completed', 'claimed', 'v1', 'sig', '2026-04-01T00:00:00Z',
-      1, new Uint8Array([0]),
+      "r1",
+      "ts",
+      1,
+      "s",
+      "r",
+      "2026-04-01T00:00:00Z",
+      "2026-04-01T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2026-04-01T00:00:00Z",
+      1,
+      new Uint8Array([0]),
     )
     .run();
 
@@ -68,12 +78,14 @@ beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-beforeEach(async () => { await seed(); });
+beforeEach(async () => {
+  await seed();
+});
 
-describe('GET /api/v1/categories', () => {
-  it('returns categories ordered by task_count desc with avg_pass_rate', async () => {
+describe("GET /api/v1/categories", () => {
+  it("returns categories ordered by task_count desc with avg_pass_rate", async () => {
     // Vary URL per assertion to avoid named-cache poisoning between tests.
-    const res = await SELF.fetch('https://x/api/v1/categories?_cb=ord');
+    const res = await SELF.fetch("https://x/api/v1/categories?_cb=ord");
     expect(res.status).toBe(200);
     const body = (await res.json()) as CategoriesIndexResponse;
 
@@ -82,9 +94,9 @@ describe('GET /api/v1/categories', () => {
     expect(body.data).toHaveLength(3);
 
     // tables and pages tied at task_count=2 (sort stable on slug); permissions=0
-    const tables = body.data.find((c) => c.slug === 'tables')!;
-    const pages = body.data.find((c) => c.slug === 'pages')!;
-    const perms = body.data.find((c) => c.slug === 'permissions')!;
+    const tables = body.data.find((c) => c.slug === "tables")!;
+    const pages = body.data.find((c) => c.slug === "pages")!;
+    const perms = body.data.find((c) => c.slug === "permissions")!;
     expect(tables.task_count).toBe(2);
     expect(pages.task_count).toBe(2);
     expect(perms.task_count).toBe(0);
@@ -95,20 +107,20 @@ describe('GET /api/v1/categories', () => {
     expect(perms.avg_pass_rate).toBeNull();
 
     // Permissions has the lowest task_count; should appear last under task_count desc.
-    expect(body.data[body.data.length - 1].slug).toBe('permissions');
+    expect(body.data[body.data.length - 1].slug).toBe("permissions");
 
-    expect(typeof body.generated_at).toBe('string');
+    expect(typeof body.generated_at).toBe("string");
   });
 
-  it('returns empty data array when catalog has no categories (CC-1 production shape)', async () => {
+  it("returns empty data array when catalog has no categories (CC-1 production shape)", async () => {
     // Wipe categories + tasks to mimic the CC-1 production scenario where
     // sync-catalog --apply has not been run.
     await resetDb();
 
-    const res = await SELF.fetch('https://x/api/v1/categories?_cb=empty');
+    const res = await SELF.fetch("https://x/api/v1/categories?_cb=empty");
     expect(res.status).toBe(200);
     const body = (await res.json()) as CategoriesIndexResponse;
     expect(body.data).toEqual([]);
-    expect(typeof body.generated_at).toBe('string');
+    expect(typeof body.generated_at).toBe("string");
   });
 });

@@ -12,8 +12,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       `SELECT id, display_name FROM models WHERE slug = ?`,
       [params.slug!],
     );
-    if (!model)
+    if (!model) {
       throw new ApiError(404, "model_not_found", `No model '${params.slug}'`);
+    }
 
     // D-data §D5: JOIN through concept_id to read canonical c.slug /
     // c.description / c.al_concept / c.canonical_correct_pattern instead of
@@ -117,8 +118,8 @@ function renderMarkdown(
   }>,
 ): string {
   const sections = rows.map((r) => {
-    const codes =
-      (JSON.parse(r.error_codes_json) as string[]).join(", ") || "(none)";
+    const codes = (JSON.parse(r.error_codes_json) as string[]).join(", ") ||
+      "(none)";
     return [
       `## ${r.al_concept}`,
       "",

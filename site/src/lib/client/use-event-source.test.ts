@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useEventSource } from './use-event-source.svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useEventSource } from "./use-event-source.svelte";
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -31,9 +31,13 @@ class FakeEventSource {
     for (const h of list) h(ev);
   }
 
-  close() { this.readyState = 2; }
+  close() {
+    this.readyState = 2;
+  }
 
-  static reset() { FakeEventSource.instances = []; }
+  static reset() {
+    FakeEventSource.instances = [];
+  }
 }
 
 beforeEach(() => {
@@ -47,66 +51,69 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('useEventSource', () => {
-  it('opens an EventSource with route query param', () => {
-    const h = useEventSource(['/']);
+describe("useEventSource", () => {
+  it("opens an EventSource with route query param", () => {
+    const h = useEventSource(["/"]);
     expect(FakeEventSource.instances).toHaveLength(1);
-    expect(FakeEventSource.instances[0].url).toContain('routes=%2F');
-    expect(FakeEventSource.instances[0].url).not.toContain('%2Fleaderboard');
+    expect(FakeEventSource.instances[0].url).toContain("routes=%2F");
+    expect(FakeEventSource.instances[0].url).not.toContain("%2Fleaderboard");
     h.dispose();
   });
 
-  it('encodes multiple routes as a comma list', () => {
-    const h = useEventSource(['/runs', '/runs/r-1']);
+  it("encodes multiple routes as a comma list", () => {
+    const h = useEventSource(["/runs", "/runs/r-1"]);
     const url = FakeEventSource.instances[0].url;
-    expect(decodeURIComponent(url)).toContain('/runs,/runs/r-1');
+    expect(decodeURIComponent(url)).toContain("/runs,/runs/r-1");
     h.dispose();
   });
 
-  it('on(type, handler) receives dispatched events', () => {
-    const h = useEventSource(['/']);
+  it("on(type, handler) receives dispatched events", () => {
+    const h = useEventSource(["/"]);
     const handler = vi.fn();
-    h.on('run_finalized', handler);
-    FakeEventSource.instances[0].dispatch('run_finalized', { run_id: 'r-1', ts: 'now' });
+    h.on("run_finalized", handler);
+    FakeEventSource.instances[0].dispatch("run_finalized", {
+      run_id: "r-1",
+      ts: "now",
+    });
     expect(handler).toHaveBeenCalledTimes(1);
     h.dispose();
   });
 
-  it('status transitions connecting → connected on open', () => {
-    const h = useEventSource(['/']);
-    expect(h.status).toBe('connecting');
-    FakeEventSource.instances[0].onopen?.(new Event('open'));
-    expect(h.status).toBe('connected');
+  it("status transitions connecting → connected on open", () => {
+    const h = useEventSource(["/"]);
+    expect(h.status).toBe("connecting");
+    FakeEventSource.instances[0].onopen?.(new Event("open"));
+    expect(h.status).toBe("connected");
     h.dispose();
   });
 
-  it('reconnects with exponential backoff on error', () => {
-    const h = useEventSource(['/']);
+  it("reconnects with exponential backoff on error", () => {
+    const h = useEventSource(["/"]);
     expect(FakeEventSource.instances).toHaveLength(1);
-    FakeEventSource.instances[0].onerror?.(new Event('error'));
-    expect(h.status).toBe('reconnecting');
+    FakeEventSource.instances[0].onerror?.(new Event("error"));
+    expect(h.status).toBe("reconnecting");
     vi.advanceTimersByTime(1000);
-    expect(FakeEventSource.instances).toHaveLength(2);  // 1 s retry
-    FakeEventSource.instances[1].onerror?.(new Event('error'));
+    expect(FakeEventSource.instances).toHaveLength(2); // 1 s retry
+    FakeEventSource.instances[1].onerror?.(new Event("error"));
     vi.advanceTimersByTime(3000);
-    expect(FakeEventSource.instances).toHaveLength(3);  // 3 s retry
-    FakeEventSource.instances[2].onerror?.(new Event('error'));
+    expect(FakeEventSource.instances).toHaveLength(3); // 3 s retry
+    FakeEventSource.instances[2].onerror?.(new Event("error"));
     vi.advanceTimersByTime(10_000);
-    expect(FakeEventSource.instances).toHaveLength(4);  // 10 s retry
-    FakeEventSource.instances[3].onerror?.(new Event('error'));
-    expect(h.status).toBe('disconnected');
+    expect(FakeEventSource.instances).toHaveLength(4); // 10 s retry
+    FakeEventSource.instances[3].onerror?.(new Event("error"));
+    expect(h.status).toBe("disconnected");
     vi.advanceTimersByTime(60_000);
-    expect(FakeEventSource.instances).toHaveLength(4);  // no further retry after 3 attempts
+    expect(FakeEventSource.instances).toHaveLength(4); // no further retry after 3 attempts
     h.dispose();
   });
 
-  it('dispose closes the active EventSource and prevents future reconnects', () => {
-    const h = useEventSource(['/']);
+  it("dispose closes the active EventSource and prevents future reconnects", () => {
+    const h = useEventSource(["/"]);
     const es = FakeEventSource.instances[0];
     h.dispose();
     expect(es.readyState).toBe(2);
-    es.onerror?.(new Event('error'));
+    es.onerror?.(new Event("error"));
     vi.advanceTimersByTime(10_000);
-    expect(FakeEventSource.instances).toHaveLength(1);  // no reconnect after dispose
+    expect(FakeEventSource.instances).toHaveLength(1); // no reconnect after dispose
   });
 });

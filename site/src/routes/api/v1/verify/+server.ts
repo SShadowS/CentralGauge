@@ -1,7 +1,7 @@
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { runBatch } from '$lib/server/db';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { runBatch } from "$lib/server/db";
 
 const PROMOTION_THRESHOLD = 0.9;
 
@@ -14,7 +14,11 @@ interface RunRow {
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const db = platform.env.DB;
 
   try {
@@ -23,21 +27,28 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     try {
       body = await request.json();
     } catch {
-      throw new ApiError(400, 'bad_request', 'request body must be valid JSON');
+      throw new ApiError(400, "bad_request", "request body must be valid JSON");
     }
 
     // Step 2: Validate envelope shape
     const envelope = body as {
       payload: Record<string, unknown>;
-      signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
+      signature: {
+        alg: "Ed25519";
+        key_id: number;
+        signed_at: string;
+        value: string;
+      };
     };
-    if (!envelope.signature) throw new ApiError(400, 'missing_signature', 'signature block required');
-    if (!envelope.payload || typeof envelope.payload !== 'object') {
-      throw new ApiError(400, 'bad_payload', 'payload object required');
+    if (!envelope.signature) {
+      throw new ApiError(400, "missing_signature", "signature block required");
+    }
+    if (!envelope.payload || typeof envelope.payload !== "object") {
+      throw new ApiError(400, "bad_payload", "payload object required");
     }
 
     // Step 3: Verify signature — requires 'verifier' scope (admin also passes via hasScope)
-    const verified = await verifySignedRequest(db, envelope, 'verifier');
+    const verified = await verifySignedRequest(db, envelope, "verifier");
 
     // Step 4: Coerce and validate payload fields
     const payload = envelope.payload as {
@@ -52,22 +63,49 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const agreement_score = payload.agreement_score;
     const notesRaw = payload.notes;
 
-    if (typeof original_run_id !== 'string' || !original_run_id) {
-      throw new ApiError(400, 'bad_request', 'original_run_id must be a non-empty string');
+    if (typeof original_run_id !== "string" || !original_run_id) {
+      throw new ApiError(
+        400,
+        "bad_request",
+        "original_run_id must be a non-empty string",
+      );
     }
-    if (typeof verifier_run_id !== 'string' || !verifier_run_id) {
-      throw new ApiError(400, 'bad_request', 'verifier_run_id must be a non-empty string');
+    if (typeof verifier_run_id !== "string" || !verifier_run_id) {
+      throw new ApiError(
+        400,
+        "bad_request",
+        "verifier_run_id must be a non-empty string",
+      );
     }
     if (original_run_id === verifier_run_id) {
-      throw new ApiError(400, 'same_run', 'original_run_id and verifier_run_id must differ');
+      throw new ApiError(
+        400,
+        "same_run",
+        "original_run_id and verifier_run_id must differ",
+      );
     }
-    if (typeof agreement_score !== 'number' || !Number.isFinite(agreement_score) || agreement_score < 0 || agreement_score > 1) {
-      throw new ApiError(400, 'invalid_agreement', 'agreement_score must be a finite number in [0, 1]');
+    if (
+      typeof agreement_score !== "number" ||
+      !Number.isFinite(agreement_score) || agreement_score < 0 ||
+      agreement_score > 1
+    ) {
+      throw new ApiError(
+        400,
+        "invalid_agreement",
+        "agreement_score must be a finite number in [0, 1]",
+      );
     }
-    if (notesRaw !== undefined && notesRaw !== null && typeof notesRaw !== 'string') {
-      throw new ApiError(400, 'bad_payload', 'notes must be a string or absent');
+    if (
+      notesRaw !== undefined && notesRaw !== null &&
+      typeof notesRaw !== "string"
+    ) {
+      throw new ApiError(
+        400,
+        "bad_payload",
+        "notes must be a string or absent",
+      );
     }
-    const notes: string | null = typeof notesRaw === 'string' ? notesRaw : null;
+    const notes: string | null = typeof notesRaw === "string" ? notesRaw : null;
 
     // Note: this endpoint does not prevent a single operator from signing both the
     // original run ingest and the verification attestation. Verifier identity is
@@ -77,16 +115,32 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
     // Step 5: Fetch both runs
     const origRun = await db
-      .prepare(`SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`)
+      .prepare(
+        `SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`,
+      )
       .bind(original_run_id)
       .first<RunRow>();
-    if (!origRun) throw new ApiError(404, 'original_run_not_found', `run ${original_run_id} not found`);
+    if (!origRun) {
+      throw new ApiError(
+        404,
+        "original_run_not_found",
+        `run ${original_run_id} not found`,
+      );
+    }
 
     const verifRun = await db
-      .prepare(`SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`)
+      .prepare(
+        `SELECT id, tier, task_set_hash, model_id, settings_hash FROM runs WHERE id = ?`,
+      )
       .bind(verifier_run_id)
       .first<RunRow>();
-    if (!verifRun) throw new ApiError(404, 'verifier_run_not_found', `run ${verifier_run_id} not found`);
+    if (!verifRun) {
+      throw new ApiError(
+        404,
+        "verifier_run_not_found",
+        `run ${verifier_run_id} not found`,
+      );
+    }
 
     // Step 6: Grouping check — task_set_hash, model_id, and settings_hash must match
     if (
@@ -94,11 +148,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       origRun.model_id !== verifRun.model_id ||
       origRun.settings_hash !== verifRun.settings_hash
     ) {
-      throw new ApiError(400, 'grouping_mismatch', 'original and verifier runs must share task_set_hash, model_id, and settings_hash');
+      throw new ApiError(
+        400,
+        "grouping_mismatch",
+        "original and verifier runs must share task_set_hash, model_id, and settings_hash",
+      );
     }
 
     // Step 7: Determine promotion — only promote if agreement >= threshold AND original is still 'claimed'
-    const promoted = agreement_score >= PROMOTION_THRESHOLD && origRun.tier === 'claimed';
+    const promoted = agreement_score >= PROMOTION_THRESHOLD &&
+      origRun.tier === "claimed";
 
     // Step 8: Build atomic batch
     const now = new Date().toISOString();
@@ -114,15 +173,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             notes = excluded.notes,
             verified_at = excluded.verified_at
         `,
-        params: [original_run_id, verifier_run_id, now, agreement_score, notes] as (string | number | null)[]
-      }
+        params: [
+          original_run_id,
+          verifier_run_id,
+          now,
+          agreement_score,
+          notes,
+        ] as (string | number | null)[],
+      },
     ];
 
     if (promoted) {
       // Promote the original run's tier
       ops.push({
         sql: `UPDATE runs SET tier = 'verified' WHERE id = ?`,
-        params: [original_run_id]
+        params: [original_run_id],
       });
 
       // Audit event — use verified.machine_id (the verifier that signed), not a hard-coded string.
@@ -130,13 +195,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       // the UPDATE — D1 serialises writes so the second UPDATE is a no-op, but both run_promoted
       // events fire (with different verifier_run_ids). This is acceptable for auditability.
       ops.push({
-        sql: `INSERT INTO ingest_events(event, machine_id, ts, details_json) VALUES (?, ?, ?, ?)`,
+        sql:
+          `INSERT INTO ingest_events(event, machine_id, ts, details_json) VALUES (?, ?, ?, ?)`,
         params: [
-          'run_promoted',
+          "run_promoted",
           verified.machine_id,
           now,
-          JSON.stringify({ original_run_id, verifier_run_id, agreement_score, key_id: verified.key_id })
-        ]
+          JSON.stringify({
+            original_run_id,
+            verifier_run_id,
+            agreement_score,
+            key_id: verified.key_id,
+          }),
+        ],
       });
     }
 
@@ -151,7 +222,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     return jsonResponse(
       { original_run_id, verifier_run_id, agreement_score, promoted },
       200,
-      { 'Cache-Control': 'no-store' }
+      { "Cache-Control": "no-store" },
     );
   } catch (err) {
     return errorResponse(err);

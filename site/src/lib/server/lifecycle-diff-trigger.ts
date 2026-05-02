@@ -2,8 +2,8 @@ import {
   computeGenerationDiff,
   type DiffDb,
   type DiffResult,
-} from '../../../../src/lifecycle/diff';
-import { invalidateFamilyDiff } from './family-diff-cache';
+} from "../../../../src/lifecycle/diff";
+import { invalidateFamilyDiff } from "./family-diff-cache";
 
 /**
  * Worker-side ctx.waitUntil trigger fired by the lifecycle events POST
@@ -56,7 +56,7 @@ export async function maybeTriggerFamilyDiff(
    */
   origin?: string,
 ): Promise<void> {
-  if (event.event_type !== 'analysis.completed') return;
+  if (event.event_type !== "analysis.completed") return;
 
   // Resolve family_slug (JOIN models.family_id → model_families.slug).
   // If the model isn't in the catalog yet, the diff is a no-op — the trigger
@@ -148,7 +148,7 @@ async function runDiffJob(args: DiffJobArgs): Promise<void> {
     // when the cache miss happens (the diff endpoint has a fallback path
     // that calls computeGenerationDiff() inline if the materialised row is
     // absent). Log for observability but do not re-throw.
-    console.error('[lifecycle-diff-trigger] failed', {
+    console.error("[lifecycle-diff-trigger] failed", {
       family_slug: args.family_slug,
       to_gen_event_id: args.to_gen_event_id,
       from_gen_event_id: args.from_gen_event_id,
@@ -167,7 +167,10 @@ async function runDiffJob(args: DiffJobArgs): Promise<void> {
  * The 0007 migration deliberately omits UNIQUE; this writer enforces
  * dedup via IS NULL-aware lookup.
  */
-async function upsertFamilyDiff(db: D1Database, result: DiffResult): Promise<void> {
+async function upsertFamilyDiff(
+  db: D1Database,
+  result: DiffResult,
+): Promise<void> {
   const existing = await db.prepare(
     `SELECT id FROM family_diffs
       WHERE family_slug = ? AND task_set_hash = ?
@@ -195,7 +198,7 @@ async function upsertFamilyDiff(db: D1Database, result: DiffResult): Promise<voi
       result.status,
       JSON.stringify(result),
       now,
-      result.from_model_slug,           // NULL allowed for baseline_missing
+      result.from_model_slug, // NULL allowed for baseline_missing
       result.to_model_slug,
       result.analyzer_model_a,
       result.analyzer_model_b,
@@ -212,9 +215,9 @@ async function upsertFamilyDiff(db: D1Database, result: DiffResult): Promise<voi
     ).bind(
       result.family_slug,
       result.task_set_hash,
-      result.from_gen_event_id,         // NULL when baseline_missing — NO sentinel
+      result.from_gen_event_id, // NULL when baseline_missing — NO sentinel
       result.to_gen_event_id,
-      result.from_model_slug,            // NULL when baseline_missing
+      result.from_model_slug, // NULL when baseline_missing
       result.to_model_slug,
       result.status,
       result.analyzer_model_a,

@@ -1,5 +1,5 @@
-import { env, SELF } from 'cloudflare:test';
-import { afterAll, describe, it, expect } from 'vitest';
+import { env, SELF } from "cloudflare:test";
+import { afterAll, describe, expect, it } from "vitest";
 
 // -------------------------------------------------------------------------
 // miniflare / workerd limitation note
@@ -18,7 +18,7 @@ import { afterAll, describe, it, expect } from 'vitest';
 //     event is in the DO buffer, which is what a new subscriber would see.
 // -------------------------------------------------------------------------
 
-describe('GET /api/v1/events/live', () => {
+describe("GET /api/v1/events/live", () => {
   // Drain DO state so workerd can shut down promptly on Windows. See the
   // matching note in tests/broadcaster.test.ts for the full rationale.
   // We give the reset call a tight 2s budget — if miniflare's request
@@ -27,21 +27,21 @@ describe('GET /api/v1/events/live', () => {
   // the workerd count to 1 and the runtime is killed by the parent on
   // process exit.
   afterAll(async () => {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
-    const resetReq = stub.fetch('https://do/reset', {
-      method: 'POST',
-      headers: { 'x-test-only': '1' },
+    const resetReq = stub.fetch("https://do/reset", {
+      method: "POST",
+      headers: { "x-test-only": "1" },
     });
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<'timeout'>((resolve) => {
-      timeoutHandle = setTimeout(() => resolve('timeout'), 2000);
+    const timeout = new Promise<"timeout">((resolve) => {
+      timeoutHandle = setTimeout(() => resolve("timeout"), 2000);
     });
     await Promise.race([resetReq, timeout]);
     if (timeoutHandle) clearTimeout(timeoutHandle);
   });
 
-  it('DO /subscribe is registered and streams text/event-stream', async () => {
+  it("DO /subscribe is registered and streams text/event-stream", async () => {
     // workerd/miniflare: stub.fetch() on a streaming SSE response blocks until
     // the writer closes.  We verify the SSE contract by:
     //  1. Confirming the DO's /recent endpoint (finite) works — proves DO is live
@@ -53,26 +53,26 @@ describe('GET /api/v1/events/live', () => {
     // DO — not possible without modifying the DO class.  The route-reachability
     // test (third test below) confirms the SvelteKit route exists and routes
     // correctly via SELF.fetch.
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
     // Finite call proves the DO binding resolves correctly
-    const recentRes = await stub.fetch('https://do/recent');
+    const recentRes = await stub.fetch("https://do/recent");
     expect(recentRes.status).toBe(200);
     const body = (await recentRes.json()) as { events: unknown[] };
     expect(Array.isArray(body.events)).toBe(true);
   });
 
-  it('buffered events are available to new subscribers', async () => {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  it("buffered events are available to new subscribers", async () => {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
     // Broadcast an event to seed the DO buffer
-    const broadcastRes = await stub.fetch('https://do/broadcast', {
-      method: 'POST',
+    const broadcastRes = await stub.fetch("https://do/broadcast", {
+      method: "POST",
       body: JSON.stringify({
-        type: 'run_finalized',
-        run_id: 'r-buffered',
+        type: "run_finalized",
+        run_id: "r-buffered",
         ts: new Date().toISOString(),
       }),
     });
@@ -81,13 +81,15 @@ describe('GET /api/v1/events/live', () => {
     // A new subscriber receives the last ≤20 buffered events on connect.
     // We verify the buffer contains the event via the finite /recent endpoint
     // (same slice that /subscribe would replay).
-    const recentRes = await stub.fetch('https://do/recent?limit=20');
+    const recentRes = await stub.fetch("https://do/recent?limit=20");
     expect(recentRes.status).toBe(200);
-    const body = (await recentRes.json()) as { events: Array<{ run_id?: string }> };
-    expect(body.events.some((e) => e.run_id === 'r-buffered')).toBe(true);
+    const body = (await recentRes.json()) as {
+      events: Array<{ run_id?: string }>;
+    };
+    expect(body.events.some((e) => e.run_id === "r-buffered")).toBe(true);
   });
 
-  it('SELF.fetch on /api/v1/events/live reaches the route handler', async () => {
+  it("SELF.fetch on /api/v1/events/live reaches the route handler", async () => {
     // The body stream is infinite — but the response HEADERS may flush before
     // miniflare starts buffering. We use an explicit AbortController (instead
     // of AbortSignal.timeout) so we can call abort() in finally; this gives
@@ -97,7 +99,7 @@ describe('GET /api/v1/events/live', () => {
     const timer = setTimeout(() => controller.abort(), 150);
     let routeReached = false;
     try {
-      const res = await SELF.fetch('http://x/api/v1/events/live', {
+      const res = await SELF.fetch("http://x/api/v1/events/live", {
         signal: controller.signal,
       });
       expect(res.status).not.toBe(404);
@@ -106,7 +108,10 @@ describe('GET /api/v1/events/live', () => {
       // AbortError is expected if miniflare buffers the entire body before
       // responding. The route is still wired — verified statically in
       // do-worker.ts and +server.ts.
-      if ((err as Error).name !== 'AbortError' && (err as Error).name !== 'TimeoutError') {
+      if (
+        (err as Error).name !== "AbortError" &&
+        (err as Error).name !== "TimeoutError"
+      ) {
         throw err;
       }
     } finally {
@@ -116,6 +121,6 @@ describe('GET /api/v1/events/live', () => {
     // If the test reached headers, great. If it aborted, the do-worker fixture
     // routes /api/v1/events/live correctly by static inspection — the only
     // alternative path would return 'ok' with status 200, which we'd see.
-    expect(typeof routeReached).toBe('boolean'); // smoke
+    expect(typeof routeReached).toBe("boolean"); // smoke
   });
 });

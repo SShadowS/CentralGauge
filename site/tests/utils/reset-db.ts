@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test';
+import { env } from "cloudflare:test";
 
 // Required after @cloudflare/vitest-pool-workers v0.14 removed isolatedStorage
 // & singleWorker — D1, R2, and KV state now persists across `it` blocks within
@@ -38,12 +38,16 @@ export async function resetDb(): Promise<void> {
   // don't leak across `it` blocks within the same file.
   const lifecycleBlobs = await env.LIFECYCLE_BLOBS.list();
   if (lifecycleBlobs.objects.length > 0) {
-    await env.LIFECYCLE_BLOBS.delete(lifecycleBlobs.objects.map((o: R2Object) => o.key));
+    await env.LIFECYCLE_BLOBS.delete(
+      lifecycleBlobs.objects.map((o: R2Object) => o.key),
+    );
   }
 
   const cache = await env.CACHE.list();
   await Promise.all(
-    cache.keys.map((k: KVNamespaceListKey<unknown, string>) => env.CACHE.delete(k.name)),
+    cache.keys.map((k: KVNamespaceListKey<unknown, string>) =>
+      env.CACHE.delete(k.name)
+    ),
   );
 
   // caches.default — adapter-cloudflare's worker wrapper writes responses

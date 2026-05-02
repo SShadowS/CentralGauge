@@ -1,5 +1,5 @@
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 /**
  * Catalog drift probe (read-only health endpoint).
@@ -21,7 +21,9 @@ import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
  */
 export const GET: RequestHandler = async ({ platform }) => {
   if (!platform) {
-    return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
   }
   const db = platform.env.DB;
   try {
@@ -47,7 +49,7 @@ export const GET: RequestHandler = async ({ platform }) => {
         generated_at,
       },
       200,
-      { 'cache-control': 'no-store' },
+      { "cache-control": "no-store" },
     );
   } catch (err) {
     return errorResponse(err);

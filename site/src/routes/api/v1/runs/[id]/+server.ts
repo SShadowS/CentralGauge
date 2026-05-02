@@ -1,7 +1,7 @@
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { cachedJson } from '$lib/server/cache';
-import { getAll, getFirst } from '$lib/server/db';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { cachedJson } from "$lib/server/cache";
+import { getAll, getFirst } from "$lib/server/db";
 
 interface RunRow {
   id: string;
@@ -45,7 +45,7 @@ interface ResultRow {
   transcript_r2_key: string | null;
   code_r2_key: string | null;
   cost_usd: number | string | null;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
 }
 
 interface AttemptOut {
@@ -53,7 +53,15 @@ interface AttemptOut {
   passed: boolean;
   score: number;
   compile_success: boolean;
-  compile_errors: Array<{ code: string; message: string; file?: string; line?: number; column?: number }>;
+  compile_errors: Array<
+    {
+      code: string;
+      message: string;
+      file?: string;
+      line?: number;
+      column?: number;
+    }
+  >;
   tests_total: number;
   tests_passed: number;
   duration_ms: number;
@@ -64,7 +72,7 @@ interface AttemptOut {
 
 interface PerTaskOut {
   task_id: string;
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: "easy" | "medium" | "hard";
   attempts: AttemptOut[];
 }
 
@@ -72,19 +80,23 @@ const SHA256_HEX = /^[a-f0-9]{64}$/;
 
 function sha256FromKey(key: string): string {
   // `blobs/<sha>` → use sha; otherwise use the path stem (basename without extension)
-  if (key.startsWith('blobs/')) {
-    const tail = key.slice('blobs/'.length);
+  if (key.startsWith("blobs/")) {
+    const tail = key.slice("blobs/".length);
     if (SHA256_HEX.test(tail)) return tail;
     return tail;
   }
   // Take basename (last path segment), strip first extension.
-  const base = key.split('/').pop() ?? key;
-  const dot = base.indexOf('.');
+  const base = key.split("/").pop() ?? key;
+  const dot = base.indexOf(".");
   return dot === -1 ? base : base.slice(0, dot);
 }
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const blobs = platform.env.BLOBS;
 
@@ -106,7 +118,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       [params.id!],
     );
 
-    if (!run) throw new ApiError(404, 'not_found', `Run ${params.id} not found`);
+    if (!run) {
+      throw new ApiError(404, "not_found", `Run ${params.id} not found`);
+    }
 
     const results = await getAll<ResultRow>(
       db,
@@ -129,22 +143,31 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     let totalCostUsd = 0;
 
     for (const r of results) {
-      let compileErrors: AttemptOut['compile_errors'];
+      let compileErrors: AttemptOut["compile_errors"];
       try {
-        compileErrors = JSON.parse(r.compile_errors_json) as AttemptOut['compile_errors'];
+        compileErrors = JSON.parse(
+          r.compile_errors_json,
+        ) as AttemptOut["compile_errors"];
       } catch {
-        throw new ApiError(500, 'result_corrupt', `compile_errors_json corrupt for result ${r.id}`);
+        throw new ApiError(
+          500,
+          "result_corrupt",
+          `compile_errors_json corrupt for result ${r.id}`,
+        );
       }
       let failureReasons: string[] = [];
       if (r.failure_reasons_json) {
         try {
           failureReasons = JSON.parse(r.failure_reasons_json) as string[];
         } catch {
-          throw new ApiError(500, 'result_corrupt', `failure_reasons_json corrupt for result ${r.id}`);
+          throw new ApiError(
+            500,
+            "result_corrupt",
+            `failure_reasons_json corrupt for result ${r.id}`,
+          );
         }
       }
-      const durationMs =
-        (r.llm_duration_ms ?? 0) +
+      const durationMs = (r.llm_duration_ms ?? 0) +
         (r.compile_duration_ms ?? 0) +
         (r.test_duration_ms ?? 0);
       totalDurationMs += durationMs;
@@ -159,7 +182,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         tests_total: r.tests_total,
         tests_passed: r.tests_passed,
         duration_ms: durationMs,
-        transcript_key: r.transcript_r2_key ?? '',
+        transcript_key: r.transcript_r2_key ?? "",
         failure_reasons: failureReasons,
       };
       if (r.code_r2_key) attempt.code_key = r.code_r2_key;
@@ -169,7 +192,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         task = {
           task_id: r.task_id,
           // tasks row may be missing for legacy/imported runs; default to 'easy' as a safe fallback.
-          difficulty: r.difficulty ?? 'easy',
+          difficulty: r.difficulty ?? "easy",
           attempts: [],
         };
         byTask.set(r.task_id, task);
@@ -193,7 +216,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       lastAttemptScoreSum += last.score;
       if (last.passed) tasksPassed += 1;
     }
-    const avgScore = tasksAttempted > 0 ? lastAttemptScoreSum / tasksAttempted : 0;
+    const avgScore = tasksAttempted > 0
+      ? lastAttemptScoreSum / tasksAttempted
+      : 0;
 
     // Reproduction bundle metadata via R2 head() — try/catch so a missing/erroring blob just omits the field.
     let reproductionBundle: { sha256: string; size_bytes: number } | undefined;
@@ -224,7 +249,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       machine_id: run.machine_id,
       task_set_hash: run.task_set_hash,
       pricing_version: run.pricing_version,
-      ...(run.centralgauge_sha ? { centralgauge_sha: run.centralgauge_sha } : {}),
+      ...(run.centralgauge_sha
+        ? { centralgauge_sha: run.centralgauge_sha }
+        : {}),
       started_at: run.started_at,
       // P6 C1: emit null (not '') for incomplete runs; matches RunDetail.completed_at: string | null.
       completed_at: run.completed_at ?? null,
@@ -232,8 +259,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         temperature: run.temperature ?? 0,
         max_attempts: run.max_attempts ?? 0,
         max_tokens: run.max_tokens ?? 0,
-        prompt_version: run.prompt_version ?? '',
-        bc_version: run.bc_version ?? '',
+        prompt_version: run.prompt_version ?? "",
+        bc_version: run.bc_version ?? "",
       },
       totals: {
         avg_score: avgScore,
@@ -243,10 +270,14 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         tasks_passed: tasksPassed,
       },
       results: groupedResults,
-      ...(reproductionBundle ? { reproduction_bundle: reproductionBundle } : {}),
+      ...(reproductionBundle
+        ? { reproduction_bundle: reproductionBundle }
+        : {}),
     };
 
-    return cachedJson(request, body, { cacheControl: 'public, s-maxage=30, stale-while-revalidate=300' });
+    return cachedJson(request, body, {
+      cacheControl: "public, s-maxage=30, stale-while-revalidate=300",
+    });
   } catch (err) {
     return errorResponse(err);
   }

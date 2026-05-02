@@ -12,19 +12,19 @@
  * Plan H's CLI status command will read, but does not depend on any
  * Plan H code. Operators get the matrix view independent of CLI work.
  */
-import type { PageServerLoad } from './$types';
-import { getAll } from '$lib/server/db';
+import type { PageServerLoad } from "./$types";
+import { getAll } from "$lib/server/db";
 
 export interface StateRow {
   model_slug: string;
   task_set_hash: string;
-  step: 'bench' | 'debug' | 'analyze' | 'publish' | 'cycle' | 'other';
+  step: "bench" | "debug" | "analyze" | "publish" | "cycle" | "other";
   last_ts: number;
   last_event_id: number;
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
-  if (!platform) throw new Error('no platform env');
+  if (!platform) throw new Error("no platform env");
   const rows = await getAll<StateRow>(
     platform.env.DB,
     `SELECT v.model_slug, v.task_set_hash, v.step, v.last_ts, v.last_event_id

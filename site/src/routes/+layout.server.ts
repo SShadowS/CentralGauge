@@ -1,6 +1,6 @@
-import type { LayoutServerLoad } from './$types';
-import { building } from '$app/environment';
-import { loadFlags, type Flags } from '$lib/server/flags';
+import type { LayoutServerLoad } from "./$types";
+import { building } from "$app/environment";
+import { type Flags, loadFlags } from "$lib/server/flags";
 
 export const load: LayoutServerLoad = async ({ platform, url }) => {
   // During prerender, `platform.env` is a Cloudflare adapter proxy whose
@@ -11,7 +11,7 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
   const env: Record<string, string | undefined> = building
     ? {}
     : ((platform?.env ?? {}) as Record<string, string | undefined>);
-  const isCanary = url.pathname.startsWith('/_canary/');
+  const isCanary = url.pathname.startsWith("/_canary/");
   const flags: Flags = loadFlags(env, isCanary);
 
   // RUM beacon token. `null` during prerender (the `building` guard keeps env
@@ -27,8 +27,8 @@ export const load: LayoutServerLoad = async ({ platform, url }) => {
   return {
     flags,
     serverTime: new Date().toISOString(),
-    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? 'dev',
-    buildAt: env.CENTRALGAUGE_BUILD_AT ?? '',
+    buildSha: env.CENTRALGAUGE_BUILD_SHA ?? "dev",
+    buildAt: env.CENTRALGAUGE_BUILD_AT ?? "",
     cfWebAnalyticsToken,
   };
 };

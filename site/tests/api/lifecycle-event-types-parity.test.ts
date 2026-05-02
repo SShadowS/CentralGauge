@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 import {
   CANONICAL_ACTORS,
   CANONICAL_EVENT_TYPES,
-} from '../../src/lib/shared/lifecycle-constants';
+} from "../../src/lib/shared/lifecycle-constants";
 
 declare const __LIFECYCLE_TYPES_SOURCE__: string;
 
@@ -20,26 +20,34 @@ function extractTuple(source: string, name: string): string[] {
   // Match `export const <name> = [ ... ] as const ... ;`
   const re = new RegExp(
     `export\\s+const\\s+${name}\\s*=\\s*\\[(?<body>[\\s\\S]*?)\\]\\s*as\\s+const`,
-    'm',
+    "m",
   );
   const m = source.match(re);
-  if (!m?.groups?.body) throw new Error(`could not extract ${name} from source`);
+  if (!m?.groups?.body) {
+    throw new Error(`could not extract ${name} from source`);
+  }
   const body = m.groups.body;
   return [...body.matchAll(/["']([^"']+)["']/g)].map((mm) => mm[1]);
 }
 
-describe('lifecycle constants parity (worker mirrors Deno)', () => {
-  it('CANONICAL_EVENT_TYPES are byte-identical', () => {
-    const denoEvents = extractTuple(__LIFECYCLE_TYPES_SOURCE__, 'CANONICAL_EVENT_TYPES');
+describe("lifecycle constants parity (worker mirrors Deno)", () => {
+  it("CANONICAL_EVENT_TYPES are byte-identical", () => {
+    const denoEvents = extractTuple(
+      __LIFECYCLE_TYPES_SOURCE__,
+      "CANONICAL_EVENT_TYPES",
+    );
     expect([...CANONICAL_EVENT_TYPES]).toEqual(denoEvents);
   });
 
-  it('CANONICAL_ACTORS are byte-identical', () => {
-    const denoActors = extractTuple(__LIFECYCLE_TYPES_SOURCE__, 'CANONICAL_ACTORS');
+  it("CANONICAL_ACTORS are byte-identical", () => {
+    const denoActors = extractTuple(
+      __LIFECYCLE_TYPES_SOURCE__,
+      "CANONICAL_ACTORS",
+    );
     expect([...CANONICAL_ACTORS]).toEqual(denoActors);
   });
 
-  it('expected count from strategic plan: 29 event types, 4 actors', () => {
+  it("expected count from strategic plan: 29 event types, 4 actors", () => {
     expect(CANONICAL_EVENT_TYPES.length).toBe(29);
     expect(CANONICAL_ACTORS.length).toBe(4);
   });

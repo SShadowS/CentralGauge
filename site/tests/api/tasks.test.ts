@@ -1,6 +1,6 @@
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -37,18 +37,18 @@ async function seed(): Promise<void> {
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
-      'r1',
-      'ts',
+      "r1",
+      "ts",
       1,
-      's',
-      'rig',
-      '2026-04-01T00:00:00Z',
-      '2026-04-01T01:00:00Z',
-      'completed',
-      'claimed',
-      'v1',
-      'sig',
-      '2026-04-01T00:00:00Z',
+      "s",
+      "rig",
+      "2026-04-01T00:00:00Z",
+      "2026-04-01T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2026-04-01T00:00:00Z",
       1,
       new Uint8Array([0]),
     )
@@ -68,87 +68,110 @@ beforeEach(async () => {
   await seed();
 });
 
-describe('GET /api/v1/tasks', () => {
-  it('lists tasks in current set by default', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks');
+describe("GET /api/v1/tasks", () => {
+  it("lists tasks in current set by default", async () => {
+    const res = await SELF.fetch("https://x/api/v1/tasks");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      data: Array<{ id: string; difficulty: string; content_hash: string; category: { slug: string; name: string } }>;
+      data: Array<
+        {
+          id: string;
+          difficulty: string;
+          content_hash: string;
+          category: { slug: string; name: string };
+        }
+      >;
       next_cursor: string | null;
     };
     expect(body.data).toHaveLength(2);
-    expect(body.data[0].id).toBe('easy/a');
-    expect(body.data[0].difficulty).toBe('easy');
-    expect(body.data[0].category.slug).toBe('easy');
-    expect(body.data[0].content_hash).toBe('hash-a');
+    expect(body.data[0].id).toBe("easy/a");
+    expect(body.data[0].difficulty).toBe("easy");
+    expect(body.data[0].category.slug).toBe("easy");
+    expect(body.data[0].content_hash).toBe("hash-a");
     expect(body.next_cursor).toBeNull();
   });
 
-  it('respects limit + paginates via cursor', async () => {
-    const res1 = await SELF.fetch('https://x/api/v1/tasks?limit=1');
+  it("respects limit + paginates via cursor", async () => {
+    const res1 = await SELF.fetch("https://x/api/v1/tasks?limit=1");
     expect(res1.status).toBe(200);
-    const body1 = (await res1.json()) as { data: Array<{ id: string }>; next_cursor: string | null };
+    const body1 = (await res1.json()) as {
+      data: Array<{ id: string }>;
+      next_cursor: string | null;
+    };
     expect(body1.data).toHaveLength(1);
     expect(body1.next_cursor).not.toBeNull();
 
     const res2 = await SELF.fetch(
-      `https://x/api/v1/tasks?limit=1&cursor=${encodeURIComponent(body1.next_cursor!)}`,
+      `https://x/api/v1/tasks?limit=1&cursor=${
+        encodeURIComponent(body1.next_cursor!)
+      }`,
     );
     expect(res2.status).toBe(200);
-    const body2 = (await res2.json()) as { data: Array<{ id: string }>; next_cursor: string | null };
+    const body2 = (await res2.json()) as {
+      data: Array<{ id: string }>;
+      next_cursor: string | null;
+    };
     expect(body2.data).toHaveLength(1);
     expect(body2.data[0].id).not.toBe(body1.data[0].id);
-    expect(body2.data[0].id).toBe('hard/b');
+    expect(body2.data[0].id).toBe("hard/b");
     expect(body2.next_cursor).toBeNull();
   });
 
-  it('rejects invalid limit', async () => {
-    for (const val of ['0', '101', '-1', 'abc']) {
+  it("rejects invalid limit", async () => {
+    for (const val of ["0", "101", "-1", "abc"]) {
       const res = await SELF.fetch(`https://x/api/v1/tasks?limit=${val}`);
       expect(res.status, `limit=${val} should 400`).toBe(400);
     }
   });
 });
 
-describe('GET /api/v1/tasks — filters', () => {
-  it('?difficulty=hard returns only hard tasks', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=hard');
+describe("GET /api/v1/tasks — filters", () => {
+  it("?difficulty=hard returns only hard tasks", async () => {
+    const res = await SELF.fetch("https://x/api/v1/tasks?difficulty=hard");
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<{ difficulty: string }> };
-    for (const row of body.data) expect(row.difficulty).toBe('hard');
+    for (const row of body.data) expect(row.difficulty).toBe("hard");
   });
 
-  it('?category=schema-design returns only that category', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks?category=schema-design');
+  it("?category=schema-design returns only that category", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?category=schema-design",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ category: { slug: string } | null }> };
+    const body = await res.json() as {
+      data: Array<{ category: { slug: string } | null }>;
+    };
     for (const row of body.data) {
       expect(row.category).not.toBeNull();
-      expect(row.category!.slug).toBe('schema-design');
+      expect(row.category!.slug).toBe("schema-design");
     }
   });
 
-  it('combines ?difficulty= and ?category=', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=easy&category=schema-design');
+  it("combines ?difficulty= and ?category=", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?difficulty=easy&category=schema-design",
+    );
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ difficulty: string; category: { slug: string } | null }> };
+    const body = await res.json() as {
+      data: Array<{ difficulty: string; category: { slug: string } | null }>;
+    };
     for (const row of body.data) {
-      expect(row.difficulty).toBe('easy');
-      expect(row.category?.slug).toBe('schema-design');
+      expect(row.difficulty).toBe("easy");
+      expect(row.category?.slug).toBe("schema-design");
     }
   });
 
-  it('rejects invalid difficulty with 400', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks?difficulty=trivial');
+  it("rejects invalid difficulty with 400", async () => {
+    const res = await SELF.fetch("https://x/api/v1/tasks?difficulty=trivial");
     expect(res.status).toBe(400);
     const body = await res.json() as { error?: string };
     expect(body.error).toMatch(/invalid_difficulty/);
   });
 });
 
-describe('GET /api/v1/tasks/:id', () => {
-  it('returns task detail + solved-by matrix', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks/easy/a');
+describe("GET /api/v1/tasks/:id", () => {
+  it("returns task detail + solved-by matrix", async () => {
+    const res = await SELF.fetch("https://x/api/v1/tasks/easy/a");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       id: string;
@@ -164,19 +187,19 @@ describe('GET /api/v1/tasks/:id', () => {
         avg_score: number;
       }>;
     };
-    expect(body.id).toBe('easy/a');
-    expect(body.difficulty).toBe('easy');
-    expect(body.content_hash).toBe('hash-a');
-    expect(body.category.slug).toBe('easy');
+    expect(body.id).toBe("easy/a");
+    expect(body.difficulty).toBe("easy");
+    expect(body.content_hash).toBe("hash-a");
+    expect(body.category.slug).toBe("easy");
     expect(body.solved_by).toHaveLength(1);
-    expect(body.solved_by[0].model_slug).toBe('sonnet-4.7');
+    expect(body.solved_by[0].model_slug).toBe("sonnet-4.7");
     expect(body.solved_by[0].attempt_1_passed).toBe(1);
     expect(body.solved_by[0].runs_total).toBe(1);
     expect(body.solved_by[0].avg_score).toBeCloseTo(1.0, 5);
   });
 
-  it('returns 404 for unknown task', async () => {
-    const res = await SELF.fetch('https://x/api/v1/tasks/easy/nonexistent');
+  it("returns 404 for unknown task", async () => {
+    const res = await SELF.fetch("https://x/api/v1/tasks/easy/nonexistent");
     expect(res.status).toBe(404);
   });
 });

@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { useId, resetIdCounter } from './use-id';
+import { describe, expect, it } from "vitest";
+import { resetIdCounter, useId } from "./use-id";
 
-describe('useId', () => {
-  it('produces unique sequential ids', () => {
+describe("useId", () => {
+  it("produces unique sequential ids", () => {
     const a = useId();
     const b = useId();
     expect(a).not.toBe(b);
@@ -10,15 +10,15 @@ describe('useId', () => {
     expect(b).toMatch(/^cg-id-\d+$/);
   });
 
-  it('resetIdCounter restarts the sequence', () => {
+  it("resetIdCounter restarts the sequence", () => {
     const a = useId();
     resetIdCounter();
     const b = useId();
-    expect(b).toBe('cg-id-1');
+    expect(b).toBe("cg-id-1");
     expect(a).not.toBe(b);
   });
 
-  it('produces matching id sequences across two reset cycles', () => {
+  it("produces matching id sequences across two reset cycles", () => {
     resetIdCounter();
     const id1 = useId();
     const id2 = useId();

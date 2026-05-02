@@ -1,7 +1,13 @@
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, type Plugin } from 'vite';
-import { readFileSync, writeFileSync, renameSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig, type Plugin } from "vite";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
 
 /**
  * Rename the `cmd-k` and `use-event-source` chunks emitted by Rollup so the
@@ -20,28 +26,33 @@ function renameNamedChunksPlugin(): Plugin {
   // useEventSource registration; we just need to give them stable filenames
   // so the bundle-budget glob can match.
   const FACADE_TAGS: Array<[RegExp, string]> = [
-    [/CommandPalette\.svelte/, 'cmd-k'],
-    [/use-event-source\.svelte\.ts/, 'use-event-source'],
+    [/CommandPalette\.svelte/, "cmd-k"],
+    [/use-event-source\.svelte\.ts/, "use-event-source"],
   ];
   // chunk.fileName → tag, captured in generateBundle and consumed in
   // writeBundle (same plugin instance, same client build pass).
   let pending = new Map<string, string>();
   return {
-    name: 'centralgauge:rename-named-chunks',
-    apply: 'build',
-    enforce: 'post',
+    name: "centralgauge:rename-named-chunks",
+    apply: "build",
+    enforce: "post",
     generateBundle(_opts, bundle) {
       pending = new Map();
       for (const [fileName, chunk] of Object.entries(bundle)) {
-        if (chunk.type !== 'chunk') continue;
-        if (!fileName.includes('_app/immutable/chunks/')) continue;
-        const facade = chunk.facadeModuleId ?? '';
-        const name = chunk.name ?? '';
+        if (chunk.type !== "chunk") continue;
+        if (!fileName.includes("_app/immutable/chunks/")) continue;
+        const facade = chunk.facadeModuleId ?? "";
+        const name = chunk.name ?? "";
         let tag: string | undefined;
         // Prefer manualChunks name (synthetic chunks); fall back to a
         // facade-id regex for natural async chunks.
-        if (name === 'cmd-k' || name === 'use-event-source') tag = name;
-        else for (const [re, t] of FACADE_TAGS) if (re.test(facade)) { tag = t; break; }
+        if (name === "cmd-k" || name === "use-event-source") tag = name;
+        else {for (const [re, t] of FACADE_TAGS) {
+            if (re.test(facade)) {
+              tag = t;
+              break;
+            }
+          }}
         if (!tag) continue;
         pending.set(fileName, tag);
       }
@@ -72,12 +83,13 @@ function renameNamedChunksPlugin(): Plugin {
           if (ent.isDirectory()) out.push(...walk(p));
           else if (
             ent.isFile() &&
-            (p.endsWith('.js') ||
-              p.endsWith('.css') ||
-              p.endsWith('.html') ||
-              p.endsWith('.json'))
-          )
+            (p.endsWith(".js") ||
+              p.endsWith(".css") ||
+              p.endsWith(".html") ||
+              p.endsWith(".json"))
+          ) {
             out.push(p);
+          }
         }
         return out;
       };
@@ -88,7 +100,7 @@ function renameNamedChunksPlugin(): Plugin {
       // through. Patch the in-place client tree only.
       const patchRoot = dir;
       for (const file of walk(patchRoot)) {
-        let txt = readFileSync(file, 'utf8');
+        let txt = readFileSync(file, "utf8");
         let changed = false;
         for (const [oldBase, newBase] of renames) {
           if (txt.includes(oldBase)) {

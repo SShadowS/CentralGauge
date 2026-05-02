@@ -18,7 +18,14 @@
   font-feature-settings: "tnum";
 }
 
-.text-muted { color: var(--text-muted); }
-.text-faint { color: var(--text-faint); }
+.text-muted {
+  color: var(--text-muted);
+}
+.text-faint {
+  color: var(--text-faint);
+}
 
-.tabular { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}

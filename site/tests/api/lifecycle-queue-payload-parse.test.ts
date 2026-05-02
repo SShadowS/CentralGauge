@@ -154,8 +154,13 @@ describe("IMPORTANT 4 — review/queue tolerates bad payload_json per-row", () =
     function b64url(buf: ArrayBuffer | Uint8Array): string {
       const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
       let bin = "";
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-      return btoa(bin).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+      for (let i = 0; i < bytes.length; i++) {
+        bin += String.fromCharCode(bytes[i]!);
+      }
+      return btoa(bin).replace(/=+$/, "").replace(/\+/g, "-").replace(
+        /\//g,
+        "_",
+      );
     }
     const headerB64 = b64url(
       new TextEncoder().encode(

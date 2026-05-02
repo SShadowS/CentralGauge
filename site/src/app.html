@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -8,9 +8,9 @@
       // No-flash theme application — runs before any paint.
       (function () {
         try {
-          var t = localStorage.getItem('theme');
-          if (t === 'dark' || t === 'light') {
-            document.documentElement.setAttribute('data-theme', t);
+          var t = localStorage.getItem("theme");
+          if (t === "dark" || t === "light") {
+            document.documentElement.setAttribute("data-theme", t);
           }
         } catch (e) { /* localStorage may be unavailable in private mode */ }
       })();
@@ -24,9 +24,9 @@
       // attribute itself is benign when the toggle UI is hidden.
       (function () {
         try {
-          var d = localStorage.getItem('cg-density');
-          if (d === 'compact' || d === 'comfortable') {
-            document.documentElement.setAttribute('data-density', d);
+          var d = localStorage.getItem("cg-density");
+          if (d === "compact" || d === "comfortable") {
+            document.documentElement.setAttribute("data-density", d);
           }
         } catch (e) { /* localStorage blocked — accept comfortable default */ }
       })();

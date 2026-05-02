@@ -12,22 +12,26 @@
  * already been applied by `wrangler dev`'s startup if the file exists; we
  * additionally apply migrations explicitly to handle the cold-start case.
  */
-import { execSync } from 'node:child_process';
-import { writeFileSync, readdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { execSync } from "node:child_process";
+import { readdirSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
-const ROOT = resolve(import.meta.dirname ?? process.cwd(), '..');
+const ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 
 function run(cmd: string): string {
   console.log(`$ ${cmd}`);
-  return execSync(cmd, { stdio: 'inherit', cwd: ROOT, encoding: 'utf8' as const }) ?? '';
+  return execSync(cmd, {
+    stdio: "inherit",
+    cwd: ROOT,
+    encoding: "utf8" as const,
+  }) ?? "";
 }
 
 function tryRun(cmd: string): boolean {
   console.log(`$ ${cmd}`);
   try {
-    execSync(cmd, { stdio: 'inherit', cwd: ROOT, encoding: 'utf8' as const });
+    execSync(cmd, { stdio: "inherit", cwd: ROOT, encoding: "utf8" as const });
     return true;
   } catch {
     return false;
@@ -38,9 +42,13 @@ function tryRun(cmd: string): boolean {
 //    applied state, so re-running on an existing DB fails with "table
 //    already exists". We tolerate that — the seed (step 2) is what
 //    matters, and the migrations are idempotent at the schema level.
-const migrations = readdirSync(join(ROOT, 'migrations')).filter((f) => f.endsWith('.sql')).sort();
+const migrations = readdirSync(join(ROOT, "migrations")).filter((f) =>
+  f.endsWith(".sql")
+).sort();
 for (const m of migrations) {
-  const ok = tryRun(`npx wrangler d1 execute centralgauge --local --file=migrations/${m}`);
+  const ok = tryRun(
+    `npx wrangler d1 execute centralgauge --local --file=migrations/${m}`,
+  );
   if (!ok) {
     console.log(`  (migration ${m} likely already applied — continuing)`);
   }
@@ -113,8 +121,12 @@ INSERT INTO shortcoming_occurrences(shortcoming_id,result_id,task_id,error_code)
   (2,5,'CG-AL-E002','AL0500');
 `;
 
-const seedFile = join(tmpdir(), 'cg-seed.sql');
+const seedFile = join(tmpdir(), "cg-seed.sql");
 writeFileSync(seedFile, SEED_SQL);
-run(`npx wrangler d1 execute centralgauge --local --file=${seedFile.replace(/\\/g, '/')}`);
+run(
+  `npx wrangler d1 execute centralgauge --local --file=${
+    seedFile.replace(/\\/g, "/")
+  }`,
+);
 
-console.log('\n[OK] E2E seed applied to local D1.');
+console.log("\n[OK] E2E seed applied to local D1.");

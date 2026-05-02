@@ -1,21 +1,30 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll, getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll, getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
   try {
-    const fam = await getFirst<{ id: number; slug: string; display_name: string; vendor: string }>(
+    const fam = await getFirst<
+      { id: number; slug: string; display_name: string; vendor: string }
+    >(
       env.DB,
       `SELECT id, slug, display_name, vendor FROM model_families WHERE slug = ?`,
       [params.slug!],
     );
-    if (!fam) throw new ApiError(404, 'family_not_found', `No family '${params.slug}'`);
+    if (!fam) {
+      throw new ApiError(404, "family_not_found", `No family '${params.slug}'`);
+    }
 
     const trajectory = await getAll<{
-      slug: string; display_name: string; api_model_id: string; generation: number | null;
-      avg_score: number | null; run_count: number | string; last_run_at: string | null;
+      slug: string;
+      display_name: string;
+      api_model_id: string;
+      generation: number | null;
+      avg_score: number | null;
+      run_count: number | string;
+      last_run_at: string | null;
       avg_cost_usd: number | null;
     }>(
       env.DB,

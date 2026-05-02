@@ -23,7 +23,7 @@ declare global {
       // Only exists under @cloudflare/vitest-pool-workers; safe to leave
       // non-optional because production code never reads it and tests always
       // receive it from the pool.
-      TEST_MIGRATIONS: import('cloudflare:test').D1Migration[];
+      TEST_MIGRATIONS: import("cloudflare:test").D1Migration[];
     }
   }
 }

@@ -11,11 +11,11 @@
  *
  * Public read path — no signature required.
  */
-import type { RequestHandler } from './$types';
-import { getAll, getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
-import { SLUG_REGEX } from '$lib/shared/slug';
+import type { RequestHandler } from "./$types";
+import { getAll, getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
+import { SLUG_REGEX } from "$lib/shared/slug";
 
 const CACHE_TTL_S = 300;
 
@@ -39,16 +39,16 @@ interface ModelRow {
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   if (!platform) {
     return errorResponse(
-      new ApiError(500, 'no_platform', 'Cloudflare platform not available')
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
     );
   }
   const env = platform.env;
   try {
-    const slug = params.slug ?? '';
+    const slug = params.slug ?? "";
     if (!SLUG_REGEX.test(slug)) {
       throw new ApiError(
         400,
-        'invalid_slug',
+        "invalid_slug",
         `slug must match ${SLUG_REGEX.source}`,
       );
     }
@@ -64,7 +64,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
               first_seen, last_seen
        FROM concepts
        WHERE slug = ? AND superseded_by IS NULL`,
-      [slug]
+      [slug],
     );
 
     // Alias path: resolve via concept_aliases → canonical concept.
@@ -72,13 +72,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       const alias = await getFirst<{ concept_id: number }>(
         env.DB,
         `SELECT concept_id FROM concept_aliases WHERE alias_slug = ?`,
-        [slug]
+        [slug],
       );
       if (!alias) {
         throw new ApiError(
           404,
-          'concept_not_found',
-          `concept '${slug}' not found`
+          "concept_not_found",
+          `concept '${slug}' not found`,
         );
       }
       concept = await getFirst<ConceptRow>(
@@ -87,13 +87,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
                 first_seen, last_seen
          FROM concepts
          WHERE id = ? AND superseded_by IS NULL`,
-        [alias.concept_id]
+        [alias.concept_id],
       );
       if (!concept) {
         throw new ApiError(
           404,
-          'concept_not_found',
-          `alias '${slug}' resolves to a superseded or missing concept`
+          "concept_not_found",
+          `alias '${slug}' resolves to a superseded or missing concept`,
         );
       }
     }
@@ -109,7 +109,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
        FROM models m
        WHERE m.id IN (SELECT s.model_id FROM shortcomings s WHERE s.concept_id = ?)
        ORDER BY occurrences DESC, m.slug ASC`,
-      [conceptId, conceptId]
+      [conceptId, conceptId],
     );
 
     const body = JSON.stringify({
@@ -124,18 +124,18 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         affected_models: models.map((m) => ({
           slug: m.slug,
           display_name: m.display_name,
-          occurrences: Number(m.occurrences ?? 0)
-        }))
+          occurrences: Number(m.occurrences ?? 0),
+        })),
       },
-      generated_at: new Date().toISOString()
+      generated_at: new Date().toISOString(),
     });
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': `public, s-maxage=${CACHE_TTL_S}`,
-        'x-api-version': 'v1'
-      }
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": `public, s-maxage=${CACHE_TTL_S}`,
+        "x-api-version": "v1",
+      },
     });
     await cache.put(request, response.clone());
     return response;

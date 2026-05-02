@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { SELF } from 'cloudflare:test';
+import { describe, expect, it } from "vitest";
+import { SELF } from "cloudflare:test";
 
 /**
  * P6 A7 — canary scope leak fix integration tests.
@@ -14,29 +14,29 @@ import { SELF } from 'cloudflare:test';
  * the transforms become a no-op on that body — but the canary chrome
  * around the iframe must still render correctly.
  */
-describe('canary scope: proxy applies transforms without breaking chrome', () => {
-  it('emits the X-Canary header', async () => {
-    const res = await SELF.fetch('http://x/_canary/sha-test/health');
+describe("canary scope: proxy applies transforms without breaking chrome", () => {
+  it("emits the X-Canary header", async () => {
+    const res = await SELF.fetch("http://x/_canary/sha-test/health");
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-canary')).toBe('1');
+    expect(res.headers.get("x-canary")).toBe("1");
   });
 
-  it('the canary chrome banner remains rendered', async () => {
-    const res = await SELF.fetch('http://x/_canary/sha-test/health');
+  it("the canary chrome banner remains rendered", async () => {
+    const res = await SELF.fetch("http://x/_canary/sha-test/health");
     const body = await res.text();
-    expect(body).toContain('Canary build');
-    expect(body).toContain('sha-test');
+    expect(body).toContain("Canary build");
+    expect(body).toContain("sha-test");
   });
 
-  it('canary HTML contains an iframe (proxy contract preserved)', async () => {
-    const res = await SELF.fetch('http://x/_canary/sha-test/health');
+  it("canary HTML contains an iframe (proxy contract preserved)", async () => {
+    const res = await SELF.fetch("http://x/_canary/sha-test/health");
     const body = await res.text();
-    expect(body).toContain('iframe');
+    expect(body).toContain("iframe");
   });
 
-  it('non-canary route does not invoke the proxy or emit X-Canary', async () => {
-    const res = await SELF.fetch('http://x/health');
+  it("non-canary route does not invoke the proxy or emit X-Canary", async () => {
+    const res = await SELF.fetch("http://x/health");
     expect(res.status).toBe(200);
-    expect(res.headers.get('x-canary')).toBeNull();
+    expect(res.headers.get("x-canary")).toBeNull();
   });
 });

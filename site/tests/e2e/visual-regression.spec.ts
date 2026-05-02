@@ -1,11 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
 const PAGES = [
-  { name: 'home', url: '/' },
-  { name: 'run-detail', url: '/runs/run-0000' },
-  { name: 'model-detail', url: '/models/sonnet-4-7' },
-  { name: 'family-detail', url: '/families/claude' },
-  { name: 'limitations', url: '/limitations' },
+  { name: "home", url: "/" },
+  { name: "run-detail", url: "/runs/run-0000" },
+  { name: "model-detail", url: "/models/sonnet-4-7" },
+  { name: "family-detail", url: "/families/claude" },
+  { name: "limitations", url: "/limitations" },
 ];
 
 // Lifecycle Wave 7 / Plan J6 — placeholders for the admin lifecycle
@@ -28,9 +28,9 @@ const PAGES = [
 // workflow (NOT a Windows dev machine — Windows captures drift per
 // the P5.4 baseline-platform invariant).
 const ADMIN_LIFECYCLE_PAGES = [
-  { name: 'admin-lifecycle-status', url: '/admin/lifecycle/status' },
-  { name: 'admin-lifecycle-review', url: '/admin/lifecycle/review' },
-  { name: 'admin-lifecycle-events', url: '/admin/lifecycle/events' },
+  { name: "admin-lifecycle-status", url: "/admin/lifecycle/status" },
+  { name: "admin-lifecycle-review", url: "/admin/lifecycle/review" },
+  { name: "admin-lifecycle-events", url: "/admin/lifecycle/events" },
 ];
 
 // Family-diff section is part of /families/<slug>; it renders only
@@ -38,11 +38,11 @@ const ADMIN_LIFECYCLE_PAGES = [
 // the same analyzer_model. seed:e2e currently doesn't materialise
 // this state.
 const FAMILY_DIFF_PAGES = [
-  { name: 'family-diff', url: '/families/claude#diff' },
+  { name: "family-diff", url: "/families/claude#diff" },
 ];
 
-const THEMES = ['light', 'dark'] as const;
-const DENSITIES = ['comfortable', 'compact'] as const;
+const THEMES = ["light", "dark"] as const;
+const DENSITIES = ["comfortable", "compact"] as const;
 
 // Placeholder skipped suite for the lifecycle pages. Bodies are stubbed
 // so the test runner discovers the names but never executes — keeps
@@ -50,8 +50,11 @@ const DENSITIES = ['comfortable', 'compact'] as const;
 // comment.
 for (const p of [...ADMIN_LIFECYCLE_PAGES, ...FAMILY_DIFF_PAGES]) {
   test.describe(`visual:${p.name}`, () => {
-    test.skip(true, 'Pending CF Access fixture + seed:e2e lifecycle data — see comment block at top of file (Wave 7 / Plan J6)');
-    test('light · comfortable', async ({ page }) => {
+    test.skip(
+      true,
+      "Pending CF Access fixture + seed:e2e lifecycle data — see comment block at top of file (Wave 7 / Plan J6)",
+    );
+    test("light · comfortable", async ({ page }) => {
       await page.goto(p.url);
     });
   });
@@ -65,28 +68,31 @@ for (const p of PAGES) {
           // Set theme + density via localStorage before first paint
           await page.addInitScript(([t, d]) => {
             try {
-              localStorage.setItem('cg-theme', t);
-              localStorage.setItem('cg-density', d);
+              localStorage.setItem("cg-theme", t);
+              localStorage.setItem("cg-density", d);
             } catch { /* ignore */ }
           }, [theme, density]);
 
           await page.goto(p.url);
-          await page.waitForLoadState('networkidle');
+          await page.waitForLoadState("networkidle");
 
           // Mask anything time-dependent (relative timestamps, build sha,
           // run IDs that change between seeds).
           const masks = [
             page.locator('[data-testid="timestamp"]'),
-            page.locator('time'),
-            page.locator('text=/Updated\\s/'),
-            page.locator('text=/build:\\s+\\w+/'),
+            page.locator("time"),
+            page.locator("text=/Updated\\s/"),
+            page.locator("text=/build:\\s+\\w+/"),
           ];
 
-          await expect(page).toHaveScreenshot(`${p.name}-${theme}-${density}.png`, {
-            fullPage: true,
-            mask: masks,
-            // Use the global threshold from playwright.config.ts.
-          });
+          await expect(page).toHaveScreenshot(
+            `${p.name}-${theme}-${density}.png`,
+            {
+              fullPage: true,
+              mask: masks,
+              // Use the global threshold from playwright.config.ts.
+            },
+          );
         });
       }
     }

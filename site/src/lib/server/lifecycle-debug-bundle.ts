@@ -22,7 +22,7 @@
  * to `r2BundleAvailable: false`.
  */
 
-import { getFirst } from './db';
+import { getFirst } from "./db";
 
 export type DebugBundleStatus =
   | { exists: true; r2_key: string }
@@ -33,15 +33,18 @@ export type DebugBundleStatus =
    * "the key we expected" display). Other failure variants don't have a
    * key to surface (event missing, payload malformed, etc.).
    */
-  | { exists: false; reason: 'r2_head_null'; r2_key: string }
-  | { exists: false; reason: Exclude<DebugBundleMissingReason, 'r2_head_null'> };
+  | { exists: false; reason: "r2_head_null"; r2_key: string }
+  | {
+    exists: false;
+    reason: Exclude<DebugBundleMissingReason, "r2_head_null">;
+  };
 
 export type DebugBundleMissingReason =
-  | 'event_not_found'
-  | 'no_debug_captured'
-  | 'malformed_payload_json'
-  | 'no_r2_key'
-  | 'r2_head_null';
+  | "event_not_found"
+  | "no_debug_captured"
+  | "malformed_payload_json"
+  | "no_r2_key"
+  | "r2_head_null";
 
 /**
  * Check whether a retained debug bundle exists in R2 for the given
@@ -65,7 +68,7 @@ export async function checkDebugBundleAvailable(
       `SELECT model_slug, task_set_hash FROM lifecycle_events WHERE id = ?`,
       [eventId],
     );
-    if (!ev) return { exists: false, reason: 'event_not_found' };
+    if (!ev) return { exists: false, reason: "event_not_found" };
 
     const dbg = await getFirst<{ payload_json: string }>(
       db,
@@ -79,22 +82,22 @@ export async function checkDebugBundleAvailable(
         LIMIT 1`,
       [ev.model_slug, ev.task_set_hash, eventId],
     );
-    if (!dbg) return { exists: false, reason: 'no_debug_captured' };
+    if (!dbg) return { exists: false, reason: "no_debug_captured" };
 
     let payload: { r2_key?: unknown };
     try {
       payload = JSON.parse(dbg.payload_json) as { r2_key?: unknown };
     } catch {
-      return { exists: false, reason: 'malformed_payload_json' };
+      return { exists: false, reason: "malformed_payload_json" };
     }
 
-    if (typeof payload.r2_key !== 'string' || payload.r2_key.length === 0) {
-      return { exists: false, reason: 'no_r2_key' };
+    if (typeof payload.r2_key !== "string" || payload.r2_key.length === 0) {
+      return { exists: false, reason: "no_r2_key" };
     }
 
     const obj = await bucket.head(payload.r2_key);
     if (obj === null) {
-      return { exists: false, reason: 'r2_head_null', r2_key: payload.r2_key };
+      return { exists: false, reason: "r2_head_null", r2_key: payload.r2_key };
     }
 
     return { exists: true, r2_key: payload.r2_key };
@@ -104,10 +107,10 @@ export async function checkDebugBundleAvailable(
     // than throwing into SvelteKit's `error()`. The admin endpoint logs
     // its own context and propagates a 500 via errorResponse — so this
     // helper's swallow only matters for the loader path.
-    console.error('[checkDebugBundleAvailable] unexpected failure', {
+    console.error("[checkDebugBundleAvailable] unexpected failure", {
       eventId,
       error: err instanceof Error ? err.message : String(err),
     });
-    return { exists: false, reason: 'event_not_found' };
+    return { exists: false, reason: "event_not_found" };
   }
 }

@@ -14,10 +14,10 @@
  * cannot use this endpoint directly because there's no body to sign;
  * a CLI consumer should switch to a body-signed POST mirror if needed.
  */
-import type { RequestHandler } from './$types';
-import { authenticateAdminRequest } from '$lib/server/cf-access';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { getAll } from '$lib/server/db';
+import type { RequestHandler } from "./$types";
+import { authenticateAdminRequest } from "$lib/server/cf-access";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { getAll } from "$lib/server/db";
 
 interface QueueRow {
   id: number;
@@ -33,7 +33,11 @@ interface QueueRow {
 }
 
 export const GET: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const env = platform.env;
   try {
     // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.

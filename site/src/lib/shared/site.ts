@@ -14,5 +14,5 @@
  * wrangler `[vars]` entry + redeploy. No code edits.
  */
 export const SITE_ROOT: string =
-  (typeof process !== 'undefined' ? process.env.SITE_BASE_URL : undefined) ||
-  'https://centralgauge.sshadows.workers.dev';
+  (typeof process !== "undefined" ? process.env.SITE_BASE_URL : undefined) ||
+  "https://centralgauge.sshadows.workers.dev";

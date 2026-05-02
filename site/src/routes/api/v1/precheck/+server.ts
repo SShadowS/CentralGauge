@@ -1,11 +1,11 @@
-import type { RequestHandler } from './$types';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { verifySignedRequest } from '$lib/server/signature';
+import type { RequestHandler } from "./$types";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { verifySignedRequest } from "$lib/server/signature";
 import type {
   PrecheckCatalog,
   PrecheckRequest,
   PrecheckResponse,
-} from '$lib/shared/types';
+} from "$lib/shared/types";
 
 /**
  * POST /api/v1/precheck — read-only signed health probe.
@@ -24,7 +24,9 @@ import type {
  */
 export const POST: RequestHandler = async ({ request, platform }) => {
   if (!platform) {
-    return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
   }
   const db = platform.env.DB;
 
@@ -32,17 +34,20 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const body = (await request.json()) as PrecheckRequest;
 
     if (body.version !== 1) {
-      throw new ApiError(400, 'version_unsupported', 'version must be 1');
+      throw new ApiError(400, "version_unsupported", "version must be 1");
     }
-    if (!body.payload || typeof body.payload.machine_id !== 'string') {
-      throw new ApiError(400, 'bad_payload', 'payload.machine_id required');
+    if (!body.payload || typeof body.payload.machine_id !== "string") {
+      throw new ApiError(400, "bad_payload", "payload.machine_id required");
     }
 
     // Required scope: 'ingest' (the lowest tier; verifier/admin satisfy via hasScope).
     const verified = await verifySignedRequest(
       db,
-      { signature: body.signature, payload: body.payload as unknown as Record<string, unknown> },
-      'ingest',
+      {
+        signature: body.signature,
+        payload: body.payload as unknown as Record<string, unknown>,
+      },
+      "ingest",
     );
 
     // verifySignedRequest already throws 401 'revoked_key' when revoked_at is set,
@@ -60,7 +65,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const variants = body.payload.variants;
     if (variants && variants.length > 0) {
       const slugs = variants.map((v) => v.slug);
-      const placeholders = slugs.map(() => '?').join(',');
+      const placeholders = slugs.map(() => "?").join(",");
 
       // 1. Look up models matching the requested slugs.
       const modelsRes = await db
@@ -72,23 +77,28 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
       const missing_models = variants
         .filter((v) => !foundSlugs.has(v.slug))
-        .map((v) => ({ slug: v.slug, reason: 'not_in_catalog' }));
+        .map((v) => ({ slug: v.slug, reason: "not_in_catalog" }));
 
       // 2. Look up cost_snapshots at the requested pricing_version (if any).
-      const missing_pricing: PrecheckCatalog['missing_pricing'] = [];
+      const missing_pricing: PrecheckCatalog["missing_pricing"] = [];
       const pricingVersion = body.payload.pricing_version;
       if (pricingVersion && foundRows.length > 0) {
-        const idPlaceholders = foundRows.map(() => '?').join(',');
+        const idPlaceholders = foundRows.map(() => "?").join(",");
         const costRes = await db
           .prepare(
             `SELECT model_id FROM cost_snapshots WHERE pricing_version = ? AND model_id IN (${idPlaceholders})`,
           )
           .bind(pricingVersion, ...foundRows.map((r) => r.id))
           .all<{ model_id: number }>();
-        const pricedModelIds = new Set((costRes.results ?? []).map((r) => r.model_id));
+        const pricedModelIds = new Set(
+          (costRes.results ?? []).map((r) => r.model_id),
+        );
         for (const row of foundRows) {
           if (!pricedModelIds.has(row.id)) {
-            missing_pricing.push({ slug: row.slug, pricing_version: pricingVersion });
+            missing_pricing.push({
+              slug: row.slug,
+              pricing_version: pricingVersion,
+            });
           }
         }
       }

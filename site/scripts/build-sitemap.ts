@@ -20,9 +20,9 @@
  * would tell crawlers to follow the redirect (wasteful) or worse,
  * index it alongside / (duplicate-content signal).
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // SITE_BASE_URL is the single source of truth. Read at module-load time
 // so build-time invocations (`npm run build`) and tests both pick up the
@@ -30,20 +30,20 @@ import { fileURLToPath } from 'node:url';
 // When P7 lands a custom domain (e.g. `centralgauge.dev`), set
 // `SITE_BASE_URL=https://centralgauge.dev` in the build environment AND
 // edit `wrangler.toml` — both paths re-target atomically.
-export const BASE_URL =
-  process.env.SITE_BASE_URL ?? 'https://centralgauge.sshadows.workers.dev';
+export const BASE_URL = process.env.SITE_BASE_URL ??
+  "https://centralgauge.sshadows.workers.dev";
 
 // ALPHABETIZED + DEDUPLICATED. Tests assert sortedness.
 export const SITEMAP_ROUTES: ReadonlyArray<string> = [
-  '/',
-  '/about',
-  '/compare',
-  '/families',
-  '/limitations',
-  '/models',
-  '/runs',
-  '/search',
-  '/tasks',
+  "/",
+  "/about",
+  "/compare",
+  "/families",
+  "/limitations",
+  "/models",
+  "/runs",
+  "/search",
+  "/tasks",
 ];
 
 export function buildSitemap(): string {
@@ -56,24 +56,23 @@ export function buildSitemap(): string {
     // Without this both the sitemap and the canonical disagree on whether
     // the homepage URL has a trailing slash, which Google flags as a
     // duplicate-canonical signal.
-    const loc = route === '/' ? `${BASE_URL}/` : `${BASE_URL}${route}`;
-    lines.push('  <url>');
+    const loc = route === "/" ? `${BASE_URL}/` : `${BASE_URL}${route}`;
+    lines.push("  <url>");
     lines.push(`    <loc>${loc}</loc>`);
-    lines.push('    <changefreq>daily</changefreq>');
-    lines.push('  </url>');
+    lines.push("    <changefreq>daily</changefreq>");
+    lines.push("  </url>");
   }
-  lines.push('</urlset>');
+  lines.push("</urlset>");
   // Trailing newline — POSIX text-file convention; some XML linters flag
   // its absence.
-  lines.push('');
-  return lines.join('\n');
+  lines.push("");
+  return lines.join("\n");
 }
 
 // Standard Node ESM entrypoint detection. `import.meta.main` is a Deno-ism
 // (undefined in Node + tsx); using it here would silently fall through and
 // always treat this file as a library import.
-const isMain =
-  process.argv[1] !== undefined &&
+const isMain = process.argv[1] !== undefined &&
   fileURLToPath(import.meta.url) === resolve(process.argv[1]);
 
 if (isMain) {
@@ -85,9 +84,9 @@ if (isMain) {
   // `manifest.assets.has('sitemap.xml')`). The artifact is gitignored —
   // see `site/.gitignore` — so re-running the generator never produces a
   // committed diff.
-  const target = resolve(process.cwd(), 'static/sitemap.xml');
+  const target = resolve(process.cwd(), "static/sitemap.xml");
   mkdirSync(dirname(target), { recursive: true });
   const xml = buildSitemap();
-  writeFileSync(target, xml, 'utf8');
+  writeFileSync(target, xml, "utf8");
   console.log(`[sitemap] wrote ${SITEMAP_ROUTES.length} routes to ${target}`);
 }

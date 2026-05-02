@@ -24,23 +24,23 @@
  *   2. UPDATE pending_review + (on accept) INSERT shortcomings keyed to
  *      the resolved event id.
  */
-import type { RequestHandler } from './$types';
+import type { RequestHandler } from "./$types";
 import {
   actorIdFromAuth,
   authenticateAdminRequest,
-} from '$lib/server/cf-access';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { getFirst, runBatch } from '$lib/server/db';
-import { appendEvent } from '$lib/server/lifecycle-event-log';
-import type { AnalyzerEntry } from '../../../../../../../../../src/lifecycle/confidence';
+} from "$lib/server/cf-access";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { getFirst, runBatch } from "$lib/server/db";
+import { appendEvent } from "$lib/server/lifecycle-event-log";
+import type { AnalyzerEntry } from "../../../../../../../../../src/lifecycle/confidence";
 
 interface DecideBody {
-  decision?: 'accept' | 'reject';
+  decision?: "accept" | "reject";
   reason?: string;
   /** CLI signed-envelope wrapper. CF Access path leaves these undefined. */
   version?: number;
   signature?: unknown;
-  payload?: { decision?: 'accept' | 'reject'; reason?: string };
+  payload?: { decision?: "accept" | "reject"; reason?: string };
 }
 
 interface PendingRow {
@@ -51,11 +51,15 @@ interface PendingRow {
 }
 
 export const POST: RequestHandler = async ({ request, params, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const env = platform.env;
   const id = Number(params.id ?? 0);
   if (!Number.isInteger(id) || id < 1) {
-    return errorResponse(new ApiError(400, 'bad_id', 'numeric id required'));
+    return errorResponse(new ApiError(400, "bad_id", "numeric id required"));
   }
 
   try {
@@ -65,8 +69,10 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
     // posts it at root. Resolve both shapes upfront so the rest of the
     // handler is single-shape.
     const isCli = !!body.signature;
-    const decisionContainer: { decision?: 'accept' | 'reject'; reason?: string } =
-      isCli ? body.payload ?? {} : body;
+    const decisionContainer: {
+      decision?: "accept" | "reject";
+      reason?: string;
+    } = isCli ? body.payload ?? {} : body;
 
     // (Plan F / F5) authenticateAdminRequest — dual transport. Pass the
     // body envelope when it carries `signature`, else null (CF Access only).
@@ -78,11 +84,11 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
     const actorId = actorIdFromAuth(auth);
 
     const decision = decisionContainer.decision;
-    if (decision !== 'accept' && decision !== 'reject') {
-      throw new ApiError(400, 'bad_decision', 'decision must be accept|reject');
+    if (decision !== "accept" && decision !== "reject") {
+      throw new ApiError(400, "bad_decision", "decision must be accept|reject");
     }
-    if (decision === 'reject' && !decisionContainer.reason) {
-      throw new ApiError(400, 'reason_required', 'reject requires reason');
+    if (decision === "reject" && !decisionContainer.reason) {
+      throw new ApiError(400, "reason_required", "reject requires reason");
     }
 
     const pr = await getFirst<PendingRow>(
@@ -91,9 +97,11 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
          FROM pending_review WHERE id = ?`,
       [id],
     );
-    if (!pr) throw new ApiError(404, 'not_found', `pending_review ${id} not found`);
-    if (pr.status !== 'pending') {
-      throw new ApiError(409, 'already_decided', `status=${pr.status}`);
+    if (!pr) {
+      throw new ApiError(404, "not_found", `pending_review ${id} not found`);
+    }
+    if (pr.status !== "pending") {
+      throw new ApiError(409, "already_decided", `status=${pr.status}`);
     }
 
     const analysisEvent = await getFirst<{ task_set_hash: string }>(
@@ -102,11 +110,15 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
       [pr.analysis_event_id],
     );
     if (!analysisEvent) {
-      throw new ApiError(500, 'orphan_review', `analysis_event_id ${pr.analysis_event_id} missing`);
+      throw new ApiError(
+        500,
+        "orphan_review",
+        `analysis_event_id ${pr.analysis_event_id} missing`,
+      );
     }
 
-    const eventType: 'analysis.accepted' | 'analysis.rejected' =
-      decision === 'accept' ? 'analysis.accepted' : 'analysis.rejected';
+    const eventType: "analysis.accepted" | "analysis.rejected" =
+      decision === "accept" ? "analysis.accepted" : "analysis.rejected";
 
     // Step 1 — append the lifecycle event via the canonical helper. The
     // worker-side appendEvent stringifies payload to D1 columns and
@@ -117,7 +129,7 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
       model_slug: pr.model_slug,
       task_set_hash: analysisEvent.task_set_hash,
       ts,
-      actor: 'reviewer',
+      actor: "reviewer",
       actor_id: actorId,
       payload: {
         pending_review_id: id,
@@ -129,41 +141,46 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
     // Step 2 — pending_review update + (on accept) shortcomings INSERT.
     // Both batched together so a partial failure rolls back atomically
     // per-replica.
-    const followUp: Array<{ sql: string; params: (string | number | null)[] }> = [
-      {
-        sql: `UPDATE pending_review
+    const followUp: Array<{ sql: string; params: (string | number | null)[] }> =
+      [
+        {
+          sql: `UPDATE pending_review
                  SET status = ?, reviewer_decision_event_id = ?
                WHERE id = ?`,
-        params: [
-          decision === 'accept' ? 'accepted' : 'rejected',
-          inserted.id,
-          id,
-        ],
-      },
-    ];
+          params: [
+            decision === "accept" ? "accepted" : "rejected",
+            inserted.id,
+            id,
+          ],
+        },
+      ];
 
-    if (decision === 'accept') {
+    if (decision === "accept") {
       // Parse the canonical row shape: { entry, confidence }. The entry
       // field naming mirrors src/verify/schema.ts (camelCase + snake_case mix).
       let reviewBody: { entry: AnalyzerEntry; confidence: { score: number } };
       try {
         reviewBody = JSON.parse(pr.payload_json) as typeof reviewBody;
       } catch {
-        throw new ApiError(500, 'bad_payload', 'pending_review.payload_json is not valid JSON');
+        throw new ApiError(
+          500,
+          "bad_payload",
+          "pending_review.payload_json is not valid JSON",
+        );
       }
       if (!reviewBody.entry || !reviewBody.confidence) {
         throw new ApiError(
           500,
-          'bad_payload',
-          'pending_review.payload_json missing { entry, confidence }',
+          "bad_payload",
+          "pending_review.payload_json missing { entry, confidence }",
         );
       }
       const proposedSlug = reviewBody.entry.concept_slug_proposed;
       if (!proposedSlug) {
         throw new ApiError(
           500,
-          'bad_payload',
-          'entry.concept_slug_proposed missing',
+          "bad_payload",
+          "entry.concept_slug_proposed missing",
         );
       }
 
@@ -179,7 +196,7 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
       if (!concept) {
         throw new ApiError(
           409,
-          'concept_missing',
+          "concept_missing",
           `concept ${proposedSlug} not in registry`,
         );
       }

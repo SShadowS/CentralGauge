@@ -1,10 +1,10 @@
-import { canonicalJSON } from '$lib/shared/canonical';
+import { canonicalJSON } from "$lib/shared/canonical";
 import type {
   AppendEventInput,
   LifecycleEnvelope,
   LifecycleEvent,
   ToolVersions,
-} from '../../../../src/lifecycle/types';
+} from "../../../../src/lifecycle/types";
 
 /**
  * Worker-side `appendEvent` — direct D1 INSERT. Used by the lifecycle POST
@@ -21,14 +21,23 @@ export async function appendEvent(
   db: D1Database,
   input: AppendEventInput,
 ): Promise<{ id: number }> {
-  if (!input.model_slug) throw new Error('appendEvent: model_slug must be non-empty');
-  if (!input.task_set_hash) throw new Error('appendEvent: task_set_hash must be non-empty');
-  if (!input.event_type) throw new Error('appendEvent: event_type must be non-empty');
+  if (!input.model_slug) {
+    throw new Error("appendEvent: model_slug must be non-empty");
+  }
+  if (!input.task_set_hash) {
+    throw new Error("appendEvent: task_set_hash must be non-empty");
+  }
+  if (!input.event_type) {
+    throw new Error("appendEvent: event_type must be non-empty");
+  }
 
   const ts = input.ts ?? Date.now();
-  const payload_hash = input.payload_hash ?? await computePayloadHash(input.payload);
+  const payload_hash = input.payload_hash ??
+    await computePayloadHash(input.payload);
   const payload_json = JSON.stringify(input.payload);
-  const tool_versions_json = input.tool_versions ? JSON.stringify(input.tool_versions) : null;
+  const tool_versions_json = input.tool_versions
+    ? JSON.stringify(input.tool_versions)
+    : null;
   const envelope_json = input.envelope ? JSON.stringify(input.envelope) : null;
 
   const res = await db.prepare(
@@ -37,11 +46,18 @@ export async function appendEvent(
        tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
-    ts, input.model_slug, input.task_set_hash, input.event_type,
-    input.source_id ?? null, payload_hash,
-    tool_versions_json, envelope_json,
-    payload_json, input.actor,
-    input.actor_id ?? null, input.migration_note ?? null,
+    ts,
+    input.model_slug,
+    input.task_set_hash,
+    input.event_type,
+    input.source_id ?? null,
+    payload_hash,
+    tool_versions_json,
+    envelope_json,
+    payload_json,
+    input.actor,
+    input.actor_id ?? null,
+    input.migration_note ?? null,
   ).run();
   return { id: Number(res.meta?.last_row_id ?? 0) };
 }
@@ -61,23 +77,42 @@ export async function queryEvents(
   filter: QueryEventsFilter,
 ): Promise<LifecycleEvent[]> {
   const params: (string | number)[] = [filter.model_slug];
-  let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
+  let sql =
+    `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                     tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
                FROM lifecycle_events WHERE model_slug = ?`;
-  if (filter.task_set_hash) { sql += ' AND task_set_hash = ?'; params.push(filter.task_set_hash); }
-  if (filter.since !== undefined) { sql += ' AND ts >= ?'; params.push(filter.since); }
-  if (filter.event_type_prefix) { sql += ' AND event_type LIKE ?'; params.push(`${filter.event_type_prefix}%`); }
-  sql += ' ORDER BY ts ASC, id ASC';
-  if (filter.limit !== undefined) { sql += ' LIMIT ?'; params.push(filter.limit); }
+  if (filter.task_set_hash) {
+    sql += " AND task_set_hash = ?";
+    params.push(filter.task_set_hash);
+  }
+  if (filter.since !== undefined) {
+    sql += " AND ts >= ?";
+    params.push(filter.since);
+  }
+  if (filter.event_type_prefix) {
+    sql += " AND event_type LIKE ?";
+    params.push(`${filter.event_type_prefix}%`);
+  }
+  sql += " ORDER BY ts ASC, id ASC";
+  if (filter.limit !== undefined) {
+    sql += " LIMIT ?";
+    params.push(filter.limit);
+  }
   const rows = await db.prepare(sql).bind(...params).all<LifecycleEvent>();
   // Populate parsed `payload`/`tool_versions`/`envelope` so consumers don't
   // re-parse JSON at every call site (Plan C lock-token tiebreaker, Plan E
   // diff trigger, Plan H matrix renderer all read these).
   return rows.results.map((r) => ({
     ...r,
-    payload: r.payload_json ? JSON.parse(r.payload_json) as Record<string, unknown> : undefined,
-    tool_versions: r.tool_versions_json ? JSON.parse(r.tool_versions_json) as ToolVersions : null,
-    envelope: r.envelope_json ? JSON.parse(r.envelope_json) as LifecycleEnvelope : null,
+    payload: r.payload_json
+      ? JSON.parse(r.payload_json) as Record<string, unknown>
+      : undefined,
+    tool_versions: r.tool_versions_json
+      ? JSON.parse(r.tool_versions_json) as ToolVersions
+      : null,
+    envelope: r.envelope_json
+      ? JSON.parse(r.envelope_json) as LifecycleEnvelope
+      : null,
   }));
 }
 
@@ -87,9 +122,12 @@ export async function queryEvents(
  * pre-computed `payload_hash` round-trip. Both sides import `canonicalJSON`
  * from `shared/canonical.ts` (single source of truth).
  */
-export async function computePayloadHash(payload: Record<string, unknown>): Promise<string> {
+export async function computePayloadHash(
+  payload: Record<string, unknown>,
+): Promise<string> {
   const canon = canonicalJSON(payload);
   const bytes = new TextEncoder().encode(canon);
-  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }

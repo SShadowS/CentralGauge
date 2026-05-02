@@ -1,10 +1,10 @@
-import { canonicalJSON } from '$lib/shared/canonical';
-import { verify } from '$lib/shared/ed25519';
-import { b64ToBytes } from '$lib/shared/base64';
-import { sha256Hex } from '$lib/shared/hash';
-import type { Scope } from '$lib/shared/types';
-import { ApiError } from './errors';
-import { hasScope } from './signature';
+import { canonicalJSON } from "$lib/shared/canonical";
+import { verify } from "$lib/shared/ed25519";
+import { b64ToBytes } from "$lib/shared/base64";
+import { sha256Hex } from "$lib/shared/hash";
+import type { Scope } from "$lib/shared/types";
+import { ApiError } from "./errors";
+import { hasScope } from "./signature";
 
 /**
  * Lifecycle-admin auth helper. Centralizes the header-signing contract used by
@@ -81,27 +81,39 @@ export async function verifyLifecycleAdminRequest(
   request: Request,
   input: LifecycleAuthInput,
 ): Promise<VerifiedLifecycleAdmin> {
-  const sigB64 = request.headers.get('X-CG-Signature');
-  const keyIdStr = request.headers.get('X-CG-Key-Id');
-  const signedAt = request.headers.get('X-CG-Signed-At');
+  const sigB64 = request.headers.get("X-CG-Signature");
+  const keyIdStr = request.headers.get("X-CG-Key-Id");
+  const signedAt = request.headers.get("X-CG-Signed-At");
   if (!sigB64 || !keyIdStr || !signedAt) {
     throw new ApiError(
       401,
-      'unauthenticated',
-      'X-CG-Signature, X-CG-Key-Id, X-CG-Signed-At headers required',
+      "unauthenticated",
+      "X-CG-Signature, X-CG-Key-Id, X-CG-Signed-At headers required",
     );
   }
   const keyId = parseInt(keyIdStr, 10);
   if (!Number.isFinite(keyId) || keyId < 1) {
-    throw new ApiError(401, 'bad_key_id', 'X-CG-Key-Id must be a positive integer');
+    throw new ApiError(
+      401,
+      "bad_key_id",
+      "X-CG-Key-Id must be a positive integer",
+    );
   }
 
   const signedAtMs = Date.parse(signedAt);
   if (Number.isNaN(signedAtMs)) {
-    throw new ApiError(400, 'bad_signed_at', 'signed_at is not a valid ISO 8601 timestamp');
+    throw new ApiError(
+      400,
+      "bad_signed_at",
+      "signed_at is not a valid ISO 8601 timestamp",
+    );
   }
   if (Math.abs(Date.now() - signedAtMs) > SKEW_LIMIT_MS) {
-    throw new ApiError(400, 'clock_skew', 'signed_at too far from server time (> 10 min skew)');
+    throw new ApiError(
+      400,
+      "clock_skew",
+      "signed_at too far from server time (> 10 min skew)",
+    );
   }
 
   const keyRow = await db
@@ -116,28 +128,34 @@ export async function verifyLifecycleAdminRequest(
       scope: Scope;
       revoked_at: string | null;
     }>();
-  if (!keyRow) throw new ApiError(401, 'unknown_key', `key_id ${keyId} not found`);
-  if (keyRow.revoked_at) throw new ApiError(401, 'revoked_key', 'key revoked');
+  if (!keyRow) {
+    throw new ApiError(401, "unknown_key", `key_id ${keyId} not found`);
+  }
+  if (keyRow.revoked_at) throw new ApiError(401, "revoked_key", "key revoked");
   // Lifecycle accepts verifier OR admin (verifier writes analysis.* events).
-  if (!hasScope(keyRow.scope, 'verifier')) {
+  if (!hasScope(keyRow.scope, "verifier")) {
     throw new ApiError(
       403,
-      'insufficient_scope',
+      "insufficient_scope",
       `required scope: verifier or admin, have: ${keyRow.scope}`,
     );
   }
 
-  const bodyHash = input.body ? await sha256Hex(input.body) : '';
+  const bodyHash = input.body ? await sha256Hex(input.body) : "";
   // Helper-controlled keys: `signed_at` and `body_sha256`. The endpoint
   // doesn't get to override these — they ALWAYS come from the trusted
   // header / hashed body bytes. If the caller passed them in `signedFields`
   // by accident, drop them silently (they'll be reset).
-  const fields = { ...input.signedFields, body_sha256: bodyHash, signed_at: signedAt };
+  const fields = {
+    ...input.signedFields,
+    body_sha256: bodyHash,
+    signed_at: signedAt,
+  };
   const canonical = canonicalJSON(fields);
   const msg = new TextEncoder().encode(canonical);
   const sig = b64ToBytes(sigB64);
   const ok = await verify(sig, msg, new Uint8Array(keyRow.public_key));
-  if (!ok) throw new ApiError(401, 'bad_signature', 'Ed25519 verify failed');
+  if (!ok) throw new ApiError(401, "bad_signature", "Ed25519 verify failed");
 
   // Best-effort telemetry; never fail an authenticated request because of it.
   try {
@@ -163,7 +181,7 @@ export async function verifyLifecycleAdminRequest(
  * `null` / `undefined` values are dropped (signer must do the same).
  */
 export function buildHeaderSignedFields(args: {
-  method: 'GET' | 'PUT';
+  method: "GET" | "PUT";
   path: string;
   query?: Record<string, string | number | null | undefined>;
 }): Record<string, unknown> {

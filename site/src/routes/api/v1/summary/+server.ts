@@ -1,15 +1,15 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getFirst } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
-import { parseChangelog } from '$lib/server/changelog';
-import type { ChangelogEntry, SummaryStats } from '$lib/shared/api-types';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getFirst } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
+import { parseChangelog } from "$lib/server/changelog";
+import type { ChangelogEntry, SummaryStats } from "$lib/shared/api-types";
 // Build-time `?raw` import: Vite inlines the markdown file's contents as a
 // string at bundle time. The path crosses the site/ boundary; the precedent
 // is `site/src/lib/shared/canonical.ts` (re-export from `../../shared`).
 // Edits to the markdown file require a redeploy — there is no runtime read
 // (zero D1 writes; deterministic bundles).
-import changelogMarkdown from '../../../../../../docs/site/changelog.md?raw';
+import changelogMarkdown from "../../../../../../docs/site/changelog.md?raw";
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -30,8 +30,10 @@ const LATEST_CHANGELOG: ChangelogEntry | null = CHANGELOG_ENTRIES[0] ?? null;
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const cache = await platform!.caches.open('cg-summary');
-    const cacheKey = new Request(new URL(url.toString()).toString(), { method: 'GET' });
+    const cache = await platform!.caches.open("cg-summary");
+    const cacheKey = new Request(new URL(url.toString()).toString(), {
+      method: "GET",
+    });
 
     let payload: SummaryStats | null = null;
     const cached = await cache.match(cacheKey);
@@ -99,8 +101,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'cache-control': `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
         },
       });
       await cache.put(cacheKey, storeRes);

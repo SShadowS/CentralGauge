@@ -16,10 +16,10 @@
  * Public read path — no signature required. Cache-invalidated by
  * concept-mutating writes via $lib/server/concept-cache.invalidateConcept.
  */
-import type { RequestHandler } from './$types';
-import { getAll } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { CONCEPT_CACHE_NAME } from '$lib/server/concept-cache';
+import type { RequestHandler } from "./$types";
+import { getAll } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
 
 const CACHE_TTL_S = 300;
 const DEFAULT_LIMIT = 20;
@@ -38,16 +38,16 @@ interface RawRow {
 export const GET: RequestHandler = async ({ url, platform }) => {
   if (!platform) {
     return errorResponse(
-      new ApiError(500, 'no_platform', 'Cloudflare platform not available')
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
     );
   }
   const env = platform.env;
   try {
-    const recentParam = url.searchParams.get('recent');
+    const recentParam = url.searchParams.get("recent");
     const parsed = parseInt(recentParam ?? String(DEFAULT_LIMIT), 10);
     const limit = Math.min(
       Math.max(Number.isFinite(parsed) ? parsed : DEFAULT_LIMIT, 1),
-      MAX_LIMIT
+      MAX_LIMIT,
     );
 
     // Canonical cache key: drop all query params except the clamped
@@ -71,7 +71,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
        WHERE c.superseded_by IS NULL
        ORDER BY c.last_seen DESC, c.id DESC
        LIMIT ?`,
-      [limit]
+      [limit],
     );
 
     const body = JSON.stringify({
@@ -82,17 +82,18 @@ export const GET: RequestHandler = async ({ url, platform }) => {
         description: r.description,
         first_seen: r.first_seen,
         last_seen: r.last_seen,
-        affected_models: Number(r.affected_models ?? 0)
+        affected_models: Number(r.affected_models ?? 0),
       })),
-      generated_at: new Date().toISOString()
+      generated_at: new Date().toISOString(),
     });
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=60`,
-        'x-api-version': 'v1'
-      }
+        "content-type": "application/json; charset=utf-8",
+        "cache-control":
+          `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=60`,
+        "x-api-version": "v1",
+      },
     });
     // Inline put — NOT ctx.waitUntil — so subsequent reads + tests observe
     // the populated cache deterministically (CLAUDE.md guidance).

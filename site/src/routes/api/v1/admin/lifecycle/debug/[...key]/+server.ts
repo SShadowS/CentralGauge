@@ -11,13 +11,17 @@
  * primary surface). CLI consumers that need to replay a bundle should
  * use Plan A's r2/[...key] GET (header-signed).
  */
-import type { RequestHandler } from './$types';
-import { authenticateAdminRequest } from '$lib/server/cf-access';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { validateR2Key } from '$lib/server/r2-key';
+import type { RequestHandler } from "./$types";
+import { authenticateAdminRequest } from "$lib/server/cf-access";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { validateR2Key } from "$lib/server/r2-key";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const env = platform.env;
   try {
     // CF Access only — the review UI loads this from the browser, where
@@ -33,21 +37,22 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     if (!env.LIFECYCLE_BLOBS) {
       throw new ApiError(
         500,
-        'r2_unbound',
-        'LIFECYCLE_BLOBS R2 binding missing — Plan A wrangler.toml not deployed',
+        "r2_unbound",
+        "LIFECYCLE_BLOBS R2 binding missing — Plan A wrangler.toml not deployed",
       );
     }
     const obj = await env.LIFECYCLE_BLOBS.get(key);
-    if (!obj) throw new ApiError(404, 'r2_missing', `key ${key} not in R2`);
+    if (!obj) throw new ApiError(404, "r2_missing", `key ${key} not in R2`);
 
     return new Response(obj.body, {
       status: 200,
       headers: {
-        'content-type': obj.httpMetadata?.contentType ?? 'text/plain; charset=utf-8',
+        "content-type": obj.httpMetadata?.contentType ??
+          "text/plain; charset=utf-8",
         // 5-min private cache. Reviews are quick — operators don't keep
         // a tab open for hours, and CF Access cookies expire at the
         // session boundary anyway.
-        'cache-control': 'private, max-age=300',
+        "cache-control": "private, max-age=300",
       },
     });
   } catch (err) {

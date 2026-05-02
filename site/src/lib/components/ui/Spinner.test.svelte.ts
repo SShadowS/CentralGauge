@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/svelte';
-import Spinner from './Spinner.svelte';
+import { describe, expect, it } from "vitest";
+import { render } from "@testing-library/svelte";
+import Spinner from "./Spinner.svelte";
 
-describe('Spinner', () => {
-  it('renders an SVG with role status', () => {
-    const { container } = render(Spinner, { label: 'Loading' });
+describe("Spinner", () => {
+  it("renders an SVG with role status", () => {
+    const { container } = render(Spinner, { label: "Loading" });
     expect(container.querySelector('svg[role="status"]')).toBeDefined();
   });
 });

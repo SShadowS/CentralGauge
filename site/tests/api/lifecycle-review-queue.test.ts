@@ -12,11 +12,11 @@
  *   - returned shape matches the cross-plan { entries, count } contract
  *   - JOINs to debug.captured event for r2_key + analyzer_model
  */
-import { applyD1Migrations, env, SELF } from 'cloudflare:test';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import { appendEvent } from '../../src/lib/server/lifecycle-event-log';
-import { enqueue } from '../../../src/lifecycle/pending-review';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import { appendEvent } from "../../src/lib/server/lifecycle-event-log";
+import { enqueue } from "../../../src/lifecycle/pending-review";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -42,48 +42,49 @@ async function seedReviewRow(opts?: { withDebugBundle?: boolean }) {
 
   if (opts?.withDebugBundle) {
     await appendEvent(env.DB, {
-      event_type: 'debug.captured',
-      model_slug: 'anthropic/claude-opus-4-6',
-      task_set_hash: 'h-test',
+      event_type: "debug.captured",
+      model_slug: "anthropic/claude-opus-4-6",
+      task_set_hash: "h-test",
       ts: 1700000000000,
-      actor: 'operator',
+      actor: "operator",
       actor_id: null,
       payload: {
-        session_id: 'sess-1',
-        r2_key: 'lifecycle/anthropic/claude-opus-4-6/h-test/debug.captured/abc.bin',
+        session_id: "sess-1",
+        r2_key:
+          "lifecycle/anthropic/claude-opus-4-6/h-test/debug.captured/abc.bin",
       },
     });
   }
 
   const analysisEv = await appendEvent(env.DB, {
-    event_type: 'analysis.completed',
-    model_slug: 'anthropic/claude-opus-4-6',
-    task_set_hash: 'h-test',
+    event_type: "analysis.completed",
+    model_slug: "anthropic/claude-opus-4-6",
+    task_set_hash: "h-test",
     ts: 1700000001000,
-    actor: 'operator',
+    actor: "operator",
     actor_id: null,
     payload: {
-      analyzer_model: 'anthropic/claude-opus-4-7',
+      analyzer_model: "anthropic/claude-opus-4-7",
       entries_count: 1,
     },
   });
 
   const reviewId = await enqueue(env.DB, {
     analysis_event_id: analysisEv.id,
-    model_slug: 'anthropic/claude-opus-4-6',
+    model_slug: "anthropic/claude-opus-4-6",
     entry: {
-      outcome: 'model_shortcoming',
-      category: 'model_knowledge_gap',
-      concept: 'FlowField CalcFields',
-      alConcept: 'FlowField',
-      description: 'requires CalcFields',
-      errorCode: 'AL0606',
+      outcome: "model_shortcoming",
+      category: "model_knowledge_gap",
+      concept: "FlowField CalcFields",
+      alConcept: "FlowField",
+      description: "requires CalcFields",
+      errorCode: "AL0606",
       generatedCode: 'if Rec."x" > 0 then ...',
       correctPattern: 'Rec.CalcFields("x");',
-      concept_slug_proposed: 'flowfield-calcfields',
+      concept_slug_proposed: "flowfield-calcfields",
       concept_slug_existing_match: null,
       similarity_score: null,
-      confidence: 'medium',
+      confidence: "medium",
     },
     confidence: {
       score: 0.4,
@@ -101,26 +102,28 @@ async function seedReviewRow(opts?: { withDebugBundle?: boolean }) {
   return { reviewId, analysisEventId: analysisEv.id };
 }
 
-describe('GET /api/v1/admin/lifecycle/review/queue', () => {
-  it('returns 401 unauthenticated without CF Access or signed body', async () => {
+describe("GET /api/v1/admin/lifecycle/review/queue", () => {
+  it("returns 401 unauthenticated without CF Access or signed body", async () => {
     const r = await SELF.fetch(
-      'https://x/api/v1/admin/lifecycle/review/queue',
-      { method: 'GET' },
+      "https://x/api/v1/admin/lifecycle/review/queue",
+      { method: "GET" },
     );
     expect(r.status).toBe(401);
     const body = (await r.json()) as { code: string };
-    expect(body.code).toBe('unauthenticated');
+    expect(body.code).toBe("unauthenticated");
   });
 
-  it('returns 401 with malformed CF Access JWT (signature fails)', async () => {
+  it("returns 401 with malformed CF Access JWT (signature fails)", async () => {
     // Even without CF_ACCESS_AUD configured, malformed tokens fail at the
     // misconfigured-env gate (closer to the front of the verifier). Either
     // 401 path satisfies the fail-closed contract.
     const r = await SELF.fetch(
-      'https://x/api/v1/admin/lifecycle/review/queue',
+      "https://x/api/v1/admin/lifecycle/review/queue",
       {
-        method: 'GET',
-        headers: { 'cf-access-jwt-assertion': 'eyJhbGciOiJSUzI1NiJ9.bogus.bogus' },
+        method: "GET",
+        headers: {
+          "cf-access-jwt-assertion": "eyJhbGciOiJSUzI1NiJ9.bogus.bogus",
+        },
       },
     );
     // CF_ACCESS_TEAM_DOMAIN is committed to wrangler.toml but
@@ -132,14 +135,14 @@ describe('GET /api/v1/admin/lifecycle/review/queue', () => {
   });
 });
 
-describe('GET /api/v1/admin/lifecycle/review/queue — payload shape', () => {
+describe("GET /api/v1/admin/lifecycle/review/queue — payload shape", () => {
   // These are documentation tests. Without CF Access wired through the
   // vitest-pool-workers harness we can't fully exercise the 200 path here;
   // the unit suite (cf-access.test.ts) covers the JWT verifier in isolation,
   // and the manual acceptance step in F8.6 covers end-to-end. We do verify
   // that the SELECT JOIN works against the migration by hitting the
   // unauthenticated 401 path AFTER seeding — proving the seed is good.
-  it('seeds without errors when joining analysis + debug events', async () => {
+  it("seeds without errors when joining analysis + debug events", async () => {
     const { reviewId } = await seedReviewRow({ withDebugBundle: true });
     expect(reviewId).toBeGreaterThan(0);
     // Verify the JOIN matches: pending_review JOIN lifecycle_events on
@@ -156,14 +159,16 @@ describe('GET /api/v1/admin/lifecycle/review/queue — payload shape', () => {
                AND dbg.event_type = 'debug.captured'
                AND dbg.id < le.id
         WHERE pr.id = ?`,
-    ).bind(reviewId).first<{ id: number; r2_key: string | null; analyzer_model: string | null }>();
+    ).bind(reviewId).first<
+      { id: number; r2_key: string | null; analyzer_model: string | null }
+    >();
     expect(row?.r2_key).toBe(
-      'lifecycle/anthropic/claude-opus-4-6/h-test/debug.captured/abc.bin',
+      "lifecycle/anthropic/claude-opus-4-6/h-test/debug.captured/abc.bin",
     );
-    expect(row?.analyzer_model).toBe('anthropic/claude-opus-4-7');
+    expect(row?.analyzer_model).toBe("anthropic/claude-opus-4-7");
   });
 
-  it('returns null r2_key when no debug.captured event exists', async () => {
+  it("returns null r2_key when no debug.captured event exists", async () => {
     const { reviewId } = await seedReviewRow({ withDebugBundle: false });
     const row = await env.DB.prepare(
       `SELECT pr.id,

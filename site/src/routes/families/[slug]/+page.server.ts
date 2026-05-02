@@ -1,7 +1,7 @@
-import type { ServerLoad } from '@sveltejs/kit';
-import type { FamilyDetail, FamilyDiff } from '$lib/shared/api-types';
-import { error } from '@sveltejs/kit';
-import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
+import type { ServerLoad } from "@sveltejs/kit";
+import type { FamilyDetail, FamilyDiff } from "$lib/shared/api-types";
+import { error } from "@sveltejs/kit";
+import { checkDebugBundleAvailable } from "$lib/server/lifecycle-debug-bundle";
 
 /**
  * Family page loader. Fetches the existing FamilyDetail payload and the
@@ -23,7 +23,9 @@ import { checkDebugBundleAvailable } from '$lib/server/lifecycle-debug-bundle';
  * baseline_missing shell when no analysis events exist), so any non-200
  * response is a real error — surface via SvelteKit's `error()`.
  */
-export const load: ServerLoad = async ({ params, fetch, depends, setHeaders, platform }) => {
+export const load: ServerLoad = async (
+  { params, fetch, depends, setHeaders, platform },
+) => {
   const slug = params.slug!;
   depends(`app:family:${slug}`);
 
@@ -34,12 +36,16 @@ export const load: ServerLoad = async ({ params, fetch, depends, setHeaders, pla
 
   if (!famR.ok) {
     let body: { error?: string } = {};
-    try { body = await famR.json() as { error?: string }; } catch { /* swallow */ }
+    try {
+      body = await famR.json() as { error?: string };
+    } catch { /* swallow */ }
     throw error(famR.status, body.error ?? `family fetch ${famR.status}`);
   }
   if (!diffR.ok) {
     let body: { error?: string } = {};
-    try { body = await diffR.json() as { error?: string }; } catch { /* swallow */ }
+    try {
+      body = await diffR.json() as { error?: string };
+    } catch { /* swallow */ }
     throw error(diffR.status, body.error ?? `diff fetch ${diffR.status}`);
   }
 
@@ -49,12 +55,12 @@ export const load: ServerLoad = async ({ params, fetch, depends, setHeaders, pla
   // Propagate cache-control from the family endpoint so SvelteKit's response
   // TTL matches the API's (existing /api/v1/families/<slug> emits
   // private,max-age=60).
-  const apiCache = famR.headers.get('cache-control');
-  if (apiCache) setHeaders({ 'cache-control': apiCache });
+  const apiCache = famR.headers.get("cache-control");
+  if (apiCache) setHeaders({ "cache-control": apiCache });
 
   let r2BundleAvailable = false;
   if (
-    diff.status === 'analyzer_mismatch' &&
+    diff.status === "analyzer_mismatch" &&
     diff.from_gen_event_id != null &&
     platform?.env?.LIFECYCLE_BLOBS &&
     platform?.env?.DB

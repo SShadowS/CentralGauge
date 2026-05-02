@@ -1,18 +1,18 @@
-import type { DurableObjectState } from '@cloudflare/workers-types';
-import { eventToRoutes, routePatternMatches } from '../lib/server/sse-routes';
+import type { DurableObjectState } from "@cloudflare/workers-types";
+import { eventToRoutes, routePatternMatches } from "../lib/server/sse-routes";
 
 const MAX_BUFFERED = 100;
-const RECENT_STORAGE_KEY = 'recent';
+const RECENT_STORAGE_KEY = "recent";
 
 export interface BroadcastEvent {
-  type: 'run_finalized' | 'task_set_promoted' | 'shortcoming_added' | 'ping';
+  type: "run_finalized" | "task_set_promoted" | "shortcoming_added" | "ping";
   ts: string;
   [k: string]: unknown;
 }
 
 interface ClientEntry {
   writer: WritableStreamDefaultWriter<Uint8Array>;
-  routes: string[];   // parsed from ?routes= comma list, default ['*']
+  routes: string[]; // parsed from ?routes= comma list, default ['*']
 }
 
 export class LeaderboardBroadcaster {
@@ -32,8 +32,10 @@ export class LeaderboardBroadcaster {
     // the resolved promise and don't pay the round-trip again.
     this.restorePromise = this.state.storage
       .get<BroadcastEvent[]>(RECENT_STORAGE_KEY)
-      .then((stored) => { if (stored) this.recent = stored; })
-      .catch(() => { /* fresh start */ });
+      .then((stored) => {
+        if (stored) this.recent = stored;
+      })
+      .catch(() => {/* fresh start */});
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -41,12 +43,12 @@ export class LeaderboardBroadcaster {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === '/broadcast' && request.method === 'POST') {
+    if (path === "/broadcast" && request.method === "POST") {
       let ev: BroadcastEvent;
       try {
         ev = (await request.json()) as BroadcastEvent;
       } catch {
-        return new Response('Bad JSON', { status: 400 });
+        return new Response("Bad JSON", { status: 400 });
       }
 
       // Append to buffer and evict oldest when over limit
@@ -67,18 +69,24 @@ export class LeaderboardBroadcaster {
       return Response.json({ ok: true, clients: this.clients.size });
     }
 
-    if (path === '/recent' && request.method === 'GET') {
-      const limitParam = url.searchParams.get('limit');
-      const limit = Math.min(limitParam ? parseInt(limitParam, 10) || 20 : 20, MAX_BUFFERED);
+    if (path === "/recent" && request.method === "GET") {
+      const limitParam = url.searchParams.get("limit");
+      const limit = Math.min(
+        limitParam ? parseInt(limitParam, 10) || 20 : 20,
+        MAX_BUFFERED,
+      );
       const events = this.recent.slice(-limit);
       return Response.json({ events });
     }
 
-    if (path === '/subscribe' && request.method === 'GET') {
-      const routesParam = url.searchParams.get('routes');
+    if (path === "/subscribe" && request.method === "GET") {
+      const routesParam = url.searchParams.get("routes");
       const routes = parseRoutesParam(routesParam);
 
-      const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+      const { readable, writable } = new TransformStream<
+        Uint8Array,
+        Uint8Array
+      >();
       const writer = writable.getWriter();
       const entry: ClientEntry = { writer, routes };
       this.clients.add(entry);
@@ -87,7 +95,11 @@ export class LeaderboardBroadcaster {
       // Walk backwards through the full buffer so a route that only
       // appears 30+ events back still gets its replay.
       const initialEvents: BroadcastEvent[] = [];
-      for (let i = this.recent.length - 1; i >= 0 && initialEvents.length < 20; i--) {
+      for (
+        let i = this.recent.length - 1;
+        i >= 0 && initialEvents.length < 20;
+        i--
+      ) {
         const ev = this.recent[i];
         if (matchesClient(ev, entry)) initialEvents.unshift(ev);
       }
@@ -104,8 +116,11 @@ export class LeaderboardBroadcaster {
       // no real events are buffered.
       (async () => {
         try {
-          await writer.write(this.encoder.encode(':\n\n'));
-          await this.writeEvent(writer, { type: 'ping', ts: new Date().toISOString() });
+          await writer.write(this.encoder.encode(":\n\n"));
+          await this.writeEvent(writer, {
+            type: "ping",
+            ts: new Date().toISOString(),
+          });
           for (const ev of initialEvents) {
             await this.writeEvent(writer, ev);
           }
@@ -115,16 +130,16 @@ export class LeaderboardBroadcaster {
       })();
 
       // Clean up on disconnect
-      request.signal.addEventListener('abort', () => {
+      request.signal.addEventListener("abort", () => {
         this.clients.delete(entry);
         writer.close().catch(() => {});
       });
 
       return new Response(readable, {
         headers: {
-          'content-type': 'text/event-stream',
-          'cache-control': 'no-cache, no-store',
-          'x-accel-buffering': 'no',
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache, no-store",
+          "x-accel-buffering": "no",
         },
       });
     }
@@ -134,13 +149,16 @@ export class LeaderboardBroadcaster {
     // receive, WITHOUT actually opening a streaming SSE connection. Avoids
     // miniflare's response-buffering hang on infinite TransformStream bodies
     // while still exercising parseRoutesParam + matchesClient end-to-end.
-    if (path === '/test-match' && request.method === 'GET') {
-      if (request.headers.get('x-test-only') !== '1') {
-        return new Response('Forbidden', { status: 403 });
+    if (path === "/test-match" && request.method === "GET") {
+      if (request.headers.get("x-test-only") !== "1") {
+        return new Response("Forbidden", { status: 403 });
       }
-      const routesParam = url.searchParams.get('routes');
+      const routesParam = url.searchParams.get("routes");
       const routes = parseRoutesParam(routesParam);
-      const entry: ClientEntry = { writer: null as unknown as WritableStreamDefaultWriter<Uint8Array>, routes };
+      const entry: ClientEntry = {
+        writer: null as unknown as WritableStreamDefaultWriter<Uint8Array>,
+        routes,
+      };
       const matched: BroadcastEvent[] = [];
       for (let i = this.recent.length - 1; i >= 0 && matched.length < 20; i--) {
         const ev = this.recent[i];
@@ -153,9 +171,9 @@ export class LeaderboardBroadcaster {
     // the buffer so vitest can shut down workerd cleanly on Windows. Gated
     // behind the `x-test-only: 1` header so it can never be invoked in
     // production via the public route surface.
-    if (path === '/reset' && request.method === 'POST') {
-      if (request.headers.get('x-test-only') !== '1') {
-        return new Response('Forbidden', { status: 403 });
+    if (path === "/reset" && request.method === "POST") {
+      if (request.headers.get("x-test-only") !== "1") {
+        return new Response("Forbidden", { status: 403 });
       }
       await this.closeAllClients();
       this.recent = [];
@@ -163,7 +181,7 @@ export class LeaderboardBroadcaster {
       return Response.json({ ok: true });
     }
 
-    return new Response('Not Found', { status: 404 });
+    return new Response("Not Found", { status: 404 });
   }
 
   // TEST-ONLY helper: invoked by /reset to drain in-memory state so the DO
@@ -177,7 +195,9 @@ export class LeaderboardBroadcaster {
   }
 
   private formatFrame(ev: BroadcastEvent): Uint8Array {
-    return this.encoder.encode(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`);
+    return this.encoder.encode(
+      `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`,
+    );
   }
 
   private async writeEvent(
@@ -204,13 +224,15 @@ export class LeaderboardBroadcaster {
 }
 
 function parseRoutesParam(raw: string | null): string[] {
-  if (!raw) return ['*'];
-  const parts = raw.split(',').map((s) => decodeURIComponent(s).trim()).filter(Boolean);
-  return parts.length > 0 ? parts : ['*'];
+  if (!raw) return ["*"];
+  const parts = raw.split(",").map((s) => decodeURIComponent(s).trim()).filter(
+    Boolean,
+  );
+  return parts.length > 0 ? parts : ["*"];
 }
 
 function matchesClient(ev: BroadcastEvent, entry: ClientEntry): boolean {
   // Heartbeats and reset events always flow.
-  if (ev.type === 'ping') return true;
+  if (ev.type === "ping") return true;
   return routePatternMatches(eventToRoutes(ev), entry.routes);
 }

@@ -9,7 +9,9 @@ export async function goto(_url: string | URL, _opts?: unknown): Promise<void> {
   // no-op
 }
 
-export async function invalidate(_dependency: string | URL | ((url: URL) => boolean)): Promise<void> {
+export async function invalidate(
+  _dependency: string | URL | ((url: URL) => boolean),
+): Promise<void> {
   // no-op
 }
 

@@ -1,6 +1,6 @@
-import { sha256Hex } from '$lib/shared/hash';
-import { canonicalJSON } from '$lib/shared/canonical';
-import { bytesToB64Url, b64UrlToBytes } from '$lib/shared/base64';
+import { sha256Hex } from "$lib/shared/hash";
+import { canonicalJSON } from "$lib/shared/canonical";
+import { b64UrlToBytes, bytesToB64Url } from "$lib/shared/base64";
 
 export async function computeEtag(body: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalJSON(body));
@@ -22,7 +22,7 @@ export async function cachedJson(
   // (ignoring query string nuances, Accept, and any DB-state invalidation we
   // do for KV), so any public cache lifetime here causes stale or cross-variant
   // responses for dynamic API endpoints. Client ETag/304 is preserved below.
-  const cacheControl = opts.cacheControl ?? 'private, max-age=60';
+  const cacheControl = opts.cacheControl ?? "private, max-age=60";
   // `no-store` is a hard "do not cache anywhere" signal; emitting an ETag would
   // invite conditional-request 304s from intermediaries. Skip the ETag path entirely.
   const noStore = /\bno-store\b/.test(cacheControl);
@@ -31,9 +31,9 @@ export async function cachedJson(
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: {
-        'content-type': 'application/json; charset=utf-8',
-        'cache-control': cacheControl,
-        'x-api-version': 'v1',
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": cacheControl,
+        "x-api-version": "v1",
         ...opts.extraHeaders,
       },
     });
@@ -41,12 +41,12 @@ export async function cachedJson(
 
   const etagHex = await computeEtag(body);
   const etag = `"${etagHex}"`;
-  const ifNoneMatch = req.headers.get('if-none-match');
+  const ifNoneMatch = req.headers.get("if-none-match");
 
   const headers: Record<string, string> = {
-    'etag': etag,
-    'cache-control': cacheControl,
-    'x-api-version': 'v1',
+    "etag": etag,
+    "cache-control": cacheControl,
+    "x-api-version": "v1",
     ...opts.extraHeaders,
   };
 
@@ -58,16 +58,16 @@ export async function cachedJson(
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: {
-      'content-type': 'application/json; charset=utf-8',
+      "content-type": "application/json; charset=utf-8",
       ...headers,
     },
   });
 }
 
 function matchesEtag(ifNoneMatch: string, etag: string): boolean {
-  if (ifNoneMatch === '*') return true;
-  for (const raw of ifNoneMatch.split(',')) {
-    const tag = raw.trim().replace(/^W\//, '');
+  if (ifNoneMatch === "*") return true;
+  for (const raw of ifNoneMatch.split(",")) {
+    const tag = raw.trim().replace(/^W\//, "");
     if (tag === etag) return true;
   }
   return false;

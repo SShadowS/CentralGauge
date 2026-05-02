@@ -170,7 +170,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         confidence: r.confidence,
         created_at: r.created_at,
         payload: {
-          nearest_concept_id: cluster.nearest_concept_id ?? r.nearest_concept_id,
+          nearest_concept_id: cluster.nearest_concept_id ??
+            r.nearest_concept_id,
           similarity: cluster.similarity ?? null,
           shortcoming_ids: cluster.shortcoming_ids ?? [],
           sample_descriptions: samples,

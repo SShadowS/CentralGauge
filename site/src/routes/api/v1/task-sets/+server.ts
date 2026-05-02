@@ -1,6 +1,6 @@
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 
 interface TaskSetPayload {
   hash: string;
@@ -9,31 +9,52 @@ interface TaskSetPayload {
   tasks: Array<{
     task_id: string;
     content_hash: string;
-    difficulty: 'easy' | 'medium' | 'hard';
+    difficulty: "easy" | "medium" | "hard";
     category_slug: string;
     manifest: unknown;
   }>;
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const db = platform.env.DB;
 
   try {
     const signed = (await request.json()) as {
       payload: TaskSetPayload;
-      signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
+      signature: {
+        alg: "Ed25519";
+        key_id: number;
+        signed_at: string;
+        value: string;
+      };
       run_id?: string;
       version?: number;
     };
-    if (!signed.signature) throw new ApiError(400, 'missing_signature', 'signature block required');
+    if (!signed.signature) {
+      throw new ApiError(400, "missing_signature", "signature block required");
+    }
     const payload = signed.payload;
-    if (!payload?.hash) throw new ApiError(400, 'bad_payload', 'payload.hash required');
+    if (!payload?.hash) {
+      throw new ApiError(400, "bad_payload", "payload.hash required");
+    }
 
     await verifySignedRequest(
       db,
-      signed as unknown as { signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string }; payload: Record<string, unknown> },
-      'ingest'
+      signed as unknown as {
+        signature: {
+          alg: "Ed25519";
+          key_id: number;
+          signed_at: string;
+          value: string;
+        };
+        payload: Record<string, unknown>;
+      },
+      "ingest",
     );
 
     // Idempotent on (task_set_hash + tasks-populated). Three states:
@@ -51,7 +72,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const existingTaskRows = taskCountRow?.c ?? 0;
     if (existing && existingTaskRows >= payload.task_count) {
       return jsonResponse(
-        { hash: payload.hash, task_count: payload.task_count, status: 'exists' },
+        {
+          hash: payload.hash,
+          task_count: payload.task_count,
+          status: "exists",
+        },
         200,
       );
     }
@@ -60,7 +85,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (!existing) {
       setupStatements.push(
         db
-          .prepare(`INSERT INTO task_sets(hash, created_at, task_count) VALUES (?,?,?)`)
+          .prepare(
+            `INSERT INTO task_sets(hash, created_at, task_count) VALUES (?,?,?)`,
+          )
           .bind(payload.hash, payload.created_at, payload.task_count),
       );
     }
@@ -68,7 +95,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     for (const task of payload.tasks) {
       setupStatements.push(
         db
-          .prepare(`INSERT OR IGNORE INTO task_categories(slug, name) VALUES (?, ?)`)
+          .prepare(
+            `INSERT OR IGNORE INTO task_categories(slug, name) VALUES (?, ?)`,
+          )
           .bind(task.category_slug, task.category_slug),
       );
     }
@@ -103,7 +132,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       }
     }
 
-    const status = existing ? 'backfilled' : 'created';
+    const status = existing ? "backfilled" : "created";
     const httpStatus = existing ? 200 : 201;
     return jsonResponse(
       { hash: payload.hash, task_count: payload.task_count, status },

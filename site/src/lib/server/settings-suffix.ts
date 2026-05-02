@@ -17,10 +17,15 @@ export interface SettingsProfileLike {
   extra_json?: string | null;
 }
 
-export function formatSettingsSuffix(profile: SettingsProfileLike | null): string {
-  if (!profile) return '';
+export function formatSettingsSuffix(
+  profile: SettingsProfileLike | null,
+): string {
+  if (!profile) return "";
   const parts: string[] = [];
-  if (profile.max_tokens !== null && profile.max_tokens !== undefined && profile.max_tokens > 0) {
+  if (
+    profile.max_tokens !== null && profile.max_tokens !== undefined &&
+    profile.max_tokens > 0
+  ) {
     const k = Math.round(profile.max_tokens / 1000);
     parts.push(`${k}K`);
   }
@@ -28,6 +33,6 @@ export function formatSettingsSuffix(profile: SettingsProfileLike | null): strin
     const t = Math.round(profile.temperature * 10) / 10;
     parts.push(`t${t}`);
   }
-  if (parts.length === 0) return '';
-  return ` (${parts.join(', ')})`;
+  if (parts.length === 0) return "";
+  return ` (${parts.join(", ")})`;
 }

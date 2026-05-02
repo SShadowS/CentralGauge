@@ -21,7 +21,7 @@
  * that mapping was a bug in an earlier draft; do not reintroduce.
  */
 
-import type { AppendEventInput } from '../../../../src/lifecycle/types';
+import type { AppendEventInput } from "../../../../src/lifecycle/types";
 
 export interface ResolveInput {
   proposed_slug: string;
@@ -36,7 +36,7 @@ export interface ResolveInput {
   analyzer_model: string;
 }
 
-export type ResolveAction = 'aliased' | 'created' | 'pending';
+export type ResolveAction = "aliased" | "created" | "pending";
 
 export interface ResolveResult {
   /** null when action === 'pending'. */
@@ -81,10 +81,10 @@ export async function resolveConcept(
       // concept_aliases.alias_event_id FK in the next INSERT). The helper
       // serializes the payload object internally; pass plain objects.
       const ev = await appendEvent({
-        event_type: 'concept.aliased',
+        event_type: "concept.aliased",
         model_slug: modelSlug,
         task_set_hash: taskSetHash,
-        actor: 'operator',
+        actor: "operator",
         actor_id: null,
         payload: {
           alias_slug: input.proposed_slug,
@@ -112,7 +112,7 @@ export async function resolveConcept(
         .run();
       return {
         concept_id: row.id,
-        action: 'aliased',
+        action: "aliased",
         emitted_event_id: ev.id,
       };
     }
@@ -124,7 +124,7 @@ export async function resolveConcept(
   // for INSERTing pending_review with a real analysis_event_id (NOT a 0
   // placeholder — that violates the FK NOT NULL REFERENCES lifecycle_events(id)).
   if (sim >= REVIEW_LOWER_BOUND && sim < AUTO_MERGE_THRESHOLD) {
-    return { concept_id: null, action: 'pending', emitted_event_id: null };
+    return { concept_id: null, action: "pending", emitted_event_id: null };
   }
 
   // Tier 3: auto-create. INSERT concept first (need concept_id for the event
@@ -158,10 +158,10 @@ export async function resolveConcept(
         nowMs,
       )
       .first<{ id: number }>();
-    if (!inserted) throw new Error('concept insert returned no row');
+    if (!inserted) throw new Error("concept insert returned no row");
   } catch (e) {
     const msg = String(e instanceof Error ? e.message : e);
-    if (msg.includes('UNIQUE constraint failed: concepts.slug')) {
+    if (msg.includes("UNIQUE constraint failed: concepts.slug")) {
       // Race partner already created this concept. Recover as alias-merge.
       const existing = await db
         .prepare(
@@ -175,10 +175,10 @@ export async function resolveConcept(
         throw e;
       }
       const ev = await appendEvent({
-        event_type: 'concept.aliased',
+        event_type: "concept.aliased",
         model_slug: modelSlug,
         task_set_hash: taskSetHash,
-        actor: 'operator',
+        actor: "operator",
         actor_id: null,
         payload: {
           alias_slug: input.proposed_slug,
@@ -207,7 +207,7 @@ export async function resolveConcept(
         .run();
       return {
         concept_id: existing.id,
-        action: 'aliased',
+        action: "aliased",
         emitted_event_id: ev.id,
       };
     }
@@ -218,10 +218,10 @@ export async function resolveConcept(
   // payload (per strategic plan: payload = { concept_id, slug,
   // llm_proposed_slug, similarity_to_nearest, analyzer_model }).
   const ev = await appendEvent({
-    event_type: 'concept.created',
+    event_type: "concept.created",
     model_slug: modelSlug,
     task_set_hash: taskSetHash,
-    actor: 'operator',
+    actor: "operator",
     actor_id: null,
     payload: {
       concept_id: inserted.id,
@@ -240,7 +240,7 @@ export async function resolveConcept(
 
   return {
     concept_id: inserted.id,
-    action: 'created',
+    action: "created",
     emitted_event_id: ev.id,
   };
 }

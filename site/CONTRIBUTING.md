@@ -280,8 +280,8 @@ drill so the production `[vars]` table never has to flip during
 business hours; the off-state remains reachable via the per-version
 preview URL.
 
-The drill counts toward the §13 done-criteria item *Rollback drill
-executed*. The full canary review checklist (operations.md) was also
+The drill counts toward the §13 done-criteria item _Rollback drill
+executed_. The full canary review checklist (operations.md) was also
 walked for the 5 SSE-subscribing routes (`/leaderboard`, `/runs`,
 `/runs/<id>`, `/models/<slug>`, `/families/<slug>`) at the same time.
 
@@ -462,6 +462,7 @@ then pin relative to that wrapper's edge, not the viewport. With `top:
 covering it.
 
 **Fix options (pick one):**
+
 - Drop sticky if the table fits on screen — simplest, what the leaderboard
   uses today.
 - Make the wrap NOT a scroll container (`overflow: visible`) and instead

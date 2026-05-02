@@ -3,7 +3,7 @@ export type SqlParams = (string | number | null | Uint8Array | ArrayBuffer)[];
 export async function getFirst<T>(
   db: D1Database,
   sql: string,
-  params: SqlParams
+  params: SqlParams,
 ): Promise<T | null> {
   const stmt = db.prepare(sql).bind(...params);
   const row = await stmt.first<T>();
@@ -13,7 +13,7 @@ export async function getFirst<T>(
 export async function getAll<T>(
   db: D1Database,
   sql: string,
-  params: SqlParams
+  params: SqlParams,
 ): Promise<T[]> {
   const stmt = db.prepare(sql).bind(...params);
   const res = await stmt.all<T>();
@@ -28,20 +28,20 @@ export interface BatchStatement {
 // D1 batch() is atomic per-replica. Cross-replica consistency is eventual.
 export async function runBatch(
   db: D1Database,
-  statements: BatchStatement[]
+  statements: BatchStatement[],
 ): Promise<void> {
-  const prepared = statements.map(s => db.prepare(s.sql).bind(...s.params));
+  const prepared = statements.map((s) => db.prepare(s.sql).bind(...s.params));
   await db.batch(prepared);
 }
 
 export async function insertAndReturnId(
   db: D1Database,
   sql: string,
-  params: SqlParams
+  params: SqlParams,
 ): Promise<number> {
   const res = await db.prepare(sql).bind(...params).run();
   if (res.meta?.last_row_id == null) {
-    throw new Error('insertAndReturnId: no last_row_id in result meta');
+    throw new Error("insertAndReturnId: no last_row_id in result meta");
   }
   return res.meta.last_row_id;
 }

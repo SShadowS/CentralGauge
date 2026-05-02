@@ -1,7 +1,7 @@
-import type { RequestHandler } from './$types';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
-import { computeSeverity } from '$lib/server/severity';
+import type { RequestHandler } from "./$types";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
+import { computeSeverity } from "$lib/server/severity";
 
 interface RawRow {
   al_concept: string;
@@ -15,7 +15,7 @@ interface RawRow {
   affected_json: string;
 }
 
-const CACHE_NAME = 'cg-shortcomings';
+const CACHE_NAME = "cg-shortcomings";
 const CACHE_TTL_S = 60;
 
 export const GET: RequestHandler = async ({ request, platform }) => {
@@ -69,7 +69,9 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     );
 
     const data = rows.map((r) => {
-      let affected: Array<{ slug: string; display_name: string; occurrences: number }> = [];
+      let affected: Array<
+        { slug: string; display_name: string; occurrences: number }
+      > = [];
       try {
         affected = JSON.parse(r.affected_json) as typeof affected;
       } catch {
@@ -84,20 +86,24 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         models_affected: Number(r.models_affected ?? 0),
         occurrence_count: occ,
         severity,
-        first_seen: r.first_seen ?? '',
-        last_seen: r.last_seen ?? '',
+        first_seen: r.first_seen ?? "",
+        last_seen: r.last_seen ?? "",
         example_run_id: r.example_run_id,
         example_task_id: r.example_task_id,
         affected_models: affected,
       };
     });
 
-    const body = JSON.stringify({ data, generated_at: new Date().toISOString() });
+    const body = JSON.stringify({
+      data,
+      generated_at: new Date().toISOString(),
+    });
     const response = new Response(body, {
       status: 200,
       headers: {
-        'content-type': 'application/json',
-        'cache-control': `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=300`,
+        "content-type": "application/json",
+        "cache-control":
+          `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=300`,
       },
     });
     // Inline put — NOT ctx.waitUntil — so the next request (and tests)

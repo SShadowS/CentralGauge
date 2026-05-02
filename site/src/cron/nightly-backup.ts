@@ -24,7 +24,7 @@ export interface NightlyBackupEnv {
  */
 export async function runNightlyBackup(
   env: NightlyBackupEnv,
-  now: Date = new Date()
+  now: Date = new Date(),
 ): Promise<string> {
   // Exclude:
   //   * `sqlite_*`           - SQLite internals (e.g. sqlite_sequence)
@@ -45,7 +45,7 @@ export async function runNightlyBackup(
          AND name NOT LIKE '_cf_%'
          AND name NOT LIKE '%_fts'
          AND name NOT LIKE '%_fts_%'
-     ORDER BY name`
+     ORDER BY name`,
   ).all<{ name: string }>();
 
   const lines: string[] = [];
@@ -54,8 +54,8 @@ export async function runNightlyBackup(
   // deferred so the alphabetical emission order doesn't trip FK constraints
   // at COMMIT time.
   lines.push(`-- CentralGauge D1 backup ${now.toISOString()}`);
-  lines.push('BEGIN TRANSACTION;');
-  lines.push('PRAGMA defer_foreign_keys = ON;');
+  lines.push("BEGIN TRANSACTION;");
+  lines.push("PRAGMA defer_foreign_keys = ON;");
 
   for (const t of tables.results) {
     const rows = await env.DB
@@ -65,19 +65,19 @@ export async function runNightlyBackup(
       const cols = Object.keys(r);
       const vals = cols.map((c) => sqlEscape(r[c]));
       lines.push(
-        `INSERT INTO ${t.name}(${cols.join(',')}) VALUES(${vals.join(',')});`
+        `INSERT INTO ${t.name}(${cols.join(",")}) VALUES(${vals.join(",")});`,
       );
     }
   }
 
-  lines.push('COMMIT;');
+  lines.push("COMMIT;");
 
   const yyyy = now.getUTCFullYear();
-  const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(now.getUTCDate()).padStart(2, '0');
+  const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(now.getUTCDate()).padStart(2, "0");
   const key = `backups/d1-${yyyy}${mm}${dd}.sql`;
 
-  const text = lines.join('\n') + '\n';
+  const text = lines.join("\n") + "\n";
   await env.BLOBS.put(key, text);
   return key;
 }
@@ -93,13 +93,13 @@ export async function runNightlyBackup(
  *   other          -> quoted string with single quotes doubled
  */
 function sqlEscape(v: unknown): string {
-  if (v === null || v === undefined) return 'NULL';
-  if (typeof v === 'number' || typeof v === 'bigint') return String(v);
+  if (v === null || v === undefined) return "NULL";
+  if (typeof v === "number" || typeof v === "bigint") return String(v);
   if (v instanceof ArrayBuffer || v instanceof Uint8Array) {
     const bytes = v instanceof Uint8Array ? v : new Uint8Array(v);
     const hex = Array.from(bytes)
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
     return `x'${hex}'`;
   }
   return `'${String(v).replace(/'/g, "''")}'`;

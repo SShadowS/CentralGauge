@@ -15,24 +15,27 @@
 //      them through the same relative path _worker.js already uses.
 //   3. Is idempotent: re-running produces no duplicate exports.
 
-import { readFile, writeFile, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { access, readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const siteRoot = resolve(__dirname, '..');
+const siteRoot = resolve(__dirname, "..");
 
-const workerPath = resolve(siteRoot, '.svelte-kit/cloudflare/_worker.js');
-const hooksPath = resolve(siteRoot, '.svelte-kit/output/server/entries/hooks.server.js');
+const workerPath = resolve(siteRoot, ".svelte-kit/cloudflare/_worker.js");
+const hooksPath = resolve(
+  siteRoot,
+  ".svelte-kit/output/server/entries/hooks.server.js",
+);
 
 // Relative import path used inside _worker.js. The existing `Server` import
 // is `./../output/server/index.js`, so the hooks chunk sits alongside at
 // `./../output/server/entries/hooks.server.js`.
-const hooksImportSpecifier = './../output/server/entries/hooks.server.js';
+const hooksImportSpecifier = "./../output/server/entries/hooks.server.js";
 
-const REQUIRED_NAMED_EXPORTS = ['LeaderboardBroadcaster', 'scheduled'];
-const MARKER = '// --- wrap-worker-exports: top-level bindings ---';
+const REQUIRED_NAMED_EXPORTS = ["LeaderboardBroadcaster", "scheduled"];
+const MARKER = "// --- wrap-worker-exports: top-level bindings ---";
 
 async function fileExists(path) {
   try {
@@ -47,17 +50,17 @@ async function main() {
   if (!(await fileExists(workerPath))) {
     throw new Error(
       `Missing build artifact: ${workerPath}\n` +
-        'Run `npm run build` (or `vite build`) before wrap-worker-exports.'
+        "Run `npm run build` (or `vite build`) before wrap-worker-exports.",
     );
   }
   if (!(await fileExists(hooksPath))) {
     throw new Error(
       `Missing build artifact: ${hooksPath}\n` +
-        'The adapter did not emit a hooks.server.js entry. Check that src/hooks.server.ts exists.'
+        "The adapter did not emit a hooks.server.js entry. Check that src/hooks.server.ts exists.",
     );
   }
 
-  const hooksSource = await readFile(hooksPath, 'utf8');
+  const hooksSource = await readFile(hooksPath, "utf8");
   for (const name of REQUIRED_NAMED_EXPORTS) {
     // Accept either individual `export { X }` or grouped `export { A, X, B }`
     // plus direct `export function X` / `export class X` forms.
@@ -71,28 +74,27 @@ async function main() {
       throw new Error(
         `hooks.server.js does not export '${name}'.\n` +
           `Inspected: ${hooksPath}\n` +
-          'The post-build re-export cannot be wired up.'
+          "The post-build re-export cannot be wired up.",
       );
     }
   }
 
-  let workerSource = await readFile(workerPath, 'utf8');
+  let workerSource = await readFile(workerPath, "utf8");
   if (workerSource.includes(MARKER)) {
     return; // already wrapped
   }
 
-  const appendix =
-    '\n' +
+  const appendix = "\n" +
     MARKER +
-    '\n' +
-    `export { ${REQUIRED_NAMED_EXPORTS.join(', ')} } from ` +
+    "\n" +
+    `export { ${REQUIRED_NAMED_EXPORTS.join(", ")} } from ` +
     `'${hooksImportSpecifier}';\n`;
 
   workerSource += appendix;
-  await writeFile(workerPath, workerSource, 'utf8');
+  await writeFile(workerPath, workerSource, "utf8");
 }
 
 main().catch((err) => {
-  console.error('[wrap-worker-exports] failed:', err.message);
+  console.error("[wrap-worker-exports] failed:", err.message);
   process.exit(1);
 });

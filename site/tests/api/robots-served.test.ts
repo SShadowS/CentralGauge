@@ -1,33 +1,35 @@
-import { SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { SELF } from "cloudflare:test";
+import { describe, expect, it } from "vitest";
 
-describe('GET /robots.txt', () => {
-  it('returns 200 with text/plain content-type', async () => {
-    const res = await SELF.fetch('http://x/robots.txt');
+describe("GET /robots.txt", () => {
+  it("returns 200 with text/plain content-type", async () => {
+    const res = await SELF.fetch("http://x/robots.txt");
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type') ?? '').toContain('text/plain');
+    expect(res.headers.get("content-type") ?? "").toContain("text/plain");
   });
 
-  it('contains User-agent: * directive', async () => {
-    const res = await SELF.fetch('http://x/robots.txt');
+  it("contains User-agent: * directive", async () => {
+    const res = await SELF.fetch("http://x/robots.txt");
     const body = await res.text();
-    expect(body).toContain('User-agent: *');
+    expect(body).toContain("User-agent: *");
   });
 
-  it('contains Allow: / directive (no global Disallow)', async () => {
-    const res = await SELF.fetch('http://x/robots.txt');
+  it("contains Allow: / directive (no global Disallow)", async () => {
+    const res = await SELF.fetch("http://x/robots.txt");
     const body = await res.text();
-    expect(body).toContain('Allow: /');
+    expect(body).toContain("Allow: /");
   });
 
-  it('contains Sitemap: pointer to absolute URL', async () => {
-    const res = await SELF.fetch('http://x/robots.txt');
+  it("contains Sitemap: pointer to absolute URL", async () => {
+    const res = await SELF.fetch("http://x/robots.txt");
     const body = await res.text();
-    expect(body).toMatch(/Sitemap:\s+https:\/\/centralgauge\.sshadows\.workers\.dev\/sitemap\.xml/);
+    expect(body).toMatch(
+      /Sitemap:\s+https:\/\/centralgauge\.sshadows\.workers\.dev\/sitemap\.xml/,
+    );
   });
 
-  it('does NOT contain a wildcard Disallow (would block all crawlers)', async () => {
-    const res = await SELF.fetch('http://x/robots.txt');
+  it("does NOT contain a wildcard Disallow (would block all crawlers)", async () => {
+    const res = await SELF.fetch("http://x/robots.txt");
     const body = await res.text();
     expect(body).not.toMatch(/^Disallow:\s+\/$/m);
   });

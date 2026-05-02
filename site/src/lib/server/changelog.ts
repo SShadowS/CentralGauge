@@ -25,7 +25,7 @@
  * descending by date so newest is first regardless of file order.
  */
 
-import type { ChangelogEntry } from '$lib/shared/api-types';
+import type { ChangelogEntry } from "$lib/shared/api-types";
 
 /**
  * Convert a title like `P7 — Stat parity restored` to `p7-stat-parity-restored`.
@@ -38,8 +38,8 @@ import type { ChangelogEntry } from '$lib/shared/api-types';
 export function slugifyTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 /** Match `## Title text (YYYY-MM-DD)` at the start of a line. */
@@ -56,7 +56,7 @@ const ENTRY_HEADER_RE = /^##\s+(.+?)\s+\((\d{4}-\d{2}-\d{2})\)\s*$/;
  * the first matching header (preamble, H1) are discarded.
  */
 export function parseChangelog(markdown: string): ChangelogEntry[] {
-  if (!markdown || typeof markdown !== 'string') return [];
+  if (!markdown || typeof markdown !== "string") return [];
 
   const lines = markdown.split(/\r?\n/);
   const entries: ChangelogEntry[] = [];
@@ -69,13 +69,18 @@ export function parseChangelog(markdown: string): ChangelogEntry[] {
     if (currentTitle === null || currentDate === null) return;
     // Trim leading/trailing blank lines from the body without disturbing
     // intentional blanks between paragraphs.
-    while (currentBody.length > 0 && currentBody[0].trim() === '') currentBody.shift();
-    while (currentBody.length > 0 && currentBody[currentBody.length - 1].trim() === '') currentBody.pop();
+    while (currentBody.length > 0 && currentBody[0].trim() === "") {
+      currentBody.shift();
+    }
+    while (
+      currentBody.length > 0 &&
+      currentBody[currentBody.length - 1].trim() === ""
+    ) currentBody.pop();
     entries.push({
       date: currentDate,
       title: currentTitle,
       slug: slugifyTitle(currentTitle),
-      body: currentBody.join('\n'),
+      body: currentBody.join("\n"),
     });
   };
 

@@ -30,7 +30,11 @@
 
 const RETRY_DELAYS_MS = [1000, 3000, 10_000];
 
-export type EventSourceStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+export type EventSourceStatus =
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "disconnected";
 
 export interface EventSourceHandle {
   readonly status: EventSourceStatus;
@@ -46,15 +50,18 @@ interface InternalState {
   handlers: Map<string, Set<(ev: MessageEvent) => void>>;
 }
 
-export function useEventSource(routes: string[], opts: { url?: string } = {}): EventSourceHandle {
-  const baseUrl = opts.url ?? '/api/v1/events/live';
-  const routeParam = encodeURIComponent(routes.join(','));
+export function useEventSource(
+  routes: string[],
+  opts: { url?: string } = {},
+): EventSourceHandle {
+  const baseUrl = opts.url ?? "/api/v1/events/live";
+  const routeParam = encodeURIComponent(routes.join(","));
   const fullUrl = `${baseUrl}?routes=${routeParam}`;
 
   // Reactive status — $state is a compile-time transform that requires
   // the .svelte.ts file extension. Reads via the getter below pick up
   // every transition.
-  let status = $state<EventSourceStatus>('connecting');
+  let status = $state<EventSourceStatus>("connecting");
 
   const state: InternalState = {
     attempt: 0,
@@ -71,8 +78,8 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
 
     es.onopen = () => {
       if (state.disposed) return;
-      status = 'connected';
-      state.attempt = 0;   // reset on successful open
+      status = "connected";
+      state.attempt = 0; // reset on successful open
     };
 
     es.onerror = () => {
@@ -80,10 +87,10 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
       es.close();
       state.source = null;
       if (state.attempt >= RETRY_DELAYS_MS.length) {
-        status = 'disconnected';
+        status = "disconnected";
         return;
       }
-      status = 'reconnecting';
+      status = "reconnecting";
       const delay = RETRY_DELAYS_MS[state.attempt];
       state.attempt += 1;
       state.retryTimer = setTimeout(open, delay);
@@ -115,13 +122,15 @@ export function useEventSource(routes: string[], opts: { url?: string } = {}): E
     state.source?.close();
     state.source = null;
     state.handlers.clear();
-    status = 'disconnected';
+    status = "disconnected";
   }
 
   open();
 
   return {
-    get status() { return status; },
+    get status() {
+      return status;
+    },
     on,
     dispose,
   };

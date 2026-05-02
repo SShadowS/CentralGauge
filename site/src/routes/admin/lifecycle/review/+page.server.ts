@@ -6,7 +6,7 @@
  * authenticateAdminRequest gate on /api/v1/admin/lifecycle/review/queue
  * passes here.
  */
-import type { PageServerLoad } from './$types';
+import type { PageServerLoad } from "./$types";
 
 export interface ReviewEntry {
   id: number;
@@ -28,7 +28,7 @@ export interface ReviewEntry {
       concept_slug_proposed: string;
       concept_slug_existing_match?: string | null;
       similarity_score?: number | null;
-      confidence?: 'high' | 'medium' | 'low';
+      confidence?: "high" | "medium" | "low";
       // Optional rationale wording; older entries may omit it.
       rationale?: string;
       // Plan D-data nests cluster metadata here.
@@ -58,7 +58,7 @@ export interface ReviewEntry {
 }
 
 export const load: PageServerLoad = async ({ fetch }) => {
-  const r = await fetch('/api/v1/admin/lifecycle/review/queue');
+  const r = await fetch("/api/v1/admin/lifecycle/review/queue");
   if (!r.ok) {
     // Surface a clean error instead of crashing — the operator UI shows
     // the upstream code so they can act (re-auth via CF Access if 401,

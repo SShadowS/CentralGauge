@@ -1,6 +1,6 @@
-import { env } from 'cloudflare:test';
+import { env } from "cloudflare:test";
 
-export { resetDb } from './reset-db';
+export { resetDb } from "./reset-db";
 
 interface Concept {
   al_concept: string;
@@ -20,11 +20,13 @@ interface SeedShortcomingsOpts {
  *
  * Default fixture: 2 models, 2 concepts (one shared across both models).
  */
-export async function seedShortcomingsAcrossModels(opts: SeedShortcomingsOpts = {}): Promise<void> {
-  const models = opts.models ?? ['claude-sonnet-4', 'gpt-4o'];
+export async function seedShortcomingsAcrossModels(
+  opts: SeedShortcomingsOpts = {},
+): Promise<void> {
+  const models = opts.models ?? ["claude-sonnet-4", "gpt-4o"];
   const concepts = opts.concepts ?? [
-    { al_concept: 'Missing semicolon', occurrences: 3 },
-    { al_concept: 'Wrong DataItem', occurrences: 1 },
+    { al_concept: "Missing semicolon", occurrences: 3 },
+    { al_concept: "Wrong DataItem", occurrences: 1 },
   ];
 
   // 1. Family + models + supporting catalog rows.
@@ -63,7 +65,22 @@ export async function seedShortcomingsAcrossModels(opts: SeedShortcomingsOpts = 
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
-      .bind(runId, 'ts', id, 's', 'rig', '2026-04-01T00:00:00Z', '2026-04-01T01:00:00Z', 'completed', 'claimed', 'v1', 'sig', '2026-04-01T00:00:00Z', 1, new Uint8Array([0]))
+      .bind(
+        runId,
+        "ts",
+        id,
+        "s",
+        "rig",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
+      )
       .run();
   }
 
@@ -86,8 +103,8 @@ export async function seedShortcomingsAcrossModels(opts: SeedShortcomingsOpts = 
         `Description for ${c.al_concept}`,
         `Correct pattern for ${c.al_concept}`,
         `shortcomings/${scId}.al.zst`,
-        '2026-01-01T00:00:00Z',
-        '2026-04-01T00:00:00Z',
+        "2026-01-01T00:00:00Z",
+        "2026-04-01T00:00:00Z",
       ).run();
       for (let oi = 0; oi < c.occurrences; oi++) {
         const taskId = `easy/a-${scId}-${oi}`;
@@ -97,7 +114,7 @@ export async function seedShortcomingsAcrossModels(opts: SeedShortcomingsOpts = 
         ).bind(resultId, runId, taskId, 1, 0, 0.0, 1, 3, 0).run();
         await env.DB.prepare(
           `INSERT INTO shortcoming_occurrences(shortcoming_id,result_id,task_id,error_code) VALUES (?,?,?,?)`,
-        ).bind(scId, resultId, taskId, 'AL0000').run();
+        ).bind(scId, resultId, taskId, "AL0000").run();
         resultId += 1;
       }
       scId += 1;
@@ -151,16 +168,33 @@ export async function seedSmokeData(opts: SeedSmokeOpts = {}): Promise<void> {
   // Insert runs in descending started_at so palette ordering is observable.
   const stmts: D1PreparedStatement[] = [];
   for (let i = 0; i < runCount; i++) {
-    const id = `run-${String(i).padStart(4, '0')}`;
+    const id = `run-${String(i).padStart(4, "0")}`;
     const modelId = (i % 3) + 1;
     // Started_at: most recent first
     const minutesAgo = i;
-    const startedAt = new Date(Date.UTC(2026, 3, 27, 12, 0, 0) - minutesAgo * 60_000).toISOString();
+    const startedAt = new Date(
+      Date.UTC(2026, 3, 27, 12, 0, 0) - minutesAgo * 60_000,
+    ).toISOString();
     stmts.push(
       env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ).bind(id, 'ts', modelId, 's', 'rig', startedAt, startedAt, 'completed', 'claimed', 'v1', 'sig', startedAt, 1, new Uint8Array([0])),
+      ).bind(
+        id,
+        "ts",
+        modelId,
+        "s",
+        "rig",
+        startedAt,
+        startedAt,
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        startedAt,
+        1,
+        new Uint8Array([0]),
+      ),
     );
   }
   if (stmts.length > 0) {

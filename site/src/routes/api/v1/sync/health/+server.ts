@@ -1,7 +1,7 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
 
 const STALE_SECONDS = 24 * 3600;
 
@@ -49,14 +49,16 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         : Number.POSITIVE_INFINITY;
       // Clamp negative lag (clock skew / future timestamps) to 0 so operators don't
       // see nonsensical "-42 seconds ago" rows.
-      const lagSeconds = Number.isFinite(lagMs) ? Math.max(0, Math.floor(lagMs / 1000)) : null;
+      const lagSeconds = Number.isFinite(lagMs)
+        ? Math.max(0, Math.floor(lagMs / 1000))
+        : null;
       const status = activeKeys === 0 && revokedKeys > 0
-        ? 'revoked'
+        ? "revoked"
         : !r.active_last_used_at
-          ? 'never_used'
-          : lagSeconds! > STALE_SECONDS
-            ? 'stale'
-            : 'healthy';
+        ? "never_used"
+        : lagSeconds! > STALE_SECONDS
+        ? "stale"
+        : "healthy";
       return {
         machine_id: r.machine_id,
         last_used_at: r.active_last_used_at,
@@ -69,14 +71,16 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 
     const overall = {
       total_machines: machines.length,
-      healthy: machines.filter((m) => m.status === 'healthy').length,
-      stale: machines.filter((m) => m.status === 'stale').length,
-      revoked: machines.filter((m) => m.status === 'revoked').length,
-      never_used: machines.filter((m) => m.status === 'never_used').length,
+      healthy: machines.filter((m) => m.status === "healthy").length,
+      stale: machines.filter((m) => m.status === "stale").length,
+      revoked: machines.filter((m) => m.status === "revoked").length,
+      never_used: machines.filter((m) => m.status === "never_used").length,
       generated_at: new Date(now).toISOString(),
     };
 
-    return cachedJson(request, { machines, overall }, { cacheControl: 'no-store' });
+    return cachedJson(request, { machines, overall }, {
+      cacheControl: "no-store",
+    });
   } catch (err) {
     return errorResponse(err);
   }

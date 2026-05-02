@@ -24,7 +24,7 @@
  * - 307/308: preserve method (POST stays POST). Not relevant here —
  *   `/leaderboard` had no POST handler.
  */
-import type { RequestHandler } from './$types';
+import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = ({ url }) => {
   // Preserve the query string verbatim. `url.search` is `''` for no
@@ -35,7 +35,7 @@ export const GET: RequestHandler = ({ url }) => {
       location: `/${url.search}`,
       // 1-hour cache; NOT immutable. Post-deletion-day clients re-fetch
       // within the hour and learn the URL is gone. See architect I4.
-      'cache-control': 'public, max-age=3600',
+      "cache-control": "public, max-age=3600",
     },
   });
 };

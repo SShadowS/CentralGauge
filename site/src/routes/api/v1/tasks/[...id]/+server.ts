@@ -1,7 +1,7 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll, getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll, getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
@@ -23,7 +23,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
        AND t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
       [params.id!],
     );
-    if (!task) throw new ApiError(404, 'task_not_found', `No task '${params.id}' in current set`);
+    if (!task) {
+      throw new ApiError(
+        404,
+        "task_not_found",
+        `No task '${params.id}' in current set`,
+      );
+    }
 
     const solvedBy = await getAll<{
       model_slug: string;
@@ -53,7 +59,11 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     try {
       manifest = JSON.parse(task.manifest_json);
     } catch {
-      throw new ApiError(500, 'manifest_corrupt', `Task '${task.id}' has corrupt manifest`);
+      throw new ApiError(
+        500,
+        "manifest_corrupt",
+        `Task '${task.id}' has corrupt manifest`,
+      );
     }
 
     return cachedJson(request, {
@@ -70,8 +80,12 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         return {
           model_slug: r.model_slug,
           model_display: r.model_display,
-          attempt_1_passed: r.attempt_1_passed === null ? null : +(r.attempt_1_passed),
-          attempt_2_passed: r.attempt_2_passed === null ? null : +(r.attempt_2_passed),
+          attempt_1_passed: r.attempt_1_passed === null
+            ? null
+            : +(r.attempt_1_passed),
+          attempt_2_passed: r.attempt_2_passed === null
+            ? null
+            : +(r.attempt_2_passed),
           runs_total: runsTotal,
           avg_score: r.avg_score === null ? null : +(r.avg_score),
         };

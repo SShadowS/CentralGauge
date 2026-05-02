@@ -1,8 +1,8 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
-import { computeModelAggregates } from '$lib/server/model-aggregates';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
+import { computeModelAggregates } from "$lib/server/model-aggregates";
 
 interface ModelRow {
   id: number;
@@ -28,7 +28,15 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 
     const allModelIds = rows.map((r) => r.id);
     const aggMap = allModelIds.length === 0
-      ? new Map<number, { run_count: number; verified_runs: number; avg_score: number | null; last_run_at: string | null }>()
+      ? new Map<
+        number,
+        {
+          run_count: number;
+          verified_runs: number;
+          avg_score: number | null;
+          last_run_at: string | null;
+        }
+      >()
       : await computeModelAggregates(env.DB, { modelIds: allModelIds });
 
     const data = rows.map((r) => {

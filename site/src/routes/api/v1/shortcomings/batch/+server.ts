@@ -1,11 +1,11 @@
-import type { RequestHandler } from './$types';
-import { verifySignedRequest } from '$lib/server/signature';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { broadcastEvent } from '$lib/server/broadcaster';
-import { resolveConcept } from '$lib/server/concept-resolver';
-import { invalidateConcept } from '$lib/server/concept-cache';
-import { appendEvent } from '$lib/server/lifecycle-event-log';
-import { SLUG_REGEX } from '$lib/shared/slug';
+import type { RequestHandler } from "./$types";
+import { verifySignedRequest } from "$lib/server/signature";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { broadcastEvent } from "$lib/server/broadcaster";
+import { resolveConcept } from "$lib/server/concept-resolver";
+import { invalidateConcept } from "$lib/server/concept-cache";
+import { appendEvent } from "$lib/server/lifecycle-event-log";
+import { SLUG_REGEX } from "$lib/shared/slug";
 
 interface ShortcomingOccurrence {
   result_id: number;
@@ -32,100 +32,141 @@ interface ShortcomingItem {
 function validateOccurrence(
   occ: unknown,
   shortIdx: number,
-  occIdx: number
+  occIdx: number,
 ): ShortcomingOccurrence {
   const o = occ as Record<string, unknown>;
   const { result_id, task_id, error_code } = o;
   if (!Number.isInteger(result_id) || (result_id as number) <= 0) {
     throw new ApiError(
       400,
-      'bad_payload',
-      `shortcomings[${shortIdx}].occurrences[${occIdx}].result_id must be a positive integer`
+      "bad_payload",
+      `shortcomings[${shortIdx}].occurrences[${occIdx}].result_id must be a positive integer`,
     );
   }
-  if (typeof task_id !== 'string' || task_id.length === 0) {
+  if (typeof task_id !== "string" || task_id.length === 0) {
     throw new ApiError(
       400,
-      'bad_payload',
-      `shortcomings[${shortIdx}].occurrences[${occIdx}].task_id must be a non-empty string`
+      "bad_payload",
+      `shortcomings[${shortIdx}].occurrences[${occIdx}].task_id must be a non-empty string`,
     );
   }
   return {
     result_id: result_id as number,
     task_id,
-    error_code: typeof error_code === 'string' ? error_code : null
+    error_code: typeof error_code === "string" ? error_code : null,
   };
 }
 
-function validateShortcomingItem(item: unknown, index: number): ShortcomingItem {
+function validateShortcomingItem(
+  item: unknown,
+  index: number,
+): ShortcomingItem {
   const it = item as Record<string, unknown>;
 
-  if (typeof it.al_concept !== 'string' || it.al_concept.length === 0) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].al_concept must be a non-empty string`);
-  }
-  if (typeof it.concept !== 'string' || it.concept.length === 0) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].concept must be a non-empty string`);
-  }
-  if (typeof it.description !== 'string' || it.description.length === 0) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].description must be a non-empty string`);
-  }
-  if (typeof it.correct_pattern !== 'string' || it.correct_pattern.length === 0) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].correct_pattern must be a non-empty string`);
-  }
-  if (typeof it.incorrect_pattern_sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(it.incorrect_pattern_sha256)) {
+  if (typeof it.al_concept !== "string" || it.al_concept.length === 0) {
     throw new ApiError(
       400,
-      'bad_payload',
-      `shortcomings[${index}].incorrect_pattern_sha256 must be a 64-char hex string`
+      "bad_payload",
+      `shortcomings[${index}].al_concept must be a non-empty string`,
+    );
+  }
+  if (typeof it.concept !== "string" || it.concept.length === 0) {
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].concept must be a non-empty string`,
+    );
+  }
+  if (typeof it.description !== "string" || it.description.length === 0) {
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].description must be a non-empty string`,
+    );
+  }
+  if (
+    typeof it.correct_pattern !== "string" || it.correct_pattern.length === 0
+  ) {
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].correct_pattern must be a non-empty string`,
+    );
+  }
+  if (
+    typeof it.incorrect_pattern_sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(it.incorrect_pattern_sha256)
+  ) {
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].incorrect_pattern_sha256 must be a 64-char hex string`,
     );
   }
 
   const rawErrorCodes = it.error_codes;
   if (rawErrorCodes !== undefined && !Array.isArray(rawErrorCodes)) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].error_codes must be an array of strings or absent`);
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].error_codes must be an array of strings or absent`,
+    );
   }
-  if (Array.isArray(rawErrorCodes) && !rawErrorCodes.every((e) => typeof e === 'string')) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].error_codes must be an array of strings`);
+  if (
+    Array.isArray(rawErrorCodes) &&
+    !rawErrorCodes.every((e) => typeof e === "string")
+  ) {
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].error_codes must be an array of strings`,
+    );
   }
 
   const rawOccurrences = it.occurrences;
   if (rawOccurrences !== undefined && !Array.isArray(rawOccurrences)) {
-    throw new ApiError(400, 'bad_payload', `shortcomings[${index}].occurrences must be an array or absent`);
+    throw new ApiError(
+      400,
+      "bad_payload",
+      `shortcomings[${index}].occurrences must be an array or absent`,
+    );
   }
 
   const occurrences: ShortcomingOccurrence[] = Array.isArray(rawOccurrences)
-    ? rawOccurrences.map((occ, occIdx) => validateOccurrence(occ, index, occIdx))
+    ? rawOccurrences.map((occ, occIdx) =>
+      validateOccurrence(occ, index, occIdx)
+    )
     : [];
 
   // D-prompt: validate the new registry-shaped fields. All three are
   // optional/nullable for legacy clients; new clients post all three.
   const proposed = it.concept_slug_proposed;
   if (proposed !== undefined && proposed !== null) {
-    if (typeof proposed !== 'string' || !SLUG_REGEX.test(proposed)) {
+    if (typeof proposed !== "string" || !SLUG_REGEX.test(proposed)) {
       throw new ApiError(
         400,
-        'bad_payload',
-        `shortcomings[${index}].concept_slug_proposed must be kebab-case`
+        "bad_payload",
+        `shortcomings[${index}].concept_slug_proposed must be kebab-case`,
       );
     }
   }
   const existingMatch = it.concept_slug_existing_match;
   if (existingMatch !== undefined && existingMatch !== null) {
-    if (typeof existingMatch !== 'string' || !SLUG_REGEX.test(existingMatch)) {
+    if (typeof existingMatch !== "string" || !SLUG_REGEX.test(existingMatch)) {
       throw new ApiError(
         400,
-        'bad_payload',
-        `shortcomings[${index}].concept_slug_existing_match must be kebab-case or null`
+        "bad_payload",
+        `shortcomings[${index}].concept_slug_existing_match must be kebab-case or null`,
       );
     }
   }
   const sim = it.similarity_score;
   if (sim !== undefined && sim !== null) {
-    if (typeof sim !== 'number' || sim < 0 || sim > 1) {
+    if (typeof sim !== "number" || sim < 0 || sim > 1) {
       throw new ApiError(
         400,
-        'bad_payload',
-        `shortcomings[${index}].similarity_score must be in [0,1] or null`
+        "bad_payload",
+        `shortcomings[${index}].similarity_score must be in [0,1] or null`,
       );
     }
   }
@@ -134,7 +175,7 @@ function validateShortcomingItem(item: unknown, index: number): ShortcomingItem 
     // NULL until D-data clusters legacy entries server-side.
     console.warn(
       `[deprecation] shortcomings[${index}] missing concept_slug_proposed; ` +
-        `falling back to legacy 'concept' field. Will be required in v2.`
+        `falling back to legacy 'concept' field. Will be required in v2.`,
     );
   }
 
@@ -144,23 +185,31 @@ function validateShortcomingItem(item: unknown, index: number): ShortcomingItem 
     description: it.description,
     correct_pattern: it.correct_pattern,
     incorrect_pattern_sha256: it.incorrect_pattern_sha256,
-    error_codes: Array.isArray(rawErrorCodes) ? (rawErrorCodes as string[]) : [],
+    error_codes: Array.isArray(rawErrorCodes)
+      ? (rawErrorCodes as string[])
+      : [],
     occurrences,
-    concept_slug_proposed: typeof proposed === 'string' ? proposed : null,
-    concept_slug_existing_match:
-      typeof existingMatch === 'string' ? existingMatch : null,
-    similarity_score: typeof sim === 'number' ? sim : null
+    concept_slug_proposed: typeof proposed === "string" ? proposed : null,
+    concept_slug_existing_match: typeof existingMatch === "string"
+      ? existingMatch
+      : null,
+    similarity_score: typeof sim === "number" ? sim : null,
   };
 }
 
 async function sha256Hex(text: string): Promise<string> {
   const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'Cloudflare platform not available'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
   const db = platform.env.DB;
 
   try {
@@ -168,32 +217,42 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     try {
       body = await request.json();
     } catch {
-      throw new ApiError(400, 'bad_request', 'request body must be valid JSON');
+      throw new ApiError(400, "bad_request", "request body must be valid JSON");
     }
 
     const envelope = body as {
       payload: Record<string, unknown>;
-      signature: { alg: 'Ed25519'; key_id: number; signed_at: string; value: string };
+      signature: {
+        alg: "Ed25519";
+        key_id: number;
+        signed_at: string;
+        value: string;
+      };
     };
-    if (!envelope.signature) throw new ApiError(400, 'missing_signature', 'signature block required');
-    if (!envelope.payload || typeof envelope.payload !== 'object') {
-      throw new ApiError(400, 'bad_payload', 'payload object required');
+    if (!envelope.signature) {
+      throw new ApiError(400, "missing_signature", "signature block required");
+    }
+    if (!envelope.payload || typeof envelope.payload !== "object") {
+      throw new ApiError(400, "bad_payload", "payload object required");
     }
 
     const payload = envelope.payload;
-    if (!payload.model_slug || typeof payload.model_slug !== 'string') {
-      throw new ApiError(400, 'bad_payload', 'model_slug is required and must be a string');
+    if (!payload.model_slug || typeof payload.model_slug !== "string") {
+      throw new ApiError(
+        400,
+        "bad_payload",
+        "model_slug is required and must be a string",
+      );
     }
     if (!Array.isArray(payload.shortcomings)) {
-      throw new ApiError(400, 'bad_payload', 'shortcomings must be an array');
+      throw new ApiError(400, "bad_payload", "shortcomings must be an array");
     }
 
     // Validate all items BEFORE signature verification to avoid timing leaks
-    const shortcomings: ShortcomingItem[] = (payload.shortcomings as unknown[]).map((item, idx) =>
-      validateShortcomingItem(item, idx)
-    );
+    const shortcomings: ShortcomingItem[] = (payload.shortcomings as unknown[])
+      .map((item, idx) => validateShortcomingItem(item, idx));
 
-    await verifySignedRequest(db, envelope, 'verifier');
+    await verifySignedRequest(db, envelope, "verifier");
 
     const modelSlug = payload.model_slug as string;
 
@@ -202,7 +261,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       .prepare(`SELECT id FROM models WHERE slug = ?`)
       .bind(modelSlug)
       .first<{ id: number }>();
-    if (!modelRow) throw new ApiError(404, 'model_not_found', `model '${modelSlug}' not found`);
+    if (!modelRow) {
+      throw new ApiError(
+        404,
+        "model_not_found",
+        `model '${modelSlug}' not found`,
+      );
+    }
 
     const modelId = modelRow.id;
     const now = new Date().toISOString();
@@ -216,10 +281,12 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // payload `{entries_count, min_confidence, payload_hash}`. The captured
     // id is reused for both shortcomings.analysis_event_id AND
     // pending_review.analysis_event_id.
-    const taskSetHash =
-      typeof payload.task_set_hash === 'string' ? payload.task_set_hash : 'unknown';
-    const analyzerModel =
-      typeof payload.analyzer_model === 'string' ? payload.analyzer_model : modelSlug;
+    const taskSetHash = typeof payload.task_set_hash === "string"
+      ? payload.task_set_hash
+      : "unknown";
+    const analyzerModel = typeof payload.analyzer_model === "string"
+      ? payload.analyzer_model
+      : modelSlug;
     const writeNowMs = Date.now();
     const invalidationSlugs: string[] = [];
 
@@ -228,16 +295,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     let analysisEventId: number | null = null;
     if (shortcomings.length > 0) {
       const analysisEvt = await appendEvent(db, {
-        event_type: 'analysis.completed',
+        event_type: "analysis.completed",
         model_slug: modelSlug,
         task_set_hash: taskSetHash,
-        actor: 'operator',
+        actor: "operator",
         actor_id: null,
         payload: {
           analyzer_model: analyzerModel,
           entries_count: shortcomings.length,
-          payload_hash: await sha256Hex(JSON.stringify(shortcomings))
-        }
+          payload_hash: await sha256Hex(JSON.stringify(shortcomings)),
+        },
       });
       analysisEventId = analysisEvt.id;
     }
@@ -262,15 +329,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             al_concept: item.al_concept,
             description: item.description,
             correct_pattern: item.correct_pattern,
-            analyzer_model: analyzerModel
+            analyzer_model: analyzerModel,
           },
           writeNowMs,
           (input) => appendEvent(db, input),
           modelSlug,
-          taskSetHash
+          taskSetHash,
         );
 
-        if (resolved.action === 'pending') {
+        if (resolved.action === "pending") {
           // STEP 4: pending_review row references the real analysis_event_id
           // from STEP 1. No `0` placeholder — the FK NOT NULL REFERENCES
           // lifecycle_events(id) holds because we wrote a real row upstream.
@@ -283,13 +350,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           // nested cluster data is opaque to it.
           const pendingPayload = {
             entry: item,
-            confidence: item.similarity_score ?? 0
+            confidence: item.similarity_score ?? 0,
           };
           await db
             .prepare(
               `INSERT INTO pending_review (analysis_event_id, model_slug, concept_slug_proposed,
                                            payload_json, confidence, created_at, status)
-               VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+               VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
             )
             .bind(
               analysisEventId, // real event id from STEP 1
@@ -297,7 +364,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
               item.concept_slug_proposed,
               JSON.stringify(pendingPayload),
               item.similarity_score ?? 0,
-              writeNowMs
+              writeNowMs,
             )
             .run();
           // Skip writing this row to shortcomings — reviewer decision creates
@@ -306,7 +373,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         }
 
         conceptId = resolved.concept_id;
-        if (resolved.action === 'created' || resolved.action === 'aliased') {
+        if (resolved.action === "created" || resolved.action === "aliased") {
           // Cache invalidation needed for both bands — a freshly-aliased slug
           // shouldn't serve stale 5-min results from
           // /api/v1/concepts/<aliased-slug>.
@@ -331,7 +398,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
              last_seen = excluded.last_seen,
              concept_id = COALESCE(excluded.concept_id, concept_id),
              analysis_event_id = COALESCE(excluded.analysis_event_id, analysis_event_id)
-           RETURNING id`
+           RETURNING id`,
         )
         .bind(
           modelId,
@@ -344,11 +411,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           now,
           now,
           conceptId,
-          analysisEventId
+          analysisEventId,
         )
         .first<{ id: number }>();
 
-      if (!row) throw new ApiError(500, 'db_error', 'failed to upsert shortcoming');
+      if (!row) {
+        throw new ApiError(500, "db_error", "failed to upsert shortcoming");
+      }
       upserted++;
 
       // Batch occurrence inserts per shortcoming for efficiency
@@ -357,7 +426,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           db
             .prepare(
               `INSERT OR IGNORE INTO shortcoming_occurrences(shortcoming_id, result_id, task_id, error_code)
-               VALUES (?, ?, ?, ?)`
+               VALUES (?, ?, ?, ?)`,
             )
             .bind(row.id, occ.result_id, occ.task_id, occ.error_code ?? null)
         );
@@ -386,15 +455,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (upserted > 0) {
       try {
         await broadcastEvent(platform.env, {
-          type: 'shortcoming_added',
+          type: "shortcoming_added",
           model_slug: modelSlug,
           count: upserted,
-          ts: new Date().toISOString()
+          ts: new Date().toISOString(),
         });
       } catch { /* swallow */ }
     }
 
-    return jsonResponse({ upserted, occurrences }, 200, { 'Cache-Control': 'no-store' });
+    return jsonResponse({ upserted, occurrences }, 200, {
+      "Cache-Control": "no-store",
+    });
   } catch (err) {
     return errorResponse(err);
   }

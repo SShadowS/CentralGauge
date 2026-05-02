@@ -1,1 +1,1 @@
-export { canonicalJSON } from '../../../../shared/canonical.ts';
+export { canonicalJSON } from "../../../../shared/canonical.ts";

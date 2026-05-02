@@ -16,14 +16,14 @@
  * Companion no-flash inline script lives in app.html and runs before any paint.
  */
 
-export type Theme = 'light' | 'dark' | 'system';
+export type Theme = "light" | "dark" | "system";
 
-const STORAGE_KEY = 'theme';
+const STORAGE_KEY = "theme";
 
 export function getTheme(): Theme {
-  if (typeof localStorage === 'undefined') return 'system';
+  if (typeof localStorage === "undefined") return "system";
   const v = localStorage.getItem(STORAGE_KEY);
-  return v === 'light' || v === 'dark' ? v : 'system';
+  return v === "light" || v === "dark" ? v : "system";
 }
 
 /**
@@ -31,20 +31,22 @@ export function getTheme(): Theme {
  * preference. Use this whenever the UI needs to know which CSS palette
  * is currently rendered (e.g. icon selection, the toggle inversion).
  */
-export function getEffectiveTheme(): 'light' | 'dark' {
+export function getEffectiveTheme(): "light" | "dark" {
   const stored = getTheme();
-  if (stored === 'light' || stored === 'dark') return stored;
-  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (stored === "light" || stored === "dark") return stored;
+  if (typeof window === "undefined" || !window.matchMedia) return "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 export function setTheme(theme: Theme): void {
-  if (typeof document === 'undefined') return;
-  if (theme === 'system') {
-    document.documentElement.removeAttribute('data-theme');
+  if (typeof document === "undefined") return;
+  if (theme === "system") {
+    document.documentElement.removeAttribute("data-theme");
     localStorage.removeItem(STORAGE_KEY);
   } else {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem(STORAGE_KEY, theme);
   }
 }
@@ -55,7 +57,7 @@ export function setTheme(theme: Theme): void {
  * whether the stored value is 'light' / 'dark' / 'system'.
  */
 export function cycleTheme(): Theme {
-  const next: Theme = getEffectiveTheme() === 'dark' ? 'light' : 'dark';
+  const next: Theme = getEffectiveTheme() === "dark" ? "light" : "dark";
   setTheme(next);
   return next;
 }

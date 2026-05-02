@@ -61,8 +61,8 @@ export function registerChord(
 
 function ensureListener(): void {
   if (listenerAttached) return;
-  if (typeof document === 'undefined') return;
-  document.addEventListener('keydown', onKeyDown);
+  if (typeof document === "undefined") return;
+  document.addEventListener("keydown", onKeyDown);
   listenerAttached = true;
 }
 

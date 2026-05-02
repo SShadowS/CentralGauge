@@ -10,17 +10,17 @@
  */
 
 export type CellBucket =
-  | 'pass-all'
-  | 'pass-most'
-  | 'pass-some'
-  | 'fail-all'
-  | 'no-data';
+  | "pass-all"
+  | "pass-most"
+  | "pass-some"
+  | "fail-all"
+  | "no-data";
 
 export function cellColorBucket(passed: number, attempted: number): CellBucket {
-  if (attempted === 0) return 'no-data';
+  if (attempted === 0) return "no-data";
   const ratio = passed / attempted;
-  if (ratio === 1) return 'pass-all';
-  if (ratio >= 0.5) return 'pass-most';
-  if (ratio > 0) return 'pass-some';
-  return 'fail-all';
+  if (ratio === 1) return "pass-all";
+  if (ratio >= 0.5) return "pass-most";
+  if (ratio > 0) return "pass-some";
+  return "fail-all";
 }

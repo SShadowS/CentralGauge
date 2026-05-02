@@ -5,30 +5,33 @@
  *
  * Limits are gzipped sizes. We compute gzipped via zlib on the file contents.
  */
-import { readFileSync, statSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
-import { resolve, join, relative } from 'node:path';
-import { globSync } from 'node:fs';
+import { readFileSync, statSync } from "node:fs";
+import { gzipSync } from "node:zlib";
+import { join, relative, resolve } from "node:path";
+import { globSync } from "node:fs";
 
-const ROOT = resolve(import.meta.dirname ?? process.cwd(), '..');
-const OUT  = join(ROOT, '.svelte-kit/output/client/_app/immutable');
+const ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
+const OUT = join(ROOT, ".svelte-kit/output/client/_app/immutable");
 
-interface Budget { glob: string; maxKbGz: number; }
+interface Budget {
+  glob: string;
+  maxKbGz: number;
+}
 
 const budgets: Budget[] = [
   // initial JS — entry chunks
-  { glob: 'entry/start.*.js',  maxKbGz: 25 },
-  { glob: 'entry/app.*.js',    maxKbGz: 25 },
+  { glob: "entry/start.*.js", maxKbGz: 25 },
+  { glob: "entry/app.*.js", maxKbGz: 25 },
   // root layout/page chunks (initial route shell)
-  { glob: 'nodes/0.*.js',      maxKbGz: 20 },
-  { glob: 'nodes/1.*.js',      maxKbGz: 20 },
+  { glob: "nodes/0.*.js", maxKbGz: 20 },
+  { glob: "nodes/1.*.js", maxKbGz: 20 },
   // cmd-K palette lazy chunk (P5.4 split). Spec target: ≤ 6 KB gz.
   // Forced chunk name via vite.config.ts manualChunks + chunkFileNames.
-  { glob: 'chunks/cmd-k-*.js', maxKbGz: 6 },
+  { glob: "chunks/cmd-k-*.js", maxKbGz: 6 },
   // useEventSource client hook chunk (~1.5 KB gz observed). Cap at 2.
-  { glob: 'chunks/use-event-source-*.js', maxKbGz: 2 },
+  { glob: "chunks/use-event-source-*.js", maxKbGz: 2 },
   // all per-page chunks individually capped
-  { glob: 'nodes/*.js',        maxKbGz: 20 },
+  { glob: "nodes/*.js", maxKbGz: 20 },
 ];
 
 const checked = new Set<string>();
@@ -43,7 +46,11 @@ for (const b of budgets) {
     const gz = gzipSync(raw);
     const kb = gz.length / 1024;
     if (kb > b.maxKbGz) {
-      failures.push(`  ${relative(ROOT, path)}: ${kb.toFixed(1)} KB gz (limit ${b.maxKbGz} KB)`);
+      failures.push(
+        `  ${relative(ROOT, path)}: ${
+          kb.toFixed(1)
+        } KB gz (limit ${b.maxKbGz} KB)`,
+      );
     } else {
       console.log(`OK ${relative(ROOT, path)}: ${kb.toFixed(1)} KB gz`);
     }
@@ -51,13 +58,13 @@ for (const b of budgets) {
 }
 
 if (checked.size === 0) {
-  console.error('No chunks found — did you run `npm run build` first?');
+  console.error("No chunks found — did you run `npm run build` first?");
   process.exit(1);
 }
 
 if (failures.length) {
-  console.error('\nBundle budget exceeded:');
+  console.error("\nBundle budget exceeded:");
   for (const f of failures) console.error(f);
   process.exit(1);
 }
-console.log('\nAll bundle budgets met.');
+console.log("\nAll bundle budgets met.");

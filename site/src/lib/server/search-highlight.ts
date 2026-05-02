@@ -23,7 +23,7 @@ export function applyMarkHighlighting(
   tokens: string[],
   maxLen = 200,
 ): string {
-  if (!text) return '';
+  if (!text) return "";
 
   // Find earliest match in text (case-insensitive); center window there.
   let earliest = -1;
@@ -38,20 +38,24 @@ export function applyMarkHighlighting(
   if (text.length > maxLen) {
     const start = earliest === -1 ? 0 : Math.max(0, earliest - 30);
     const end = Math.min(text.length, start + maxLen);
-    window = (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+    window = (start > 0 ? "…" : "") + text.slice(start, end) +
+      (end < text.length ? "…" : "");
   }
 
   // Escape HTML in the window first; then wrap exact (case-insensitive) token matches.
   const escaped = window
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
   let result = escaped;
   for (const t of tokens) {
     if (!t) continue;
-    const escTok = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp(escTok, 'gi'), (m) => `<mark>${m}</mark>`);
+    const escTok = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(
+      new RegExp(escTok, "gi"),
+      (m) => `<mark>${m}</mark>`,
+    );
   }
   return result;
 }

@@ -74,13 +74,10 @@ export async function mergeConceptTx(
     .prepare(`SELECT slug FROM concepts WHERE id = ?`)
     .bind(args.winnerConceptId)
     .first<{ slug: string }>())!;
-  const loser =
-    args.loserConceptId == null
-      ? null
-      : await db
-          .prepare(`SELECT slug FROM concepts WHERE id = ?`)
-          .bind(args.loserConceptId)
-          .first<{ slug: string }>();
+  const loser = args.loserConceptId == null ? null : await db
+    .prepare(`SELECT slug FROM concepts WHERE id = ?`)
+    .bind(args.loserConceptId)
+    .first<{ slug: string }>();
 
   const placeholders = args.shortcomingIds.map(() => "?").join(",");
   const isTrueMerge = args.loserConceptId != null;
@@ -95,21 +92,21 @@ export async function mergeConceptTx(
     actor_id: args.actorId,
     payload: isTrueMerge
       ? {
-          // Strategic appendix: concept.merged payload =
-          //   { winner_concept_id, loser_concept_id, similarity, reviewer_actor_id }
-          winner_concept_id: args.winnerConceptId,
-          loser_concept_id: args.loserConceptId,
-          similarity: args.similarity,
-          reviewer_actor_id: args.reviewerActorId ?? null,
-        }
+        // Strategic appendix: concept.merged payload =
+        //   { winner_concept_id, loser_concept_id, similarity, reviewer_actor_id }
+        winner_concept_id: args.winnerConceptId,
+        loser_concept_id: args.loserConceptId,
+        similarity: args.similarity,
+        reviewer_actor_id: args.reviewerActorId ?? null,
+      }
       : {
-          // Strategic appendix: concept.aliased payload =
-          //   { alias_slug, concept_id, similarity, reviewer_actor_id }
-          alias_slug: args.proposedSlug,
-          concept_id: args.winnerConceptId,
-          similarity: args.similarity,
-          reviewer_actor_id: args.reviewerActorId ?? null,
-        },
+        // Strategic appendix: concept.aliased payload =
+        //   { alias_slug, concept_id, similarity, reviewer_actor_id }
+        alias_slug: args.proposedSlug,
+        concept_id: args.winnerConceptId,
+        similarity: args.similarity,
+        reviewer_actor_id: args.reviewerActorId ?? null,
+      },
   });
   const eventId = ev.id;
 

@@ -1,7 +1,7 @@
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import type { MatrixResponse } from '../../src/lib/shared/api-types';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import type { MatrixResponse } from "../../src/lib/shared/api-types";
 
 /**
  * Matrix API tests.
@@ -73,15 +73,21 @@ beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-beforeEach(async () => { await seedBasic(); });
+beforeEach(async () => {
+  await seedBasic();
+});
 
-describe('GET /api/v1/matrix', () => {
-  it('returns dense matrix shape with tasks × models', async () => {
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=shape');
+describe("GET /api/v1/matrix", () => {
+  it("returns dense matrix shape with tasks × models", async () => {
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=shape");
     expect(res.status).toBe(200);
     const body = (await res.json()) as MatrixResponse;
 
-    expect(body.filters).toEqual({ set: 'current', category: null, difficulty: null });
+    expect(body.filters).toEqual({
+      set: "current",
+      category: null,
+      difficulty: null,
+    });
     expect(body.tasks).toHaveLength(2);
     expect(body.models).toHaveLength(2);
     // Dense rectangular: cells.length === tasks.length and each row === models.length.
@@ -89,63 +95,74 @@ describe('GET /api/v1/matrix', () => {
     for (const row of body.cells) {
       expect(row.length).toBe(body.models.length);
     }
-    expect(typeof body.generated_at).toBe('string');
+    expect(typeof body.generated_at).toBe("string");
   });
 
-  it('cell aggregates match seeded results', async () => {
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=cells');
+  it("cell aggregates match seeded results", async () => {
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=cells");
     const body = (await res.json()) as MatrixResponse;
 
     const taskIdx = (id: string) => body.tasks.findIndex((t) => t.id === id);
-    const modelIdx = (slug: string) => body.models.findIndex((m) => m.slug === slug);
+    const modelIdx = (slug: string) =>
+      body.models.findIndex((m) => m.slug === slug);
 
-    const t1Sonnet = body.cells[taskIdx('easy/t1')][modelIdx('sonnet')];
+    const t1Sonnet = body.cells[taskIdx("easy/t1")][modelIdx("sonnet")];
     expect(t1Sonnet).toEqual({ passed: 1, attempted: 1, concept: null });
 
-    const t2Haiku = body.cells[taskIdx('medium/t2')][modelIdx('haiku')];
+    const t2Haiku = body.cells[taskIdx("medium/t2")][modelIdx("haiku")];
     expect(t2Haiku).toEqual({ passed: 0, attempted: 1, concept: null });
   });
 
-  it('filters by category', async () => {
+  it("filters by category", async () => {
     // Only category=tables exists; both tasks belong to it. Asking for a
     // non-existent category yields zero tasks.
-    const ok = await SELF.fetch('https://x/api/v1/matrix?_cb=cat-ok&category=tables');
+    const ok = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=cat-ok&category=tables",
+    );
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as MatrixResponse).tasks).toHaveLength(2);
 
-    const miss = await SELF.fetch('https://x/api/v1/matrix?_cb=cat-miss&category=permissions');
+    const miss = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=cat-miss&category=permissions",
+    );
     expect(miss.status).toBe(200);
     const missBody = (await miss.json()) as MatrixResponse;
     expect(missBody.tasks).toEqual([]);
     expect(missBody.cells).toEqual([]);
   });
 
-  it('filters by difficulty', async () => {
-    const easy = await SELF.fetch('https://x/api/v1/matrix?_cb=diff-easy&difficulty=easy');
+  it("filters by difficulty", async () => {
+    const easy = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=diff-easy&difficulty=easy",
+    );
     expect(easy.status).toBe(200);
     const easyBody = (await easy.json()) as MatrixResponse;
     expect(easyBody.tasks).toHaveLength(1);
-    expect(easyBody.tasks[0].id).toBe('easy/t1');
+    expect(easyBody.tasks[0].id).toBe("easy/t1");
   });
 
-  it('returns empty matrix gracefully when catalog is empty (CC-1 production shape)', async () => {
+  it("returns empty matrix gracefully when catalog is empty (CC-1 production shape)", async () => {
     await resetDb();
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=empty');
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=empty");
     expect(res.status).toBe(200);
     const body = (await res.json()) as MatrixResponse;
     expect(body.tasks).toEqual([]);
     expect(body.models).toEqual([]);
     expect(body.cells).toEqual([]);
-    expect(body.filters.set).toBe('current');
+    expect(body.filters.set).toBe("current");
   });
 
-  it('rejects invalid set', async () => {
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=bad-set&set=junk');
+  it("rejects invalid set", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=bad-set&set=junk",
+    );
     expect(res.status).toBe(400);
   });
 
-  it('rejects invalid difficulty', async () => {
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=bad-diff&difficulty=expert');
+  it("rejects invalid difficulty", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/matrix?_cb=bad-diff&difficulty=expert",
+    );
     expect(res.status).toBe(400);
   });
 
@@ -154,7 +171,7 @@ describe('GET /api/v1/matrix', () => {
   // and the SAME model with conflicting outcomes. set=current must surface
   // ONLY the current-set classification.
   // ---------------------------------------------------------------------
-  it('CR-5: scopes cells, models, and tasks queries to current task_set', async () => {
+  it("CR-5: scopes cells, models, and tasks queries to current task_set", async () => {
     await resetDb();
     await env.DB.batch([
       env.DB.prepare(
@@ -210,13 +227,13 @@ describe('GET /api/v1/matrix', () => {
       ),
     ]);
 
-    const res = await SELF.fetch('https://x/api/v1/matrix?_cb=cr5');
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=cr5");
     expect(res.status).toBe(200);
     const body = (await res.json()) as MatrixResponse;
 
     // Tasks query is task_set-scoped: only the current entry, exactly once.
     expect(body.tasks).toHaveLength(1);
-    expect(body.tasks[0].id).toBe('easy/shared');
+    expect(body.tasks[0].id).toBe("easy/shared");
     expect(body.models).toHaveLength(1);
 
     // The single cell must reflect ONLY the current-set outcome (0/1),

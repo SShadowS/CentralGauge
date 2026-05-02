@@ -45,11 +45,17 @@
   }
 
   /* Tables full width */
-  table { width: 100%; }
+  table {
+    width: 100%;
+  }
 
   /* Avoid breaking sections across pages where possible */
-  section, table, figure { page-break-inside: avoid; }
-  h1, h2, h3 { page-break-after: avoid; }
+  section, table, figure {
+    page-break-inside: avoid;
+  }
+  h1, h2, h3 {
+    page-break-after: avoid;
+  }
 
   /* Code blocks: no borders, plain mono */
   pre, code {

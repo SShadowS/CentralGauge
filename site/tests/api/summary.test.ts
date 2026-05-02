@@ -1,7 +1,7 @@
-import { env, applyD1Migrations, SELF } from 'cloudflare:test';
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { resetDb } from '../utils/reset-db';
-import type { SummaryStats } from '../../src/lib/shared/api-types';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
+import type { SummaryStats } from "../../src/lib/shared/api-types";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -35,17 +35,31 @@ async function seed(): Promise<void> {
   ]);
 
   // 2 runs across 1 model
-  for (const [id, started] of [
-    ['r1', '2026-04-01T00:00:00Z'],
-    ['r2', '2026-04-15T00:00:00Z'],
-  ] as const) {
+  for (
+    const [id, started] of [
+      ["r1", "2026-04-01T00:00:00Z"],
+      ["r2", "2026-04-15T00:00:00Z"],
+    ] as const
+  ) {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     )
       .bind(
-        id, 'ts', 1, 's', 'r', started, started.replace('T00', 'T01'),
-        'completed', 'claimed', 'v1', 'sig', started, 1, new Uint8Array([0]),
+        id,
+        "ts",
+        1,
+        "s",
+        "r",
+        started,
+        started.replace("T00", "T01"),
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        started,
+        1,
+        new Uint8Array([0]),
       )
       .run();
   }
@@ -69,11 +83,13 @@ beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-beforeEach(async () => { await seed(); });
+beforeEach(async () => {
+  await seed();
+});
 
-describe('GET /api/v1/summary', () => {
-  it('returns aggregate counts + cost/token totals + last_run_at', async () => {
-    const res = await SELF.fetch('https://x/api/v1/summary?_cb=ok');
+describe("GET /api/v1/summary", () => {
+  it("returns aggregate counts + cost/token totals + last_run_at", async () => {
+    const res = await SELF.fetch("https://x/api/v1/summary?_cb=ok");
     expect(res.status).toBe(200);
     const body = (await res.json()) as SummaryStats;
 
@@ -82,23 +98,23 @@ describe('GET /api/v1/summary', () => {
     expect(body.tasks).toBe(3);
     expect(body.total_tokens).toBe(3_500_000);
     expect(body.total_cost_usd).toBeCloseTo(40, 5);
-    expect(body.last_run_at).toBe('2026-04-15T00:00:00Z');
+    expect(body.last_run_at).toBe("2026-04-15T00:00:00Z");
     // Phase H wires latest_changelog from a build-time `?raw` import of
     // docs/site/changelog.md. The fixture markdown ships with several
     // dated entries; the latest one (newest date) must be exposed here.
     expect(body.latest_changelog).not.toBeNull();
     expect(body.latest_changelog!.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(typeof body.latest_changelog!.title).toBe('string');
+    expect(typeof body.latest_changelog!.title).toBe("string");
     expect(body.latest_changelog!.title.length).toBeGreaterThan(0);
-    expect(typeof body.latest_changelog!.slug).toBe('string');
+    expect(typeof body.latest_changelog!.slug).toBe("string");
     expect(body.latest_changelog!.slug).toMatch(/^[a-z0-9-]+$/);
-    expect(typeof body.generated_at).toBe('string');
+    expect(typeof body.generated_at).toBe("string");
   });
 
-  it('returns zero-shaped response on empty production-like state', async () => {
+  it("returns zero-shaped response on empty production-like state", async () => {
     await resetDb();
 
-    const res = await SELF.fetch('https://x/api/v1/summary?_cb=empty');
+    const res = await SELF.fetch("https://x/api/v1/summary?_cb=empty");
     expect(res.status).toBe(200);
     const body = (await res.json()) as SummaryStats;
 

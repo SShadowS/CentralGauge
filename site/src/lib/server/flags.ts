@@ -13,8 +13,8 @@ export interface Flags {
   og_dynamic: boolean;
   trajectory_charts: boolean;
   print_stylesheet: boolean;
-  density_toggle: boolean;     // NEW (P5.4)
-  rum_beacon: boolean;          // NEW (P5.4)
+  density_toggle: boolean; // NEW (P5.4)
+  rum_beacon: boolean; // NEW (P5.4)
 }
 
 const DEFAULTS: Flags = {
@@ -27,7 +27,10 @@ const DEFAULTS: Flags = {
   rum_beacon: false,
 };
 
-export function loadFlags(env: Record<string, string | undefined>, isCanary: boolean): Flags {
+export function loadFlags(
+  env: Record<string, string | undefined>,
+  isCanary: boolean,
+): Flags {
   if (isCanary) {
     return {
       cmd_k_palette: true,
@@ -42,10 +45,10 @@ export function loadFlags(env: Record<string, string | undefined>, isCanary: boo
 
   const out: Flags = { ...DEFAULTS };
   for (const k of Object.keys(out) as Array<keyof Flags>) {
-    const envName = 'FLAG_' + (k as string).toUpperCase();
+    const envName = "FLAG_" + (k as string).toUpperCase();
     const v = env[envName];
-    if (v === 'on') out[k] = true;
-    if (v === 'off') out[k] = false;
+    if (v === "on") out[k] = true;
+    if (v === "off") out[k] = false;
   }
   return out;
 }

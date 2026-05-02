@@ -6,11 +6,11 @@
  * server loader runs in the same isolate as the worker so a direct DB
  * query is faster + simpler than fetching `/api/v1/admin/lifecycle/state`).
  */
-import type { PageServerLoad } from './$types';
-import { getFirst } from '$lib/server/db';
+import type { PageServerLoad } from "./$types";
+import { getFirst } from "$lib/server/db";
 
 export const load: PageServerLoad = async ({ platform }) => {
-  if (!platform) throw new Error('no platform env');
+  if (!platform) throw new Error("no platform env");
   const env = platform.env;
 
   const pending = await getFirst<{ n: number }>(

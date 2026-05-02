@@ -1,7 +1,10 @@
-import { env, runInDurableObject } from 'cloudflare:test';
-import { afterAll, describe, it, expect } from 'vitest';
-import { broadcastEvent } from '../../src/lib/server/broadcaster';
-import type { LeaderboardBroadcaster, BroadcastEvent } from '../../src/do/leaderboard-broadcaster';
+import { env, runInDurableObject } from "cloudflare:test";
+import { afterAll, describe, expect, it } from "vitest";
+import { broadcastEvent } from "../../src/lib/server/broadcaster";
+import type {
+  BroadcastEvent,
+  LeaderboardBroadcaster,
+} from "../../src/do/leaderboard-broadcaster";
 
 // -------------------------------------------------------------------------
 // miniflare/workerd buffers SSE response bodies, so stub.fetch() on
@@ -12,82 +15,90 @@ import type { LeaderboardBroadcaster, BroadcastEvent } from '../../src/do/leader
 // but returns the matched-buffer set as JSON.
 // -------------------------------------------------------------------------
 
-describe('LeaderboardBroadcaster route filtering', () => {
+describe("LeaderboardBroadcaster route filtering", () => {
   afterAll(async () => {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
-    await stub.fetch('https://do/reset', { method: 'POST', headers: { 'x-test-only': '1' } });
+    await stub.fetch("https://do/reset", {
+      method: "POST",
+      headers: { "x-test-only": "1" },
+    });
   });
 
-  async function matchedFor(routesParam?: string): Promise<Array<{ run_id?: string }>> {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  async function matchedFor(
+    routesParam?: string,
+  ): Promise<Array<{ run_id?: string }>> {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
     const url = routesParam
       ? `https://do/test-match?routes=${encodeURIComponent(routesParam)}`
-      : 'https://do/test-match';
-    const res = await stub.fetch(url, { method: 'GET', headers: { 'x-test-only': '1' } });
+      : "https://do/test-match";
+    const res = await stub.fetch(url, {
+      method: "GET",
+      headers: { "x-test-only": "1" },
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { events: Array<{ run_id?: string }> };
     return body.events;
   }
 
-  it('default subscriber (no routes param) receives all events', async () => {
+  it("default subscriber (no routes param) receives all events", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-default-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-default-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
     const events = await matchedFor();
-    expect(events.some((e) => e.run_id === 'r-default-1')).toBe(true);
+    expect(events.some((e) => e.run_id === "r-default-1")).toBe(true);
   });
 
-  it('subscriber listing / receives a run_finalized event', async () => {
+  it("subscriber listing / receives a run_finalized event", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-lb-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-lb-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const events = await matchedFor('/');
-    expect(events.some((e) => e.run_id === 'r-lb-1')).toBe(true);
+    const events = await matchedFor("/");
+    expect(events.some((e) => e.run_id === "r-lb-1")).toBe(true);
   });
 
-  it('subscriber listing /models/gpt-5 does NOT receive run_finalized for sonnet-4-7', async () => {
+  it("subscriber listing /models/gpt-5 does NOT receive run_finalized for sonnet-4-7", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-fil-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-fil-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const events = await matchedFor('/models/gpt-5');
+    const events = await matchedFor("/models/gpt-5");
     // The event should NOT appear (filtered out at the DO).
-    expect(events.some((e) => e.run_id === 'r-fil-1')).toBe(false);
+    expect(events.some((e) => e.run_id === "r-fil-1")).toBe(false);
   });
 
-  it('subscriber listing /models/sonnet-4-7 receives the matching run_finalized', async () => {
+  it("subscriber listing /models/sonnet-4-7 receives the matching run_finalized", async () => {
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-match-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-match-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
-    const events = await matchedFor('/models/sonnet-4-7');
-    expect(events.some((e) => e.run_id === 'r-match-1')).toBe(true);
+    const events = await matchedFor("/models/sonnet-4-7");
+    expect(events.some((e) => e.run_id === "r-match-1")).toBe(true);
   });
 
-  it('forbids /test-match without x-test-only header', async () => {
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+  it("forbids /test-match without x-test-only header", async () => {
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
-    const res = await stub.fetch('https://do/test-match');
+    const res = await stub.fetch("https://do/test-match");
     expect(res.status).toBe(403);
   });
 
-  it('recent buffer is written to state.storage and survives in-memory wipe', async () => {
+  it("recent buffer is written to state.storage and survives in-memory wipe", async () => {
     // `cloudflare:test`'s `env.X.get(id)` always returns a stub backed by the
     // SAME singleton DO instance for a given id within a test run — there is
     // no per-`get()` isolation, so the original two-stub pattern was a no-op
@@ -103,31 +114,41 @@ describe('LeaderboardBroadcaster route filtering', () => {
     //   3. Trust by static inspection that the constructor's
     //      `state.storage.get(RECENT_STORAGE_KEY)` restore will repopulate
     //      `recent` on the next cold start.
-    const id = env.LEADERBOARD_BROADCASTER.idFromName('leaderboard');
+    const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
     await broadcastEvent(env, {
-      type: 'run_finalized',
+      type: "run_finalized",
       ts: new Date().toISOString(),
-      run_id: 'r-persist-1',
-      model_slug: 'sonnet-4-7',
-      family_slug: 'claude',
+      run_id: "r-persist-1",
+      model_slug: "sonnet-4-7",
+      family_slug: "claude",
     });
 
     // (1) Storage write happened.
-    await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (_instance, state) => {
-      const stored = await state.storage.get<BroadcastEvent[]>('recent');
-      expect(stored).toBeDefined();
-      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
-      expect(ids).toContain('r-persist-1');
-    });
+    await runInDurableObject<LeaderboardBroadcaster, void>(
+      stub,
+      async (_instance, state) => {
+        const stored = await state.storage.get<BroadcastEvent[]>("recent");
+        expect(stored).toBeDefined();
+        const ids = (stored ?? []).map((e) =>
+          (e as { run_id?: string }).run_id
+        );
+        expect(ids).toContain("r-persist-1");
+      },
+    );
 
     // (2) Wipe in-memory `recent` (hibernation analogue) — storage stays.
-    await runInDurableObject<LeaderboardBroadcaster, void>(stub, async (instance, state) => {
-      (instance as unknown as { recent: BroadcastEvent[] }).recent = [];
-      const stored = await state.storage.get<BroadcastEvent[]>('recent');
-      const ids = (stored ?? []).map((e) => (e as { run_id?: string }).run_id);
-      expect(ids).toContain('r-persist-1');
-    });
+    await runInDurableObject<LeaderboardBroadcaster, void>(
+      stub,
+      async (instance, state) => {
+        (instance as unknown as { recent: BroadcastEvent[] }).recent = [];
+        const stored = await state.storage.get<BroadcastEvent[]>("recent");
+        const ids = (stored ?? []).map((e) =>
+          (e as { run_id?: string }).run_id
+        );
+        expect(ids).toContain("r-persist-1");
+      },
+    );
   });
 });

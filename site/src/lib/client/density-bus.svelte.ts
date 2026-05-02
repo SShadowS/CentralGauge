@@ -19,9 +19,9 @@
  * writing localStorage — that would loop).
  */
 
-export type Density = 'comfortable' | 'compact';
+export type Density = "comfortable" | "compact";
 
-const STORAGE_KEY = 'cg-density';
+const STORAGE_KEY = "cg-density";
 
 /**
  * Initial density read from `<html data-density>`. The inline no-flash
@@ -36,9 +36,9 @@ const STORAGE_KEY = 'cg-density';
  * hydration re-evaluates this expression on the rune-store first read.
  */
 function readInitialDensity(): Density {
-  if (typeof document === 'undefined') return 'comfortable';
+  if (typeof document === "undefined") return "comfortable";
   const attr = document.documentElement.dataset.density;
-  return attr === 'compact' ? 'compact' : 'comfortable';
+  return attr === "compact" ? "compact" : "comfortable";
 }
 
 class DensityBus {
@@ -53,29 +53,29 @@ class DensityBus {
    * once won't double-register the listener.
    */
   init(): void {
-    if (typeof document !== 'undefined') {
+    if (typeof document !== "undefined") {
       const attr = document.documentElement.dataset.density;
-      if (attr === 'compact' || attr === 'comfortable') {
+      if (attr === "compact" || attr === "comfortable") {
         this.density = attr;
-      } else if (typeof localStorage !== 'undefined') {
+      } else if (typeof localStorage !== "undefined") {
         const v = localStorage.getItem(STORAGE_KEY);
-        if (v === 'compact' || v === 'comfortable') this.density = v;
+        if (v === "compact" || v === "comfortable") this.density = v;
       }
-    } else if (typeof localStorage !== 'undefined') {
+    } else if (typeof localStorage !== "undefined") {
       const v = localStorage.getItem(STORAGE_KEY);
-      if (v === 'compact' || v === 'comfortable') this.density = v;
+      if (v === "compact" || v === "comfortable") this.density = v;
     }
 
-    if (this.storageListenerAttached || typeof window === 'undefined') return;
-    window.addEventListener('storage', (e: StorageEvent) => {
+    if (this.storageListenerAttached || typeof window === "undefined") return;
+    window.addEventListener("storage", (e: StorageEvent) => {
       if (e.key !== STORAGE_KEY) return;
       const next = e.newValue;
-      if (next === 'compact' || next === 'comfortable') {
+      if (next === "compact" || next === "comfortable") {
         // Avoid re-writing localStorage from this tab — we got HERE because
         // ANOTHER tab wrote it. Just reflect into our rune + DOM.
         this.density = next;
-        if (typeof document !== 'undefined') {
-          document.documentElement.setAttribute('data-density', next);
+        if (typeof document !== "undefined") {
+          document.documentElement.setAttribute("data-density", next);
         }
       }
     });
@@ -84,15 +84,17 @@ class DensityBus {
 
   setDensity(d: Density): void {
     this.density = d;
-    if (typeof localStorage !== 'undefined') localStorage.setItem(STORAGE_KEY, d);
-    if (typeof document !== 'undefined') {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(STORAGE_KEY, d);
+    }
+    if (typeof document !== "undefined") {
       // Apply attribute immediately so consumers without an effect see it.
-      document.documentElement.setAttribute('data-density', d);
+      document.documentElement.setAttribute("data-density", d);
     }
   }
 
   toggle(): void {
-    this.setDensity(this.density === 'comfortable' ? 'compact' : 'comfortable');
+    this.setDensity(this.density === "comfortable" ? "compact" : "comfortable");
   }
 }
 

@@ -36,7 +36,7 @@ export function fuzzyScore(query: string, haystack: string): number | null {
       if (hi === lastMatchIdx + 1) {
         score += 30;
       } else if (lastMatchIdx >= 0) {
-        score -= (hi - lastMatchIdx - 1);
+        score -= hi - lastMatchIdx - 1;
       }
       lastMatchIdx = hi;
       qi += 1;
@@ -52,8 +52,11 @@ export function fuzzyScore(query: string, haystack: string): number | null {
   let qj = 0;
   for (let hi = 0; hi < h.length && qj < q.length; hi++) {
     if (h[hi] !== q[qj]) continue;
-    const before = hi === 0 ? '-' : h[hi - 1];
-    if (!/[-_/ .]/.test(before) && hi !== 0) { allTokenStarts = false; break; }
+    const before = hi === 0 ? "-" : h[hi - 1];
+    if (!/[-_/ .]/.test(before) && hi !== 0) {
+      allTokenStarts = false;
+      break;
+    }
     qj += 1;
   }
   if (allTokenStarts && qj === q.length) score += 50;
@@ -74,7 +77,11 @@ export interface FuzzyResult<T> {
  * Otherwise: by score desc, then by extracted-key length asc, then by
  * lex order. Deterministic across V8 / JSC / Workerd.
  */
-export function fuzzyFilter<T>(query: string, items: T[], key: (v: T) => string = String): FuzzyResult<T>[] {
+export function fuzzyFilter<T>(
+  query: string,
+  items: T[],
+  key: (v: T) => string = String,
+): FuzzyResult<T>[] {
   const out: FuzzyResult<T>[] = [];
   for (const v of items) {
     const s = fuzzyScore(query, key(v));

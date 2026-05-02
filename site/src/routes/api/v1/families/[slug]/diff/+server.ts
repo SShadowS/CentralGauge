@@ -1,14 +1,14 @@
-import type { RequestHandler } from './$types';
-import { computeEtag } from '$lib/server/cache';
-import { getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { computeEtag } from "$lib/server/cache";
+import { getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
 import {
   computeGenerationDiff,
   type DiffDb,
   type DiffResult,
-} from '../../../../../../../../src/lifecycle/diff';
-import type { FamilyDiff } from '$lib/shared/api-types';
-import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
+} from "../../../../../../../../src/lifecycle/diff";
+import type { FamilyDiff } from "$lib/shared/api-types";
+import { FAMILY_DIFF_CACHE_NAME } from "$lib/server/family-diff-cache";
 
 /**
  * GET /api/v1/families/<slug>/diff?from=<event_id>&to=<event_id>&task_set=<hash>
@@ -34,14 +34,20 @@ import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
  * stores responses in `caches.default`, where app-level invalidation can't
  * reach them). The trigger's `invalidateFamilyDiff` evicts the same keys.
  */
-export const GET: RequestHandler = async ({ request, params, url, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+export const GET: RequestHandler = async (
+  { request, params, url, platform },
+) => {
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const env = platform.env;
   try {
     const slug = params.slug!;
-    const fromQ = url.searchParams.get('from');
-    const toQ = url.searchParams.get('to');
-    const taskSetQ = url.searchParams.get('task_set');
+    const fromQ = url.searchParams.get("from");
+    const toQ = url.searchParams.get("to");
+    const taskSetQ = url.searchParams.get("task_set");
 
     // Wave 5 / Plan E IMPORTANT 3: validate query params BEFORE the cache
     // lookup. Pre-fix `+toQ` accepted `NaN`/`Infinity`/`-1`/`1.5` and
@@ -49,19 +55,19 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     // triple is its own cache slot, so unbounded probing fills the
     // named cache silently. Reject malformed values with 400 before any
     // expensive work.
-    const validatedToEventId = parsePositiveIntQuery(toQ, 'to');
-    const validatedFromEventId = parsePositiveIntQuery(fromQ, 'from');
+    const validatedToEventId = parsePositiveIntQuery(toQ, "to");
+    const validatedFromEventId = parsePositiveIntQuery(fromQ, "from");
     // task_set accepts hex/kebab task hashes (alphanumeric, underscore,
     // hyphen) capped at 128 chars to bound cache-key size. Special token
     // 'current' maps to is_current=1 (same as omitting the param).
     let validatedTaskSetHash: string | null = null;
     if (taskSetQ !== null) {
-      if (taskSetQ === 'current') {
+      if (taskSetQ === "current") {
         validatedTaskSetHash = null; // fall through to is_current lookup
       } else if (!/^[a-zA-Z0-9_-]{1,128}$/.test(taskSetQ)) {
         throw new ApiError(
           400,
-          'invalid_task_set',
+          "invalid_task_set",
           'task_set must match ^[a-zA-Z0-9_-]{1,128}$ or equal "current"',
         );
       } else {
@@ -93,7 +99,13 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
         `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
         [],
       );
-      if (!ts) throw new ApiError(404, 'no_current_task_set', 'no task_set is is_current');
+      if (!ts) {
+        throw new ApiError(
+          404,
+          "no_current_task_set",
+          "no task_set is is_current",
+        );
+      }
       taskSetHash = ts.hash;
     }
 
@@ -122,7 +134,7 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     // The two event-id fields are NULL; consumers render an empty state.
     if (toEventId == null) {
       const shell: FamilyDiff = {
-        status: 'baseline_missing',
+        status: "baseline_missing",
         family_slug: slug,
         task_set_hash: taskSetHash,
         from_gen_event_id: null,
@@ -229,7 +241,7 @@ async function respondCached(
 ): Promise<Response> {
   const etagHex = await computeEtag(body);
   const etag = `"${etagHex}"`;
-  const ifNoneMatch = request.headers.get('if-none-match');
+  const ifNoneMatch = request.headers.get("if-none-match");
   // The CLIENT-facing response uses `private` so the adapter-cloudflare
   // wrapper (worker.js line 21) does NOT also write to caches.default
   // (URL-keyed, unreachable to our app-level eviction). The Cache API
@@ -238,10 +250,10 @@ async function respondCached(
   // API spec rejects `cache-control: private` / `no-store` / `no-cache`
   // on `cache.put` (per the Fetch spec's "cacheable" definition).
   const clientHeaders: Record<string, string> = {
-    'content-type': 'application/json; charset=utf-8',
+    "content-type": "application/json; charset=utf-8",
     etag,
-    'cache-control': `private, max-age=${maxAgeSeconds}`,
-    'x-api-version': 'v1',
+    "cache-control": `private, max-age=${maxAgeSeconds}`,
+    "x-api-version": "v1",
   };
 
   if (ifNoneMatch && matchesEtag(ifNoneMatch, etag)) {
@@ -261,7 +273,7 @@ async function respondCached(
     status: 200,
     headers: {
       ...clientHeaders,
-      'cache-control': `public, max-age=${maxAgeSeconds}`,
+      "cache-control": `public, max-age=${maxAgeSeconds}`,
     },
   });
   // Inline put (NOT ctx.waitUntil) so the next request — and tests — observe
@@ -286,7 +298,10 @@ async function respondCached(
  * canonical integer string. Cache-key flooding via these variants is the
  * specific attack we're guarding against.
  */
-function parsePositiveIntQuery(raw: string | null, paramName: string): number | null {
+function parsePositiveIntQuery(
+  raw: string | null,
+  paramName: string,
+): number | null {
   if (raw === null) return null;
   const n = Number.parseInt(raw, 10);
   if (!Number.isInteger(n) || n <= 0 || String(n) !== raw) {
@@ -300,9 +315,9 @@ function parsePositiveIntQuery(raw: string | null, paramName: string): number | 
 }
 
 function matchesEtag(ifNoneMatch: string, etag: string): boolean {
-  if (ifNoneMatch === '*') return true;
-  for (const raw of ifNoneMatch.split(',')) {
-    const tag = raw.trim().replace(/^W\//, '');
+  if (ifNoneMatch === "*") return true;
+  for (const raw of ifNoneMatch.split(",")) {
+    const tag = raw.trim().replace(/^W\//, "");
     if (tag === etag) return true;
   }
   return false;
@@ -321,12 +336,12 @@ function matchesEtag(ifNoneMatch: string, etag: string): boolean {
  */
 function relabelForClient(cached: Response): Response {
   const headers = new Headers(cached.headers);
-  const cc = headers.get('cache-control') ?? '';
+  const cc = headers.get("cache-control") ?? "";
   // Map any cache-control flavour to `private, max-age=N` (lift the
   // existing N if present; default to 60s otherwise).
   const m = cc.match(/max-age=(\d+)/);
-  const maxAge = m ? m[1] : '60';
-  headers.set('cache-control', `private, max-age=${maxAge}`);
+  const maxAge = m ? m[1] : "60";
+  headers.set("cache-control", `private, max-age=${maxAge}`);
   return new Response(cached.body, {
     status: cached.status,
     statusText: cached.statusText,

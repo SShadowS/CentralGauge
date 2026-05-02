@@ -15,6 +15,7 @@ both read the same view. Implementation split across waves 1–7 (plans
 A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
 
 ### Added
+
 - D1 migration `0006_lifecycle.sql` (Plan A) — `lifecycle_events`,
   `concepts`, `concept_aliases`, `pending_review`, `v_lifecycle_state`
   view; nullable FK `concept_id` column on `shortcomings`.
@@ -66,6 +67,7 @@ A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
   idempotency, resume-on-failure, lock-token tiebreaker.
 
 ### Changed
+
 - `verify` writes the production-vendor-prefixed slug into
   `model-shortcomings/*.json` directly — no transformation at populate
   time (Plan B).
@@ -80,6 +82,7 @@ A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
   separate revocation paths (Plan F5 + retro-patches).
 
 ### Backfilled
+
 - Synthetic lifecycle events for every (model, task_set) pair with
   historical bench / analysis / publish artifacts (Plan B). Pre-P6
   runs use sentinel `task_set_hash='pre-p6-unknown'` and surface in a
@@ -88,6 +91,7 @@ A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
   slugs (Plan B). Previously-unmapped files become uploadable.
 
 ### Operator
+
 - `CLAUDE.md` gained a `## Lifecycle` section (Plan J2).
 - `docs/site/operations.md` gained six lifecycle runbooks (Plan J3).
 - The recommended onboarding command for a new model is now
@@ -95,6 +99,7 @@ A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
   flow).
 
 ### Out of scope (deferred to follow-up)
+
 - `/concepts/<slug>` public page (schema work done; route + UI are a
   separate plan).
 - Reproduction-bundle download UX.
@@ -108,6 +113,7 @@ A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
 Closes the parity gap with the legacy dashboard.
 
 ### Added
+
 - Pass@1 / Pass@2 split with multi-run "best across runs per task" semantics (leaderboard mini-bar; model detail breakdown tile)
 - `tasks_attempted_distinct` field on LeaderboardRow + ModelDetail.aggregates (per-task count alongside legacy per-attempt `tasks_attempted`)
 - /categories (index + drill-down)
@@ -121,20 +127,24 @@ Closes the parity gap with the legacy dashboard.
 - Run detail per-attempt section gains "View transcript" link (gated on `transcript_key` presence) using existing TranscriptViewer
 
 ### Changed
+
 - LeaderboardRow gains tasks_passed_attempt_1, tasks_passed_attempt_2_only, tasks_attempted_distinct, pass_at_n, settings_suffix
 - ModelDetail.aggregates parallel extension
 - /tasks gains Category column
 - Visual regression baselines regenerated per-phase (B/C/D/E/F)
 
 ### Deprecated
+
 - `LeaderboardRow.tasks_attempted` (per-attempt count) — still emitted; superseded by `tasks_attempted_distinct` (per-task). Removal targeted P9+.
 - `LeaderboardRow.tasks_passed` (per-attempt sum) — same.
 
 ### Operator
+
 - docs/site/operations.md §"Tasks-empty symptom (CC-1)" cross-links the existing P6 §"Catalog reconciliation" runbook (run `centralgauge sync-catalog --apply` to populate tasks)
 - docs/site/operations.md §"Shortcomings empty (CC-2)" documents the P8 analyzer-build deferral
 
 ### Out of scope (deferred to P8)
+
 - Shortcomings analyzer build (CC-2 root cause; bench-side LLM-driven classification + signed batch writes)
 - Incorrect-pattern rendering (CR-1; needs new /api/v1/shortcomings/<id>/incorrect-pattern endpoint with fzstd decompression)
 - `tasks_attempted` deprecation (P7 ships co-existence; P9+ may remove the legacy field)

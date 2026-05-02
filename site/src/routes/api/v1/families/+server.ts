@@ -1,14 +1,18 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
 
 export const GET: RequestHandler = async ({ request, platform }) => {
   const env = platform!.env;
   try {
     const rows = await getAll<{
-      slug: string; display_name: string; vendor: string;
-      model_count: number; latest_avg_score: number | null; latest_model_slug: string | null;
+      slug: string;
+      display_name: string;
+      vendor: string;
+      model_count: number;
+      latest_avg_score: number | null;
+      latest_model_slug: string | null;
     }>(
       env.DB,
       `
@@ -41,7 +45,9 @@ export const GET: RequestHandler = async ({ request, platform }) => {
         display_name: r.display_name,
         vendor: r.vendor,
         model_count: +(r.model_count ?? 0),
-        latest_avg_score: r.latest_avg_score === null ? null : +(r.latest_avg_score),
+        latest_avg_score: r.latest_avg_score === null
+          ? null
+          : +(r.latest_avg_score),
         latest_model_slug: r.latest_model_slug,
       })),
     });

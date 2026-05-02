@@ -10,25 +10,25 @@
  */
 export const FIXTURE = {
   family: {
-    claude: 'claude',
-    gpt: 'gpt',
+    claude: "claude",
+    gpt: "gpt",
   },
   model: {
-    sonnet: 'sonnet-4-7',
-    haiku: 'haiku-3-5',
-    gpt5: 'gpt-5',
+    sonnet: "sonnet-4-7",
+    haiku: "haiku-3-5",
+    gpt5: "gpt-5",
   },
   task: {
-    easy1: 'CG-AL-E001',
-    easy2: 'CG-AL-E002',
-    medium1: 'CG-AL-M001',
-    hard1: 'CG-AL-H001',
+    easy1: "CG-AL-E001",
+    easy2: "CG-AL-E002",
+    medium1: "CG-AL-M001",
+    hard1: "CG-AL-H001",
   },
   run: {
     /** First run created by seedSmokeData ({ runCount: 5 }) */
-    run0: 'run-0000',
-    run1: 'run-0001',
+    run0: "run-0000",
+    run1: "run-0001",
   },
   /** Search-FTS fixture: query that must produce a row with <mark> */
-  searchKnownQuery: 'AL0132',
+  searchKnownQuery: "AL0132",
 } as const;

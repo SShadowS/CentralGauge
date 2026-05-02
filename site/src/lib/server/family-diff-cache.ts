@@ -23,7 +23,7 @@
  *   spells out the same trap.
  */
 
-const CACHE_NAME = 'lifecycle-family-diff';
+const CACHE_NAME = "lifecycle-family-diff";
 
 export const FAMILY_DIFF_CACHE_NAME = CACHE_NAME;
 
@@ -56,7 +56,7 @@ export function buildFamilyDiffCacheKeys(opts: {
   from_gen_event_id: number | null;
   to_gen_event_id: number | null;
 }): string[] {
-  const origin = opts.origin ?? 'http://internal.invalid';
+  const origin = opts.origin ?? "http://internal.invalid";
   const slug = encodeURIComponent(opts.family_slug);
   const base = `${origin}/api/v1/families/${slug}/diff`;
   const tsh = encodeURIComponent(opts.task_set_hash);

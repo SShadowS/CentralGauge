@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { applyD1Migrations, env } from 'cloudflare:test';
-import { computeModelAggregates } from '../../src/lib/server/model-aggregates';
-import { resetDb } from '../utils/reset-db';
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { applyD1Migrations, env } from "cloudflare:test";
+import { computeModelAggregates } from "../../src/lib/server/model-aggregates";
+import { resetDb } from "../utils/reset-db";
 
 async function seed(): Promise<void> {
   await resetDb();
@@ -30,21 +30,66 @@ async function seed(): Promise<void> {
     `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
-    .bind('r1', 'ts_cur', 1, 's', 'rig', '2026-04-01T00:00:00Z', '2026-04-01T01:00:00Z', 'completed', 'verified', 'v1', 'sig', '2026-04-01T00:00:00Z', 1, new Uint8Array([0]))
+    .bind(
+      "r1",
+      "ts_cur",
+      1,
+      "s",
+      "rig",
+      "2026-04-01T00:00:00Z",
+      "2026-04-01T01:00:00Z",
+      "completed",
+      "verified",
+      "v1",
+      "sig",
+      "2026-04-01T00:00:00Z",
+      1,
+      new Uint8Array([0]),
+    )
     .run();
   // Run for model 1: in old task set
   await env.DB.prepare(
     `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
-    .bind('r2', 'ts_old', 1, 's', 'rig', '2025-04-01T00:00:00Z', '2025-04-01T01:00:00Z', 'completed', 'claimed', 'v1', 'sig', '2025-04-01T00:00:00Z', 1, new Uint8Array([0]))
+    .bind(
+      "r2",
+      "ts_old",
+      1,
+      "s",
+      "rig",
+      "2025-04-01T00:00:00Z",
+      "2025-04-01T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2025-04-01T00:00:00Z",
+      1,
+      new Uint8Array([0]),
+    )
     .run();
   // Run for model 2: in current task set
   await env.DB.prepare(
     `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
-    .bind('r3', 'ts_cur', 2, 's', 'rig', '2026-04-02T00:00:00Z', '2026-04-02T01:00:00Z', 'completed', 'claimed', 'v1', 'sig', '2026-04-02T00:00:00Z', 1, new Uint8Array([0]))
+    .bind(
+      "r3",
+      "ts_cur",
+      2,
+      "s",
+      "rig",
+      "2026-04-02T00:00:00Z",
+      "2026-04-02T01:00:00Z",
+      "completed",
+      "claimed",
+      "v1",
+      "sig",
+      "2026-04-02T00:00:00Z",
+      1,
+      new Uint8Array([0]),
+    )
     .run();
   await env.DB.batch([
     env.DB.prepare(
@@ -59,7 +104,7 @@ async function seed(): Promise<void> {
   ]);
 }
 
-describe('computeModelAggregates', () => {
+describe("computeModelAggregates", () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -67,15 +112,15 @@ describe('computeModelAggregates', () => {
     await seed();
   });
 
-  it('returns a single model aggregate', async () => {
+  it("returns a single model aggregate", async () => {
     const out = await computeModelAggregates(env.DB, { modelIds: [1] });
     expect(out.size).toBe(1);
     const a = out.get(1);
     expect(a).toBeDefined();
-    expect(typeof a!.run_count).toBe('number');
-    expect(typeof a!.verified_runs).toBe('number');
+    expect(typeof a!.run_count).toBe("number");
+    expect(typeof a!.verified_runs).toBe("number");
     if (a!.run_count > 0) {
-      expect(typeof a!.avg_score).toBe('number');
+      expect(typeof a!.avg_score).toBe("number");
       expect(a!.avg_score).toBeGreaterThanOrEqual(0);
       expect(a!.avg_score).toBeLessThanOrEqual(1);
     } else {
@@ -83,17 +128,20 @@ describe('computeModelAggregates', () => {
     }
   });
 
-  it('returns multiple model aggregates in one query', async () => {
+  it("returns multiple model aggregates in one query", async () => {
     const out = await computeModelAggregates(env.DB, { modelIds: [1, 2, 3] });
     expect(out.size).toBeLessThanOrEqual(3);
     for (const v of out.values()) {
-      expect(typeof v.run_count).toBe('number');
+      expect(typeof v.run_count).toBe("number");
     }
   });
 
-  it('current-task-set filter narrows results', async () => {
+  it("current-task-set filter narrows results", async () => {
     const all = await computeModelAggregates(env.DB, { modelIds: [1] });
-    const cur = await computeModelAggregates(env.DB, { modelIds: [1], taskSetCurrent: true });
+    const cur = await computeModelAggregates(env.DB, {
+      modelIds: [1],
+      taskSetCurrent: true,
+    });
     const a = all.get(1);
     const c = cur.get(1);
     if (a && c) {
@@ -102,12 +150,12 @@ describe('computeModelAggregates', () => {
     }
   });
 
-  it('omits latency_p50_ms by default (null)', async () => {
+  it("omits latency_p50_ms by default (null)", async () => {
     const out = await computeModelAggregates(env.DB, { modelIds: [1] });
     expect(out.get(1)?.latency_p50_ms).toBeNull();
   });
 
-  it('computes latency_p50_ms when includeLatencyP50 is set', async () => {
+  it("computes latency_p50_ms when includeLatencyP50 is set", async () => {
     const out = await computeModelAggregates(env.DB, {
       modelIds: [1],
       includeLatencyP50: true,
@@ -118,7 +166,7 @@ describe('computeModelAggregates', () => {
     expect(out.get(1)?.latency_p50_ms).toBe(600);
   });
 
-  it('latency_p50_ms median of even-length set averages two middle values', async () => {
+  it("latency_p50_ms median of even-length set averages two middle values", async () => {
     // Restrict to current task set (model 1 has only r1's two results: 600, 1200)
     const out = await computeModelAggregates(env.DB, {
       modelIds: [1],
@@ -129,7 +177,7 @@ describe('computeModelAggregates', () => {
     expect(out.get(1)?.latency_p50_ms).toBe(900);
   });
 
-  it('returns pass@1 / pass@2-only / tasks_attempted_distinct breakdown (P7 B1)', async () => {
+  it("returns pass@1 / pass@2-only / tasks_attempted_distinct breakdown (P7 B1)", async () => {
     // model 1, taskSetCurrent: 1 run (r1), 2 attempt-1 results: easy/a passed,
     // hard/b failed (no attempt=2). Expected: distinct=2, a1=1, a2only=0.
     const out = await computeModelAggregates(env.DB, {
@@ -147,7 +195,7 @@ describe('computeModelAggregates', () => {
       .toBeLessThanOrEqual(a!.tasks_attempted_distinct);
   });
 
-  it('settings_suffix renders when all runs share one settings_hash', async () => {
+  it("settings_suffix renders when all runs share one settings_hash", async () => {
     const out = await computeModelAggregates(env.DB, {
       modelIds: [1],
       taskSetCurrent: true,
@@ -155,6 +203,6 @@ describe('computeModelAggregates', () => {
     const a = out.get(1);
     // Only 1 run (r1) in current set with hash 's' → settings_profile (t=0,
     // max_tokens=null) → temperature-only suffix ` (t0)`.
-    expect(a?.settings_suffix).toBe(' (t0)');
+    expect(a?.settings_suffix).toBe(" (t0)");
   });
 });

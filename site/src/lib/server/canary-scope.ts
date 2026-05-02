@@ -76,12 +76,12 @@ export function rewriteAbsoluteLinks(html: string, sha: string): string {
       // Skip empty values.
       if (!value) return full;
       // Skip non-internal-absolute paths.
-      if (!value.startsWith('/')) return full; // relative
-      if (value.startsWith('//')) return full; // protocol-relative
+      if (!value.startsWith("/")) return full; // relative
+      if (value.startsWith("//")) return full; // protocol-relative
       if (value.startsWith(canaryPrefix)) return full; // already canary
       if (value === canaryRoot) return full; // bare canary root
 
-      const newValue = value === '/'
+      const newValue = value === "/"
         ? canaryPrefix
         : `${canaryPrefix}${value.slice(1)}`;
       return `${attr}=${q1}${newValue}${q2}`;

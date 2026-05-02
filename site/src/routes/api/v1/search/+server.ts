@@ -1,23 +1,25 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { applyMarkHighlighting } from '$lib/server/search-highlight';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { applyMarkHighlighting } from "$lib/server/search-highlight";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
-    const q = (url.searchParams.get('q') ?? '').trim();
-    if (!q) throw new ApiError(400, 'missing_query', 'q is required');
-    if (q.length > 200) throw new ApiError(400, 'query_too_long', 'q must be ≤ 200 chars');
+    const q = (url.searchParams.get("q") ?? "").trim();
+    if (!q) throw new ApiError(400, "missing_query", "q is required");
+    if (q.length > 200) {
+      throw new ApiError(400, "query_too_long", "q must be ≤ 200 chars");
+    }
 
     // FTS5 operators (NEAR, *, ^, column filters) are injectable via raw user input.
     // Wrap every token in double-quotes unconditionally — even single-word queries —
     // so the value is interpreted as a literal phrase, never as MATCH syntax.
     const tokens = q.split(/\s+/).filter(Boolean);
     const matchExpr = tokens
-      .map((t) => `"${t.replace(/"/g, '')}"`)
-      .join(' ');
+      .map((t) => `"${t.replace(/"/g, "")}"`)
+      .join(" ");
 
     // Note: FTS columns (compile_errors_text, failure_reasons_text) are NULL
     // under contentless mode and are NOT rendered by SearchResultRow.svelte —
@@ -73,7 +75,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       task_id: r.task_id,
       model_slug: r.model_slug,
       started_at: r.started_at,
-      snippet: r.snippet_text === null || r.snippet_text === ''
+      snippet: r.snippet_text === null || r.snippet_text === ""
         ? null
         : applyMarkHighlighting(r.snippet_text, tokens, 200),
     }));

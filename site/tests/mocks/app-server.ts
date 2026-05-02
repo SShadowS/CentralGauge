@@ -12,5 +12,5 @@ export function read(_asset: string): Response {
 }
 
 export function getRequestEvent(): never {
-  throw new Error('getRequestEvent stub: not available in unit tests');
+  throw new Error("getRequestEvent stub: not available in unit tests");
 }

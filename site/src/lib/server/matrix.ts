@@ -19,17 +19,20 @@ import type {
   MatrixModel,
   MatrixResponse,
   MatrixTask,
-} from '$lib/shared/api-types';
-import { getAll, type SqlParams } from './db';
-import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
+} from "$lib/shared/api-types";
+import { getAll, type SqlParams } from "./db";
+import {
+  formatSettingsSuffix,
+  type SettingsProfileLike,
+} from "./settings-suffix";
 
-export { cellColorBucket } from '$lib/client/matrix-helpers';
-export type { CellBucket } from '$lib/client/matrix-helpers';
+export { cellColorBucket } from "$lib/client/matrix-helpers";
+export type { CellBucket } from "$lib/client/matrix-helpers";
 
 export interface ComputeMatrixOpts {
-  set: 'current' | 'all';
+  set: "current" | "all";
   category: string | null;
-  difficulty: 'easy' | 'medium' | 'hard' | null;
+  difficulty: "easy" | "medium" | "hard" | null;
 }
 
 /**
@@ -38,7 +41,11 @@ export interface ComputeMatrixOpts {
  */
 function emptyResponse(opts: ComputeMatrixOpts): MatrixResponse {
   return {
-    filters: { set: opts.set, category: opts.category, difficulty: opts.difficulty },
+    filters: {
+      set: opts.set,
+      category: opts.category,
+      difficulty: opts.difficulty,
+    },
     tasks: [],
     models: [],
     cells: [],
@@ -54,7 +61,7 @@ export async function computeMatrix(
   // Filtered by current task_set (CR-5), category, and difficulty.
   const taskWheres: string[] = [];
   const taskParams: SqlParams = [];
-  if (opts.set === 'current') {
+  if (opts.set === "current") {
     taskWheres.push(
       `t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
     );
@@ -68,8 +75,8 @@ export async function computeMatrix(
     taskParams.push(opts.difficulty);
   }
   const taskWhereClause = taskWheres.length
-    ? `WHERE ${taskWheres.join(' AND ')}`
-    : '';
+    ? `WHERE ${taskWheres.join(" AND ")}`
+    : "";
 
   const taskRows = await getAll<{
     task_id: string;
@@ -95,25 +102,25 @@ export async function computeMatrix(
 
   const tasks: MatrixTask[] = taskRows.map((t) => ({
     id: t.task_id,
-    difficulty: t.difficulty as 'easy' | 'medium' | 'hard',
+    difficulty: t.difficulty as "easy" | "medium" | "hard",
     category_slug: t.category_slug,
     category_name: t.category_name,
   }));
 
   const taskIds = taskRows.map((t) => t.task_id);
-  const taskIdsPh = taskIds.map(() => '?').join(',');
+  const taskIdsPh = taskIds.map(() => "?").join(",");
 
   // -- 2. Models query ------------------------------------------------------
   // Filter to models that have at least one result for any task in the set,
   // also scoped to current task_set (CR-5). The settings_hash subquery is
   // similarly task_set-scoped — the suffix should reflect ONLY the runs
   // that contributed to the visible cells, not the model's lifetime runs.
-  const taskSetSubFilter = opts.set === 'current'
+  const taskSetSubFilter = opts.set === "current"
     ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-    : '';
-  const taskSetRunsFilter = opts.set === 'current'
+    : "";
+  const taskSetRunsFilter = opts.set === "current"
     ? `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
-    : '';
+    : "";
 
   // The settings_hash uniqueness is computed per-model in TS rather than via
   // a correlated subquery so we can also resolve the actual settings profile
@@ -143,7 +150,11 @@ export async function computeMatrix(
   if (modelRows.length === 0) {
     // Tasks exist but no model has run them — return empty models + empty cells.
     return {
-      filters: { set: opts.set, category: opts.category, difficulty: opts.difficulty },
+      filters: {
+        set: opts.set,
+        category: opts.category,
+        difficulty: opts.difficulty,
+      },
       tasks,
       models: [],
       cells: tasks.map(() => []),
@@ -153,7 +164,7 @@ export async function computeMatrix(
 
   // Settings suffix per model — ambiguous-when-multi rule, scoped to set.
   const modelIds = modelRows.map((m) => m.model_id);
-  const modelIdsPh = modelIds.map(() => '?').join(',');
+  const modelIdsPh = modelIds.map(() => "?").join(",");
   const settingsRows = await getAll<{
     model_id: number;
     settings_hash: string;
@@ -182,7 +193,7 @@ export async function computeMatrix(
   const profileByHash = new Map<string, SettingsProfileLike>();
   const uniqueHashes = Array.from(new Set(uniqueHashByModel.values()));
   if (uniqueHashes.length > 0) {
-    const ph = uniqueHashes.map(() => '?').join(',');
+    const ph = uniqueHashes.map(() => "?").join(",");
     const profileRows = await getAll<{
       hash: string;
       temperature: number | null;
@@ -194,8 +205,8 @@ export async function computeMatrix(
     );
     for (const p of profileRows) {
       profileByHash.set(p.hash, {
-        temperature: typeof p.temperature === 'number' ? p.temperature : null,
-        max_tokens: typeof p.max_tokens === 'number' ? p.max_tokens : null,
+        temperature: typeof p.temperature === "number" ? p.temperature : null,
+        max_tokens: typeof p.max_tokens === "number" ? p.max_tokens : null,
       });
     }
   }
@@ -262,11 +273,15 @@ export async function computeMatrix(
           attempted: 0,
           concept: null,
         },
-    ),
+    )
   );
 
   return {
-    filters: { set: opts.set, category: opts.category, difficulty: opts.difficulty },
+    filters: {
+      set: opts.set,
+      category: opts.category,
+      difficulty: opts.difficulty,
+    },
     tasks,
     models,
     cells,

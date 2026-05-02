@@ -1,11 +1,11 @@
-import type { Handle } from '@sveltejs/kit';
-import { isRateLimited, type RateLimitBinding } from '$lib/server/rate-limit';
-import { resetIdCounter } from '$lib/client/use-id';
-import { isCanary } from '$lib/server/canary';
-import { runNightlyBackup } from './cron/nightly-backup';
-import { runDailyDriftProbe } from './cron/catalog-drift';
+import type { Handle } from "@sveltejs/kit";
+import { isRateLimited, type RateLimitBinding } from "$lib/server/rate-limit";
+import { resetIdCounter } from "$lib/client/use-id";
+import { isCanary } from "$lib/server/canary";
+import { runNightlyBackup } from "./cron/nightly-backup";
+import { runDailyDriftProbe } from "./cron/catalog-drift";
 
-export { LeaderboardBroadcaster } from './do/leaderboard-broadcaster';
+export { LeaderboardBroadcaster } from "./do/leaderboard-broadcaster";
 
 interface ScheduledEnv {
   DB: D1Database;
@@ -25,37 +25,37 @@ interface ScheduledEnv {
 export async function scheduled(
   controller: ScheduledController,
   env: ScheduledEnv,
-  ctx: ExecutionContext
+  ctx: ExecutionContext,
 ): Promise<void> {
-  if (controller.cron === '0 2 * * *') {
+  if (controller.cron === "0 2 * * *") {
     ctx.waitUntil(
       runNightlyBackup(env).catch((err) => {
         console.error(JSON.stringify({
           ts: new Date().toISOString(),
-          level: 'error',
-          msg: 'nightly_backup_failed',
-          err: err instanceof Error ? err.message : String(err)
+          level: "error",
+          msg: "nightly_backup_failed",
+          err: err instanceof Error ? err.message : String(err),
         }));
-      })
+      }),
     );
     return;
   }
-  if (controller.cron === '0 3 * * *') {
+  if (controller.cron === "0 3 * * *") {
     ctx.waitUntil(
       runDailyDriftProbe(env).catch((err) => {
         console.error(JSON.stringify({
           ts: new Date().toISOString(),
-          level: 'error',
-          msg: 'catalog_drift_probe_failed',
-          err: err instanceof Error ? err.message : String(err)
+          level: "error",
+          msg: "catalog_drift_probe_failed",
+          err: err instanceof Error ? err.message : String(err),
         }));
-      })
+      }),
     );
     return;
   }
 }
 
-const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 export const handle: Handle = async ({ event, resolve }) => {
   // Reset the SSR id counter per request. Otherwise the long-lived Cloudflare
@@ -79,7 +79,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   const startNs = Date.now();
   const method = event.request.method;
   const path = event.url.pathname;
-  const ip = event.request.headers.get('cf-connecting-ip') || 'unknown';
+  const ip = event.request.headers.get("cf-connecting-ip") || "unknown";
 
   // Graceful degradation: if the platform bindings are somehow missing
   // (misconfiguration, local dev without --experimental-platform-proxy),
@@ -92,8 +92,8 @@ export const handle: Handle = async ({ event, resolve }) => {
   // revocation = throttle); IP-based limits would block legitimate weekly-CI
   // bursts (Phase G writes ~50 events per cycle × ~6 models = ~300/week,
   // and the throughput acceptance test exercises 100 events in tight loop).
-  const shouldLimit = WRITE_METHODS.has(method) && path.startsWith('/api/') &&
-    !path.startsWith('/api/v1/admin/lifecycle/');
+  const shouldLimit = WRITE_METHODS.has(method) && path.startsWith("/api/") &&
+    !path.startsWith("/api/v1/admin/lifecycle/");
 
   if (shouldLimit) {
     // The RL binding is provisioned via [[unsafe.bindings]] in wrangler.toml.
@@ -104,30 +104,38 @@ export const handle: Handle = async ({ event, resolve }) => {
         const result = await isRateLimited(rl, ip);
         if (result.limited) {
           const res = new Response(
-            JSON.stringify({ error: { code: 'rate_limited', message: 'Too many requests' } }),
+            JSON.stringify({
+              error: { code: "rate_limited", message: "Too many requests" },
+            }),
             {
               status: 429,
               headers: {
-                'content-type': 'application/json',
-                'cache-control': 'no-store',
-                'retry-after': String(result.retry_after),
-                'x-ratelimit-remaining': String(result.remaining)
-              }
-            }
+                "content-type": "application/json",
+                "cache-control": "no-store",
+                "retry-after": String(result.retry_after),
+                "x-ratelimit-remaining": String(result.remaining),
+              },
+            },
           );
-          logRequest(event.platform.env, { method, path, status: 429, ip, dur_ms: Date.now() - startNs });
+          logRequest(event.platform.env, {
+            method,
+            path,
+            status: 429,
+            ip,
+            dur_ms: Date.now() - startNs,
+          });
           return res;
         }
       } catch (err) {
         // Best-effort: if the binding throws we let the request through
         // rather than taking the whole API offline. Log the error so it surfaces.
         const env = event.platform.env as { LOG_LEVEL?: string };
-        if (env.LOG_LEVEL !== 'silent') {
+        if (env.LOG_LEVEL !== "silent") {
           console.error(JSON.stringify({
             ts: new Date().toISOString(),
-            level: 'error',
-            msg: 'rate_limit_binding_error',
-            err: err instanceof Error ? err.message : String(err)
+            level: "error",
+            msg: "rate_limit_binding_error",
+            err: err instanceof Error ? err.message : String(err),
           }));
         }
       }
@@ -138,7 +146,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
   // Surface canary-ness as a response header on every canary request.
   if (event.locals.canary) {
-    response.headers.set('x-canary', '1');
+    response.headers.set("x-canary", "1");
   }
 
   logRequest(event.platform.env, {
@@ -146,7 +154,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     path,
     status: response.status,
     ip,
-    dur_ms: Date.now() - startNs
+    dur_ms: Date.now() - startNs,
   });
   return response;
 };
@@ -174,9 +182,9 @@ function logRequest(env: unknown, entry: LogEntry) {
   } catch {
     return;
   }
-  if (level === 'silent') return;
+  if (level === "silent") return;
   console.log(JSON.stringify({
     ts: new Date().toISOString(),
-    ...entry
+    ...entry,
   }));
 }

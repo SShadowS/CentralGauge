@@ -1,11 +1,11 @@
-import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll } from '$lib/server/db';
-import { errorResponse } from '$lib/server/errors';
+import type { RequestHandler } from "./$types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import { errorResponse } from "$lib/server/errors";
 import type {
   CategoriesIndexItem,
   CategoriesIndexResponse,
-} from '$lib/shared/api-types';
+} from "$lib/shared/api-types";
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -14,8 +14,10 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   try {
     // Named cache (cg-categories) — same pattern as /api/v1/leaderboard.
     // 60s TTL is sufficient for a low-frequency aggregate endpoint.
-    const cache = await platform!.caches.open('cg-categories');
-    const cacheKey = new Request(new URL(url.toString()).toString(), { method: 'GET' });
+    const cache = await platform!.caches.open("cg-categories");
+    const cacheKey = new Request(new URL(url.toString()).toString(), {
+      method: "GET",
+    });
 
     let payload: CategoriesIndexResponse | null = null;
     const cached = await cache.match(cacheKey);
@@ -76,8 +78,8 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // observe the entry deterministically.
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
-          'content-type': 'application/json; charset=utf-8',
-          'cache-control': `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
         },
       });
       await cache.put(cacheKey, storeRes);

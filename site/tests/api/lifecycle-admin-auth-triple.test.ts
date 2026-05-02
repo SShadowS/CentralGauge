@@ -27,9 +27,9 @@
  * fails this test. Per-endpoint behaviour (happy path, edge cases) is
  * still covered in the per-endpoint test files.
  */
-import { applyD1Migrations, env, SELF } from 'cloudflare:test';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { resetDb } from '../utils/reset-db';
+import { applyD1Migrations, env, SELF } from "cloudflare:test";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resetDb } from "../utils/reset-db";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -41,7 +41,7 @@ beforeEach(async () => {
 interface AuthTriple {
   name: string;
   url: string;
-  method: 'GET' | 'POST' | 'PUT';
+  method: "GET" | "POST" | "PUT";
   /**
    * For body-signed POST/PUT endpoints: if true, send an empty body.
    * The unauthenticated check still expects 401 — the auth gate runs
@@ -52,106 +52,106 @@ interface AuthTriple {
 
 const POST_ENDPOINTS: AuthTriple[] = [
   {
-    name: 'POST /events',
-    url: 'https://x/api/v1/admin/lifecycle/events',
-    method: 'POST',
+    name: "POST /events",
+    url: "https://x/api/v1/admin/lifecycle/events",
+    method: "POST",
     body: JSON.stringify({ version: 1, payload: {} }),
   },
   {
-    name: 'POST /concepts/list',
-    url: 'https://x/api/v1/admin/lifecycle/concepts/list',
-    method: 'POST',
-    body: JSON.stringify({ version: 1, payload: { scope: 'list', ts: 1 } }),
+    name: "POST /concepts/list",
+    url: "https://x/api/v1/admin/lifecycle/concepts/list",
+    method: "POST",
+    body: JSON.stringify({ version: 1, payload: { scope: "list", ts: 1 } }),
   },
   {
-    name: 'POST /concepts/create',
-    url: 'https://x/api/v1/admin/lifecycle/concepts/create',
-    method: 'POST',
+    name: "POST /concepts/create",
+    url: "https://x/api/v1/admin/lifecycle/concepts/create",
+    method: "POST",
     body: JSON.stringify({ version: 1, payload: {} }),
   },
   {
-    name: 'POST /concepts/merge',
-    url: 'https://x/api/v1/admin/lifecycle/concepts/merge',
-    method: 'POST',
+    name: "POST /concepts/merge",
+    url: "https://x/api/v1/admin/lifecycle/concepts/merge",
+    method: "POST",
     body: JSON.stringify({ version: 1, payload: {} }),
   },
   {
-    name: 'POST /concepts/review-enqueue',
-    url: 'https://x/api/v1/admin/lifecycle/concepts/review-enqueue',
-    method: 'POST',
+    name: "POST /concepts/review-enqueue",
+    url: "https://x/api/v1/admin/lifecycle/concepts/review-enqueue",
+    method: "POST",
     body: JSON.stringify({ version: 1, payload: {} }),
   },
   {
-    name: 'POST /shortcomings/unclassified',
-    url: 'https://x/api/v1/admin/lifecycle/shortcomings/unclassified',
-    method: 'POST',
-    body: JSON.stringify({ version: 1, payload: { scope: 'list', ts: 1 } }),
+    name: "POST /shortcomings/unclassified",
+    url: "https://x/api/v1/admin/lifecycle/shortcomings/unclassified",
+    method: "POST",
+    body: JSON.stringify({ version: 1, payload: { scope: "list", ts: 1 } }),
   },
   {
-    name: 'POST /cluster-review/queue',
-    url: 'https://x/api/v1/admin/lifecycle/cluster-review/queue',
-    method: 'POST',
-    body: JSON.stringify({ version: 1, payload: { scope: 'list', ts: 1 } }),
+    name: "POST /cluster-review/queue",
+    url: "https://x/api/v1/admin/lifecycle/cluster-review/queue",
+    method: "POST",
+    body: JSON.stringify({ version: 1, payload: { scope: "list", ts: 1 } }),
   },
   {
-    name: 'POST /cluster-review/decide',
-    url: 'https://x/api/v1/admin/lifecycle/cluster-review/decide',
-    method: 'POST',
+    name: "POST /cluster-review/decide",
+    url: "https://x/api/v1/admin/lifecycle/cluster-review/decide",
+    method: "POST",
     body: JSON.stringify({ version: 1, payload: {} }),
   },
   {
-    name: 'POST /review/[id]/decide',
-    url: 'https://x/api/v1/admin/lifecycle/review/1/decide',
-    method: 'POST',
-    body: JSON.stringify({ decision: 'accept' }),
+    name: "POST /review/[id]/decide",
+    url: "https://x/api/v1/admin/lifecycle/review/1/decide",
+    method: "POST",
+    body: JSON.stringify({ decision: "accept" }),
   },
 ];
 
 const HEADER_SIGNED_GET_ENDPOINTS: AuthTriple[] = [
   {
-    name: 'GET /events',
-    url: 'https://x/api/v1/admin/lifecycle/events?model=m',
-    method: 'GET',
+    name: "GET /events",
+    url: "https://x/api/v1/admin/lifecycle/events?model=m",
+    method: "GET",
   },
   {
-    name: 'GET /state',
-    url: 'https://x/api/v1/admin/lifecycle/state?model=m&task_set=h',
-    method: 'GET',
+    name: "GET /state",
+    url: "https://x/api/v1/admin/lifecycle/state?model=m&task_set=h",
+    method: "GET",
   },
   {
-    name: 'GET /r2/<key>',
-    url: 'https://x/api/v1/admin/lifecycle/r2/lifecycle/m/h/x.bin',
-    method: 'GET',
+    name: "GET /r2/<key>",
+    url: "https://x/api/v1/admin/lifecycle/r2/lifecycle/m/h/x.bin",
+    method: "GET",
   },
   {
-    name: 'PUT /r2/<key>',
-    url: 'https://x/api/v1/admin/lifecycle/r2/lifecycle/m/h/x.bin',
-    method: 'PUT',
-    body: 'data',
+    name: "PUT /r2/<key>",
+    url: "https://x/api/v1/admin/lifecycle/r2/lifecycle/m/h/x.bin",
+    method: "PUT",
+    body: "data",
   },
   {
-    name: 'GET /review/queue',
-    url: 'https://x/api/v1/admin/lifecycle/review/queue',
-    method: 'GET',
+    name: "GET /review/queue",
+    url: "https://x/api/v1/admin/lifecycle/review/queue",
+    method: "GET",
   },
 ];
 
-describe('F5.5 — body-signed POST endpoints reject unauthenticated requests', () => {
+describe("F5.5 — body-signed POST endpoints reject unauthenticated requests", () => {
   for (const ep of POST_ENDPOINTS) {
     it(`${ep.name} → 401 unauthenticated`, async () => {
       const r = await SELF.fetch(ep.url, {
         method: ep.method,
-        headers: { 'content-type': 'application/json' },
+        headers: { "content-type": "application/json" },
         body: ep.body,
       });
       expect(r.status).toBe(401);
       const body = (await r.json()) as { code: string };
-      expect(body.code).toBe('unauthenticated');
+      expect(body.code).toBe("unauthenticated");
     });
   }
 });
 
-describe('F5.5 — header-signed GET/PUT endpoints reject unauthenticated requests', () => {
+describe("F5.5 — header-signed GET/PUT endpoints reject unauthenticated requests", () => {
   for (const ep of HEADER_SIGNED_GET_ENDPOINTS) {
     it(`${ep.name} → 4xx (no CF Access, no signature headers)`, async () => {
       const init: RequestInit = { method: ep.method };
@@ -172,37 +172,39 @@ describe('F5.5 — header-signed GET/PUT endpoints reject unauthenticated reques
       expect(r.status).toBeGreaterThanOrEqual(400);
       expect(r.status).toBeLessThan(500);
       // Most paths surface { code: 'unauthenticated' } — assert when JSON.
-      const ct = r.headers.get('content-type') ?? '';
-      if (ct.includes('application/json')) {
+      const ct = r.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
         const body = (await r.json()) as { code?: string; error?: string };
         // Acceptable codes: unauthenticated (no auth at all), bad_key_id,
         // invalid_key (path validator runs ahead of auth on r2/<key>),
         // payload_too_large (PUT cap), missing_model, missing_params.
         expect([
-          'unauthenticated',
-          'bad_key_id',
-          'invalid_key',
-          'missing_model',
-          'missing_params',
-          'payload_too_large',
+          "unauthenticated",
+          "bad_key_id",
+          "invalid_key",
+          "missing_model",
+          "missing_params",
+          "payload_too_large",
         ]).toContain(body.code);
       }
     });
   }
 });
 
-describe('F5.5 — CF Access bypass attempts fail closed', () => {
-  it('malformed CF Access JWT does NOT fall through to unauthenticated', async () => {
+describe("F5.5 — CF Access bypass attempts fail closed", () => {
+  it("malformed CF Access JWT does NOT fall through to unauthenticated", async () => {
     // Whoever sets cf-access-jwt-assertion is asserting "I am via CF Access"
     // — the verifier MUST NOT silently fall back to the signed-body path
     // and let the request through. Our authenticateAdminRequest implements
     // this: any JWT header present forks into the JWT verifier, which
     // throws on every failure path.
     const r = await SELF.fetch(
-      'https://x/api/v1/admin/lifecycle/review/queue',
+      "https://x/api/v1/admin/lifecycle/review/queue",
       {
-        method: 'GET',
-        headers: { 'cf-access-jwt-assertion': 'eyJhbGciOiJSUzI1NiJ9.bogus.bogus' },
+        method: "GET",
+        headers: {
+          "cf-access-jwt-assertion": "eyJhbGciOiJSUzI1NiJ9.bogus.bogus",
+        },
       },
     );
     // 401 (cf_access_misconfigured / cf_access_malformed) or 500
@@ -210,12 +212,12 @@ describe('F5.5 — CF Access bypass attempts fail closed', () => {
     expect([401, 500]).toContain(r.status);
   });
 
-  it('JWT with wrong shape (1 part) is rejected', async () => {
+  it("JWT with wrong shape (1 part) is rejected", async () => {
     const r = await SELF.fetch(
-      'https://x/api/v1/admin/lifecycle/review/queue',
+      "https://x/api/v1/admin/lifecycle/review/queue",
       {
-        method: 'GET',
-        headers: { 'cf-access-jwt-assertion': 'singlepart' },
+        method: "GET",
+        headers: { "cf-access-jwt-assertion": "singlepart" },
       },
     );
     expect([401, 500]).toContain(r.status);

@@ -1,10 +1,13 @@
-import { cloudflareTest, readD1Migrations } from '@cloudflare/vitest-pool-workers';
-import path from 'path';
-import { readFileSync } from 'fs';
-import { defineConfig } from 'vitest/config';
+import {
+  cloudflareTest,
+  readD1Migrations,
+} from "@cloudflare/vitest-pool-workers";
+import path from "path";
+import { readFileSync } from "fs";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig(async () => {
-  const migrations = await readD1Migrations('./migrations');
+  const migrations = await readD1Migrations("./migrations");
 
   // Inline the SvelteKit-built `hooks.server.js` as the sidecar worker's
   // script. This sidecar exists ONLY to host the LeaderboardBroadcaster
@@ -24,17 +27,17 @@ export default defineConfig(async () => {
   // So we strip the chunk imports here to satisfy miniflare's loader; they
   // are dead code inside the sidecar.
   const hooksScript = readFileSync(
-    path.resolve('./.svelte-kit/output/server/entries/hooks.server.js'),
-    'utf8'
-  ).replace(/^import\s+[^;]+from\s+["']\.\.\/chunks\/[^"']+["'];?\s*$/gm, '');
+    path.resolve("./.svelte-kit/output/server/entries/hooks.server.js"),
+    "utf8",
+  ).replace(/^import\s+[^;]+from\s+["']\.\.\/chunks\/[^"']+["'];?\s*$/gm, "");
 
   // Inject the Deno-side lifecycle types source as a string constant so the
   // worker-mirror parity test (`lifecycle-event-types-parity.test.ts`) can
   // diff against it without filesystem access. Reading the file at
   // config-time = single source of truth, evaluated once per test run.
   const lifecycleTypesSource = readFileSync(
-    path.resolve('../src/lifecycle/types.ts'),
-    'utf8',
+    path.resolve("../src/lifecycle/types.ts"),
+    "utf8",
   );
 
   // Inject the cross-language golden vectors fixture so the miniflare sandbox
@@ -48,50 +51,53 @@ export default defineConfig(async () => {
   return {
     resolve: {
       alias: {
-        $lib: path.resolve('./src/lib')
-      }
+        $lib: path.resolve("./src/lib"),
+      },
     },
     plugins: [
       cloudflareTest({
-        wrangler: { configPath: './wrangler.toml' },
+        wrangler: { configPath: "./wrangler.toml" },
         miniflare: {
-          compatibilityDate: '2026-04-17',
-          compatibilityFlags: ['nodejs_compat'],
+          compatibilityDate: "2026-04-17",
+          compatibilityFlags: ["nodejs_compat"],
           bindings: {
             TEST_MIGRATIONS: migrations,
-            LOG_LEVEL: 'silent',
-            FLAG_OG_DYNAMIC: 'on',
-            FLAG_RUM_BEACON: 'on',
-            CF_WEB_ANALYTICS_TOKEN: 'test-token',
+            LOG_LEVEL: "silent",
+            FLAG_OG_DYNAMIC: "on",
+            FLAG_RUM_BEACON: "on",
+            CF_WEB_ANALYTICS_TOKEN: "test-token",
           },
           durableObjects: {
-            LEADERBOARD_BROADCASTER: { className: 'LeaderboardBroadcaster', scriptName: 'do-script' }
+            LEADERBOARD_BROADCASTER: {
+              className: "LeaderboardBroadcaster",
+              scriptName: "do-script",
+            },
           },
           workers: [
             {
-              name: 'do-script',
+              name: "do-script",
               modules: true,
               script: hooksScript,
-              compatibilityDate: '2026-04-17',
-              compatibilityFlags: ['nodejs_compat']
-            }
-          ]
-        }
-      })
+              compatibilityDate: "2026-04-17",
+              compatibilityFlags: ["nodejs_compat"],
+            },
+          ],
+        },
+      }),
     ],
     define: {
       __LIFECYCLE_TYPES_SOURCE__: JSON.stringify(lifecycleTypesSource),
       __STATS_GOLDEN_VECTORS__: JSON.stringify(statsGoldenVectors),
     },
     test: {
-      setupFiles: ['./tests/setup.ts'],
-      include: ['tests/**/*.test.ts'],
+      setupFiles: ["./tests/setup.ts"],
+      include: ["tests/**/*.test.ts"],
       exclude: [
-        'tests/broadcaster.test.ts',
-        'tests/api/events-live.test.ts',
-        'tests/api/events-live-routes.test.ts',
-        'tests/build/**'
-      ]
-    }
+        "tests/broadcaster.test.ts",
+        "tests/api/events-live.test.ts",
+        "tests/api/events-live-routes.test.ts",
+        "tests/build/**",
+      ],
+    },
   };
 });

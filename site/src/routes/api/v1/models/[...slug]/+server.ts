@@ -1,10 +1,13 @@
-import type { RequestHandler } from './$types';
-import type { FailureMode, ModelDetail, ModelHistoryPoint } from '$shared/api-types';
-import { cachedJson } from '$lib/server/cache';
-import { getAll, getFirst } from '$lib/server/db';
-import { ApiError, errorResponse } from '$lib/server/errors';
-import { computeModelAggregates } from '$lib/server/model-aggregates';
-import { ServerTimer } from '$lib/server/server-timing';
+import type { RequestHandler } from "./$types";
+import type {
+  FailureMode,
+  ModelDetail,
+  ModelHistoryPoint,
+} from "$shared/api-types";
+import { cachedJson } from "$lib/server/cache";
+import { getAll, getFirst } from "$lib/server/db";
+import { ApiError, errorResponse } from "$lib/server/errors";
+import { computeModelAggregates } from "$lib/server/model-aggregates";
 
 interface ModelRow {
   id: number;
@@ -39,7 +42,11 @@ const RECENT_RUNS_LIMIT = 20;
 const FAILURE_MODES_LIMIT = 10;
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const env = platform.env;
 
   try {
@@ -51,18 +58,17 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
        WHERE m.slug = ?`,
       [params.slug!],
     );
-    if (!model) throw new ApiError(404, 'model_not_found', `No model '${params.slug}'`);
+    if (!model) {
+      throw new ApiError(404, "model_not_found", `No model '${params.slug}'`);
+    }
 
     // 1. Aggregates (run_count, verified_runs, avg_score, avg_cost_usd,
     //    latency_p50_ms, tasks_*, pass_at_n, settings_suffix). Helper now
     //    supplies all per-task counts, so the legacy per-attempt SELECT below
     //    is no longer needed.
-    const timer = new ServerTimer();
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
       includeLatencyP50: true,
-      includePassHatAtN: true,
-      timer,
     });
     const agg = aggMap.get(model.id) ?? null;
 
@@ -109,12 +115,17 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
          AND r.compile_errors_json != ''`,
       [model.id],
     );
-    const failureModes = aggregateFailureModes(failureRows, FAILURE_MODES_LIMIT);
+    const failureModes = aggregateFailureModes(
+      failureRows,
+      FAILURE_MODES_LIMIT,
+    );
 
     // 6. Predecessor — prior generation in the same family, if one exists.
-    let predecessor: NonNullable<ModelDetail['predecessor']> | undefined;
+    let predecessor: NonNullable<ModelDetail["predecessor"]> | undefined;
     if (model.generation !== null && model.generation > 1) {
-      const prior = await getFirst<{ id: number; slug: string; display_name: string }>(
+      const prior = await getFirst<
+        { id: number; slug: string; display_name: string }
+      >(
         env.DB,
         `SELECT id, slug, display_name FROM models
          WHERE family_id = ? AND generation = ?
@@ -122,7 +133,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         [model.family_id, model.generation - 1],
       );
       if (prior) {
-        const priorAgg = await computeModelAggregates(env.DB, { modelIds: [prior.id] });
+        const priorAgg = await computeModelAggregates(env.DB, {
+          modelIds: [prior.id],
+        });
         const a = priorAgg.get(prior.id);
         if (a && a.run_count > 0) {
           predecessor = {
@@ -138,14 +151,14 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // 7. added_at — there is no `models.added_at` column. Use released_at
     //    when present; otherwise fall back to MIN(runs.started_at) for this
     //    model so the page always has something to render.
-    let addedAt = model.released_at ?? '';
+    let addedAt = model.released_at ?? "";
     if (!addedAt) {
       const firstRun = await getFirst<{ first_seen: string | null }>(
         env.DB,
         `SELECT MIN(started_at) AS first_seen FROM runs WHERE model_id = ?`,
         [model.id],
       );
-      addedAt = firstRun?.first_seen ?? '';
+      addedAt = firstRun?.first_seen ?? "";
     }
 
     const runCount = agg?.run_count ?? 0;
@@ -155,7 +168,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const tasksPassedAttempt1 = agg?.tasks_passed_attempt_1 ?? 0;
     const tasksPassedAttempt2Only = agg?.tasks_passed_attempt_2_only ?? 0;
     const passAtN = agg?.pass_at_n ?? 0;
-    const settingsSuffix = agg?.settings_suffix ?? '';
+    const settingsSuffix = agg?.settings_suffix ?? "";
 
     const body: ModelDetail = {
       model: {
@@ -176,10 +189,6 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         pass_at_n: passAtN,
         avg_cost_usd: agg?.avg_cost_usd ?? 0,
         latency_p50_ms: agg?.latency_p50_ms ?? 0,
-        latency_p95_ms: agg?.latency_p95_ms ?? 0,
-        pass_rate_ci: agg?.pass_rate_ci ?? { lower: 0, upper: 1 },
-        pass_hat_at_n: agg?.pass_hat_at_n ?? 0,
-        cost_per_pass_usd: agg?.cost_per_pass_usd ?? null,
         run_count: runCount,
         verified_runs: agg?.verified_runs ?? 0,
       },
@@ -197,9 +206,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       ...(predecessor ? { predecessor } : {}),
     };
 
-    return cachedJson(request, body, {
-      extraHeaders: { 'server-timing': timer.header() },
-    });
+    return cachedJson(request, body);
   } catch (err) {
     return errorResponse(err);
   }
@@ -209,14 +216,15 @@ function toHistoryPoint(row: RunRow): ModelHistoryPoint {
   // tier is constrained to 'verified' | 'claimed' on output (per ModelHistoryPoint).
   // The runs table also allows 'trusted' — bucket it under 'verified' for the
   // chart's two-tone color encoding.
-  const tier: 'verified' | 'claimed' = row.tier === 'verified' || row.tier === 'trusted'
-    ? 'verified'
-    : 'claimed';
+  const tier: "verified" | "claimed" =
+    row.tier === "verified" || row.tier === "trusted" ? "verified" : "claimed";
   return {
     run_id: row.run_id,
     ts: row.ts,
     score: row.score === null ? 0 : Number(Number(row.score).toFixed(6)),
-    cost_usd: row.cost_usd === null ? 0 : Number(Number(row.cost_usd).toFixed(6)),
+    cost_usd: row.cost_usd === null
+      ? 0
+      : Number(Number(row.cost_usd).toFixed(6)),
     tier,
   };
 }
@@ -246,7 +254,7 @@ function aggregateFailureModes(
       if (entry) {
         entry.count += 1;
       } else {
-        counts.set(code, { count: 1, example: err.message ?? '' });
+        counts.set(code, { count: 1, example: err.message ?? "" });
       }
     }
   }

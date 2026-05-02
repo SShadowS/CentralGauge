@@ -11,10 +11,10 @@ export function formatScore(score: number): string {
 // formatCost returns "<$0.001" only for usd strictly less than 0.001.
 // Exactly 0.001 renders as "$0.001" — the threshold is a strict floor.
 export function formatCost(usd: number): string {
-  if (usd === 0) return '$0.00';
-  if (usd < 0.001) return '<$0.001';
-  if (usd < 0.01) return '$' + usd.toFixed(3);
-  return '$' + usd.toFixed(2);
+  if (usd === 0) return "$0.00";
+  if (usd < 0.001) return "<$0.001";
+  if (usd < 0.01) return "$" + usd.toFixed(3);
+  return "$" + usd.toFixed(2);
 }
 
 export function formatDuration(ms: number): string {
@@ -32,12 +32,15 @@ export function formatDuration(ms: number): string {
 
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 10_000) return (n / 1000).toFixed(1) + 'k';
-  if (n < 1_000_000) return Math.round(n / 1000) + 'k';
-  return (n / 1_000_000).toFixed(1) + 'M';
+  if (n < 10_000) return (n / 1000).toFixed(1) + "k";
+  if (n < 1_000_000) return Math.round(n / 1000) + "k";
+  return (n / 1_000_000).toFixed(1) + "M";
 }
 
-export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+export function formatRelativeTime(
+  iso: string,
+  now: Date = new Date(),
+): string {
   const then = new Date(iso);
   const deltaSec = Math.floor((now.getTime() - then.getTime()) / 1000);
   if (deltaSec < 60) return `${deltaSec}s ago`;
@@ -56,13 +59,15 @@ export function formatTaskRatio(passed: number, total: number): string {
   return `${passed}/${total}`;
 }
 
-import type { LeaderboardRow } from '$shared/api-types';
+import type { LeaderboardRow } from "$shared/api-types";
 
 /**
  * Heuristic-derived tier from a LeaderboardRow. The API doesn't yet expose
  * an explicit `tier` field; we infer from `verified_runs`. If the threshold
  * changes (e.g. "verified ≥ 3 runs") or a third tier appears, update here.
  */
-export function tierFromRow(row: Pick<LeaderboardRow, 'verified_runs'>): 'verified' | 'claimed' {
-  return row.verified_runs > 0 ? 'verified' : 'claimed';
+export function tierFromRow(
+  row: Pick<LeaderboardRow, "verified_runs">,
+): "verified" | "claimed" {
+  return row.verified_runs > 0 ? "verified" : "claimed";
 }
