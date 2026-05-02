@@ -20,7 +20,9 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM model_families`),
     env.DB.prepare(`DELETE FROM settings_profiles`),
     env.DB.prepare(`DELETE FROM machine_keys`),
-    // 0006_lifecycle.sql tables — clear in FK order (pending_review → concept_aliases → concepts → lifecycle_events).
+    // 0006_lifecycle.sql + 0007_family_diffs.sql tables — clear in FK order
+    // (family_diffs → pending_review → concept_aliases → concepts → lifecycle_events).
+    env.DB.prepare(`DELETE FROM family_diffs`),
     env.DB.prepare(`DELETE FROM pending_review`),
     env.DB.prepare(`DELETE FROM concept_aliases`),
     env.DB.prepare(`DELETE FROM concepts`),
