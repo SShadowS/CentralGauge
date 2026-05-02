@@ -17,6 +17,23 @@ import {
 import { extractModelName } from "../../helpers/mod.ts";
 import { generateShortcomingsHtml } from "./shortcomings.ts";
 
+function formatCI(
+  ci: { lower: number; upper: number },
+): string {
+  const lo = (ci.lower * 100).toFixed(1);
+  const hi = (ci.upper * 100).toFixed(1);
+  return `[${lo}–${hi}]%`;
+}
+
+function formatPerPass(value: number | null, prefix = "$"): string {
+  if (value === null) return "n/a";
+  if (prefix === "$") return `$${value.toFixed(4)}`;
+  // tokens
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+  return Math.round(value).toString();
+}
+
 const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
 const PILL_CLASSES = [
   "attempt-pill-1st",
@@ -115,6 +132,21 @@ export function generateModelCardsHtml(
             <div class="model-stats">
               <div class="stat"><span class="stat-label" title="Percentage of tasks that passed across all allowed attempts.">Pass Rate:</span><span class="stat-value">${
       formatRate(passRate)
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Wilson 95% confidence interval on pass rate. Use this to judge whether a lead over another model is statistically meaningful.">Pass Rate 95% CI:</span><span class="stat-value">${
+      formatCI(m.passRateCI)
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Total cost divided by number of tasks passed. Lower is better; null when no tasks passed.">$/Pass:</span><span class="stat-value">${
+      formatPerPass(m.costPerPass)
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Total tokens divided by tasks passed. Compares token efficiency across models with different verbosity.">Tokens/Pass:</span><span class="stat-value">${
+      formatPerPass(m.tokensPerPass, "")
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Median per-task wall-clock duration (LLM + compile + test).">Latency p50:</span><span class="stat-value">${
+      m.latencyP50 > 0 ? `${(m.latencyP50 / 1000).toFixed(1)}s` : "—"
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="95th-percentile per-task wall-clock duration. Tail-latency indicator.">Latency p95:</span><span class="stat-value">${
+      m.latencyP95 > 0 ? `${(m.latencyP95 / 1000).toFixed(1)}s` : "—"
     }</span></div>
               ${pillsHtml}
               <div class="stat"><span class="stat-label" title="Controls randomness in responses. Lower values (0) produce more deterministic output, higher values (1) increase creativity and variability.">Temperature:</span><span class="stat-value">${
