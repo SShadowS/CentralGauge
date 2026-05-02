@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { cachedJson } from '$lib/server/cache';
+import { computeEtag } from '$lib/server/cache';
 import { getFirst } from '$lib/server/db';
 import { ApiError, errorResponse } from '$lib/server/errors';
 import {
@@ -8,6 +8,7 @@ import {
   type DiffResult,
 } from '../../../../../../../../src/lifecycle/diff';
 import type { FamilyDiff } from '$lib/shared/api-types';
+import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
 
 /**
  * GET /api/v1/families/<slug>/diff?from=<event_id>&to=<event_id>&task_set=<hash>
@@ -27,8 +28,11 @@ import type { FamilyDiff } from '$lib/shared/api-types';
  * and returns the freshly-computed result; the worker trigger will catch up
  * on the next analysis.completed event.
  *
- * Public — no signature. Cache-Control: public, max-age=300 for materialised
- * results, max-age=60 for inline-recomputed fallbacks.
+ * Caching: writes/reads via the named cache `lifecycle-family-diff` keyed
+ * on the actual `request` object (NOT a `cachedJson`/`cache-control` header
+ * indirection — adapter-cloudflare interprets cache-control headers and
+ * stores responses in `caches.default`, where app-level invalidation can't
+ * reach them). The trigger's `invalidateFamilyDiff` evicts the same keys.
  */
 export const GET: RequestHandler = async ({ request, params, url, platform }) => {
   if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
@@ -38,6 +42,20 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     const fromQ = url.searchParams.get('from');
     const toQ = url.searchParams.get('to');
     const taskSetQ = url.searchParams.get('task_set');
+
+    // Cache lookup — use the actual Request as key. Hit short-circuits the
+    // SQL path and matches the trigger's eviction key shape exactly.
+    //
+    // The cached entry was stored with `cache-control: public, max-age=N`
+    // (workerd's Cache API rejects `private`/`no-store`/`no-cache` on
+    // `cache.put` per the Fetch spec's "cacheable" definition). Before
+    // returning we MUST rewrite the cache-control header to `private` so
+    // adapter-cloudflare's worker wrapper does NOT also tee a copy into
+    // `caches.default` (which is URL-keyed and bypasses our app-level
+    // named-cache eviction on subsequent reads).
+    const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return relabelForClient(cached);
 
     // Resolve task_set: explicit param > current.
     let taskSetHash: string;
@@ -88,7 +106,10 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
         analyzer_model_a: null,
         analyzer_model_b: null,
       };
-      return cachedJson(request, shell, { cacheControl: 'public, max-age=60' });
+      // Shorter TTL — empty-family state changes the moment the first
+      // analysis.completed event lands; the trigger will evict on that
+      // event (cache key shape is derived from the same parameters).
+      return await respondCached(cache, request, shell, 60);
     }
 
     let fromEventId: number | null;
@@ -140,7 +161,7 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
     );
     if (row) {
       const result = JSON.parse(row.payload_json) as FamilyDiff;
-      return cachedJson(request, result, { cacheControl: 'public, max-age=300' });
+      return await respondCached(cache, request, result, 300);
     }
 
     // Fallback: trigger may not have run yet (slow waitUntil OR backfill of
@@ -153,10 +174,107 @@ export const GET: RequestHandler = async ({ request, params, url, platform }) =>
       from_event_ts: fromEventTs,
       to_gen_event_id: toEventId,
     });
-    return cachedJson(request, result satisfies DiffResult, {
-      cacheControl: 'public, max-age=60',
-    });
+    return await respondCached(cache, request, result satisfies DiffResult, 60);
   } catch (err) {
     return errorResponse(err);
   }
 };
+
+/**
+ * Build a 200 JSON response, write to the named cache inline (NOT
+ * ctx.waitUntil — see CLAUDE.md cache discipline), and return the
+ * original. Cache.put requires a fresh response per call so we clone
+ * before put.
+ *
+ * `cache-control` is `private, max-age=N` — the named cache is the
+ * authoritative app-level cache layer (eviction by trigger targets it
+ * deterministically) and `private` prevents adapter-cloudflare from
+ * ALSO caching to `caches.default` (which we cannot reach for
+ * invalidation). `private` also stops shared CDNs from holding stale
+ * copies; if a downstream CDN cache is desired in future, encode the
+ * cache-key version into the request URL and let staleness be a miss
+ * (see `cache.ts` source comment for the same approach).
+ */
+async function respondCached(
+  cache: Cache,
+  request: Request,
+  body: unknown,
+  maxAgeSeconds: number,
+): Promise<Response> {
+  const etagHex = await computeEtag(body);
+  const etag = `"${etagHex}"`;
+  const ifNoneMatch = request.headers.get('if-none-match');
+  // The CLIENT-facing response uses `private` so the adapter-cloudflare
+  // wrapper (worker.js line 21) does NOT also write to caches.default
+  // (URL-keyed, unreachable to our app-level eviction). The Cache API
+  // entry is stored separately under the named cache via `storedResponse`
+  // below — that copy uses `public, max-age` because the workerd Cache
+  // API spec rejects `cache-control: private` / `no-store` / `no-cache`
+  // on `cache.put` (per the Fetch spec's "cacheable" definition).
+  const clientHeaders: Record<string, string> = {
+    'content-type': 'application/json; charset=utf-8',
+    etag,
+    'cache-control': `private, max-age=${maxAgeSeconds}`,
+    'x-api-version': 'v1',
+  };
+
+  if (ifNoneMatch && matchesEtag(ifNoneMatch, etag)) {
+    return new Response(null, { status: 304, headers: clientHeaders });
+  }
+
+  const bodyString = JSON.stringify(body);
+  const clientResponse = new Response(bodyString, {
+    status: 200,
+    headers: clientHeaders,
+  });
+
+  // Stored copy gets a different cache-control so workerd's Cache API
+  // accepts the put. Headers are otherwise identical (etag preserved so
+  // the next match-then-return path emits the same etag).
+  const storedResponse = new Response(bodyString, {
+    status: 200,
+    headers: {
+      ...clientHeaders,
+      'cache-control': `public, max-age=${maxAgeSeconds}`,
+    },
+  });
+  // Inline put (NOT ctx.waitUntil) so the next request — and tests — observe
+  // the cached entry deterministically.
+  await cache.put(request, storedResponse);
+  return clientResponse;
+}
+
+function matchesEtag(ifNoneMatch: string, etag: string): boolean {
+  if (ifNoneMatch === '*') return true;
+  for (const raw of ifNoneMatch.split(',')) {
+    const tag = raw.trim().replace(/^W\//, '');
+    if (tag === etag) return true;
+  }
+  return false;
+}
+
+/**
+ * Rewrite a response read from the named cache so the cache-control header
+ * matches the `private, max-age` semantics our handler advertises to
+ * clients. Without this rewrite the response would carry the stored
+ * `public, max-age` header (workerd's Cache API rejects non-cacheable
+ * cache-control on `put`), and adapter-cloudflare's `caches.default` tee
+ * would store a copy there too — silently bypassing app-level eviction.
+ *
+ * Body and etag are preserved verbatim so the next conditional-request
+ * cycle still works.
+ */
+function relabelForClient(cached: Response): Response {
+  const headers = new Headers(cached.headers);
+  const cc = headers.get('cache-control') ?? '';
+  // Map any cache-control flavour to `private, max-age=N` (lift the
+  // existing N if present; default to 60s otherwise).
+  const m = cc.match(/max-age=(\d+)/);
+  const maxAge = m ? m[1] : '60';
+  headers.set('cache-control', `private, max-age=${maxAge}`);
+  return new Response(cached.body, {
+    status: cached.status,
+    statusText: cached.statusText,
+    headers,
+  });
+}

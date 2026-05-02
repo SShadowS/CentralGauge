@@ -3,6 +3,7 @@ import { describe, expect, it, beforeAll, beforeEach } from 'vitest';
 import { createSignedPayload } from '../fixtures/keys';
 import { registerMachineKey } from '../fixtures/ingest-helpers';
 import { resetDb } from '../utils/reset-db';
+import { FAMILY_DIFF_CACHE_NAME } from '../../src/lib/server/family-diff-cache';
 
 beforeAll(async () => { await applyD1Migrations(env.DB, env.TEST_MIGRATIONS); });
 beforeEach(async () => { await resetDb(); });
@@ -243,4 +244,93 @@ describe('lifecycle diff trigger on analysis.completed', () => {
     ).first<{ n: number }>();
     expect(cnt!.n).toBe(0);
   });
+
+  it('trigger evicts the named-cache slot the GET handler put there (no 5-min stale window)', async () => {
+    // Wave-5 critical-fix coverage: invalidateFamilyDiffCache used to delete
+    // synthetic `https://cache.lifecycle/family-diff/...` URLs that no
+    // handler ever wrote to — entries actually stored under the
+    // `lifecycle-family-diff` named cache (keyed on real Request URLs)
+    // were left to be served stale for the full 300s TTL after every
+    // analysis.completed event.
+    //
+    // This test pre-warms the cache via a real GET, fires the trigger via
+    // a real POST analysis.completed, and asserts the next GET returns
+    // FRESH data (different to_gen_event_id) — proving eviction reached
+    // the right slot.
+    await seedFamilyAndModels({
+      familySlug: 'famcache',
+      vendor: 'anthropic',
+      models: [
+        { slug: 'famcache-4-6', api_id: 'fc-4-6', display: 'FC 4.6', gen: 46 },
+        { slug: 'famcache-4-7', api_id: 'fc-4-7', display: 'FC 4.7', gen: 47 },
+      ],
+    });
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash, created_at, task_count, is_current)
+       VALUES (?, ?, 0, 1)`,
+    ).bind('h-cache', new Date().toISOString()).run();
+
+    const { keyId, keypair } = await registerMachineKey('admin-cache', 'admin');
+    const t1 = Date.now() - 20_000;
+
+    // First analysis: triggers baseline_missing diff. POST body's
+    // origin = https://x (matches SELF.fetch).
+    const ev1 = await postAnalysisCompleted({
+      keyId, keypair,
+      modelSlug: 'famcache-4-6', taskSetHash: 'h-cache',
+      analyzerModel: ANALYZER_OPUS, ts: t1,
+    });
+
+    // Pre-warm the cache via a real GET. The handler MUST inline-put before
+    // returning, so the next cache.match observes the entry.
+    const url = 'https://x/api/v1/families/famcache/diff';
+    const r1 = await SELF.fetch(url);
+    expect(r1.status).toBe(200);
+    const body1 = await r1.json() as { to_gen_event_id: number; status: string };
+    expect(body1.status).toBe('baseline_missing');
+    expect(body1.to_gen_event_id).toBe(ev1.id);
+
+    const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
+    const warmHit = await cache.match(new Request(url));
+    expect(
+      warmHit,
+      'cache MUST have an entry after the GET — handler should inline-put before returning',
+    ).toBeTruthy();
+
+    // Now post a second analysis.completed for the sibling model. The
+    // trigger fires inline, materialises a new family_diffs row, AND
+    // evicts the named-cache slot for `https://x/.../diff`.
+    const ev2 = await postAnalysisCompleted({
+      keyId, keypair,
+      modelSlug: 'famcache-4-7', taskSetHash: 'h-cache',
+      analyzerModel: ANALYZER_OPUS, ts: t1 + 1000,
+    });
+
+    const postEvictMiss = await cache.match(new Request(url));
+    expect(
+      postEvictMiss,
+      'trigger MUST evict the cache slot the GET handler wrote — pre-fix this' +
+        ' would still hit (synthetic URL eviction never matched the real key).',
+    ).toBeUndefined();
+
+    // The next GET should observe ev2 as the to_gen_event_id, not ev1
+    // (proves the second-level cache.put fed fresh data into the cache).
+    // Confirm the trigger did NOT also poison caches.default — historical
+    // hazard: adapter-cloudflare's worker wrapper (worker.js line 21)
+    // automatically writes responses with `cache-control: public,*` to
+    // caches.default keyed by URL, bypassing app-level eviction. The
+    // handler now emits `private, max-age` to opt out of that tee.
+    const dflt = await caches.default.match(new Request(url));
+    expect(dflt, 'caches.default MUST NOT have an entry — adapter-cloudflare ' +
+      'should skip the tee for `cache-control: private` responses').toBeUndefined();
+
+    const r2 = await SELF.fetch(url);
+    expect(r2.status).toBe(200);
+    const body2 = await r2.json() as { to_gen_event_id: number; status: string };
+    expect(body2.to_gen_event_id).toBe(ev2.id);
+    // ev2 is comparable (analyzer matches). If we still saw the stale
+    // baseline_missing body, the trigger eviction failed.
+    expect(body2.status).toBe('comparable');
+  });
+
 });

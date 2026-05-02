@@ -3,6 +3,7 @@ import {
   type DiffDb,
   type DiffResult,
 } from '../../../../src/lifecycle/diff';
+import { invalidateFamilyDiff } from './family-diff-cache';
 
 /**
  * Worker-side ctx.waitUntil trigger fired by the lifecycle events POST
@@ -44,6 +45,16 @@ export async function maybeTriggerFamilyDiff(
     task_set_hash: string;
     event_type: string;
   },
+  /**
+   * Effective request origin (e.g. `https://centralgauge.sshadows.workers.dev`
+   * or `https://x` in tests). Used to build the canonical cache-key URLs
+   * for `invalidateFamilyDiff` so eviction matches what the GET handler put
+   * there. Optional — defaults to the same sentinel as concept-cache so
+   * production callers that omit it still get internally-consistent
+   * eviction (no entries land under that sentinel during a GET, so misses
+   * are harmless; but production code SHOULD pass `request.url`'s origin).
+   */
+  origin?: string,
 ): Promise<void> {
   if (event.event_type !== 'analysis.completed') return;
 
@@ -103,6 +114,7 @@ export async function maybeTriggerFamilyDiff(
     from_gen_event_id: prior?.id ?? null,
     from_event_ts: prior?.ts ?? null,
     to_gen_event_id: event.id,
+    origin,
   });
   ctx.waitUntil(job);
   await job;
@@ -116,6 +128,7 @@ interface DiffJobArgs {
   from_gen_event_id: number | null;
   from_event_ts: number | null;
   to_gen_event_id: number;
+  origin?: string;
 }
 
 async function runDiffJob(args: DiffJobArgs): Promise<void> {
@@ -129,7 +142,7 @@ async function runDiffJob(args: DiffJobArgs): Promise<void> {
     });
 
     await upsertFamilyDiff(args.db, result);
-    await invalidateFamilyDiffCache(args.cache, result);
+    await invalidateFamilyDiffCache(args.cache, result, args.origin);
   } catch (err) {
     // Failure is non-fatal — the API endpoint will recompute on demand
     // when the cache miss happens (the diff endpoint has a fallback path
@@ -213,19 +226,32 @@ async function upsertFamilyDiff(db: D1Database, result: DiffResult): Promise<voi
 }
 
 /**
- * Cache invalidation. Two surfaces to evict:
- *   - the family-diff endpoint's cached response keyed by URL.
- *   - the parent family page's data endpoint (already cached for 60s).
+ * Cache invalidation. Delegated to `invalidateFamilyDiff` (family-diff-cache.ts)
+ * so the eviction key shape MUST match the canonical Request URLs the GET
+ * handler used as cache keys. The previous version of this function deleted
+ * synthetic `https://cache.lifecycle/...` URLs that no handler ever wrote
+ * to — a silent no-op that left the named-cache entries to be served stale
+ * for the full 300s TTL.
  *
- * Cache API has no purge-by-tag; we delete by exact URL. CLAUDE.md's
- * KV-quota note applies: use caches.open('lifecycle'), NOT caches.default
- * (the adapter-cloudflare wrapper already touches caches.default keyed by
- * URL on its own, so app-level invalidation there is unreliable).
+ * Why a named cache (`caches.open('lifecycle-family-diff')`), not
+ * `caches.default`: `adapter-cloudflare` interprets `cache-control` headers
+ * and stores responses in `caches.default` keyed by URL — entries land
+ * there silently and are served back on the next matching request *without
+ * invoking the handler*, bypassing both ETag/304 negotiation AND any
+ * app-level invalidation. The GET handler now uses
+ * `cache.match(request)` / `cache.put(request, response.clone())` against
+ * the named cache exclusively; this evictor targets the same keys.
  */
-async function invalidateFamilyDiffCache(cache: Cache, result: DiffResult): Promise<void> {
-  const baseUrl = 'https://cache.lifecycle/family-diff';
-  await cache.delete(`${baseUrl}/${result.family_slug}/latest`);
-  await cache.delete(
-    `${baseUrl}/${result.family_slug}/${result.from_gen_event_id ?? 'baseline'}/${result.to_gen_event_id}`,
-  );
+async function invalidateFamilyDiffCache(
+  cache: Cache,
+  result: DiffResult,
+  origin?: string,
+): Promise<void> {
+  await invalidateFamilyDiff(cache, {
+    origin,
+    family_slug: result.family_slug,
+    task_set_hash: result.task_set_hash,
+    from_gen_event_id: result.from_gen_event_id,
+    to_gen_event_id: result.to_gen_event_id,
+  });
 }

@@ -4,6 +4,7 @@ import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 import { maybeTriggerFamilyDiff } from '$lib/server/lifecycle-diff-trigger';
+import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
 import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
 import {
   CANONICAL_ACTORS,
@@ -73,13 +74,23 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // read is fast. ctx.waitUntil keeps the POST response immediate while
     // the background job runs to completion.
     try {
-      const cache = await caches.open('lifecycle');
+      // Open the named cache the GET handler also writes to. Eviction has
+      // to target the same Cache instance and key shapes that the read path
+      // uses — see family-diff-cache.ts comment on why named cache (NOT
+      // caches.default).
+      const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
+      // Origin from the inbound request URL — matches what `cache.match`
+      // sees on subsequent fetches against the same origin so eviction
+      // hits the right keys. Production fronts can have multiple origins
+      // (custom domain + workers.dev fallback); each key shape is per-
+      // origin so we evict the one this writer's caller actually used.
+      const origin = new URL(request.url).origin;
       // Awaited inline (matches concept-cache-invalidation pattern: writers
       // do the work synchronously and ctx.waitUntil ALSO holds it open for
       // background completion — this keeps the next read deterministic AND
       // makes Vitest's miniflare runs observe the materialised row without
       // needing arbitrary drain hacks). The inline cost is one SELECT + one
-      // INSERT/UPDATE + two cache.delete calls — negligible vs the
+      // INSERT/UPDATE + several cache.delete calls — negligible vs the
       // signature-verification round-trip we already paid above.
       await maybeTriggerFamilyDiff(
         platform.context,
@@ -91,6 +102,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           task_set_hash: p.task_set_hash,
           event_type: p.event_type,
         },
+        origin,
       );
     } catch (err) {
       // Cache.open or trigger failure is non-fatal — the event is already
