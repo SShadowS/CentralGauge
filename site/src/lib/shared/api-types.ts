@@ -22,8 +22,10 @@ export interface LeaderboardQuery {
    * P7 Mini-phase B sort key. `avg_score` (default, server-side ORDER BY),
    * `pass_at_n` and `pass_at_1` (TS-side post-query sort because the
    * correlated subquery alias is not referenceable in SQLite ORDER BY).
+   * `cost_per_pass_usd` and `latency_p95_ms` (TS-side ascending sorts;
+   * lower is better, nulls last).
    */
-  sort: 'avg_score' | 'pass_at_n' | 'pass_at_1';
+  sort: 'avg_score' | 'pass_at_n' | 'pass_at_1' | 'cost_per_pass_usd' | 'latency_p95_ms';
   limit: number;
   cursor: { score: number; id: number } | null;
 }

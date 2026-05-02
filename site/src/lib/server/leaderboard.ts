@@ -234,6 +234,20 @@ export async function computeLeaderboard(
       ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug)
     );
     mapped.forEach((row, idx) => { row.rank = idx + 1; });
+  } else if (q.sort === 'cost_per_pass_usd') {
+    // Lower cost is better; null (0 tasks passed) sorts last.
+    mapped.sort((a, b) =>
+      (a.cost_per_pass_usd ?? Infinity) - (b.cost_per_pass_usd ?? Infinity)
+        || a.model.slug.localeCompare(b.model.slug)
+    );
+    mapped.forEach((row, idx) => { row.rank = idx + 1; });
+  } else if (q.sort === 'latency_p95_ms') {
+    // Lower latency is better; 0 (no data) sorts last.
+    mapped.sort((a, b) =>
+      (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity)
+        || a.model.slug.localeCompare(b.model.slug)
+    );
+    mapped.forEach((row, idx) => { row.rank = idx + 1; });
   }
 
   return mapped;

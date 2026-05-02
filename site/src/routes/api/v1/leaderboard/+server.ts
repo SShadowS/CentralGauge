@@ -95,11 +95,15 @@ function parseQuery(url: URL): LeaderboardQuery {
   // P7 Phase B5 — sort key. The page may pass sort fields the SQL ORDER BY
   // doesn't recognize (e.g. `model:desc`, `tasks_passed:desc`, used only by
   // the LeaderboardTable header buttons for client-side affordance, not for
-  // server semantics). Server only acts on the three values it understands;
+  // server semantics). Server only acts on the values it understands;
   // unknown sorts fall through to the default `avg_score` ORDER BY (no 400).
   const sortField = url.searchParams.get('sort')?.split(':')[0] ?? 'avg_score';
-  const sortRaw: 'avg_score' | 'pass_at_n' | 'pass_at_1' =
-    sortField === 'pass_at_n' || sortField === 'pass_at_1' ? sortField : 'avg_score';
+  const knownSorts = ['pass_at_n', 'pass_at_1', 'cost_per_pass_usd', 'latency_p95_ms'] as const;
+  type KnownSort = (typeof knownSorts)[number];
+  const sortRaw: 'avg_score' | KnownSort =
+    (knownSorts as readonly string[]).includes(sortField)
+      ? (sortField as KnownSort)
+      : 'avg_score';
 
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw ? parseInt(limitRaw, 10) : 50;

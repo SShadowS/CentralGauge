@@ -395,6 +395,71 @@ describe('GET /api/v1/leaderboard', () => {
   });
 
   // ===========================================================================
+  // I-1 complete-fix — cost_per_pass_usd + latency_p95_ms sort
+  // ===========================================================================
+
+  it('?sort=cost_per_pass_usd orders rows ascending by cost per passed task (I-1)', async () => {
+    // seed cost_snapshots:
+    //   sonnet (model_id=1): input=3.0, output=15.0 $/M
+    //   opus   (model_id=2): input=15.0, output=75.0 $/M
+    // r1+r2 (sonnet, current): tokens_in=1000+900+1000=... actually per result row
+    // The exact numerical cost_per_pass_usd values are complex; what matters is
+    // that opus (10x more expensive) ends up AFTER sonnet when sorted ascending.
+    // Verify: rows are sorted ascending (each row cost_per_pass_usd ≤ next).
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd&_cb=cpp');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(body.data.length).toBeGreaterThanOrEqual(2);
+
+    // Assert ascending cost order: each row's cost_per_pass_usd ≤ next.
+    // Nulls (0 tasks passed) go last → treat as Infinity for the check.
+    const costs = body.data.map((r) =>
+      r.cost_per_pass_usd === null ? Infinity : (r.cost_per_pass_usd as number)
+    );
+    for (let i = 0; i < costs.length - 1; i++) {
+      expect(costs[i]).toBeLessThanOrEqual(costs[i + 1]);
+    }
+
+    // Sonnet is cheaper (lower $/M) so should appear first.
+    const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
+    expect(firstSlug).toBe('sonnet-4.7');
+  });
+
+  it('?sort=latency_p95_ms orders rows ascending by p95 latency (I-1)', async () => {
+    // latency_p95_ms is computed by computeModelAggregates from run durations.
+    // The default seed rows all use duration_ms from the results table — which
+    // does not have a duration column directly; the aggregates use result-level
+    // tokens to proxy timing in tests. We just assert the sort invariant holds.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=latency_p95_ms&_cb=lat');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(body.data.length).toBeGreaterThanOrEqual(1);
+
+    // Assert ascending latency order: each row's latency_p95_ms ≤ next.
+    // Rows with 0 (no latency data) sort last.
+    const latencies = body.data.map((r) =>
+      (r.latency_p95_ms as number) === 0 ? Infinity : (r.latency_p95_ms as number)
+    );
+    for (let i = 0; i < latencies.length - 1; i++) {
+      expect(latencies[i]).toBeLessThanOrEqual(latencies[i + 1]);
+    }
+  });
+
+  it('?sort=invalid falls back to default avg_score sort (I-1)', async () => {
+    // An unrecognised sort value must not 400 — it silently falls back to avg_score.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    // Default seed: opus has avg_score=1.0, sonnet=0.75 → opus first.
+    const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
+    expect(firstSlug).toBe('opus-4.7');
+    // filters.sort should reflect the normalised fallback value.
+    expect((body as Record<string, unknown>).filters).toBeDefined();
+    const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
+    expect(filters.sort).toBe('avg_score');
+  });
+
+  // ===========================================================================
   // P7 Phase C1 — Category filter on leaderboard endpoint
   // ===========================================================================
 
