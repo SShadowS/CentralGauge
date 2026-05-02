@@ -107,6 +107,14 @@ describe('GET /api/v1/models/:slug', () => {
     expect(typeof body.model.added_at).toBe('string');
     expect(body.aggregates.run_count).toBe(1);
     expect(body.aggregates.avg_score).toBeCloseTo(0.5, 5);
+    expect(typeof body.aggregates.latency_p95_ms).toBe('number');
+    expect(body.aggregates.pass_rate_ci).toMatchObject({
+      lower: expect.any(Number),
+      upper: expect.any(Number),
+    });
+    expect(typeof body.aggregates.pass_hat_at_n).toBe('number');
+    const cost = (body.aggregates as unknown as { cost_per_pass_usd: number | null }).cost_per_pass_usd;
+    expect(cost === null || typeof cost === 'number').toBe(true);
     // recent_runs and history use the ModelHistoryPoint shape (run_id/ts/score/...).
     expect(body.recent_runs).toHaveLength(1);
     expect(body.recent_runs[0].run_id).toBe('r1');

@@ -207,6 +207,10 @@ export async function computeLeaderboard(
       avg_cost_usd: Math.round((+(r.avg_cost_usd ?? 0)) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,
       last_run_at: r.last_run_at,
+      latency_p95_ms: aggMap.get(r.model_id)?.latency_p95_ms ?? 0,
+      pass_rate_ci: aggMap.get(r.model_id)?.pass_rate_ci ?? { lower: 0, upper: 1 },
+      pass_hat_at_n: aggMap.get(r.model_id)?.pass_hat_at_n ?? 0,
+      cost_per_pass_usd: aggMap.get(r.model_id)?.cost_per_pass_usd ?? null,
     };
   });
 

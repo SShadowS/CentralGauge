@@ -93,6 +93,16 @@ describe('GET /api/v1/leaderboard', () => {
     expect(Math.abs((sonnet!.avg_score as number) - 0.75)).toBeLessThan(0.001);
     expect(Math.abs((opus!.avg_score as number) - 1.0)).toBeLessThan(0.001);
 
+    // New tier-1/2 metrics present on each row.
+    expect(typeof sonnet!.latency_p95_ms).toBe('number');
+    expect(sonnet!.pass_rate_ci).toMatchObject({
+      lower: expect.any(Number),
+      upper: expect.any(Number),
+    });
+    expect(typeof sonnet!.pass_hat_at_n).toBe('number');
+    const sonnetCost = sonnet!.cost_per_pass_usd as number | null;
+    expect(sonnetCost === null || typeof sonnetCost === 'number').toBe(true);
+
     // Opus is higher → sorted first
     const firstSlug = (body.data[0].model as Record<string, unknown>)['slug'];
     expect(firstSlug).toBe('opus-4.7');

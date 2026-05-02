@@ -59,6 +59,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
       includeLatencyP50: true,
+      includePassHatAtN: true,
     });
     const agg = aggMap.get(model.id) ?? null;
 
@@ -172,6 +173,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         pass_at_n: passAtN,
         avg_cost_usd: agg?.avg_cost_usd ?? 0,
         latency_p50_ms: agg?.latency_p50_ms ?? 0,
+        latency_p95_ms: agg?.latency_p95_ms ?? 0,
+        pass_rate_ci: agg?.pass_rate_ci ?? { lower: 0, upper: 1 },
+        pass_hat_at_n: agg?.pass_hat_at_n ?? 0,
+        cost_per_pass_usd: agg?.cost_per_pass_usd ?? null,
         run_count: runCount,
         verified_runs: agg?.verified_runs ?? 0,
       },
