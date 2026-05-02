@@ -57,6 +57,8 @@ import {
   type ErrorRow,
   type StateRow,
   StateRowSchema,
+  type StatusJsonError,
+  StatusJsonErrorSchema,
   type StatusJsonOutput,
   StatusJsonOutputSchema,
   type Step,
@@ -388,6 +390,59 @@ async function handleStatus(flags: StatusFlags): Promise<void> {
   if (errSection) console.log(errSection);
 }
 
+/** Suggested-command echo embedded in every structured `--json` error. */
+const RETRY_COMMAND = "centralgauge lifecycle status [--model <slug>]";
+
+/**
+ * Writers for {@link emitActionError}. Defaulted to `console.log`/
+ * `console.error` in production; tests inject in-memory collectors.
+ */
+interface ActionErrorWriters {
+  writeStdout: (s: string) => void;
+  writeStderr: (s: string) => void;
+}
+
+/**
+ * Format and emit a CLI-action error per the `--json` contract:
+ *
+ *   --json:        STDOUT receives a {@link StatusJsonError}-shaped JSON
+ *                  envelope; stderr stays silent. Consumers piping through
+ *                  `jq` can detect the failure by either non-zero exit code
+ *                  or the presence of `.error`.
+ *   no --json:     STDERR receives the standard `[FAIL] <msg>` line; stdout
+ *                  stays silent so any upstream pipe consumer sees an empty
+ *                  stream rather than partial garbage.
+ *
+ * Returns the exit code the action should pass to `Deno.exit`. Pure (no
+ * `Deno.exit` of its own) so the helper is unit-testable without process
+ * teardown.
+ */
+function emitActionError(
+  err: unknown,
+  flags: { json: boolean },
+  writers: ActionErrorWriters = {
+    writeStdout: (s) => console.log(s),
+    writeStderr: (s) => console.error(s),
+  },
+): number {
+  const message = err instanceof Error ? err.message : String(err);
+  if (flags.json) {
+    const code = err instanceof CentralGaugeError ? err.code : "UNKNOWN_ERROR";
+    const envelope: StatusJsonError = {
+      error: message,
+      code,
+      command: RETRY_COMMAND,
+    };
+    // Self-validate so a future schema rename doesn't silently drift the
+    // CI contract.
+    const verified = StatusJsonErrorSchema.parse(envelope);
+    writers.writeStdout(JSON.stringify(verified, null, 2));
+  } else {
+    writers.writeStderr(`${colors.red("[FAIL]")} ${message}`);
+  }
+  return 1;
+}
+
 /**
  * Test-only escape hatch. Exposes internals that should NOT be part of the
  * production API surface (e.g. `listAllModels` is a private helper but the
@@ -404,6 +459,7 @@ export const __testing__ = {
    */
   collectRowsAndErrors,
   renderErrorSection,
+  emitActionError,
 };
 
 export function registerStatusCommand(parent: Command): void {
@@ -453,14 +509,15 @@ export function registerStatusCommand(parent: Command): void {
         "centralgauge lifecycle status --legacy",
       )
       .action(async (flags) => {
+        const typedFlags = flags as unknown as StatusFlags;
         try {
-          await handleStatus(flags as unknown as StatusFlags);
+          await handleStatus(typedFlags);
         } catch (err) {
-          console.error(
-            colors.red("[FAIL]"),
-            err instanceof Error ? err.message : String(err),
-          );
-          Deno.exit(1);
+          // `--json` must always emit parseable JSON to stdout — CI
+          // consumers piping through `jq` previously saw an empty pipe
+          // because errors went to stderr regardless of the flag.
+          const exitCode = emitActionError(err, { json: typedFlags.json });
+          Deno.exit(exitCode);
         }
       }),
   );

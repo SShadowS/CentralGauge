@@ -833,6 +833,43 @@ LEGACY=$(centralgauge lifecycle status --json | jq '.legacy_rows | length')
 echo "Pre-P6 backfilled rows still present: $LEGACY"
 ```
 
+### Failure contract for `--json`
+
+When `lifecycle status --json` fails (admin key missing, network down,
+malformed `/api/v1/models` response, etc.), STDOUT receives a structured
+JSON envelope validated against `StatusJsonErrorSchema`:
+
+```json
+{
+  "error": "<human-readable message>",
+  "code": "<CentralGaugeError.code or UNKNOWN_ERROR>",
+  "command": "centralgauge lifecycle status [--model <slug>]"
+}
+```
+
+Exit code is non-zero. Stderr stays silent in `--json` mode so consumers
+piping through `jq` get parseable JSON instead of an empty pipe.
+
+The contract is therefore one of:
+
+- exit `0` + valid `StatusJsonOutput` (no `error` key) — success
+- exit non-zero + valid `StatusJsonError` (has `error` key) — failure
+
+CI consumers can detect failure either way:
+
+```bash
+OUT=$(centralgauge lifecycle status --json) || {
+  ERR=$(echo "$OUT" | jq -r '.error // "unknown"')
+  CODE=$(echo "$OUT" | jq -r '.code // "UNKNOWN_ERROR"')
+  echo "::error::lifecycle status failed (code=$CODE): $ERR"
+  exit 1
+}
+```
+
+Without `--json`, the command preserves the existing `[FAIL] ...` line
+on stderr and exits non-zero — stdout stays silent so any upstream pipe
+consumer sees an empty stream rather than partial garbage.
+
 ### Stability contract
 
 Adding new optional fields is non-breaking. Renaming or removing any

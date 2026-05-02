@@ -32,9 +32,11 @@ import { renderMatrix } from "../../../src/lifecycle/status-renderer.ts";
 import { generateHints } from "../../../src/lifecycle/status-hints.ts";
 import {
   type StateRow,
+  StatusJsonErrorSchema,
   type StatusJsonOutput,
   StatusJsonOutputSchema,
 } from "../../../src/lifecycle/status-types.ts";
+import { CentralGaugeError } from "../../../src/errors.ts";
 import {
   type CurrentStateMap,
   type LifecycleEvent,
@@ -660,5 +662,115 @@ Deno.test(
       const slugs = await __testing__.listAllModels("https://example");
       assertEquals(slugs, ["foo/bar", "baz/qux"]);
     });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Structured --json error path (IMPORTANT 3)
+// ---------------------------------------------------------------------------
+
+Deno.test(
+  "emitActionError(--json) writes structured JSON to stdout",
+  () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = __testing__.emitActionError(
+      new CentralGaugeError(
+        "admin_key_path missing",
+        "MISSING_ADMIN_KEY",
+      ),
+      { json: true },
+      {
+        writeStdout: (s) => stdout.push(s),
+        writeStderr: (s) => stderr.push(s),
+      },
+    );
+    assertEquals(exitCode, 1);
+    assertEquals(
+      stderr.length,
+      0,
+      "stderr must be silent in --json mode (CI consumers parse stdout)",
+    );
+    assertEquals(stdout.length, 1);
+    const parsed = StatusJsonErrorSchema.parse(JSON.parse(stdout[0]!));
+    assertEquals(parsed.error, "admin_key_path missing");
+    assertEquals(parsed.code, "MISSING_ADMIN_KEY");
+    assertEquals(
+      parsed.command,
+      "centralgauge lifecycle status [--model <slug>]",
+    );
+  },
+);
+
+Deno.test(
+  "emitActionError(--json) handles plain Error with default code",
+  () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    __testing__.emitActionError(
+      new Error("network timeout"),
+      { json: true },
+      {
+        writeStdout: (s) => stdout.push(s),
+        writeStderr: (s) => stderr.push(s),
+      },
+    );
+    assertEquals(stderr.length, 0);
+    const parsed = StatusJsonErrorSchema.parse(JSON.parse(stdout[0]!));
+    assertEquals(parsed.error, "network timeout");
+    // Plain `Error` has no `code` field — the schema allows any string but
+    // the helper must default to a sensible token (not `undefined`).
+    assertEquals(parsed.code, "UNKNOWN_ERROR");
+  },
+);
+
+Deno.test(
+  "emitActionError(no --json) writes [FAIL] to stderr, leaves stdout silent",
+  () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = __testing__.emitActionError(
+      new Error("boom"),
+      { json: false },
+      {
+        writeStdout: (s) => stdout.push(s),
+        writeStderr: (s) => stderr.push(s),
+      },
+    );
+    assertEquals(exitCode, 1);
+    assertEquals(
+      stdout.length,
+      0,
+      "stdout must be silent in non-json mode (preserves piping semantics)",
+    );
+    assertEquals(stderr.length, 1);
+    assertStringIncludes(stderr[0]!, "[FAIL]");
+    assertStringIncludes(stderr[0]!, "boom");
+  },
+);
+
+Deno.test(
+  "StatusJsonErrorSchema validates the structured-error envelope",
+  () => {
+    // Required fields only.
+    const minimal = StatusJsonErrorSchema.parse({
+      error: "boom",
+      code: "BOOM",
+    });
+    assertEquals(minimal.error, "boom");
+    assertEquals(minimal.code, "BOOM");
+    assertEquals(minimal.command, undefined);
+
+    // With optional command.
+    const withCmd = StatusJsonErrorSchema.parse({
+      error: "boom",
+      code: "BOOM",
+      command: "centralgauge lifecycle status [--model <slug>]",
+    });
+    assertEquals(withCmd.command?.includes("--model"), true);
+
+    // Missing required `error` is rejected.
+    const bad = StatusJsonErrorSchema.safeParse({ code: "BOOM" });
+    assertEquals(bad.success, false);
   },
 );

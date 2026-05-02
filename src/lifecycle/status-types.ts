@@ -93,3 +93,29 @@ export const StatusJsonOutputSchema = z.object({
   error_rows: z.array(ErrorRowSchema).default([]),
 });
 export type StatusJsonOutput = z.infer<typeof StatusJsonOutputSchema>;
+
+/**
+ * Structured error envelope emitted to STDOUT (not stderr) when
+ * `lifecycle status --json` fails. CI consumers piping the output through
+ * `jq` previously got an empty pipe + non-zero exit because the failure
+ * path printed `[FAIL] ...` to stderr regardless of `--json`. Now the
+ * `--json` mode contract is:
+ *
+ *   exit 0 + valid `StatusJsonOutput` (no `error` key)   — success
+ *   exit !=0 + valid `StatusJsonError` (has `error` key) — failure
+ *
+ * Either way, stdout is parseable JSON. Consumers can detect failure by
+ * checking the exit code OR the presence of the `error` key.
+ *
+ * `code` carries the `CentralGaugeError.code` token (e.g.
+ * `INVALID_MODELS_RESPONSE`) when available; plain `Error` falls back to
+ * `UNKNOWN_ERROR`. `command` echoes the user-facing CLI surface so
+ * operators triaging failed CI runs can re-execute manually without
+ * digging through workflow YAML.
+ */
+export const StatusJsonErrorSchema = z.object({
+  error: z.string(),
+  code: z.string(),
+  command: z.string().optional(),
+});
+export type StatusJsonError = z.infer<typeof StatusJsonErrorSchema>;
