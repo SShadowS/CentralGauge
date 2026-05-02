@@ -7,14 +7,21 @@
  * backfill loop can append it to its in-memory concept list and use it as
  * a candidate for subsequent rows.
  *
- * Auth: Ed25519 admin scope.
+ * Auth: dual — CF Access JWT (browser path) OR Ed25519 admin signature
+ * (CLI path). Wired through `authenticateAdminRequest` per F5.5 retro-patch.
+ *
+ * Auth-trail invariant: the audit row's `actor_id` is ALWAYS derived from
+ * the verified auth identity (CF Access email or `key:<id>` for the CLI
+ * signature), NEVER from the request body. Wave 5 / CRITICAL 1 fixed an
+ * impersonation regression where a body-supplied `actor_id` flowed verbatim
+ * into the concept.created event row.
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
 import {
-  type SignedAdminRequest,
-  verifySignedRequest,
-} from "$lib/server/signature";
+  actorIdFromAuth,
+  authenticateAdminRequest,
+} from "$lib/server/cf-access";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { createConceptTx } from "$lib/server/concepts";
 import { slugSchema } from "$lib/shared/slug";
@@ -51,11 +58,14 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
     if (body.version !== 1) {
       throw new ApiError(400, "bad_version", "only version 1 supported");
     }
-    await verifySignedRequest(
-      db,
-      body as unknown as SignedAdminRequest,
-      "admin",
-    );
+    // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
+    // Accepts either CF Access JWT (browser, future cluster-review UI) or
+    // the existing Ed25519 admin signature (D-data backfill / D7 CLI).
+    const auth = await authenticateAdminRequest(request, platform.env, body);
+    // Wave 5 / CRITICAL 1 — verifiedActorId from auth, NOT body. Without
+    // this an authenticated caller could forge audit rows with arbitrary
+    // actor_id values (e.g. `operator@victim.com`).
+    const verifiedActorId = actorIdFromAuth(auth);
     const parsed = Body.safeParse(body.payload);
     if (!parsed.success) {
       throw new ApiError(
@@ -82,7 +92,8 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
       modelSlug: p.model_slug,
       taskSetHash: p.task_set_hash,
       actor: p.actor,
-      actorId: p.actor_id,
+      // Wave 5 / C1: override body.actor_id with the verified identity.
+      actorId: verifiedActorId,
       envelopeJson: p.envelope_json,
       ts: p.ts,
       analyzerModel: p.analyzer_model,

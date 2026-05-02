@@ -1,4 +1,5 @@
 import type { RequestHandler } from './$types';
+import { authenticateAdminRequest } from '$lib/server/cf-access';
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
 import { validateR2Key } from '$lib/server/r2-key';
@@ -42,14 +43,30 @@ export const PUT: RequestHandler = async ({ request, platform, params, url }) =>
       }
     }
 
-    const body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
-
-    // C1 fix: bind the URL path AND the body hash into the signed bytes.
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    await verifyLifecycleAdminRequest(db, request, {
-      signedFields: buildHeaderSignedFields({ method: 'PUT', path: url.pathname }),
-      body,
-    });
+    // (Plan F / F5.5) Dual-auth PUT. Wave 5 / IMPORTANT 5 — defer body
+    // buffering until AFTER the CF Access auth check to avoid an
+    // unauthenticated DoS that materializes up to MAX_BODY_BYTES per
+    // attempt. The Ed25519 path still reads the body first because the
+    // signature is hash-bound to the body bytes (rebinding the upload
+    // would require a fresh sig).
+    let body: Uint8Array;
+    if (request.headers.get('cf-access-jwt-assertion')) {
+      // CF Access path: auth FIRST (JWT validation is body-independent),
+      // then read the body. This caps unauthenticated body buffering at
+      // zero bytes for malformed-JWT attackers.
+      await authenticateAdminRequest(request, platform.env, null);
+      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
+    } else {
+      // Ed25519 path: body first because verifyLifecycleAdminRequest
+      // hashes the bytes into the signed envelope. Without the hash
+      // binding an attacker could redirect a captured signature to a
+      // different upload.
+      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({ method: 'PUT', path: url.pathname }),
+        body,
+      });
+    }
 
     await bucket.put(key, body, {
       httpMetadata: {
@@ -69,12 +86,17 @@ export const GET: RequestHandler = async ({ request, platform, params, url }) =>
   if (!bucket) return errorResponse(new ApiError(500, 'no_bucket', 'LIFECYCLE_BLOBS binding missing'));
   try {
     const key = validateR2Key(params.key);
-    // C1 fix: bind the URL path into the signed bytes so an attacker can't
-    // swap `?key=public.bin` for `?key=secret.bin` with a captured signature.
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    await verifyLifecycleAdminRequest(db, request, {
-      signedFields: buildHeaderSignedFields({ method: 'GET', path: url.pathname }),
-    });
+    // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
+    // primary path (review UI proxies blob bytes via this endpoint); fall
+    // back to the existing header-signed Ed25519 path (binds the URL path
+    // so a captured envelope can't be swapped to a different key).
+    if (request.headers.get('cf-access-jwt-assertion')) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({ method: 'GET', path: url.pathname }),
+      });
+    }
     const obj = await bucket.get(key);
     if (!obj) throw new ApiError(404, 'not_found', `no blob at key=${key}`);
     return new Response(obj.body, {

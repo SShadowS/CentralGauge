@@ -5,10 +5,13 @@
  * appropriate *Tx primitive (mergeConceptTx / createConceptTx /
  * splitConceptTx) and updates pending_review.status + reviewer_decision_event_id.
  *
- * Dual-auth target: CF Access JWT OR Ed25519 admin signature. Until
- * Plan F ships authenticateAdminRequest, this endpoint accepts Ed25519
- * only and is patched by Plan F's F5.5 retro-patch commit
- * (TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth).
+ * Auth: dual — CF Access JWT (browser path) OR Ed25519 admin signature
+ * (CLI path). Wired through `authenticateAdminRequest` per F5.5 retro-patch.
+ *
+ * Auth-trail invariant: the audit row's `actor_id` is ALWAYS derived from
+ * the verified auth identity (CF Access email or `key:<id>` for the CLI
+ * signature), NEVER from the request body — `verifiedActorId` flows into
+ * every Tx call below.
  *
  * Decision schema:
  *   merge  — alias the pending slug onto an existing winner
@@ -18,9 +21,9 @@
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
 import {
-  type SignedAdminRequest,
-  verifySignedRequest,
-} from "$lib/server/signature";
+  actorIdFromAuth,
+  authenticateAdminRequest,
+} from "$lib/server/cf-access";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import {
   createConceptTx,
@@ -78,21 +81,22 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (body.version !== 1) {
       throw new ApiError(400, "bad_version", "only version 1 supported");
     }
-    // TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth.
-    const verified = await verifySignedRequest(
-      db,
-      body as unknown as SignedAdminRequest,
-      "admin",
-    );
+    // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
+    // Browser path: operator clicks Accept/Reject in the cluster-review
+    // web UI; auth is CF Access JWT (no body.signature). CLI path: D7
+    // cluster-review CLI signs the body with the admin Ed25519 key.
+    const auth = await authenticateAdminRequest(request, platform.env, body);
     const parsed = Body.safeParse(body.payload);
     if (!parsed.success) {
       throw new ApiError(400, "invalid_body", parsed.error.message);
     }
     const p = parsed.data;
-    // Override actor_id with the verified key id so a malicious caller
-    // cannot impersonate a different operator in the audit row. Plan F's
-    // CF Access path will substitute the verified email here.
-    const verifiedActorId = `key:${verified.key_id}`;
+    // Override actor_id with the auth-derived identity (email for CF Access
+    // path, 'key:<id>' for CLI signature path) so a malicious caller cannot
+    // impersonate a different operator in the audit row. The CLI used to
+    // pass actor_id in the body, but we ignore that field — the only
+    // trustworthy identity comes from the verified auth result.
+    const verifiedActorId = actorIdFromAuth(auth);
 
     const row = await db
       .prepare(

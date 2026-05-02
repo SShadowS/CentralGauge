@@ -7,15 +7,21 @@
  * client only POSTs the proposed alias + winner concept_id + similarity
  * + the shortcomings to repoint.
  *
- * Auth: Ed25519 admin scope. (Plan F's CF Access dual-auth swap is
- * tracked in TODO(Plan F / F5) inside cluster-review/decide.)
+ * Auth: dual — CF Access JWT (browser path) OR Ed25519 admin signature
+ * (CLI path). Wired through `authenticateAdminRequest` per F5.5 retro-patch.
+ *
+ * Auth-trail invariant: the audit row's `actor_id` is ALWAYS derived from
+ * the verified auth identity (CF Access email or `key:<id>` for the CLI
+ * signature), NEVER from the request body. Wave 5 / CRITICAL 1 fixed an
+ * impersonation regression where a body-supplied `actor_id` flowed verbatim
+ * into the concept.aliased / concept.merged event row.
  */
 import type { RequestHandler } from "./$types";
 import { z } from "zod";
 import {
-  type SignedAdminRequest,
-  verifySignedRequest,
-} from "$lib/server/signature";
+  actorIdFromAuth,
+  authenticateAdminRequest,
+} from "$lib/server/cf-access";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { mergeConceptTx } from "$lib/server/concepts";
 import { slugSchema } from "$lib/shared/slug";
@@ -51,11 +57,12 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
     if (body.version !== 1) {
       throw new ApiError(400, "bad_version", "only version 1 supported");
     }
-    await verifySignedRequest(
-      db,
-      body as unknown as SignedAdminRequest,
-      "admin",
-    );
+    // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
+    const auth = await authenticateAdminRequest(request, platform.env, body);
+    // Wave 5 / CRITICAL 1 — verifiedActorId from auth, NOT body. Without
+    // this an authenticated caller could forge audit rows with arbitrary
+    // actor_id values (e.g. `operator@victim.com`).
+    const verifiedActorId = actorIdFromAuth(auth);
     const parsed = Body.safeParse(body.payload);
     if (!parsed.success) {
       throw new ApiError(
@@ -82,7 +89,8 @@ export const POST: RequestHandler = async ({ request, platform, url }) => {
       modelSlug: p.model_slug,
       taskSetHash: p.task_set_hash,
       actor: p.actor,
-      actorId: p.actor_id,
+      // Wave 5 / C1: override body.actor_id with the verified identity.
+      actorId: verifiedActorId,
       envelopeJson: p.envelope_json,
       ts: p.ts,
       ...(p.reviewer_actor_id !== undefined

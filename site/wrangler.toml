@@ -16,6 +16,17 @@ FLAG_DENSITY_TOGGLE = "on"          # P5.4
 FLAG_RUM_BEACON = "on"              # P5.4
 CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
+# Cloudflare Access — admin lifecycle UI dual-auth (Plan F / F5).
+# CF_ACCESS_TEAM_DOMAIN is non-secret (the cloudflareaccess.com hostname is
+# public). CF_ACCESS_AUD is per-application and operator-rotates when the
+# CF Access app is reconfigured — it lives in `wrangler secret put` so it's
+# encrypted at rest and not baked into the deployed bundle.
+#
+# DO NOT add `CF_ACCESS_AUD = ""` here. Vars and secrets share env.* and a
+# baked-in empty var would shadow the secret at runtime (resolution order
+# is implementation-defined). See docs/site/operations.md for the runbook.
+CF_ACCESS_TEAM_DOMAIN = "centralgauge.cloudflareaccess.com"
+
 [assets]
 directory = ".svelte-kit/cloudflare"
 binding = "ASSETS"

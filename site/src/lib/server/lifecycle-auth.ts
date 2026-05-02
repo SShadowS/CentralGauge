@@ -33,10 +33,14 @@ import { hasScope } from './signature';
  * pass the raw body bytes via `body:` and the helper auto-injects
  * `body_sha256` into the signed fields — keeping the endpoint code clean.
  *
- * The 5 admin lifecycle endpoints document a pre-baked TODO above each call
- * site so Plan F's CF-Access dual-auth swap-in is a single search-and-replace:
- *
- *   TODO(Plan F / F5): swap to authenticateAdminRequest for CF Access dual-auth
+ * Cross-plan dependency: per Plan F's F5.5 retro-patch, the body-signed
+ * POST endpoints (events, concepts/*, cluster-review/*) now route through
+ * `authenticateAdminRequest` in `cf-access.ts`, which calls
+ * `verifySignedRequest` (NOT this helper) for the Ed25519 path. The
+ * GET / PUT endpoints (events, state, r2/<key>) still call
+ * `verifyLifecycleAdminRequest` directly because they sign URL fields,
+ * not body envelopes — those endpoints implement dual-auth inline by
+ * branching on the `cf-access-jwt-assertion` header before calling here.
  */
 
 const SKEW_LIMIT_MS = 10 * 60 * 1000;

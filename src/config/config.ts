@@ -131,6 +131,100 @@ export interface CentralGaugeConfig {
 
   // Benchmark presets for reusable benchmark configurations
   benchmarkPresets?: Record<string, BenchmarkPreset>;
+
+  /**
+   * Model lifecycle event-sourcing settings (Plan F-owned).
+   *
+   * Cross-plan consumers:
+   *   - Plan C `cycle analyze` reads `lifecycle.analyzer_model` as the
+   *     default for its `--analyzer-model` flag (CLI flag wins when set).
+   *   - Plan C analyze step reads `lifecycle.confidence_threshold` and
+   *     `lifecycle.cross_llm_sample_rate` to wire `scoreEntry()` from
+   *     `src/lifecycle/confidence.ts`.
+   *   - Plan G's `.github/workflows/weekly-cycle.yml` exports
+   *     `lifecycle.analyzer_model` to the env so the cron run matches
+   *     operator-local config.
+   *
+   * Plan F is the canonical owner of this section — adding the field here
+   * (single source of truth) means Plan C and Plan G consume from one
+   * location with no duplicated defaults.
+   */
+  lifecycle?: LifecycleConfig;
+}
+
+/**
+ * Lifecycle configuration (Plan F-owned). All fields optional; `loadConfig`
+ * fills defaults via `validateLifecycleConfig` when the section is present.
+ */
+export interface LifecycleConfig {
+  /**
+   * Default analyzer LLM slug. Plan C's `cycle analyze` step picks this up
+   * when `--analyzer-model` is unset; Plan G's weekly CI workflow also
+   * reads it. Default: `'anthropic/claude-opus-4-6'` (matches the strategic
+   * plan rationale).
+   */
+  analyzer_model?: string;
+  /**
+   * Sampling rate for the cross-LLM agreement check. Default 0.2 — ~20%
+   * of analyzer entries get re-scored by a different model. Bound to
+   * [0, 1]; values outside that range are clamped at validation time.
+   */
+  cross_llm_sample_rate?: number;
+  /**
+   * Threshold below which entries route to the `pending_review` queue.
+   * Default 0.7. Bound to [0, 1].
+   */
+  confidence_threshold?: number;
+}
+
+/**
+ * Default values for `LifecycleConfig`. Single source of truth — Plan C
+ * orchestrator and Plan F scorer both read these via `mergeLifecycleDefaults`.
+ */
+export const LIFECYCLE_DEFAULTS: Required<LifecycleConfig> = {
+  analyzer_model: "anthropic/claude-opus-4-6",
+  cross_llm_sample_rate: 0.2,
+  confidence_threshold: 0.7,
+};
+
+/**
+ * Validate + merge defaults for the lifecycle config section. Returns a
+ * fully-resolved `Required<LifecycleConfig>` so call sites can rely on
+ * every field being present without `?? defaults.x` boilerplate.
+ *
+ * Throws `ConfigurationError`-style messages on out-of-range values; the
+ * orchestrator surfaces these at `cycle` startup so misconfiguration
+ * fails loud, not silent.
+ */
+export function mergeLifecycleDefaults(
+  config: LifecycleConfig | undefined,
+): Required<LifecycleConfig> {
+  const c = config ?? {};
+  const sampleRate = c.cross_llm_sample_rate ??
+    LIFECYCLE_DEFAULTS.cross_llm_sample_rate;
+  const threshold = c.confidence_threshold ??
+    LIFECYCLE_DEFAULTS.confidence_threshold;
+  const analyzerModel = c.analyzer_model ?? LIFECYCLE_DEFAULTS.analyzer_model;
+  if (sampleRate < 0 || sampleRate > 1) {
+    throw new Error(
+      `lifecycle.cross_llm_sample_rate must be in [0, 1], got ${sampleRate}`,
+    );
+  }
+  if (threshold < 0 || threshold > 1) {
+    throw new Error(
+      `lifecycle.confidence_threshold must be in [0, 1], got ${threshold}`,
+    );
+  }
+  if (typeof analyzerModel !== "string" || analyzerModel.length === 0) {
+    throw new Error(
+      "lifecycle.analyzer_model must be a non-empty string",
+    );
+  }
+  return {
+    analyzer_model: analyzerModel,
+    cross_llm_sample_rate: sampleRate,
+    confidence_threshold: threshold,
+  };
 }
 
 export class ConfigManager {
@@ -448,6 +542,38 @@ export class ConfigManager {
   }
 
   /**
+   * Load lifecycle settings from environment variables (Plan F-owned).
+   *
+   * Env vars (all optional):
+   *   - CENTRALGAUGE_LIFECYCLE_ANALYZER_MODEL
+   *   - CENTRALGAUGE_LIFECYCLE_CROSS_LLM_SAMPLE_RATE
+   *   - CENTRALGAUGE_LIFECYCLE_CONFIDENCE_THRESHOLD
+   */
+  private static loadEnvLifecycleSettings(): CentralGaugeConfig["lifecycle"] {
+    const analyzerModel = Deno.env.get(
+      "CENTRALGAUGE_LIFECYCLE_ANALYZER_MODEL",
+    );
+    const sampleRateRaw = Deno.env.get(
+      "CENTRALGAUGE_LIFECYCLE_CROSS_LLM_SAMPLE_RATE",
+    );
+    const thresholdRaw = Deno.env.get(
+      "CENTRALGAUGE_LIFECYCLE_CONFIDENCE_THRESHOLD",
+    );
+    if (!analyzerModel && !sampleRateRaw && !thresholdRaw) return undefined;
+    const out: NonNullable<CentralGaugeConfig["lifecycle"]> = {};
+    if (analyzerModel) out.analyzer_model = analyzerModel;
+    if (sampleRateRaw) {
+      const n = parseFloat(sampleRateRaw);
+      if (Number.isFinite(n)) out.cross_llm_sample_rate = n;
+    }
+    if (thresholdRaw) {
+      const n = parseFloat(thresholdRaw);
+      if (Number.isFinite(n)) out.confidence_threshold = n;
+    }
+    return out;
+  }
+
+  /**
    * Load configuration from environment variables
    */
   private static loadEnvironmentConfig(): CentralGaugeConfig {
@@ -470,6 +596,9 @@ export class ConfigManager {
 
     const logging = this.loadEnvLoggingSettings();
     if (logging) config.logging = logging;
+
+    const lifecycle = this.loadEnvLifecycleSettings();
+    if (lifecycle) config.lifecycle = lifecycle;
 
     return config;
   }
@@ -549,6 +678,12 @@ export class ConfigManager {
           ...override.notifications.pushbullet,
         },
       };
+    }
+    if (override.lifecycle) {
+      // Shallow merge — every lifecycle field is a primitive (string /
+      // number), so spread is sufficient. The base may already carry
+      // home-config values; override (cwd) wins per-field.
+      result.lifecycle = { ...result.lifecycle, ...override.lifecycle };
     }
 
     return result;
