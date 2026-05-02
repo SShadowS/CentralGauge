@@ -11,7 +11,7 @@ import type {
 import type { ModelShortcomingsFile } from "../../../src/verify/types.ts";
 import { THEMES } from "../../../src/tasks/themes.ts";
 import { filterResultsByTheme } from "./theme-builder.ts";
-import { escapeHtml } from "./html-utils.ts";
+import { escapeHtml, formatTokenCount } from "./html-utils.ts";
 import { shortVariantName } from "../../../src/utils/formatters.ts";
 import {
   type ChartDimensions,
@@ -121,12 +121,6 @@ function getModelPassRate(stats: PerModelStats): number {
 /** Pretty model name matching the existing Model Rankings chart */
 function displayName(variantId: string): string {
   return shortVariantName(variantId);
-}
-
-function fmtTokens(t: number): string {
-  if (t >= 1_000_000) return `${(t / 1_000_000).toFixed(1)}M`;
-  if (t >= 1000) return `${(t / 1000).toFixed(1)}K`;
-  return Math.round(t).toString();
 }
 
 function passRateColor(rate: number): string {
@@ -804,13 +798,13 @@ export function generateTokenEfficiency(
       `<rect x="${dim.margin.left}" y="${y}" width="${barW}" height="${barHeight}" fill="${
         getModelColor(d.idx)
       }" rx="3" opacity="0.8"><title>${escapeHtml(d.name)}: ${
-        fmtTokens(d.tokensPerSuccess)
+        formatTokenCount(d.tokensPerSuccess)
       } tokens/success</title></rect>`;
 
     svg += svgText(
       dim.margin.left + barW + 6,
       y + barHeight / 2 + 4,
-      fmtTokens(d.tokensPerSuccess),
+      formatTokenCount(d.tokensPerSuccess),
       `font-size="10" fill="var(--cg-chart-text)" font-weight="600"`,
     );
   }
