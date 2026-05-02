@@ -1,8 +1,11 @@
-import type { RequestHandler } from './$types';
-import { authenticateAdminRequest } from '$lib/server/cf-access';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
-import { validateR2Key } from '$lib/server/r2-key';
+import type { RequestHandler } from "./$types";
+import { authenticateAdminRequest } from "$lib/server/cf-access";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import {
+  buildHeaderSignedFields,
+  verifyLifecycleAdminRequest,
+} from "$lib/server/lifecycle-auth";
+import { validateR2Key } from "$lib/server/r2-key";
 
 /**
  * R2 proxy for lifecycle blob storage. Plan C uploads debug bundles via PUT
@@ -19,11 +22,21 @@ import { validateR2Key } from '$lib/server/r2-key';
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024; // I4: 50 MB cap on PUT body.
 
-export const PUT: RequestHandler = async ({ request, platform, params, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+export const PUT: RequestHandler = async (
+  { request, platform, params, url },
+) => {
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const bucket = platform.env.LIFECYCLE_BLOBS;
-  if (!bucket) return errorResponse(new ApiError(500, 'no_bucket', 'LIFECYCLE_BLOBS binding missing'));
+  if (!bucket) {
+    return errorResponse(
+      new ApiError(500, "no_bucket", "LIFECYCLE_BLOBS binding missing"),
+    );
+  }
   try {
     const key = validateR2Key(params.key);
 
@@ -31,13 +44,13 @@ export const PUT: RequestHandler = async ({ request, platform, params, url }) =>
     // can't OOM the worker with a 5GB upload. Some clients omit
     // Content-Length on chunked transfer; in that case we still cap by
     // reading at most MAX_BODY_BYTES bytes below.
-    const declaredLen = request.headers.get('content-length');
+    const declaredLen = request.headers.get("content-length");
     if (declaredLen !== null) {
       const n = parseInt(declaredLen, 10);
       if (Number.isFinite(n) && n > MAX_BODY_BYTES) {
         throw new ApiError(
           413,
-          'payload_too_large',
+          "payload_too_large",
           `body exceeds ${MAX_BODY_BYTES} bytes (declared ${n})`,
         );
       }
@@ -50,27 +63,40 @@ export const PUT: RequestHandler = async ({ request, platform, params, url }) =>
     // signature is hash-bound to the body bytes (rebinding the upload
     // would require a fresh sig).
     let body: Uint8Array;
-    if (request.headers.get('cf-access-jwt-assertion')) {
-      // CF Access path: auth FIRST (JWT validation is body-independent),
-      // then read the body. This caps unauthenticated body buffering at
-      // zero bytes for malformed-JWT attackers.
-      await authenticateAdminRequest(request, platform.env, null);
-      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
-    } else {
+    // Prefer header-signed path when CLI signature headers are present —
+    // CF Access service-token requests carry both `x-cg-signature` and a
+    // `cf-access-jwt-assertion` JWT (the JWT is just edge-bypass).
+    if (request.headers.get("x-cg-signature")) {
       // Ed25519 path: body first because verifyLifecycleAdminRequest
       // hashes the bytes into the signed envelope. Without the hash
       // binding an attacker could redirect a captured signature to a
       // different upload.
       body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
       await verifyLifecycleAdminRequest(db, request, {
-        signedFields: buildHeaderSignedFields({ method: 'PUT', path: url.pathname }),
+        signedFields: buildHeaderSignedFields({
+          method: "PUT",
+          path: url.pathname,
+        }),
         body,
       });
+    } else if (request.headers.get("cf-access-jwt-assertion")) {
+      // CF Access browser path: auth FIRST (JWT validation is
+      // body-independent), then read the body. This caps unauthenticated
+      // body buffering at zero bytes for malformed-JWT attackers.
+      await authenticateAdminRequest(request, platform.env, null);
+      body = await readBodyWithCap(request.body, MAX_BODY_BYTES);
+    } else {
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "CF Access JWT or X-CG-Signature required",
+      );
     }
 
     await bucket.put(key, body, {
       httpMetadata: {
-        contentType: request.headers.get('content-type') ?? 'application/octet-stream',
+        contentType: request.headers.get("content-type") ??
+          "application/octet-stream",
       },
     });
     return jsonResponse({ key, size: body.byteLength }, 200);
@@ -79,31 +105,54 @@ export const PUT: RequestHandler = async ({ request, platform, params, url }) =>
   }
 };
 
-export const GET: RequestHandler = async ({ request, platform, params, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+export const GET: RequestHandler = async (
+  { request, platform, params, url },
+) => {
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   const bucket = platform.env.LIFECYCLE_BLOBS;
-  if (!bucket) return errorResponse(new ApiError(500, 'no_bucket', 'LIFECYCLE_BLOBS binding missing'));
+  if (!bucket) {
+    return errorResponse(
+      new ApiError(500, "no_bucket", "LIFECYCLE_BLOBS binding missing"),
+    );
+  }
   try {
     const key = validateR2Key(params.key);
     // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
     // primary path (review UI proxies blob bytes via this endpoint); fall
     // back to the existing header-signed Ed25519 path (binds the URL path
     // so a captured envelope can't be swapped to a different key).
-    if (request.headers.get('cf-access-jwt-assertion')) {
+    // Prefer header-signed path when CLI signature headers are present —
+    // CF Access service-token requests carry both `x-cg-signature` and a
+    // `cf-access-jwt-assertion` JWT.
+    if (request.headers.get("x-cg-signature")) {
+      await verifyLifecycleAdminRequest(db, request, {
+        signedFields: buildHeaderSignedFields({
+          method: "GET",
+          path: url.pathname,
+        }),
+      });
+    } else if (request.headers.get("cf-access-jwt-assertion")) {
       await authenticateAdminRequest(request, platform.env, null);
     } else {
-      await verifyLifecycleAdminRequest(db, request, {
-        signedFields: buildHeaderSignedFields({ method: 'GET', path: url.pathname }),
-      });
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "CF Access JWT or X-CG-Signature required",
+      );
     }
     const obj = await bucket.get(key);
-    if (!obj) throw new ApiError(404, 'not_found', `no blob at key=${key}`);
+    if (!obj) throw new ApiError(404, "not_found", `no blob at key=${key}`);
     return new Response(obj.body, {
       status: 200,
       headers: {
-        'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
-        'content-length': String(obj.size),
+        "content-type": obj.httpMetadata?.contentType ??
+          "application/octet-stream",
+        "content-length": String(obj.size),
       },
     });
   } catch (err) {
@@ -132,7 +181,11 @@ async function readBodyWithCap(
       if (!value) continue;
       total += value.byteLength;
       if (total > cap) {
-        throw new ApiError(413, 'payload_too_large', `body exceeds ${cap} bytes`);
+        throw new ApiError(
+          413,
+          "payload_too_large",
+          `body exceeds ${cap} bytes`,
+        );
       }
       chunks.push(value);
     }

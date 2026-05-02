@@ -1,17 +1,23 @@
-import type { RequestHandler } from './$types';
-import { actorIdFromAuth, authenticateAdminRequest } from '$lib/server/cf-access';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { appendEvent } from '$lib/server/lifecycle-event-log';
-import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
-import { maybeTriggerFamilyDiff } from '$lib/server/lifecycle-diff-trigger';
-import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
-import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
+import type { RequestHandler } from "./$types";
+import {
+  actorIdFromAuth,
+  authenticateAdminRequest,
+} from "$lib/server/cf-access";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { appendEvent } from "$lib/server/lifecycle-event-log";
+import {
+  buildHeaderSignedFields,
+  verifyLifecycleAdminRequest,
+} from "$lib/server/lifecycle-auth";
+import { maybeTriggerFamilyDiff } from "$lib/server/lifecycle-diff-trigger";
+import { FAMILY_DIFF_CACHE_NAME } from "$lib/server/family-diff-cache";
+import type { AppendEventInput } from "../../../../../../../src/lifecycle/types";
 import {
   CANONICAL_ACTORS,
   CANONICAL_EVENT_TYPES,
   isCanonicalActor,
   isCanonicalEventType,
-} from '$lib/shared/lifecycle-constants';
+} from "$lib/shared/lifecycle-constants";
 
 /**
  * Wire body matches the canonical `AppendEventInput` shape from
@@ -28,11 +34,21 @@ import {
  */
 
 export const POST: RequestHandler = async ({ request, platform }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as { version: number; signature: unknown; payload: AppendEventInput & { payload_hash?: string | null } };
-    if (body.version !== 1) throw new ApiError(400, 'bad_version', 'only version 1 supported');
+    const body = await request.json() as {
+      version: number;
+      signature: unknown;
+      payload: AppendEventInput & { payload_hash?: string | null };
+    };
+    if (body.version !== 1) {
+      throw new ApiError(400, "bad_version", "only version 1 supported");
+    }
     // (Plan F / F5.5) authenticateAdminRequest replaces verifySignedRequest.
     // POST is body-signed for the CLI (the existing SignedAdminRequest
     // pattern signs the full payload object). The browser path uses CF
@@ -46,10 +62,18 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const verifiedActorId = actorIdFromAuth(auth);
     const p = body.payload;
     if (!p.model_slug || !p.task_set_hash || !p.event_type) {
-      throw new ApiError(400, 'missing_field', 'model_slug, task_set_hash, event_type required');
+      throw new ApiError(
+        400,
+        "missing_field",
+        "model_slug, task_set_hash, event_type required",
+      );
     }
     if (!p.actor) {
-      throw new ApiError(400, 'missing_field', 'actor required (one of: ' + CANONICAL_ACTORS.join(', ') + ')');
+      throw new ApiError(
+        400,
+        "missing_field",
+        "actor required (one of: " + CANONICAL_ACTORS.join(", ") + ")",
+      );
     }
     // Runtime allowlist: the TS union evaporates at JSON.parse, so we need a
     // value-side check before INSERT. Source of truth = CANONICAL_EVENT_TYPES
@@ -57,15 +81,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     if (!isCanonicalEventType(p.event_type)) {
       throw new ApiError(
         400,
-        'invalid_event_type',
-        `event_type "${p.event_type}" is not canonical; allowed: ${CANONICAL_EVENT_TYPES.join(', ')}`,
+        "invalid_event_type",
+        `event_type "${p.event_type}" is not canonical; allowed: ${
+          CANONICAL_EVENT_TYPES.join(", ")
+        }`,
       );
     }
     if (!isCanonicalActor(p.actor)) {
       throw new ApiError(
         400,
-        'invalid_actor',
-        `actor "${p.actor}" is not canonical; allowed: ${CANONICAL_ACTORS.join(', ')}`,
+        "invalid_actor",
+        `actor "${p.actor}" is not canonical; allowed: ${
+          CANONICAL_ACTORS.join(", ")
+        }`,
       );
     }
     if (p.payload_hash && p.ts !== undefined) {
@@ -73,7 +101,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         `SELECT id FROM lifecycle_events WHERE payload_hash = ? AND ts = ? AND event_type = ?`,
       ).bind(p.payload_hash, p.ts, p.event_type).first<{ id: number }>();
       if (dup) {
-        throw new ApiError(409, 'duplicate_event', `event already recorded with id=${dup.id}`);
+        throw new ApiError(
+          409,
+          "duplicate_event",
+          `event already recorded with id=${dup.id}`,
+        );
       }
     }
     // Wave 5 / CRITICAL 1 — override body.actor_id with the verified
@@ -107,7 +139,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     } catch (err) {
       // Trigger failure is non-fatal — the event is already persisted; the
       // diff endpoint recomputes inline on cache miss. Log for observability.
-      console.error('[lifecycle/events] diff trigger failed', err);
+      console.error("[lifecycle/events] diff trigger failed", err);
     }
 
     return jsonResponse({ id }, 200);
@@ -117,15 +149,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 };
 
 export const GET: RequestHandler = async ({ request, platform, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const model = url.searchParams.get('model');
-    if (!model) throw new ApiError(400, 'missing_model', 'model query param required');
-    const taskSet = url.searchParams.get('task_set');
-    const since = url.searchParams.get('since');
-    const eventTypePrefix = url.searchParams.get('event_type_prefix');
-    const limit = url.searchParams.get('limit');
+    const model = url.searchParams.get("model");
+    if (!model) {
+      throw new ApiError(400, "missing_model", "model query param required");
+    }
+    const taskSet = url.searchParams.get("task_set");
+    const since = url.searchParams.get("since");
+    const eventTypePrefix = url.searchParams.get("event_type_prefix");
+    const limit = url.searchParams.get("limit");
     // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
     // primary path; fall back to the existing header-signed Ed25519 path
     // (verifyLifecycleAdminRequest binds every URL param into the signed
@@ -133,26 +171,55 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
     // model). When the CF-Access-Jwt-Assertion header is present, CF Access
     // wins (revocation path is the CF Access policy, not the machine_keys
     // table).
-    if (request.headers.get('cf-access-jwt-assertion')) {
-      await authenticateAdminRequest(request, platform.env, null);
-    } else {
+    // Prefer header-signed path when CLI signature headers are present —
+    // service-token requests carry both `x-cg-signature` and a CF Access
+    // JWT (the JWT is just edge-bypass, no identity). The JWT path is
+    // browser-only.
+    if (request.headers.get("x-cg-signature")) {
       await verifyLifecycleAdminRequest(db, request, {
         signedFields: buildHeaderSignedFields({
-          method: 'GET',
+          method: "GET",
           path: url.pathname,
-          query: { model, task_set: taskSet, since, event_type_prefix: eventTypePrefix, limit },
+          query: {
+            model,
+            task_set: taskSet,
+            since,
+            event_type_prefix: eventTypePrefix,
+            limit,
+          },
         }),
       });
+    } else if (request.headers.get("cf-access-jwt-assertion")) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "CF Access JWT or X-CG-Signature required",
+      );
     }
     const params: (string | number)[] = [model];
-    let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
+    let sql =
+      `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                       tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
                  FROM lifecycle_events WHERE model_slug = ?`;
-    if (taskSet) { sql += ' AND task_set_hash = ?'; params.push(taskSet); }
-    if (since) { sql += ' AND ts >= ?'; params.push(Number(since)); }
-    if (eventTypePrefix) { sql += ' AND event_type LIKE ?'; params.push(`${eventTypePrefix}%`); }
-    sql += ' ORDER BY ts ASC, id ASC';
-    if (limit) { sql += ' LIMIT ?'; params.push(Number(limit)); }
+    if (taskSet) {
+      sql += " AND task_set_hash = ?";
+      params.push(taskSet);
+    }
+    if (since) {
+      sql += " AND ts >= ?";
+      params.push(Number(since));
+    }
+    if (eventTypePrefix) {
+      sql += " AND event_type LIKE ?";
+      params.push(`${eventTypePrefix}%`);
+    }
+    sql += " ORDER BY ts ASC, id ASC";
+    if (limit) {
+      sql += " LIMIT ?";
+      params.push(Number(limit));
+    }
     const rows = await db.prepare(sql).bind(...params).all();
     return jsonResponse(rows.results, 200);
   } catch (err) {

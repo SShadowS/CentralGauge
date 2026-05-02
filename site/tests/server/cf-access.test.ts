@@ -16,14 +16,14 @@
  *   - missing email/sub claims → 401
  *   - happy path → returns { email, sub }
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __resetJwksCacheForTests,
   __setJwksCacheForTests,
   authenticateAdminRequest,
   verifyCfAccessJwt,
-} from '../../src/lib/server/cf-access';
-import { ApiError } from '../../src/lib/server/errors';
+} from "../../src/lib/server/cf-access";
+import { ApiError } from "../../src/lib/server/errors";
 
 /**
  * Assert that `fn` throws an ApiError whose `.code` equals `expectedCode`.
@@ -46,9 +46,9 @@ async function expectApiError(
   expect((thrown as ApiError).code).toBe(expectedCode);
 }
 
-const TEAM = 't.cloudflareaccess.com';
-const AUD = 'aud-tag-123';
-const KID = 'test-kid';
+const TEAM = "t.cloudflareaccess.com";
+const AUD = "aud-tag-123";
+const KID = "test-kid";
 
 interface RsaKeypair {
   publicJwk: JsonWebKey;
@@ -58,25 +58,25 @@ interface RsaKeypair {
 async function generateRsaKeypair(): Promise<RsaKeypair> {
   const { publicKey, privateKey } = await crypto.subtle.generateKey(
     {
-      name: 'RSASSA-PKCS1-v1_5',
+      name: "RSASSA-PKCS1-v1_5",
       modulusLength: 2048,
       publicExponent: new Uint8Array([1, 0, 1]),
-      hash: 'SHA-256',
+      hash: "SHA-256",
     },
     true,
-    ['sign', 'verify'],
+    ["sign", "verify"],
   );
-  const publicJwk = await crypto.subtle.exportKey('jwk', publicKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", publicKey);
   publicJwk.kid = KID;
-  publicJwk.alg = 'RS256';
+  publicJwk.alg = "RS256";
   return { publicJwk, privateKey };
 }
 
 function b64url(buf: ArrayBuffer | Uint8Array): string {
   const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let bin = '';
+  let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return btoa(bin).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 async function signJwt(
@@ -88,7 +88,7 @@ async function signJwt(
   const claimsB64 = b64url(new TextEncoder().encode(JSON.stringify(claims)));
   const data = new TextEncoder().encode(`${headerB64}.${claimsB64}`);
   const sig = await crypto.subtle.sign(
-    { name: 'RSASSA-PKCS1-v1_5' },
+    { name: "RSASSA-PKCS1-v1_5" },
     privateKey,
     data,
   );
@@ -99,48 +99,48 @@ function envOk() {
   return { CF_ACCESS_AUD: AUD, CF_ACCESS_TEAM_DOMAIN: TEAM };
 }
 
-describe('verifyCfAccessJwt', () => {
+describe("verifyCfAccessJwt", () => {
   afterEach(() => __resetJwksCacheForTests());
 
-  it('rejects when CF_ACCESS_AUD is unset', async () => {
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': 'a.b.c' },
+  it("rejects when CF_ACCESS_AUD is unset", async () => {
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": "a.b.c" },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, { CF_ACCESS_TEAM_DOMAIN: TEAM }),
-      'cf_access_misconfigured',
+      "cf_access_misconfigured",
     );
   });
 
-  it('rejects when CF_ACCESS_TEAM_DOMAIN is unset', async () => {
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': 'a.b.c' },
+  it("rejects when CF_ACCESS_TEAM_DOMAIN is unset", async () => {
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": "a.b.c" },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, { CF_ACCESS_AUD: AUD }),
-      'cf_access_misconfigured',
+      "cf_access_misconfigured",
     );
   });
 
-  it('rejects when JWT header is missing', async () => {
-    const req = new Request('https://x/admin/lifecycle/review');
+  it("rejects when JWT header is missing", async () => {
+    const req = new Request("https://x/admin/lifecycle/review");
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_missing',
+      "cf_access_missing",
     );
   });
 
-  it('rejects malformed JWT (not 3 parts)', async () => {
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': 'a.b' },
+  it("rejects malformed JWT (not 3 parts)", async () => {
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": "a.b" },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_malformed',
+      "cf_access_malformed",
     );
   });
 
-  it('IMPORTANT 1 — malformed signature base64 returns 401, NOT 500', async () => {
+  it("IMPORTANT 1 — malformed signature base64 returns 401, NOT 500", async () => {
     // Pre-Wave5: b64UrlDecode threw a DOMException for "...!!!" inside the
     // signature segment, propagating as a 500 internal_error. Spec contract:
     // malformed JWT bytes are an unauthenticated state, not a server fault.
@@ -151,24 +151,26 @@ describe('verifyCfAccessJwt', () => {
     // *and* outside the standard base64 charset. atob() raises DOMException.
     const headerB64 = b64url(
       new TextEncoder().encode(
-        JSON.stringify({ alg: 'RS256', kid: KID, typ: 'JWT' }),
+        JSON.stringify({ alg: "RS256", kid: KID, typ: "JWT" }),
       ),
     );
     const claimsB64 = b64url(
-      new TextEncoder().encode(JSON.stringify({ aud: AUD, email: 'x@x', sub: 'u' })),
+      new TextEncoder().encode(
+        JSON.stringify({ aud: AUD, email: "x@x", sub: "u" }),
+      ),
     );
-    const garbageSig = '!!!';
+    const garbageSig = "!!!";
     const jwt = `${headerB64}.${claimsB64}.${garbageSig}`;
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_malformed',
+      "cf_access_malformed",
     );
   });
 
-  it('IMPORTANT 1 — malformed payload base64 returns 401, NOT 500', async () => {
+  it("IMPORTANT 1 — malformed payload base64 returns 401, NOT 500", async () => {
     // Same edge: payloadB64 is decoded after the signature verify path. We
     // shape a JWT whose signature path can be reached but whose payload
     // contains undecodable bytes. The fix wraps b64UrlDecode in try/catch
@@ -182,114 +184,114 @@ describe('verifyCfAccessJwt', () => {
     __setJwksCacheForTests([kp.publicJwk]);
     const headerB64 = b64url(
       new TextEncoder().encode(
-        JSON.stringify({ alg: 'RS256', kid: KID, typ: 'JWT' }),
+        JSON.stringify({ alg: "RS256", kid: KID, typ: "JWT" }),
       ),
     );
-    const garbagePayload = '!!!';
+    const garbagePayload = "!!!";
     const data = new TextEncoder().encode(`${headerB64}.${garbagePayload}`);
     const sig = await crypto.subtle.sign(
-      { name: 'RSASSA-PKCS1-v1_5' },
+      { name: "RSASSA-PKCS1-v1_5" },
       kp.privateKey,
       data,
     );
     const jwt = `${headerB64}.${garbagePayload}.${b64url(sig)}`;
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_malformed',
+      "cf_access_malformed",
     );
   });
 
-  it('rejects HS256 (only RS256 accepted)', async () => {
+  it("rejects HS256 (only RS256 accepted)", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'HS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'x@x', sub: 'u' },
+      { alg: "HS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "x@x", sub: "u" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_bad_alg',
+      "cf_access_bad_alg",
     );
   });
 
-  it('rejects unknown kid (signing key not in JWKs)', async () => {
+  it("rejects unknown kid (signing key not in JWKs)", async () => {
     const kp = await generateRsaKeypair();
     // Cache has a key with kid='other', JWT uses our KID — mismatch.
-    __setJwksCacheForTests([{ ...kp.publicJwk, kid: 'other' }]);
+    __setJwksCacheForTests([{ ...kp.publicJwk, kid: "other" }]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'x@x', sub: 'u' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "x@x", sub: "u" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     // After Wave 5 / IMPORTANT 2 the verifier force-refreshes JWKs once
     // when the cache is missing the kid. To assert the *unknown_kid*
     // failure path here we also stub fetch so the refresh path returns
     // the same kid-mismatched JWK (still no match → 401).
     const stub = vi
-      .spyOn(globalThis, 'fetch')
+      .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         new Response(
-          JSON.stringify({ keys: [{ ...kp.publicJwk, kid: 'other' }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
+          JSON.stringify({ keys: [{ ...kp.publicJwk, kid: "other" }] }),
+          { status: 200, headers: { "content-type": "application/json" } },
         ),
       );
     try {
       await expectApiError(
         () => verifyCfAccessJwt(req, envOk()),
-        'cf_access_unknown_kid',
+        "cf_access_unknown_kid",
       );
     } finally {
       stub.mockRestore();
     }
   });
 
-  it('IMPORTANT 2 — re-fetches JWKs once when kid is not in cache (CF key rotation)', async () => {
+  it("IMPORTANT 2 — re-fetches JWKs once when kid is not in cache (CF key rotation)", async () => {
     // Pre-warm the cache with an OLD kid; the JWT uses a NEW kid (mirrors
     // a CF key rotation between fetches). Pre-Wave5 this returned 401
     // cf_access_unknown_kid for up to JWKS_TTL_MS (10 minutes). Post-fix
     // the verifier force-refreshes JWKs once and retries the lookup.
     const kpOld = await generateRsaKeypair();
     const kpNew = await generateRsaKeypair();
-    __setJwksCacheForTests([{ ...kpOld.publicJwk, kid: 'old-kid' }]);
+    __setJwksCacheForTests([{ ...kpOld.publicJwk, kid: "old-kid" }]);
     const jwt = await signJwt(
       kpNew.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "op@example.com", sub: "u-1" },
     );
     // Stub fetch so the refresh path returns the NEW key.
     const stub = vi
-      .spyOn(globalThis, 'fetch')
+      .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         new Response(
           JSON.stringify({ keys: [{ ...kpNew.publicJwk, kid: KID }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
+          { status: 200, headers: { "content-type": "application/json" } },
         ),
       );
     try {
-      const req = new Request('https://x/admin/lifecycle/review', {
-        headers: { 'cf-access-jwt-assertion': jwt },
+      const req = new Request("https://x/admin/lifecycle/review", {
+        headers: { "cf-access-jwt-assertion": jwt },
       });
       const user = await verifyCfAccessJwt(req, envOk());
-      expect(user.email).toBe('op@example.com');
+      expect(user.email).toBe("op@example.com");
       // The refresh fetch happened exactly once.
       expect(stub).toHaveBeenCalledTimes(1);
-      expect(stub.mock.calls[0]?.[0]).toContain('/cdn-cgi/access/certs');
+      expect(stub.mock.calls[0]?.[0]).toContain("/cdn-cgi/access/certs");
     } finally {
       stub.mockRestore();
     }
   });
 
-  it('IMPORTANT 2 — does NOT re-fetch when the cache was just-fetched (cold start no double-fetch)', async () => {
+  it("IMPORTANT 2 — does NOT re-fetch when the cache was just-fetched (cold start no double-fetch)", async () => {
     // Cold start: jwksCache is null. The first fetchJwks call populates the
     // cache. If the kid still isn't found the verifier MUST NOT re-fetch
     // (we just got the freshest data possible) — return 401 immediately.
@@ -297,25 +299,27 @@ describe('verifyCfAccessJwt', () => {
     const kp = await generateRsaKeypair();
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "op@example.com", sub: "u-1" },
     );
     const stub = vi
-      .spyOn(globalThis, 'fetch')
+      .spyOn(globalThis, "fetch")
       .mockResolvedValue(
         new Response(
           // Fresh JWKs but with a DIFFERENT kid — JWT will not match.
-          JSON.stringify({ keys: [{ ...kp.publicJwk, kid: 'something-else' }] }),
-          { status: 200, headers: { 'content-type': 'application/json' } },
+          JSON.stringify({
+            keys: [{ ...kp.publicJwk, kid: "something-else" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
         ),
       );
     try {
-      const req = new Request('https://x/admin/lifecycle/review', {
-        headers: { 'cf-access-jwt-assertion': jwt },
+      const req = new Request("https://x/admin/lifecycle/review", {
+        headers: { "cf-access-jwt-assertion": jwt },
       });
       await expectApiError(
         () => verifyCfAccessJwt(req, envOk()),
-        'cf_access_unknown_kid',
+        "cf_access_unknown_kid",
       );
       // Exactly ONE fetch — no double-fetch on a cold cache.
       expect(stub).toHaveBeenCalledTimes(1);
@@ -324,123 +328,123 @@ describe('verifyCfAccessJwt', () => {
     }
   });
 
-  it('rejects wrong audience even with valid signature (the F5.3 acceptance gate)', async () => {
+  it("rejects wrong audience even with valid signature (the F5.3 acceptance gate)", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: 'wrong-aud', email: 'x@x', sub: 'u' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: "wrong-aud", email: "x@x", sub: "u" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_bad_aud',
+      "cf_access_bad_aud",
     );
   });
 
-  it('rejects expired JWT', async () => {
+  it("rejects expired JWT", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
       {
         aud: AUD,
-        email: 'x@x',
-        sub: 'u',
+        email: "x@x",
+        sub: "u",
         exp: Math.floor(Date.now() / 1000) - 60,
       },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_expired',
+      "cf_access_expired",
     );
   });
 
-  it('rejects when email or sub claim missing', async () => {
+  it("rejects when email or sub claim missing", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, sub: 'u' }, // missing email
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, sub: "u" }, // missing email
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_missing_claims',
+      "cf_access_missing_claims",
     );
   });
 
-  it('rejects tampered signature (signed by a different private key)', async () => {
+  it("rejects tampered signature (signed by a different private key)", async () => {
     const kp1 = await generateRsaKeypair();
     const kp2 = await generateRsaKeypair();
     // JWKs cache holds kp1; JWT signed by kp2 — verify should fail.
     __setJwksCacheForTests([kp1.publicJwk]);
     const jwt = await signJwt(
       kp2.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'x@x', sub: 'u' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "x@x", sub: "u" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     await expectApiError(
       () => verifyCfAccessJwt(req, envOk()),
-      'cf_access_bad_sig',
+      "cf_access_bad_sig",
     );
   });
 
-  it('happy path → returns { email, sub } from valid JWT', async () => {
+  it("happy path → returns { email, sub } from valid JWT", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
       {
         aud: AUD,
-        email: 'op@example.com',
-        sub: 'u-12345',
+        email: "op@example.com",
+        sub: "u-12345",
         exp: Math.floor(Date.now() / 1000) + 3600,
       },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     const user = await verifyCfAccessJwt(req, envOk());
-    expect(user.email).toBe('op@example.com');
-    expect(user.sub).toBe('u-12345');
+    expect(user.email).toBe("op@example.com");
+    expect(user.sub).toBe("u-12345");
   });
 
-  it('happy path with array audience containing AUD', async () => {
+  it("happy path with array audience containing AUD", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: ['other', AUD], email: 'op@x', sub: 's' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: ["other", AUD], email: "op@x", sub: "s" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     const user = await verifyCfAccessJwt(req, envOk());
-    expect(user.email).toBe('op@x');
+    expect(user.email).toBe("op@x");
   });
 });
 
-describe('authenticateAdminRequest', () => {
+describe("authenticateAdminRequest", () => {
   afterEach(() => __resetJwksCacheForTests());
 
-  it('throws unauthenticated when neither CF Access nor signed body is present', async () => {
-    const req = new Request('https://x/admin/lifecycle/review');
+  it("throws unauthenticated when neither CF Access nor signed body is present", async () => {
+    const req = new Request("https://x/admin/lifecycle/review");
     await expectApiError(
       () =>
         authenticateAdminRequest(
@@ -448,7 +452,7 @@ describe('authenticateAdminRequest', () => {
           { ...envOk(), DB: {} as D1Database },
           null,
         ),
-      'unauthenticated',
+      "unauthenticated",
     );
   });
 
@@ -457,41 +461,60 @@ describe('authenticateAdminRequest', () => {
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'op@example.com', sub: 'u-1' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "op@example.com", sub: "u-1" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
     const auth = await authenticateAdminRequest(
       req,
       { ...envOk(), DB: {} as D1Database },
       null,
     );
-    expect(auth.kind).toBe('cf-access');
-    if (auth.kind === 'cf-access') {
-      expect(auth.email).toBe('op@example.com');
-      expect(auth.sub).toBe('u-1');
+    expect(auth.kind).toBe("cf-access");
+    if (auth.kind === "cf-access") {
+      expect(auth.email).toBe("op@example.com");
+      expect(auth.sub).toBe("u-1");
     }
   });
 
-  it('CF Access takes precedence when both are present', async () => {
+  it("Ed25519 signature takes precedence over CF Access JWT", async () => {
+    // The original ordering preferred CF Access JWT when both were
+    // present, on the theory that the JWT carries identity and the
+    // signature would shadow it with a less-revocable `key:<n>` row.
+    //
+    // CF Access service tokens (used for CLI/CI edge-bypass) inject a
+    // `cf-access-jwt-assertion` header with NO email/sub claims. The
+    // service token is just an edge-bypass mechanism, not an identity.
+    // Trying the user-JWT validator on a service-token JWT throws
+    // `cf_access_missing_claims` and the signature path never runs.
+    //
+    // The fix: signature path first when body has a signature. Browser
+    // requests don't sign bodies, so OAuth-user flow is unaffected; the
+    // operator-with-cookie+curl edge case still resolves sensibly
+    // (signature wins, identity is the more-revocable `key:<n>`).
+    //
+    // We assert the new ordering by observing that the signature path
+    // is *attempted* — it throws because we pass a stub DB that doesn't
+    // implement `prepare`. If the JWT path ran first it would succeed
+    // and return cf-access, so the throw proves the signature path won.
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
-      { alg: 'RS256', kid: KID, typ: 'JWT' },
-      { aud: AUD, email: 'cf@example.com', sub: 'u-1' },
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "cf@example.com", sub: "u-1" },
     );
-    const req = new Request('https://x/admin/lifecycle/review', {
-      headers: { 'cf-access-jwt-assertion': jwt },
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
     });
-    const auth = await authenticateAdminRequest(
-      req,
-      { ...envOk(), DB: {} as D1Database },
-      // signed body present too — CF Access should win.
-      { signature: { alg: 'Ed25519', key_id: 1, signed_at: 'x', value: 'AA' } },
-    );
-    expect(auth.kind).toBe('cf-access');
+    await expect(
+      authenticateAdminRequest(
+        req,
+        { ...envOk(), DB: {} as D1Database },
+        { signature: { alg: "Ed25519", key_id: 1, signed_at: "x", value: "AA" } },
+      ),
+    ).rejects.toThrow(/db\.prepare is not a function/);
   });
 });

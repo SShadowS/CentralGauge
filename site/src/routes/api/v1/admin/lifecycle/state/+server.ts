@@ -1,30 +1,49 @@
-import type { RequestHandler } from './$types';
-import { authenticateAdminRequest } from '$lib/server/cf-access';
-import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
-import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
+import type { RequestHandler } from "./$types";
+import { authenticateAdminRequest } from "$lib/server/cf-access";
+import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import {
+  buildHeaderSignedFields,
+  verifyLifecycleAdminRequest,
+} from "$lib/server/lifecycle-auth";
 
 export const GET: RequestHandler = async ({ request, platform, url }) => {
-  if (!platform) return errorResponse(new ApiError(500, 'no_platform', 'platform env missing'));
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "platform env missing"),
+    );
+  }
   const db = platform.env.DB;
   try {
-    const model = url.searchParams.get('model');
-    const taskSet = url.searchParams.get('task_set');
-    if (!model || !taskSet) throw new ApiError(400, 'missing_params', 'model and task_set required');
+    const model = url.searchParams.get("model");
+    const taskSet = url.searchParams.get("task_set");
+    if (!model || !taskSet) {
+      throw new ApiError(400, "missing_params", "model and task_set required");
+    }
     // (Plan F / F5.5) Dual-auth GET. CF Access JWT in the browser is the
     // primary path; fall back to the existing header-signed Ed25519 path
     // (verifyLifecycleAdminRequest binds both `model` and `task_set` into
     // the signed bytes so a captured envelope can't be replayed against a
     // different pair).
-    if (request.headers.get('cf-access-jwt-assertion')) {
-      await authenticateAdminRequest(request, platform.env, null);
-    } else {
+    // Prefer header-signed path when CLI signature headers are present —
+    // CF Access service-token requests carry both `x-cg-signature` and a
+    // `cf-access-jwt-assertion` JWT (the JWT is just edge-bypass, no
+    // identity).
+    if (request.headers.get("x-cg-signature")) {
       await verifyLifecycleAdminRequest(db, request, {
         signedFields: buildHeaderSignedFields({
-          method: 'GET',
+          method: "GET",
           path: url.pathname,
           query: { model, task_set: taskSet },
         }),
       });
+    } else if (request.headers.get("cf-access-jwt-assertion")) {
+      await authenticateAdminRequest(request, platform.env, null);
+    } else {
+      throw new ApiError(
+        401,
+        "unauthenticated",
+        "CF Access JWT or X-CG-Signature required",
+      );
     }
     // v_lifecycle_state gives last_ts + last_event_id per step; JOIN back for the row.
     const rows = await db.prepare(
@@ -33,7 +52,15 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
          FROM v_lifecycle_state v
          JOIN lifecycle_events e ON e.id = v.last_event_id
         WHERE v.model_slug = ? AND v.task_set_hash = ?`,
-    ).bind(model, taskSet).all<{ step: string; id: number; ts: number; event_type: string; [k: string]: unknown }>();
+    ).bind(model, taskSet).all<
+      {
+        step: string;
+        id: number;
+        ts: number;
+        event_type: string;
+        [k: string]: unknown;
+      }
+    >();
     const out: Record<string, unknown> = {};
     for (const r of rows.results) {
       const { step, ...rest } = r;

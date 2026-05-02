@@ -163,13 +163,13 @@ export interface CfAccessEnv {
  */
 export async function verifyCfAccessJwt(
   request: Request,
-  env: CfAccessEnv
+  env: CfAccessEnv,
 ): Promise<CfAccessUser> {
   if (!env.CF_ACCESS_AUD || !env.CF_ACCESS_TEAM_DOMAIN) {
     throw new ApiError(
       500,
       "cf_access_misconfigured",
-      "CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN must be set"
+      "CF_ACCESS_AUD and CF_ACCESS_TEAM_DOMAIN must be set",
     );
   }
   const jwt = request.headers.get("cf-access-jwt-assertion");
@@ -186,13 +186,13 @@ export async function verifyCfAccessJwt(
   let header: { alg: string; kid: string };
   try {
     header = JSON.parse(
-      new TextDecoder().decode(b64UrlDecode(headerB64))
+      new TextDecoder().decode(b64UrlDecode(headerB64)),
     ) as { alg: string; kid: string };
   } catch {
     throw new ApiError(
       401,
       "cf_access_malformed",
-      "JWT header is not valid base64url JSON"
+      "JWT header is not valid base64url JSON",
     );
   }
   if (header.alg !== "RS256") {
@@ -202,7 +202,7 @@ export async function verifyCfAccessJwt(
     throw new ApiError(
       401,
       "cf_access_malformed",
-      "JWT header missing kid"
+      "JWT header missing kid",
     );
   }
 
@@ -228,7 +228,7 @@ export async function verifyCfAccessJwt(
     jwk,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
-    ["verify"]
+    ["verify"],
   );
 
   // Wave 5 / IMPORTANT 1 — wrap b64UrlDecode in try/catch. Pre-fix,
@@ -245,7 +245,7 @@ export async function verifyCfAccessJwt(
       "cf_access_malformed",
       `JWT signature is not valid base64url: ${
         err instanceof Error ? err.message : String(err)
-      }`
+      }`,
     );
   }
   const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
@@ -253,7 +253,7 @@ export async function verifyCfAccessJwt(
     "RSASSA-PKCS1-v1_5",
     cryptoKey,
     sig as BufferSource,
-    data as BufferSource
+    data as BufferSource,
   );
   if (!ok) {
     throw new ApiError(401, "cf_access_bad_sig", "signature failed");
@@ -272,7 +272,7 @@ export async function verifyCfAccessJwt(
       "cf_access_malformed",
       `JWT payload is not valid base64url: ${
         err instanceof Error ? err.message : String(err)
-      }`
+      }`,
     );
   }
   let claims: {
@@ -282,25 +282,27 @@ export async function verifyCfAccessJwt(
     exp?: number;
   };
   try {
-    claims = JSON.parse(new TextDecoder().decode(payloadBytes)) as typeof claims;
+    claims = JSON.parse(
+      new TextDecoder().decode(payloadBytes),
+    ) as typeof claims;
   } catch {
     throw new ApiError(
       401,
       "cf_access_malformed",
-      "JWT payload is not valid base64url JSON"
+      "JWT payload is not valid base64url JSON",
     );
   }
 
   const auds = Array.isArray(claims.aud)
     ? claims.aud
     : claims.aud
-      ? [claims.aud]
-      : [];
+    ? [claims.aud]
+    : [];
   if (!auds.includes(env.CF_ACCESS_AUD)) {
     throw new ApiError(
       401,
       "cf_access_bad_aud",
-      `expected aud=${env.CF_ACCESS_AUD}, got ${JSON.stringify(auds)}`
+      `expected aud=${env.CF_ACCESS_AUD}, got ${JSON.stringify(auds)}`,
     );
   }
   if (claims.exp && claims.exp * 1000 < Date.now()) {
@@ -310,7 +312,7 @@ export async function verifyCfAccessJwt(
     throw new ApiError(
       401,
       "cf_access_missing_claims",
-      "email and sub required"
+      "email and sub required",
     );
   }
 
@@ -326,12 +328,12 @@ export async function verifyCfAccessJwt(
 export type AdminAuthResult =
   | { kind: "cf-access"; email: string; sub: string }
   | {
-      kind: "admin-sig";
-      key_id: number;
-      machine_id: string;
-      scope: Scope;
-      key_fingerprint: string;
-    };
+    kind: "admin-sig";
+    key_id: number;
+    machine_id: string;
+    scope: Scope;
+    key_fingerprint: string;
+  };
 
 /**
  * Env shape for the dual-auth middleware. Combines the CF Access env
@@ -362,22 +364,29 @@ export interface AdminAuthEnv extends CfAccessEnv {
 export async function authenticateAdminRequest(
   request: Request,
   env: AdminAuthEnv,
-  signedBody: { signature?: unknown } | null
+  signedBody: { signature?: unknown } | null,
 ): Promise<AdminAuthResult> {
-  // Path 1: CF Access JWT.
-  if (request.headers.get("cf-access-jwt-assertion")) {
-    const user = await verifyCfAccessJwt(request, env);
-    return { kind: "cf-access", email: user.email, sub: user.sub };
-  }
-  // Path 2: Ed25519 admin signature.
+  // Order: Ed25519 body signature first, then CF Access JWT.
+  //
+  // The original ordering (CF Access JWT first, "JWT carries identity") held
+  // when the only CF Access path was OAuth-user JWTs with email/sub claims.
+  // CF Access service tokens (used for CLI/CI edge-bypass) ALSO inject a
+  // `cf-access-jwt-assertion` header, but the JWT carries no email/sub —
+  // it's purely an edge-bypass mechanism, not an identity. Trying the
+  // user-JWT validator on it throws `cf_access_missing_claims` and the
+  // signature path never runs.
+  //
+  // Swap: when the body has a signature, that's the authoritative identity
+  // (`key:<n>`) regardless of any CF Access JWT also being present. Browser
+  // requests don't sign bodies; service-token CLI requests always do — so
+  // the orig "operator with cookie + curl" edge case still resolves
+  // sensibly (signature wins, identity is the more-revocable key id).
   if (signedBody?.signature) {
-    // Lazy import to avoid pulling the signature module into clients of
-    // this helper that only need the JWT verifier.
     const { verifySignedRequest } = await import("./signature");
     const verified = await verifySignedRequest(
       env.DB,
       signedBody as SignedRequest,
-      "admin"
+      "admin",
     );
     return {
       kind: "admin-sig",
@@ -387,10 +396,14 @@ export async function authenticateAdminRequest(
       key_fingerprint: `key:${verified.key_id}`,
     };
   }
+  if (request.headers.get("cf-access-jwt-assertion")) {
+    const user = await verifyCfAccessJwt(request, env);
+    return { kind: "cf-access", email: user.email, sub: user.sub };
+  }
   throw new ApiError(
     401,
     "unauthenticated",
-    "CF Access JWT or admin Ed25519 signature required"
+    "CF Access JWT or admin Ed25519 signature required",
   );
 }
 
