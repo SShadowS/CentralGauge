@@ -94,6 +94,18 @@ export interface PerModelStats {
     reasoningEffort?: string;
     maxTokens?: number;
   } | null;
+  /** Wilson 95% CI on pass rate (0-1). */
+  passRateCI: { lower: number; upper: number };
+  /** Cost per successful task. null when 0 tasks passed. */
+  costPerPass: number | null;
+  /** Total tokens per successful task. null when 0 tasks passed. */
+  tokensPerPass: number | null;
+  /** Per-task durations across all attempts (ms), used for p50/p95. */
+  durations: number[];
+  /** Median per-task duration (ms). 0 when no data. */
+  latencyP50: number;
+  /** 95th percentile per-task duration (ms). 0 when no data. */
+  latencyP95: number;
 }
 
 /** A loaded result file with metadata */
@@ -118,8 +130,14 @@ export interface MultiRunModelStats extends PerModelStats {
   runCount: number;
   /** pass@k values keyed by k, e.g. { 1: 0.67, 2: 0.89, 3: 1.0 } */
   passAtK: Record<number, number>;
+  /** pass^k (strict): all k runs pass. Same key shape as passAtK. */
+  passHatK: Record<number, number>;
   /** Fraction of tasks with identical outcomes across all runs (0-1) */
   consistency: number;
+  /** Fraction of tasks where strict majority of runs pass (0-1). */
+  majorityAtN: number;
+  /** Stddev of per-task pass-counts across runs. Higher = more flaky. */
+  perTaskPassStddev: number;
   perTaskRuns: Map<string, TaskRunData>;
 }
 
