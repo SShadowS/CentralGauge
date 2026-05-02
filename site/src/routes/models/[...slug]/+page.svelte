@@ -130,27 +130,33 @@
   <main class="content">
     <section class="stats">
       <StatTile label="Score" value={formatScore(m.aggregates.avg_score)} sparklineValues={sparklineValues}
+        infoId="avg_score"
         delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined} />
       <AttemptBreakdownTile aggregates={m.aggregates} />
       <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
+        infoId="avg_cost_usd"
         delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
-      <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} />
+      <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
       <StatTile
         label="Pass Rate"
         value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%"
         note="95% CI: [{(m.aggregates.pass_rate_ci.lower * 100).toFixed(1)}–{(m.aggregates.pass_rate_ci.upper * 100).toFixed(1)}]%"
+        infoId="pass_at_n"
       />
       <StatTile
         label="pass^n (strict)"
         value="{(m.aggregates.pass_hat_at_n * 100).toFixed(1)}%"
+        infoId="pass_hat_at_n"
       />
       <StatTile
         label="$/Pass"
         value={m.aggregates.cost_per_pass_usd === null ? '—' : `$${m.aggregates.cost_per_pass_usd.toFixed(4)}`}
+        infoId="cost_per_pass_usd"
       />
       <StatTile
         label="Latency p95"
         value={formatDuration(m.aggregates.latency_p95_ms)}
+        infoId="latency_p95_ms"
       />
     </section>
 

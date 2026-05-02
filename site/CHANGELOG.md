@@ -5,6 +5,7 @@
 ### Added
 - New leaderboard metrics: pass-rate 95% confidence interval, $/Pass cost efficiency, latency p95.
 - New model-detail metrics: pass^n (strict consistency), pass-rate CI, $/Pass, latency p95.
+- Metric explanations: native tooltips on leaderboard headers and model-detail tiles, click-popover with formula + interpretation guidance, and a dedicated /about#metrics glossary section. All driven from a single registry to prevent drift.
 
 ## Lifecycle event-sourcing (2026-04-29)
 

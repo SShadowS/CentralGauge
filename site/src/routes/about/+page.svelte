@@ -1,5 +1,7 @@
 <script lang="ts">
   // P7: full /about with scoring methodology section.
+  import { METRICS } from '$lib/shared/metrics';
+  const metricList = Object.values(METRICS);
 </script>
 
 <svelte:head>
@@ -19,6 +21,7 @@
     <ul>
       <li><a href="#status">Status</a></li>
       <li><a href="#scoring">Scoring metrics</a></li>
+      <li><a href="#metrics">Metrics glossary</a></li>
       <li><a href="#transparency">Transparency</a></li>
     </ul>
   </nav>
@@ -70,6 +73,36 @@
     <p>
       The Pass@1 / Pass@2 stacked bar on each leaderboard row visualizes the per-task breakdown: green for first-try success, amber for retry-recovery, red for unsolved.
     </p>
+  </section>
+
+  <section id="metrics">
+    <h2>Metrics glossary</h2>
+    <p class="text-muted">
+      All metrics shown on the leaderboard and model detail pages are defined here.
+      Each definition includes the formula used to compute it and guidance on when each metric is most useful.
+    </p>
+
+    <nav class="metrics-toc" aria-label="Metrics quick-jump">
+      {#each metricList as m}
+        <a href="#metric-{m.id}" class="metric-jump">{m.label}</a>
+      {/each}
+    </nav>
+
+    <dl class="metrics-list">
+      {#each metricList as m}
+        <div class="metric-entry" id="metric-{m.id}">
+          <dt class="metric-label">{m.label}</dt>
+          <dd class="metric-body">
+            <p class="metric-short">{m.short}</p>
+            <p class="metric-formula-row"><span class="formula-key">Formula:</span> <code>{m.formula}</code></p>
+            <p class="metric-when"><em>{m.when}</em></p>
+            {#if m.link}
+              <p class="metric-link"><a href={m.link.href} target="_blank" rel="noopener noreferrer">{m.link.text} ↗</a></p>
+            {/if}
+          </dd>
+        </div>
+      {/each}
+    </dl>
   </section>
 
   <section id="transparency">
@@ -137,4 +170,76 @@
   }
   section h2 { margin: 0; scroll-margin-top: var(--space-7); }
   section h3 { margin: var(--space-3) 0 0 0; }
+
+  /* Metrics glossary — Tier 4 */
+  .metrics-toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .metric-jump {
+    font-size: var(--text-xs);
+    color: var(--accent);
+    text-decoration: none;
+    background: var(--accent-soft);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
+  .metric-jump:hover { text-decoration: underline; }
+
+  .metrics-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+  }
+  .metric-entry {
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: calc(var(--nav-h) + var(--space-5));
+  }
+  .metric-entry:last-child { border-bottom: 0; }
+
+  .metric-label {
+    font-weight: var(--weight-semi);
+    font-size: var(--text-base);
+    margin-bottom: var(--space-2);
+    color: var(--text);
+  }
+  .metric-body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .metric-short {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--text);
+    line-height: var(--leading-sm);
+  }
+  .metric-formula-row {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-sm);
+  }
+  .formula-key { font-weight: var(--weight-medium); }
+  .metric-when {
+    margin: 0;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    line-height: var(--leading-sm);
+  }
+  .metric-link {
+    margin: 0;
+    font-size: var(--text-xs);
+  }
+  .metric-link a { color: var(--accent); text-decoration: none; }
+  .metric-link a:hover { text-decoration: underline; }
 </style>
