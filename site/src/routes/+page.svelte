@@ -4,7 +4,6 @@
   import LeaderboardTable from '$lib/components/domain/LeaderboardTable.svelte';
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
-  import StatusIndicator from '$lib/components/domain/StatusIndicator.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import SummaryBand from '$lib/components/domain/SummaryBand.svelte';
   import PerformanceVsCostChart from '$lib/components/domain/PerformanceVsCostChart.svelte';
@@ -83,8 +82,6 @@
     · Updated {formatRelativeTime(data.leaderboard.generated_at)}
     {#if data.flags.sse_live_updates && sse}
       <LiveStatus {sse} onReconnect={reconnect} />
-    {:else}
-      <StatusIndicator status="static" label="" />
     {/if}
   </p>
 </div>
