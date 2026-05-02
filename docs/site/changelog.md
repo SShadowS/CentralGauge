@@ -18,6 +18,16 @@ section at the top, committing, and redeploying. The site reads this
 file at build time via Vite's `?raw` import; runtime reads are not
 supported by design (zero D1 writes, deterministic bundles).
 
+## Lifecycle tracking (2026-04-29)
+
+- `centralgauge cycle --llms <slug>` orchestrates the full
+  bench → analyze → publish pipeline as one resumable command.
+- A weekly CI workflow keeps every model in the catalog current and
+  posts a digest issue when anything regresses.
+- A new admin surface at `/admin/lifecycle` hosts the analyzer review
+  queue, the per-model event timeline, and the lifecycle status
+  matrix.
+
 ## Live updates + cmd-K palette (2026-04-26)
 
 - The leaderboard, model detail, and run pages now refresh in place

@@ -1,5 +1,102 @@
 # CentralGauge site — changelog
 
+## Lifecycle event-sourcing (2026-04-29)
+
+Closes the gap between bench output and the production scoreboard. Every
+state transition becomes an immutable event in `lifecycle_events`;
+current state is a reduction over the log; web admin + CLI surfaces
+both read the same view. Implementation split across waves 1–7 (plans
+A–H + J); see `docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`.
+
+### Added
+- D1 migration `0006_lifecycle.sql` (Plan A) — `lifecycle_events`,
+  `concepts`, `concept_aliases`, `pending_review`, `v_lifecycle_state`
+  view; nullable FK `concept_id` column on `shortcomings`.
+- D1 migration `0007_family_diffs.sql` (Plan E) — per-release
+  differential snapshots with nullable `from_gen_event_id` for the
+  baseline-missing case.
+- Worker endpoints (all dual-auth — CF Access OR Ed25519 admin sig):
+  `/api/v1/admin/lifecycle/{events,state,r2/[...key],
+  debug-bundle-exists,debug/[...key],concepts/*,cluster-review/*,
+  review/*}`.
+- Public endpoints: `/api/v1/families/[slug]/diff` (Plan E),
+  `/api/v1/concepts` + `/api/v1/concepts/[slug]` (Plan D-prompt).
+- `/admin/lifecycle/{status,review,events}` web admin UI behind
+  Cloudflare Access + GitHub OAuth (Plan F).
+- CLI: `centralgauge cycle` (Plan C), `centralgauge lifecycle status`
+  (Plan H), `centralgauge lifecycle cluster-review` (Plan D-data),
+  `centralgauge lifecycle digest` (Plan G). Plus `verify
+  --shortcomings-only` made default (Plan B) and
+  `populate-shortcomings` simplified to pass-through (Plan B).
+- Weekly CI workflow `.github/workflows/weekly-cycle.yml` — Monday
+  06:00 UTC + workflow_dispatch (Plan G).
+- Concept registry with three-tier clustering (auto-merge / 0.70–0.85
+  review band / auto-create), append-only invariants, transactional
+  mutations via `db.batch([...])` (Plan D).
+- Per-generation concept diffs (resolved / persisting / regressed /
+  new) on `/families/<vendor>/<family>` with analyzer-mismatch
+  warnings (Plan E).
+- Quality gating: per-entry confidence score combining schema
+  validity + concept-cluster consistency + sampled cross-LLM
+  agreement; below-threshold entries route to `/admin/lifecycle/review`
+  (Plan F1).
+- Reproducibility envelope on every lifecycle event: deno + wrangler +
+  claude-code + BC compiler versions, git_sha, machine_id,
+  task_set_hash, settings_hash (Plan A).
+- R2-resident debug bundles at
+  `lifecycle/debug/<model>/<session>.tar.zst` (Plan C) — replay no
+  longer depends on operator-local `debug/`.
+- Backfill scripts: `scripts/backfill-lifecycle.ts` (Plan B),
+  `scripts/migrate-shortcomings-slugs.ts` (Plan B),
+  `scripts/backfill-concepts.ts` (Plan D-data).
+- Operator + reviewer guide `docs/site/lifecycle.md` (Plan J1).
+- Six new operations runbooks: authorize a new operator, triage a
+  stuck cycle lock, recover from a bad concept merge, run weekly CI
+  manually, apply Plan E migration to production, interpret a stale
+  digest (Plan J3).
+- End-to-end integration test
+  `tests/integration/lifecycle/cycle-end-to-end.test.ts` (Plan J4) —
+  dry-run, force-unlock, skip-on-success, mid-cycle crash, publish
+  idempotency, resume-on-failure, lock-token tiebreaker.
+
+### Changed
+- `verify` writes the production-vendor-prefixed slug into
+  `model-shortcomings/*.json` directly — no transformation at populate
+  time (Plan B).
+- `populate-shortcomings` is pass-through; the legacy
+  `VENDOR_PREFIX_MAP` retired with all hardcoded mappings (Plan B).
+- `/api/v1/shortcomings/batch` accepts `concept_slug_proposed`;
+  resolves to `concept_id` server-side (Plan D-prompt).
+- `/api/v1/models/<slug>/limitations` JOINs through `concept_id` and
+  filters out superseded concepts (Plan D-data).
+- All `/api/v1/admin/lifecycle/*` endpoints accept BOTH CF Access JWT
+  (browser) AND Ed25519 admin signature (CLI) — two identities,
+  separate revocation paths (Plan F5 + retro-patches).
+
+### Backfilled
+- Synthetic lifecycle events for every (model, task_set) pair with
+  historical bench / analysis / publish artifacts (Plan B). Pre-P6
+  runs use sentinel `task_set_hash='pre-p6-unknown'` and surface in a
+  separate `--legacy` section.
+- Existing `model-shortcomings/*.json` files renamed to vendor-prefixed
+  slugs (Plan B). Previously-unmapped files become uploadable.
+
+### Operator
+- `CLAUDE.md` gained a `## Lifecycle` section (Plan J2).
+- `docs/site/operations.md` gained six lifecycle runbooks (Plan J3).
+- The recommended onboarding command for a new model is now
+  `centralgauge cycle --llms <slug>` (replaces the manual six-step
+  flow).
+
+### Out of scope (deferred to follow-up)
+- `/concepts/<slug>` public page (schema work done; route + UI are a
+  separate plan).
+- Reproduction-bundle download UX.
+- Multi-task-set comparison page.
+- `/admin/lifecycle/*` visual-regression baselines (deferred to
+  CI-runner Ubuntu capture per the P5.4 baseline-platform
+  invariant — Windows captures drift).
+
 ## P7 — Stat parity (2026-04-29)
 
 Closes the parity gap with the legacy dashboard.
