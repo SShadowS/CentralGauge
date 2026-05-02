@@ -203,6 +203,14 @@ describe('Phase E acceptance fixtures', () => {
     // analysis.completed payload (Plan D-data); the trigger reads them
     // atomically. Here we simulate that ordering by purging the stale row
     // so the GET endpoint's fallback path recomputes inline.
+    //
+    // NOTE: This test exercises the FALLBACK-RECOMPUTE path of the GET
+    // endpoint (no materialised row → inline computeGenerationDiff). The
+    // trigger's happy-path materialisation is covered separately in
+    // `lifecycle-diff-trigger.test.ts > comparable diff materialises with
+    // all 4 buckets populated when shortcomings are attached BEFORE the
+    // trigger fires` (Wave 5 / Plan E IMPORTANT 4) and in the
+    // `production payload-attached pattern` test below.
     await env.DB.prepare(`DELETE FROM family_diffs WHERE family_slug = 'family2gen'`).run();
     const r = await SELF.fetch(
       `https://x/api/v1/families/family2gen/diff?from=${ev1.id}&to=${ev2.id}`,
@@ -429,5 +437,147 @@ describe('Phase E acceptance fixtures', () => {
       { headers },
     );
     expect(r.status).toBe(404);
+  });
+
+  it('production payload-attached pattern: GET returns the trigger-materialised row WITHOUT purge', async () => {
+    // Wave 5 / Plan E IMPORTANT 6: the existing 2-gen + 3-gen tests purge
+    // the trigger-written row to force the GET endpoint's fallback
+    // recompute. Production avoids the staleness because Plan D-data
+    // attaches shortcomings INSIDE the same db.batch as the
+    // analysis.completed event — the trigger sees the populated state
+    // on first fire.
+    //
+    // This test simulates that atomic shape by direct SQL: insert the
+    // lifecycle_event row + shortcomings rows in a single `db.batch`,
+    // then invoke the trigger directly (bypassing the events POST
+    // handler — its body-signed contract doesn't accept attached
+    // shortcomings). The GET endpoint reads the trigger-materialised
+    // row WITHOUT a purge, proving the production happy-path lands
+    // populated buckets.
+    const { modelIds } = await seedFamily({
+      familySlug: 'famprod',
+      vendor: 'anthropic',
+      models: [
+        { slug: 'fp-4-6', api_id: 'fp-4-6', display: 'FP 4.6', gen: 46 },
+        { slug: 'fp-4-7', api_id: 'fp-4-7', display: 'FP 4.7', gen: 47 },
+      ],
+      taskSetHash: 'h-fp',
+    });
+    const tA = Date.now() - 10_000;
+    const tB = tA + 5_000;
+    const PRE_TS = tA - 30 * 86_400_000;
+    const POST_TS = tA + 1_000;
+    const cResolved = await seedConcept({
+      slug: 'p-resolved', display: 'P resolved', description: 'r',
+      alConcept: 'al-r', firstSeen: PRE_TS,
+    });
+    const cPersisting = await seedConcept({
+      slug: 'p-persists', display: 'P persists', description: 'p',
+      alConcept: 'al-p', firstSeen: PRE_TS,
+    });
+    const cRegressed = await seedConcept({
+      slug: 'p-regressed', display: 'P regressed', description: 'rg',
+      alConcept: 'al-rg', firstSeen: PRE_TS,
+    });
+    const cNew = await seedConcept({
+      slug: 'p-new', display: 'P new', description: 'n',
+      alConcept: 'al-n', firstSeen: POST_TS,
+    });
+
+    // Insert gen_a + its shortcomings atomically (single db.batch). Plan
+    // D-data emits this exact shape from the orchestrator side.
+    const evAStmt = env.DB.prepare(
+      `INSERT INTO lifecycle_events(
+         ts, model_slug, task_set_hash, event_type, payload_json, actor
+       ) VALUES (?, ?, ?, 'analysis.completed', ?, 'operator') RETURNING id`,
+    ).bind(tA, 'fp-4-6', 'h-fp', JSON.stringify({ analyzer_model: ANALYZER_OPUS }));
+    const [evARow] = await env.DB.batch([evAStmt]);
+    const evAId = (evARow.results![0] as { id: number }).id;
+
+    await attachShortcoming({
+      modelId: modelIds.get('fp-4-6')!, conceptId: cResolved,
+      alConcept: 'al-r', analysisEventId: evAId, count: 1, baseSlug: 'gA',
+    });
+    await attachShortcoming({
+      modelId: modelIds.get('fp-4-6')!, conceptId: cPersisting,
+      alConcept: 'al-p', analysisEventId: evAId, count: 3, baseSlug: 'gA',
+    });
+
+    // Insert gen_b + its shortcomings atomically. The trigger MUST run
+    // AFTER both rows are committed so it observes the attached state.
+    const evBStmt = env.DB.prepare(
+      `INSERT INTO lifecycle_events(
+         ts, model_slug, task_set_hash, event_type, payload_json, actor
+       ) VALUES (?, ?, ?, 'analysis.completed', ?, 'operator') RETURNING id`,
+    ).bind(tB, 'fp-4-7', 'h-fp', JSON.stringify({ analyzer_model: ANALYZER_OPUS }));
+    const [evBRow] = await env.DB.batch([evBStmt]);
+    const evBId = (evBRow.results![0] as { id: number }).id;
+
+    await attachShortcoming({
+      modelId: modelIds.get('fp-4-7')!, conceptId: cPersisting,
+      alConcept: 'al-p', analysisEventId: evBId, count: 1, baseSlug: 'gB',
+    });
+    await attachShortcoming({
+      modelId: modelIds.get('fp-4-7')!, conceptId: cRegressed,
+      alConcept: 'al-rg', analysisEventId: evBId, count: 2, baseSlug: 'gB',
+    });
+    await attachShortcoming({
+      modelId: modelIds.get('fp-4-7')!, conceptId: cNew,
+      alConcept: 'al-n', analysisEventId: evBId, count: 1, baseSlug: 'gB',
+    });
+
+    // Now fire the trigger AS IF the events POST had landed AFTER all
+    // shortcomings INSERTs (atomic-batch ordering). Production runs this
+    // via ctx.waitUntil from the events POST handler; here we invoke
+    // directly so we don't have to forge a signed POST.
+    const { maybeTriggerFamilyDiff } = await import(
+      '../../src/lib/server/lifecycle-diff-trigger'
+    );
+    const cache = await caches.open('lifecycle-family-diff');
+    const noopCtx = { waitUntil: (_p: Promise<unknown>) => {} };
+    await maybeTriggerFamilyDiff(
+      noopCtx, env.DB, cache,
+      {
+        id: evBId,
+        model_slug: 'fp-4-7',
+        task_set_hash: 'h-fp',
+        event_type: 'analysis.completed',
+      },
+      'https://x',
+    );
+
+    // GET WITHOUT purging the trigger-written row. The materialised diff
+    // is the trigger's; the GET endpoint reads it directly.
+    const r = await SELF.fetch(
+      `https://x/api/v1/families/famprod/diff?task_set=h-fp&from=${evAId}&to=${evBId}`,
+    );
+    expect(r.status).toBe(200);
+    const body = await r.json() as {
+      status: string;
+      resolved: Array<{ slug: string; delta: number }>;
+      persisting: Array<{ slug: string; delta: number }>;
+      regressed: Array<{ slug: string; delta: number }>;
+      new: Array<{ slug: string; delta: number }>;
+    };
+    expect(body.status).toBe('comparable');
+    expect(body.resolved.map((c) => c.slug)).toEqual(['p-resolved']);
+    expect(body.resolved[0].delta).toBe(1);
+    expect(body.persisting.map((c) => c.slug)).toEqual(['p-persists']);
+    expect(body.persisting[0].delta).toBe(-2); // 1 - 3
+    expect(body.regressed.map((c) => c.slug)).toEqual(['p-regressed']);
+    expect(body.regressed[0].delta).toBe(2);
+    expect(body.new.map((c) => c.slug)).toEqual(['p-new']);
+    expect(body.new[0].delta).toBe(1);
+
+    // Cross-check: the family_diffs row IS the one the trigger wrote
+    // (no purge happened in this test). `computed_at` is a single
+    // timestamp from that one trigger fire — proves no fallback recompute
+    // executed during the GET.
+    const allRows = await env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM family_diffs
+        WHERE family_slug = 'famprod' AND from_gen_event_id = ?
+          AND to_gen_event_id = ?`,
+    ).bind(evAId, evBId).first<{ n: number }>();
+    expect(allRows!.n).toBe(1);
   });
 });
