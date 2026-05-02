@@ -29,8 +29,10 @@ import {
   type ErrorRow,
   type StateRow,
   type StatusJsonOutput,
+  StatusJsonOutputSchema,
 } from "../src/lifecycle/status-types.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../src/lifecycle/types.ts";
+import { CentralGaugeError } from "../src/errors.ts";
 
 export interface SelectArgs {
   /** Wall-clock for staleness comparison; injectable for tests. */
@@ -173,6 +175,49 @@ async function runCycle(modelSlug: string): Promise<CycleOutcome> {
   };
 }
 
+/**
+ * Parse + validate the raw stdout from `lifecycle status --json` against
+ * {@link StatusJsonOutputSchema} (Plan H's wire contract).
+ *
+ * Pure function — no I/O — so the failure path can be unit-tested without
+ * subprocess plumbing. A future schema rename in `lifecycle status --json`
+ * (e.g. `rows` → `state_rows`) would otherwise silently feed `undefined`
+ * into {@link selectStaleModels} → every model skipped → "all clear"
+ * digest with a real backlog hidden underneath. The zod parse short-circuits
+ * that failure mode at the orchestrator boundary.
+ *
+ * @throws {CentralGaugeError} code `INVALID_STATUS_OUTPUT` with `zodIssues`
+ *   (or `parseError`) on `context` for triage.
+ */
+export function parseStatusJson(raw: string): StatusJsonOutput {
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (parseError) {
+    throw new CentralGaugeError(
+      "lifecycle status --json output is not valid JSON",
+      "INVALID_STATUS_OUTPUT",
+      {
+        parseError: parseError instanceof Error
+          ? parseError.message
+          : String(parseError),
+        rawSample: raw.slice(0, 500),
+      },
+    );
+  }
+  const result = StatusJsonOutputSchema.safeParse(json);
+  if (!result.success) {
+    throw new CentralGaugeError(
+      "lifecycle status --json payload failed schema validation",
+      "INVALID_STATUS_OUTPUT",
+      {
+        zodIssues: result.error.issues,
+      },
+    );
+  }
+  return result.data;
+}
+
 async function readStatusJson(): Promise<StatusJsonOutput> {
   const cmd = new Deno.Command("deno", {
     args: ["task", "start", "lifecycle", "status", "--json"],
@@ -183,7 +228,7 @@ async function readStatusJson(): Promise<StatusJsonOutput> {
   if (code !== 0) {
     throw new Error(`lifecycle status --json exited with code ${code}`);
   }
-  return JSON.parse(new TextDecoder().decode(stdout)) as StatusJsonOutput;
+  return parseStatusJson(new TextDecoder().decode(stdout));
 }
 
 if (import.meta.main) {

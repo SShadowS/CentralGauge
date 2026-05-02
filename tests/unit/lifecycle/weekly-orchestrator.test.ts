@@ -8,12 +8,14 @@
  *
  * @module tests/unit/lifecycle/weekly-orchestrator
  */
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   computeExitCode,
+  parseStatusJson,
   selectStaleModels,
   summariseResults,
 } from "../../../scripts/weekly-cycle.ts";
+import { CentralGaugeError } from "../../../src/errors.ts";
 import { PRE_P6_TASK_SET_SENTINEL } from "../../../src/lifecycle/types.ts";
 
 const NOW = Date.UTC(2026, 4, 5, 6, 0, 0);
@@ -183,6 +185,64 @@ Deno.test("summariseResults — empty input → all zeros", () => {
   assertEquals(summary.total, 0);
   assertEquals(summary.succeeded, 0);
   assertEquals(summary.failed, 0);
+});
+
+Deno.test("parseStatusJson — well-formed payload validates and returns typed shape", () => {
+  // The same shape `lifecycle status --json` emits in production.
+  const raw = JSON.stringify({
+    as_of_ts: NOW,
+    rows: [
+      {
+        model_slug: "anthropic/claude-opus-4-7",
+        task_set_hash: "ts-current",
+        step: "analyze",
+        last_ts: NOW - DAY,
+        last_event_id: 1,
+        last_event_type: "analysis.completed",
+        last_payload_hash: null,
+        last_envelope_json: null,
+      },
+    ],
+    legacy_rows: [],
+    hints: [],
+    error_rows: [],
+  });
+  const parsed = parseStatusJson(raw);
+  assertEquals(parsed.rows.length, 1);
+  assertEquals(parsed.rows[0]!.model_slug, "anthropic/claude-opus-4-7");
+});
+
+Deno.test("parseStatusJson — malformed payload (missing rows) throws INVALID_STATUS_OUTPUT", () => {
+  // Simulates a future schema rename in `lifecycle status --json` that
+  // removes / renames the `rows` field. Without zod validation the
+  // orchestrator would feed `undefined` into `selectStaleModels` and
+  // silently skip every model — "all clear" digest, no events.
+  const raw = JSON.stringify({
+    as_of_ts: NOW,
+    // rows: missing!
+    legacy_rows: [],
+    hints: [],
+    error_rows: [],
+  });
+  const err = assertThrows(
+    () => parseStatusJson(raw),
+    CentralGaugeError,
+  );
+  assertEquals(err.code, "INVALID_STATUS_OUTPUT");
+  // zod issues attached for triage.
+  assert(
+    Array.isArray(err.context?.["zodIssues"]),
+    "expected zodIssues array on context for triage",
+  );
+});
+
+Deno.test("parseStatusJson — non-JSON input throws INVALID_STATUS_OUTPUT", () => {
+  // E.g. command printed a plain-text error message before crashing.
+  const err = assertThrows(
+    () => parseStatusJson("not json at all"),
+    CentralGaugeError,
+  );
+  assertEquals(err.code, "INVALID_STATUS_OUTPUT");
 });
 
 Deno.test("selectStaleModels — fully-current models are excluded", () => {
