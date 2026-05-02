@@ -166,6 +166,52 @@ Deno.test("fetchDigestInputs — per-model queryEvents failure is non-fatal", as
   assertEquals(inputs.events[0]!.model_slug, "anthropic/claude-opus-4-7");
 });
 
+Deno.test(
+  "fetchDigestInputs — per-model failure isolated even when queryFn throws synchronously",
+  async () => {
+    // `Promise.allSettled` over the per-model fan-out is the canonical
+    // choice for self-documenting failure isolation. The previous
+    // implementation used `Promise.all` and relied on an inner
+    // try/catch — easy to break by a refactor that removes the inner
+    // catch under the assumption that `Promise.all` already isolates
+    // (it does NOT — one rejected promise rejects the whole array).
+    //
+    // This test exercises a synchronous throw (not a rejected promise);
+    // even though the orchestrator wraps the async map fn, the internal
+    // `await queryFn(...)` propagates a sync throw into a rejection that
+    // `allSettled` then quarantines. The healthy model still contributes
+    // its events; the digest renders with partial data.
+    const inputs = await fetchDigestInputs({
+      siteUrl: "https://centralgauge.example",
+      sinceMs: 0,
+      privateKey: new Uint8Array(32),
+      keyId: 1,
+      models: ["anthropic/claude-opus-4-7", "openai/gpt-5.5"],
+      taskSetHash: "ts-current",
+      queryFn: (filter, _opts) => {
+        if (filter.model_slug === "openai/gpt-5.5") {
+          // Synchronous throw — distinguishes allSettled fan-out from
+          // a Promise.all + inner try/catch combination.
+          throw new Error("config not loaded");
+        }
+        return Promise.resolve([{
+          id: 1,
+          ts: 1000,
+          model_slug: filter.model_slug,
+          task_set_hash: "ts-current",
+          event_type: "bench.completed",
+          actor: "ci",
+        }]);
+      },
+      fetchFamiliesFn: () => Promise.resolve([]),
+      fetchQueueFn: () => Promise.resolve({ pending_count: 0, rows: [] }),
+    });
+
+    assertEquals(inputs.events.length, 1);
+    assertEquals(inputs.events[0]!.model_slug, "anthropic/claude-opus-4-7");
+  },
+);
+
 Deno.test("digest — non-comparable family diffs do not contribute regressions", async () => {
   const json = await generateDigest({
     events: [],

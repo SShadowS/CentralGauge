@@ -446,28 +446,51 @@ export async function fetchDigestInputs(
   };
 
   // 1. Events — one round-trip per model. Concurrency cap not needed at
-  // the typical ~5–10 model count; a Promise.all blast is fine.
-  const eventBatches = await Promise.all(
-    args.models.map(async (slug) => {
-      try {
-        return await queryFn({
+  // the typical ~5–10 model count.
+  //
+  // `Promise.allSettled` (NOT `Promise.all`) is the canonical choice for
+  // fan-out with per-model failure isolation: each model's promise either
+  // resolves with its events or rejects with its error, and the
+  // aggregator sorts them apart. `Promise.all` would propagate the FIRST
+  // rejection and discard healthy results — the previous implementation
+  // worked only because of a per-task try/catch that converted rejections
+  // to empty results before `Promise.all` saw them. That's load-bearing
+  // logic disguised as a defensive null-guard, easy to remove during
+  // refactor under the assumption that `Promise.all` already isolates.
+  // `allSettled` is self-documenting.
+  const settled = await Promise.allSettled(
+    args.models.map((slug) =>
+      // `Promise.resolve().then(...)` defers the queryFn invocation into
+      // a microtask so synchronous throws inside the function become
+      // promise rejections that `allSettled` quarantines, matching the
+      // semantics of the previous `async (slug) => { try { ... } }`
+      // wrapper without re-introducing a per-task try/catch.
+      Promise.resolve().then(() =>
+        queryFn({
           model_slug: slug,
           task_set_hash: args.taskSetHash,
           since: args.sinceMs,
-        }, opts);
-      } catch (err) {
-        // Per-model failure shouldn't kill the digest; the failed model
-        // simply contributes no events. Operator sees a less-complete
-        // digest with a workflow-step warning.
-        console.warn(
-          `[digest] queryEvents failed for ${slug}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-        return [];
-      }
-    }),
+        }, opts)
+      )
+    ),
   );
+  const eventBatches: LifecycleEvent[][] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i]!;
+    if (result.status === "fulfilled") {
+      eventBatches.push(result.value);
+    } else {
+      // Operator sees a less-complete digest with a workflow-step
+      // warning — failed model simply contributes no events.
+      const slug = args.models[i] ?? "<unknown>";
+      const err = result.reason;
+      console.warn(
+        `[digest] queryEvents failed for ${slug}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
   const events = eventBatches.flat();
 
   // 2. Family diffs. Public endpoints; no signature.
