@@ -583,8 +583,10 @@ async function computeSettingsConsistency(
  *
  * Replaces the old `computeLatencyP50ByModel`; callers now receive both p50
  * and p95 from a single query.
+ *
+ * @internal Exported for unit testing; not part of the public API surface.
  */
-async function computeLatencyPercentilesByModel(
+export async function computeLatencyPercentilesByModel(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
@@ -628,8 +630,10 @@ async function computeLatencyPercentilesByModel(
 /**
  * Linear interpolation percentile on a sorted array. Returns 0 for empty
  * arrays.
+ *
+ * @internal Exported for unit testing; not part of the public API surface.
  */
-function percentileLinear(sorted: number[], p: number): number {
+export function percentileLinear(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   if (sorted.length === 1) return sorted[0]!;
   const idx = p * (sorted.length - 1);
@@ -643,8 +647,10 @@ function percentileLinear(sorted: number[], p: number): number {
 /**
  * Wilson 95% confidence interval on a proportion.
  * Returns { lower: 0, upper: 1 } when trials ≤ 0 (no data).
+ *
+ * @internal Exported for unit testing; not part of the public API surface.
  */
-function wilsonInterval(
+export function wilsonInterval(
   successes: number,
   trials: number,
 ): { lower: number; upper: number } {
@@ -667,8 +673,10 @@ function wilsonInterval(
  * A task "passes" in a run if any of its result rows for that run has
  * `passed = 1` (covers attempt-2 recovery). Returns a Map keyed by model_id;
  * absent entries should be treated as 0.
+ *
+ * @internal Exported for unit testing; not part of the public API surface.
  */
-async function computePassHatAtN(
+export async function computePassHatAtN(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
