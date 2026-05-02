@@ -3,6 +3,8 @@ import { actorIdFromAuth, authenticateAdminRequest } from '$lib/server/cf-access
 import { ApiError, errorResponse, jsonResponse } from '$lib/server/errors';
 import { appendEvent } from '$lib/server/lifecycle-event-log';
 import { buildHeaderSignedFields, verifyLifecycleAdminRequest } from '$lib/server/lifecycle-auth';
+import { maybeTriggerFamilyDiff } from '$lib/server/lifecycle-diff-trigger';
+import { FAMILY_DIFF_CACHE_NAME } from '$lib/server/family-diff-cache';
 import type { AppendEventInput } from '../../../../../../../src/lifecycle/types';
 import {
   CANONICAL_ACTORS,
@@ -74,8 +76,40 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         throw new ApiError(409, 'duplicate_event', `event already recorded with id=${dup.id}`);
       }
     }
-    // Override body.actor_id with the verified identity (Wave 5 / C1).
+    // Wave 5 / CRITICAL 1 — override body.actor_id with the verified
+    // identity. NEVER pass body's actor_id to appendEvent; an authenticated
+    // caller could otherwise forge audit-trail rows with arbitrary actor_id.
     const { id } = await appendEvent(db, { ...p, actor_id: verifiedActorId });
+
+    // Wave 5 / Phase E — schedule per-family concept-diff materialisation.
+    // No-op for non-`analysis.completed`; for analysis.completed it computes
+    // the diff against the family's prior generation and upserts the row
+    // into family_diffs so the next /api/v1/families/<slug>/diff read is
+    // fast. Awaited inline (matches concept-cache-invalidation pattern):
+    // synchronous so the next read is deterministic in tests + production;
+    // one SELECT + one INSERT/UPDATE + a few cache.deletes is negligible vs
+    // the signature-verification round-trip already paid above.
+    try {
+      const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
+      const origin = new URL(request.url).origin;
+      await maybeTriggerFamilyDiff(
+        platform.context,
+        db,
+        cache,
+        {
+          id,
+          model_slug: p.model_slug,
+          task_set_hash: p.task_set_hash,
+          event_type: p.event_type,
+        },
+        origin,
+      );
+    } catch (err) {
+      // Trigger failure is non-fatal — the event is already persisted; the
+      // diff endpoint recomputes inline on cache miss. Log for observability.
+      console.error('[lifecycle/events] diff trigger failed', err);
+    }
+
     return jsonResponse({ id }, 200);
   } catch (err) {
     return errorResponse(err);
