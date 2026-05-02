@@ -71,6 +71,7 @@ nav:
       - Architecture: site/architecture.md
       - Design system: site/design-system.md
       - Operations: site/operations.md
+      - Lifecycle: site/lifecycle.md
   - Postmortems:
       - Template: postmortems/_template.md
   - CLI Reference:
