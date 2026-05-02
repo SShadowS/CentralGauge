@@ -975,3 +975,248 @@ deploy is required — the verifier reads `env.CF_ACCESS_AUD` per request.
 - **503 `cf_access_jwks_unreachable`** — CF Access JWKs endpoint is
   down or the `CF_ACCESS_TEAM_DOMAIN` is wrong. Verify with
   `curl https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`.
+
+## Lifecycle runbooks
+
+> Operator procedures for the lifecycle event log + admin surfaces
+> introduced by the 2026-04-29 lifecycle plan. Operator + reviewer
+> guide: `docs/site/lifecycle.md`.
+
+### How to authorize a new operator for `/admin/lifecycle/*`
+
+The CF Access policy details live in this same file under
+"Admin lifecycle UI access (Cloudflare Access)" → "Adding a new
+reviewer" — the one-time setup, secrets, AUD rotation, and
+troubleshooting flows are NOT duplicated here. The minimal grant flow
+for an existing application:
+
+1. Cloudflare dashboard → **Zero Trust** → **Access** → **Applications**
+   → **CentralGauge Admin Lifecycle** → **Edit** → **Policies**.
+2. Open the existing policy `Operators` → **Configure rules** →
+   **Include** → add the new operator's GitHub OAuth email. Save.
+3. Confirm with the operator that
+   `https://centralgauge.sshadows.workers.dev/admin/lifecycle/status`
+   loads the matrix view (after a fresh GitHub OAuth round-trip in an
+   incognito window). No worker redeploy needed; CF Access policy
+   changes propagate at the edge within seconds.
+
+Removing access: same flow, remove the email. Active CF Access sessions
+invalidate on the next request — CF Access does not maintain
+server-side session state, so revocation is effectively immediate.
+
+CLI access (Ed25519 admin key) is unaffected by CF Access policy
+changes — the two identities have separate revocation paths. Revoke a
+CLI by rotating the admin key (separate procedure; see "Wrangler.toml
+vs secrets" above).
+
+### How to triage a stuck cycle lock
+
+**Symptom.** `centralgauge cycle --llms <model>` exits immediately with
+an error like `cycle: lost lock race for <model>` (the orchestrator
+emits `cycle.aborted{reason='lost_race'}` and re-raises), but no other
+cycle is actually running. Cause: a previous cycle was SIGKILLed or
+evicted before it could write a terminal event, and the lock is still
+within its 90-minute TTL window.
+
+**Resolution.**
+
+1. Verify no other process is actually running:
+
+   ```bash
+   ps aux | grep -E "centralgauge.*cycle" | grep -v grep
+   ```
+
+   If a process is running, wait for it. Do NOT proceed.
+
+2. Confirm the stuck lock by reading the event log via the status
+   endpoint:
+
+   ```bash
+   centralgauge lifecycle status --model <slug> --json | \
+     jq '.rows[] | {step, last_ts, last_event_type, last_envelope_json}'
+   ```
+
+   Expect a `cycle.started` with no matching `cycle.completed`,
+   `cycle.failed`, `cycle.timed_out`, or `cycle.aborted` event with
+   higher id.
+
+3. Release the lock:
+
+   ```bash
+   centralgauge cycle --llms <slug> --force-unlock --yes
+   ```
+
+   This writes
+   `cycle.aborted{reason='manual_unlock', actor_id=<machine_id>}`. The
+   `--yes` flag is mandatory — `--force-unlock` is destructive in the
+   sense that it admits a fresh cycle to start, so the prompt-bypass is
+   guarded.
+
+4. Re-run the cycle:
+
+   ```bash
+   centralgauge cycle --llms <slug>
+   ```
+
+   The orchestrator resumes from the last successful step (`bench` and
+   `debug-capture` typically already completed before the crash;
+   `analyze` re-runs).
+
+When the 90-minute TTL fires automatically, the orchestrator emits
+`cycle.timed_out` for the stale `cycle.started` before attempting to
+acquire its own lock — no operator action is needed for that path.
+`--force-unlock` is the manual short-circuit when waiting 90 minutes is
+not acceptable.
+
+### How to recover from a bad merge in concept registry
+
+**Symptom.** Two distinct AL pedagogical concepts were collapsed into a
+single row by the clustering step. The `/concepts/<slug>` page now lists
+models that hit the wrong concept; the family-diff page may show
+phantom "persisting" entries that are actually a separate issue.
+
+The `concepts` table is **append-only** — rows are NEVER `DELETE`d
+(per the cross-plan invariant 4 in
+`docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md`). Recovery uses
+a `concept.split` event written via the `lifecycle cluster-review`
+CLI's `--split` flow:
+
+1. Identify the bad merge from the event timeline. Pull recent
+   `concept.merged` events:
+
+   ```bash
+   centralgauge lifecycle status --model <slug> --json | \
+     jq '.rows[] | select(.last_event_type == "concept.merged")'
+   ```
+
+   Note the `winner_concept_id`, `loser_concept_id`, and `similarity`
+   from the payload.
+
+2. Run the cluster-review CLI's split flow:
+
+   ```bash
+   centralgauge lifecycle cluster-review --split <winner_concept_id>
+   ```
+
+   Interactive prompt: enter slugs for the new daughter concepts;
+   choose which existing `shortcomings.concept_id` rows point at each
+   daughter. The command writes a `concept.split` event + creates the
+   new concept rows + updates `shortcomings.concept_id` joins — all in
+   a single D1 batch (per Plan D6's atomicity test).
+
+3. Verify the split landed:
+
+   ```bash
+   curl -s \
+     "https://centralgauge.sshadows.workers.dev/api/v1/concepts/<original-slug>" \
+     | jq '.split_into'
+   ```
+
+   Lists the daughter concept slugs.
+
+4. Cache invalidation: the `concept.split` event triggers
+   `invalidateConcept` on the original slug + every alias + every
+   daughter (Plan D4). No manual `cache.delete()` needed.
+
+**Never `DELETE` from `concepts` directly.** Direct deletion breaks the
+foreign-key joins from `shortcomings.concept_id` and is impossible to
+audit. The append-only invariant is the ONLY safe recovery path.
+
+### How to run the weekly CI cycle manually
+
+`weekly-cycle.yml` runs every Monday at 06:00 UTC and on
+`workflow_dispatch`. To trigger ad-hoc (e.g. after merging a hotfix
+that re-arms a previously-failing model):
+
+```bash
+gh workflow run weekly-cycle.yml
+gh run watch                       # follow live
+```
+
+The workflow:
+
+1. Calls `centralgauge lifecycle status --json` to identify stale
+   models (no `analysis.completed` under the current `task_set` within
+   `lifecycle.weekly_stale_after_days`).
+2. Fans out a `centralgauge cycle --llms <slug> --yes` per stale model
+   via `Promise.allSettled` (failures isolated per-model — one bad
+   model does not abort the run).
+3. Generates a digest via `centralgauge lifecycle digest --since 7d
+   --format markdown`.
+4. Posts the digest to a sticky GitHub issue tagged
+   `weekly-cycle-digest`.
+
+Inspecting outputs:
+
+- `weekly-cycle-result.json` artifact — per-model outcomes (added by
+  Plan G).
+- `digest.md` artifact — the markdown body posted to the issue.
+
+To re-run only one model without touching the workflow:
+
+```bash
+centralgauge cycle --llms <vendor>/<model> --yes
+```
+
+### How to apply Plan E migration to production
+
+The Plan E migration (`0007_family_diffs.sql`) is operator-gated — Plan
+E's implementer only applied it `--local` and confirmed the schema.
+The full apply + verify + rollback runbook lives in
+`docs/superpowers/plans/2026-04-29-lifecycle-E-rollback-runbook.md`.
+Headline steps:
+
+```bash
+cd site
+# 1. Back up D1 first; keep the backup-id for rollback.
+CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b \
+  npx wrangler d1 backup create centralgauge
+
+# 2. Apply 0007.
+CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b \
+  npx wrangler d1 execute centralgauge --remote \
+  --file=migrations/0007_family_diffs.sql
+
+# 3. Verify table + indexes + nullable from_gen_event_id; details in
+#    the per-plan rollback runbook.
+```
+
+Plan A's `0006_lifecycle.sql` and Plan B's slug-rename backfill have
+their own runbooks at
+`docs/superpowers/plans/2026-04-29-lifecycle-A-rollback-runbook.md`
+and `2026-04-29-lifecycle-B-rollback-runbook.md`. The two migrations
+must be applied in order (0006 before 0007 — 0007's family-diff
+foreign keys reference `lifecycle_events`).
+
+### How to interpret a stale digest
+
+The weekly CI sticky GitHub issue (`weekly-cycle-digest`) stays open
+when any cycle failed during the last run. The body has two sections:
+
+- **Result table** at the top — per-model outcomes from
+  `weekly-cycle-result.json`. Failed rows show the error code +
+  human-readable error message.
+- **Markdown digest** below — output of `centralgauge lifecycle digest
+  --since 7d`. Lists new concepts, regressions, model state
+  transitions, and accept/reject decisions over the last 7 days.
+
+Triage flow:
+
+1. Read the result-table failed rows. Single-line errors are usually
+   transient (rate limit, container blip); multi-line errors are
+   usually real regressions.
+2. For each failed model, run
+   `centralgauge cycle --llms <slug> --yes` locally to reproduce. Most
+   transient errors self-resolve on the next Monday tick.
+3. Persistent failures: open a tracking issue, link the
+   `weekly-cycle-digest` issue + the local repro, and triage as a
+   normal bug.
+4. After all tracked failures are resolved, the next successful weekly
+   run auto-closes the digest issue (Plan G's sticky-issue logic
+   detects the empty failure list and closes).
+
+When in doubt: the digest is descriptive, not prescriptive — the
+authoritative state is the `lifecycle_events` table queried via
+`centralgauge lifecycle status`. If the digest and the matrix
+disagree, trust the matrix (digest writes can be truncated at 60 KB
+per Plan G's gh-issue ceiling).
