@@ -74,6 +74,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
     const p = parsed.data;
+    // NOTE: cacheOrigin intentionally NOT threaded here. enqueueReviewTx
+    // only INSERTs into pending_review; it does NOT mutate the concept
+    // registry (concepts / concept_aliases) and emits NO lifecycle event.
+    // The /api/v1/concepts/<slug> cache is therefore unaffected by this
+    // call, so invalidateConcept is never reached and origin threading
+    // would be dead code. The cluster-review/decide endpoint is the one
+    // that mutates concepts when an operator accepts/rejects a queued row,
+    // and it does thread cacheOrigin (see decide/+server.ts:122-123).
     const id = await enqueueReviewTx(db, {
       entry: p.entry as Record<string, unknown> & {
         concept_slug_proposed: string;

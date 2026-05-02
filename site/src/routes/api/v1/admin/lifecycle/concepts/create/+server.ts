@@ -34,7 +34,7 @@ const Body = z.object({
   analyzer_model: z.string().nullable(),
 });
 
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, url }) => {
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
@@ -66,6 +66,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
     const p = parsed.data;
+    // Thread the request origin so invalidateConcept evicts production cache
+    // slots keyed by the real host. Without this, createConceptTx falls back
+    // to the http://internal.invalid sentinel and silently misses live slots
+    // (relevant when overwriting a stale slot from a deleted earlier concept).
+    const cacheOrigin = `${url.protocol}//${url.host}`;
     const result = await createConceptTx(db, {
       proposedSlug: p.proposed_slug,
       displayName: p.display_name,
@@ -80,6 +85,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       envelopeJson: p.envelope_json,
       ts: p.ts,
       analyzerModel: p.analyzer_model,
+      cacheOrigin,
     });
     return jsonResponse(result, 200);
   } catch (err) {
