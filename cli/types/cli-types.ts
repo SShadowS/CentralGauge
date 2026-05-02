@@ -4,6 +4,7 @@
  */
 
 import type { BenchmarkOptions } from "../../types/index.ts";
+import type { ConfidenceInterval } from "../commands/report/stats-calculator.ts";
 import type { CLIPromptOverrides } from "../../src/prompts/mod.ts";
 import type { OutputFormat } from "../../src/utils/formatters.ts";
 
@@ -95,7 +96,7 @@ export interface PerModelStats {
     maxTokens?: number;
   } | null;
   /** Wilson 95% CI on pass rate (0-1). */
-  passRateCI: { lower: number; upper: number };
+  passRateCI: ConfidenceInterval;
   /** Cost per successful task. null when 0 tasks passed. */
   costPerPass: number | null;
   /** Total tokens per successful task. null when 0 tasks passed. */
