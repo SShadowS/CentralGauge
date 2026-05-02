@@ -311,6 +311,27 @@ export async function displayMultiRunSummary(
       }`,
     );
 
+    // pass^k (strict — all k runs pass)
+    const passHatKParts: string[] = [];
+    for (let k = 1; k <= runCount; k++) {
+      const val = stats.passHatK[k];
+      if (val !== undefined) {
+        passHatKParts.push(
+          `pass^${k}: ${colors.cyan((val * 100).toFixed(1) + "%")}`,
+        );
+      }
+    }
+    if (passHatKParts.length > 0) {
+      console.log(`    ${passHatKParts.join("  ")}`);
+    }
+
+    // majority@n
+    console.log(
+      `    Majority@${runCount}: ${
+        colors.yellow((stats.majorityAtN * 100).toFixed(1) + "%")
+      }   Pass-count stddev: ${stats.perTaskPassStddev.toFixed(2)}`,
+    );
+
     // Show inconsistent tasks
     const inconsistentTasks: string[] = [];
     for (const [taskId, taskRun] of stats.perTaskRuns) {
