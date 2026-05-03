@@ -1,4 +1,4 @@
-codeunit 80097 "CG-AL-M007 Mock Calculator"
+codeunit 69097 "CG-AL-M007 Mock Calculator"
 {
     // Mock implementation of Sales Performance Analysis calculations for testing
     // This exposes the calculation logic that should be implemented in the report

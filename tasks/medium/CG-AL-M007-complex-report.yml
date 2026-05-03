@@ -5,6 +5,8 @@ max_attempts: 2
 description: >-
   Create a complex report called "Sales Performance Analysis" with ID 70001 that performs advanced data processing.
 
+  A "CG-AL-M007 Mock Calculator" codeunit (ID 69097) is already available; the report should consume it via the existing public procedures (Initialize, AddSalesLine, GetRunningTotalByCustomer, GetRunningTotalByRegion, CalculateAverageOrderValue, GetCustomerRank, GetTopProduct, GetProductSalesQuantity, GetTotalSales, GetCustomerCount, CalculateYoYComparison, CalculateOrderFrequency).
+
   The report should include multiple data items with complex relationships:
   - Customer (grouped by region and category)
   - Sales Header (filtered by date range)
