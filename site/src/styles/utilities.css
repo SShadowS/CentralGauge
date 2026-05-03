@@ -21,6 +21,12 @@
 .text-muted {
   color: var(--text-muted);
 }
+/* Links inside muted text blocks blend with the surrounding color, so axe
+ * (link-in-text-block) requires a non-color distinguisher. Underline by
+ * default; existing :hover rule keeps the underline. */
+.text-muted a {
+  text-decoration: underline;
+}
 .text-faint {
   color: var(--text-faint);
 }
