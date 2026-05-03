@@ -12,7 +12,7 @@
 </script>
 
 <svelte:head>
-  <title>Runs by {data.slug} — CentralGauge</title>
+  <title>Runs by {data.slug} · CentralGauge</title>
 </svelte:head>
 
 <Breadcrumbs crumbs={[

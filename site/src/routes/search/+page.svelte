@@ -28,7 +28,7 @@
 </script>
 
 <svelte:head>
-  <title>{query ? `${query} — Search` : 'Search'} — CentralGauge</title>
+  <title>{query ? `${query} · Search` : 'Search'} · CentralGauge</title>
   <meta name="description" content="Full-text search across compile errors and failure reasons." />
 </svelte:head>
 

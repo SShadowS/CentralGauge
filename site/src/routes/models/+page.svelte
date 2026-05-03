@@ -41,7 +41,7 @@
 </script>
 
 <svelte:head>
-  <title>Models — CentralGauge</title>
+  <title>Models · CentralGauge</title>
   <meta name="description" content="All LLMs benchmarked by CentralGauge ({allModels.length} catalogued)." />
 </svelte:head>
 

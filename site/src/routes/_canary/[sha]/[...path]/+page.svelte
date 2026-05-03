@@ -3,7 +3,7 @@
 </script>
 
 <svelte:head>
-  <title>Canary {data.canary.sha} — {data.canary.path} — CentralGauge</title>
+  <title>Canary {data.canary.sha} · {data.canary.path} · CentralGauge</title>
   <meta name="robots" content="noindex">
 </svelte:head>
 

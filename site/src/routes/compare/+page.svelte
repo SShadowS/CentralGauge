@@ -57,7 +57,7 @@
 </script>
 
 <svelte:head>
-  <title>Compare — CentralGauge</title>
+  <title>Compare · CentralGauge</title>
   <meta name="description" content="Side-by-side model comparison ({data.requested.length} selected)." />
 </svelte:head>
 
@@ -84,7 +84,7 @@
 {#if !data.compare}
   <EmptyState title="Pick at least two models to compare">
     {#snippet children()}
-      Add a slug to the input above, or jump straight in via URL — for example
+      Add a slug to the input above, or jump straight in via URL. For example
       <code class="text-mono">?models=sonnet-4-7,gpt-5</code>.
     {/snippet}
   </EmptyState>

@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>Limitations of {data.slug} — CentralGauge</title>
+  <title>Limitations of {data.slug} · CentralGauge</title>
 </svelte:head>
 
 <Breadcrumbs crumbs={[

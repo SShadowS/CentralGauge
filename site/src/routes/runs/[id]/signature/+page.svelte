@@ -6,8 +6,8 @@
 </script>
 
 <svelte:head>
-  <title>Signature for run {data.runId.slice(0, 8)}… — CentralGauge</title>
-  <meta name="description" content="Ed25519 signature for run {data.runId} — independently verifiable in-browser." />
+  <title>Signature for run {data.runId.slice(0, 8)}… · CentralGauge</title>
+  <meta name="description" content="Ed25519 signature for run {data.runId}, independently verifiable in-browser." />
 </svelte:head>
 
 <Breadcrumbs crumbs={[

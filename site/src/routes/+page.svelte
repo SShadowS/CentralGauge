@@ -71,7 +71,7 @@
 </script>
 
 <svelte:head>
-  <title>Leaderboard — CentralGauge</title>
+  <title>Leaderboard · CentralGauge</title>
   <meta name="description" content="LLM AL/BC benchmark leaderboard. {data.leaderboard.data.length} models ranked by score." />
 </svelte:head>
 

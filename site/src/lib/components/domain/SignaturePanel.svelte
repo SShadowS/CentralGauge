@@ -99,7 +99,7 @@
     {:else if verifyState === 'valid'}
       <span class="ok">✓ Signature valid (Ed25519)</span>
     {:else if verifyState === 'invalid'}
-      <span class="bad">✗ Signature INVALID — does not match public key</span>
+      <span class="bad">✗ Signature INVALID, does not match public key</span>
     {:else if verifyState === 'error'}
       <span class="bad">verify failed: {errorMsg}</span>
     {/if}

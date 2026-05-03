@@ -28,7 +28,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Pass Rate',
     short: 'Fraction of distinct tasks solved in any attempt across all runs.',
     formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / tasks_attempted_distinct',
-    when: 'Primary ranking metric. Compare models here first — it directly measures how often the model delivers working code.',
+    when: 'Primary ranking metric. Compare models here first: it directly measures how often the model delivers working code.',
     link: { href: 'https://arxiv.org/abs/2107.03374', text: 'HumanEval paper (Chen et al., 2021)' },
   },
 
@@ -46,7 +46,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'pass^n (strict)',
     short: 'Fraction of tasks the model solved in every single run (strict consistency).',
     formula: 'tasks where ALL runs produced a passing result / tasks_attempted_distinct',
-    when: 'Measures reliability under repetition. High pass^n means the model is unlikely to regress on a re-run — important for CI and production use.',
+    when: 'Measures reliability under repetition. High pass^n means the model is unlikely to regress on a re-run, important for CI and production use.',
   },
 
   avg_score: {
@@ -62,7 +62,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Cost / run',
     short: 'Average total LLM cost per benchmark run in USD.',
     formula: 'SUM(cost_usd) / run_count across all runs for this model.',
-    when: 'Use to compare operating cost across models with similar pass rates. Does not account for quality — combine with $/Pass for a cost-efficiency view.',
+    when: 'Use to compare operating cost across models with similar pass rates. Does not account for quality. Combine with $/Pass for a cost-efficiency view.',
   },
 
   cost_per_pass_usd: {
@@ -86,7 +86,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Latency p95',
     short: '95th-percentile per-task wall time. Captures tail latency.',
     formula: '95th percentile of per-task duration_ms across all tasks in all runs.',
-    when: 'Use p95 to understand worst-case latency. A low p95 means the model rarely stalls — relevant for automated pipelines with timeouts.',
+    when: 'Use p95 to understand worst-case latency. A low p95 means the model rarely stalls, relevant for automated pipelines with timeouts.',
   },
 
   consistency_pct: {

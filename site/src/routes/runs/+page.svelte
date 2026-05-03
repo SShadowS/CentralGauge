@@ -102,7 +102,7 @@
 </script>
 
 <svelte:head>
-  <title>Runs — CentralGauge</title>
+  <title>Runs · CentralGauge</title>
   <meta name="description" content="Global runs feed across all benchmarked models." />
 </svelte:head>
 
@@ -123,7 +123,7 @@
     <button type="button" class="banner-btn" onclick={dismissAndInvalidate}>
       <span class="badge">new</span>
       <span class="banner-text">
-        {banners.length} new {banners.length === 1 ? 'run' : 'runs'} available — click to refresh
+        {banners.length} new {banners.length === 1 ? 'run' : 'runs'} available, click to refresh
       </span>
     </button>
     <ul class="banners">

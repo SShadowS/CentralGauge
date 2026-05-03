@@ -14,7 +14,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.meta.name} — Categories — CentralGauge</title>
+  <title>{data.meta.name} · Categories · CentralGauge</title>
   <meta
     name="description"
     content="Task category {data.meta.name}: {data.meta.task_count} tasks across the current task set."

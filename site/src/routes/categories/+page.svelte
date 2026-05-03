@@ -8,8 +8,8 @@
 </script>
 
 <svelte:head>
-  <title>Categories — CentralGauge</title>
-  <meta name="description" content="Benchmark task themes — Tables, Pages, Permissions, Reports, Roles." />
+  <title>Categories · CentralGauge</title>
+  <meta name="description" content="Benchmark task themes: Tables, Pages, Permissions, Reports, Roles." />
 </svelte:head>
 
 <Breadcrumbs crumbs={[{ label: 'Home', href: '/' }, { label: 'Categories' }]} />

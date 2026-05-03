@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0a4dff" />
     <script>
-      // No-flash theme application — runs before any paint.
+      // No-flash theme application: runs before any paint.
       (function () {
         try {
           var t = localStorage.getItem("theme");
@@ -16,11 +16,11 @@
       })();
     </script>
     <script>
-      // No-flash density application — runs before any paint.
+      // No-flash density application: runs before any paint.
       // Reads localStorage and writes <html data-density> so the rune
       // store reads the correct initial value at construction (avoids
-      // the comfortable→compact flash and hydration mismatch).
-      // Intentionally NOT gated on the density_toggle flag — the
+      // the comfortable to compact flash and hydration mismatch).
+      // Intentionally NOT gated on the density_toggle flag, because the
       // attribute itself is benign when the toggle UI is hidden.
       (function () {
         try {
@@ -28,7 +28,7 @@
           if (d === "compact" || d === "comfortable") {
             document.documentElement.setAttribute("data-density", d);
           }
-        } catch (e) { /* localStorage blocked — accept comfortable default */ }
+        } catch (e) { /* localStorage blocked: accept comfortable default */ }
       })();
     </script>
     %sveltekit.head%

@@ -98,7 +98,7 @@
   }
 </script>
 
-<svelte:head><title>Review queue — Lifecycle — CentralGauge</title></svelte:head>
+<svelte:head><title>Review queue · Lifecycle · CentralGauge</title></svelte:head>
 
 <div class="layout">
   <aside class="queue">

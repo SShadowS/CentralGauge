@@ -89,7 +89,7 @@
     </EmptyState>
   {:else if isMismatch}
     <div class="warn-card" role="status">
-      <h3>Cross-analyzer comparison — diff suppressed</h3>
+      <h3>Cross-analyzer comparison: diff suppressed</h3>
       <p>
         The two generations were analyzed by different models
         (<code>{diff.analyzer_model_a}</code> vs
@@ -115,15 +115,15 @@
       {:else}
         <p class="text-sm text-muted">
           Original debug session for <code>{diff.from_model_slug}</code> is
-          not retained in R2 — re-analysis would have to re-run inference
+          not retained in R2. Re-analysis would have to re-run inference
           from scratch. Operator decision required (not a one-click action).
         </p>
       {/if}
     </div>
   {:else if isComparable}
     <p class="meta text-muted">
-      <code>{diff.from_model_slug}</code> → <code>{diff.to_model_slug}</code>
-      — resolved {counts.resolved},
+      <code>{diff.from_model_slug}</code> → <code>{diff.to_model_slug}</code>:
+      resolved {counts.resolved},
       persisting {counts.persisting},
       regressed {counts.regressed},
       new {counts.new}.

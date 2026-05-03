@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>Families — CentralGauge</title>
+  <title>Families · CentralGauge</title>
   <meta name="description" content="LLM families benchmarked by CentralGauge." />
 </svelte:head>
 

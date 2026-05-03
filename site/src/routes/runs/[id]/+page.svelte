@@ -108,7 +108,7 @@
 </script>
 
 <svelte:head>
-  <title>Run {r.id.slice(0, 8)}… — CentralGauge</title>
+  <title>Run {r.id.slice(0, 8)}… · CentralGauge</title>
 </svelte:head>
 
 <Breadcrumbs crumbs={[

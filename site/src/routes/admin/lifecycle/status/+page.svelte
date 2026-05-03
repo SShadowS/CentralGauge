@@ -55,7 +55,7 @@
   }
 </script>
 
-<svelte:head><title>Status matrix — Lifecycle — CentralGauge</title></svelte:head>
+<svelte:head><title>Status matrix · Lifecycle · CentralGauge</title></svelte:head>
 
 {#if matrix.length === 0}
   <p class="text-muted">No lifecycle events recorded against the current task set yet.</p>

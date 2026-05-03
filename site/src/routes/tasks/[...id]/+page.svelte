@@ -7,7 +7,7 @@
 </script>
 
 <svelte:head>
-  <title>{t.id} — Task — CentralGauge</title>
+  <title>{t.id} task · CentralGauge</title>
   <meta name="description" content="Task {t.id}: {t.difficulty} difficulty across {t.solved_by.length} models." />
 </svelte:head>
 

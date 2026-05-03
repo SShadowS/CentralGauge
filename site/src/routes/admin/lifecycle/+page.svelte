@@ -27,7 +27,7 @@
   }
 </script>
 
-<svelte:head><title>Lifecycle admin — CentralGauge</title></svelte:head>
+<svelte:head><title>Lifecycle admin · CentralGauge</title></svelte:head>
 
 <section class="cards">
   <div class="card">

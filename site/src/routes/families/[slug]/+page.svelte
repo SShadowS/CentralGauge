@@ -42,7 +42,7 @@
 </script>
 
 <svelte:head>
-  <title>{f.display_name} — Family — CentralGauge</title>
+  <title>{f.display_name} family · CentralGauge</title>
   <meta name="description" content="{f.display_name} family trajectory across {f.trajectory.length} models." />
 </svelte:head>
 

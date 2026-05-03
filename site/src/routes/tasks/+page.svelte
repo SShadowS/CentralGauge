@@ -60,7 +60,7 @@
 </script>
 
 <svelte:head>
-  <title>Tasks — CentralGauge</title>
+  <title>Tasks · CentralGauge</title>
   <meta name="description" content="Benchmark task suite ({allRows.length} on this page)." />
 </svelte:head>
 

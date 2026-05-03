@@ -10,7 +10,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.taskId} attempt {data.attempt} — Run {data.runId.slice(0, 8)}… — CentralGauge</title>
+  <title>{data.taskId} attempt {data.attempt} · Run {data.runId.slice(0, 8)}… · CentralGauge</title>
 </svelte:head>
 
 <Breadcrumbs crumbs={[

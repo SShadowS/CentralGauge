@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-  <title>About — CentralGauge</title>
+  <title>About CentralGauge</title>
   <meta name="description" content="Methodology, scoring, and transparency for the CentralGauge LLM AL/BC benchmark." />
 </svelte:head>
 
@@ -38,12 +38,12 @@
     <h2>Scoring metrics</h2>
 
     <p>
-      CentralGauge surfaces two distinct metrics — they measure different things and may diverge for the same model.
+      CentralGauge surfaces two distinct metrics. They measure different things and may diverge for the same model.
     </p>
 
     <h3>avg_score (per-attempt)</h3>
     <p>
-      The leaderboard's <strong>Score</strong> column averages over <em>every attempt row</em> in <code>results</code> (each task contributes 2 rows: attempt 1 and attempt 2). This captures partial credit — a task scoring 0.5 on attempt 1 and 1.0 on attempt 2 contributes 0.75 to avg_score.
+      The leaderboard's <strong>Score</strong> column averages over <em>every attempt row</em> in <code>results</code> (each task contributes 2 rows: attempt 1 and attempt 2). This captures partial credit: a task scoring 0.5 on attempt 1 and 1.0 on attempt 2 contributes 0.75 to avg_score.
     </p>
 
     <h3>pass_at_n (per-task, "best across runs")</h3>
@@ -56,12 +56,12 @@
       <li><strong>Pass@N</strong> = (Pass@1 + Pass@2-only) / tasks_attempted_distinct.</li>
     </ul>
     <p>
-      Concrete example: a model runs T1 twice. Run 1 succeeds on attempt 1; Run 2 succeeds only on attempt 2. T1 counts toward Pass@1 (the model demonstrated first-try capability somewhere), NOT Pass@2-only. The invariant <code>Pass@1 + Pass@2-only &le; tasks_attempted_distinct</code> always holds — no double-counting across runs.
+      Concrete example: a model runs T1 twice. Run 1 succeeds on attempt 1; Run 2 succeeds only on attempt 2. T1 counts toward Pass@1 (the model demonstrated first-try capability somewhere), NOT Pass@2-only. The invariant <code>Pass@1 + Pass@2-only &le; tasks_attempted_distinct</code> always holds, with no double-counting across runs.
     </p>
 
     <h3>tasks_attempted vs tasks_attempted_distinct</h3>
     <p>
-      The API exposes both: <code>tasks_attempted</code> (per-attempt; <code>COUNT(*)</code> over rows in <code>results</code>) and <code>tasks_attempted_distinct</code> (per-task; <code>COUNT(DISTINCT task_id)</code>). Pass@N's denominator is <code>tasks_attempted_distinct</code>; <code>tasks_attempted</code> is preserved for back-compatibility with consumers built before the per-task split. The numbers differ — for a model with 4 tasks attempted twice each, <code>tasks_attempted</code> is 8, <code>tasks_attempted_distinct</code> is 4.
+      The API exposes both: <code>tasks_attempted</code> (per-attempt; <code>COUNT(*)</code> over rows in <code>results</code>) and <code>tasks_attempted_distinct</code> (per-task; <code>COUNT(DISTINCT task_id)</code>). Pass@N's denominator is <code>tasks_attempted_distinct</code>; <code>tasks_attempted</code> is preserved for back-compatibility with consumers built before the per-task split. The numbers differ: for a model with 4 tasks attempted twice each, <code>tasks_attempted</code> is 8, <code>tasks_attempted_distinct</code> is 4.
     </p>
 
     <h3>Why both?</h3>

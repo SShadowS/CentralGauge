@@ -8,7 +8,7 @@
 </script>
 
 <svelte:head>
-  <title>Limitations — CentralGauge</title>
+  <title>Limitations · CentralGauge</title>
   <meta name="description" content="Global shortcomings across all benchmarked models, grouped by AL concept." />
 </svelte:head>
 

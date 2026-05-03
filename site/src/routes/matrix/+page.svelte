@@ -28,7 +28,7 @@
 </script>
 
 <svelte:head>
-  <title>Matrix — CentralGauge</title>
+  <title>Matrix · CentralGauge</title>
   <meta
     name="description"
     content="Task × model results matrix. {data.matrix.tasks.length} tasks × {data.matrix.models.length} models."

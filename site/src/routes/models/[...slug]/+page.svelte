@@ -96,7 +96,7 @@
 </script>
 
 <svelte:head>
-  <title>{m.model.display_name} — CentralGauge</title>
+  <title>{m.model.display_name} · CentralGauge</title>
   <meta name="description" content="{m.model.display_name} ({m.model.api_model_id}) on CentralGauge: {formatScore(m.aggregates.avg_score)} avg score across {m.aggregates.run_count} runs." />
 </svelte:head>
 
