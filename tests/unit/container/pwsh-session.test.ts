@@ -354,3 +354,32 @@ describe("PwshContainerSession.recycle", () => {
     assertEquals(sess.state, "dead");
   });
 });
+
+describe("PwshContainerSession.dispose", () => {
+  it("kills the process and sets state=dead", async () => {
+    const mock = createMockPwshProcess();
+    // Inline init helper since the existing initSession is scoped to the .execute describe block.
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 5_000,
+    });
+    const initP = sess.init();
+    await new Promise((r) => setTimeout(r, 10));
+    const writes0 = mock.getStdinWrites().join("");
+    const t0 = writes0.match(/CG-DONE-([a-f0-9-]+)-EXIT-/)![1]!;
+    mock.emitStdout(`@@CG-DONE-${t0}-EXIT-0@@\n`);
+    await initP;
+
+    await sess.dispose();
+    assertEquals(sess.state, "dead");
+    assertEquals(mock.wasKilled(), true);
+  });
+
+  it("is safe to call when already dead", async () => {
+    const sess = new PwshContainerSession("Cronus28");
+    assertEquals(sess.state, "dead");
+    await sess.dispose(); // no-op, no throw
+    assertEquals(sess.state, "dead");
+  });
+});

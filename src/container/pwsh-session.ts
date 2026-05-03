@@ -339,12 +339,9 @@ export class PwshContainerSession {
     }
   }
 
-  dispose(): Promise<void> {
-    throw new PwshSessionError(
-      "dispose not yet implemented",
-      "session_init_failed",
-      { container: this.containerName },
-    );
+  async dispose(): Promise<void> {
+    if (this._state === "dead") return;
+    await this.killProcess();
   }
 }
 
