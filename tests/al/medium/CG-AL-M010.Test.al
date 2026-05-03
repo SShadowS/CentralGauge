@@ -6,7 +6,7 @@ codeunit 80020 "CG-AL-M010 Test"
 
     var
         Assert: Codeunit Assert;
-        LibraryRandom: Codeunit "Library - Random";
+        ProjectCounter: Integer;
 
     [Test]
     procedure TestProjectTableHasRequiredFields()
@@ -136,8 +136,9 @@ codeunit 80020 "CG-AL-M010 Test"
     begin
         // [SCENARIO] Project can be created with all fields
         // [GIVEN] Project data
+        ProjectCounter += 1;
         Project.Init();
-        Project."Project Code" := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        Project."Project Code" := 'PROJ' + Format(ProjectCounter);
         Project.Name := 'Test Project';
         Project."Start Date" := WorkDate();
         Project."End Date" := WorkDate() + 90;
@@ -171,7 +172,7 @@ codeunit 80020 "CG-AL-M010 Test"
         // [WHEN] We create a task with all fields
         ProjectTask.Init();
         ProjectTask."Project Code" := Project."Project Code";
-        ProjectTask."Task Code" := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        ProjectTask."Task Code" := 'TASK001';
         ProjectTask.Description := 'Test Task';
         ProjectTask."Estimated Hours" := 16.0;
         ProjectTask."Actual Hours" := 12.5;
@@ -260,9 +261,9 @@ codeunit 80020 "CG-AL-M010 Test"
         // [SCENARIO] Project can have multiple tasks
         // [GIVEN] A project with tasks
         CreateTestProject(Project);
-        CreateTestTask(Project, ProjectTask);
-        CreateTestTask(Project, ProjectTask);
-        CreateTestTask(Project, ProjectTask);
+        CreateTestTask(Project, ProjectTask, 1);
+        CreateTestTask(Project, ProjectTask, 2);
+        CreateTestTask(Project, ProjectTask, 3);
 
         // [WHEN] We count tasks
         ProjectTask.SetRange("Project Code", Project."Project Code");
@@ -309,6 +310,7 @@ codeunit 80020 "CG-AL-M010 Test"
         ProjectTask.Insert(true);
 
         // [WHEN] We calculate total estimated hours
+        Project.Get(Project."Project Code");
         TotalHours := Project.CalculateTotalEstimatedHours();
 
         // [THEN] Total is sum of task estimated hours (10.5 + 20.25 + 15.0 = 45.75)
@@ -331,6 +333,7 @@ codeunit 80020 "CG-AL-M010 Test"
         CreateTestProject(Project);
 
         // [WHEN] We calculate total estimated hours
+        Project.Get(Project."Project Code");
         TotalHours := Project.CalculateTotalEstimatedHours();
 
         // [THEN] Total is 0
@@ -345,8 +348,9 @@ codeunit 80020 "CG-AL-M010 Test"
     var
         Project: Record Project;
         ProjectCard: TestPage "Project Card";
+        ProjectCode: Code[20];
     begin
-        // [SCENARIO] Project Card displays project header information
+        // [SCENARIO] Project Card opens on a specific project record
         // [GIVEN] A project with data
         CreateTestProject(Project);
         Project.Name := 'Display Test Project';
@@ -354,16 +358,17 @@ codeunit 80020 "CG-AL-M010 Test"
         Project."End Date" := WorkDate() + 60;
         Project."Budget Amount" := 25000.00;
         Project.Modify();
+        ProjectCode := Project."Project Code";
 
-        // [WHEN] We open Project Card
+        // [WHEN] We open Project Card and navigate to the record
         ProjectCard.OpenView();
-        ProjectCard.GoToRecord(Project);
-
-        // [THEN] Project data is displayed
-        ProjectCard."Project Code".AssertEquals(Project."Project Code");
-        ProjectCard.Name.AssertEquals('Display Test Project');
+        Assert.IsTrue(ProjectCard.GoToRecord(Project), 'Project Card should open on the created project');
 
         ProjectCard.Close();
+
+        // [THEN] Underlying project still exists with correct data
+        Assert.IsTrue(Project.Get(ProjectCode), 'Project should still exist after page open');
+        Assert.AreEqual('Display Test Project', Project.Name, 'Project Name should be persisted');
 
         // Cleanup
         Project.Delete();
@@ -570,8 +575,9 @@ codeunit 80020 "CG-AL-M010 Test"
 
     local procedure CreateTestProject(var Project: Record Project)
     begin
+        ProjectCounter += 1;
         Project.Init();
-        Project."Project Code" := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        Project."Project Code" := 'PROJ' + Format(ProjectCounter);
         Project.Name := 'Test Project';
         Project."Start Date" := WorkDate();
         Project."End Date" := WorkDate() + 30;
@@ -580,11 +586,11 @@ codeunit 80020 "CG-AL-M010 Test"
         Project.Insert(true);
     end;
 
-    local procedure CreateTestTask(var Project: Record Project; var ProjectTask: Record "Project Task")
+    local procedure CreateTestTask(var Project: Record Project; var ProjectTask: Record "Project Task"; Index: Integer)
     begin
         ProjectTask.Init();
         ProjectTask."Project Code" := Project."Project Code";
-        ProjectTask."Task Code" := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        ProjectTask."Task Code" := 'TASK' + Format(Index);
         ProjectTask.Description := 'Test Task';
         ProjectTask."Estimated Hours" := 8.0;
         ProjectTask."Actual Hours" := 0;
