@@ -149,11 +149,27 @@ export class ContainerSessionSlot {
             });
             const fresh = await this.ensureHealthy();
             if (fresh) {
-              this.metrics.executeCount++;
-              const r2 = await fresh.execute(script);
-              return { output: r2.output, exitCode: r2.exitCode };
+              try {
+                this.metrics.executeCount++;
+                const r2 = await fresh.execute(script);
+                return { output: r2.output, exitCode: r2.exitCode };
+              } catch (e2) {
+                if (e2 instanceof PwshSessionError) {
+                  // Retry attempt also crashed/errored. Don't retry-of-retry —
+                  // fall through to spawn-per-call. Symmetric with first
+                  // attempt's non-crash error handling below.
+                  this.recordError(e2);
+                  log.warn(
+                    "fresh session retry failed; falling back to spawn",
+                    { container: this.containerName, code: e2.code },
+                  );
+                } else {
+                  throw e2;
+                }
+              }
             }
-            // Fresh init also failed — fall through to fallback below.
+            // Fresh init failed OR fresh execute failed — fall through to
+            // fallback below.
           } else if (e instanceof PwshSessionError) {
             this.recordError(e);
             log.warn("session error; falling back to spawn", {
@@ -208,7 +224,20 @@ export class ContainerSessionSlot {
       this.session = null;
     }
 
-    const sess = this.options.factory();
+    let sess: SessionLike;
+    try {
+      sess = this.options.factory();
+    } catch (e) {
+      // Factory should never throw in normal operation (programmer error),
+      // but handle it symmetrically with init failures so the slot doesn't
+      // leak the exception through the lock — caller falls back to spawn.
+      this.recordError(e);
+      log.warn("persistent session factory threw; using spawn-per-call", {
+        container: this.containerName,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return null;
+    }
     try {
       this.metrics.initCount++;
       await sess.init();

@@ -136,6 +136,67 @@ describe("ContainerSessionSlot - persistent path", () => {
     await slot.dispose();
   });
 
+  it("falls back to spawn when retry execute also throws PwshSessionError", async () => {
+    let factoryCalls = 0;
+    const stub1 = createStubSession();
+    const stub2 = createStubSession();
+    const stubs = [stub1, stub2];
+    let fbCalls = 0;
+    const slot = new ContainerSessionSlot("Cronus28", {
+      persistentEnabled: true,
+      factory: () => {
+        const s = stubs[factoryCalls++];
+        if (!s) throw new Error("factory called too many times");
+        return s;
+      },
+      fallback: () => {
+        fbCalls++;
+        return Promise.resolve({ output: "fb", exitCode: 0 });
+      },
+    });
+
+    // First attempt: crash. Retry attempt: also crash. Slot should fall back.
+    stub1.throwOnNextExecute(
+      new PwshSessionError("first boom", "session_crashed", {
+        container: "stub",
+      }),
+    );
+    stub2.throwOnNextExecute(
+      new PwshSessionError("retry boom", "session_crashed", {
+        container: "stub",
+      }),
+    );
+
+    const r = await slot.runScript("payload");
+    assertEquals(r.output, "fb", "fallback served the call after retry failed");
+    assertEquals(fbCalls, 1);
+    assertEquals(stub1.executeCalls, 1);
+    assertEquals(stub2.executeCalls, 1);
+    assertEquals(slot.metrics.crashRetryCount, 1);
+    assertEquals(slot.metrics.fallbackCount, 1);
+    await slot.dispose();
+  });
+
+  it("falls back to spawn when factory itself throws", async () => {
+    let fbCalls = 0;
+    const slot = new ContainerSessionSlot("Cronus28", {
+      persistentEnabled: true,
+      factory: () => {
+        throw new Error("factory bug");
+      },
+      fallback: () => {
+        fbCalls++;
+        return Promise.resolve({ output: "fb", exitCode: 0 });
+      },
+    });
+
+    const r = await slot.runScript("p");
+    assertEquals(r.output, "fb");
+    assertEquals(fbCalls, 1);
+    assertEquals(slot.metrics.fallbackCount, 1);
+    await slot.dispose();
+  });
+
   it("retries once on session_crashed with a fresh session", async () => {
     let factoryCalls = 0;
     const stub1 = createStubSession();
