@@ -1433,6 +1433,78 @@ Deno.test("BcContainerProvider - sessionFactory option is accepted", async () =>
 
 Deno.test({
   name:
+    "BcContainerProvider.compileProject routes through persistent session when available",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createMockPwshProcess();
+    const session = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 30_000,
+    });
+
+    let executeCalls = 0;
+    let lastScript = "";
+    const stubOutput = [
+      "COMPILE_SUCCESS",
+      "APP_FILE:C:\\fake\\out.app",
+    ].join("\n");
+    // deno-lint-ignore no-explicit-any
+    (session as any).execute = (script: string) => {
+      executeCalls++;
+      lastScript = script;
+      return Promise.resolve({
+        output: stubOutput,
+        exitCode: 0,
+        durationMs: 50,
+      });
+    };
+    // Mark session as already initialized (idle) so getOrCreateSession finds it healthy.
+    // deno-lint-ignore no-explicit-any
+    (session as any)._state = "idle";
+
+    const provider = new BcContainerProvider({
+      persistentPwsh: true,
+      sessionFactory: () => session,
+    });
+    // Pre-inject the session into the provider's sessions map.
+    // deno-lint-ignore no-explicit-any
+    (provider as any).sessions.set("Cronus28", session);
+
+    // Use tmpDir as both the project path and the compiler folder so that
+    // getOrCreateCompilerFolder's Deno.stat() check passes without spawning PowerShell.
+    const tmpDir = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
+
+    try {
+      const result = await provider.compileProject(
+        "Cronus28",
+        {
+          path: tmpDir,
+          appJson: {
+            id: "00000000-0000-0000-0000-000000000001",
+            name: "TestApp",
+          },
+          // deno-lint-ignore no-explicit-any
+        } as any,
+      );
+      assertEquals(executeCalls, 1, "session.execute should be called once");
+      assertStringIncludes(
+        lastScript,
+        "Compile-AppWithBcCompilerFolder",
+        "script must contain BCH compile command",
+      );
+      assertEquals(result.success, true, "compilation should succeed");
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+      await provider.dispose();
+    }
+  },
+});
+
+Deno.test({
+  name:
     "BcContainerProvider.runTests routes through persistent session when available",
   ignore: !isWindows,
   async fn() {

@@ -636,7 +636,7 @@ export class BcContainerProvider implements ContainerProvider {
         projectPath,
         outputDir,
       );
-      const result = await this.executePowerShell(script);
+      const result = await this.runScriptThroughSession(containerName, script);
 
       return this.buildCompilationResult(
         result.output,
