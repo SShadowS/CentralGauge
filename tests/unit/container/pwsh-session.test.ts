@@ -195,4 +195,25 @@ describe("PwshContainerSession.execute", () => {
     );
     assertEquals(sess.state, "dead");
   });
+
+  it("rejects concurrent execute() with state_violation", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    // Start one execute (don't await).
+    const first = sess.execute(`first`);
+    // Immediately try a second — should reject because state is now "running".
+    await assertRejects(
+      () => sess.execute(`second`),
+      PwshSessionError,
+      "execute called from non-idle state",
+    );
+
+    // Drain the first to clean up.
+    await new Promise((r) => setTimeout(r, 10));
+    const writes = mock.getStdinWrites().join("");
+    const tokens = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    mock.emitStdout(`@@CG-DONE-${tokens[tokens.length - 1]![1]}-EXIT-0@@\n`);
+    await first;
+  });
 });
