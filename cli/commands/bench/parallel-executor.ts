@@ -307,74 +307,12 @@ export async function executeParallelBenchmark(
       // Track pass rates per model (reset each run)
       const modelPassRates: ModelPassRates = new Map();
 
-      // Initialize TUI if enabled and supported
+      // Per-run resources whose cleanup must happen on EVERY exit path
+      // (success + throw). Lifted to function scope so the trailing
+      // try/finally below can tear them down even when runParallel,
+      // result-writing, or formatted-output throws.
       let tuiSetup: ReturnType<typeof BenchTui.setup> | null = null;
-      if (tuiMode) {
-        const totalTasks = taskManifests.length * options.llms.length;
-        tuiSetup = BenchTui.setup({
-          totalTasks,
-          startTime: new Date(),
-          headerLine: totalRuns > 1
-            ? `[CentralGauge] LLM Benchmark Mode (Run ${runIndex}/${totalRuns})`
-            : "[CentralGauge] LLM Benchmark Mode",
-          statusLines: [
-            `Models: ${options.llms.join(", ")}`,
-            `Tasks: ${taskManifests.length} task(s)`,
-            `Container: ${
-              containerNames ? containerNames.join(", ") : primaryContainerName
-            }`,
-          ],
-        });
-
-        if (!tuiSetup) {
-          log.warn(
-            "TUI mode requires a terminal. Falling back to console output.",
-          );
-        }
-      }
-
-      // Subscribe to events
-      subscribeToEvents(
-        orchestrator,
-        modelPassRates,
-        options,
-        jsonEvents,
-        tuiSetup?.tui ?? null,
-      );
-
-      // Connect dashboard to orchestrator events
-      if (dashboard) {
-        dashboard.bridge.setRun(runIndex);
-        orchestrator.on((event) => dashboard!.bridge.handleEvent(event));
-        // Attach pool snapshot source so the dashboard gets live container
-        // metrics (pool-snapshot SSE event at 1Hz). The pool isn't constructed
-        // until runParallel() builds it — attach lazily on first event.
-        let attached = false;
-        orchestrator.on(() => {
-          if (attached) return;
-          const snap = orchestrator.getPoolSnapshot();
-          if (!snap) return;
-          dashboard!.bridge.attachPool({
-            getPoolSnapshot: () => orchestrator.getPoolSnapshot()!,
-          });
-          attached = true;
-        });
-      }
-
-      // JSON-events parity: emit pool-snapshot lines at 1Hz so headless/CI
-      // consumers see the same observability data the dashboard does.
       let jsonPoolTicker: number | null = null;
-      if (jsonEvents) {
-        const tick = () => {
-          const snap = orchestrator.getPoolSnapshot();
-          if (snap) {
-            console.log(
-              JSON.stringify({ type: "pool-snapshot", snapshot: snap }),
-            );
-          }
-        };
-        jsonPoolTicker = setInterval(tick, 1000);
-      }
       const stopJsonPoolTicker = () => {
         if (jsonPoolTicker !== null) {
           clearInterval(jsonPoolTicker);
@@ -382,139 +320,225 @@ export async function executeParallelBenchmark(
         }
       };
 
-      // Run parallel benchmark with interactive retry loop
-      let allResults = [...previousResults];
-      let tasksToRun = taskManifests;
-      let variantsToRun = variants;
-      let lastSummary: Awaited<
-        ReturnType<typeof orchestrator.runParallel>
-      >["summary"];
-      let retryCount = 0;
+      try {
+        // Initialize TUI if enabled and supported
+        if (tuiMode) {
+          const totalTasks = taskManifests.length * options.llms.length;
+          tuiSetup = BenchTui.setup({
+            totalTasks,
+            startTime: new Date(),
+            headerLine: totalRuns > 1
+              ? `[CentralGauge] LLM Benchmark Mode (Run ${runIndex}/${totalRuns})`
+              : "[CentralGauge] LLM Benchmark Mode",
+            statusLines: [
+              `Models: ${options.llms.join(", ")}`,
+              `Tasks: ${taskManifests.length} task(s)`,
+              `Container: ${
+                containerNames
+                  ? containerNames.join(", ")
+                  : primaryContainerName
+              }`,
+            ],
+          });
 
-      while (true) {
-        const { results, summary } = await orchestrator.runParallel(
-          tasksToRun,
-          variantsToRun,
-          parallelOptions,
-        );
-        lastSummary = summary;
-
-        // Merge results: remove any old results for task+model pairs we just re-ran
-        const newResultKeys = new Set(
-          results.map((r) =>
-            `${r.taskId}|${r.context.variantId || r.context.llmModel}`
-          ),
-        );
-        allResults = [
-          ...allResults.filter((r) =>
-            !newResultKeys.has(
-              `${r.taskId}|${r.context?.variantId || r.context?.llmModel}`,
-            )
-          ),
-          ...results,
-        ];
-
-        // Check for failures - distinguish transient vs model output failures
-        const failedResults = results.filter((r) => !r.success);
-        const transientFailures = failedResults.filter(isTransientFailure);
-        const modelFailureCount = failedResults.length -
-          transientFailures.length;
-        const isInteractive = !quiet && !jsonEvents && !tuiMode;
-
-        // Only offer retry if there are transient failures worth retrying
-        if (transientFailures.length === 0 || !isInteractive) {
-          if (modelFailureCount > 0 && isInteractive) {
-            console.log(
-              colors.dim(
-                `\n[Info] ${modelFailureCount} model output failures (compilation/test) - not retryable`,
-              ),
+          if (!tuiSetup) {
+            log.warn(
+              "TUI mode requires a terminal. Falling back to console output.",
             );
           }
-          break;
         }
 
-        const shouldRetry = await promptRetryFailed(
-          transientFailures.length,
-          modelFailureCount,
+        // Subscribe to events
+        subscribeToEvents(
+          orchestrator,
+          modelPassRates,
+          options,
+          jsonEvents,
+          tuiSetup?.tui ?? null,
         );
-        if (!shouldRetry) {
-          break;
+
+        // Connect dashboard to orchestrator events
+        if (dashboard) {
+          dashboard.bridge.setRun(runIndex);
+          orchestrator.on((event) => dashboard!.bridge.handleEvent(event));
+          // Attach pool snapshot source so the dashboard gets live container
+          // metrics (pool-snapshot SSE event at 1Hz). The pool isn't constructed
+          // until runParallel() builds it — attach lazily on first event.
+          let attached = false;
+          orchestrator.on(() => {
+            if (attached) return;
+            const snap = orchestrator.getPoolSnapshot();
+            if (!snap) return;
+            dashboard!.bridge.attachPool({
+              getPoolSnapshot: () => orchestrator.getPoolSnapshot()!,
+            });
+            attached = true;
+          });
         }
 
-        retryCount++;
+        // JSON-events parity: emit pool-snapshot lines at 1Hz so headless/CI
+        // consumers see the same observability data the dashboard does.
+        if (jsonEvents) {
+          const tick = () => {
+            const snap = orchestrator.getPoolSnapshot();
+            if (snap) {
+              console.log(
+                JSON.stringify({ type: "pool-snapshot", snapshot: snap }),
+              );
+            }
+          };
+          jsonPoolTicker = setInterval(tick, 1000);
+        }
 
-        // Filter to only transient failed combinations for next iteration
-        const failedTaskIds = new Set(transientFailures.map((r) => r.taskId));
-        const failedVariantIds = new Set(
-          transientFailures.map((r) =>
-            r.context.variantId || r.context.llmModel
-          ),
+        // Run parallel benchmark with interactive retry loop
+        let allResults = [...previousResults];
+        let tasksToRun = taskManifests;
+        let variantsToRun = variants;
+        let lastSummary: Awaited<
+          ReturnType<typeof orchestrator.runParallel>
+        >["summary"];
+        let retryCount = 0;
+
+        while (true) {
+          const { results, summary } = await orchestrator.runParallel(
+            tasksToRun,
+            variantsToRun,
+            parallelOptions,
+          );
+          lastSummary = summary;
+
+          // Merge results: remove any old results for task+model pairs we just re-ran
+          const newResultKeys = new Set(
+            results.map((r) =>
+              `${r.taskId}|${r.context.variantId || r.context.llmModel}`
+            ),
+          );
+          allResults = [
+            ...allResults.filter((r) =>
+              !newResultKeys.has(
+                `${r.taskId}|${r.context?.variantId || r.context?.llmModel}`,
+              )
+            ),
+            ...results,
+          ];
+
+          // Check for failures - distinguish transient vs model output failures
+          const failedResults = results.filter((r) => !r.success);
+          const transientFailures = failedResults.filter(isTransientFailure);
+          const modelFailureCount = failedResults.length -
+            transientFailures.length;
+          const isInteractive = !quiet && !jsonEvents && !tuiMode;
+
+          // Only offer retry if there are transient failures worth retrying
+          if (transientFailures.length === 0 || !isInteractive) {
+            if (modelFailureCount > 0 && isInteractive) {
+              console.log(
+                colors.dim(
+                  `\n[Info] ${modelFailureCount} model output failures (compilation/test) - not retryable`,
+                ),
+              );
+            }
+            break;
+          }
+
+          const shouldRetry = await promptRetryFailed(
+            transientFailures.length,
+            modelFailureCount,
+          );
+          if (!shouldRetry) {
+            break;
+          }
+
+          retryCount++;
+
+          // Filter to only transient failed combinations for next iteration
+          const failedTaskIds = new Set(transientFailures.map((r) => r.taskId));
+          const failedVariantIds = new Set(
+            transientFailures.map((r) =>
+              r.context.variantId || r.context.llmModel
+            ),
+          );
+
+          tasksToRun = taskManifests.filter((t) => failedTaskIds.has(t.id));
+          variantsToRun = variants.filter((v) =>
+            failedVariantIds.has(v.variantId)
+          );
+
+          log.info(
+            `[Retry #${retryCount}] Re-running ${transientFailures.length} transient failures...`,
+          );
+        }
+
+        // Clean up TUI before outputting results — TUI overlays the terminal,
+        // so result display has to happen with TUI already torn down.
+        // Null after restore so the per-iteration finally doesn't double-restore.
+        if (tuiSetup) {
+          tuiSetup.restore();
+          tuiSetup.tui.destroy();
+          tuiSetup = null;
+        }
+
+        // Use all accumulated results
+        const finalResults = allResults;
+        const summary = lastSummary!;
+        lastRunStats = summary.stats;
+
+        // Save results
+        const timestamp = Date.now();
+        const resultsFile =
+          `${options.outputDir}/benchmark-results-${timestamp}.json`;
+        await saveResultsJson(
+          resultsFile,
+          finalResults,
+          summary.stats,
+          summary.comparisons,
+          toHashResult(hashResult),
+        );
+        resultFilePaths.push(resultsFile);
+
+        // Save score file
+        const scoreFile = `${options.outputDir}/scores-${timestamp}.txt`;
+        await saveScoresFile(
+          scoreFile,
+          summary.stats,
+          taskManifests,
+          variants,
+          options.attempts,
+          finalResults.length,
         );
 
-        tasksToRun = taskManifests.filter((t) => failedTaskIds.has(t.id));
-        variantsToRun = variants.filter((v) =>
-          failedVariantIds.has(v.variantId)
+        // Print summary
+        displayBenchmarkSummary(
+          summary.stats,
+          finalResults.length,
+          resultsFile,
+          scoreFile,
         );
 
-        log.info(
-          `[Retry #${retryCount}] Re-running ${transientFailures.length} transient failures...`,
+        // Display formatted output
+        await displayFormattedOutput(
+          summary.stats,
+          summary.comparisons,
+          summary.results,
+          taskManifests.length,
+          outputFormat,
         );
+      } finally {
+        // Per-run resource cleanup. Runs on every iteration exit path
+        // (normal completion + thrown error). Without this, an early throw
+        // in runParallel / result writing / formatted-output would leave
+        // the 1Hz JSON ticker firing forever and the TUI in raw mode.
+        stopJsonPoolTicker();
+        if (tuiSetup) {
+          try {
+            tuiSetup.restore();
+          } catch { /* best-effort */ }
+          try {
+            tuiSetup.tui.destroy();
+          } catch { /* best-effort */ }
+          tuiSetup = null;
+        }
       }
-
-      // Clean up TUI before outputting results
-      if (tuiSetup) {
-        tuiSetup.restore();
-        tuiSetup.tui.destroy();
-      }
-
-      // Use all accumulated results
-      const finalResults = allResults;
-      const summary = lastSummary!;
-      lastRunStats = summary.stats;
-
-      // Save results
-      const timestamp = Date.now();
-      const resultsFile =
-        `${options.outputDir}/benchmark-results-${timestamp}.json`;
-      await saveResultsJson(
-        resultsFile,
-        finalResults,
-        summary.stats,
-        summary.comparisons,
-        toHashResult(hashResult),
-      );
-      resultFilePaths.push(resultsFile);
-
-      // Save score file
-      const scoreFile = `${options.outputDir}/scores-${timestamp}.txt`;
-      await saveScoresFile(
-        scoreFile,
-        summary.stats,
-        taskManifests,
-        variants,
-        options.attempts,
-        finalResults.length,
-      );
-
-      // Print summary
-      displayBenchmarkSummary(
-        summary.stats,
-        finalResults.length,
-        resultsFile,
-        scoreFile,
-      );
-
-      // Display formatted output
-      await displayFormattedOutput(
-        summary.stats,
-        summary.comparisons,
-        summary.results,
-        taskManifests.length,
-        outputFormat,
-      );
-
-      // Stop the per-run JSON pool ticker before next iteration / shutdown
-      stopJsonPoolTicker();
     }
 
     // Cleanup container(s)
