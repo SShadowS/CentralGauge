@@ -22,7 +22,9 @@ test.describe("P5.5 cutover", () => {
 
   test("/leaderboard?tier=verified preserves query through 302", async ({ page }) => {
     await page.goto("/leaderboard?tier=verified");
-    await expect(page).toHaveURL(/^\/?\?tier=verified/);
+    // toHaveURL matches against the full URL (incl. http://host:port).
+    // Match the path-and-query suffix without anchoring to a leading slash.
+    await expect(page).toHaveURL(/\/\?tier=verified$/);
   });
 
   test("robots noindex meta is absent", async ({ page }) => {

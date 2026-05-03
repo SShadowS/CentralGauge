@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 
 test.describe("density toggle", () => {
   test("Nav button switches density and persists across reload", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: density toggle (Nav button + cmd-shift-D global handler)
+    // wires up during Svelte hydration. Default `load` returns before that.
+    await page.goto("/", { waitUntil: "networkidle" });
     const compactBtn = page.getByRole("button", { name: /Compact density/i });
     await compactBtn.click();
     await expect(page.locator("html")).toHaveAttribute(
@@ -19,14 +21,18 @@ test.describe("density toggle", () => {
   });
 
   test("cmd-shift-d toggles density", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: density toggle (Nav button + cmd-shift-D global handler)
+    // wires up during Svelte hydration. Default `load` returns before that.
+    await page.goto("/", { waitUntil: "networkidle" });
     await page.keyboard.press("Meta+Shift+D");
     const after = await page.locator("html").getAttribute("data-density");
     expect(["comfortable", "compact"]).toContain(after);
   });
 
   test("compact mode reduces row height", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: density toggle (Nav button + cmd-shift-D global handler)
+    // wires up during Svelte hydration. Default `load` returns before that.
+    await page.goto("/", { waitUntil: "networkidle" });
     const comfortableHeight = await page.locator("table tbody tr").first()
       .evaluate((el) => el.getBoundingClientRect().height);
     await page.getByRole("button", { name: /Compact density/i }).click();
