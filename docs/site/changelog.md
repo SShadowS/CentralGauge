@@ -20,14 +20,13 @@ supported by design (zero D1 writes, deterministic bundles).
 
 ## New site live at ai.sshadows.dk (2026-05-04)
 
-The scoreboard moved from `centralgauge.sshadows.workers.dev` to its
-permanent home at **[ai.sshadows.dk](https://ai.sshadows.dk/)**. The
-old workers.dev URL still serves as a fallback.
+The scoreboard now has a permanent home at
+**[ai.sshadows.dk](https://ai.sshadows.dk/)**.
 
-All benchmarks are being **re-run from scratch** — the AL test suite
+All benchmarks are being **re-run from scratch**. The AL test suite
 has been hardened (better assertions, prereq apps, fewer false
 passes), so prior scores are not directly comparable. Fresh results
-will land on the leaderboard over the next ~24 hours.
+will land on the leaderboard over the next 24 hours.
 
 ## Live updates + cmd-K palette (2026-04-26)
 
