@@ -61,4 +61,7 @@ export interface ContainerProvider {
 
   // Cleanup operations (optional - not all providers need this)
   cleanupCompilerFolders?(): Promise<void>;
+
+  // Persistent session recycle hook (optional - only persistent-session providers implement)
+  maybeRecycleSession?(containerName: string): Promise<void>;
 }

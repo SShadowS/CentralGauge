@@ -411,6 +411,11 @@ export class MockContainerProvider implements ContainerProvider {
     return state?.health === "healthy";
   }
 
+  async maybeRecycleSession(containerName: string): Promise<void> {
+    await Promise.resolve();
+    this.recordCall("maybeRecycleSession", containerName);
+  }
+
   // ==================== Helper Methods ====================
 
   /**

@@ -421,6 +421,20 @@ export class CompileQueue implements CompileWorkQueue {
         }
       }
 
+      // Trigger recycle check between tasks. Safe by construction:
+      // testMutex was released, so no execute is in flight on this session.
+      if (this.containerProvider.maybeRecycleSession) {
+        try {
+          await this.containerProvider.maybeRecycleSession(this.containerName);
+        } catch (e) {
+          // Log only — recycle failure should not abort task processing.
+          log.warn(
+            `maybeRecycleSession threw for ${this.containerName}`,
+            { error: e instanceof Error ? e.message : String(e) },
+          );
+        }
+      }
+
       compilePhaseResult.duration = Date.now() - startTime;
       this.processedCount++;
       this.totalProcessTime += compilePhaseResult.duration;

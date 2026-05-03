@@ -652,6 +652,99 @@ describe({
   });
 });
 
+describe({
+  name: "CompileQueue.maybeRecycleSession",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  let mockProvider: MockContainerProvider;
+
+  beforeEach(() => {
+    mockProvider = createMockContainerProvider();
+  });
+
+  afterEach(() => {
+    mockProvider.reset();
+  });
+
+  it("calls maybeRecycleSession once per task after test phase", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container");
+    mockProvider.setCompilationConfig({ success: true });
+    mockProvider.setTestConfig({
+      success: true,
+      totalTests: 1,
+      passedTests: 1,
+    });
+
+    const workItem = createMockCompileWorkItem({
+      context: createMockTaskExecutionContext({
+        manifest: createMockTaskManifest({
+          expected: {
+            compile: true,
+            testApp: "tests/fixtures/TestApp.al",
+          },
+        }),
+      }),
+    });
+
+    await queue.enqueue(workItem);
+
+    assertEquals(mockProvider.getCallCount("maybeRecycleSession"), 1);
+    const calls = mockProvider.getCallsFor("maybeRecycleSession");
+    assertEquals(calls[0]?.args[0], "test-container");
+  });
+
+  it("calls maybeRecycleSession once per task even when tests are skipped", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container");
+    mockProvider.setCompilationConfig({ success: true });
+
+    const workItem = createMockCompileWorkItem({
+      context: createMockTaskExecutionContext({
+        manifest: createMockTaskManifest({
+          expected: { compile: true },
+        }),
+      }),
+    });
+
+    await queue.enqueue(workItem);
+
+    assertEquals(mockProvider.getCallCount("maybeRecycleSession"), 1);
+  });
+
+  it("does not abort task processing when maybeRecycleSession throws", async () => {
+    // Override to throw
+    mockProvider.maybeRecycleSession = async (_containerName: string) => {
+      await Promise.resolve();
+      throw new Error("session recycle failed");
+    };
+    mockProvider.setCompilationConfig({ success: true });
+
+    const queue = new CompileQueue(mockProvider, "test-container");
+    const workItem = createMockCompileWorkItem();
+    const result = await queue.enqueue(workItem);
+
+    // Task should complete successfully despite recycle error
+    assertEquals(result.compilationResult.success, true);
+  });
+
+  it("calls maybeRecycleSession once per task across multiple tasks", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 1,
+    });
+    mockProvider.setCompilationConfig({ success: true });
+
+    const items = Array.from(
+      { length: 3 },
+      (_, i) => createMockCompileWorkItem({ id: `recycle-${i}` }),
+    );
+
+    await Promise.all(items.map((item) => queue.enqueue(item)));
+    await queue.drain();
+
+    assertEquals(mockProvider.getCallCount("maybeRecycleSession"), 3);
+  });
+});
+
 describe("QueueFullError", () => {
   it("should have correct name and properties", () => {
     const error = new QueueFullError("Queue is full", 10);
