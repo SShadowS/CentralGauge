@@ -96,13 +96,18 @@ With Bug A + B fixed the transcript URL renders again. Re-added `/runs/run-0000/
 
 Pre-existing OG-image R2 cache behavior. Unrelated to this branch.
 
-### `run-detail.spec.ts:26 › signature tab loads and verify works` flake
+### `run-detail.spec.ts:26 › signature tab loads and verify works` single-occurrence flake
 
-First attempt times out at the 5s `expect(...).toBeVisible({ timeout: 5000 })`; retry passes in ~500ms. Classic Cloudflare worker cold-start curve (workerd boot + V8 isolate warm-up). The 5s budget is too tight for a first-hit-after-build worker call — whichever test happens to land first in the run will probably trip it. Two reasonable fixes:
-- Bump the inline timeout to 10s, OR
-- Add a worker pre-warm step (single GET to `/`) before the spec runs.
+In [25276740751](https://github.com/SShadowS/CentralGauge/actions/runs/25276740751): first attempt 5.3s ✘, retry 491ms ✓. In the immediately prior run [25276042382](https://github.com/SShadowS/CentralGauge/actions/runs/25276042382): both attempts passed. Single-occurrence in the post-fix run.
 
-Confirmed unrelated to ce2f18a's data-shape changes: `grep transcript_key site/src/routes/runs/[id]/+page.{server.ts,svelte}` returns no matches; the run-detail page does not consume `transcript_key`. The signature endpoint is independent of `results.transcript_r2_key` entirely.
+**Mechanism is unknown.** A 10× retry speedup is too slow for a true cold-start curve (workerd cold-start is ~500-800 ms; the first attempt was 5300 ms). Plausible causes for a 5+ s spike on a single test in a `workers: 1` serial run: D1 first-query warm-up, GC pause, transient localhost socket scheduling, R2 state file lazy-load. None of these have direct evidence; the only certainty is that the retry resolves immediately.
+
+**Causality rule-out for ce2f18a's data changes:**
+- `grep transcript_key site/src/routes/runs/[id]/+page.{server.ts,svelte}` returns no matches — the run-detail page does not consume `transcript_key`.
+- The signature endpoint reads `runs.ingest_*` columns (untouched) and `machine_keys` (untouched). No R2 access.
+- Tests run serially with shared workerd; arrow-right at test 127 (also `/runs/run-0000`) failed at 5.2s deterministically pre-fix too — a real keyboard-handler bug — so the worker WAS hot when signature ran.
+
+**Suggested fix:** bump `expect(...).toBeVisible({ timeout: 10000 })` for the verify-button assertion. The test exists to confirm the verify button responds, not to enforce a 5 s SLA. A pre-warm hook would mask the symptom but doesn't address the underlying "test depends on CI scheduler luck" issue.
 
 ### Visual-regression specs lack Linux baselines
 
