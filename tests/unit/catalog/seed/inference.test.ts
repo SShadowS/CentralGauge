@@ -7,6 +7,7 @@
 import { assertEquals, assertThrows } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import {
+  inferDisplayName,
   inferFamilySlug,
   parseSlug,
 } from "../../../../src/catalog/seed/inference.ts";
@@ -98,6 +99,40 @@ describe("inferFamilySlug", () => {
       () => inferFamilySlug("acme", "ai-9000"),
       Error,
       "cannot infer family",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. inferDisplayName
+// ---------------------------------------------------------------------------
+
+describe("inferDisplayName", () => {
+  it("returns the openrouter name when provided", () => {
+    assertEquals(
+      inferDisplayName("openrouter/x-ai/grok-4.3", "xAI: Grok 4.3"),
+      "xAI: Grok 4.3",
+    );
+  });
+
+  it("title-cases hyphen-split tail when openrouter name is null", () => {
+    // "claude-haiku-4-5" → ["claude","haiku","4","5"] → "Claude Haiku 4 5"
+    assertEquals(
+      inferDisplayName("anthropic/claude-haiku-4-5", null),
+      "Claude Haiku 4 5",
+    );
+  });
+
+  it("title-cases single-segment tail (no hyphens) when name is null", () => {
+    // "gpt-5.4" → ["gpt","5.4"] → "Gpt 5.4"
+    assertEquals(inferDisplayName("openai/gpt-5.4", null), "Gpt 5.4");
+  });
+
+  it("title-cases multi-hyphen tail when name is null", () => {
+    // "grok-code-fast-1" → ["Grok","Code","Fast","1"] → "Grok Code Fast 1"
+    assertEquals(
+      inferDisplayName("openrouter/x-ai/grok-code-fast-1", null),
+      "Grok Code Fast 1",
     );
   });
 });

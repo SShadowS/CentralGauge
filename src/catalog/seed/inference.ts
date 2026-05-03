@@ -74,3 +74,24 @@ export function inferFamilySlug(
       (subVendor ? ` (sub-vendor=${subVendor})` : ""),
   );
 }
+
+// ---------------------------------------------------------------------------
+// inferDisplayName
+// ---------------------------------------------------------------------------
+
+export function inferDisplayName(
+  slug: string,
+  openRouterName: string | null,
+): string {
+  if (openRouterName && openRouterName.trim().length > 0) {
+    return openRouterName;
+  }
+  const tail = slug.split("/").pop() ?? slug;
+  return tail
+    .split("-")
+    .map((word) => {
+      if (word.length === 0) return word;
+      return word[0]!.toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}
