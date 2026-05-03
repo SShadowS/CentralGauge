@@ -14,11 +14,15 @@
   function bgStyle(score: number | null, rowMax: number | null): string {
     if (score === null || rowMax === null || rowMax <= 0) return '';
     const ratio = score / rowMax;
-    const opacity = 0.15 + ratio * 0.5; // range [0.15, 0.65]
-    // At opacity > 0.4 the accent backdrop dominates, so dark text drops
-    // below WCAG AA; switch to accent-fg (designed for accent backdrops).
-    const color = opacity > 0.4 ? 'var(--accent-fg)' : 'var(--text)';
-    return `background: var(--accent); opacity: 1; --cell-opacity: ${opacity.toFixed(2)}; color: ${color}`;
+    // Use opaque tokens at every step. color-mix(... transparent) emits
+    // a translucent computed bg that Lighthouse can't validate for
+    // contrast (it sees rgba(...,0.15) and conservatively fails). Use
+    // accent-soft (solid, designed-for-text-overlay) below the visual
+    // threshold and accent (saturated) above it, with matching text.
+    if (ratio < 0.4) {
+      return 'background: var(--accent-soft); color: var(--text)';
+    }
+    return 'background: var(--accent); color: var(--accent-fg)';
   }
 </script>
 
@@ -76,8 +80,8 @@
     display: inline-block;
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-1);
-    /* color is set per-cell by bgStyle() — accent-fg above the contrast
-     * threshold, --text below it. */
-    background-color: color-mix(in srgb, var(--accent) calc(var(--cell-opacity, 0) * 100%), transparent);
+    /* background + color are set per-cell by bgStyle(). Two opaque
+     * variants only — accent-soft + --text below the 0.4 ratio,
+     * accent + --accent-fg above it. */
   }
 </style>
