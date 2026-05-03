@@ -13,6 +13,9 @@ test.describe("/families", () => {
     const card = page.locator('a[href^="/families/"]').first();
     await card.click();
     await expect(page).toHaveURL(/\/families\/[^/]+$/);
-    await expect(page.getByText("Trajectory")).toBeVisible();
+    // "Trajectory" appears twice on family detail (a heading + a longer
+     // "Concept trajectory" heading). Anchor on the lone-word heading.
+    await expect(page.getByRole("heading", { name: /^Trajectory$/ }))
+      .toBeVisible();
   });
 });

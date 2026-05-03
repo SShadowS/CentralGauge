@@ -11,9 +11,11 @@ test.describe("/runs", () => {
   test("Next link advances cursor", async ({ page }) => {
     await page.goto("/runs");
     const next = page.getByRole("link", { name: /Next/ });
-    if (await next.isEnabled()) {
-      await next.click();
-      await expect(page).toHaveURL(/cursor=/);
-    }
+    // Seeded fixture has only 5 runs (page size > 5), so no Next link
+    // renders. `isEnabled()` waits 30s for a non-existent element; use
+    // `count()` to short-circuit the no-pagination case.
+    if ((await next.count()) === 0) return;
+    await next.click();
+    await expect(page).toHaveURL(/cursor=/);
   });
 });

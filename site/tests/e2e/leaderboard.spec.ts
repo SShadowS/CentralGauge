@@ -20,10 +20,12 @@ test.describe("/", () => {
   });
 
   test("filter chip removal updates URL", async ({ page }) => {
-    await page.goto("/?tier=verified");
-    const chip = page.getByText(/tier: verified/i);
+    // `tier` is a tab-style toggle (not in FILTER_KEYS), so it doesn't
+    // render as a removable chip. Use a real filter (`family`) instead.
+    await page.goto("/?family=claude", { waitUntil: "networkidle" });
+    const chip = page.getByText(/family: claude/i);
     await expect(chip).toBeVisible();
-    await page.getByRole("button", { name: /remove filter tier/i }).click();
-    await expect(page).not.toHaveURL(/tier=/);
+    await page.getByRole("button", { name: /remove filter family/i }).click();
+    await expect(page).not.toHaveURL(/family=/);
   });
 });
