@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { PwshSessionError } from "../../../src/errors.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
@@ -215,5 +215,29 @@ describe("PwshContainerSession.execute", () => {
     const tokens = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
     mock.emitStdout(`@@CG-DONE-${tokens[tokens.length - 1]![1]}-EXIT-0@@\n`);
     await first;
+  });
+
+  it("ignores markers with different tokens", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    const execPromise = sess.execute(`Write-Output stuff`);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Emit a misleading marker with a different token, then real output, then the real marker.
+    mock.emitStdout(
+      `noise here\n@@CG-DONE-12345678-1111-2222-3333-444444444444-EXIT-0@@\nstuff\n`,
+    );
+
+    const writes = mock.getStdinWrites().join("");
+    const tokens = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    const realToken = tokens[tokens.length - 1]![1]!;
+    mock.emitStdout(`@@CG-DONE-${realToken}-EXIT-0@@\n`);
+
+    const result = await execPromise;
+    // Output includes everything before the real marker (including the fake marker line).
+    assertStringIncludes(result.output, "noise here");
+    assertStringIncludes(result.output, "stuff");
+    assertStringIncludes(result.output, "12345678-1111");
   });
 });
