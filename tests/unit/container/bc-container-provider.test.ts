@@ -1403,10 +1403,19 @@ Deno.test("BcContainerProvider - no-arg constructor still works", () => {
   assertEquals(provider instanceof BcContainerProvider, true);
 });
 
-Deno.test("BcContainerProvider - persistentPwsh=false disables session creation", async () => {
-  const provider = new BcContainerProvider({ persistentPwsh: false });
-  await provider.maybeRecycleSession("Cronus28"); // no-op, no session created
-  await provider.dispose(); // safe, nothing to dispose
+Deno.test("BcContainerProvider with persistentPwsh=false skips session creation", async () => {
+  let factoryCalled = false;
+  const provider = new BcContainerProvider({
+    persistentPwsh: false,
+    sessionFactory: () => {
+      factoryCalled = true;
+      throw new Error("should not be called");
+    },
+  });
+  // Internal call to getOrCreateSession should return null without invoking factory.
+  // We verify by checking maybeRecycleSession is a no-op (no factory call).
+  await provider.maybeRecycleSession("Cronus28");
+  assertEquals(factoryCalled, false);
 });
 
 Deno.test("BcContainerProvider - sessionFactory option is accepted", async () => {
