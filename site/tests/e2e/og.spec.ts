@@ -35,8 +35,14 @@ test.describe("OG image endpoints", () => {
   });
 
   test("Second request hits R2 cache (x-og-cache: hit)", async ({ request }) => {
-    await request.get("/og/index.png"); // warm
-    const res = await request.get("/og/index.png");
+    // adapter-cloudflare's caches.default keys responses by URL and
+    // serves them back without invoking the handler (see CLAUDE.md
+    // "Cache API" note). To exercise the application-level R2 cache
+    // layer we need URL-distinct requests that resolve to the same R2
+    // key — the og endpoints ignore query strings, so ?seq=N differs at
+    // the URL cache but produces the same payload hash → same R2 key.
+    await request.get("/og/index.png?seq=1"); // warm R2
+    const res = await request.get("/og/index.png?seq=2");
     expect(res.headers()["x-og-cache"]).toBe("hit");
   });
 });
