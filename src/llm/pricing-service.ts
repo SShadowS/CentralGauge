@@ -278,15 +278,27 @@ export class PricingService {
   }
 
   /**
-   * Register API-fetched pricing (e.g., from OpenRouter discovery)
+   * Register API-fetched pricing (e.g., from OpenRouter discovery or LiteLLM cache warmup).
+   *
+   * Merges new entries into any existing per-provider map. On key conflict, the
+   * **existing** entry wins so that authoritative upstream data (registered first,
+   * e.g. the OpenRouter /api/v1/models response) is never overwritten by a
+   * secondary/community source (e.g. LiteLLM) registered later in the startup
+   * sequence. Unique entries from the new batch are always added.
+   *
+   * Spread order: `{ ...modelPricing, ...existing.models }` — later spread wins.
    */
   static registerApiPricing(
     provider: string,
     modelPricing: Record<string, ModelPricing>,
   ): void {
     const now = Date.now();
+    const existing = this.apiCache.get(provider);
+    const mergedModels = existing
+      ? { ...modelPricing, ...existing.models } // existing wins on conflict
+      : modelPricing;
     this.apiCache.set(provider, {
-      models: modelPricing,
+      models: mergedModels,
       fetchedAt: now,
       expiresAt: now + API_CACHE_TTL_MS,
     });
@@ -294,6 +306,7 @@ export class PricingService {
     log.info("Registered API pricing", {
       provider,
       modelCount: Object.keys(modelPricing).length,
+      totalCached: Object.keys(mergedModels).length,
     });
   }
 

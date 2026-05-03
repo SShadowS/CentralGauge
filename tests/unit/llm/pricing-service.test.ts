@@ -271,6 +271,85 @@ describe("PricingService", () => {
     });
   });
 
+  describe("API pricing registration — merge behavior", () => {
+    it("should preserve existing entries on key conflict (existing wins)", () => {
+      // First registration — authoritative source (e.g. OpenRouter API discovery)
+      PricingService.registerApiPricing("openrouter", {
+        "x-ai/grok-4.3": { input: 1.25, output: 2.5 },
+        "x-ai/grok-4": { input: 5.0, output: 15.0 },
+      });
+
+      // Second registration — secondary source (e.g. LiteLLM cache warmup)
+      // Attempts to overwrite "x-ai/grok-4" and adds a unique entry.
+      PricingService.registerApiPricing("openrouter", {
+        "x-ai/grok-4": { input: 999, output: 999 }, // attempt to overwrite
+        "anthropic/claude-via-or": { input: 3.0, output: 15.0 }, // unique key
+      });
+
+      // Existing entry must win on conflict
+      const grok4 = PricingService.getPriceSync("openrouter", "x-ai/grok-4");
+      assertEquals(grok4.input, 5.0, "existing entry should win on conflict");
+      assertEquals(grok4.output, 15.0);
+
+      // Unique entry from second call should be added
+      const claude = PricingService.getPriceSync(
+        "openrouter",
+        "anthropic/claude-via-or",
+      );
+      assertEquals(claude.input, 3.0, "unique new entry should be added");
+      assertEquals(claude.output, 15.0);
+
+      // First-call unique entry should be preserved
+      const grok43 = PricingService.getPriceSync(
+        "openrouter",
+        "x-ai/grok-4.3",
+      );
+      assertEquals(
+        grok43.input,
+        1.25,
+        "first-registration unique entry must be preserved",
+      );
+      assertEquals(grok43.output, 2.5);
+    });
+
+    it("should behave as a plain set when provider has no prior entry", () => {
+      // Use a known provider (openrouter) that has a config entry, so getPriceSync
+      // can reach the API cache. clearApiCache() ensures no prior entry exists.
+      PricingService.clearApiCache();
+      PricingService.registerApiPricing("openrouter", {
+        "some/fresh-model": { input: 0.5, output: 1.0 },
+      });
+
+      const pricing = PricingService.getPriceSync(
+        "openrouter",
+        "some/fresh-model",
+      );
+      assertEquals(pricing.input, 0.5);
+      assertEquals(pricing.output, 1.0);
+    });
+
+    it("should report totalCached count reflecting merge", () => {
+      // Register 2 models first, then 1 overlapping + 1 unique = 3 total
+      PricingService.registerApiPricing("openrouter", {
+        "a/model-1": { input: 1.0, output: 2.0 },
+        "a/model-2": { input: 1.0, output: 2.0 },
+      });
+      PricingService.registerApiPricing("openrouter", {
+        "a/model-2": { input: 99, output: 99 }, // overlapping — should not grow total
+        "a/model-3": { input: 1.0, output: 2.0 }, // unique — grows total
+      });
+
+      const stats = PricingService.getApiCacheStats();
+      // Only one provider entry in the map
+      assertEquals(stats.entries, 1);
+      // 3 distinct model keys after merge
+      const cached = PricingService.getPriceSync("openrouter", "a/model-1");
+      assertExists(cached);
+      const cached3 = PricingService.getPriceSync("openrouter", "a/model-3");
+      assertExists(cached3);
+    });
+  });
+
   describe("API pricing registration", () => {
     it("should register API pricing and use it", async () => {
       // Register some API pricing
