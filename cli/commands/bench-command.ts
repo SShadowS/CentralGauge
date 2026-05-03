@@ -37,6 +37,7 @@ import {
   runDoctor,
   type VariantProbe,
 } from "../../src/doctor/mod.ts";
+import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -505,18 +506,60 @@ export function registerBenchCommand(cli: Command): void {
             pricingVersion,
           });
           if (!report.ok) {
-            console.error(formatReportToTerminal(report));
-            console.error(
-              colors.red(
-                "\n[FAIL] ingest precheck failed — bench aborted before any LLM calls.",
-              ),
-            );
-            console.error(
-              colors.gray(
-                "       Fix above or pass --no-ingest to skip ingest entirely.",
-              ),
-            );
-            Deno.exit(1);
+            // Try built-in repairers (auto-seed missing catalog rows, sync to D1).
+            const repairOutcome = await applyRepairs(report, builtInRepairers);
+            const allRepairsOk = repairOutcome.attempted.length > 0 &&
+              repairOutcome.attempted.every((a) => a.ok);
+
+            if (allRepairsOk) {
+              // Re-run the precheck after repair; emit messages so the operator sees what happened.
+              for (const a of repairOutcome.attempted) {
+                console.log(
+                  colors.green(`[REPAIR] ${a.checkId}: ${a.message}`),
+                );
+              }
+              const retry = await runDoctor({
+                section: ingestSection,
+                variants: probes,
+                pricingVersion,
+              });
+              if (retry.ok) {
+                console.log(
+                  colors.green("[OK] ingest precheck recovered after repair."),
+                );
+              } else {
+                console.error(formatReportToTerminal(retry));
+                console.error(
+                  colors.red(
+                    "\n[FAIL] ingest precheck still failing after repair — bench aborted.",
+                  ),
+                );
+                Deno.exit(1);
+              }
+            } else {
+              // Either no repairers matched, or some failed. Show original report + repair attempts.
+              console.error(formatReportToTerminal(report));
+              if (repairOutcome.attempted.length > 0) {
+                console.error(colors.red("\nRepair attempts:"));
+                for (const a of repairOutcome.attempted) {
+                  const tag = a.ok
+                    ? colors.green("[OK]")
+                    : colors.red("[FAIL]");
+                  console.error(`  ${tag} ${a.checkId}: ${a.message}`);
+                }
+              }
+              console.error(
+                colors.red(
+                  "\n[FAIL] ingest precheck failed — bench aborted before any LLM calls.",
+                ),
+              );
+              console.error(
+                colors.gray(
+                  "       Fix above or pass --no-ingest to skip ingest entirely.",
+                ),
+              );
+              Deno.exit(1);
+            }
           }
         }
       }
