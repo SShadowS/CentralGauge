@@ -3,10 +3,16 @@ main = ".svelte-kit/cloudflare/_worker.js"
 compatibility_date = "2026-04-17"
 compatibility_flags = ["nodejs_compat"]
 account_id = "22c8fbe790464b492d9b178cc0f9255b"
+workers_dev = true
+
+# Custom domain — managed by Cloudflare (auto-creates DNS + cert).
+[[routes]]
+pattern = "ai.sshadows.dk"
+custom_domain = true
 
 [vars]
 LOG_LEVEL = "info"
-SITE_BASE_URL = "https://centralgauge.sshadows.workers.dev"
+SITE_BASE_URL = "https://ai.sshadows.dk"
 FLAG_PRINT_STYLESHEET = "on"
 FLAG_TRAJECTORY_CHARTS = "on"       # P5.3 carry — flag interface defined in P5.3 but env var never landed
 FLAG_CMD_K_PALETTE = "on"           # P5.4

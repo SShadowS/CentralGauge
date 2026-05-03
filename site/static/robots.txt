@@ -5,4 +5,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://centralgauge.sshadows.workers.dev/sitemap.xml
+Sitemap: https://ai.sshadows.dk/sitemap.xml
