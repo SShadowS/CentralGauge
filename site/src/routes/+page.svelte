@@ -5,10 +5,8 @@
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
-  import SummaryBand from '$lib/components/domain/SummaryBand.svelte';
-  import PerformanceVsCostChart from '$lib/components/domain/PerformanceVsCostChart.svelte';
+  import HeroChart from '$lib/components/domain/HeroChart.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
-  import { formatRelativeTime } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
@@ -75,23 +73,17 @@
   <meta name="description" content="LLM AL/BC benchmark leaderboard. {data.leaderboard.data.length} models ranked by score." />
 </svelte:head>
 
-<div class="header">
-  <h1>Leaderboard</h1>
-  <p class="meta">
-    {data.leaderboard.data.length} models · current task set
-    · Snapshot from {formatRelativeTime(data.leaderboard.generated_at)}
-    {#if data.flags.sse_live_updates && sse}
-      <LiveStatus {sse} onReconnect={reconnect} />
-    {/if}
+<HeroChart
+  rows={data.leaderboard.data}
+  generatedAt={data.leaderboard.generated_at}
+  taskCount={data.summary.tasks}
+/>
+
+{#if data.flags.sse_live_updates && sse}
+  <p class="live-line">
+    <LiveStatus {sse} onReconnect={reconnect} />
   </p>
-</div>
-
-<SummaryBand stats={data.summary} />
-
-<section class="perf-chart" aria-labelledby="perf-chart-heading">
-  <h2 id="perf-chart-heading" class="sr-only">Performance vs Cost</h2>
-  <PerformanceVsCostChart rows={data.leaderboard.data} />
-</section>
+{/if}
 
 <div class="layout">
   <FilterRail>
@@ -138,10 +130,7 @@
 </div>
 
 <style>
-  .header h1 { font-size: var(--text-3xl); margin: 0; }
-  .meta { font-size: var(--text-sm); color: var(--text-muted); margin-top: var(--space-2); display: inline-flex; gap: var(--space-3); align-items: center; }
-
-  .perf-chart { padding: var(--space-5) 0; border-bottom: 1px solid var(--border); }
+  .live-line { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
 
   .layout {
     display: grid;
