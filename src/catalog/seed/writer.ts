@@ -4,8 +4,8 @@
  * @module catalog/seed/writer
  */
 
-import { stringify } from "@std/yaml";
-import type { FamilyRow, ModelRow } from "./types.ts";
+import { parse as parseYaml, stringify } from "@std/yaml";
+import type { FamilyRow, ModelRow, PricingRow } from "./types.ts";
 import { CatalogSeedError } from "../../errors.ts";
 
 export interface AppendResult {
@@ -94,6 +94,55 @@ export async function appendModel(
     ? ""
     : "\n";
   const next = existing + trailingNewline + modelRowToYaml(row);
+  await writeAtomic(path, next);
+  return { added: true };
+}
+
+function pricingRowToYaml(row: PricingRow): string {
+  return stringify([row], { lineWidth: -1 });
+}
+
+function findLatestPricing(
+  content: string,
+  slug: string,
+): { input: number; output: number } | null {
+  if (content.trim().length === 0) return null;
+  const parsed = parseYaml(content) as PricingRow[] | null;
+  if (!parsed || !Array.isArray(parsed)) return null;
+  const matches = parsed.filter((r) => r.model_slug === slug);
+  if (matches.length === 0) return null;
+  // Latest by pricing_version (lexicographic ISO date sort, descending).
+  matches.sort((a, b) =>
+    a.pricing_version < b.pricing_version
+      ? 1
+      : a.pricing_version > b.pricing_version
+      ? -1
+      : 0
+  );
+  const latest = matches[0]!;
+  return {
+    input: latest.input_per_mtoken,
+    output: latest.output_per_mtoken,
+  };
+}
+
+export async function appendPricingIfChanged(
+  path: string,
+  row: PricingRow,
+): Promise<AppendResult> {
+  const existing = await readTextSafe(path);
+  const latest = findLatestPricing(existing, row.model_slug);
+  if (
+    latest !== null &&
+    latest.input === row.input_per_mtoken &&
+    latest.output === row.output_per_mtoken
+  ) {
+    return { added: false };
+  }
+  const trailingNewline = existing.endsWith("\n") || existing.length === 0
+    ? ""
+    : "\n";
+  const next = existing + trailingNewline + pricingRowToYaml(row);
   await writeAtomic(path, next);
   return { added: true };
 }
