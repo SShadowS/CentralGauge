@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/svelte";
 import { createRawSnippet } from "svelte";
 import Modal from "./Modal.svelte";
+import { textSnippet } from "$lib/test-utils/snippets";
 
 const childrenSnippet = createRawSnippet(() => ({
   render: () => "<button>One</button><button>Two</button>",
@@ -12,7 +13,7 @@ describe("Modal", () => {
     const { getByText } = render(Modal, {
       open: true,
       title: "My Modal",
-      children: "modal body",
+      children: textSnippet("modal body"),
     });
     expect(getByText("My Modal")).toBeDefined();
     expect(getByText("modal body")).toBeDefined();
@@ -22,7 +23,7 @@ describe("Modal", () => {
     const { queryByText } = render(Modal, {
       open: false,
       title: "My Modal",
-      children: "modal body",
+      children: textSnippet("modal body"),
     });
     expect(queryByText("My Modal")).toBeNull();
   });

@@ -47,8 +47,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     return new Response(obj.body, {
       status: 200,
       headers: {
-        "content-type": obj.httpMetadata?.contentType ??
-          "text/plain; charset=utf-8",
+        "content-type":
+          obj.httpMetadata?.contentType ?? "text/plain; charset=utf-8",
         // 5-min private cache. Reviews are quick — operators don't keep
         // a tab open for hours, and CF Access cookies expire at the
         // session boundary anyway.

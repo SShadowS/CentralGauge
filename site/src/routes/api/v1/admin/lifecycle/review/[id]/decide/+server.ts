@@ -32,7 +32,7 @@ import {
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { getFirst, runBatch } from "$lib/server/db";
 import { appendEvent } from "$lib/server/lifecycle-event-log";
-import type { AnalyzerEntry } from "../../../../../../../../../src/lifecycle/confidence";
+import type { AnalyzerEntry } from "../../../../../../../../../../src/lifecycle/confidence";
 
 interface DecideBody {
   decision?: "accept" | "reject";
@@ -72,7 +72,7 @@ export const POST: RequestHandler = async ({ request, params, platform }) => {
     const decisionContainer: {
       decision?: "accept" | "reject";
       reason?: string;
-    } = isCli ? body.payload ?? {} : body;
+    } = isCli ? (body.payload ?? {}) : body;
 
     // (Plan F / F5) authenticateAdminRequest — dual transport. Pass the
     // body envelope when it carries `signature`, else null (CF Access only).

@@ -159,7 +159,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         return out;
       }
       const cluster = parsedPayload.entry?._cluster ?? {};
-      const samples = parsedPayload.entry?.sample_descriptions ??
+      const samples =
+        parsedPayload.entry?.sample_descriptions ??
         (parsedPayload.entry?.description
           ? [String(parsedPayload.entry.description)]
           : []);
@@ -170,12 +171,13 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         confidence: r.confidence,
         created_at: r.created_at,
         payload: {
-          nearest_concept_id: cluster.nearest_concept_id ??
-            r.nearest_concept_id,
+          nearest_concept_id:
+            cluster.nearest_concept_id ?? r.nearest_concept_id,
           similarity: cluster.similarity ?? null,
           shortcoming_ids: cluster.shortcoming_ids ?? [],
           sample_descriptions: samples,
-          al_concept: parsedPayload.entry?.al_concept ??
+          al_concept:
+            parsedPayload.entry?.al_concept ??
             parsedPayload.entry?.alConcept ??
             "unknown",
         },

@@ -1,8 +1,15 @@
-import type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow } from '$shared/api-types';
-import { getAll } from './db';
-import { computeModelAggregates } from './model-aggregates';
-import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
-import type { ServerTimer } from './server-timing';
+import type {
+  LeaderboardQuery,
+  LeaderboardResponse,
+  LeaderboardRow,
+} from "$shared/api-types";
+import { getAll } from "./db";
+import { computeModelAggregates, type Aggregate } from "./model-aggregates";
+import {
+  formatSettingsSuffix,
+  type SettingsProfileLike,
+} from "./settings-suffix";
+import type { ServerTimer } from "./server-timing";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -18,18 +25,19 @@ export async function computeLeaderboard(
   // task_set / category / difficulty filters. Without these, correlated
   // subqueries that aggregate across `runs` would bleed in cross-task-set or
   // cross-category data (CR-5: Phase B critical fix).
-  let taskSetClauseSubA1 = '';
-  let taskSetClauseSubA2 = '';
-  let taskSetClauseSubA2NotExists = '';
+  let taskSetClauseSubA1 = "";
+  let taskSetClauseSubA2 = "";
+  let taskSetClauseSubA2NotExists = "";
 
-  if (q.set === 'current') {
-    wheres.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+  if (q.set === "current") {
+    wheres.push(
+      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
+    );
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
-    taskSetClauseSubA2NotExists =
-      `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
   }
-  if (q.tier !== 'all') {
+  if (q.tier !== "all") {
     wheres.push(`runs.tier = ?`);
     params.push(q.tier);
   }
@@ -46,7 +54,7 @@ export async function computeLeaderboard(
   // tasks.difficulty holds difficulty; no difficulty column on task_categories.
   const difficultyJoin = q.difficulty
     ? `JOIN tasks t ON t.task_id = r.task_id AND t.task_set_hash = runs.task_set_hash AND t.difficulty = ?`
-    : '';
+    : "";
   if (q.difficulty) params.push(q.difficulty);
 
   // Category filter (P7 Phase C1) — JOINs tasks→task_categories scoped to the
@@ -55,13 +63,13 @@ export async function computeLeaderboard(
   const categoryJoin = q.category
     ? `JOIN tasks t_cat ON t_cat.task_id = r.task_id AND t_cat.task_set_hash = runs.task_set_hash
        JOIN task_categories tc ON tc.id = t_cat.category_id`
-    : '';
+    : "";
   if (q.category) {
     wheres.push(`tc.slug = ?`);
     params.push(q.category);
   }
 
-  const whereClause = wheres.length ? `WHERE ${wheres.join(' AND ')}` : '';
+  const whereClause = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
 
   // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
   // so multi-run "best across runs per task" semantics hold (cf. plan B1 design
@@ -140,18 +148,22 @@ export async function computeLeaderboard(
   };
 
   const rows = await (timer
-    ? timer.measure('leaderboard_main', () => getAll<Row>(db, sql, [...params, q.limit]))
+    ? timer.measure("leaderboard_main", () =>
+        getAll<Row>(db, sql, [...params, q.limit]),
+      )
     : getAll<Row>(db, sql, [...params, q.limit]));
 
   // Resolve settings profiles in a separate batch lookup (only for rows with
   // a unique settings_hash). Sidesteps the SQLite "misuse of aggregate"
   // restriction on MAX() inside the main aggregate's scalar subquery.
   const uniqueHashes = Array.from(
-    new Set(rows.map((r) => r.settings_hash_unique).filter((h): h is string => !!h)),
+    new Set(
+      rows.map((r) => r.settings_hash_unique).filter((h): h is string => !!h),
+    ),
   );
   const profileByHash = new Map<string, SettingsProfileLike>();
   if (uniqueHashes.length > 0) {
-    const ph = uniqueHashes.map(() => '?').join(',');
+    const ph = uniqueHashes.map(() => "?").join(",");
     const profileRows = await getAll<{
       hash: string;
       temperature: number | null;
@@ -163,8 +175,8 @@ export async function computeLeaderboard(
     );
     for (const p of profileRows) {
       profileByHash.set(p.hash, {
-        temperature: typeof p.temperature === 'number' ? p.temperature : null,
-        max_tokens: typeof p.max_tokens === 'number' ? p.max_tokens : null,
+        temperature: typeof p.temperature === "number" ? p.temperature : null,
+        max_tokens: typeof p.max_tokens === "number" ? p.max_tokens : null,
       });
     }
   }
@@ -173,25 +185,27 @@ export async function computeLeaderboard(
   // (this function, /api/v1/models, /api/v1/models/[slug]) compute it the
   // same way. The is_current=1 filter is preserved via taskSetCurrent.
   const modelIds = rows.map((r) => r.model_id);
-  const aggMap = modelIds.length === 0
-    ? new Map<number, { verified_runs: number }>()
-    : await computeModelAggregates(db, {
-      modelIds,
-      taskSetCurrent: q.set === 'current',
-      includeLatencyP50: true,
-      includePassHatAtN: true,
-      timer,
-    });
+  const aggMap =
+    modelIds.length === 0
+      ? new Map<number, Aggregate>()
+      : await computeModelAggregates(db, {
+          modelIds,
+          taskSetCurrent: q.set === "current",
+          includeLatencyP50: true,
+          includePassHatAtN: true,
+          timer,
+        });
 
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
     const passedA1 = Number(r.tasks_passed_attempt_1 ?? 0);
     const passedA2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
     const attemptedDistinct = Number(r.tasks_attempted_distinct ?? 0);
-    const passAtN = attemptedDistinct > 0
-      ? (passedA1 + passedA2Only) / attemptedDistinct
-      : 0;
+    const passAtN =
+      attemptedDistinct > 0 ? (passedA1 + passedA2Only) / attemptedDistinct : 0;
 
-    const profile = r.settings_hash_unique ? profileByHash.get(r.settings_hash_unique) ?? null : null;
+    const profile = r.settings_hash_unique
+      ? (profileByHash.get(r.settings_hash_unique) ?? null)
+      : null;
     const settingsSuffix = formatSettingsSuffix(profile);
 
     return {
@@ -210,12 +224,15 @@ export async function computeLeaderboard(
       tasks_passed_attempt_1: passedA1,
       tasks_passed_attempt_2_only: passedA2Only,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
-      avg_score: Math.round((+(r.avg_score ?? 0)) * 1e6) / 1e6,
-      avg_cost_usd: Math.round((+(r.avg_cost_usd ?? 0)) * 1e6) / 1e6,
+      avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
+      avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,
       last_run_at: r.last_run_at,
       latency_p95_ms: aggMap.get(r.model_id)?.latency_p95_ms ?? 0,
-      pass_rate_ci: aggMap.get(r.model_id)?.pass_rate_ci ?? { lower: 0, upper: 1 },
+      pass_rate_ci: aggMap.get(r.model_id)?.pass_rate_ci ?? {
+        lower: 0,
+        upper: 1,
+      },
       pass_hat_at_n: aggMap.get(r.model_id)?.pass_hat_at_n ?? 0,
       cost_per_pass_usd: aggMap.get(r.model_id)?.cost_per_pass_usd ?? null,
     };
@@ -226,35 +243,46 @@ export async function computeLeaderboard(
   // so we sort post-query. LIMIT applies before this re-sort — fine for
   // current row count (low-N leaderboard); if rows exceed LIMIT, switch to
   // repeating the subquery expression in ORDER BY.
-  if (q.sort === 'pass_at_n') {
-    mapped.sort((a, b) =>
-      b.pass_at_n - a.pass_at_n || a.model.slug.localeCompare(b.model.slug)
+  if (q.sort === "pass_at_n") {
+    mapped.sort(
+      (a, b) =>
+        b.pass_at_n - a.pass_at_n || a.model.slug.localeCompare(b.model.slug),
     );
-    mapped.forEach((row, idx) => { row.rank = idx + 1; });
-  } else if (q.sort === 'pass_at_1') {
-    const ratio = (r: LeaderboardRow): number => r.tasks_attempted_distinct > 0
-      ? r.tasks_passed_attempt_1 / r.tasks_attempted_distinct
-      : 0;
-    mapped.sort((a, b) =>
-      ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug)
+    mapped.forEach((row, idx) => {
+      row.rank = idx + 1;
+    });
+  } else if (q.sort === "pass_at_1") {
+    const ratio = (r: LeaderboardRow): number =>
+      r.tasks_attempted_distinct > 0
+        ? r.tasks_passed_attempt_1 / r.tasks_attempted_distinct
+        : 0;
+    mapped.sort(
+      (a, b) => ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug),
     );
-    mapped.forEach((row, idx) => { row.rank = idx + 1; });
-  } else if (q.sort === 'cost_per_pass_usd') {
+    mapped.forEach((row, idx) => {
+      row.rank = idx + 1;
+    });
+  } else if (q.sort === "cost_per_pass_usd") {
     // Lower cost is better; null (0 tasks passed) sorts last.
-    mapped.sort((a, b) =>
-      (a.cost_per_pass_usd ?? Infinity) - (b.cost_per_pass_usd ?? Infinity)
-        || a.model.slug.localeCompare(b.model.slug)
+    mapped.sort(
+      (a, b) =>
+        (a.cost_per_pass_usd ?? Infinity) - (b.cost_per_pass_usd ?? Infinity) ||
+        a.model.slug.localeCompare(b.model.slug),
     );
-    mapped.forEach((row, idx) => { row.rank = idx + 1; });
-  } else if (q.sort === 'latency_p95_ms') {
+    mapped.forEach((row, idx) => {
+      row.rank = idx + 1;
+    });
+  } else if (q.sort === "latency_p95_ms") {
     // Lower latency is better; 0 (no data) sorts last.
-    mapped.sort((a, b) =>
-      (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity)
-        || a.model.slug.localeCompare(b.model.slug)
+    mapped.sort(
+      (a, b) =>
+        (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity) ||
+        a.model.slug.localeCompare(b.model.slug),
     );
-    mapped.forEach((row, idx) => { row.rank = idx + 1; });
+    mapped.forEach((row, idx) => {
+      row.rank = idx + 1;
+    });
   }
 
   return mapped;
 }
-

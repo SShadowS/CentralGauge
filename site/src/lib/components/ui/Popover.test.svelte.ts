@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import Popover from "./Popover.svelte";
+import { textSnippet } from "$lib/test-utils/snippets";
 
 describe("Popover", () => {
   it("renders trigger always; content only when open", async () => {
     render(Popover, {
       trigger: "Open",
-      children: "Hidden content",
+      children: textSnippet("Hidden content"),
     });
     expect(screen.getByText("Open")).toBeDefined();
     expect(screen.queryByText("Hidden content")).toBeNull();
@@ -15,7 +16,7 @@ describe("Popover", () => {
   it("shows content after clicking trigger", async () => {
     const { container } = render(Popover, {
       trigger: "Open",
-      children: "Visible content",
+      children: textSnippet("Visible content"),
     });
     const btn = container.querySelector("button.trigger") as HTMLButtonElement;
     await fireEvent.click(btn);
@@ -25,7 +26,7 @@ describe("Popover", () => {
   it("hides content on Escape", async () => {
     const { container } = render(Popover, {
       trigger: "Open",
-      children: "X",
+      children: textSnippet("X"),
     });
     const btn = container.querySelector("button.trigger") as HTMLButtonElement;
     await fireEvent.click(btn);

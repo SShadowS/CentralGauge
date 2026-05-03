@@ -22,9 +22,12 @@ import { validateR2Key } from "$lib/server/r2-key";
 
 const MAX_BODY_BYTES = 50 * 1024 * 1024; // I4: 50 MB cap on PUT body.
 
-export const PUT: RequestHandler = async (
-  { request, platform, params, url },
-) => {
+export const PUT: RequestHandler = async ({
+  request,
+  platform,
+  params,
+  url,
+}) => {
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
@@ -95,8 +98,8 @@ export const PUT: RequestHandler = async (
 
     await bucket.put(key, body, {
       httpMetadata: {
-        contentType: request.headers.get("content-type") ??
-          "application/octet-stream",
+        contentType:
+          request.headers.get("content-type") ?? "application/octet-stream",
       },
     });
     return jsonResponse({ key, size: body.byteLength }, 200);
@@ -105,9 +108,12 @@ export const PUT: RequestHandler = async (
   }
 };
 
-export const GET: RequestHandler = async (
-  { request, platform, params, url },
-) => {
+export const GET: RequestHandler = async ({
+  request,
+  platform,
+  params,
+  url,
+}) => {
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
@@ -150,8 +156,8 @@ export const GET: RequestHandler = async (
     return new Response(obj.body, {
       status: 200,
       headers: {
-        "content-type": obj.httpMetadata?.contentType ??
-          "application/octet-stream",
+        "content-type":
+          obj.httpMetadata?.contentType ?? "application/octet-stream",
         "content-length": String(obj.size),
       },
     });

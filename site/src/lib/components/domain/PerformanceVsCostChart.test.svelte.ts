@@ -29,6 +29,10 @@ function row(
     avg_cost_usd: cost,
     verified_runs: 0,
     last_run_at: "2026-04-01T00:00:00Z",
+    latency_p95_ms: 0,
+    pass_rate_ci: { lower: 0, upper: 1 },
+    pass_hat_at_n: 0,
+    cost_per_pass_usd: null,
   };
 }
 
@@ -42,11 +46,7 @@ describe("PerformanceVsCostChart", () => {
   });
 
   it("renders one bar per row (3 rows -> 3 bars, no cost overlay)", () => {
-    const rows = [
-      row("a", 90, 0.01),
-      row("b", 70, 0.05),
-      row("c", 50, 0.02),
-    ];
+    const rows = [row("a", 90, 0.01), row("b", 70, 0.05), row("c", 50, 0.02)];
     const { container } = render(PerformanceVsCostChart, { rows });
     expect(container.querySelector("svg")).not.toBeNull();
     // Bar rects all carry an inline <title>; filter to just those.
@@ -66,16 +66,15 @@ describe("PerformanceVsCostChart", () => {
       (t) => t.textContent ?? "",
     );
     expect(
-      titles.some((t) =>
-        t.includes("claude-sonnet") && t.includes("score 80.00")
+      titles.some(
+        (t) => t.includes("claude-sonnet") && t.includes("score 80.00"),
       ),
     ).toBe(true);
   });
 
   it("caps display at top N=12 even when 20 rows are provided", () => {
-    const rows = Array.from(
-      { length: 20 },
-      (_, i) => row(`m${i}`, 50 + (i % 5) * 5, 0.01 + i * 0.001, i + 1),
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      row(`m${i}`, 50 + (i % 5) * 5, 0.01 + i * 0.001, i + 1),
     );
     const { container } = render(PerformanceVsCostChart, { rows });
     const bars = Array.from(container.querySelectorAll("rect")).filter(

@@ -9,7 +9,7 @@ const tabs = [
   { id: "c", label: "Gamma" },
 ];
 
-const childrenSnippet = createRawSnippet((active) => ({
+const childrenSnippet = createRawSnippet<[string]>((active) => ({
   render: () => `<div>panel: ${active()}</div>`,
 }));
 

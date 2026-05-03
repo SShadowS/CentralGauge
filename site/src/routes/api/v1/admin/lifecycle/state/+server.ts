@@ -46,21 +46,22 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
       );
     }
     // v_lifecycle_state gives last_ts + last_event_id per step; JOIN back for the row.
-    const rows = await db.prepare(
-      `SELECT v.step, e.id, e.ts, e.model_slug, e.task_set_hash, e.event_type,
+    const rows = await db
+      .prepare(
+        `SELECT v.step, e.id, e.ts, e.model_slug, e.task_set_hash, e.event_type,
               e.source_id, e.payload_hash, e.actor, e.actor_id
          FROM v_lifecycle_state v
          JOIN lifecycle_events e ON e.id = v.last_event_id
         WHERE v.model_slug = ? AND v.task_set_hash = ?`,
-    ).bind(model, taskSet).all<
-      {
+      )
+      .bind(model, taskSet)
+      .all<{
         step: string;
         id: number;
         ts: number;
         event_type: string;
         [k: string]: unknown;
-      }
-    >();
+      }>();
     const out: Record<string, unknown> = {};
     for (const r of rows.results) {
       const { step, ...rest } = r;

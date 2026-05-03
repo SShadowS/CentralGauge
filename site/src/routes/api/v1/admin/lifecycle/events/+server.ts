@@ -11,7 +11,7 @@ import {
 } from "$lib/server/lifecycle-auth";
 import { maybeTriggerFamilyDiff } from "$lib/server/lifecycle-diff-trigger";
 import { FAMILY_DIFF_CACHE_NAME } from "$lib/server/family-diff-cache";
-import type { AppendEventInput } from "../../../../../../../src/lifecycle/types";
+import type { AppendEventInput } from "../../../../../../../../src/lifecycle/types";
 import {
   CANONICAL_ACTORS,
   CANONICAL_EVENT_TYPES,
@@ -41,7 +41,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
   }
   const db = platform.env.DB;
   try {
-    const body = await request.json() as {
+    const body = (await request.json()) as {
       version: number;
       signature: unknown;
       payload: AppendEventInput & { payload_hash?: string | null };
@@ -82,24 +82,27 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       throw new ApiError(
         400,
         "invalid_event_type",
-        `event_type "${p.event_type}" is not canonical; allowed: ${
-          CANONICAL_EVENT_TYPES.join(", ")
-        }`,
+        `event_type "${p.event_type}" is not canonical; allowed: ${CANONICAL_EVENT_TYPES.join(
+          ", ",
+        )}`,
       );
     }
     if (!isCanonicalActor(p.actor)) {
       throw new ApiError(
         400,
         "invalid_actor",
-        `actor "${p.actor}" is not canonical; allowed: ${
-          CANONICAL_ACTORS.join(", ")
-        }`,
+        `actor "${p.actor}" is not canonical; allowed: ${CANONICAL_ACTORS.join(
+          ", ",
+        )}`,
       );
     }
     if (p.payload_hash && p.ts !== undefined) {
-      const dup = await db.prepare(
-        `SELECT id FROM lifecycle_events WHERE payload_hash = ? AND ts = ? AND event_type = ?`,
-      ).bind(p.payload_hash, p.ts, p.event_type).first<{ id: number }>();
+      const dup = await db
+        .prepare(
+          `SELECT id FROM lifecycle_events WHERE payload_hash = ? AND ts = ? AND event_type = ?`,
+        )
+        .bind(p.payload_hash, p.ts, p.event_type)
+        .first<{ id: number }>();
       if (dup) {
         throw new ApiError(
           409,
@@ -199,8 +202,7 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
       );
     }
     const params: (string | number)[] = [model];
-    let sql =
-      `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
+    let sql = `SELECT id, ts, model_slug, task_set_hash, event_type, source_id, payload_hash,
                       tool_versions_json, envelope_json, payload_json, actor, actor_id, migration_note
                  FROM lifecycle_events WHERE model_slug = ?`;
     if (taskSet) {
@@ -220,7 +222,10 @@ export const GET: RequestHandler = async ({ request, platform, url }) => {
       sql += " LIMIT ?";
       params.push(Number(limit));
     }
-    const rows = await db.prepare(sql).bind(...params).all();
+    const rows = await db
+      .prepare(sql)
+      .bind(...params)
+      .all();
     return jsonResponse(rows.results, 200);
   } catch (err) {
     return errorResponse(err);

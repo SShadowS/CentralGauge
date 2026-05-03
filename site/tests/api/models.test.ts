@@ -100,30 +100,33 @@ describe("GET /api/v1/models/:slug", () => {
         tasks_passed: number;
         avg_cost_usd: number;
         latency_p50_ms: number;
+        latency_p95_ms: number;
+        pass_rate_ci: { lower: number; upper: number };
+        pass_hat_at_n: number;
+        cost_per_pass_usd: number | null;
         run_count: number;
         verified_runs: number;
       };
-      history: Array<
-        {
-          run_id: string;
-          ts: string;
-          score: number;
-          cost_usd: number;
-          tier: string;
-        }
-      >;
-      failure_modes: Array<
-        { code: string; count: number; pct: number; example_message: string }
-      >;
-      recent_runs: Array<
-        {
-          run_id: string;
-          ts: string;
-          score: number;
-          cost_usd: number;
-          tier: string;
-        }
-      >;
+      history: Array<{
+        run_id: string;
+        ts: string;
+        score: number;
+        cost_usd: number;
+        tier: string;
+      }>;
+      failure_modes: Array<{
+        code: string;
+        count: number;
+        pct: number;
+        example_message: string;
+      }>;
+      recent_runs: Array<{
+        run_id: string;
+        ts: string;
+        score: number;
+        cost_usd: number;
+        tier: string;
+      }>;
       predecessor?: {
         slug: string;
         display_name: string;
@@ -137,14 +140,16 @@ describe("GET /api/v1/models/:slug", () => {
     expect(typeof body.model.added_at).toBe("string");
     expect(body.aggregates.run_count).toBe(1);
     expect(body.aggregates.avg_score).toBeCloseTo(0.5, 5);
-    expect(typeof body.aggregates.latency_p95_ms).toBe('number');
+    expect(typeof body.aggregates.latency_p95_ms).toBe("number");
     expect(body.aggregates.pass_rate_ci).toMatchObject({
       lower: expect.any(Number),
       upper: expect.any(Number),
     });
-    expect(typeof body.aggregates.pass_hat_at_n).toBe('number');
-    const cost = (body.aggregates as unknown as { cost_per_pass_usd: number | null }).cost_per_pass_usd;
-    expect(cost === null || typeof cost === 'number').toBe(true);
+    expect(typeof body.aggregates.pass_hat_at_n).toBe("number");
+    const cost = (
+      body.aggregates as unknown as { cost_per_pass_usd: number | null }
+    ).cost_per_pass_usd;
+    expect(cost === null || typeof cost === "number").toBe(true);
     // recent_runs and history use the ModelHistoryPoint shape (run_id/ts/score/...).
     expect(body.recent_runs).toHaveLength(1);
     expect(body.recent_runs[0].run_id).toBe("r1");
@@ -191,7 +196,9 @@ describe("GET /api/v1/models/:slug", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('r_hot','ts',1,'s_high','rig','2026-04-03T00:00:00Z','2026-04-03T01:00:00Z','completed','claimed','v1','sig','2026-04-03T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('r_hot','easy/a',1,1,1.0,1,3,3)`,
     ).run();
@@ -224,7 +231,9 @@ describe("GET /api/v1/models/:slug", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('r_think','ts',1,'s_think','rig','2026-04-04T00:00:00Z','2026-04-04T01:00:00Z','completed','claimed','v1','sig','2026-04-04T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out) VALUES ('r_think','easy/a',1,1,1.0,1,3,3,1200,800)`,
     ).run();
@@ -303,7 +312,9 @@ describe("GET /api/v1/models/:slug", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('r2','ts',1,'s','rig','2026-04-02T00:00:00Z','2026-04-02T01:00:00Z','completed','claimed','v1','sig','2026-04-02T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,compile_errors_json,tests_total,tests_passed)
        VALUES ('r2','easy/x',1,0,0.0,0,'[{"code":"AL0132","message":"AL0132 expected end of statement"},{"code":"AL0132","message":"AL0132 again"},{"code":"AL0118","message":"AL0118 unknown identifier"}]',0,0)`,
@@ -312,9 +323,12 @@ describe("GET /api/v1/models/:slug", () => {
     const res = await SELF.fetch("https://x/api/v1/models/sonnet-4.7?_cb=fm");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      failure_modes: Array<
-        { code: string; count: number; pct: number; example_message: string }
-      >;
+      failure_modes: Array<{
+        code: string;
+        count: number;
+        pct: number;
+        example_message: string;
+      }>;
     };
     // Two distinct codes — AL0132 (count 2) and AL0118 (count 1), sorted by count desc.
     expect(body.failure_modes.length).toBe(2);
@@ -340,7 +354,9 @@ describe("GET /api/v1/models/:slug", () => {
     await env.DB.prepare(
       `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
        VALUES ('r_pred','ts',3,'s','rig','2026-03-01T00:00:00Z','2026-03-01T01:00:00Z','completed','claimed','v1','sig','2026-03-01T00:00:00Z',1,?)`,
-    ).bind(new Uint8Array([0])).run();
+    )
+      .bind(new Uint8Array([0]))
+      .run();
     await env.DB.prepare(
       `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
        VALUES ('r_pred','easy/a',1,1,0.4,1,3,1,1000,500)`,
@@ -407,11 +423,13 @@ describe("ModelDetail.aggregates — contract completeness", () => {
   it("response.aggregates includes exactly every field declared in ModelDetail['aggregates'] type", async () => {
     const res = await SELF.fetch("https://x/api/v1/models/sonnet-4.7");
     expect(res.status).toBe(200);
-    const body = await res.json() as { aggregates: Record<string, unknown> };
+    const body = (await res.json()) as { aggregates: Record<string, unknown> };
 
     // REQUIRED: every key in this array must match ModelDetail["aggregates"]
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
-    const requiredAggregateKeys: ReadonlyArray<keyof ModelDetail["aggregates"]> = [
+    const requiredAggregateKeys: ReadonlyArray<
+      keyof ModelDetail["aggregates"]
+    > = [
       "avg_score",
       "tasks_attempted",
       "tasks_passed",
@@ -441,7 +459,7 @@ describe("GET /api/v1/models — list aggregates", () => {
   it("returns ModelsIndexItem[] with aggregates", async () => {
     const res = await SELF.fetch("https://x/api/v1/models");
     expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const body = (await res.json()) as { data: Array<Record<string, unknown>> };
     expect(Array.isArray(body.data)).toBe(true);
     for (const row of body.data) {
       expect(typeof row.slug).toBe("string");
