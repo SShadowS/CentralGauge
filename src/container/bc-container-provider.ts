@@ -109,7 +109,8 @@ export class BcContainerProvider implements ContainerProvider {
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
 
   constructor(options: BcContainerProviderOptions = {}) {
-    this.persistentEnabled = options.persistentPwsh ?? true;
+    this.persistentEnabled = options.persistentPwsh ??
+      (Deno.env.get("CENTRALGAUGE_PWSH_PERSISTENT") !== "0");
     this._sessionFactory = options.sessionFactory ??
       ((name) => new PwshContainerSession(name));
   }

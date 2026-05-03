@@ -185,6 +185,10 @@ export function registerBenchCommand(cli: Command): void {
       { default: 1 },
     )
     .option(
+      "--no-persistent-pwsh",
+      "Disable persistent PowerShell session reuse (debug only; default: enabled)",
+    )
+    .option(
       "--no-ingest",
       "Skip ingestion to the scoreboard API after the run completes",
       { default: false },
@@ -195,6 +199,12 @@ export function registerBenchCommand(cli: Command): void {
       { default: false },
     )
     .action(async (options) => {
+      // Plumb --no-persistent-pwsh to the env var consumed by BcContainerProvider.
+      // Must run before any container provider is instantiated (registry caches instances).
+      if (options.persistentPwsh === false) {
+        Deno.env.set("CENTRALGAUGE_PWSH_PERSISTENT", "0");
+      }
+
       // Handle --list-presets
       if (options.listPresets) {
         const config = await ConfigManager.loadConfig();
