@@ -527,6 +527,12 @@ export async function executeParallelBenchmark(
       );
     }
 
+    // Tear down persistent per-container pwsh sessions so child processes are
+    // SIGTERM'd cleanly rather than left to OS-reaping at process exit.
+    if (containerProvider.dispose) {
+      await containerProvider.dispose();
+    }
+
     // Send notification if configured (once after all runs)
     if (!options.noNotify && lastRunStats) {
       await sendBenchmarkNotificationIfConfigured({
