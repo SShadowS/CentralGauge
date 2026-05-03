@@ -149,6 +149,15 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
 
   const isOpenrouterSlug = parsed.provider === "openrouter";
 
+  // Guard: openrouter slugs must have a sub-vendor
+  if (isOpenrouterSlug && !parsed.subVendor) {
+    throw new CatalogSeedError(
+      `openrouter slug missing sub-vendor: ${input.slug}`,
+      "SEED_NO_PRICING",
+      { slug: input.slug },
+    );
+  }
+
   // Pricing: OR-only for openrouter slugs; prefer LiteLLM for direct provider slugs
   let pricingValues: { input: number; output: number };
   let pricingSource: "litellm" | "openrouter";

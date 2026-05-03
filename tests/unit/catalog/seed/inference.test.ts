@@ -256,4 +256,51 @@ describe("mergeMetadata", () => {
       "no pricing source",
     );
   });
+
+  it("direct provider falls back to OR pricing when LiteLLM has none", () => {
+    const result = mergeMetadata({
+      slug: "anthropic/claude-haiku-4-5",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 1, output: 5 },
+        displayName: "Claude Haiku 4.5",
+        vendor: "Anthropic",
+        releasedAt: null,
+      },
+    });
+    assertEquals(result.pricing.source, "openrouter");
+    assertEquals(result.pricing.input_per_mtoken, 1);
+    assertEquals(result.model.released_at, undefined);
+  });
+
+  it("throws SEED_NO_PRICING for openrouter slug with no OR data", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/x-ai/grok-4.3",
+          litellm: { input: 1, output: 5 },
+          openrouter: null,
+        }),
+      CatalogSeedError,
+      "OpenRouter has no entry",
+    );
+  });
+
+  it("throws SEED_NO_PRICING when openrouter slug has no sub-vendor", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/foo",
+          litellm: null,
+          openrouter: {
+            pricing: { input: 1, output: 5 },
+            displayName: "Foo",
+            vendor: "Foo",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "missing sub-vendor",
+    );
+  });
 });
