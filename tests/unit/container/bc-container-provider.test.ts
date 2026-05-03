@@ -1594,3 +1594,80 @@ Deno.test({
     }
   },
 });
+
+// =============================================================================
+// Concurrency / Per-Container Serialization
+// =============================================================================
+
+Deno.test({
+  name:
+    "BcContainerProvider serializes concurrent compileProject callers per container (no orphan sessions)",
+  ignore: !isWindows,
+  async fn() {
+    let factoryCalls = 0;
+    const stubOutput = [
+      "COMPILE_SUCCESS",
+      "APP_FILE:C:\\fake\\out.app",
+    ].join("\n");
+
+    const sessionFactory = (name: string): PwshContainerSession => {
+      factoryCalls++;
+      const mock = createMockPwshProcess();
+      const sess = new PwshContainerSession(name, {
+        spawnFactory: () => mock.process,
+      });
+      // Stub init to take a few ticks so concurrent callers race.
+      // deno-lint-ignore no-explicit-any
+      (sess as any).init = async () => {
+        await new Promise((r) => setTimeout(r, 25));
+        // deno-lint-ignore no-explicit-any
+        (sess as any)._state = "idle";
+      };
+      // Stub execute to remain in "idle" so subsequent serialized callers
+      // see the session as healthy and reuse it.
+      // deno-lint-ignore no-explicit-any
+      (sess as any).execute = (_script: string) =>
+        Promise.resolve({
+          output: stubOutput,
+          exitCode: 0,
+          durationMs: 10,
+        });
+      return sess;
+    };
+
+    const provider = new BcContainerProvider({
+      persistentPwsh: true,
+      sessionFactory,
+    });
+
+    const tmpDir = await Deno.makeTempDir();
+    // Pre-populate compiler folder cache so getOrCreateCompilerFolder skips PowerShell.
+    // deno-lint-ignore no-explicit-any
+    (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
+
+    const project = {
+      path: tmpDir,
+      appJson: {
+        id: "00000000-0000-0000-0000-000000000001",
+        name: "TestApp",
+      },
+      // deno-lint-ignore no-explicit-any
+    } as any;
+
+    try {
+      await Promise.all([
+        provider.compileProject("Cronus28", project),
+        provider.compileProject("Cronus28", project),
+        provider.compileProject("Cronus28", project),
+      ]);
+      assertEquals(
+        factoryCalls,
+        1,
+        "sessionFactory must run exactly once per container under concurrent callers (otherwise pwsh processes are orphaned)",
+      );
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+      await provider.dispose();
+    }
+  },
+});

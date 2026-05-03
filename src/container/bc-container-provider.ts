@@ -24,6 +24,7 @@ import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("container:bc");
 import { ContainerError, PwshSessionError } from "../errors.ts";
+import { Mutex } from "../parallel/semaphore.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import {
   calculateTestMetrics,
@@ -104,6 +105,12 @@ export class BcContainerProvider implements ContainerProvider {
 
   // Persistent pwsh session map (one session per container name).
   private readonly sessions = new Map<string, PwshContainerSession>();
+  // Per-container lock serializing all session access (init, execute, recycle).
+  // PwshContainerSession communicates over a single stdin/stdout pair, so
+  // concurrent execute() calls would interleave commands and marker tokens.
+  // The lock also prevents two callers from racing in getOrCreateSession and
+  // each spawning a fresh pwsh process (orphan leak).
+  private readonly sessionLocks = new Map<string, Mutex>();
   private readonly persistentEnabled: boolean;
   // sessionFactory stored for use in getOrCreateSession (Task 14).
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
@@ -147,23 +154,43 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Lazy-create the per-container Mutex used to serialize all session access.
+   */
+  private getSessionLock(name: string): Mutex {
+    let lock = this.sessionLocks.get(name);
+    if (!lock) {
+      lock = new Mutex();
+      this.sessionLocks.set(name, lock);
+    }
+    return lock;
+  }
+
+  /**
    * Recycle the per-container persistent pwsh session if it has reached the
    * configured threshold. No-op when no session exists or session is unhealthy.
+   *
+   * Holds the per-container session lock so it cannot run concurrently with an
+   * in-flight execute (which would kill the session mid-command).
    */
   async maybeRecycleSession(name: string): Promise<void> {
     if (!this.persistentEnabled) return;
-    const sess = this.sessions.get(name);
-    if (!sess) return;
-    if (!sess.isHealthy) return;
-    if (!sess.shouldRecycle) return;
+    const release = await this.getSessionLock(name).acquire();
     try {
-      await sess.recycle();
-    } catch (e) {
-      log.warn("session recycle failed; will fall back to spawn-per-call", {
-        container: name,
-        error: e instanceof Error ? e.message : String(e),
-      });
-      // Session state is now "dead"; getOrCreateSession will return null next call.
+      const sess = this.sessions.get(name);
+      if (!sess) return;
+      if (!sess.isHealthy) return;
+      if (!sess.shouldRecycle) return;
+      try {
+        await sess.recycle();
+      } catch (e) {
+        log.warn("session recycle failed; will fall back to spawn-per-call", {
+          container: name,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        // Session state is now "dead"; getOrCreateSession will return null next call.
+      }
+    } finally {
+      release();
     }
   }
 
@@ -206,40 +233,49 @@ export class BcContainerProvider implements ContainerProvider {
    * Execute a script via the per-container persistent session if available.
    * Retries once with a fresh session on session_crashed. Falls back to
    * spawn-per-call on init/recycle failure or on non-crash session errors.
+   *
+   * Holds the per-container session lock for the entire init+execute window so
+   * (a) concurrent callers don't each spawn a fresh pwsh process (orphan leak)
+   * and (b) consecutive execute() calls don't interleave on the shared stdin.
    */
   private async runScriptThroughSession(
     containerName: string,
     script: string,
   ): Promise<{ output: string; exitCode: number }> {
-    const session = await this.getOrCreateSession(containerName);
-    if (!session) {
-      return await this.executePowerShell(script);
-    }
+    const release = await this.getSessionLock(containerName).acquire();
     try {
-      const r = await session.execute(script);
-      return { output: r.output, exitCode: r.exitCode };
-    } catch (e) {
-      if (e instanceof PwshSessionError && e.code === "session_crashed") {
-        log.warn("session crashed; retrying once with fresh session", {
-          container: containerName,
-        });
-        // getOrCreateSession will detect the dead session and reinit.
-        const fresh = await this.getOrCreateSession(containerName);
-        if (fresh) {
-          const r2 = await fresh.execute(script);
-          return { output: r2.output, exitCode: r2.exitCode };
+      const session = await this.getOrCreateSession(containerName);
+      if (!session) {
+        return await this.executePowerShell(script);
+      }
+      try {
+        const r = await session.execute(script);
+        return { output: r.output, exitCode: r.exitCode };
+      } catch (e) {
+        if (e instanceof PwshSessionError && e.code === "session_crashed") {
+          log.warn("session crashed; retrying once with fresh session", {
+            container: containerName,
+          });
+          // getOrCreateSession will detect the dead session and reinit.
+          const fresh = await this.getOrCreateSession(containerName);
+          if (fresh) {
+            const r2 = await fresh.execute(script);
+            return { output: r2.output, exitCode: r2.exitCode };
+          }
+          // Fresh session failed too; fall back to spawn-per-call.
+          return await this.executePowerShell(script);
         }
-        // Fresh session failed too; fall back to spawn-per-call.
-        return await this.executePowerShell(script);
+        if (e instanceof PwshSessionError) {
+          log.warn("session error; falling back to spawn", {
+            container: containerName,
+            code: e.code,
+          });
+          return await this.executePowerShell(script);
+        }
+        throw e;
       }
-      if (e instanceof PwshSessionError) {
-        log.warn("session error; falling back to spawn", {
-          container: containerName,
-          code: e.code,
-        });
-        return await this.executePowerShell(script);
-      }
-      throw e;
+    } finally {
+      release();
     }
   }
 

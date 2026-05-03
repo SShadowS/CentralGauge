@@ -385,12 +385,23 @@ export class PwshContainerSession {
 }
 
 function defaultSpawnFactory(): SpawnedProcess {
-  return new Deno.Command("pwsh", {
+  const proc = new Deno.Command("pwsh", {
     args: ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "-"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
   }).spawn();
+  // Drain stderr in the background. The session reads stdout for the marker
+  // protocol but never reads stderr; without this drain, anything pwsh writes
+  // to its own stderr (parser warnings, BCH module warnings outside the
+  // script's `2>&1` scope, etc.) fills the OS pipe (~64 KB on Windows) and
+  // blocks pwsh on the next stderr write — silently freezing the session.
+  proc.stderr.pipeTo(
+    new WritableStream({
+      write() {/* discard */},
+    }),
+  ).catch(() => {/* stream closed; safe to ignore */});
+  return proc;
 }
 
 function escapeRegex(s: string): string {
