@@ -130,6 +130,11 @@ export async function executeParallelBenchmark(
   log.info(`Output: ${options.outputDir}`);
 
   let dashboard: DashboardServer | null = null;
+  // Lifted out of the try block so the finally below can dispose persistent
+  // sessions even when an error escapes the main flow before normal cleanup.
+  let containerProvider:
+    | import("../../../src/container/interface.ts").ContainerProvider
+    | undefined;
 
   try {
     await Deno.mkdir(options.outputDir, { recursive: true });
@@ -182,9 +187,8 @@ export async function executeParallelBenchmark(
       variants = retryResult.variants;
     }
 
-    // Setup container(s)
-    let containerProvider:
-      import("../../../src/container/interface.ts").ContainerProvider;
+    // Setup container(s) — assign to the outer-scoped `containerProvider`
+    // so the function's finally block can dispose it on any exit path.
     let primaryContainerName: string;
     let wasExisting: boolean;
     let containerNames: string[] | undefined;
@@ -527,11 +531,9 @@ export async function executeParallelBenchmark(
       );
     }
 
-    // Tear down persistent per-container pwsh sessions so child processes are
-    // SIGTERM'd cleanly rather than left to OS-reaping at process exit.
-    if (containerProvider.dispose) {
-      await containerProvider.dispose();
-    }
+    // Persistent per-container pwsh sessions are torn down in the function's
+    // outer `finally` (below) so they survive both normal completion and any
+    // throw escape path. Slot.dispose is idempotent so this is safe.
 
     // Send notification if configured (once after all runs)
     if (!options.noNotify && lastRunStats) {
@@ -599,6 +601,27 @@ export async function executeParallelBenchmark(
     }
 
     throw error;
+  } finally {
+    // Tear down persistent per-container pwsh sessions on every exit path
+    // (normal return + thrown error). Without this, an early throw inside
+    // runParallel / result-writing / cleanupContainer would leave child
+    // pwsh processes alive until the parent Deno exits — exactly the leak
+    // the slot architecture was designed to prevent.
+    //
+    // Slot.dispose is idempotent and best-effort: any error from the dispose
+    // itself is logged, never rethrown, so the original throw (if any)
+    // propagates unaltered to the caller.
+    if (containerProvider?.dispose) {
+      try {
+        await containerProvider.dispose();
+      } catch (e) {
+        log.warn(
+          `containerProvider.dispose threw: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
   }
 }
 
