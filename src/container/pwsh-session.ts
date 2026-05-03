@@ -44,33 +44,27 @@ Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyC
 $bcContainerHelperConfig.usePwshForBc24 = $false
 `.trim();
 
-/** Resolved options with all defaults applied — consumed by init/execute/recycle/dispose in later tasks. */
-interface ResolvedOptions {
-  recycleThreshold: number;
-  defaultTimeoutMs: number;
-  bootstrapTimeoutMs: number;
-  bootstrapScript: string;
-  spawnFactory: () => SpawnedProcess;
-}
-
 export class PwshContainerSession {
   private _state: SessionState = "dead";
   private _callCount = 0;
-  /** Resolved configuration; consumed by init/execute/recycle/dispose (implemented in later tasks). */
-  private readonly _opts: ResolvedOptions;
+  protected process: SpawnedProcess | null = null;
+  protected readonly recycleThreshold: number;
+  protected readonly defaultTimeoutMs: number;
+  protected readonly bootstrapTimeoutMs: number;
+  protected readonly bootstrapScript: string;
+  protected readonly spawnFactory: () => SpawnedProcess;
 
   constructor(
     public readonly containerName: string,
     options: PwshSessionOptions = {},
   ) {
-    this._opts = {
-      recycleThreshold: options.recycleThreshold ?? DEFAULT_RECYCLE_THRESHOLD,
-      defaultTimeoutMs: options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
-      bootstrapTimeoutMs: options.bootstrapTimeoutMs ??
-        DEFAULT_BOOTSTRAP_TIMEOUT_MS,
-      bootstrapScript: options.bootstrapScript ?? DEFAULT_BOOTSTRAP_SCRIPT,
-      spawnFactory: options.spawnFactory ?? defaultSpawnFactory,
-    };
+    this.recycleThreshold = options.recycleThreshold ??
+      DEFAULT_RECYCLE_THRESHOLD;
+    this.defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.bootstrapTimeoutMs = options.bootstrapTimeoutMs ??
+      DEFAULT_BOOTSTRAP_TIMEOUT_MS;
+    this.bootstrapScript = options.bootstrapScript ?? DEFAULT_BOOTSTRAP_SCRIPT;
+    this.spawnFactory = options.spawnFactory ?? defaultSpawnFactory;
   }
 
   get state(): SessionState {
@@ -86,7 +80,7 @@ export class PwshContainerSession {
   }
 
   get shouldRecycle(): boolean {
-    return this._callCount >= this._opts.recycleThreshold;
+    return this._callCount >= this.recycleThreshold;
   }
 
   // To be implemented in later tasks:
