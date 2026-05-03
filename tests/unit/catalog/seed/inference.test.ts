@@ -10,6 +10,7 @@ import {
   inferDisplayName,
   inferFamilySlug,
   inferGeneration,
+  inferReleasedAt,
   parseSlug,
 } from "../../../../src/catalog/seed/inference.ts";
 
@@ -166,5 +167,27 @@ describe("inferGeneration", () => {
 
   it("extracts 1 from o1-mini", () => {
     assertEquals(inferGeneration("o1-mini"), 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. inferReleasedAt
+// ---------------------------------------------------------------------------
+
+describe("inferReleasedAt", () => {
+  it("converts a valid epoch to ISO date string", () => {
+    assertEquals(inferReleasedAt(1761955200), "2025-11-01");
+  });
+
+  it("returns null for null input", () => {
+    assertEquals(inferReleasedAt(null), null);
+  });
+
+  it("returns null for NaN", () => {
+    assertEquals(inferReleasedAt(NaN), null);
+  });
+
+  it("returns null for Infinity", () => {
+    assertEquals(inferReleasedAt(Infinity), null);
   });
 });

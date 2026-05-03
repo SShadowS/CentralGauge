@@ -105,3 +105,15 @@ export function inferGeneration(model: string): number | null {
   if (!match || !match[1]) return null;
   return parseInt(match[1], 10);
 }
+
+// ---------------------------------------------------------------------------
+// inferReleasedAt
+// ---------------------------------------------------------------------------
+
+export function inferReleasedAt(epochSeconds: number | null): string | null {
+  if (epochSeconds === null) return null;
+  if (!Number.isFinite(epochSeconds)) return null;
+  const ms = epochSeconds * 1000;
+  const date = new Date(ms);
+  return date.toISOString().slice(0, 10);
+}
