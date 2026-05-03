@@ -168,4 +168,16 @@ describe("PwshContainerSession.execute", () => {
     assertEquals(sess.state, "idle");
     assertEquals(sess.callCount, 1);
   });
+
+  it("throws session_timeout when marker doesn't arrive in time", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    await assertRejects(
+      () => sess.execute(`Start-Sleep 9999`, 100),
+      PwshSessionError,
+      "not received within 100ms",
+    );
+    assertEquals(sess.state, "dead"); // execute() kills process on error
+  });
 });
