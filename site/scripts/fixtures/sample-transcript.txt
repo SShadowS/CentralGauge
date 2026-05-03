@@ -1,0 +1,33 @@
+== SYSTEM ==
+You are an AL code generation assistant for Microsoft Dynamics 365 Business
+Central. Generate AL source files that compile and pass the supplied tests.
+
+== USER ==
+Create a codeunit "Calculator" exposing two procedures:
+  Add(a: Integer; b: Integer): Integer
+  Sub(a: Integer; b: Integer): Integer
+
+The procedures must return the sum and difference respectively.
+
+== ASSISTANT ==
+codeunit 70001 "Calculator"
+{
+    procedure Add(a: Integer; b: Integer): Integer
+    begin
+        exit(a + b);
+    end;
+
+    procedure Sub(a: Integer; b: Integer): Integer
+    begin
+        exit(a - b);
+    end;
+}
+
+== TOOL: al_compile ==
+{ "success": true, "warnings": 0, "errors": 0 }
+
+== TOOL: al_test ==
+{ "tests_passed": 3, "tests_total": 3 }
+
+== RESULT ==
+score=1.0 passed=true tests=3/3 attempt=1

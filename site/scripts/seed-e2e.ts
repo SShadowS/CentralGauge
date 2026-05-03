@@ -21,11 +21,13 @@ const ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 
 function run(cmd: string): string {
   console.log(`$ ${cmd}`);
-  return execSync(cmd, {
-    stdio: "inherit",
-    cwd: ROOT,
-    encoding: "utf8" as const,
-  }) ?? "";
+  return (
+    execSync(cmd, {
+      stdio: "inherit",
+      cwd: ROOT,
+      encoding: "utf8" as const,
+    }) ?? ""
+  );
 }
 
 function tryRun(cmd: string): boolean {
@@ -42,9 +44,9 @@ function tryRun(cmd: string): boolean {
 //    applied state, so re-running on an existing DB fails with "table
 //    already exists". We tolerate that — the seed (step 2) is what
 //    matters, and the migrations are idempotent at the schema level.
-const migrations = readdirSync(join(ROOT, "migrations")).filter((f) =>
-  f.endsWith(".sql")
-).sort();
+const migrations = readdirSync(join(ROOT, "migrations"))
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 for (const m of migrations) {
   const ok = tryRun(
     `npx wrangler d1 execute centralgauge --local --file=migrations/${m}`,
@@ -57,17 +59,25 @@ for (const m of migrations) {
 // 2. Build the seed SQL inline. We mirror seedSmokeData() from
 //    tests/utils/seed.ts but write SQL directly because the JS function
 //    requires `cloudflare:test` env.DB which only works inside vitest.
+//
+// DELETE order matters: D1 enforces FKs at write time, so children must
+// be deleted before parents. Reverse-topological of the INSERT order:
+//   model_families ← models ← cost_snapshots/runs/shortcomings
+//   task_sets ← tasks/runs
+//   settings_profiles ← runs
+//   machine_keys ← runs
+//   runs ← results ← shortcoming_occurrences
 const SEED_SQL = `
 DELETE FROM shortcoming_occurrences;
 DELETE FROM shortcomings;
 DELETE FROM results;
 DELETE FROM runs;
+DELETE FROM tasks;
 DELETE FROM cost_snapshots;
+DELETE FROM settings_profiles;
+DELETE FROM task_sets;
 DELETE FROM models;
 DELETE FROM model_families;
-DELETE FROM task_sets;
-DELETE FROM settings_profiles;
-DELETE FROM tasks;
 DELETE FROM machine_keys;
 
 INSERT INTO model_families(id,slug,vendor,display_name) VALUES
@@ -103,14 +113,16 @@ INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,c
   ('run-0003','ts',1,'s','rig','2026-04-27T11:57:00Z','2026-04-27T12:57:00Z','completed','verified','v1','sig','2026-04-27T11:57:00Z',1,x'00'),
   ('run-0004','ts',2,'s','rig','2026-04-27T11:56:00Z','2026-04-27T12:56:00Z','completed','claimed','v1','sig','2026-04-27T11:56:00Z',1,x'00');
 
--- Seeded results so leaderboard scores aren't all NULL
-INSERT INTO results(id,run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,failure_reasons_json,compile_errors_json) VALUES
-  (1,'run-0000','CG-AL-E001',1,1,1.0,1,3,3,NULL,'[]'),
-  (2,'run-0000','CG-AL-E002',1,1,1.0,1,3,3,NULL,'[]'),
-  (3,'run-0000','CG-AL-M001',1,0,0.5,1,4,2,'["half passing"]','[]'),
-  (4,'run-0001','CG-AL-E001',1,1,1.0,1,3,3,NULL,'[]'),
-  (5,'run-0001','CG-AL-E002',1,0,0.0,1,3,0,'["wrong assert"]','[{"message":"expected 5 got 3"}]'),
-  (6,'run-0002','CG-AL-E001',1,0,0.0,0,0,0,'["AL0132 syntax error"]','[{"code":"AL0132","message":"AL0132 expected end of statement at line 12"}]');
+-- Seeded results so leaderboard scores aren't all NULL.
+-- transcript_r2_key uses the curated transcripts/<run>/<task>/<n>.txt
+-- naming scheme; seeded blobs are uploaded to R2 below (see TRANSCRIPT_KEYS).
+INSERT INTO results(id,run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,failure_reasons_json,compile_errors_json,transcript_r2_key) VALUES
+  (1,'run-0000','CG-AL-E001',1,1,1.0,1,3,3,NULL,'[]','transcripts/run-0000/CG-AL-E001/1.txt'),
+  (2,'run-0000','CG-AL-E002',1,1,1.0,1,3,3,NULL,'[]','transcripts/run-0000/CG-AL-E002/1.txt'),
+  (3,'run-0000','CG-AL-M001',1,0,0.5,1,4,2,'["half passing"]','[]','transcripts/run-0000/CG-AL-M001/1.txt'),
+  (4,'run-0001','CG-AL-E001',1,1,1.0,1,3,3,NULL,'[]','transcripts/run-0001/CG-AL-E001/1.txt'),
+  (5,'run-0001','CG-AL-E002',1,0,0.0,1,3,0,'["wrong assert"]','[{"message":"expected 5 got 3"}]','transcripts/run-0001/CG-AL-E002/1.txt'),
+  (6,'run-0002','CG-AL-E001',1,0,0.0,0,0,0,'["AL0132 syntax error"]','[{"code":"AL0132","message":"AL0132 expected end of statement at line 12"}]','transcripts/run-0002/CG-AL-E001/1.txt');
 
 INSERT INTO shortcomings(id,model_id,al_concept,concept,description,correct_pattern,incorrect_pattern_r2_key,first_seen,last_seen) VALUES
   (1,1,'interfaces','interfaces','Adds IDs to interfaces','No ID on interfaces','shortcomings/x.al.zst','2026-01-01T00:00:00Z','2026-04-01T00:00:00Z'),
@@ -124,9 +136,32 @@ INSERT INTO shortcoming_occurrences(shortcoming_id,result_id,task_id,error_code)
 const seedFile = join(tmpdir(), "cg-seed.sql");
 writeFileSync(seedFile, SEED_SQL);
 run(
-  `npx wrangler d1 execute centralgauge --local --file=${
-    seedFile.replace(/\\/g, "/")
-  }`,
+  `npx wrangler d1 execute centralgauge --local --file=${seedFile.replace(
+    /\\/g,
+    "/",
+  )}`,
 );
 
-console.log("\n[OK] E2E seed applied to local D1.");
+// 3. Seed R2 transcript blobs. Keys must match transcript_r2_key values
+//    inserted above; the page at /runs/[id]/transcripts/[taskId]/[attempt]
+//    fetches /api/v1/transcripts/<key> which reads from the BLOBS bucket.
+//    Without these blobs the API returns 404 and the page surfaces it.
+const TRANSCRIPT_KEYS = [
+  "transcripts/run-0000/CG-AL-E001/1.txt",
+  "transcripts/run-0000/CG-AL-E002/1.txt",
+  "transcripts/run-0000/CG-AL-M001/1.txt",
+  "transcripts/run-0001/CG-AL-E001/1.txt",
+  "transcripts/run-0001/CG-AL-E002/1.txt",
+  "transcripts/run-0002/CG-AL-E001/1.txt",
+];
+const fixtureFile = join(ROOT, "scripts", "fixtures", "sample-transcript.txt");
+for (const key of TRANSCRIPT_KEYS) {
+  run(
+    `npx wrangler r2 object put centralgauge-blobs/${key} --local --file=${fixtureFile.replace(
+      /\\/g,
+      "/",
+    )} --content-type=text/plain`,
+  );
+}
+
+console.log("\n[OK] E2E seed applied to local D1 + R2.");
