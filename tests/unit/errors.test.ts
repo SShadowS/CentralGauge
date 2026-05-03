@@ -1,6 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
-import { CatalogSeedError } from "../../src/errors.ts";
+import { CatalogSeedError, PwshSessionError } from "../../src/errors.ts";
 
 describe("CatalogSeedError", () => {
   it("captures slug + reason in context", () => {
@@ -24,6 +24,36 @@ describe("CatalogSeedError", () => {
     ];
     for (const c of codes) {
       const e = new CatalogSeedError("x", c);
+      assertEquals(e.code, c);
+    }
+  });
+});
+
+describe("PwshSessionError", () => {
+  it("captures container + reason in context", () => {
+    const err = new PwshSessionError(
+      "session crashed mid-task",
+      "session_crashed",
+      { container: "Cronus28", lastOutput: "..." },
+    );
+    assertEquals(err.code, "session_crashed");
+    assertEquals(err.context, {
+      container: "Cronus28",
+      lastOutput: "...",
+    });
+    assert(err instanceof Error);
+  });
+
+  it("accepts the five documented codes", () => {
+    const codes: Array<PwshSessionError["code"]> = [
+      "session_init_failed",
+      "session_crashed",
+      "session_timeout",
+      "session_recycle_failed",
+      "session_state_violation",
+    ];
+    for (const c of codes) {
+      const e = new PwshSessionError("x", c);
       assertEquals(e.code, c);
     }
   });

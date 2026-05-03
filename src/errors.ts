@@ -343,6 +343,25 @@ export class CatalogSeedError extends CentralGaugeError {
 }
 
 /**
+ * Error during persistent pwsh session lifecycle (init, execute, recycle, dispose)
+ */
+export class PwshSessionError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public override readonly code:
+      | "session_init_failed"
+      | "session_crashed"
+      | "session_timeout"
+      | "session_recycle_failed"
+      | "session_state_violation",
+    context?: Record<string, unknown>,
+  ) {
+    super(message, code, context);
+    this.name = "PwshSessionError";
+  }
+}
+
+/**
  * Check if an error is retryable (rate limits, transient network issues)
  */
 export function isRetryableError(error: unknown): boolean {
