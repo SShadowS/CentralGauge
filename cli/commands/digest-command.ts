@@ -34,7 +34,7 @@ import {
   loadAdminConfig,
   readPrivateKey,
 } from "../../src/ingest/config.ts";
-import { computeTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
+import { resolveCurrentTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
 import {
   fetchDigestInputs,
   generateDigest,
@@ -105,11 +105,7 @@ export function parseDuration(s: string): number {
 
 async function resolveTaskSetHash(taskSetFlag: string): Promise<string> {
   if (taskSetFlag !== "current") return taskSetFlag;
-  try {
-    return await computeTaskSetHash(`${Deno.cwd()}/tasks`);
-  } catch {
-    return "current";
-  }
+  return await resolveCurrentTaskSetHash();
 }
 
 async function handleDigest(flags: DigestFlags): Promise<void> {

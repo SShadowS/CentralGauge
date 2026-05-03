@@ -44,7 +44,7 @@ import {
   loadAdminConfig,
   readPrivateKey,
 } from "../../src/ingest/config.ts";
-import { computeTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
+import { resolveCurrentTaskSetHash } from "../../src/ingest/catalog/task-set-hash.ts";
 import { currentState } from "../../src/lifecycle/event-log.ts";
 import type {
   CurrentStateMap,
@@ -189,21 +189,14 @@ async function listAllModels(siteUrl: string): Promise<string[]> {
 }
 
 /**
- * Resolve the `current` task_set sentinel to a real hash. Uses the same
- * `computeTaskSetHash(cwd/tasks)` helper the `cycle` command uses, so the
- * two commands always agree on what "current" means (Plan H §H0.1b parity
+ * Resolve the `current` task_set sentinel to a real hash. Uses the shared
+ * `resolveCurrentTaskSetHash` helper so the `status`, `digest`, and `cycle`
+ * commands always agree on what "current" means (Plan H §H0.1b parity
  * check is enforced by construction — same helper, same input).
  */
 async function resolveTaskSetHash(taskSetFlag: string): Promise<string> {
   if (taskSetFlag !== "current") return taskSetFlag;
-  try {
-    return await computeTaskSetHash(`${Deno.cwd()}/tasks`);
-  } catch {
-    // No tasks/ dir (e.g. running from a non-project cwd) — fall back to
-    // the literal sentinel so the command still attempts a query and the
-    // operator gets a clear error from the worker.
-    return "current";
-  }
+  return await resolveCurrentTaskSetHash();
 }
 
 interface FetchAllStateDeps {

@@ -19,7 +19,7 @@
 import * as colors from "@std/fmt/colors";
 import { appendEvent, queryEvents } from "./event-log.ts";
 import { collectEnvelope, collectToolVersions } from "./envelope.ts";
-import { computeTaskSetHash } from "../ingest/catalog/task-set-hash.ts";
+import { resolveCurrentTaskSetHash } from "../ingest/catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "../ingest/config.ts";
 import { runBenchStep } from "./steps/bench-step.ts";
 import { runDebugCaptureStep } from "./steps/debug-capture-step.ts";
@@ -463,18 +463,9 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
   const actorId = config.machineId ?? null;
 
   for (const modelSlug of opts.llms) {
-    let taskSetHash: string;
-    if (opts.taskSet === "current") {
-      try {
-        taskSetHash = await computeTaskSetHash(`${cwd}/tasks`);
-      } catch {
-        // No tasks/ dir (e.g. inside an integration-test temp dir) — fall
-        // back to the literal sentinel so events are still attributable.
-        taskSetHash = "current";
-      }
-    } else {
-      taskSetHash = opts.taskSet;
-    }
+    const taskSetHash = opts.taskSet === "current"
+      ? await resolveCurrentTaskSetHash(cwd)
+      : opts.taskSet;
 
     // Force-unlock path is one-shot per model: write cycle.aborted, return.
     if (opts.forceUnlock) {
