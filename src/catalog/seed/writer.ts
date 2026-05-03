@@ -4,10 +4,11 @@
  * @module catalog/seed/writer
  */
 
+import { stringify } from "@std/yaml";
 import type { FamilyRow } from "./types.ts";
 import { CatalogSeedError } from "../../errors.ts";
 
-interface AppendResult {
+export interface AppendResult {
   added: boolean;
 }
 
@@ -49,10 +50,9 @@ function familyExists(content: string, slug: string): boolean {
 }
 
 function familyRowToYaml(row: FamilyRow): string {
-  return `- slug: ${row.slug}
-  vendor: ${row.vendor}
-  display_name: ${row.display_name}
-`;
+  // Use a single-element array so output is sequence-of-mapping form ("- slug: ...").
+  // stringify auto-quotes values containing YAML metacharacters (colons, hashes, etc.).
+  return stringify([row], { lineWidth: -1 });
 }
 
 export async function ensureFamily(

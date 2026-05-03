@@ -82,4 +82,27 @@ describe("ensureFamily", () => {
     assertEquals(caught instanceof CatalogSeedError, true);
     assertEquals((caught as CatalogSeedError).code, "SEED_YAML_WRITE");
   });
+
+  it("safely quotes values containing YAML special characters (colon)", async () => {
+    const dir = await createTempDir("seed-family-special");
+    const path = `${dir}/model-families.yml`;
+    await Deno.writeTextFile(path, "");
+
+    try {
+      const result = await ensureFamily(path, {
+        slug: "grok",
+        vendor: "xAI",
+        display_name: "xAI: Grok 4.3",
+      });
+      assertEquals(result.added, true);
+
+      // Round-trip: parse the file and confirm we get the expected display_name back.
+      const content = await Deno.readTextFile(path);
+      const parsed = parseYaml(content) as Array<Record<string, string>>;
+      assertEquals(parsed.length, 1);
+      assertEquals(parsed[0]?.["display_name"], "xAI: Grok 4.3");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
 });
