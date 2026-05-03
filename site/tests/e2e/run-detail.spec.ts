@@ -28,15 +28,16 @@ test.describe("/runs/:id", () => {
   });
 
   test("signature tab loads and verify works", async ({ page }) => {
-    await page.goto(`/runs/${FIXTURE.run.run0}`);
+    await page.goto(`/runs/${FIXTURE.run.run0}`, { waitUntil: "networkidle" });
+    // Wait for the signature API response that the click triggers,
+    // rather than racing the network with a fixed timeout. Eliminates
+    // the "first-hit slow, retry fast" flake mode entirely.
+    const sigResponse = page.waitForResponse((r) =>
+      r.url().includes(`/api/v1/runs/${FIXTURE.run.run0}/signature`)
+    );
     await page.getByRole("tab", { name: "Signature" }).click();
-    // 10s (not 5s): the signature endpoint hits two cold D1 queries on
-    // the first /runs/run-0000 page-load of the run, and the global
-    // workerd warmup occasionally crosses 5s on CI. Test exists to
-    // confirm the verify button responds, not to enforce an SLA.
-    await expect(page.getByRole("button", { name: /verify/i })).toBeVisible({
-      timeout: 10000,
-    });
+    await sigResponse;
+    await expect(page.getByRole("button", { name: /verify/i })).toBeVisible();
     await page.getByRole("button", { name: /verify/i }).click();
     // Either valid (✓) or invalid (✗) — both are valid outcomes; we just want
     // confirmation the button responded

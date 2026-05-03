@@ -62,6 +62,16 @@ for (const p of [...ADMIN_LIFECYCLE_PAGES, ...FAMILY_DIFF_PAGES]) {
 
 for (const p of PAGES) {
   test.describe(`visual:${p.name}`, () => {
+    // Linux baselines have not been captured yet; only -win32.png and
+    // -darwin.png exist under __screenshots__/. Per the per-platform
+    // policy in playwright.config.ts:45, Linux CI cannot diff against
+    // win32 baselines (font hinting / DPR drift). Skip until baselines
+    // are captured via `npx playwright test --update-snapshots` on
+    // Ubuntu (see CONTRIBUTING.md J6 / docs/site/operations.md).
+    test.skip(
+      process.platform === "linux",
+      "Linux baselines not captured — see snapshotPathTemplate / CONTRIBUTING.md J6",
+    );
     for (const theme of THEMES) {
       for (const density of DENSITIES) {
         test(`${theme} · ${density}`, async ({ page }) => {
