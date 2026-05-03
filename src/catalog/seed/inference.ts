@@ -5,6 +5,14 @@
  * @module catalog/seed/inference
  */
 
+import type {
+  FamilyRow,
+  ModelRow,
+  OpenRouterMeta,
+  PricingRow,
+} from "./types.ts";
+import { CatalogSeedError } from "../../errors.ts";
+
 // ---------------------------------------------------------------------------
 // parseSlug
 // ---------------------------------------------------------------------------
@@ -116,4 +124,108 @@ export function inferReleasedAt(epochSeconds: number | null): string | null {
   const ms = epochSeconds * 1000;
   const date = new Date(ms);
   return date.toISOString().slice(0, 10);
+}
+
+// ---------------------------------------------------------------------------
+// mergeMetadata
+// ---------------------------------------------------------------------------
+
+interface MergeInput {
+  slug: string;
+  litellm: { input: number; output: number } | null;
+  openrouter: OpenRouterMeta | null;
+}
+
+interface MergeOutput {
+  model: ModelRow;
+  family: FamilyRow;
+  pricing: PricingRow;
+}
+
+export function mergeMetadata(input: MergeInput): MergeOutput {
+  const parsed = parseSlug(input.slug);
+  const today = new Date().toISOString();
+  const todayDate = today.slice(0, 10);
+
+  const isOpenrouterSlug = parsed.provider === "openrouter";
+
+  // Pricing: OR-only for openrouter slugs; prefer LiteLLM for direct provider slugs
+  let pricingValues: { input: number; output: number };
+  let pricingSource: "litellm" | "openrouter";
+  if (isOpenrouterSlug) {
+    if (!input.openrouter) {
+      throw new CatalogSeedError(
+        `no pricing source for ${input.slug} (OpenRouter has no entry)`,
+        "SEED_NO_PRICING",
+        { slug: input.slug },
+      );
+    }
+    pricingValues = input.openrouter.pricing;
+    pricingSource = "openrouter";
+  } else {
+    if (input.litellm) {
+      pricingValues = input.litellm;
+      pricingSource = "litellm";
+    } else if (input.openrouter) {
+      pricingValues = input.openrouter.pricing;
+      pricingSource = "openrouter";
+    } else {
+      throw new CatalogSeedError(
+        `no pricing source for ${input.slug} (LiteLLM and OpenRouter both empty)`,
+        "SEED_NO_PRICING",
+        { slug: input.slug },
+      );
+    }
+  }
+
+  const family = inferFamilySlug(
+    parsed.provider,
+    parsed.model,
+    parsed.subVendor,
+  );
+  const displayName = inferDisplayName(
+    input.slug,
+    input.openrouter?.displayName ?? null,
+  );
+  const generation = inferGeneration(parsed.model) ?? 0;
+  const releasedAt = input.openrouter?.releasedAt ?? null;
+
+  const apiModelId = isOpenrouterSlug
+    ? `${parsed.subVendor}/${parsed.model}`
+    : parsed.model;
+
+  const modelRow: ModelRow = {
+    slug: input.slug,
+    api_model_id: apiModelId,
+    family,
+    display_name: displayName,
+    generation,
+    ...(releasedAt ? { released_at: releasedAt } : {}),
+  };
+
+  const familyRow: FamilyRow = {
+    slug: family,
+    vendor: input.openrouter?.vendor ?? capitalize(parsed.provider),
+    display_name: capitalize(family),
+  };
+
+  const pricingRow: PricingRow = {
+    pricing_version: todayDate,
+    model_slug: input.slug,
+    effective_from: today,
+    effective_until: null,
+    input_per_mtoken: pricingValues.input,
+    output_per_mtoken: pricingValues.output,
+    cache_read_per_mtoken: 0,
+    cache_write_per_mtoken: 0,
+    source: pricingSource,
+    fetched_at: today,
+  };
+
+  return { model: modelRow, family: familyRow, pricing: pricingRow };
+}
+
+function capitalize(s: string): string {
+  if (s.length === 0) return s;
+  return s[0]!.toUpperCase() + s.slice(1);
 }

@@ -6,11 +6,13 @@
 
 import { assertEquals, assertThrows } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
+import { CatalogSeedError } from "../../../../src/errors.ts";
 import {
   inferDisplayName,
   inferFamilySlug,
   inferGeneration,
   inferReleasedAt,
+  mergeMetadata,
   parseSlug,
 } from "../../../../src/catalog/seed/inference.ts";
 
@@ -189,5 +191,69 @@ describe("inferReleasedAt", () => {
 
   it("returns null for Infinity", () => {
     assertEquals(inferReleasedAt(Infinity), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 6. mergeMetadata
+// ---------------------------------------------------------------------------
+
+describe("mergeMetadata", () => {
+  it("openrouter slug uses OR meta only for pricing", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/x-ai/grok-4.3",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 1.25, output: 2.5 },
+        displayName: "xAI: Grok 4.3",
+        vendor: "xAI",
+        releasedAt: "2025-11-01",
+      },
+    });
+    assertEquals(result.model.family, "grok");
+    assertEquals(result.model.display_name, "xAI: Grok 4.3");
+    assertEquals(result.pricing.input_per_mtoken, 1.25);
+    assertEquals(result.pricing.source, "openrouter");
+  });
+
+  it("direct provider slug uses LiteLLM price + OR metadata", () => {
+    const result = mergeMetadata({
+      slug: "anthropic/claude-haiku-4-5",
+      litellm: { input: 1, output: 5 },
+      openrouter: {
+        pricing: { input: 1, output: 5 },
+        displayName: "Anthropic: Claude Haiku 4.5",
+        vendor: "Anthropic",
+        releasedAt: "2026-01-15",
+      },
+    });
+    assertEquals(result.model.family, "claude");
+    assertEquals(result.model.released_at, "2026-01-15");
+    assertEquals(result.pricing.input_per_mtoken, 1);
+    assertEquals(result.pricing.source, "litellm");
+  });
+
+  it("direct provider slug works with LiteLLM only (no OR data)", () => {
+    const result = mergeMetadata({
+      slug: "openai/gpt-5.4",
+      litellm: { input: 2.5, output: 15 },
+      openrouter: null,
+    });
+    assertEquals(result.model.family, "gpt");
+    assertEquals(result.pricing.input_per_mtoken, 2.5);
+    assertEquals(result.pricing.source, "litellm");
+  });
+
+  it("throws SEED_NO_PRICING when no source has pricing", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openai/gpt-5.4",
+          litellm: null,
+          openrouter: null,
+        }),
+      CatalogSeedError,
+      "no pricing source",
+    );
   });
 });
