@@ -310,12 +310,33 @@ export class PwshContainerSession {
     }
   }
 
-  recycle(): Promise<void> {
-    throw new PwshSessionError(
-      "recycle not yet implemented",
-      "session_recycle_failed",
-      { container: this.containerName },
-    );
+  async recycle(): Promise<void> {
+    if (this._state !== "idle") {
+      throw new PwshSessionError(
+        `recycle called from non-idle state: ${this._state}`,
+        "session_state_violation",
+        { container: this.containerName, state: this._state },
+      );
+    }
+    this._state = "recycling";
+    await this.killProcess(); // sets state = "dead"
+    try {
+      await this.init(); // sets state = "idle" on success
+    } catch (e) {
+      // killProcess already set state = "dead"; re-throw as recycle_failed
+      if (e instanceof PwshSessionError) {
+        throw new PwshSessionError(
+          `recycle init failed: ${e.message}`,
+          "session_recycle_failed",
+          { container: this.containerName, cause: e.code },
+        );
+      }
+      throw new PwshSessionError(
+        `recycle init failed: ${e instanceof Error ? e.message : String(e)}`,
+        "session_recycle_failed",
+        { container: this.containerName },
+      );
+    }
   }
 
   dispose(): Promise<void> {

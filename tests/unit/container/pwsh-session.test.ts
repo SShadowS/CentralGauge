@@ -241,3 +241,116 @@ describe("PwshContainerSession.execute", () => {
     assertStringIncludes(result.output, "12345678-1111");
   });
 });
+
+describe("PwshContainerSession.recycle", () => {
+  it("disposes and reinits, resetting callCount", async () => {
+    let spawnCount = 0;
+    const mocks: ReturnType<typeof createMockPwshProcess>[] = [];
+    const factory = () => {
+      const m = createMockPwshProcess();
+      mocks.push(m);
+      spawnCount++;
+      return m.process;
+    };
+
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: factory,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 5_000,
+    });
+
+    // Init session 1
+    const initP = sess.init();
+    await new Promise((r) => setTimeout(r, 10));
+    const w1 = mocks[0]!.getStdinWrites().join("");
+    const t1 = w1.match(/CG-DONE-([a-f0-9-]+)-EXIT-/)![1]!;
+    mocks[0]!.emitStdout(`@@CG-DONE-${t1}-EXIT-0@@\n`);
+    await initP;
+
+    // Run an execute to bump callCount
+    const execP = sess.execute(`Write-Output x`);
+    await new Promise((r) => setTimeout(r, 10));
+    const w1b = mocks[0]!.getStdinWrites().join("");
+    const tokens = [...w1b.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    mocks[0]!.emitStdout(
+      `@@CG-DONE-${tokens[tokens.length - 1]![1]}-EXIT-0@@\n`,
+    );
+    await execP;
+    assertEquals(sess.callCount, 1);
+
+    // Recycle
+    const recycleP = sess.recycle();
+    await new Promise((r) => setTimeout(r, 10));
+    const w2 = mocks[1]!.getStdinWrites().join("");
+    const t2 = w2.match(/CG-DONE-([a-f0-9-]+)-EXIT-/)![1]!;
+    mocks[1]!.emitStdout(`@@CG-DONE-${t2}-EXIT-0@@\n`);
+    await recycleP;
+
+    assertEquals(spawnCount, 2);
+    assertEquals(sess.state, "idle");
+    assertEquals(sess.callCount, 0);
+    assertEquals(mocks[0]!.wasKilled(), true);
+  });
+
+  it("rejects when not idle", async () => {
+    const mock = createMockPwshProcess();
+    // Inline init helper since the existing initSession is scoped to the .execute describe block.
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 5_000,
+    });
+    const initP = sess.init();
+    await new Promise((r) => setTimeout(r, 10));
+    const writes0 = mock.getStdinWrites().join("");
+    const t0 = writes0.match(/CG-DONE-([a-f0-9-]+)-EXIT-/)![1]!;
+    mock.emitStdout(`@@CG-DONE-${t0}-EXIT-0@@\n`);
+    await initP;
+
+    const exec = sess.execute(`x`);
+    await assertRejects(
+      () => sess.recycle(),
+      PwshSessionError,
+      "recycle called from non-idle state",
+    );
+
+    // Drain
+    await new Promise((r) => setTimeout(r, 10));
+    const writes = mock.getStdinWrites().join("");
+    const tokensD = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    mock.emitStdout(`@@CG-DONE-${tokensD[tokensD.length - 1]![1]}-EXIT-0@@\n`);
+    await exec;
+  });
+
+  it("sets state=dead when reinit fails after dispose", async () => {
+    let spawnCount = 0;
+    const mocks: ReturnType<typeof createMockPwshProcess>[] = [];
+    const factory = () => {
+      spawnCount++;
+      if (spawnCount === 2) {
+        throw new Error("pwsh missing on 2nd spawn");
+      }
+      const m = createMockPwshProcess();
+      mocks.push(m);
+      return m.process;
+    };
+
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: factory,
+      bootstrapTimeoutMs: 5_000,
+    });
+
+    const initP = sess.init();
+    await new Promise((r) => setTimeout(r, 10));
+    const w1 = mocks[0]!.getStdinWrites().join("");
+    const t1 = w1.match(/CG-DONE-([a-f0-9-]+)-EXIT-/)![1]!;
+    mocks[0]!.emitStdout(`@@CG-DONE-${t1}-EXIT-0@@\n`);
+    await initP;
+
+    await assertRejects(
+      () => sess.recycle(),
+      PwshSessionError,
+    );
+    assertEquals(sess.state, "dead");
+  });
+});
