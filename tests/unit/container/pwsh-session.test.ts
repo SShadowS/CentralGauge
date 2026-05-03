@@ -44,6 +44,39 @@ describe("PwshContainerSession.init", () => {
     assertEquals(sess.state, "idle");
     assertEquals(sess.isHealthy, true);
   });
+
+  it("drains stderr to the provided sink throughout the session lifetime", async () => {
+    const mock = createMockPwshProcess();
+    const stderrChunks: string[] = [];
+    const decoder = new TextDecoder();
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      stderrSink: (chunk) => stderrChunks.push(decoder.decode(chunk)),
+    });
+
+    const initPromise = sess.init();
+    // Emit stderr DURING bootstrap to prove the drain attaches before init completes.
+    await new Promise((r) => setTimeout(r, 10));
+    mock.emitStderr("warning: BCH module v6.1.11 loaded\n");
+    // Resolve bootstrap so init() finishes.
+    const writes = mock.getStdinWrites().join("");
+    const tokenMatch = writes.match(/CG-DONE-([a-f0-9-]+)-EXIT-/);
+    if (!tokenMatch) throw new Error("no bootstrap token in stdin");
+    mock.emitStdout(`@@CG-DONE-${tokenMatch[1]}-EXIT-0@@\n`);
+    await initPromise;
+
+    // Emit more stderr after init.
+    mock.emitStderr("post-init noise\n");
+    // Yield so the drain reader picks up the chunk.
+    await new Promise((r) => setTimeout(r, 10));
+
+    await sess.dispose();
+
+    const text = stderrChunks.join("");
+    assertStringIncludes(text, "BCH module v6.1.11 loaded");
+    assertStringIncludes(text, "post-init noise");
+  });
 });
 
 describe("PwshContainerSession.init failure paths", () => {

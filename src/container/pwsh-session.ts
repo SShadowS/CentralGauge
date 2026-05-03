@@ -17,6 +17,13 @@ export interface PwshSessionOptions {
   bootstrapScript?: string;
   /** Test seam: factory for spawning the pwsh child process. */
   spawnFactory?: () => SpawnedProcess;
+  /**
+   * Optional sink invoked for every stderr chunk drained from the child.
+   * Default discards. Used by tests to assert drain behavior, and by
+   * `BcContainerProvider` (in verbose mode) to route diagnostics to a log.
+   * Errors thrown by the sink are caught and ignored.
+   */
+  stderrSink?: (chunk: Uint8Array) => void;
 }
 
 export interface ExecuteResult {
@@ -58,6 +65,8 @@ export class PwshContainerSession {
   private readonly _bootstrapTimeoutMs: number;
   private readonly _bootstrapScript: string;
   private readonly _spawnFactory: () => SpawnedProcess;
+  private readonly _stderrSink: (chunk: Uint8Array) => void;
+  private _stderrDrainPromise: Promise<void> | null = null;
 
   constructor(
     public readonly containerName: string,
@@ -70,6 +79,7 @@ export class PwshContainerSession {
       DEFAULT_BOOTSTRAP_TIMEOUT_MS;
     this._bootstrapScript = options.bootstrapScript ?? DEFAULT_BOOTSTRAP_SCRIPT;
     this._spawnFactory = options.spawnFactory ?? defaultSpawnFactory;
+    this._stderrSink = options.stderrSink ?? (() => {});
   }
 
   get state(): SessionState {
@@ -110,6 +120,27 @@ export class PwshContainerSession {
     this._process = proc;
     this._stdoutBuffer = "";
     this._stdoutReader = proc.stdout.getReader();
+
+    // Drain stderr in the background. The session reads stdout for the marker
+    // protocol but never reads stderr; without this drain, anything pwsh writes
+    // to its own stderr (parser warnings, BCH module warnings outside the
+    // script's `2>&1` scope, etc.) fills the OS pipe (~64 KB on Windows) and
+    // blocks pwsh on the next stderr write — silently freezing the session.
+    // Lives inside init() so it covers ANY SpawnedProcess (real pwsh + mocks),
+    // making the behavior unit-testable.
+    this._stderrDrainPromise = proc.stderr
+      .pipeTo(
+        new WritableStream({
+          write: (chunk) => {
+            try {
+              this._stderrSink(chunk);
+            } catch {
+              // Sink errors must not break the drain; swallow.
+            }
+          },
+        }),
+      )
+      .catch(() => {/* stream closed; safe to ignore */});
 
     // Send the bootstrap script with a marker
     const token = crypto.randomUUID();
@@ -267,17 +298,19 @@ export class PwshContainerSession {
     } catch {
       // ignore — reader may already be closed
     }
-    // Close stdin and cancel stderr so Deno's resource leak detector is
-    // satisfied. Both operations are best-effort.
+    // Close stdin so Deno's resource leak detector is satisfied. Best-effort.
     try {
       await this._process?.stdin.close();
     } catch {
       // ignore
     }
-    try {
-      await this._process?.stderr.cancel();
-    } catch {
-      // ignore
+    // The stderr drain (started in init) holds the only ReadableStreamReader
+    // for stderr. It resolves when the process exits or its stream errors;
+    // await it so we don't leave an orphaned background pipe. Already caught
+    // in the drain itself, so this never throws.
+    if (this._stderrDrainPromise) {
+      await this._stderrDrainPromise;
+      this._stderrDrainPromise = null;
     }
     this._process = null;
     this._stdoutReader = null;
@@ -385,23 +418,14 @@ export class PwshContainerSession {
 }
 
 function defaultSpawnFactory(): SpawnedProcess {
-  const proc = new Deno.Command("pwsh", {
+  // stderr drain happens in PwshContainerSession.init so it covers any
+  // SpawnedProcess (real pwsh + test mocks).
+  return new Deno.Command("pwsh", {
     args: ["-NoLogo", "-NoProfile", "-NoExit", "-Command", "-"],
     stdin: "piped",
     stdout: "piped",
     stderr: "piped",
   }).spawn();
-  // Drain stderr in the background. The session reads stdout for the marker
-  // protocol but never reads stderr; without this drain, anything pwsh writes
-  // to its own stderr (parser warnings, BCH module warnings outside the
-  // script's `2>&1` scope, etc.) fills the OS pipe (~64 KB on Windows) and
-  // blocks pwsh on the next stderr write — silently freezing the session.
-  proc.stderr.pipeTo(
-    new WritableStream({
-      write() {/* discard */},
-    }),
-  ).catch(() => {/* stream closed; safe to ignore */});
-  return proc;
 }
 
 function escapeRegex(s: string): string {
