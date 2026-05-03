@@ -18,15 +18,16 @@ section at the top, committing, and redeploying. The site reads this
 file at build time via Vite's `?raw` import; runtime reads are not
 supported by design (zero D1 writes, deterministic bundles).
 
-## Lifecycle tracking (2026-04-29)
+## New site live at ai.sshadows.dk (2026-05-04)
 
-- `centralgauge cycle --llms <slug>` orchestrates the full
-  bench → analyze → publish pipeline as one resumable command.
-- A weekly CI workflow keeps every model in the catalog current and
-  posts a digest issue when anything regresses.
-- A new admin surface at `/admin/lifecycle` hosts the analyzer review
-  queue, the per-model event timeline, and the lifecycle status
-  matrix.
+The scoreboard moved from `centralgauge.sshadows.workers.dev` to its
+permanent home at **[ai.sshadows.dk](https://ai.sshadows.dk/)**. The
+old workers.dev URL still serves as a fallback.
+
+All benchmarks are being **re-run from scratch** — the AL test suite
+has been hardened (better assertions, prereq apps, fewer false
+passes), so prior scores are not directly comparable. Fresh results
+will land on the leaderboard over the next ~24 hours.
 
 ## Live updates + cmd-K palette (2026-04-26)
 
