@@ -40,4 +40,23 @@ describe("createMockPwshProcess", () => {
     assertEquals(status.success, false);
     assertEquals(status.code, 1);
   });
+
+  it("kill() sets wasKilled and resolves status with code 137", async () => {
+    const mock = createMockPwshProcess();
+    assertEquals(mock.wasKilled(), false);
+    mock.process.kill("SIGTERM");
+    const status = await mock.process.status;
+    assertEquals(mock.wasKilled(), true);
+    assertEquals(status.code, 137);
+    assertEquals(status.success, false);
+  });
+
+  it("emitStdout after exit does not throw or warn", async () => {
+    const mock = createMockPwshProcess();
+    mock.exit(0);
+    await mock.process.status;
+    // Should not throw or trigger unhandled rejection.
+    mock.emitStdout("late\n");
+    mock.emitStderr("late\n");
+  });
 });

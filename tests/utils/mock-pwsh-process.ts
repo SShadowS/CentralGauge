@@ -11,7 +11,7 @@ export interface MockPwshProcess {
     stdout: ReadableStream<Uint8Array>;
     stderr: ReadableStream<Uint8Array>;
     status: Promise<{ success: boolean; code: number }>;
-    kill: (_signal?: Deno.Signal) => void;
+    kill: (signal?: Deno.Signal) => void;
   };
   /** Returns text-decoded chunks written to stdin. */
   getStdinWrites: () => string[];
@@ -71,10 +71,14 @@ export function createMockPwshProcess(): MockPwshProcess {
     },
     getStdinWrites: () => [...stdinWrites],
     emitStdout(text) {
-      stdoutWriter.write(encoder.encode(text));
+      stdoutWriter.write(encoder.encode(text)).catch(() => {
+        // stream closed — ignore late emissions
+      });
     },
     emitStderr(text) {
-      stderrWriter.write(encoder.encode(text));
+      stderrWriter.write(encoder.encode(text)).catch(() => {
+        // stream closed — ignore late emissions
+      });
     },
     exit(code) {
       resolveStatus({ success: code === 0, code });
