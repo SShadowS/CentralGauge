@@ -25,7 +25,11 @@ export interface ParsedSlug {
 
 export function parseSlug(slug: string): ParsedSlug {
   if (!slug.includes("/")) {
-    throw new Error(`invalid slug (must contain '/'): ${slug}`);
+    throw new CatalogSeedError(
+      `invalid slug (must contain '/'): ${slug}`,
+      "SEED_INVALID_SLUG",
+      { slug },
+    );
   }
   const parts = slug.split("/");
   const provider = parts[0]!;
@@ -77,9 +81,11 @@ export function inferFamilySlug(
       break;
     }
   }
-  throw new Error(
+  throw new CatalogSeedError(
     `cannot infer family for ${provider}/${model}` +
       (subVendor ? ` (sub-vendor=${subVendor})` : ""),
+    "SEED_INVALID_SLUG",
+    { provider, model, subVendor: subVendor ?? null },
   );
 }
 

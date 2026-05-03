@@ -98,6 +98,51 @@ describe("seedMissingSlugs", () => {
     }
   });
 
+  it("collects SEED_INVALID_SLUG errors per slug without aborting others", async () => {
+    const dir = await makeCatalogDir("seed-runner-invalid");
+
+    const deps: SeedDeps = {
+      fetchOpenRouter: (orSlug) =>
+        Promise.resolve(
+          orSlug === "x-ai/grok-4.3"
+            ? {
+              pricing: { input: 1.25, output: 2.5 },
+              displayName: "xAI: Grok 4.3",
+              vendor: "xAI",
+              releasedAt: null,
+            }
+            : {
+              // Provide pricing so the family-inference step is reached
+              pricing: { input: 1.0, output: 2.0 },
+              displayName: "Unknown",
+              vendor: "Unknown",
+              releasedAt: null,
+            },
+        ),
+      fetchLiteLLM: () => null,
+    };
+
+    try {
+      const result = await seedMissingSlugs(
+        {
+          slugs: [
+            "openrouter/x-ai/grok-4.3", // valid, should succeed
+            "no-slash-here", // SEED_INVALID_SLUG (no /)
+            "acme/unknown-9000", // SEED_INVALID_SLUG (unknown family)
+          ],
+          catalogDir: dir,
+        },
+        deps,
+      );
+      assertEquals(result.modelsAdded, 1);
+      assertEquals(result.errors.length, 2);
+      assertEquals(result.errors[0]?.error.code, "SEED_INVALID_SLUG");
+      assertEquals(result.errors[1]?.error.code, "SEED_INVALID_SLUG");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
   it("collects SEED_NO_PRICING errors per slug without aborting others", async () => {
     const dir = await makeCatalogDir("seed-runner-errs");
 

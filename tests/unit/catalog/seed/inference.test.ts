@@ -45,12 +45,15 @@ describe("parseSlug", () => {
     });
   });
 
-  it("throws when no slash is present", () => {
-    assertThrows(
-      () => parseSlug("invalid"),
-      Error,
-      "invalid slug",
-    );
+  it("throws CatalogSeedError on slug without /", () => {
+    let err: unknown = null;
+    try {
+      parseSlug("invalid");
+    } catch (e) {
+      err = e;
+    }
+    assertEquals(err instanceof CatalogSeedError, true);
+    assertEquals((err as CatalogSeedError).code, "SEED_INVALID_SLUG");
   });
 });
 
@@ -98,12 +101,15 @@ describe("inferFamilySlug", () => {
     );
   });
 
-  it("throws for unknown provider", () => {
-    assertThrows(
-      () => inferFamilySlug("acme", "ai-9000"),
-      Error,
-      "cannot infer family",
-    );
+  it("throws CatalogSeedError on unrecognized provider", () => {
+    let err: unknown = null;
+    try {
+      inferFamilySlug("acme", "ai-9000");
+    } catch (e) {
+      err = e;
+    }
+    assertEquals(err instanceof CatalogSeedError, true);
+    assertEquals((err as CatalogSeedError).code, "SEED_INVALID_SLUG");
   });
 });
 

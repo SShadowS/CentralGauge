@@ -14,12 +14,13 @@ describe("CatalogSeedError", () => {
     assert(err instanceof Error);
   });
 
-  it("accepts the four documented codes", () => {
+  it("accepts the five documented codes", () => {
     const codes: Array<CatalogSeedError["code"]> = [
       "SEED_NO_PRICING",
       "SEED_NETWORK",
       "SEED_MISSING_KEY",
       "SEED_YAML_WRITE",
+      "SEED_INVALID_SLUG",
     ];
     for (const c of codes) {
       const e = new CatalogSeedError("x", c);
