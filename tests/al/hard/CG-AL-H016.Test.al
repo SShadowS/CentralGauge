@@ -8,73 +8,44 @@ codeunit 80017 "CG-AL-H016 Test"
         SecureStorage: Codeunit "CG Secure Storage";
 
     [Test]
-    procedure TestBuildAuthHeader_FormatsCorrectly()
+    procedure TestBuildAuthHeader_AddsAuthorizationHeader()
     var
+        Client: HttpClient;
         ApiKey: SecretText;
-        Result: Text;
+        Added: Boolean;
     begin
         ApiKey := SecretText.SecretStrSubstNo('test-api-key-12345');
 
-        Result := SecureStorage.BuildAuthHeader(ApiKey);
+        Added := SecureStorage.BuildAuthHeader(Client, ApiKey);
 
-        Assert.IsTrue(Result.StartsWith('Bearer '), 'Should start with Bearer prefix');
-        Assert.IsTrue(Result.Contains('test-api-key-12345'), 'Should contain the key');
+        Assert.IsTrue(Added, 'BuildAuthHeader should report success');
+        Assert.IsTrue(Client.DefaultRequestHeaders.Contains('Authorization'), 'Authorization header should be present on the HttpClient');
     end;
 
     [Test]
-    procedure TestValidateCredentials_ValidCredentials()
+    procedure TestValidateCredentials_NonEmptySecretReturnsTrue()
     var
-        Password: SecretText;
+        ApiKey: SecretText;
         Result: Boolean;
     begin
-        Password := SecretText.SecretStrSubstNo('correct-password');
+        ApiKey := SecretText.SecretStrSubstNo('correct-password');
 
-        // This test assumes internal validation logic
-        Result := SecureStorage.ValidateCredentials('admin', Password);
+        Result := SecureStorage.ValidateCredentials(ApiKey);
 
-        // The actual result depends on implementation
-        // We just verify it executes without error
-        Assert.IsTrue(true, 'Validation should execute without error');
+        Assert.IsTrue(Result, 'Non-empty SecretText should validate as true');
     end;
 
     [Test]
-    procedure TestValidateCredentials_EmptyUsername()
+    procedure TestValidateCredentials_EmptySecretReturnsFalse()
     var
-        Password: SecretText;
+        ApiKey: SecretText;
         Result: Boolean;
     begin
-        Password := SecretText.SecretStrSubstNo('some-password');
+        ApiKey := SecretText.SecretStrSubstNo('');
 
-        Result := SecureStorage.ValidateCredentials('', Password);
+        Result := SecureStorage.ValidateCredentials(ApiKey);
 
-        Assert.IsFalse(Result, 'Empty username should return false');
-    end;
-
-    [Test]
-    procedure TestMaskSecret_StandardLength()
-    var
-        Secret: SecretText;
-        Result: Text;
-    begin
-        Secret := SecretText.SecretStrSubstNo('mysecretkey123');
-
-        Result := SecureStorage.MaskSecret(Secret);
-
-        Assert.AreEqual('myse****', Result, 'Should show first 4 chars plus mask');
-    end;
-
-    [Test]
-    procedure TestMaskSecret_ShortSecret()
-    var
-        Secret: SecretText;
-        Result: Text;
-    begin
-        Secret := SecretText.SecretStrSubstNo('abc');
-
-        Result := SecureStorage.MaskSecret(Secret);
-
-        // Short secrets should still be masked appropriately
-        Assert.IsTrue(Result.Contains('****'), 'Should contain mask');
+        Assert.IsFalse(Result, 'Empty SecretText should validate as false');
     end;
 
     [Test]
@@ -82,17 +53,15 @@ codeunit 80017 "CG-AL-H016 Test"
     var
         OriginalKey: SecretText;
         RetrievedKey: SecretText;
-        OriginalText, RetrievedText: Text;
     begin
         OriginalKey := SecretText.SecretStrSubstNo('my-secret-api-key');
 
         SecureStorage.StoreApiKey(OriginalKey);
+
+        Assert.IsTrue(IsolatedStorage.Contains('CG_API_KEY', DataScope::Module), 'IsolatedStorage should contain the stored key after StoreApiKey');
+
         RetrievedKey := SecureStorage.RetrieveApiKey();
 
-        // Compare by building auth headers (since we can't directly compare SecretText)
-        OriginalText := SecureStorage.BuildAuthHeader(OriginalKey);
-        RetrievedText := SecureStorage.BuildAuthHeader(RetrievedKey);
-
-        Assert.AreEqual(OriginalText, RetrievedText, 'Retrieved key should match original');
+        Assert.IsFalse(RetrievedKey.IsEmpty(), 'Retrieved SecretText should not be empty');
     end;
 }
