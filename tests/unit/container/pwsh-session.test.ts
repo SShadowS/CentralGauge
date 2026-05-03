@@ -113,3 +113,57 @@ describe("PwshContainerSession.init failure paths", () => {
     );
   });
 });
+
+describe("PwshContainerSession.execute", () => {
+  // Helper: bring a session to idle state via mock bootstrap.
+  async function initSession(mock: ReturnType<typeof createMockPwshProcess>) {
+    const sess = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 5_000,
+    });
+    const initPromise = sess.init();
+    await new Promise((r) => setTimeout(r, 10));
+    const writes = mock.getStdinWrites().join("");
+    const tokenMatch = writes.match(/CG-DONE-([a-f0-9-]+)-EXIT-/);
+    mock.emitStdout(`@@CG-DONE-${tokenMatch![1]}-EXIT-0@@\n`);
+    await initPromise;
+    return sess;
+  }
+
+  it("returns marker output and exitCode 0 on success", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    // Issue an execute call. The session writes the wrapped script with a fresh token.
+    const execPromise = sess.execute(`Write-Output "hi"`);
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Find the new token (last marker mention in stdin).
+    const writes = mock.getStdinWrites().join("");
+    const tokens = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    const lastToken = tokens[tokens.length - 1]![1]!;
+
+    // Emit the script's output then the marker.
+    mock.emitStdout(`hi\n@@CG-DONE-${lastToken}-EXIT-0@@\n`);
+    const result = await execPromise;
+    assertEquals(result.output, "hi");
+    assertEquals(result.exitCode, 0);
+    assertEquals(sess.state, "idle");
+    assertEquals(sess.callCount, 1);
+  });
+
+  it("returns non-zero exitCode without throwing", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    const execPromise = sess.execute(`exit 1`);
+    await new Promise((r) => setTimeout(r, 10));
+    const writes = mock.getStdinWrites().join("");
+    const tokens = [...writes.matchAll(/CG-DONE-([a-f0-9-]+)-EXIT-/g)];
+    const lastToken = tokens[tokens.length - 1]![1]!;
+    mock.emitStdout(`@@CG-DONE-${lastToken}-EXIT-1@@\n`);
+    const result = await execPromise;
+    assertEquals(result.exitCode, 1);
+  });
+});

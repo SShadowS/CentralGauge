@@ -272,13 +272,42 @@ export class PwshContainerSession {
     this._state = "dead";
   }
 
-  execute(_script: string, _timeoutMs?: number): Promise<ExecuteResult> {
-    const timeout = _timeoutMs ?? this._defaultTimeoutMs;
-    throw new PwshSessionError(
-      "execute not yet implemented",
-      "session_state_violation",
-      { container: this.containerName, timeout },
-    );
+  async execute(
+    script: string,
+    timeoutMs?: number,
+  ): Promise<ExecuteResult> {
+    if (this._state !== "idle") {
+      throw new PwshSessionError(
+        `execute called from non-idle state: ${this._state}`,
+        "session_state_violation",
+        { container: this.containerName, state: this._state },
+      );
+    }
+    this._state = "running";
+    this._callCount++;
+    const start = Date.now();
+
+    const token = crypto.randomUUID();
+    const wrapped =
+      `& {\n  $LASTEXITCODE = 0\n${script}\n} 2>&1\nWrite-Output "@@CG-DONE-${token}-EXIT-$LASTEXITCODE@@"\n`;
+
+    try {
+      await this.writeToStdin(wrapped);
+      const result = await this.readUntilMarker(
+        token,
+        timeoutMs ?? this._defaultTimeoutMs,
+      );
+      this._state = "idle";
+      return {
+        output: result.output,
+        exitCode: result.exitCode,
+        durationMs: Date.now() - start,
+      };
+    } catch (e) {
+      // On any error during execute, the session is unhealthy.
+      await this.killProcess();
+      throw e;
+    }
   }
 
   recycle(): Promise<void> {
