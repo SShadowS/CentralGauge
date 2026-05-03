@@ -1747,3 +1747,126 @@ Deno.test({
     }
   },
 });
+
+// =============================================================================
+// publishApp — anti-conflict / republish-skip
+// =============================================================================
+
+Deno.test({
+  name:
+    "BcContainerProvider.publishApp script skips republish when same Name+Publisher+Version already present",
+  ignore: !isWindows,
+  async fn() {
+    let lastScript = "";
+    const provider = new BcContainerProvider();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = (script: string) => {
+      lastScript = script;
+      return Promise.resolve({
+        output: [
+          "PREREQ_ALREADY_PUBLISHED: CG-AL-H022 Prereq v1.0.0.0 (skip republish)",
+          "PUBLISH_SUCCESS",
+        ].join("\n"),
+        exitCode: 0,
+      });
+    };
+
+    const tmpDir = await Deno.makeTempDir();
+    const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
+    await Deno.writeTextFile(fakeApp, "fake-bytes");
+
+    try {
+      // Must not throw — skip path returns PUBLISH_SUCCESS without doing anything.
+      await provider.publishApp("Cronus28", fakeApp);
+      // Script must contain the skip-if-already-published check.
+      assertStringIncludes(
+        lastScript,
+        "PREREQ_ALREADY_PUBLISHED",
+        "script must implement the skip-if-already-published fast path",
+      );
+      assertStringIncludes(
+        lastScript,
+        '$alreadyPublished = ($oldApp -and $oldApp.Version -eq "1.0.0.0")',
+        "script must check version equality against the new app's version",
+      );
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "BcContainerProvider.publishApp script verifies unpublish actually succeeded (BC NST race guard)",
+  ignore: !isWindows,
+  async fn() {
+    let lastScript = "";
+    const provider = new BcContainerProvider();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = (script: string) => {
+      lastScript = script;
+      return Promise.resolve({
+        output: "PUBLISH_SUCCESS",
+        exitCode: 0,
+      });
+    };
+
+    const tmpDir = await Deno.makeTempDir();
+    const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
+    await Deno.writeTextFile(fakeApp, "fake-bytes");
+
+    try {
+      await provider.publishApp("Cronus28", fakeApp);
+      // Script must verify Unpublish actually committed by re-querying
+      // Get-BcContainerAppInfo, and fall through to NST-level
+      // Uninstall-NAVApp / Unpublish-NAVApp if BCH lied about success.
+      assertStringIncludes(
+        lastScript,
+        "$stillThere = Get-BcContainerAppInfo",
+        "script must re-query Get-BcContainerAppInfo after Unpublish",
+      );
+      assertStringIncludes(
+        lastScript,
+        "Uninstall-NAVApp",
+        "script must include NST-level Uninstall-NAVApp fallback",
+      );
+      assertStringIncludes(
+        lastScript,
+        "Unpublish-NAVApp",
+        "script must include NST-level Unpublish-NAVApp fallback",
+      );
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "BcContainerProvider.publishApp throws when output does not include PUBLISH_SUCCESS",
+  ignore: !isWindows,
+  async fn() {
+    const provider = new BcContainerProvider();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = () =>
+      Promise.resolve({
+        output:
+          "Publish-NAVApp: This Extension cannot be published as it has the same App ID and Version as a previously published Extension.",
+        exitCode: 1,
+      });
+
+    const tmpDir = await Deno.makeTempDir();
+    const fakeApp = `${tmpDir}\\CentralGauge_CG-AL-H022 Prereq_1.0.0.0.app`;
+    await Deno.writeTextFile(fakeApp, "fake-bytes");
+
+    try {
+      await assertRejects(
+        () => provider.publishApp("Cronus28", fakeApp),
+        Error,
+        "Publish failed",
+      );
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+    }
+  },
+});
