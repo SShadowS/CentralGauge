@@ -22,7 +22,7 @@ description: >-
      - Blocked (Boolean)
 
      In the OnModify trigger:
-     - Compare Rec with xRec
+     - Compare Rec with xRec. Use the framework-supplied xRec record passed into the trigger directly; do not call xRec.Get() or otherwise re-read xRec inside the trigger.
      - If "Unit Price" changed, create an audit log entry with:
        * "Field Changed" = 'Unit Price'
        * "Old Value" = Format(xRec."Unit Price")
