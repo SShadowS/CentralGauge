@@ -1843,6 +1843,81 @@ Deno.test({
 
 Deno.test({
   name:
+    "BcContainerProvider.prenukeCentralGaugeApps removes all CentralGauge apps across containers",
+  ignore: !isWindows,
+  async fn() {
+    const calledScripts: string[] = [];
+    const provider = new BcContainerProvider();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = (script: string) => {
+      calledScripts.push(script);
+      return Promise.resolve({
+        output: [
+          "PRENUKE_FOUND: Cronus28 count=2",
+          "PRENUKE_REMOVE: CentralGauge_CG-AL-E001_1 v1.0.0.0",
+          "PRENUKE_REMOVE: CG-AL-H022 Prereq v1.0.0.0",
+          "PRENUKE_DONE: Cronus28",
+        ].join("\n"),
+        exitCode: 0,
+      });
+    };
+
+    await provider.prenukeCentralGaugeApps(["Cronus28", "Cronus281"]);
+
+    assertEquals(
+      calledScripts.length,
+      2,
+      "must spawn one cleanup script per container",
+    );
+    for (const script of calledScripts) {
+      assertStringIncludes(
+        script,
+        '$_.Publisher -eq "CentralGauge"',
+        "script must filter Get-BcContainerAppInfo by Publisher=CentralGauge",
+      );
+      assertStringIncludes(
+        script,
+        "Unpublish-BcContainerApp",
+        "script must invoke BCH unpublish",
+      );
+      assertStringIncludes(
+        script,
+        "Uninstall-NAVApp",
+        "script must include NST-level NAV cleanup as defensive fallback",
+      );
+      assertStringIncludes(
+        script,
+        "$nonPrereq + $prereq",
+        "script must remove non-prereqs first, then prereqs (dependency order)",
+      );
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "BcContainerProvider.prenukeCentralGaugeApps tolerates per-container failures",
+  ignore: !isWindows,
+  async fn() {
+    const provider = new BcContainerProvider();
+    let callIdx = 0;
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = () => {
+      callIdx++;
+      if (callIdx === 1) {
+        return Promise.reject(new Error("simulated container down"));
+      }
+      return Promise.resolve({ output: "PRENUKE_CLEAN: ok", exitCode: 0 });
+    };
+
+    // Must not throw — per-container failures are logged + swallowed.
+    await provider.prenukeCentralGaugeApps(["Cronus28", "Cronus281"]);
+    assertEquals(callIdx, 2, "must attempt all containers despite failures");
+  },
+});
+
+Deno.test({
+  name:
     "BcContainerProvider.publishApp throws when output does not include PUBLISH_SUCCESS",
   ignore: !isWindows,
   async fn() {

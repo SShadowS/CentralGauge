@@ -101,6 +101,13 @@ export async function setupContainer(
 
   if (containerReady) {
     log.container(`Using existing: ${containerName}`);
+    // Pre-nuke any stale CentralGauge apps left over from a previous bench
+    // that was killed mid-test — without this the next publishApp hits
+    // bccontainerhelper@6.1.11's Unpublish-success-but-not-really race.
+    if ("prenukeCentralGaugeApps" in containerProvider) {
+      await (containerProvider as BcContainerProvider)
+        .prenukeCentralGaugeApps([containerName]);
+    }
     // Pre-create compiler folder before any work is enqueued
     if ("warmupCompilerFolders" in containerProvider) {
       await (containerProvider as BcContainerProvider).warmupCompilerFolders([
@@ -198,6 +205,14 @@ export async function setupContainers(
         `Container "${name}" is not running. Multi-container mode requires all containers to be pre-existing and healthy.`,
       );
     }
+  }
+
+  // Pre-nuke any stale CentralGauge apps left over from a previous bench
+  // that was killed mid-test — without this the next publishApp hits
+  // bccontainerhelper@6.1.11's Unpublish-success-but-not-really race.
+  if ("prenukeCentralGaugeApps" in containerProvider) {
+    await (containerProvider as BcContainerProvider)
+      .prenukeCentralGaugeApps(containerNames);
   }
 
   // Pre-create compiler folders for all containers before any work is enqueued

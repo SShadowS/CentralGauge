@@ -238,6 +238,71 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Pre-nuke any leftover CentralGauge-published apps in the given containers
+   * before the bench starts. A previous bench run that was killed mid-test
+   * may have left prereq or main apps in BC NST's catalog; without removal
+   * the next bench's first publishApp hits the bccontainerhelper@6.1.11
+   * Unpublish-success-but-not-really race on every prereq. Single
+   * spawn-per-call per container, idempotent.
+   *
+   * Removes non-Prereq apps first, then prereqs (handles dependency order).
+   * Errors per-app are swallowed (best-effort cleanup) — the next layer
+   * (publishApp's verify-unpublish guard) catches anything left behind.
+   */
+  async prenukeCentralGaugeApps(containerNames: string[]): Promise<void> {
+    if (!this.isWindows()) return;
+    await Promise.all(
+      containerNames.map(async (name) => {
+        const script = `
+          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          $bcContainerHelperConfig.usePwshForBc24 = $false
+          $existing = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Publisher -eq "CentralGauge" })
+          if ($existing.Count -eq 0) {
+            Write-Output "PRENUKE_CLEAN: ${name}"
+            return
+          }
+          Write-Output "PRENUKE_FOUND: ${name} count=$($existing.Count)"
+          # Two passes: non-prereq first (they may depend on prereqs), then prereqs.
+          $nonPrereq = @($existing | Where-Object { $_.Name -notlike "*Prereq*" })
+          $prereq    = @($existing | Where-Object { $_.Name -like  "*Prereq*" })
+          foreach ($app in @($nonPrereq + $prereq)) {
+            try {
+              Write-Output "PRENUKE_REMOVE: $($app.Name) v$($app.Version)"
+              Unpublish-BcContainerApp -containerName "${name}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
+              # Verify; if BCH lied, fall through to NST-level cleanup.
+              $stillThere = Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Name -eq $app.Name -and $_.Publisher -eq $app.Publisher -and $_.Version -eq $app.Version }
+              if ($stillThere) {
+                Invoke-ScriptInBcContainer -containerName "${name}" -scriptblock {
+                  param($n, $p, $v)
+                  try { Uninstall-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Force -ErrorAction SilentlyContinue } catch { }
+                  try { Unpublish-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -ErrorAction SilentlyContinue } catch { }
+                } -argumentList $app.Name, $app.Publisher, $app.Version
+              }
+            } catch {
+              Write-Output "PRENUKE_WARN: $($app.Name) - $($_.Exception.Message)"
+            }
+          }
+          Write-Output "PRENUKE_DONE: ${name}"
+        `;
+        try {
+          const result = await this.executePowerShell(script);
+          if (result.output.includes("PRENUKE_FOUND")) {
+            log.info(`Pre-nuked stale CentralGauge apps in ${name}`, {
+              output: result.output.split("\n")
+                .filter((l) => l.startsWith("PRENUKE_"))
+                .join(" | "),
+            });
+          }
+        } catch (e) {
+          log.warn(`prenukeCentralGaugeApps failed for ${name}`, {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }),
+    );
+  }
+
+  /**
    * Dispose all per-container session slots AND compile pools in parallel.
    * Each slot acquires its own lock so an in-flight call completes before its
    * session is killed; new callers are rejected via each slot's `disposing`
