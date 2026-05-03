@@ -341,43 +341,49 @@ export class PwshContainerSession {
     // inline. Invoking a .ps1 file avoids that entirely.
     const tmpScript = await Deno.makeTempFile({ suffix: ".ps1" });
     try {
-      await Deno.writeTextFile(tmpScript, script);
-    } catch (e) {
-      this._state = "idle";
-      throw new PwshSessionError(
-        `failed to write temp script: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-        "session_state_violation",
-        { container: this.containerName },
-      );
-    }
+      // --- Write phase ---
+      try {
+        await Deno.writeTextFile(tmpScript, script);
+      } catch (e) {
+        this._state = "idle";
+        throw new PwshSessionError(
+          `failed to write temp script: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+          "session_state_violation",
+          { container: this.containerName },
+        );
+      }
 
-    // $LASTEXITCODE is only set by native executables, not PS cmdlets.
-    // Use a null-safe capture so pure-cmdlet scripts emit EXIT-0.
-    // Everything is on one line so the REPL executes it immediately.
-    const escapedPath = tmpScript.replace(/\\/g, "\\\\");
-    const oneLiner =
-      `& '${escapedPath}' 2>&1; $cgExitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }; Write-Output "@@CG-DONE-${token}-EXIT-$cgExitCode@@"\n`;
+      // $LASTEXITCODE is only set by native executables, not PS cmdlets.
+      // Use a null-safe capture so pure-cmdlet scripts emit EXIT-0.
+      // Everything is on one line so the REPL executes it immediately.
+      const escapedPath = tmpScript.replace(/\\/g, "\\\\");
+      const oneLiner =
+        `& '${escapedPath}' 2>&1; $cgExitCode = if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { 0 }; Write-Output "@@CG-DONE-${token}-EXIT-$cgExitCode@@"\n`;
 
-    try {
-      await this.writeToStdin(oneLiner);
-      const result = await this.readUntilMarker(
-        token,
-        timeoutMs ?? this._defaultTimeoutMs,
-      );
-      this._state = "idle";
-      return {
-        output: result.output,
-        exitCode: result.exitCode,
-        durationMs: Date.now() - start,
-      };
-    } catch (e) {
-      // On any error during execute, the session is unhealthy.
-      await this.killProcess();
-      throw e;
+      // --- Execute phase ---
+      try {
+        await this.writeToStdin(oneLiner);
+        const result = await this.readUntilMarker(
+          token,
+          timeoutMs ?? this._defaultTimeoutMs,
+        );
+        this._state = "idle";
+        return {
+          output: result.output,
+          exitCode: result.exitCode,
+          durationMs: Date.now() - start,
+        };
+      } catch (e) {
+        // On any error during execute, the session is unhealthy.
+        await this.killProcess();
+        throw e;
+      }
     } finally {
       // Clean up the temp file; ignore errors (best-effort).
+      // Wrapping write + execute in one try/finally guarantees cleanup even
+      // when the write phase throws (previously leaked the empty temp file).
       Deno.remove(tmpScript).catch(() => {});
     }
   }
