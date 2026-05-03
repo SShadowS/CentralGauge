@@ -26,7 +26,13 @@ test.describe("/runs/:id", () => {
   test("signature tab loads and verify works", async ({ page }) => {
     await page.goto(`/runs/${FIXTURE.run.run0}`);
     await page.getByRole("tab", { name: "Signature" }).click();
-    await expect(page.getByRole("button", { name: /verify/i })).toBeVisible();
+    // 10s (not 5s): the signature endpoint hits two cold D1 queries on
+    // the first /runs/run-0000 page-load of the run, and the global
+    // workerd warmup occasionally crosses 5s on CI. Test exists to
+    // confirm the verify button responds, not to enforce an SLA.
+    await expect(page.getByRole("button", { name: /verify/i })).toBeVisible({
+      timeout: 10000,
+    });
     await page.getByRole("button", { name: /verify/i }).click();
     // Either valid (✓) or invalid (✗) — both are valid outcomes; we just want
     // confirmation the button responded
