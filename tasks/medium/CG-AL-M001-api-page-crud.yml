@@ -3,7 +3,7 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create a comprehensive API page called "Product API" with ID 70100 that provides full CRUD operations for a Product table.
+  Create a comprehensive API page called "Product API" with ID 70100 that provides full CRUD operations for the existing "Product" table (ID 69001) which already has fields No., Description, Unit Price, Stock Quantity, Category Id.
   The API should:
   - Support GET, POST, PATCH, DELETE operations
   - Include proper error handling and validation
