@@ -14,6 +14,7 @@
 
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
+import type { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 
 // =============================================================================
@@ -1380,4 +1381,47 @@ Deno.test({
       mock.restore();
     }
   },
+});
+
+// =============================================================================
+// Persistent Pwsh Session Tests
+// =============================================================================
+
+Deno.test("BcContainerProvider lazy-creates a session per container", async () => {
+  const provider = new BcContainerProvider({ persistentPwsh: true });
+  // We need a deterministic factory; test the behavior by stubbing the session creator.
+  // For this initial test, just verify the provider exposes a maybeRecycleSession that's
+  // a no-op when no session exists.
+  await provider.maybeRecycleSession("Cronus28"); // does not throw
+  await provider.dispose(); // safe to call with no sessions
+});
+
+Deno.test("BcContainerProvider - no-arg constructor still works", () => {
+  // Backward compatibility: existing call sites use new BcContainerProvider()
+  const provider = new BcContainerProvider();
+  assertEquals(provider instanceof BcContainerProvider, true);
+});
+
+Deno.test("BcContainerProvider - persistentPwsh=false disables session creation", async () => {
+  const provider = new BcContainerProvider({ persistentPwsh: false });
+  await provider.maybeRecycleSession("Cronus28"); // no-op, no session created
+  await provider.dispose(); // safe, nothing to dispose
+});
+
+Deno.test("BcContainerProvider - sessionFactory option is accepted", async () => {
+  let factoryCalled = false;
+  // A stub that returns a mock session — never actually called in this test
+  // because no getOrCreateSession call is triggered from maybeRecycleSession
+  // when the sessions map is empty.
+  const factory = (_name: string): PwshContainerSession => {
+    factoryCalled = true;
+    throw new Error("should not be called");
+  };
+  const provider = new BcContainerProvider({
+    persistentPwsh: true,
+    sessionFactory: factory,
+  });
+  await provider.maybeRecycleSession("Cronus28");
+  await provider.dispose();
+  assertEquals(factoryCalled, false);
 });

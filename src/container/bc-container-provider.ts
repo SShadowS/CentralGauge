@@ -24,6 +24,7 @@ import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("container:bc");
 import { ContainerError } from "../errors.ts";
+import { PwshContainerSession } from "./pwsh-session.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
@@ -73,6 +74,13 @@ function logSubTimings(output: string, contextLog: Logger = log): void {
   }
 }
 
+export interface BcContainerProviderOptions {
+  /** Enable persistent pwsh session reuse. Default true. */
+  persistentPwsh?: boolean;
+  /** Test seam: factory for creating sessions. Default uses real spawn. */
+  sessionFactory?: (name: string) => PwshContainerSession;
+}
+
 export class BcContainerProvider implements ContainerProvider {
   readonly name = "bccontainer";
   readonly platform = "windows" as const;
@@ -93,6 +101,18 @@ export class BcContainerProvider implements ContainerProvider {
   private _compilerCacheEnabled = true;
   private static readonly COMPILER_CACHE_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
+
+  // Persistent pwsh session map (one session per container name).
+  private readonly sessions = new Map<string, PwshContainerSession>();
+  private readonly persistentEnabled: boolean;
+  // sessionFactory stored for use in getOrCreateSession (Task 14).
+  readonly _sessionFactory: (name: string) => PwshContainerSession;
+
+  constructor(options: BcContainerProviderOptions = {}) {
+    this.persistentEnabled = options.persistentPwsh ?? true;
+    this._sessionFactory = options.sessionFactory ??
+      ((name) => new PwshContainerSession(name));
+  }
 
   /**
    * Enable or disable the persistent compiler cache.
@@ -123,6 +143,35 @@ export class BcContainerProvider implements ContainerProvider {
 
   private isWindows(): boolean {
     return Deno.build.os === "windows";
+  }
+
+  /**
+   * Recycle the per-container persistent pwsh session if it has reached the
+   * configured threshold. No-op when no session exists or session is unhealthy.
+   */
+  async maybeRecycleSession(name: string): Promise<void> {
+    if (!this.persistentEnabled) return;
+    const sess = this.sessions.get(name);
+    if (!sess) return;
+    if (!sess.isHealthy) return;
+    if (!sess.shouldRecycle) return;
+    try {
+      await sess.recycle();
+    } catch (e) {
+      log.warn("session recycle failed; will fall back to spawn-per-call", {
+        container: name,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      // Session state is now "dead"; getOrCreateSession will return null next call.
+    }
+  }
+
+  /** Dispose all per-container persistent sessions in parallel. */
+  async dispose(): Promise<void> {
+    await Promise.all(
+      Array.from(this.sessions.values()).map((s) => s.dispose()),
+    );
+    this.sessions.clear();
   }
 
   private async executePowerShell(
