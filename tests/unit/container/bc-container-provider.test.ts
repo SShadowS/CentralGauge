@@ -1442,17 +1442,11 @@ Deno.test("BcContainerProvider - sessionFactory option is accepted", async () =>
 
 Deno.test({
   name:
-    "BcContainerProvider.compileProject uses spawn-per-call, NOT the persistent session",
+    "BcContainerProvider.compileProject uses CompileSessionPool when compilePoolPerContainer > 0",
   ignore: !isWindows,
   async fn() {
-    // Compile is host-side (Compile-AppWithBcCompilerFolder doesn't need the
-    // cached PSSession that tests benefit from). Routing it through the slot
-    // would serialize all compiles through one stdin pipe and collapse the
-    // compileSemaphore=3 parallelism — the operator-visible symptom that
-    // showed up as widespread "Compile queue timeout after 300000ms" failures.
     let factoryCalls = 0;
     let executePowerShellCalls = 0;
-    let lastScript = "";
     const stubCompileOutput = [
       "COMPILE_SUCCESS",
       "APP_FILE:C:\\fake\\out.app",
@@ -1460,16 +1454,33 @@ Deno.test({
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
+      compilePoolPerContainer: 3,
       sessionFactory: () => {
         factoryCalls++;
-        throw new Error("session must not be created for compileProject");
+        const mock = createMockPwshProcess();
+        const sess = new PwshContainerSession("Cronus28", {
+          spawnFactory: () => mock.process,
+        });
+        // Stub init to instant-idle so pool slot's ensureHealthy completes.
+        // deno-lint-ignore no-explicit-any
+        (sess as any).init = () => {
+          // deno-lint-ignore no-explicit-any
+          (sess as any)._state = "idle";
+          return Promise.resolve();
+        };
+        // deno-lint-ignore no-explicit-any
+        (sess as any).execute = (_script: string) =>
+          Promise.resolve({
+            output: stubCompileOutput,
+            exitCode: 0,
+            durationMs: 10,
+          });
+        return sess;
       },
     });
-    // Stub the spawn-per-call path. compileProject must hit this directly.
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = (script: string) => {
+    (provider as any).executePowerShell = () => {
       executePowerShellCalls++;
-      lastScript = script;
       return Promise.resolve({ output: stubCompileOutput, exitCode: 0 });
     };
 
@@ -1490,21 +1501,71 @@ Deno.test({
         } as any,
       );
       assertEquals(
-        executePowerShellCalls,
+        factoryCalls,
         1,
-        "compile must go through executePowerShell (spawn-per-call)",
+        "pool must lazy-create one slot via sessionFactory",
       );
       assertEquals(
-        factoryCalls,
+        executePowerShellCalls,
         0,
-        "compile must NOT create or touch the persistent slot session",
-      );
-      assertStringIncludes(
-        lastScript,
-        "Compile-AppWithBcCompilerFolder",
-        "script must contain BCH compile command",
+        "compile must NOT use spawn-per-call when pool is enabled",
       );
       assertEquals(result.success, true, "compilation should succeed");
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+      await provider.dispose();
+    }
+  },
+});
+
+Deno.test({
+  name:
+    "BcContainerProvider.compileProject falls back to spawn-per-call when compilePoolPerContainer = 0",
+  ignore: !isWindows,
+  async fn() {
+    let factoryCalls = 0;
+    let executePowerShellCalls = 0;
+    const stubCompileOutput = [
+      "COMPILE_SUCCESS",
+      "APP_FILE:C:\\fake\\out.app",
+    ].join("\n");
+
+    const provider = new BcContainerProvider({
+      persistentPwsh: true,
+      compilePoolPerContainer: 0,
+      sessionFactory: () => {
+        factoryCalls++;
+        throw new Error("session must not be created for compileProject");
+      },
+    });
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = () => {
+      executePowerShellCalls++;
+      return Promise.resolve({ output: stubCompileOutput, exitCode: 0 });
+    };
+
+    const tmpDir = await Deno.makeTempDir();
+    // deno-lint-ignore no-explicit-any
+    (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
+
+    try {
+      await provider.compileProject(
+        "Cronus28",
+        {
+          path: tmpDir,
+          appJson: {
+            id: "00000000-0000-0000-0000-000000000001",
+            name: "TestApp",
+          },
+          // deno-lint-ignore no-explicit-any
+        } as any,
+      );
+      assertEquals(
+        executePowerShellCalls,
+        1,
+        "pool=0 must route compile through executePowerShell",
+      );
+      assertEquals(factoryCalls, 0, "pool=0 must not create slots");
     } finally {
       await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
       await provider.dispose();
@@ -1602,13 +1663,11 @@ Deno.test({
 
 Deno.test({
   name:
-    "BcContainerProvider.compileProject runs concurrent calls in parallel (no slot serialization)",
+    "BcContainerProvider.compileProject runs concurrent calls in parallel via CompileSessionPool",
   ignore: !isWindows,
   async fn() {
-    // Compile must NOT serialize through the per-container slot lock —
-    // doing so collapsed compileSemaphore=3 to effective concurrency 1
-    // and overflowed the compile-queue 5-min timeout in real benches.
-    // Verified via observed-concurrency counter on executePowerShell.
+    // Compile must run in parallel up to the pool size — pool slot lazy
+    // creation allows N concurrent compiles per container.
     let factoryCalls = 0;
     let inFlight = 0;
     let maxObserved = 0;
@@ -1619,25 +1678,39 @@ Deno.test({
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
+      compilePoolPerContainer: 3,
       sessionFactory: () => {
         factoryCalls++;
-        throw new Error("session must not be created for compileProject");
+        const mock = createMockPwshProcess();
+        const sess = new PwshContainerSession("Cronus28", {
+          spawnFactory: () => mock.process,
+        });
+        // Stub init to instant-idle.
+        // deno-lint-ignore no-explicit-any
+        (sess as any).init = () => {
+          // deno-lint-ignore no-explicit-any
+          (sess as any)._state = "idle";
+          return Promise.resolve();
+        };
+        // Stub execute to count concurrency and block until all 3 entered.
+        // deno-lint-ignore no-explicit-any
+        (sess as any).execute = async (_script: string) => {
+          inFlight++;
+          if (inFlight > maxObserved) maxObserved = inFlight;
+          if (inFlight === 3) releaseAll();
+          await allReleased;
+          inFlight--;
+          return {
+            output: ["COMPILE_SUCCESS", "APP_FILE:C:\\fake\\out.app"].join(
+              "\n",
+            ),
+            exitCode: 0,
+            durationMs: 5,
+          };
+        };
+        return sess;
       },
     });
-    // Stub the spawn-per-call path with a controlled blocker so we can
-    // observe peak concurrency without timing-based assertions.
-    // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = async (_script: string) => {
-      inFlight++;
-      if (inFlight > maxObserved) maxObserved = inFlight;
-      if (inFlight === 3) releaseAll();
-      await allReleased;
-      inFlight--;
-      return {
-        output: ["COMPILE_SUCCESS", "APP_FILE:C:\\fake\\out.app"].join("\n"),
-        exitCode: 0,
-      };
-    };
 
     const tmpDir = await Deno.makeTempDir();
     // deno-lint-ignore no-explicit-any
@@ -1661,12 +1734,12 @@ Deno.test({
       assertEquals(
         maxObserved,
         3,
-        "all three compileProject calls must run concurrently (slot must NOT serialize compile)",
+        "all three compileProject calls must run concurrently in distinct pool slots",
       );
       assertEquals(
         factoryCalls,
-        0,
-        "compileProject must NOT create or touch the persistent slot session",
+        3,
+        "pool must lazy-create one session per concurrent caller (up to poolMax)",
       );
     } finally {
       await Deno.remove(tmpDir, { recursive: true }).catch(() => {});

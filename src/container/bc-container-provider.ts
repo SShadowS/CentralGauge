@@ -26,6 +26,7 @@ const log = Logger.create("container:bc");
 import { ContainerError } from "../errors.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import { ContainerSessionSlot } from "./session-slot.ts";
+import { CompileSessionPool } from "./compile-session-pool.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
@@ -78,6 +79,20 @@ function logSubTimings(output: string, contextLog: Logger = log): void {
 export interface BcContainerProviderOptions {
   /** Enable persistent pwsh session reuse. Default true. */
   persistentPwsh?: boolean;
+  /**
+   * Per-container compile session pool size. Should match the
+   * `compileConcurrency` of the corresponding `CompileQueue` so per-container
+   * compile parallelism isn't capped by the pool. Default 3 (matches
+   * CompileQueue's default `compileConcurrency`).
+   *
+   * Set to 0 to disable the pool and fall back to spawn-per-call (every
+   * compile pays the ~15 s bccontainerhelper module-load tax). Useful for
+   * memory-constrained machines: each pool slot holds a warm pwsh proc
+   * with bccontainerhelper loaded (~250 MB).
+   *
+   * Env override: `CENTRALGAUGE_COMPILE_POOL_PER_CONTAINER`.
+   */
+  compilePoolPerContainer?: number;
   /** Test seam: factory for creating sessions. Default uses real spawn. */
   sessionFactory?: (name: string) => PwshContainerSession;
 }
@@ -105,14 +120,27 @@ export class BcContainerProvider implements ContainerProvider {
 
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
-  // in `./session-slot.ts` for the full lifecycle contract.
+  // in `./session-slot.ts` for the full lifecycle contract. One slot per
+  // container — used by runTests (test phase is inherently serial via the
+  // CompileQueue's per-container testMutex).
   private readonly slots = new Map<string, ContainerSessionSlot>();
+  // Per-container pool of warm compile slots. Lazy-grown up to
+  // compilePoolPerContainer (default 3). Used by compileProject so multiple
+  // parallel compiles per container don't either (a) serialize through one
+  // pwsh stdin pipe or (b) pay the ~15 s bccontainerhelper module-load tax
+  // on every spawn. See `CompileSessionPool` in `./compile-session-pool.ts`.
+  private readonly compilePools = new Map<string, CompileSessionPool>();
   private readonly persistentEnabled: boolean;
+  private readonly compilePoolPerContainer: number;
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
 
   constructor(options: BcContainerProviderOptions = {}) {
     this.persistentEnabled = options.persistentPwsh ??
       (Deno.env.get("CENTRALGAUGE_PWSH_PERSISTENT") !== "0");
+    this.compilePoolPerContainer = options.compilePoolPerContainer ??
+      Number(
+        Deno.env.get("CENTRALGAUGE_COMPILE_POOL_PER_CONTAINER") ?? "3",
+      );
     this._sessionFactory = options.sessionFactory ??
       ((name) => new PwshContainerSession(name));
   }
@@ -166,31 +194,62 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Recycle the per-container persistent pwsh session if it has reached the
-   * configured threshold. No-op when no slot exists yet, no session exists,
-   * the session is unhealthy, or the threshold isn't met.
+   * Lazy-create the per-container compile session pool. Each pool slot is a
+   * separate ContainerSessionSlot wrapping its own pwsh proc — true parallel
+   * compile up to compilePoolPerContainer.
    *
-   * Slot serializes recycle behind any in-flight execute on the same container.
+   * Returns null when persistent sessions are disabled OR the pool is sized
+   * to 0; caller falls back to spawn-per-call.
    */
-  async maybeRecycleSession(name: string): Promise<void> {
-    if (!this.persistentEnabled) return;
-    const slot = this.slots.get(name);
-    if (!slot) return; // no slot yet → nothing to recycle
-    await slot.maybeRecycle();
+  private getOrCreateCompilePool(name: string): CompileSessionPool | null {
+    if (!this.persistentEnabled || this.compilePoolPerContainer <= 0) {
+      return null;
+    }
+    let pool = this.compilePools.get(name);
+    if (!pool) {
+      pool = new CompileSessionPool(name, {
+        poolMax: this.compilePoolPerContainer,
+        slotFactory: () =>
+          new ContainerSessionSlot(name, {
+            persistentEnabled: true,
+            factory: () => this._sessionFactory(name),
+            fallback: (script) => this.executePowerShell(script),
+          }),
+      });
+      this.compilePools.set(name, pool);
+    }
+    return pool;
   }
 
   /**
-   * Dispose all per-container session slots in parallel. Each slot acquires
-   * its own lock so an in-flight call completes before its session is killed,
-   * and new callers are rejected via the slot's `disposing` flag.
+   * Recycle the per-container test session AND every compile pool slot if any
+   * has reached its configured threshold. No-op when no slot/pool exists yet.
    *
-   * Idempotent.
+   * Each slot serializes recycle behind any in-flight execute on itself.
+   */
+  async maybeRecycleSession(name: string): Promise<void> {
+    if (!this.persistentEnabled) return;
+    const tasks: Promise<void>[] = [];
+    const slot = this.slots.get(name);
+    if (slot) tasks.push(slot.maybeRecycle());
+    const pool = this.compilePools.get(name);
+    if (pool) tasks.push(pool.maybeRecycle());
+    await Promise.all(tasks);
+  }
+
+  /**
+   * Dispose all per-container session slots AND compile pools in parallel.
+   * Each slot acquires its own lock so an in-flight call completes before its
+   * session is killed; new callers are rejected via each slot's `disposing`
+   * flag. Idempotent.
    */
   async dispose(): Promise<void> {
-    await Promise.all(
-      Array.from(this.slots.values()).map((slot) => slot.dispose()),
-    );
+    await Promise.all([
+      ...Array.from(this.slots.values()).map((slot) => slot.dispose()),
+      ...Array.from(this.compilePools.values()).map((pool) => pool.dispose()),
+    ]);
     this.slots.clear();
+    this.compilePools.clear();
   }
 
   /**
@@ -598,16 +657,16 @@ export class BcContainerProvider implements ContainerProvider {
         projectPath,
         outputDir,
       );
-      // Compile uses spawn-per-call, NOT the persistent slot session.
-      // Compile-AppWithBcCompilerFolder is host-side and doesn't need the
-      // cached remote PSSession that tests benefit from. Routing it through
-      // the slot's per-container Mutex would serialize all compiles for a
-      // container into one stdin pipe, collapsing compileSemaphore=3
-      // parallelism and overflowing the 5-min compile-queue timeout under
-      // realistic 4-model × N-task workloads. Each compile pays the ~15 s
-      // BCH module-load tax but runs ×3 in parallel per container, so net
-      // wall-clock is faster than the serialized persistent path.
-      const result = await this.executePowerShell(script);
+      // Compile uses the per-container CompileSessionPool when available.
+      // Pool keeps N (default 3) warm pwsh procs per container so up to N
+      // parallel compiles each get their own warm slot — no module-load tax
+      // and no stdin-pipe contention. Falls back to spawn-per-call when the
+      // pool is disabled (persistentPwsh=false, compilePoolPerContainer=0,
+      // or env override).
+      const pool = this.getOrCreateCompilePool(containerName);
+      const result = pool
+        ? await pool.runScript(script)
+        : await this.executePowerShell(script);
 
       return this.buildCompilationResult(
         result.output,
