@@ -32,7 +32,19 @@ import {
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { getFirst, runBatch } from "$lib/server/db";
 import { appendEvent } from "$lib/server/lifecycle-event-log";
-import type { AnalyzerEntry } from "../../../../../../../../../../src/lifecycle/confidence";
+// Local structural type — only the fields this handler reads. Avoids
+// cross-boundary import chain into <repo>/src/lifecycle/confidence.ts which
+// transitively pulls zod (not installed at the repo root for the worker
+// build). The canonical schema lives in src/verify/schema.ts (Deno side);
+// keep these field names aligned with that schema.
+type AnalyzerEntry = {
+  concept_slug_proposed?: string | null;
+  errorCode: string | null;
+  alConcept: string | null;
+  concept: string | null;
+  description: string | null;
+  correctPattern: string | null;
+};
 
 interface DecideBody {
   decision?: "accept" | "reject";

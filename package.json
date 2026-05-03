@@ -1,0 +1,9 @@
+{
+  "name": "centralgauge-types",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Type-only package at repo root. Exists so site/'s svelte-check can resolve npm dependencies (zod) referenced by Deno-side modules in <repo>/src/* that site imports cross-boundary via `import type`. Not used at runtime — site/ and the Deno project each have their own dependency graphs.",
+  "dependencies": {
+    "zod": "^3.25.76"
+  }
+}

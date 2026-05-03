@@ -12,16 +12,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "target": "ES2022",
-    "types": ["@cloudflare/vitest-pool-workers/types"],
-    "baseUrl": ".",
-    "paths": {
-      "$lib": ["./src/lib"],
-      "$lib/*": ["./src/lib/*"],
-      "$shared": ["./src/lib/shared"],
-      "$shared/*": ["./src/lib/shared/*"],
-      "$app/types": ["./.svelte-kit/types/index.d.ts"],
-      "zod": ["./node_modules/zod"]
-    }
+    "types": ["@cloudflare/vitest-pool-workers/types"]
   },
   "exclude": [
     ".svelte-kit/output/**",

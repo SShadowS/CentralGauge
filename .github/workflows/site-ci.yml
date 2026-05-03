@@ -2,10 +2,12 @@ name: Site CI
 
 on:
   pull_request:
-    paths: ["site/**", ".github/workflows/site-ci.yml"]
+    paths:
+      ["site/**", ".github/workflows/site-ci.yml", "package*.json", "src/**"]
   push:
     branches: [master]
-    paths: ["site/**", ".github/workflows/site-ci.yml"]
+    paths:
+      ["site/**", ".github/workflows/site-ci.yml", "package*.json", "src/**"]
 
 defaults:
   run:
@@ -26,6 +28,11 @@ jobs:
           cache: "npm",
           cache-dependency-path: site/package-lock.json,
         }
+      # Root package.json provides zod for cross-boundary type-checking
+      # of <repo>/src/verify/schema.ts (imported via `import type` from
+      # site/). Site does not run zod at runtime; root deps are dev-time only.
+      - run: npm ci
+        working-directory: .
       - run: npm ci
       - run: npm run check
       # Vitest reads `.svelte-kit/output/server/entries/hooks.server.js`
