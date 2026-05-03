@@ -57,16 +57,12 @@ export function createMockPwshProcess(): MockPwshProcess {
       kill(_signal?: Deno.Signal) {
         killed = true;
         resolveStatus({ success: false, code: 137 });
-        try {
-          stdoutWriter.close();
-        } catch {
-          // ignore — already closed
-        }
-        try {
-          stderrWriter.close();
-        } catch {
-          // ignore
-        }
+        stdoutWriter.close().catch(() => {
+          // ignore — already closed or errored
+        });
+        stderrWriter.close().catch(() => {
+          // ignore — already closed or errored
+        });
       },
     },
     getStdinWrites: () => [...stdinWrites],
@@ -82,16 +78,12 @@ export function createMockPwshProcess(): MockPwshProcess {
     },
     exit(code) {
       resolveStatus({ success: code === 0, code });
-      try {
-        stdoutWriter.close();
-      } catch {
-        // ignore
-      }
-      try {
-        stderrWriter.close();
-      } catch {
-        // ignore
-      }
+      stdoutWriter.close().catch(() => {
+        // ignore — already closed or errored
+      });
+      stderrWriter.close().catch(() => {
+        // ignore — already closed or errored
+      });
     },
     wasKilled: () => killed,
   };
