@@ -19,6 +19,11 @@
   // Keep a ref to the input so we can refocus when the palette opens.
   let inputEl: HTMLInputElement | undefined = $state();
 
+  // Element that was focused when the palette opened. Restore focus to it
+  // on close so keyboard users land back where they were (Esc returns to
+  // trigger). Plain `let` (not $state) — never read reactively.
+  let triggerEl: HTMLElement | null = null;
+
   // Non-reactive guard. Plain `let` (not $state) so reading inside the
   // effect does NOT establish a reactive dependency. Reading `loading`
   // (a $state) and then writing it on the same tick caused the effect
@@ -52,10 +57,24 @@
   // races with the AbortController cleanup above.
   $effect(() => {
     if (paletteBus.open) {
+      // Capture trigger BEFORE moving focus to the input so we can return
+      // to it on close. document.activeElement at this point is whatever
+      // had focus when the user fired cmd-K (typically the Nav button).
+      const active = document.activeElement;
+      triggerEl = active instanceof HTMLElement ? active : null;
       queueMicrotask(() => inputEl?.focus());
       activeIdx = 0;
     } else {
       query = '';
+      // Restore focus to the element that opened the palette. Skip when
+      // the close was triggered by clicking a result (`goto` will move
+      // focus to the new page); only restore when the trigger is still
+      // in the DOM and not covered by a navigation.
+      const t = triggerEl;
+      triggerEl = null;
+      if (t && t.isConnected) {
+        queueMicrotask(() => t.focus());
+      }
     }
   });
 

@@ -19,6 +19,10 @@ test.describe("cmd-K palette", () => {
     await page.goto("/", { waitUntil: "networkidle" });
     await page.keyboard.press("Meta+K");
     await page.getByRole("searchbox").fill("models");
+    // Wait for the lazy-loaded palette index to populate at least one
+    // result. Without this the next Enter is a no-op (flat[] is empty
+    // until /api/v1/internal/search-index.json resolves).
+    await expect(page.getByRole("option").first()).toBeVisible();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/models/);
   });
