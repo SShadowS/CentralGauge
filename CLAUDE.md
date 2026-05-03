@@ -79,6 +79,7 @@ Disable with `--no-ingest`.
 - `centralgauge sync-catalog --apply` — reconcile `site/catalog/*.yml` ↔ D1 catalog tables
 - Config (URL, keys, machine_id) merged from `.centralgauge.yml` (cwd + home)
 - `centralgauge doctor ingest [--llms <list>] [--repair]` — verify config + keys + connectivity + bench-aware catalog state in one signed round-trip. Bench runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to disable.
+- **Catalog auto-seed.** When `bench` runs against a model not yet in the catalog, the precheck (`doctor.bench`) automatically writes new rows to `site/catalog/{models,model-families,pricing}.yml` from real provider APIs (OpenRouter for `openrouter/*` slugs, LiteLLM + OpenRouter for direct provider slugs) and runs `sync-catalog --apply`. Aborts with `SEED_NO_PRICING` if no source has real pricing — never falls back to defaults. Disable via `CENTRALGAUGE_BENCH_PRECHECK=0`. After a successful auto-seed, commit the YAML changes manually (`git add site/catalog/{models,model-families,pricing}.yml`).
 
 ## Lifecycle
 
