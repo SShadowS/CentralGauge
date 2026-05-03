@@ -598,7 +598,16 @@ export class BcContainerProvider implements ContainerProvider {
         projectPath,
         outputDir,
       );
-      const result = await this.runScriptThroughSession(containerName, script);
+      // Compile uses spawn-per-call, NOT the persistent slot session.
+      // Compile-AppWithBcCompilerFolder is host-side and doesn't need the
+      // cached remote PSSession that tests benefit from. Routing it through
+      // the slot's per-container Mutex would serialize all compiles for a
+      // container into one stdin pipe, collapsing compileSemaphore=3
+      // parallelism and overflowing the 5-min compile-queue timeout under
+      // realistic 4-model × N-task workloads. Each compile pays the ~15 s
+      // BCH module-load tax but runs ×3 in parallel per container, so net
+      // wall-clock is faster than the serialized persistent path.
+      const result = await this.executePowerShell(script);
 
       return this.buildCompilationResult(
         result.output,

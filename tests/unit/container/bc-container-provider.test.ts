@@ -1442,48 +1442,37 @@ Deno.test("BcContainerProvider - sessionFactory option is accepted", async () =>
 
 Deno.test({
   name:
-    "BcContainerProvider.compileProject routes through persistent session when available",
+    "BcContainerProvider.compileProject uses spawn-per-call, NOT the persistent session",
   ignore: !isWindows,
   async fn() {
-    const mock = createMockPwshProcess();
-    const session = new PwshContainerSession("Cronus28", {
-      spawnFactory: () => mock.process,
-      bootstrapTimeoutMs: 5_000,
-      defaultTimeoutMs: 30_000,
-    });
-
-    let executeCalls = 0;
+    // Compile is host-side (Compile-AppWithBcCompilerFolder doesn't need the
+    // cached PSSession that tests benefit from). Routing it through the slot
+    // would serialize all compiles through one stdin pipe and collapse the
+    // compileSemaphore=3 parallelism — the operator-visible symptom that
+    // showed up as widespread "Compile queue timeout after 300000ms" failures.
+    let factoryCalls = 0;
+    let executePowerShellCalls = 0;
     let lastScript = "";
-    const stubOutput = [
+    const stubCompileOutput = [
       "COMPILE_SUCCESS",
       "APP_FILE:C:\\fake\\out.app",
     ].join("\n");
-    // Stub init to instant-idle so the slot's ensureHealthy completes without
-    // running the real bootstrap protocol against the mock pwsh.
-    // deno-lint-ignore no-explicit-any
-    (session as any).init = () => {
-      // deno-lint-ignore no-explicit-any
-      (session as any)._state = "idle";
-      return Promise.resolve();
-    };
-    // deno-lint-ignore no-explicit-any
-    (session as any).execute = (script: string) => {
-      executeCalls++;
-      lastScript = script;
-      return Promise.resolve({
-        output: stubOutput,
-        exitCode: 0,
-        durationMs: 50,
-      });
-    };
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
-      sessionFactory: () => session,
+      sessionFactory: () => {
+        factoryCalls++;
+        throw new Error("session must not be created for compileProject");
+      },
     });
+    // Stub the spawn-per-call path. compileProject must hit this directly.
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = (script: string) => {
+      executePowerShellCalls++;
+      lastScript = script;
+      return Promise.resolve({ output: stubCompileOutput, exitCode: 0 });
+    };
 
-    // Use tmpDir as both the project path and the compiler folder so that
-    // getOrCreateCompilerFolder's Deno.stat() check passes without spawning PowerShell.
     const tmpDir = await Deno.makeTempDir();
     // deno-lint-ignore no-explicit-any
     (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
@@ -1500,7 +1489,16 @@ Deno.test({
           // deno-lint-ignore no-explicit-any
         } as any,
       );
-      assertEquals(executeCalls, 1, "session.execute should be called once");
+      assertEquals(
+        executePowerShellCalls,
+        1,
+        "compile must go through executePowerShell (spawn-per-call)",
+      );
+      assertEquals(
+        factoryCalls,
+        0,
+        "compile must NOT create or touch the persistent slot session",
+      );
       assertStringIncludes(
         lastScript,
         "Compile-AppWithBcCompilerFolder",
@@ -1604,47 +1602,44 @@ Deno.test({
 
 Deno.test({
   name:
-    "BcContainerProvider serializes concurrent compileProject callers per container (no orphan sessions)",
+    "BcContainerProvider.compileProject runs concurrent calls in parallel (no slot serialization)",
   ignore: !isWindows,
   async fn() {
+    // Compile must NOT serialize through the per-container slot lock —
+    // doing so collapsed compileSemaphore=3 to effective concurrency 1
+    // and overflowed the compile-queue 5-min timeout in real benches.
+    // Verified via observed-concurrency counter on executePowerShell.
     let factoryCalls = 0;
-    const stubOutput = [
-      "COMPILE_SUCCESS",
-      "APP_FILE:C:\\fake\\out.app",
-    ].join("\n");
-
-    const sessionFactory = (name: string): PwshContainerSession => {
-      factoryCalls++;
-      const mock = createMockPwshProcess();
-      const sess = new PwshContainerSession(name, {
-        spawnFactory: () => mock.process,
-      });
-      // Stub init to take a few ticks so concurrent callers race.
-      // deno-lint-ignore no-explicit-any
-      (sess as any).init = async () => {
-        await new Promise((r) => setTimeout(r, 25));
-        // deno-lint-ignore no-explicit-any
-        (sess as any)._state = "idle";
-      };
-      // Stub execute to remain in "idle" so subsequent serialized callers
-      // see the session as healthy and reuse it.
-      // deno-lint-ignore no-explicit-any
-      (sess as any).execute = (_script: string) =>
-        Promise.resolve({
-          output: stubOutput,
-          exitCode: 0,
-          durationMs: 10,
-        });
-      return sess;
-    };
+    let inFlight = 0;
+    let maxObserved = 0;
+    let releaseAll!: () => void;
+    const allReleased = new Promise<void>((r) => {
+      releaseAll = r;
+    });
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
-      sessionFactory,
+      sessionFactory: () => {
+        factoryCalls++;
+        throw new Error("session must not be created for compileProject");
+      },
     });
+    // Stub the spawn-per-call path with a controlled blocker so we can
+    // observe peak concurrency without timing-based assertions.
+    // deno-lint-ignore no-explicit-any
+    (provider as any).executePowerShell = async (_script: string) => {
+      inFlight++;
+      if (inFlight > maxObserved) maxObserved = inFlight;
+      if (inFlight === 3) releaseAll();
+      await allReleased;
+      inFlight--;
+      return {
+        output: ["COMPILE_SUCCESS", "APP_FILE:C:\\fake\\out.app"].join("\n"),
+        exitCode: 0,
+      };
+    };
 
     const tmpDir = await Deno.makeTempDir();
-    // Pre-populate compiler folder cache so getOrCreateCompilerFolder skips PowerShell.
     // deno-lint-ignore no-explicit-any
     (provider as any).compilerFolderCache.set("Cronus28", tmpDir);
 
@@ -1664,9 +1659,14 @@ Deno.test({
         provider.compileProject("Cronus28", project),
       ]);
       assertEquals(
+        maxObserved,
+        3,
+        "all three compileProject calls must run concurrently (slot must NOT serialize compile)",
+      );
+      assertEquals(
         factoryCalls,
-        1,
-        "sessionFactory must run exactly once per container under concurrent callers (otherwise pwsh processes are orphaned)",
+        0,
+        "compileProject must NOT create or touch the persistent slot session",
       );
     } finally {
       await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
