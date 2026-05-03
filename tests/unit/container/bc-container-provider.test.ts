@@ -14,8 +14,9 @@
 
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
-import type { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
+import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
+import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
 
 // =============================================================================
 // Provider Properties Tests
@@ -1424,4 +1425,91 @@ Deno.test("BcContainerProvider - sessionFactory option is accepted", async () =>
   await provider.maybeRecycleSession("Cronus28");
   await provider.dispose();
   assertEquals(factoryCalled, false);
+});
+
+// =============================================================================
+// Session Routing Tests (Windows only — requires real shared-folder paths)
+// =============================================================================
+
+Deno.test({
+  name:
+    "BcContainerProvider.runTests routes through persistent session when available",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createMockPwshProcess();
+    const session = new PwshContainerSession("Cronus28", {
+      spawnFactory: () => mock.process,
+      bootstrapTimeoutMs: 5_000,
+      defaultTimeoutMs: 30_000,
+    });
+
+    // (bootstrapDone poller is unused because the session is pre-injected as idle,
+    // but keep a reference for cleanup in case setInterval was started elsewhere.)
+
+    // Stub session.execute() to return canned PowerShell test output.
+    let executeCalls = 0;
+    let lastScript = "";
+    const stubOutput = [
+      "PUBLISH_START:0",
+      "PUBLISH_END:1000",
+      "TEST_START:1000",
+      "ALL_TESTS_PASSED",
+      "TEST_END:2000",
+    ].join("\n");
+    // deno-lint-ignore no-explicit-any
+    (session as any).execute = (script: string) => {
+      executeCalls++;
+      lastScript = script;
+      return Promise.resolve({
+        output: stubOutput,
+        exitCode: 0,
+        durationMs: 100,
+      });
+    };
+    // Mark session as already initialized (idle) so getOrCreateSession finds it healthy.
+    // deno-lint-ignore no-explicit-any
+    (session as any)._state = "idle";
+
+    const provider = new BcContainerProvider({
+      persistentPwsh: true,
+      sessionFactory: () => session,
+    });
+    // Pre-inject the session into the provider's sessions map so getOrCreateSession
+    // hits the "existing && isHealthy" fast path and does not call init().
+    // deno-lint-ignore no-explicit-any
+    (provider as any).sessions.set("Cronus28", session);
+
+    const tmpDir = await Deno.makeTempDir();
+    const fakeApp = `${tmpDir}\\TestPublisher_TestApp_1.0.0.0.app`;
+    await Deno.writeTextFile(fakeApp, "fake-app-bytes");
+
+    try {
+      const project = {
+        path: tmpDir,
+        appJson: {
+          id: "00000000-0000-0000-0000-000000000001",
+          name: "TestApp",
+        },
+        // Minimal ALProject — sourceFiles/testFiles not needed since appFilePath is provided.
+        // deno-lint-ignore no-explicit-any
+      } as any;
+      const result = await provider.runTests(
+        "Cronus28",
+        project,
+        fakeApp,
+        80100,
+      );
+      assertEquals(executeCalls, 1, "session.execute should be called once");
+      assertStringIncludes(
+        lastScript,
+        "Run-TestsInBcContainer",
+        "script must contain BCH test command",
+      );
+      assertEquals(result.totalTests, 1);
+      assertEquals(result.success, true);
+    } finally {
+      await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
+      await provider.dispose();
+    }
+  },
 });

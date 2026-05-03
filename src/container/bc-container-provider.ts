@@ -23,7 +23,7 @@ import { ensureDir } from "@std/fs";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("container:bc");
-import { ContainerError } from "../errors.ts";
+import { ContainerError, PwshSessionError } from "../errors.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
 import {
   calculateTestMetrics,
@@ -106,7 +106,7 @@ export class BcContainerProvider implements ContainerProvider {
   private readonly sessions = new Map<string, PwshContainerSession>();
   private readonly persistentEnabled: boolean;
   // sessionFactory stored for use in getOrCreateSession (Task 14).
-  readonly _sessionFactory: (name: string) => PwshContainerSession;
+  private readonly _sessionFactory: (name: string) => PwshContainerSession;
 
   constructor(options: BcContainerProviderOptions = {}) {
     this.persistentEnabled = options.persistentPwsh ?? true;
@@ -166,12 +166,80 @@ export class BcContainerProvider implements ContainerProvider {
     }
   }
 
+  /**
+   * Return (or lazily create) the persistent session for the given container.
+   * Returns null when persistent sessions are disabled or session init fails.
+   */
+  private async getOrCreateSession(
+    name: string,
+  ): Promise<PwshContainerSession | null> {
+    if (!this.persistentEnabled) return null;
+    const existing = this.sessions.get(name);
+    if (existing && existing.isHealthy) return existing;
+    if (existing && existing.state === "dead") {
+      this.sessions.delete(name);
+    }
+    const sess = this._sessionFactory(name);
+    try {
+      await sess.init();
+    } catch (e) {
+      log.warn("persistent session unavailable; using spawn-per-call", {
+        container: name,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return null;
+    }
+    this.sessions.set(name, sess);
+    return sess;
+  }
+
   /** Dispose all per-container persistent sessions in parallel. */
   async dispose(): Promise<void> {
     await Promise.all(
       Array.from(this.sessions.values()).map((s) => s.dispose()),
     );
     this.sessions.clear();
+  }
+
+  /**
+   * Execute a script via the per-container persistent session if available.
+   * Retries once with a fresh session on session_crashed. Falls back to
+   * spawn-per-call on init/recycle failure or on non-crash session errors.
+   */
+  private async runScriptThroughSession(
+    containerName: string,
+    script: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    const session = await this.getOrCreateSession(containerName);
+    if (!session) {
+      return await this.executePowerShell(script);
+    }
+    try {
+      const r = await session.execute(script);
+      return { output: r.output, exitCode: r.exitCode };
+    } catch (e) {
+      if (e instanceof PwshSessionError && e.code === "session_crashed") {
+        log.warn("session crashed; retrying once with fresh session", {
+          container: containerName,
+        });
+        // getOrCreateSession will detect the dead session and reinit.
+        const fresh = await this.getOrCreateSession(containerName);
+        if (fresh) {
+          const r2 = await fresh.execute(script);
+          return { output: r2.output, exitCode: r2.exitCode };
+        }
+        // Fresh session failed too; fall back to spawn-per-call.
+        return await this.executePowerShell(script);
+      }
+      if (e instanceof PwshSessionError) {
+        log.warn("session error; falling back to spawn", {
+          container: containerName,
+          code: e.code,
+        });
+        return await this.executePowerShell(script);
+      }
+      throw e;
+    }
   }
 
   private async executePowerShell(
@@ -724,7 +792,7 @@ export class BcContainerProvider implements ContainerProvider {
       extensionId,
       testCodeunitId,
     );
-    const result = await this.executePowerShell(script);
+    const result = await this.runScriptThroughSession(containerName, script);
     const duration = Date.now() - startTime;
 
     // Log sub-timings from PowerShell markers
