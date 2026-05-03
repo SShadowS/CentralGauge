@@ -42,6 +42,8 @@ describe("PwshSessionError", () => {
       lastOutput: "...",
     });
     assert(err instanceof Error);
+    assert(err instanceof PwshSessionError);
+    assertEquals(err.name, "PwshSessionError");
   });
 
   it("accepts the five documented codes", () => {
@@ -55,6 +57,7 @@ describe("PwshSessionError", () => {
     for (const c of codes) {
       const e = new PwshSessionError("x", c);
       assertEquals(e.code, c);
+      assertEquals(e.context, undefined);
     }
   });
 });
