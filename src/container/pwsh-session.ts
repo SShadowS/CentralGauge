@@ -225,7 +225,9 @@ export class PwshContainerSession {
           },
         );
       }
-      this._stdoutBuffer += this._decoder.decode(result.value!);
+      this._stdoutBuffer += this._decoder.decode(result.value!, {
+        stream: true,
+      });
     }
   }
 
@@ -240,12 +242,16 @@ export class PwshContainerSession {
       // ignore — process may already be dead
     }
     // Wait briefly for the process to exit, then SIGKILL if still alive.
+    let killTimeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
         this._process.status,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("kill timeout")), 2_000)
-        ),
+        new Promise<never>((_, reject) => {
+          killTimeoutId = setTimeout(
+            () => reject(new Error("kill timeout")),
+            2_000,
+          );
+        }),
       ]);
     } catch {
       try {
@@ -253,11 +259,13 @@ export class PwshContainerSession {
       } catch {
         // ignore
       }
+    } finally {
+      if (killTimeoutId !== undefined) clearTimeout(killTimeoutId);
     }
     try {
-      this._stdoutReader?.releaseLock();
+      await this._stdoutReader?.cancel();
     } catch {
-      // ignore
+      // ignore — reader may already be closed
     }
     this._process = null;
     this._stdoutReader = null;
