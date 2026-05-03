@@ -24,6 +24,6 @@ export {
   mergeMetadata,
   parseSlug,
 } from "./inference.ts";
-export { fetchOpenRouterMeta } from "./sources.ts";
+export { clearOpenRouterCache, fetchOpenRouterMeta } from "./sources.ts";
 export { appendModel, appendPricingIfChanged, ensureFamily } from "./writer.ts";
 export { seedMissingSlugs } from "./runner.ts";

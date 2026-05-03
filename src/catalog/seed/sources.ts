@@ -23,6 +23,14 @@ interface OpenRouterListResponse {
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 
+// Module-level cache: keyed by API key to avoid leaking across users.
+let cachedList: { apiKey: string; data: OpenRouterModelEntry[] } | null = null;
+
+/** Reset the in-memory cache. Exported for tests. */
+export function clearOpenRouterCache(): void {
+  cachedList = null;
+}
+
 export async function fetchOpenRouterMeta(
   orSlug: string,
 ): Promise<OpenRouterMeta | null> {
@@ -35,32 +43,40 @@ export async function fetchOpenRouterMeta(
     );
   }
 
-  let resp: Response;
-  try {
-    resp = await fetch(OPENROUTER_MODELS_URL, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-  } catch (e) {
-    throw new CatalogSeedError(
-      `OpenRouter unreachable: ${e instanceof Error ? e.message : String(e)}`,
-      "SEED_NETWORK",
-      { slug: orSlug },
-    );
+  let entries: OpenRouterModelEntry[];
+  if (cachedList && cachedList.apiKey === apiKey) {
+    entries = cachedList.data;
+  } else {
+    let resp: Response;
+    try {
+      resp = await fetch(OPENROUTER_MODELS_URL, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    } catch (e) {
+      throw new CatalogSeedError(
+        `OpenRouter unreachable: ${e instanceof Error ? e.message : String(e)}`,
+        "SEED_NETWORK",
+        { slug: orSlug },
+      );
+    }
+
+    if (resp.status >= 500) {
+      throw new CatalogSeedError(
+        `OpenRouter returned ${resp.status}; cannot seed ${orSlug}`,
+        "SEED_NETWORK",
+        { slug: orSlug, status: resp.status },
+      );
+    }
+    if (!resp.ok) {
+      return null;
+    }
+
+    const body = (await resp.json()) as OpenRouterListResponse;
+    entries = body.data;
+    cachedList = { apiKey, data: entries };
   }
 
-  if (resp.status >= 500) {
-    throw new CatalogSeedError(
-      `OpenRouter returned ${resp.status}; cannot seed ${orSlug}`,
-      "SEED_NETWORK",
-      { slug: orSlug, status: resp.status },
-    );
-  }
-  if (!resp.ok) {
-    return null;
-  }
-
-  const body = (await resp.json()) as OpenRouterListResponse;
-  const entry = body.data.find((m) => m.id === orSlug);
+  const entry = entries.find((m) => m.id === orSlug);
   if (!entry) return null;
 
   const promptStr = entry.pricing?.prompt;
