@@ -3,29 +3,35 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create an AL codeunit named "CG YAML Handler" with ID 70121 that handles reading and writing YAML.
+  Create an AL codeunit named "CG JSON Config Handler" with ID 70121 that
+  builds, parses, and merges JSON configuration objects.
 
-  1. Procedure "ParseYamlConfig" that takes Text parameter YamlContent containing YAML like:
-     name: MyApp
-     version: 1.0.0
-     debug: true
-     port: 8080
-     Parse the YAML into a JsonObject, then extract and return a formatted Text string:
-     "App: [name] v[version], Debug: [debug], Port: [port]"
+  1. Procedure "ParseJsonConfig" that takes Text parameter JsonText and returns
+     a JsonObject. The procedure must call JsonObject.ReadFrom on the input. If
+     parsing fails, throw an error with message
+     "Invalid JSON configuration: " followed by JsonText.
 
-  2. Procedure "CreateYamlFromSettings" that takes Text parameters AppName, Version, Text parameter Env,
-     and Boolean parameter EnableLogs. Create a JsonObject with these values and return it as
-     a YAML string representation.
+  2. Procedure "CreateJsonFromSettings" that takes Dictionary of [Text, Text]
+     parameter Settings and returns a JsonObject. For each entry in the
+     dictionary, add a property to the returned JsonObject where the dictionary
+     key becomes the JSON property name and the dictionary value becomes the
+     JSON property value (stored as Text).
 
-  3. Procedure "ConvertJsonToYaml" that takes Text parameter JsonString (valid JSON),
-     parses it into JsonObject, then converts to YAML format. Returns the YAML Text.
+  3. Procedure "MergeJsonConfigs" that takes JsonObject parameter BaseJson and
+     JsonObject parameter OverrideJson and returns a JsonObject. The merged
+     result must contain every top-level key from BaseJson and every top-level
+     key from OverrideJson; when the same key exists in both, the value from
+     OverrideJson wins. The merge is shallow (top-level keys only).
 
-  4. Procedure "ConvertYamlToJson" that takes Text parameter YamlString,
-     parses it as YAML, then converts to JSON format. Returns the JSON Text.
+  4. Procedure "GetStringValue" that takes JsonObject parameter Json and Text
+     parameter JsonKey and returns Text. If the key exists in Json, return its
+     value as Text using JsonValue.AsText. If the key does not exist, return an
+     empty string.
 
-  5. Procedure "MergeYamlConfigs" that takes two Text parameters BaseYaml and OverrideYaml.
-     Parse both into JsonObjects, then for each key in OverrideYaml, set it in the base object
-     (overwriting if exists). Return the merged result as YAML Text.
+  5. Procedure "GetIntValue" that takes JsonObject parameter Json and Text
+     parameter JsonKey and returns Integer. If the key exists in Json, return
+     its value as Integer using JsonValue.AsInteger. If the key does not
+     exist, return 0.
 
   Include Access = Public on the codeunit.
 metadata:

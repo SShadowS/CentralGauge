@@ -5,258 +5,176 @@ codeunit 80021 "CG-AL-M021 Test"
 
     var
         Assert: Codeunit Assert;
-        YamlHandler: Codeunit "CG YAML Handler";
-        NL: Text[2];
+        JsonHandler: Codeunit "CG JSON Config Handler";
 
-    trigger OnRun()
-    begin
-        NL[1] := 13;
-        NL[2] := 10;
-    end;
-
-    local procedure GetNewLine(): Text
+    [Test]
+    procedure TestParseJsonConfig_ValidObject()
     var
-        Lf: Text[1];
+        Result: JsonObject;
+        Token: JsonToken;
     begin
-        Lf[1] := 10;
-        exit(Lf);
+        Result := JsonHandler.ParseJsonConfig('{"name":"MyApp","port":8080}');
+
+        Assert.IsTrue(Result.Get('name', Token), 'Result should contain name key');
+        Assert.AreEqual('MyApp', Token.AsValue().AsText(), 'name should be MyApp');
+        Assert.IsTrue(Result.Get('port', Token), 'Result should contain port key');
+        Assert.AreEqual(8080, Token.AsValue().AsInteger(), 'port should be 8080');
     end;
 
     [Test]
-    procedure TestParseYamlConfig_BasicConfig()
+    procedure TestParseJsonConfig_EmptyObject()
     var
-        YamlContent: Text;
-        Result: Text;
-        Lf: Text;
+        Result: JsonObject;
     begin
-        Lf := GetNewLine();
-        YamlContent := 'name: MyApp' + Lf +
-                       'version: 1.0.0' + Lf +
-                       'debug: true' + Lf +
-                       'port: 8080';
+        Result := JsonHandler.ParseJsonConfig('{}');
 
-        Result := YamlHandler.ParseYamlConfig(YamlContent);
-
-        Assert.IsTrue(Result.Contains('MyApp'), 'Should contain app name');
-        Assert.IsTrue(Result.Contains('1.0.0'), 'Should contain version');
-        Assert.IsTrue(Result.Contains('8080'), 'Should contain port');
+        Assert.AreEqual(0, Result.Keys().Count(), 'Empty JSON should produce zero-key object');
     end;
 
     [Test]
-    procedure TestParseYamlConfig_DebugFalse()
+    procedure TestCreateJsonFromSettings_BuildsObject()
     var
-        YamlContent: Text;
-        Result: Text;
-        Lf: Text;
+        Settings: Dictionary of [Text, Text];
+        Result: JsonObject;
+        Token: JsonToken;
     begin
-        Lf := GetNewLine();
-        YamlContent := 'name: TestApp' + Lf +
-                       'version: 2.0.0' + Lf +
-                       'debug: false' + Lf +
-                       'port: 3000';
+        Settings.Add('name', 'BCExtension');
+        Settings.Add('version', '1.0.0');
+        Settings.Add('environment', 'production');
 
-        Result := YamlHandler.ParseYamlConfig(YamlContent);
+        Result := JsonHandler.CreateJsonFromSettings(Settings);
 
-        Assert.IsTrue(Result.Contains('TestApp'), 'Should contain app name');
-        Assert.IsTrue(Result.Contains('2.0.0'), 'Should contain version');
-        Assert.IsTrue(Result.Contains('3000'), 'Should contain port');
+        Assert.IsTrue(Result.Get('name', Token), 'Result should contain name key');
+        Assert.AreEqual('BCExtension', Token.AsValue().AsText(), 'name value should match');
+        Assert.IsTrue(Result.Get('version', Token), 'Result should contain version key');
+        Assert.AreEqual('1.0.0', Token.AsValue().AsText(), 'version value should match');
+        Assert.IsTrue(Result.Get('environment', Token), 'Result should contain environment key');
+        Assert.AreEqual('production', Token.AsValue().AsText(), 'environment value should match');
     end;
 
     [Test]
-    procedure TestParseYamlConfig_FormatStructure()
+    procedure TestCreateJsonFromSettings_EmptyDictionary()
     var
-        YamlContent: Text;
-        Result: Text;
-        Lf: Text;
+        Settings: Dictionary of [Text, Text];
+        Result: JsonObject;
     begin
-        Lf := GetNewLine();
-        YamlContent := 'name: SampleApp' + Lf +
-                       'version: 3.5.0' + Lf +
-                       'debug: true' + Lf +
-                       'port: 9000';
+        Result := JsonHandler.CreateJsonFromSettings(Settings);
 
-        Result := YamlHandler.ParseYamlConfig(YamlContent);
-
-        Assert.IsTrue(Result.Contains('App'), 'Should have App label');
-        Assert.IsTrue(Result.Contains('Debug'), 'Should have Debug label');
-        Assert.IsTrue(Result.Contains('Port'), 'Should have Port label');
+        Assert.AreEqual(0, Result.Keys().Count(), 'Empty dictionary should produce empty JsonObject');
     end;
 
     [Test]
-    procedure TestCreateYamlFromSettings_BasicSettings()
+    procedure TestMergeJsonConfigs_OverrideWins()
     var
-        Result: Text;
+        BaseJson: JsonObject;
+        OverrideJson: JsonObject;
+        Result: JsonObject;
+        Token: JsonToken;
     begin
-        Result := YamlHandler.CreateYamlFromSettings('BCExtension', '1.0.0', 'production', true);
+        BaseJson.Add('name', 'BaseApp');
+        BaseJson.Add('version', '1.0.0');
+        BaseJson.Add('debug', 'false');
+        OverrideJson.Add('debug', 'true');
 
-        Assert.IsTrue(Result.Contains('BCExtension'), 'Should contain app name');
-        Assert.IsTrue(Result.Contains('1.0.0'), 'Should contain version');
-        Assert.IsTrue(Result.Contains('production'), 'Should contain environment');
+        Result := JsonHandler.MergeJsonConfigs(BaseJson, OverrideJson);
+
+        Assert.IsTrue(Result.Get('name', Token), 'Merged result should keep base name');
+        Assert.AreEqual('BaseApp', Token.AsValue().AsText(), 'name should remain BaseApp');
+        Assert.IsTrue(Result.Get('version', Token), 'Merged result should keep base version');
+        Assert.AreEqual('1.0.0', Token.AsValue().AsText(), 'version should remain 1.0.0');
+        Assert.IsTrue(Result.Get('debug', Token), 'Merged result should contain debug');
+        Assert.AreEqual('true', Token.AsValue().AsText(), 'debug should be overridden to true');
     end;
 
     [Test]
-    procedure TestCreateYamlFromSettings_DevelopmentEnv()
+    procedure TestMergeJsonConfigs_AddsNewKey()
     var
-        Result: Text;
+        BaseJson: JsonObject;
+        OverrideJson: JsonObject;
+        Result: JsonObject;
+        Token: JsonToken;
     begin
-        Result := YamlHandler.CreateYamlFromSettings('DevApp', '0.1.0', 'development', false);
+        BaseJson.Add('name', 'App');
+        BaseJson.Add('version', '2.0');
+        OverrideJson.Add('newFeature', 'enabled');
 
-        Assert.IsTrue(Result.Contains('DevApp'), 'Should contain app name');
-        Assert.IsTrue(Result.Contains('development'), 'Should contain environment');
+        Result := JsonHandler.MergeJsonConfigs(BaseJson, OverrideJson);
+
+        Assert.IsTrue(Result.Get('name', Token), 'Should keep base name key');
+        Assert.AreEqual('App', Token.AsValue().AsText(), 'name should remain App');
+        Assert.IsTrue(Result.Get('version', Token), 'Should keep base version key');
+        Assert.IsTrue(Result.Get('newFeature', Token), 'Should add newFeature from override');
+        Assert.AreEqual('enabled', Token.AsValue().AsText(), 'newFeature should be enabled');
     end;
 
     [Test]
-    procedure TestCreateYamlFromSettings_IsValidYaml()
+    procedure TestMergeJsonConfigs_EmptyOverride()
     var
-        Result: Text;
+        BaseJson: JsonObject;
+        OverrideJson: JsonObject;
+        Result: JsonObject;
+        Token: JsonToken;
     begin
-        Result := YamlHandler.CreateYamlFromSettings('Test', '1.0', 'test', true);
+        BaseJson.Add('key1', 'value1');
+        BaseJson.Add('key2', 'value2');
 
-        // YAML should have key: value format with colons
-        Assert.IsTrue(Result.Contains(':'), 'Should contain YAML key-value separator');
-        // Should not have JSON braces at the root level
-        Assert.IsFalse(Result.StartsWith('{'), 'Should not start with JSON brace');
+        Result := JsonHandler.MergeJsonConfigs(BaseJson, OverrideJson);
+
+        Assert.IsTrue(Result.Get('key1', Token), 'Should keep key1');
+        Assert.AreEqual('value1', Token.AsValue().AsText(), 'value1 should be preserved');
+        Assert.IsTrue(Result.Get('key2', Token), 'Should keep key2');
+        Assert.AreEqual('value2', Token.AsValue().AsText(), 'value2 should be preserved');
     end;
 
     [Test]
-    procedure TestConvertJsonToYaml_SimpleObject()
+    procedure TestGetStringValue_ExistingKey()
     var
-        JsonString: Text;
+        Json: JsonObject;
         Result: Text;
     begin
-        JsonString := '{"name": "Product", "price": 99.99}';
+        Json.Add('environment', 'production');
 
-        Result := YamlHandler.ConvertJsonToYaml(JsonString);
+        Result := JsonHandler.GetStringValue(Json, 'environment');
 
-        Assert.IsTrue(Result.Contains('name'), 'Should contain name key');
-        Assert.IsTrue(Result.Contains('Product'), 'Should contain Product value');
-        Assert.IsTrue(Result.Contains('price'), 'Should contain price key');
-        Assert.IsFalse(Result.StartsWith('{'), 'YAML should not start with brace');
+        Assert.AreEqual('production', Result, 'Should return value for existing key');
     end;
 
     [Test]
-    procedure TestConvertJsonToYaml_WithBoolean()
+    procedure TestGetStringValue_MissingKey()
     var
-        JsonString: Text;
+        Json: JsonObject;
         Result: Text;
     begin
-        JsonString := '{"active": true, "count": 5}';
+        Json.Add('name', 'Demo');
 
-        Result := YamlHandler.ConvertJsonToYaml(JsonString);
+        Result := JsonHandler.GetStringValue(Json, 'missing');
 
-        Assert.IsTrue(Result.Contains('active'), 'Should contain active key');
-        Assert.IsTrue(Result.Contains('count'), 'Should contain count key');
+        Assert.AreEqual('', Result, 'Should return empty string for missing key');
     end;
 
     [Test]
-    procedure TestConvertYamlToJson_SimpleConfig()
+    procedure TestGetIntValue_ExistingKey()
     var
-        YamlString: Text;
-        Result: Text;
-        Lf: Text;
+        Json: JsonObject;
+        Result: Integer;
     begin
-        Lf := GetNewLine();
-        YamlString := 'id: 123' + Lf + 'name: Item';
+        Json.Add('port', 8080);
 
-        Result := YamlHandler.ConvertYamlToJson(YamlString);
+        Result := JsonHandler.GetIntValue(Json, 'port');
 
-        Assert.IsTrue(Result.Contains('{'), 'JSON should contain opening brace');
-        Assert.IsTrue(Result.Contains('}'), 'JSON should contain closing brace');
-        Assert.IsTrue(Result.Contains('"id"') or Result.Contains('"id":'), 'Should contain id key in JSON format');
-        Assert.IsTrue(Result.Contains('123'), 'Should contain id value');
+        Assert.AreEqual(8080, Result, 'Should return integer value for existing key');
     end;
 
     [Test]
-    procedure TestConvertYamlToJson_WithStringValue()
+    procedure TestGetIntValue_MissingKey()
     var
-        YamlString: Text;
-        Result: Text;
-        Lf: Text;
+        Json: JsonObject;
+        Result: Integer;
     begin
-        Lf := GetNewLine();
-        YamlString := 'status: active' + Lf + 'level: premium';
+        Json.Add('port', 8080);
 
-        Result := YamlHandler.ConvertYamlToJson(YamlString);
+        Result := JsonHandler.GetIntValue(Json, 'absent');
 
-        Assert.IsTrue(Result.Contains('active'), 'Should contain status value');
-        Assert.IsTrue(Result.Contains('premium'), 'Should contain level value');
-        Assert.IsTrue(Result.Contains(':'), 'JSON should have colons');
-    end;
-
-    [Test]
-    procedure TestMergeYamlConfigs_OverrideValue()
-    var
-        BaseYaml: Text;
-        OverrideYaml: Text;
-        Result: Text;
-        Lf: Text;
-    begin
-        Lf := GetNewLine();
-        BaseYaml := 'name: BaseApp' + Lf + 'version: 1.0.0' + Lf + 'debug: false';
-        OverrideYaml := 'debug: true';
-
-        Result := YamlHandler.MergeYamlConfigs(BaseYaml, OverrideYaml);
-
-        Assert.IsTrue(Result.Contains('BaseApp'), 'Should keep base name');
-        Assert.IsTrue(Result.Contains('1.0.0'), 'Should keep base version');
-        Assert.IsTrue(Result.ToLower().Contains('true'), 'Debug should be overridden to true');
-    end;
-
-    [Test]
-    procedure TestMergeYamlConfigs_AddNewKey()
-    var
-        BaseYaml: Text;
-        OverrideYaml: Text;
-        Result: Text;
-        Lf: Text;
-    begin
-        Lf := GetNewLine();
-        BaseYaml := 'name: App' + Lf + 'version: 2.0';
-        OverrideYaml := 'newFeature: enabled';
-
-        Result := YamlHandler.MergeYamlConfigs(BaseYaml, OverrideYaml);
-
-        Assert.IsTrue(Result.Contains('name'), 'Should keep base name key');
-        Assert.IsTrue(Result.Contains('version'), 'Should keep base version key');
-        Assert.IsTrue(Result.Contains('newFeature'), 'Should add new key');
-        Assert.IsTrue(Result.Contains('enabled'), 'Should have new value');
-    end;
-
-    [Test]
-    procedure TestMergeYamlConfigs_MultipleOverrides()
-    var
-        BaseYaml: Text;
-        OverrideYaml: Text;
-        Result: Text;
-        Lf: Text;
-    begin
-        Lf := GetNewLine();
-        BaseYaml := 'a: 1' + Lf + 'b: 2' + Lf + 'c: 3';
-        OverrideYaml := 'b: 20' + Lf + 'c: 30';
-
-        Result := YamlHandler.MergeYamlConfigs(BaseYaml, OverrideYaml);
-
-        Assert.IsTrue(Result.Contains('a'), 'Should keep key a');
-        Assert.IsTrue(Result.Contains('20'), 'b should be overridden to 20');
-        Assert.IsTrue(Result.Contains('30'), 'c should be overridden to 30');
-    end;
-
-    [Test]
-    procedure TestMergeYamlConfigs_EmptyOverride()
-    var
-        BaseYaml: Text;
-        OverrideYaml: Text;
-        Result: Text;
-        Lf: Text;
-    begin
-        Lf := GetNewLine();
-        BaseYaml := 'key1: value1' + Lf + 'key2: value2';
-        OverrideYaml := '';
-
-        Result := YamlHandler.MergeYamlConfigs(BaseYaml, OverrideYaml);
-
-        Assert.IsTrue(Result.Contains('key1'), 'Should keep key1');
-        Assert.IsTrue(Result.Contains('value1'), 'Should keep value1');
-        Assert.IsTrue(Result.Contains('key2'), 'Should keep key2');
+        Assert.AreEqual(0, Result, 'Should return 0 for missing key');
     end;
 }
