@@ -324,6 +324,24 @@ export class ModelValidationError extends CentralGaugeError {
 }
 
 /**
+ * Error during catalog auto-seed operations
+ */
+export class CatalogSeedError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public override readonly code:
+      | "SEED_NO_PRICING"
+      | "SEED_NETWORK"
+      | "SEED_MISSING_KEY"
+      | "SEED_YAML_WRITE",
+    context?: Record<string, unknown>,
+  ) {
+    super(message, code, context);
+    this.name = "CatalogSeedError";
+  }
+}
+
+/**
  * Check if an error is retryable (rate limits, transient network issues)
  */
 export function isRetryableError(error: unknown): boolean {
