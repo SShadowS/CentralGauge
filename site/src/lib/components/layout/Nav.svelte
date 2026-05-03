@@ -56,7 +56,7 @@
       <li><a href="/search">Search</a></li>
     </ul>
     <div class="actions">
-      <button type="button" class="palette-btn" onclick={openPalette} aria-label="Open command palette ({modKey}+K)">
+      <button type="button" class="palette-btn" onclick={openPalette} aria-label="Search ({modKey}+K) — open command palette">
         <Command size={16} />
         <span class="palette-label">Search…</span>
         <KeyHint keys={[modKey, 'K']} />

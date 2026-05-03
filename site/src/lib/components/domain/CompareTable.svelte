@@ -14,8 +14,11 @@
   function bgStyle(score: number | null, rowMax: number | null): string {
     if (score === null || rowMax === null || rowMax <= 0) return '';
     const ratio = score / rowMax;
-    const opacity = (0.15 + ratio * 0.5).toFixed(2);
-    return `background: var(--accent); opacity: 1; --cell-opacity: ${opacity}`;
+    const opacity = 0.15 + ratio * 0.5; // range [0.15, 0.65]
+    // At opacity > 0.4 the accent backdrop dominates, so dark text drops
+    // below WCAG AA; switch to accent-fg (designed for accent backdrops).
+    const color = opacity > 0.4 ? 'var(--accent-fg)' : 'var(--text)';
+    return `background: var(--accent); opacity: 1; --cell-opacity: ${opacity.toFixed(2)}; color: ${color}`;
   }
 </script>
 
@@ -73,11 +76,8 @@
     display: inline-block;
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-1);
-    color: var(--accent-fg);
-    /* opacity per-cell controlled by inline --cell-opacity */
-  }
-  .cell {
+    /* color is set per-cell by bgStyle() — accent-fg above the contrast
+     * threshold, --text below it. */
     background-color: color-mix(in srgb, var(--accent) calc(var(--cell-opacity, 0) * 100%), transparent);
-    color: var(--text);
   }
 </style>
