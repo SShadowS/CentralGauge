@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 
 test.describe("cmd-K palette", () => {
   test("opens with ⌘K (Meta+K) and closes with Esc", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: cmd-K is bound via <svelte:window onkeydown> in
+    // +layout.svelte; the handler is wired only after hydration.
+    await page.goto("/", { waitUntil: "networkidle" });
     await page.keyboard.press("Meta+K");
     await expect(page.getByRole("dialog", { name: /command palette/i }))
       .toBeVisible();
@@ -12,7 +14,9 @@ test.describe("cmd-K palette", () => {
   });
 
   test("typing filters and Enter navigates", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: cmd-K is bound via <svelte:window onkeydown> in
+    // +layout.svelte; the handler is wired only after hydration.
+    await page.goto("/", { waitUntil: "networkidle" });
     await page.keyboard.press("Meta+K");
     await page.getByRole("searchbox").fill("models");
     await page.keyboard.press("Enter");
@@ -20,7 +24,9 @@ test.describe("cmd-K palette", () => {
   });
 
   test("Nav button opens the palette", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: cmd-K is bound via <svelte:window onkeydown> in
+    // +layout.svelte; the handler is wired only after hydration.
+    await page.goto("/", { waitUntil: "networkidle" });
     await page.getByRole("button", { name: /Open command palette/i }).click();
     await expect(page.getByRole("dialog", { name: /command palette/i }))
       .toBeVisible();
