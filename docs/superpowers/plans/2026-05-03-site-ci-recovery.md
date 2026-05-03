@@ -1,8 +1,8 @@
 # Site CI Recovery — State Snapshot
 
-**Date:** 2026-05-03
-**Branch:** master (commits `b1f9f9a..66356b0`, ~6 commits in this thread)
-**Trigger:** While shipping the persistent-pwsh-session work, push to master kicked Site CI which had been red for 4+ runs. User asked: "fix the CI errors". Two waves of fixes landed; some pre-existing app bugs remain.
+**Date:** 2026-05-03 (updated after Bug A+B + lighthouse URL restore landed)
+**Branch:** master (commits `b1f9f9a..e490f83`, 9 commits in this thread)
+**Trigger:** While shipping the persistent-pwsh-session work, push to master kicked Site CI which had been red for 4+ runs. User asked: "fix the CI errors". Three waves of fixes landed; remaining red is pre-existing app debt unrelated to this branch.
 
 ---
 
@@ -11,10 +11,12 @@
 | Job | Status | Cause |
 |---|---|---|
 | `unit-and-build` | **GREEN** | Was red on 17 svelte-check errors; all fixed. |
-| `e2e` | red | `/runs/{id}/transcripts/{task}/{attempt}` returns 500 — pre-existing app bug + missing R2 seed. |
-| `lighthouse` | red | Same root cause as e2e; transcript URL removed from lhci config but other URLs may share the issue. |
+| `e2e` | red | Bug A + Bug B fixed (`transcript.spec` ✓ now). 43 fails remain — pre-existing global-nav `nested-interactive` a11y violation drives ~16 a11y specs; cmd-K palette 30s timeout; OG R2 cache flake; visual-regression lacks Linux baselines; etc. |
+| `lighthouse` | red | Pre-existing global-nav `nested-interactive` a11y violation pulls every URL below the 1.0 minScore. Restoring the transcript URL added a 5th failing URL inheriting the same nav bug — same root cause, +1 affected URL. |
 
-**Site CI for the persistent-pwsh-session work is effectively unblocked** — type-check, build, and main test suites all run clean. e2e/lighthouse are pre-existing infra debt unrelated to this branch.
+**Site CI for the persistent-pwsh-session work is effectively unblocked** — type-check, build, and main test suites all run clean. The two transcript-page bugs that originally prompted this thread (Bug A + Bug B) are fixed. Remaining red is a separate pre-existing app-debt set, tracked in "Remaining" below.
+
+**Latest CI run with all three fix waves landed:** [25276740751](https://github.com/SShadowS/CentralGauge/actions/runs/25276740751) — same 43-failed/89-passed/4-skipped split as the prior run; the failure-set diff is `-transcript.spec / +run-detail signature-tab` (signature-tab is a pre-existing 5s-too-tight cold-start flake unrelated to this branch's changes — passes on retry in 491ms).
 
 ---
 
@@ -50,48 +52,65 @@
 
 - Vite dev compiles source on first request → cold-start exceeded playwright's 60s `webServer.timeout`. Switched `playwright.config.ts` from `npm run dev` (port 5173) to `npm run preview` (port 4173). Also bumped timeout to 120s.
 - This also matches the `site/scripts/seed-e2e.ts` doc comment which explicitly says "Run BEFORE `npm run preview`".
-- Removed `/runs/run-0000/transcripts/CG-AL-E001/1` from `lighthouserc.json` URL list — page returns 500 in CI (see "Remaining" below).
+- Removed `/runs/run-0000/transcripts/CG-AL-E001/1` from `lighthouserc.json` URL list — page returns 500 in CI (re-added by `e490f83` after Bug A+B fixed; see fix wave 5).
+
+### 5. `ee03df9` — `fix(site): transcript page handles empty key + 3xx from server-internal fetch` (Bug A)
+
+Two failure modes on `/runs/:id/transcripts/:taskId/:attempt`:
+
+1. SvelteKit's `error()` only accepts 400-599. Server-internal fetch to `/api/v1/transcripts/<key>` with an empty key produces `/api/v1/transcripts/` which SvelteKit canonicalizes via 308 (catch-all route normalization). Throwing `error(308, ...)` then crashed the loader with a 500.
+2. Empty-key precondition was never validated → missing `transcript_r2_key` always took the redirect path instead of surfacing as a clean 404.
+
+**Fix:** New `httpErrorStatus()` helper clamps any non-error status to 502 before throwing (defensive against future redirect leaks). Empty `transcript_key` short-circuits to a 404 with a clear message.
+
+### 6. `ce2f18a` — `fix(site/seed-e2e): seed R2 transcript blobs + fix re-seed FK violation` (Bug B + idempotency)
+
+Two changes to `scripts/seed-e2e.ts`:
+
+1. **R2 alongside D1.** Each seeded `results` row now carries `transcript_r2_key = transcripts/<run>/<task>/<n>.txt` and the script uploads `scripts/fixtures/sample-transcript.txt` (new file) to that key in `centralgauge-blobs` via `wrangler r2 object put --local`. The transcript page now renders in CI without a 404 from BLOBS, and lighthouse has a real document to score.
+2. **DELETE order fix.** Previous order deleted `task_sets` before `tasks` (and `model_families` before `models`), violating D1's write-time FK on any second run. CI started from fresh `.wrangler/state` so the bug was invisible there; local dev tripped over it the moment you ran `npm run seed:e2e` twice. Reordered to reverse-topological of INSERT order.
+
+### 7. `e490f83` — `ci(site): restore transcript URL to lighthouserc.json`
+
+With Bug A + B fixed the transcript URL renders again. Re-added `/runs/run-0000/transcripts/CG-AL-E001/1` to the lhci URL list — restores lighthouse coverage of the transcript route (back to the original 14-URL set). The URL inherits the same global-nav `nested-interactive` a11y violation as every other page, so it adds 1 to the lighthouse a11y-failure count until that nav bug is fixed.
 
 ---
 
-## What's Still Red (pre-existing app bugs)
+## What's Still Red (pre-existing app bugs, NOT this branch's work)
 
-### Bug A — Transcript page crashes with 500 on `/runs/{id}/transcripts/{task}/{attempt}`
+### Global-nav `nested-interactive` a11y violation (drives ~17 specs + lighthouse)
 
-**Where:** `site/src/routes/runs/[id]/transcripts/[taskId]/[attempt]/+page.server.ts:14`
+**Symptom:** axe-core reports `nested-interactive Interactive controls must not be nested` on every URL. Drives:
+- 16 a11y.spec.ts failures (every URL × light/dark × comfortable/compact).
+- All 5 lighthouse URLs fail accessibility minScore (0.96 < 1.0).
 
-**Symptom (CI WebServer log):**
-```
-[500] GET /runs/run-0000/transcripts/CG-AL-E001/1
-Error: HTTP error status codes must be between 400 and 599 — 308 is invalid
-```
+**Root cause:** In the global Nav component (or layout shell). A button or anchor is nested inside another interactive element. axe-core's `nested-interactive` rule fires once per page; lighthouse aggregates as a single subtraction from the 1.0 score.
 
-**Root cause:** The page calls `await fetch('/api/v1/runs/${params.id}')`. The server-internal SvelteKit fetch returns a 308 redirect (probably trailing-slash canonicalization or hosts-resolution layer). The page then does `if (!runRes.ok) throw error(runRes.status, ...)` → `error(308, ...)` → SvelteKit rejects (only 400-599 allowed) → 500.
+**Effort:** ~1 hour to find + restructure. Highest leverage of any remaining fix — greens 5 lighthouse + 16 a11y at once.
 
-**Suggested fix:** in the `+page.server.ts:11-13` block, follow the redirect manually OR clamp the status:
-```typescript
-const runRes = await fetch(`/api/v1/runs/${params.id}`, { redirect: "follow" });
-if (!runRes.ok) {
-  throw error(runRes.status >= 400 ? runRes.status : 502, `run ${params.id} not found`);
-}
-```
-Investigate why `/api/v1/runs/run-0000` returns 308 in the first place — likely an unintended SvelteKit/wrangler trailing-slash redirect on API routes.
+### cmd-K palette / keyboard tests time out at 30s (~4 spec failures)
 
-### Bug B — `seed-e2e.ts` seeds D1 but not R2 transcripts
+`tests/e2e/cmd-k.spec.ts:14` and `tests/e2e/keyboard.spec.ts:41` both hit the default 30s playwright timeout. Strongly suggests a palette behavior bug (focus trap, key handler, or store init), not flake. Worth a real investigation rather than just bumping timeouts.
 
-**Where:** `site/scripts/seed-e2e.ts` (entire file — only writes SQL via `wrangler d1 execute`, never touches R2 BLOBS binding)
+### `og.spec.ts:37 › Second request hits R2 cache (x-og-cache: hit)` flake
 
-**Symptom:** Pages and tests that read `attempt.transcript_key` from R2 either crash or return empty data:
-- `site/tests/e2e/transcript.spec.ts` (one e2e test)
-- `/runs/run-0000/transcripts/CG-AL-E001/1` page (lighthouse URL — already removed from `lighthouserc.json`)
+Pre-existing OG-image R2 cache behavior. Unrelated to this branch.
 
-**Suggested fix (effort: ~1 day):**
-1. Pick a fixed transcript-key naming scheme (e.g., `transcripts/${run_id}/${task_id}/${attempt}.txt`).
-2. Update seeded `results` rows to include `transcript_key` (already a column? verify schema).
-3. Use `wrangler r2 object put centralgauge-blobs <key> --local --file=./fixtures/sample-transcript.txt` for each fixture row.
-4. Commit the sample transcript text file under `site/scripts/fixtures/`.
+### `run-detail.spec.ts:26 › signature tab loads and verify works` flake
 
-If lower-effort interim is needed: mark `transcript.spec.ts` as `test.skip` in CI with a comment pointing at this section.
+First attempt times out at the 5s `expect(...).toBeVisible({ timeout: 5000 })`; retry passes in ~500ms. Classic Cloudflare worker cold-start curve (workerd boot + V8 isolate warm-up). The 5s budget is too tight for a first-hit-after-build worker call — whichever test happens to land first in the run will probably trip it. Two reasonable fixes:
+- Bump the inline timeout to 10s, OR
+- Add a worker pre-warm step (single GET to `/`) before the spec runs.
+
+Confirmed unrelated to ce2f18a's data-shape changes: `grep transcript_key site/src/routes/runs/[id]/+page.{server.ts,svelte}` returns no matches; the run-detail page does not consume `transcript_key`. The signature endpoint is independent of `results.transcript_r2_key` entirely.
+
+### Visual-regression specs lack Linux baselines
+
+`visual-regression.spec.ts` runs across home/run-detail/model-detail/family-detail/limitations × 4 modes = 20 fails. Each needs a Linux PNG baseline committed. Not a code bug — a baseline-management task per per-platform-snapshots policy in `playwright.config.ts:45`.
+
+### a11y.spec.ts also hits SSE / cutover / compare / etc. specs
+
+Each surfaces a distinct page-level a11y issue or a transient (SSE, navigation tab) that may need its own micro-fix. Pull from the run log of [25276740751](https://github.com/SShadowS/CentralGauge/actions/runs/25276740751) for the per-spec error.
 
 ### Bug C — Other pre-existing 8 svelte-check warnings (non-blocking)
 
@@ -136,18 +155,20 @@ site/tsconfig.json                                                              
 
 ## How to Resume from a Clean Session
 
-The state is fully checked in and pushed to `origin/master` (latest SHA: `66356b0`). Working tree should show only the docs/ untracked files (the persistent-pwsh-session plan + this recovery doc). To verify on resume:
+The state is fully checked in and pushed to `origin/master` (latest SHA: `e490f83`). Bug A + Bug B + lighthouse-URL restore are landed. To verify on resume:
 
 ```bash
-git status              # should show 4 untracked .md files in docs/superpowers/, nothing else
-gh run list --workflow="Site CI" --limit 1
+git status                                       # should show only docs/ untracked
+gh run list --workflow="Site CI" --limit 1       # latest run conclusion
 ```
 
-To pick up the remaining work:
+To pick up the remaining work, in priority order:
 
-1. **Highest leverage:** Fix Bug A (transcript page 500). 1 file, ~5 lines. Will green the lighthouse `/runs/run-0000` URL too.
-2. **Medium leverage:** Fix Bug B (seed-e2e R2). Restores e2e + lighthouse coverage of transcript-related routes. 1 day's work.
-3. **Optional:** Fix Bug C warnings opportunistically.
+1. **Highest leverage:** Fix the global-nav `nested-interactive` a11y violation. 1 component, ~1 hour, greens 5 lighthouse + 16 a11y specs at once.
+2. **Medium leverage:** Investigate cmd-K palette timeout (`cmd-k.spec.ts:14` + `keyboard.spec.ts:41`). Likely a palette focus/key handler bug rather than flake.
+3. **Low effort:** Bump signature-tab timeout 5s → 10s OR add a worker pre-warm step. Eliminates the cold-start flake.
+4. **Maintenance:** Re-record visual-regression baselines on Linux CI (`npx playwright test --update-snapshots` against the chromium project).
+5. **Optional:** Fix Bug C svelte-check warnings opportunistically.
 
 Persistent-pwsh-session post-merge follow-ups (separate from CI work) are documented in `docs/superpowers/plans/2026-05-03-persistent-pwsh-session-followups.md`.
 
