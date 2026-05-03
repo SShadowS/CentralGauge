@@ -101,6 +101,7 @@ export async function ingestRun(
     blobTable.set(reproductionBundleSha, br.reproduction_bundle_bytes);
   }
 
+  const taskSetHash = await computeTaskSetHash(opts.cwd);
   if (config.adminKeyId != null && config.adminKeyPath) {
     const adminPriv = await readPrivateKey(config.adminKeyPath);
     const deps = {
@@ -118,11 +119,8 @@ export async function ingestRun(
       br.model.family_slug,
       deps,
     );
-    const tsHash = await computeTaskSetHash(opts.tasksDir);
-    await ensureTaskSet(cat, tsHash, countTasksSync(opts.tasksDir), deps);
+    await ensureTaskSet(cat, taskSetHash, countTasksSync(opts.tasksDir), deps);
   }
-
-  const taskSetHash = await computeTaskSetHash(opts.tasksDir);
   const payloadInput: Parameters<typeof buildPayload>[0] = {
     runId: br.runId,
     taskSetHash,

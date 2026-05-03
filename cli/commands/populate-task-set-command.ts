@@ -37,7 +37,7 @@ interface PopulateTaskSetOptions {
   keyPath?: string;
   keyId?: number;
   machineId?: string;
-  tasksDir?: string;
+  projectRoot?: string;
   hash?: string;
   force?: boolean;
   dryRun?: boolean;
@@ -144,16 +144,18 @@ async function handlePopulateTaskSet(
 
   const cwd = Deno.cwd();
   const config = await loadIngestConfig(cwd, flags);
-  const tasksDir = options.tasksDir
-    ? (options.tasksDir.startsWith("/") || /^[A-Za-z]:/.test(options.tasksDir)
-      ? options.tasksDir
-      : `${cwd}/${options.tasksDir}`)
-    : `${cwd}/tasks`;
+  const projectRoot = options.projectRoot
+    ? (options.projectRoot.startsWith("/") ||
+        /^[A-Za-z]:/.test(options.projectRoot)
+      ? options.projectRoot
+      : `${cwd}/${options.projectRoot}`)
+    : cwd;
+  const tasksDir = `${projectRoot}/tasks`;
 
-  console.log(colors.gray(`[INFO] tasks dir: ${tasksDir}`));
+  console.log(colors.gray(`[INFO] project root: ${projectRoot}`));
   console.log(colors.gray(`[INFO] ingest URL: ${config.url}`));
 
-  const localHash = await computeTaskSetHash(tasksDir);
+  const localHash = await computeTaskSetHash(projectRoot);
   console.log(colors.gray(`[INFO] local task_set hash: ${localHash}`));
 
   let targetHash = options.hash;
@@ -171,7 +173,7 @@ async function handlePopulateTaskSet(
       console.error(
         colors.red(
           `[FAIL] working tree hash (${localHash}) does not match target hash ` +
-            `(${finalHash}). The tasks/ directory has changed since the last bench. ` +
+            `(${finalHash}). tasks/ or tests/al/ has changed since the last bench. ` +
             `Re-run the bench against the current tree, or pass --force to upload ` +
             `local task data under the existing prod hash anyway.`,
         ),
@@ -294,8 +296,8 @@ export function registerPopulateTaskSetCommand(cli: Command): void {
     .option("--key-id <id:number>", "Override ingest key id")
     .option("--machine-id <id:string>", "Override machine id")
     .option(
-      "--tasks-dir <dir:string>",
-      "Tasks directory (default: ./tasks)",
+      "--project-root <dir:string>",
+      "Project root containing tasks/ and tests/al/ (default: cwd)",
     )
     .option(
       "--hash <hash:string>",
