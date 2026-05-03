@@ -34,3 +34,43 @@ export function parseSlug(slug: string): ParsedSlug {
     model: parts.slice(1).join("/"),
   };
 }
+
+// ---------------------------------------------------------------------------
+// inferFamilySlug
+// ---------------------------------------------------------------------------
+
+export function inferFamilySlug(
+  provider: string,
+  model: string,
+  subVendor?: string | null,
+): string {
+  switch (provider) {
+    case "anthropic":
+      if (model.startsWith("claude-")) return "claude";
+      break;
+    case "openai":
+      if (
+        model.startsWith("gpt-") ||
+        model.startsWith("o1-") ||
+        model.startsWith("o3-")
+      ) {
+        return "gpt";
+      }
+      break;
+    case "google":
+      if (model.startsWith("gemini-") || model.startsWith("models/gemini-")) {
+        return "gemini";
+      }
+      break;
+    case "openrouter": {
+      const tail = model.split("/").pop()!;
+      const firstSegment = tail.split("-")[0];
+      if (firstSegment) return firstSegment;
+      break;
+    }
+  }
+  throw new Error(
+    `cannot infer family for ${provider}/${model}` +
+      (subVendor ? ` (sub-vendor=${subVendor})` : ""),
+  );
+}
