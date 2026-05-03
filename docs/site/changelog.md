@@ -1,16 +1,16 @@
-# CentralGauge — changelog
+# CentralGauge changelog
 
 This file is the source of truth for the public `/changelog` page.
 
 **What belongs here.** User-facing milestones only:
 
 - **New models** added to the benchmark
-- **New surfaces** — entirely new pages or top-level features (e.g. a
+- **New surfaces**: entirely new pages or top-level features (e.g. a
   new route, a new dashboard widget, live updates)
 
 **What does NOT belong here.** Bug fixes, refactors, internal cleanup,
 type-debt sweeps, dependency bumps, test infrastructure, performance
-nudges. Those live on GitHub — the commit log and release notes are
+nudges. Those live on GitHub: the commit log and release notes are
 the right home for them.
 
 Operators add entries by appending a new `## Title (YYYY-MM-DD)`
@@ -31,7 +31,7 @@ will land on the leaderboard over the next 24 hours.
 ## Live updates + cmd-K palette (2026-04-26)
 
 - The leaderboard, model detail, and run pages now refresh in place
-  when new runs finalize — no manual reload.
+  when new runs finalize. No manual reload needed.
 - Press **Ctrl-K** (or **⌘K** on Mac) anywhere on the site to jump
   to a model, run, or task.
 
@@ -43,7 +43,7 @@ matrix expand to cover it automatically.
 
 ## Per-task matrix + category drill-downs (2026-04-25)
 
-- New `/matrix` route — every task × every model in a single grid,
+- New `/matrix` route: every task × every model in a single grid,
   one click per cell to see the run.
 - New `/categories` index with per-category pages drilling into the
   tasks behind each capability area.
@@ -58,8 +58,8 @@ per-attempt and are renderable in print.
 ## GPT-5.5 joins the leaderboard (2026-04-23)
 
 OpenAI's GPT-5.5 is now benchmarked alongside GPT-5 and the Claude
-Opus family. Earlier GPT-5.5 results may show no temperature setting
-— the new model rejects the parameter so we omit it.
+Opus family. Earlier GPT-5.5 results may show no temperature setting,
+because the new model rejects the parameter so we omit it.
 
 ## Initial models on the new dashboard (2026-04-21)
 
