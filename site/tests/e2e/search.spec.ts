@@ -7,7 +7,10 @@ test.describe("/search", () => {
   });
 
   test("typing pushes ?q= to the URL", async ({ page }) => {
-    await page.goto("/search");
+    // networkidle: the URL push lives in a Svelte $effect that wires up
+    // during hydration. Default `load` returns before that — typing
+    // before hydration is a no-op for the URL.
+    await page.goto("/search", { waitUntil: "networkidle" });
     await page.getByRole("searchbox").fill("AL0132");
     await page.waitForURL(/q=AL0132/, { timeout: 1500 });
   });

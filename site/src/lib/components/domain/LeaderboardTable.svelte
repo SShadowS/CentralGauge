@@ -113,7 +113,9 @@
   thead { background: var(--surface); }
   th, td {
     text-align: left;
-    padding: var(--space-3) var(--space-5);
+    /* --cell-padding-y switches between space-4 (comfortable) and space-3
+     * (compact) per the density mode block in tokens.css. */
+    padding: var(--cell-padding-y) var(--space-5);
     border-bottom: 1px solid var(--border);
     font-size: var(--text-sm);
   }
