@@ -1,4 +1,6 @@
 import type { CheckResult, DoctorReport } from "./types.ts";
+import { seedMissingSlugs } from "../catalog/seed/mod.ts";
+import { LiteLLMService } from "../llm/litellm-service.ts";
 
 export interface RepairResult {
   ok: boolean;
@@ -57,6 +59,56 @@ export async function applyRepairs(
   }
   return { attempted };
 }
+
+/**
+ * Built-in repairer: auto-seed missing catalog rows by fetching real provider
+ * pricing/metadata and writing to site/catalog/{models,model-families,pricing}.yml.
+ * Runs BEFORE syncCatalogRepairer so the local YAML has rows for sync to push.
+ */
+export const seedCatalogRepairer: Repairer = {
+  id: "seed-catalog",
+  matches(check) {
+    if (check.id !== "catalog.bench") return false;
+    if (check.remediation?.autoRepairable !== true) return false;
+    const d = check.details as Record<string, unknown> | undefined;
+    const missingModels = (d?.["missing_models"] ?? []) as unknown[];
+    return missingModels.length > 0;
+  },
+  async run(check) {
+    const d = check.details as Record<string, unknown> | undefined;
+    const missingModels = (d?.["missing_models"] ?? []) as Array<
+      { slug: string }
+    >;
+    const slugs = missingModels.map((m) => m.slug);
+    const catalogDir = `${Deno.cwd()}/site/catalog`;
+
+    // Warm LiteLLM cache so synchronous getPricing() in defaultDeps works.
+    // No-op if already warm.
+    try {
+      await LiteLLMService.warmCache();
+    } catch {
+      // Cache warm failure is non-fatal; OpenRouter is still queried per slug.
+    }
+
+    const summary = await seedMissingSlugs({ slugs, catalogDir });
+
+    if (summary.errors.length > 0) {
+      const detail = summary.errors
+        .map((e) => `${e.slug}: ${e.error.message}`)
+        .join("; ");
+      return {
+        ok: false,
+        message: `seed failed for ${summary.errors.length} slug(s): ${detail}`,
+      };
+    }
+
+    return {
+      ok: true,
+      message:
+        `seeded ${summary.modelsAdded} model(s), ${summary.familiesAdded} family/families, ${summary.pricingAdded} pricing snapshot(s); run \`git add site/catalog/{models,model-families,pricing}.yml\` to commit`,
+    };
+  },
+};
 
 /**
  * Built-in repairer: invoke `centralgauge sync-catalog --apply` to push local
@@ -165,6 +217,7 @@ export const markTaskSetCurrentRepairer: Repairer = {
 };
 
 export const builtInRepairers: Repairer[] = [
+  seedCatalogRepairer,
   syncCatalogRepairer,
   markTaskSetCurrentRepairer,
 ];
