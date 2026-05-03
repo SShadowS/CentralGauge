@@ -165,5 +165,7 @@ describe("PwshContainerSession.execute", () => {
     mock.emitStdout(`@@CG-DONE-${lastToken}-EXIT-1@@\n`);
     const result = await execPromise;
     assertEquals(result.exitCode, 1);
+    assertEquals(sess.state, "idle");
+    assertEquals(sess.callCount, 1);
   });
 });
