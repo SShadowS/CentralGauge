@@ -180,4 +180,19 @@ describe("PwshContainerSession.execute", () => {
     );
     assertEquals(sess.state, "dead"); // execute() kills process on error
   });
+
+  it("throws session_crashed when process exits mid-execute", async () => {
+    const mock = createMockPwshProcess();
+    const sess = await initSession(mock);
+
+    const execPromise = sess.execute(`some script`);
+    await new Promise((r) => setTimeout(r, 10));
+    mock.exit(137); // SIGKILL-equivalent
+    await assertRejects(
+      () => execPromise,
+      PwshSessionError,
+      "exited before marker",
+    );
+    assertEquals(sess.state, "dead");
+  });
 });
