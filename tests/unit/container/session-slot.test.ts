@@ -2,7 +2,7 @@
  * Unit tests for ContainerSessionSlot — encapsulates per-container persistent
  * session lifecycle (lock + session ref + disposal state).
  */
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import {
   ContainerSessionSlot,
@@ -267,37 +267,41 @@ describe("ContainerSessionSlot - persistentEnabled=false", () => {
   });
 
   it("runs fallback in parallel (no slot-wide lock for fallback)", async () => {
-    const startTimes: number[] = [];
+    // Verify parallelism via observed concurrency counter rather than
+    // wall-clock timing — timing-based assertions flake on slow CI runners.
+    let inFlight = 0;
+    let maxObserved = 0;
+    let releaseAll!: () => void;
+    const allReleased = new Promise<void>((r) => {
+      releaseAll = r;
+    });
+
     const slot = new ContainerSessionSlot("Cronus28", {
       persistentEnabled: false,
       factory: () => {
         throw new Error("unused");
       },
       fallback: async () => {
-        startTimes.push(Date.now());
-        await new Promise((r) => setTimeout(r, 30));
+        inFlight++;
+        if (inFlight > maxObserved) maxObserved = inFlight;
+        // Hold here until all three callers have entered, then drain together.
+        if (inFlight === 3) releaseAll();
+        await allReleased;
+        inFlight--;
         return { output: "fb", exitCode: 0 };
       },
     });
 
-    const t0 = Date.now();
     await Promise.all([
       slot.runScript("a"),
       slot.runScript("b"),
       slot.runScript("c"),
     ]);
-    const elapsed = Date.now() - t0;
 
-    // Three 30ms parallel sleeps should finish in ~30-60ms; serialized would be ~90ms+.
-    assert(
-      elapsed < 80,
-      `expected parallel fallback (<80ms), got ${elapsed}ms`,
-    );
-    // All three fallback invocations should start within a tight window.
-    const window = Math.max(...startTimes) - Math.min(...startTimes);
-    assert(
-      window < 20,
-      `expected fallback starts within 20ms window, got ${window}ms`,
+    assertEquals(
+      maxObserved,
+      3,
+      "all three fallback calls must run concurrently (no slot-wide lock)",
     );
     await slot.dispose();
   });
