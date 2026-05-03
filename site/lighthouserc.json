@@ -8,7 +8,6 @@
         "http://127.0.0.1:4173/models/sonnet-4-7",
         "http://127.0.0.1:4173/runs",
         "http://127.0.0.1:4173/runs/run-0000",
-        "http://127.0.0.1:4173/runs/run-0000/transcripts/CG-AL-E001/1",
         "http://127.0.0.1:4173/families",
         "http://127.0.0.1:4173/families/claude",
         "http://127.0.0.1:4173/tasks",

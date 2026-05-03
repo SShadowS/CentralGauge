@@ -1,6 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 5173;
+// Preview serves the pre-built `.svelte-kit/output/` via wrangler dev, which
+// boots in seconds. `npm run dev` (`wrangler types && vite dev`) compiles
+// source on first request and routinely exceeds Playwright's webServer
+// timeout on CI cold starts. The `seed-e2e` script's doc explicitly says
+// "Run BEFORE `npm run preview`" — using preview here aligns with that
+// contract (both bind to .wrangler/state/v3/d1, the same D1 file).
+const PORT = 4173;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -42,9 +48,9 @@ export default defineConfig({
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: {
-    command: "npm run dev",
+    command: "npm run preview",
     port: PORT,
     reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    timeout: 120_000,
   },
 });
