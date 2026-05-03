@@ -80,6 +80,7 @@ Disable with `--no-ingest`.
 - Config (URL, keys, machine_id) merged from `.centralgauge.yml` (cwd + home)
 - `centralgauge doctor ingest [--llms <list>] [--repair]` — verify config + keys + connectivity + bench-aware catalog state in one signed round-trip. Bench runs this automatically at startup; set `CENTRALGAUGE_BENCH_PRECHECK=0` to disable.
 - **Catalog auto-seed.** When `bench` runs against a model not yet in the catalog, the precheck (`doctor.bench`) automatically writes new rows to `site/catalog/{models,model-families,pricing}.yml` from real provider APIs (OpenRouter for `openrouter/*` slugs, LiteLLM + OpenRouter for direct provider slugs) and runs `sync-catalog --apply`. Aborts with `SEED_NO_PRICING` if no source has real pricing — never falls back to defaults. Disable via `CENTRALGAUGE_BENCH_PRECHECK=0`. After a successful auto-seed, commit the YAML changes manually (`git add site/catalog/{models,model-families,pricing}.yml`).
+- **Task-set hash scope.** `task_sets.hash` (FK from every `runs` row) covers `tasks/**/*.yml` + `tests/al/**` (test codeunits, prereq apps in `tests/al/dependencies/`, support files like RDLC). Build artifacts are excluded: directories named `.alpackages` or `output`, and files matching `*.app` or `cache_*.json`. Editing AL tests, prereqs, or support files therefore produces a NEW `task_sets` row — leaderboard scores from the prior hash do not mix in. Per-file SHA-256 framing makes the hash binary-safe (RDLC/docx). After any in-scope change: (1) re-bench the models you care about, (2) flip leaderboard visibility with `POST /api/v1/admin/catalog/task-sets {set_current: true}` once enough models are re-benched. Old runs remain queryable under the old hash via D1 directly.
 
 ## Lifecycle
 
@@ -153,8 +154,8 @@ would otherwise re-precheck).
 - Use `caches.open('<name>')` (named cache), **not** `caches.default`,
   for app-level read caches in the worker. `adapter-cloudflare` also
   reads/writes `caches.default` keyed by URL — entries you put there
-  are served back on the next matching request *without invoking your
-  handler*, silently bypassing `cachedJson` ETag/304 negotiation.
+  are served back on the next matching request _without invoking your
+  handler_, silently bypassing `cachedJson` ETag/304 negotiation.
   `await cache.put(...)` inline (not `ctx.waitUntil`) so the next
   request — and tests — observe the entry deterministically.
 
@@ -467,6 +468,7 @@ The docs site auto-deploys via GitHub Actions when `docs/` changes are pushed to
 This project has a graphify knowledge graph at graphify-out/.
 
 Rules:
+
 - Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
