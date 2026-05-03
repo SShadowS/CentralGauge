@@ -14,7 +14,11 @@ test.describe("/runs/:id", () => {
   });
 
   test("arrow-right cycles tabs", async ({ page }) => {
-    await page.goto(`/runs/${FIXTURE.run.run0}`);
+    // networkidle (not the default `load`) is required so Svelte hydration
+    // completes before the keydown handler is exercised. focus() lands on
+    // the SSR'd button immediately, but the onkeydown listener attaches
+    // only after the client bundle hydrates the Tabs component.
+    await page.goto(`/runs/${FIXTURE.run.run0}`, { waitUntil: "networkidle" });
     await page.getByRole("tab", { name: "Results" }).focus();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("tab", { name: "Settings" })).toHaveAttribute(
