@@ -95,3 +95,13 @@ export function inferDisplayName(
     })
     .join(" ");
 }
+
+// ---------------------------------------------------------------------------
+// inferGeneration
+// ---------------------------------------------------------------------------
+
+export function inferGeneration(model: string): number | null {
+  const match = model.match(/[a-z]+-?(\d+)/i);
+  if (!match || !match[1]) return null;
+  return parseInt(match[1], 10);
+}

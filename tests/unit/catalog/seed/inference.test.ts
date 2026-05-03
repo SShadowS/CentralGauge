@@ -9,6 +9,7 @@ import { describe, it } from "@std/testing/bdd";
 import {
   inferDisplayName,
   inferFamilySlug,
+  inferGeneration,
   parseSlug,
 } from "../../../../src/catalog/seed/inference.ts";
 
@@ -134,5 +135,36 @@ describe("inferDisplayName", () => {
       inferDisplayName("openrouter/x-ai/grok-code-fast-1", null),
       "Grok Code Fast 1",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 4. inferGeneration
+// ---------------------------------------------------------------------------
+
+describe("inferGeneration", () => {
+  it("extracts 4 from claude-haiku-4-5 (first digit group after letters)", () => {
+    // regex: [a-z]+-?(\d+) — matches 'haiku-' then '4'
+    assertEquals(inferGeneration("claude-haiku-4-5"), 4);
+  });
+
+  it("extracts 5 from gpt-5.4", () => {
+    assertEquals(inferGeneration("gpt-5.4"), 5);
+  });
+
+  it("extracts 2 from gemini-2.5-pro", () => {
+    assertEquals(inferGeneration("gemini-2.5-pro"), 2);
+  });
+
+  it("extracts 4 from grok-4.3", () => {
+    assertEquals(inferGeneration("grok-4.3"), 4);
+  });
+
+  it("returns null for model with no digits", () => {
+    assertEquals(inferGeneration("claude-haiku"), null);
+  });
+
+  it("extracts 1 from o1-mini", () => {
+    assertEquals(inferGeneration("o1-mini"), 1);
   });
 });
