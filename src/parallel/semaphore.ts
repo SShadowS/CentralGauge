@@ -24,6 +24,18 @@ export class Mutex {
     });
   }
 
+  /**
+   * Atomic try-acquire: returns release function if lock was free,
+   * or `null` if it was already held. Never enqueues — caller decides
+   * whether to wait elsewhere or fall back. Used by pool implementations
+   * that want to lease a free slot without head-of-line blocking.
+   */
+  tryAcquire(): (() => void) | null {
+    if (this.locked) return null;
+    this.locked = true;
+    return () => this.release();
+  }
+
   private release(): void {
     const next = this.waiters.shift();
     if (next) {

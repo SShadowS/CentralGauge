@@ -80,6 +80,36 @@ describe("Mutex", () => {
 
     assertEquals(order, [2, 3]);
   });
+
+  it("tryAcquire returns release fn when free", () => {
+    const mutex = new Mutex();
+    const release = mutex.tryAcquire();
+    assertEquals(typeof release, "function");
+    assertEquals(mutex.isLocked(), true);
+    release!();
+    assertEquals(mutex.isLocked(), false);
+  });
+
+  it("tryAcquire returns null when already locked", async () => {
+    const mutex = new Mutex();
+    const release1 = await mutex.acquire();
+    const result = mutex.tryAcquire();
+    assertEquals(result, null);
+    assertEquals(mutex.queueLength(), 0, "tryAcquire must not enqueue");
+    release1();
+  });
+
+  it("tryAcquire is atomic (no waiters created on failure)", async () => {
+    const mutex = new Mutex();
+    const release1 = await mutex.acquire();
+    // Hammer with 10 concurrent tryAcquire calls — none should succeed,
+    // none should enqueue.
+    const results = Array.from({ length: 10 }, () => mutex.tryAcquire());
+    assertEquals(results.every((r) => r === null), true);
+    assertEquals(mutex.queueLength(), 0);
+    release1();
+    assertEquals(mutex.isLocked(), false);
+  });
 });
 
 describe("Semaphore", () => {
