@@ -1,7 +1,10 @@
 import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { parse as parseYaml } from "@std/yaml";
-import { ensureFamily } from "../../../../src/catalog/seed/writer.ts";
+import {
+  appendModel,
+  ensureFamily,
+} from "../../../../src/catalog/seed/writer.ts";
 import { CatalogSeedError } from "../../../../src/errors.ts";
 import { cleanupTempDir, createTempDir } from "../../../utils/test-helpers.ts";
 
@@ -101,6 +104,99 @@ describe("ensureFamily", () => {
       const parsed = parseYaml(content) as Array<Record<string, string>>;
       assertEquals(parsed.length, 1);
       assertEquals(parsed[0]?.["display_name"], "xAI: Grok 4.3");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("appendModel", () => {
+  it("appends a new model row preserving existing rows + comments", async () => {
+    const dir = await createTempDir("seed-model");
+    const path = `${dir}/models.yml`;
+    await Deno.writeTextFile(
+      path,
+      `# Models
+- slug: openai/gpt-5
+  api_model_id: gpt-5
+  family: gpt
+  display_name: GPT-5
+  generation: 5
+  released_at: "2025-08-07"
+`,
+    );
+
+    try {
+      const result = await appendModel(path, {
+        slug: "openrouter/x-ai/grok-4.3",
+        api_model_id: "x-ai/grok-4.3",
+        family: "grok",
+        display_name: "xAI: Grok 4.3",
+        generation: 4,
+        released_at: "2025-11-01",
+      });
+      assertEquals(result.added, true);
+
+      const content = await Deno.readTextFile(path);
+      assertEquals(content.startsWith("# Models"), true);
+      assertEquals(content.includes("openrouter/x-ai/grok-4.3"), true);
+
+      // Round-trip: parse and verify both rows present
+      const parsed = parseYaml(content) as Array<Record<string, unknown>>;
+      assertEquals(parsed.length, 2);
+      assertEquals(parsed[1]?.["slug"], "openrouter/x-ai/grok-4.3");
+      assertEquals(parsed[1]?.["display_name"], "xAI: Grok 4.3");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("returns added=false when slug already present", async () => {
+    const dir = await createTempDir("seed-model-skip");
+    const path = `${dir}/models.yml`;
+    const original = `- slug: openai/gpt-5
+  api_model_id: gpt-5
+  family: gpt
+  display_name: GPT-5
+  generation: 5
+`;
+    await Deno.writeTextFile(path, original);
+
+    try {
+      const result = await appendModel(path, {
+        slug: "openai/gpt-5",
+        api_model_id: "gpt-5",
+        family: "gpt",
+        display_name: "GPT-5",
+        generation: 5,
+      });
+      assertEquals(result.added, false);
+      assertEquals(await Deno.readTextFile(path), original);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("omits released_at when not provided on row", async () => {
+    const dir = await createTempDir("seed-model-no-date");
+    const path = `${dir}/models.yml`;
+    await Deno.writeTextFile(path, "");
+
+    try {
+      await appendModel(path, {
+        slug: "openrouter/foo/bar-1",
+        api_model_id: "foo/bar-1",
+        family: "bar",
+        display_name: "Bar 1",
+        generation: 1,
+        // released_at intentionally omitted
+      });
+
+      const content = await Deno.readTextFile(path);
+      const parsed = parseYaml(content) as Array<Record<string, unknown>>;
+      assertEquals(parsed.length, 1);
+      assertEquals(parsed[0]?.["slug"], "openrouter/foo/bar-1");
+      assertEquals("released_at" in parsed[0]!, false);
     } finally {
       await cleanupTempDir(dir);
     }

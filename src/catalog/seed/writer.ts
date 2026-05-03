@@ -5,7 +5,7 @@
  */
 
 import { stringify } from "@std/yaml";
-import type { FamilyRow } from "./types.ts";
+import type { FamilyRow, ModelRow } from "./types.ts";
 import { CatalogSeedError } from "../../errors.ts";
 
 export interface AppendResult {
@@ -67,6 +67,33 @@ export async function ensureFamily(
     ? ""
     : "\n";
   const next = existing + trailingNewline + familyRowToYaml(row);
+  await writeAtomic(path, next);
+  return { added: true };
+}
+
+function modelExists(content: string, slug: string): boolean {
+  const pattern = new RegExp(`^- slug:\\s+${escapeRegex(slug)}\\s*$`, "m");
+  return pattern.test(content);
+}
+
+function modelRowToYaml(row: ModelRow): string {
+  // Use a single-element array so output is sequence-of-mapping form ("- slug: ...").
+  // stringify auto-quotes values containing YAML metacharacters (colons, hashes, etc.).
+  return stringify([row], { lineWidth: -1 });
+}
+
+export async function appendModel(
+  path: string,
+  row: ModelRow,
+): Promise<AppendResult> {
+  const existing = await readTextSafe(path);
+  if (modelExists(existing, row.slug)) {
+    return { added: false };
+  }
+  const trailingNewline = existing.endsWith("\n") || existing.length === 0
+    ? ""
+    : "\n";
+  const next = existing + trailingNewline + modelRowToYaml(row);
   await writeAtomic(path, next);
   return { added: true };
 }
