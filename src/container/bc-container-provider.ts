@@ -23,9 +23,9 @@ import { ensureDir } from "@std/fs";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("container:bc");
-import { ContainerError, PwshSessionError } from "../errors.ts";
-import { Mutex } from "../parallel/semaphore.ts";
+import { ContainerError } from "../errors.ts";
 import { PwshContainerSession } from "./pwsh-session.ts";
+import { ContainerSessionSlot } from "./session-slot.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
@@ -103,16 +103,11 @@ export class BcContainerProvider implements ContainerProvider {
   private static readonly COMPILER_CACHE_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
 
-  // Persistent pwsh session map (one session per container name).
-  private readonly sessions = new Map<string, PwshContainerSession>();
-  // Per-container lock serializing all session access (init, execute, recycle).
-  // PwshContainerSession communicates over a single stdin/stdout pair, so
-  // concurrent execute() calls would interleave commands and marker tokens.
-  // The lock also prevents two callers from racing in getOrCreateSession and
-  // each spawning a fresh pwsh process (orphan leak).
-  private readonly sessionLocks = new Map<string, Mutex>();
+  // Per-container session slots. Each slot owns its own lock + session ref +
+  // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
+  // in `./session-slot.ts` for the full lifecycle contract.
+  private readonly slots = new Map<string, ContainerSessionSlot>();
   private readonly persistentEnabled: boolean;
-  // sessionFactory stored for use in getOrCreateSession (Task 14).
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
 
   constructor(options: BcContainerProviderOptions = {}) {
@@ -154,129 +149,59 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Lazy-create the per-container Mutex used to serialize all session access.
+   * Lazy-create the per-container session slot. The slot encapsulates the
+   * session lifecycle (lock, session ref, disposing/disposed flags, metrics).
    */
-  private getSessionLock(name: string): Mutex {
-    let lock = this.sessionLocks.get(name);
-    if (!lock) {
-      lock = new Mutex();
-      this.sessionLocks.set(name, lock);
+  private getOrCreateSlot(name: string): ContainerSessionSlot {
+    let slot = this.slots.get(name);
+    if (!slot) {
+      slot = new ContainerSessionSlot(name, {
+        persistentEnabled: this.persistentEnabled,
+        factory: () => this._sessionFactory(name),
+        fallback: (script) => this.executePowerShell(script),
+      });
+      this.slots.set(name, slot);
     }
-    return lock;
+    return slot;
   }
 
   /**
    * Recycle the per-container persistent pwsh session if it has reached the
-   * configured threshold. No-op when no session exists or session is unhealthy.
+   * configured threshold. No-op when no slot exists yet, no session exists,
+   * the session is unhealthy, or the threshold isn't met.
    *
-   * Holds the per-container session lock so it cannot run concurrently with an
-   * in-flight execute (which would kill the session mid-command).
+   * Slot serializes recycle behind any in-flight execute on the same container.
    */
   async maybeRecycleSession(name: string): Promise<void> {
     if (!this.persistentEnabled) return;
-    const release = await this.getSessionLock(name).acquire();
-    try {
-      const sess = this.sessions.get(name);
-      if (!sess) return;
-      if (!sess.isHealthy) return;
-      if (!sess.shouldRecycle) return;
-      try {
-        await sess.recycle();
-      } catch (e) {
-        log.warn("session recycle failed; will fall back to spawn-per-call", {
-          container: name,
-          error: e instanceof Error ? e.message : String(e),
-        });
-        // Session state is now "dead"; getOrCreateSession will return null next call.
-      }
-    } finally {
-      release();
-    }
+    const slot = this.slots.get(name);
+    if (!slot) return; // no slot yet → nothing to recycle
+    await slot.maybeRecycle();
   }
 
   /**
-   * Return (or lazily create) the persistent session for the given container.
-   * Returns null when persistent sessions are disabled or session init fails.
+   * Dispose all per-container session slots in parallel. Each slot acquires
+   * its own lock so an in-flight call completes before its session is killed,
+   * and new callers are rejected via the slot's `disposing` flag.
+   *
+   * Idempotent.
    */
-  private async getOrCreateSession(
-    name: string,
-  ): Promise<PwshContainerSession | null> {
-    if (!this.persistentEnabled) return null;
-    const existing = this.sessions.get(name);
-    if (existing && existing.isHealthy) return existing;
-    if (existing && existing.state === "dead") {
-      this.sessions.delete(name);
-    }
-    const sess = this._sessionFactory(name);
-    try {
-      await sess.init();
-    } catch (e) {
-      log.warn("persistent session unavailable; using spawn-per-call", {
-        container: name,
-        error: e instanceof Error ? e.message : String(e),
-      });
-      return null;
-    }
-    this.sessions.set(name, sess);
-    return sess;
-  }
-
-  /** Dispose all per-container persistent sessions in parallel. */
   async dispose(): Promise<void> {
     await Promise.all(
-      Array.from(this.sessions.values()).map((s) => s.dispose()),
+      Array.from(this.slots.values()).map((slot) => slot.dispose()),
     );
-    this.sessions.clear();
+    this.slots.clear();
   }
 
   /**
-   * Execute a script via the per-container persistent session if available.
-   * Retries once with a fresh session on session_crashed. Falls back to
-   * spawn-per-call on init/recycle failure or on non-crash session errors.
-   *
-   * Holds the per-container session lock for the entire init+execute window so
-   * (a) concurrent callers don't each spawn a fresh pwsh process (orphan leak)
-   * and (b) consecutive execute() calls don't interleave on the shared stdin.
+   * Execute a script via the per-container session slot.
+   * Slot handles: lock, session reuse, init, retry-on-crash, fallback.
    */
   private async runScriptThroughSession(
     containerName: string,
     script: string,
   ): Promise<{ output: string; exitCode: number }> {
-    const release = await this.getSessionLock(containerName).acquire();
-    try {
-      const session = await this.getOrCreateSession(containerName);
-      if (!session) {
-        return await this.executePowerShell(script);
-      }
-      try {
-        const r = await session.execute(script);
-        return { output: r.output, exitCode: r.exitCode };
-      } catch (e) {
-        if (e instanceof PwshSessionError && e.code === "session_crashed") {
-          log.warn("session crashed; retrying once with fresh session", {
-            container: containerName,
-          });
-          // getOrCreateSession will detect the dead session and reinit.
-          const fresh = await this.getOrCreateSession(containerName);
-          if (fresh) {
-            const r2 = await fresh.execute(script);
-            return { output: r2.output, exitCode: r2.exitCode };
-          }
-          // Fresh session failed too; fall back to spawn-per-call.
-          return await this.executePowerShell(script);
-        }
-        if (e instanceof PwshSessionError) {
-          log.warn("session error; falling back to spawn", {
-            container: containerName,
-            code: e.code,
-          });
-          return await this.executePowerShell(script);
-        }
-        throw e;
-      }
-    } finally {
-      release();
-    }
+    return await this.getOrCreateSlot(containerName).runScript(script);
   }
 
   private async executePowerShell(

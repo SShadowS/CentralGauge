@@ -1458,6 +1458,14 @@ Deno.test({
       "COMPILE_SUCCESS",
       "APP_FILE:C:\\fake\\out.app",
     ].join("\n");
+    // Stub init to instant-idle so the slot's ensureHealthy completes without
+    // running the real bootstrap protocol against the mock pwsh.
+    // deno-lint-ignore no-explicit-any
+    (session as any).init = () => {
+      // deno-lint-ignore no-explicit-any
+      (session as any)._state = "idle";
+      return Promise.resolve();
+    };
     // deno-lint-ignore no-explicit-any
     (session as any).execute = (script: string) => {
       executeCalls++;
@@ -1468,17 +1476,11 @@ Deno.test({
         durationMs: 50,
       });
     };
-    // Mark session as already initialized (idle) so getOrCreateSession finds it healthy.
-    // deno-lint-ignore no-explicit-any
-    (session as any)._state = "idle";
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
       sessionFactory: () => session,
     });
-    // Pre-inject the session into the provider's sessions map.
-    // deno-lint-ignore no-explicit-any
-    (provider as any).sessions.set("Cronus28", session);
 
     // Use tmpDir as both the project path and the compiler folder so that
     // getOrCreateCompilerFolder's Deno.stat() check passes without spawning PowerShell.
@@ -1537,6 +1539,14 @@ Deno.test({
       "ALL_TESTS_PASSED",
       "TEST_END:2000",
     ].join("\n");
+    // Stub init to instant-idle so the slot's ensureHealthy completes without
+    // running the real bootstrap protocol against the mock pwsh.
+    // deno-lint-ignore no-explicit-any
+    (session as any).init = () => {
+      // deno-lint-ignore no-explicit-any
+      (session as any)._state = "idle";
+      return Promise.resolve();
+    };
     // deno-lint-ignore no-explicit-any
     (session as any).execute = (script: string) => {
       executeCalls++;
@@ -1547,18 +1557,11 @@ Deno.test({
         durationMs: 100,
       });
     };
-    // Mark session as already initialized (idle) so getOrCreateSession finds it healthy.
-    // deno-lint-ignore no-explicit-any
-    (session as any)._state = "idle";
 
     const provider = new BcContainerProvider({
       persistentPwsh: true,
       sessionFactory: () => session,
     });
-    // Pre-inject the session into the provider's sessions map so getOrCreateSession
-    // hits the "existing && isHealthy" fast path and does not call init().
-    // deno-lint-ignore no-explicit-any
-    (provider as any).sessions.set("Cronus28", session);
 
     const tmpDir = await Deno.makeTempDir();
     const fakeApp = `${tmpDir}\\TestPublisher_TestApp_1.0.0.0.app`;
