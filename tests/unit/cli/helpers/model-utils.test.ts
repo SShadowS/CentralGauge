@@ -77,6 +77,16 @@ Deno.test("parseProviderAndModel", async (t) => {
     assertEquals(result.model, "models/gemini-pro");
   });
 
+  await t.step("routes openrouter slugs to openrouter provider", () => {
+    const ds = parseProviderAndModel("openrouter/deepseek/deepseek-v4-pro");
+    assertEquals(ds.provider, "openrouter");
+    assertEquals(ds.model, "deepseek/deepseek-v4-pro");
+
+    const grok = parseProviderAndModel("openrouter/x-ai/grok-4.3");
+    assertEquals(grok.provider, "openrouter");
+    assertEquals(grok.model, "x-ai/grok-4.3");
+  });
+
   await t.step("falls back to mock for unknown providers", () => {
     const result = parseProviderAndModel("unknown-provider/some-model");
     assertEquals(result.provider, "mock");

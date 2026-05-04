@@ -23,7 +23,7 @@ export type ValidProvider = typeof VALID_PROVIDERS[number];
 // Provider Detection Helpers
 // =============================================================================
 
-/** Providers allowed in provider/model format (excludes openrouter which has special handling) */
+/** Providers allowed in provider/model format. */
 const CORE_PROVIDERS = [
   "openai",
   "anthropic",
@@ -31,6 +31,7 @@ const CORE_PROVIDERS = [
   "azure-openai",
   "local",
   "mock",
+  "openrouter",
 ];
 
 /**
