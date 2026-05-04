@@ -207,6 +207,12 @@ export class ParallelBenchmarkOrchestrator {
     );
     let criticalAbort: Error | null = null;
 
+    // 1Hz progress ticker so dashboard/TUI top bar refreshes during the
+    // long compile/test windows between task completions. The per-task
+    // emitProgress() call below remains the authoritative event for
+    // completion-time updates (ETA recompute, etc.).
+    const progressTicker = setInterval(() => this.emitProgress(), 1000);
+
     try {
       const taskSemaphore = new Semaphore(this.config.taskConcurrency);
 
@@ -245,6 +251,7 @@ export class ParallelBenchmarkOrchestrator {
         if (s.status === "rejected") throw s.reason;
       }
     } finally {
+      clearInterval(progressTicker);
       // Clean up
       await this.llmPool.drain();
       await this.compileQueue?.drain();
