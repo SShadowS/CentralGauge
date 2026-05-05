@@ -24,7 +24,7 @@ describe("GET /robots.txt", () => {
     const res = await SELF.fetch("http://x/robots.txt");
     const body = await res.text();
     expect(body).toMatch(
-      /Sitemap:\s+https:\/\/centralgauge\.sshadows\.workers\.dev\/sitemap\.xml/,
+      /Sitemap:\s+https:\/\/ai\.sshadows\.dk\/sitemap\.xml/,
     );
   });
 

@@ -42,46 +42,62 @@ describe("rate limiting", () => {
     }
   });
 
-  it("blocks the same IP after 80 sequential POSTs into one bucket", {
-    timeout: 15_000,
+  it("blocks the same IP after exceeding the rate-limit window", {
+    timeout: 120_000,
   }, async () => {
+    // Binding is `simple = { limit = 600, period = 60 }` (wrangler.toml).
+    // Fire ABOVE_LIMIT requests in fully-concurrent Promise.all so the
+    // test finishes in seconds even with a high cap. Concurrency does
+    // not change the outcome — the binding counts requests, not load.
+    // 750 keeps a 25% margin above the limit; the high timeout absorbs
+    // the slow workerd test runtime on shared CI hosts.
+    const ABOVE_LIMIT = 750;
     const ip = "10.0.0.2";
+    const responses = await Promise.all(
+      Array.from({ length: ABOVE_LIMIT }, () =>
+        SELF.fetch(`http://x${FAST_PATH}`, {
+          method: "PUT",
+          headers: {
+            "cf-connecting-ip": ip,
+            "content-type": "application/octet-stream",
+          },
+          body: new Uint8Array([0]),
+        })
+      ),
+    );
     let saw429 = false;
-    for (let i = 0; i < 80; i++) {
-      const res = await SELF.fetch(`http://x${FAST_PATH}`, {
-        method: "PUT",
-        headers: {
-          "cf-connecting-ip": ip,
-          "content-type": "application/octet-stream",
-        },
-        body: new Uint8Array([0]),
-      });
+    let firstRetryAfter: string | null = null;
+    let firstRemaining: string | null = null;
+    for (const res of responses) {
       await res.arrayBuffer();
-      if (res.status === 429) {
-        // Verify shape on the first 429 we see.
-        if (!saw429) {
-          expect(res.headers.get("retry-after")).toBeTruthy();
-          expect(res.headers.get("x-ratelimit-remaining")).toBe("0");
-        }
+      if (res.status === 429 && !saw429) {
+        firstRetryAfter = res.headers.get("retry-after");
+        firstRemaining = res.headers.get("x-ratelimit-remaining");
         saw429 = true;
       }
     }
     expect(saw429).toBe(true);
+    expect(firstRetryAfter).toBeTruthy();
+    expect(firstRemaining).toBe("0");
   });
 
   it(
     "never throttles GETs from the same IP (100 GETs)",
-    { timeout: 15_000 },
+    { timeout: 30_000 },
     async () => {
+      // GETs are unmetered (writes-only policy). Use a known 400/404 GET
+      // path so we don't pay DB cost: the same blobs route returns 400
+      // for a malformed sha256 on GET as well.
       const ip = "10.0.0.3";
-      for (let i = 0; i < 100; i++) {
-        // GETs are unmetered (writes-only policy). Use a known 400/404 GET
-        // path so we don't pay DB cost: the same blobs route returns 400
-        // for a malformed sha256 on GET as well.
-        const res = await SELF.fetch(`http://x${FAST_PATH}`, {
-          method: "GET",
-          headers: { "cf-connecting-ip": ip },
-        });
+      const responses = await Promise.all(
+        Array.from({ length: 100 }, () =>
+          SELF.fetch(`http://x${FAST_PATH}`, {
+            method: "GET",
+            headers: { "cf-connecting-ip": ip },
+          })
+        ),
+      );
+      for (const res of responses) {
         await res.arrayBuffer();
         expect(res.status).not.toBe(429);
       }

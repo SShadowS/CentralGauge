@@ -699,7 +699,8 @@ export interface MatrixModel {
 }
 
 export interface MatrixFilters {
-  set: 'current' | 'all';
+  /** 'current', 'all', or a 64-char hex task_set hash. See SetFilter. */
+  set: SetFilter;
   category: string | null;
   difficulty: 'easy' | 'medium' | 'hard' | null;
 }
