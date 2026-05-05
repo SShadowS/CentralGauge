@@ -139,17 +139,29 @@ export async function ensurePricing(
   return entry;
 }
 
+// Process-local cache of task-set hashes already POSTed in this run. Skips
+// redundant admin calls when the ingest CLI loops over multiple variants /
+// files that share the same `task_sets.hash`. Cleared on process exit.
+const postedTaskSetHashes = new Set<string>();
+
 export async function ensureTaskSet(
   _cat: Catalog,
   hash: string,
   taskCount: number,
   deps: RegisterDeps,
 ): Promise<void> {
+  if (postedTaskSetHashes.has(hash)) return;
   await postAdmin(deps, "/api/v1/admin/catalog/task-sets", {
     hash,
     created_at: new Date().toISOString(),
     task_count: taskCount,
   });
+  postedTaskSetHashes.add(hash);
+}
+
+/** Test hook — resets the task-set dedup cache between Deno.test invocations. */
+export function _resetEnsureTaskSetCache(): void {
+  postedTaskSetHashes.clear();
 }
 
 async function postAdmin(
@@ -167,7 +179,7 @@ async function postAdmin(
   );
   const body = { version: 1, signature: sig, payload };
   const resp = await postWithRetry(`${deps.config.url}${path}`, body, {
-    maxAttempts: 3,
+    maxAttempts: 5,
   });
   if (resp.status !== 200) {
     throw new Error(

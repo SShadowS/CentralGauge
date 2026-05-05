@@ -23,6 +23,16 @@ export async function postWithRetry(
         headers: { "content-type": "application/json", ...extraHeaders },
         body: JSON.stringify(body),
       });
+      if (resp.status === 429 && attempt < max) {
+        const retryAfter = resp.headers.get("retry-after");
+        const hint = retryAfter ? Number(retryAfter) * 1000 : NaN;
+        const wait = Number.isFinite(hint) && hint > 0
+          ? hint
+          : base * Math.pow(4, attempt - 1);
+        lastError = new Error(`server returned 429`);
+        await sleep(wait);
+        continue;
+      }
       if (resp.status >= 400 && resp.status < 500) return resp;
       if (resp.status >= 500 && attempt < max) {
         lastError = new Error(`server returned ${resp.status}`);
