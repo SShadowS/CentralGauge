@@ -73,6 +73,7 @@ Bench results auto-ingest to the production scoreboard at
 `https://centralgauge.sshadows.workers.dev` (Cloudflare Worker + D1 + R2).
 Disable with `--no-ingest`.
 
+- **Canonical site URL is `https://ai.sshadows.dk`** (custom-domain cutover ed13869). The workers.dev URL is internal-only — keep it out of public site content, tests, and source-level fallbacks. `SITE_BASE_URL` in `wrangler.toml` is the source of truth at runtime; `site/src/lib/shared/site.ts` holds the build-time fallback.
 - `site/` — SvelteKit Worker. D1 schema in `site/migrations/`, API under `/api/v1/*`
 - `src/ingest/` — payload builder, Ed25519 signer, R2 blob uploader, HTTP client w/ backoff
 - `centralgauge ingest <results-file>` — manually replay a saved run
@@ -158,6 +159,15 @@ would otherwise re-precheck).
   handler_, silently bypassing `cachedJson` ETag/304 negotiation.
   `await cache.put(...)` inline (not `ctx.waitUntil`) so the next
   request — and tests — observe the entry deterministically.
+
+### Catalog sync quirks
+
+- **`model_families` is NOT pushed by `sync-catalog --apply`** — it is SQL-seeded at deploy time. Adding a new family requires a manual D1 `INSERT INTO model_families(slug, vendor, display_name) VALUES (...)` before `sync-catalog` will succeed for models that reference it.
+- **`d1_migrations` can be empty even when the schema is fully present.** `wrangler d1 migrations apply` then tries to re-run 0001 and fails with `table ... already exists`. Backfill: `INSERT INTO d1_migrations(name) VALUES ('0001_core.sql'), ...` for each already-applied migration, then re-run apply.
+
+### Cliffy CLI gotchas
+
+- **`--no-X` with `{ default: false }` is a footgun.** Cliffy treats `default: false` as the option's value, so the field is permanently `false` even when the flag is absent. Drop `default` entirely; cliffy's built-in `--no-` inverse handles it (absent → true, present → false).
 
 ## Code Style
 
@@ -322,6 +332,19 @@ deno task test        # Full test suite
 Vitest runs against the built `.svelte-kit/output/` bundle, **not** source.
 After editing `site/src/routes/**/*.ts`, run `cd site && npm run build` before
 `npm test` or you'll be debugging stale code.
+
+Use `npm run test:main` (runs `vitest run && vitest run --config vitest.unit.config.ts`)
+plus `npm run test:build` to mirror what CI runs. Bare `vitest run` covers only
+one of the two configs.
+
+If `npm run build` fails on Windows with `EPERM, Permission denied: .svelte-kit/cloudflare`,
+delete the stale build output: `rm -rf site/.svelte-kit/cloudflare site/.svelte-kit/cloudflare-tmp`.
+
+**Site CI structure.** Three jobs run on push: `unit-and-build`, `e2e` (Playwright),
+`lighthouse`. `e2e` and `lighthouse` are gated on `unit-and-build` and get **skipped**
+when it fails, so a green-then-red transition can expose stale e2e/lighthouse
+assertions that have been silently red for a while. After fixing a `unit-and-build`
+regression, watch the next run for downstream surprises.
 
 Do NOT run `deno fmt` on `site/` files — it converts quote style which
 conflicts with site's own prettier config.
