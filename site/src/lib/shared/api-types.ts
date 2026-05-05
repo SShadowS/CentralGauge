@@ -6,8 +6,20 @@
  * Keep this file free of runtime imports.
  */
 
+/**
+ * The set filter accepts three forms:
+ * - `'current'` — only runs against the task_set with `is_current = 1`
+ * - `'all'` — every task_set, no filter
+ * - 64-char lowercase hex — runs against that specific task_set hash
+ *
+ * Validation happens server-side in the route handler before reaching the
+ * leaderboard/matrix query builders. Anything that isn't `current`/`all`
+ * and doesn't match `/^[0-9a-f]{64}$/` is treated as `current`.
+ */
+export type SetFilter = 'current' | 'all' | string;
+
 export interface LeaderboardQuery {
-  set: 'current' | 'all';
+  set: SetFilter;
   tier: 'verified' | 'claimed' | 'all';
   difficulty: 'easy' | 'medium' | 'hard' | null;
   family: string | null;

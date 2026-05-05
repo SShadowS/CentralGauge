@@ -10,8 +10,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
     const set = url.searchParams.get("set") ?? "current";
-    if (set !== "current" && set !== "all") {
-      throw new ApiError(400, "invalid_set", "set must be current or all");
+    if (set !== "current" && set !== "all" && !/^[0-9a-f]{64}$/.test(set)) {
+      throw new ApiError(
+        400,
+        "invalid_set",
+        "set must be current, all, or a 64-char hex task_set hash",
+      );
     }
 
     const category = url.searchParams.get("category")?.trim() || null;
@@ -46,7 +50,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
     if (!payload) {
       payload = await computeMatrix(env.DB, {
-        set: set as "current" | "all",
+        set,
         category,
         difficulty: difficulty as "easy" | "medium" | "hard" | null,
       });

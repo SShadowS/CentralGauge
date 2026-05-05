@@ -79,8 +79,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
 function parseQuery(url: URL): LeaderboardQuery {
   const set = url.searchParams.get('set') ?? 'current';
-  if (set !== 'current' && set !== 'all') {
-    throw new ApiError(400, 'invalid_set', 'set must be current or all');
+  if (set !== 'current' && set !== 'all' && !/^[0-9a-f]{64}$/.test(set)) {
+    throw new ApiError(
+      400,
+      'invalid_set',
+      'set must be current, all, or a 64-char hex task_set hash',
+    );
   }
 
   const tier = url.searchParams.get('tier') ?? 'all';
@@ -122,7 +126,7 @@ function parseQuery(url: URL): LeaderboardQuery {
   }
 
   return {
-    set: set as 'current' | 'all',
+    set,
     tier: tier as 'verified' | 'claimed' | 'all',
     difficulty: (difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
     family,

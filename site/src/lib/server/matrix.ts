@@ -30,10 +30,13 @@ export { cellColorBucket } from "$lib/client/matrix-helpers";
 export type { CellBucket } from "$lib/client/matrix-helpers";
 
 export interface ComputeMatrixOpts {
-  set: "current" | "all";
+  /** "current" / "all" / 64-char hex hash. Validated upstream in the route. */
+  set: string;
   category: string | null;
   difficulty: "easy" | "medium" | "hard" | null;
 }
+
+const HASH_RE = /^[0-9a-f]{64}$/;
 
 /**
  * Empty matrix response shape used when no tasks match the filter.
@@ -65,6 +68,9 @@ export async function computeMatrix(
     taskWheres.push(
       `t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
     );
+  } else if (opts.set !== "all" && HASH_RE.test(opts.set)) {
+    taskWheres.push(`t.task_set_hash = ?`);
+    taskParams.push(opts.set);
   }
   if (opts.category) {
     taskWheres.push(`tc.slug = ?`);
@@ -117,9 +123,13 @@ export async function computeMatrix(
   // that contributed to the visible cells, not the model's lifetime runs.
   const taskSetSubFilter = opts.set === "current"
     ? `AND task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
+    : opts.set !== "all" && HASH_RE.test(opts.set)
+    ? `AND task_set_hash = '${opts.set}'`
     : "";
   const taskSetRunsFilter = opts.set === "current"
     ? `AND runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`
+    : opts.set !== "all" && HASH_RE.test(opts.set)
+    ? `AND runs.task_set_hash = '${opts.set}'`
     : "";
 
   // The settings_hash uniqueness is computed per-model in TS rather than via

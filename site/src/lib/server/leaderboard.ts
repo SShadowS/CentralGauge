@@ -36,6 +36,15 @@ export async function computeLeaderboard(
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+  } else if (q.set !== "all" && /^[0-9a-f]{64}$/.test(q.set)) {
+    // Specific task_set hash — every WHERE and correlated subquery slot
+    // must scope to it so cross-hash data does not bleed into per-task
+    // best-attempt aggregations (CR-5 invariant).
+    wheres.push(`runs.task_set_hash = ?`);
+    params.push(q.set);
+    taskSetClauseSubA1 = `AND ru1.task_set_hash = '${q.set}'`;
+    taskSetClauseSubA2 = `AND ru2.task_set_hash = '${q.set}'`;
+    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = '${q.set}'`;
   }
   if (q.tier !== "all") {
     wheres.push(`runs.tier = ?`);

@@ -225,6 +225,44 @@ describe("GET /api/v1/leaderboard", () => {
     expect(sonnet!.run_count).toBe(3);
   });
 
+  it("set=<64-char-hex-hash> filters to that specific task set", async () => {
+    const HASH = "f".repeat(64);
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, '2026-04-15T00:00:00Z', 1, 0)`,
+      ).bind(HASH),
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash, task_id, content_hash, difficulty, category_id, manifest_json) VALUES (?, 'easy/x', 'chx', 'easy', 1, '{}')`,
+      ).bind(HASH),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('rH',?,1,'s1','rig','2026-04-15T00:00:00Z','2026-04-15T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-15T00:00:00Z',1,?)`,
+      ).bind(HASH, new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,llm_duration_ms,compile_duration_ms) VALUES ('rH','easy/x',1,1,1.0,1,1,1,500,250)`,
+      ),
+    ]);
+
+    const res = await SELF.fetch(`https://x/api/v1/leaderboard?set=${HASH}`);
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    const sonnet = body.data.find((r) =>
+      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
+    );
+    expect(sonnet).toBeDefined();
+    // Only run rH should contribute — the three ts-current runs and the
+    // ts-old run must be excluded.
+    expect(sonnet!.run_count).toBe(1);
+    expect(sonnet!.avg_score).toBe(1.0);
+  });
+
+  it("set=<bogus> returns 400", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=ts-current");
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string };
+    expect(body.code).toBe("invalid_set");
+  });
+
   it("tier=verified filters to verified runs only", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=verified");
     const body = await res.json() as { data: Array<Record<string, unknown>> };
