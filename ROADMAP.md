@@ -40,3 +40,35 @@ already used by `sync-catalog --apply`.
 **Out of scope.** Auto-flipping during `bench` or `cycle` — operator
 intent matters here, since flipping hides every run from the previous
 hash.
+
+## Site
+
+### Per-hash task-set picker on the leaderboard
+
+**Why.** The Set filter on `/`, `/matrix`, `/tasks` is binary today
+(`Current` vs `All`). After flipping `is_current`, runs from the
+previous hash are still in D1 but the only way to view them in
+isolation is `?set=all` (which mixes them with current-hash runs) or
+direct D1 queries. Operators have no way to compare hash A vs hash B
+side-by-side, and external visitors cannot inspect which hash each
+displayed run belongs to.
+
+**Shape.**
+
+* Replace the `Current | All` radio with a select that lists every
+  task_set hash, ordered newest first, with the current one
+  highlighted. URL state: `?set=<short-hash>` (8 chars, ambiguity-safe
+  since they are content hashes).
+* Surface task_set metadata next to the picker: short hash, task
+  count, run count, "current" badge.
+* New endpoint: `GET /api/v1/task-sets` (public, paginated; does NOT
+  expose the existing signed POST shape).
+
+**Acceptance.**
+
+* Selecting a non-current hash filters every aggregation to that hash
+  exactly (CR-5 invariant must hold for the picked hash, not just
+  is_current=1).
+* Sharing the URL with `?set=<hash>` reproduces the same view.
+* If only one task_set has runs, the picker collapses to a label
+  (no UI churn for fresh installs).
