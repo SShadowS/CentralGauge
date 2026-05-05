@@ -9,6 +9,7 @@
 export type {
   CodeGenerationResult,
   ContinuationConfig,
+  EmptyRetryConfig,
   GenerationContext,
   LLMAdapter,
   LLMConfig,
@@ -22,7 +23,15 @@ export type {
   TokenUsage,
 } from "./types.ts";
 
-export { DEFAULT_CONTINUATION_CONFIG, isStreamingAdapter } from "./types.ts";
+export {
+  DEFAULT_CONTINUATION_CONFIG,
+  DEFAULT_EMPTY_RETRY_CONFIG,
+  isStreamingAdapter,
+} from "./types.ts";
+
+// Empty-response retry helper
+export type { EmptyRetryOutcome } from "./empty-retry.ts";
+export { isRetryableEmptyResponse, withEmptyRetry } from "./empty-retry.ts";
 
 // Registry
 export { LLMAdapterRegistry } from "./registry.ts";

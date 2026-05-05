@@ -12,12 +12,18 @@ import { LLMProviderError, StateError } from "../errors.ts";
 import {
   type ContinuationConfig,
   DEFAULT_CONTINUATION_CONFIG,
+  DEFAULT_EMPTY_RETRY_CONFIG,
+  type EmptyRetryConfig,
   type GenerationContext,
   isStreamingAdapter,
   type LLMAdapter,
   type LLMRequest,
   type StreamingLLMAdapter,
 } from "../llm/types.ts";
+import {
+  isRetryableEmptyResponse,
+  withEmptyRetry,
+} from "../llm/empty-retry.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
@@ -30,6 +36,56 @@ import {
   generateWithContinuationStream,
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
+import type { TokenUsage } from "../llm/types.ts";
+
+/**
+ * Fold token usage across every attempt of an empty-retry sequence onto
+ * the final attempt's result. Reasoning models bill output tokens on
+ * empty completions (the thinking pass is metered too), so the final
+ * result must reflect the true total cost paid.
+ */
+function mergeUsageAcrossAttempts(
+  attempts: ContinuationResult[],
+): ContinuationResult {
+  if (attempts.length === 0) {
+    throw new Error("mergeUsageAcrossAttempts: no attempts");
+  }
+  const last = attempts[attempts.length - 1]!;
+  if (attempts.length === 1) return last;
+
+  const merged: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  };
+  for (const a of attempts) {
+    merged.promptTokens += a.totalUsage.promptTokens;
+    merged.completionTokens += a.totalUsage.completionTokens;
+    merged.totalTokens += a.totalUsage.totalTokens;
+    if (a.totalUsage.cacheCreationTokens !== undefined) {
+      merged.cacheCreationTokens = (merged.cacheCreationTokens ?? 0) +
+        a.totalUsage.cacheCreationTokens;
+    }
+    if (a.totalUsage.cacheReadTokens !== undefined) {
+      merged.cacheReadTokens = (merged.cacheReadTokens ?? 0) +
+        a.totalUsage.cacheReadTokens;
+    }
+    if (a.totalUsage.reasoningTokens !== undefined) {
+      merged.reasoningTokens = (merged.reasoningTokens ?? 0) +
+        a.totalUsage.reasoningTokens;
+    }
+    if (a.totalUsage.estimatedCost !== undefined) {
+      merged.estimatedCost = (merged.estimatedCost ?? 0) +
+        a.totalUsage.estimatedCost;
+    }
+  }
+
+  return {
+    ...last,
+    response: { ...last.response, usage: merged },
+    totalUsage: merged,
+  };
+}
 
 /**
  * Work pool for managing parallel LLM requests
@@ -41,11 +97,13 @@ export class LLMWorkPool {
   private shuttingDown = false;
   private templateRenderer: TemplateRenderer;
   private continuationConfig: ContinuationConfig;
+  private emptyRetryConfig: EmptyRetryConfig;
 
   constructor(
     config: ParallelExecutionConfig,
     rateLimiter?: ProviderRateLimiter,
     continuationConfig?: ContinuationConfig,
+    emptyRetryConfig?: EmptyRetryConfig,
   ) {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
@@ -53,6 +111,7 @@ export class LLMWorkPool {
       config.templateDir || "templates",
     );
     this.continuationConfig = continuationConfig ?? DEFAULT_CONTINUATION_CONFIG;
+    this.emptyRetryConfig = emptyRetryConfig ?? DEFAULT_EMPTY_RETRY_CONFIG;
   }
 
   /**
@@ -60,6 +119,17 @@ export class LLMWorkPool {
    */
   setContinuationConfig(config: ContinuationConfig): void {
     this.continuationConfig = config;
+  }
+
+  /**
+   * Set empty-response retry configuration.
+   *
+   * Controls automatic retry when a provider returns 200 OK with empty
+   * content + `finishReason="stop"` (typically transient on reasoning
+   * models). See {@link EmptyRetryConfig}.
+   */
+  setEmptyRetryConfig(config: EmptyRetryConfig): void {
+    this.emptyRetryConfig = config;
   }
 
   /**
@@ -145,11 +215,20 @@ export class LLMWorkPool {
       // Get or create LLM adapter
       const adapter = this.getAdapter(item);
 
-      // Generate code with continuation support
-      const continuationResult = await this.generateCodeWithContinuation(
-        item,
-        adapter,
+      // Generate code with continuation + empty-retry support.
+      // withEmptyRetry re-invokes the underlying generation when the
+      // model returns empty content with finishReason=stop (transient on
+      // reasoning models). Each retry's tokens are still billed, so we
+      // fold usage across all attempts onto the final result.
+      const retryOutcome = await withEmptyRetry(
+        () => this.generateCodeWithContinuation(item, adapter),
+        (r) => isRetryableEmptyResponse(r.response),
+        this.emptyRetryConfig,
       );
+      const continuationResult = mergeUsageAcrossAttempts(
+        retryOutcome.attempts,
+      );
+      const emptyRetryCount = retryOutcome.retryCount;
 
       // Extract code from response and clean it
       const extracted = CodeExtractor.extract(
@@ -160,7 +239,7 @@ export class LLMWorkPool {
         extracted.language === "diff" ? "diff" : "al",
       );
 
-      // Release lease with actual token count
+      // Release lease with actual token count (sum across retries)
       this.rateLimiter.release(
         lease,
         continuationResult.response.usage.totalTokens,
@@ -185,6 +264,7 @@ export class LLMWorkPool {
         duration: Date.now() - startTime,
         readyForCompile: isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
+        emptyRetryCount,
       };
 
       // Set error message for extraction failures (categorizes as model failure, not transient)

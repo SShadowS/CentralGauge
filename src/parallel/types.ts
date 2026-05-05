@@ -160,6 +160,9 @@ export interface LLMWorkResult {
 
   /** Number of continuation requests made (0 if none) */
   continuationCount?: number;
+
+  /** Number of empty-response retries performed (0 if none) */
+  emptyRetryCount?: number;
 }
 
 /**

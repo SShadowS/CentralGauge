@@ -9,6 +9,9 @@ import type { PromptInjectionConfig } from "../prompts/mod.ts";
 import {
   DEFAULT_API_TIMEOUT_MS,
   DEFAULT_CONTAINER_NAME,
+  DEFAULT_EMPTY_RETRY_BASE_DELAY_MS,
+  DEFAULT_EMPTY_RETRY_JITTER_MS,
+  DEFAULT_EMPTY_RETRY_MAX_RETRIES,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TEMPERATURE,
 } from "../constants.ts";
@@ -73,6 +76,17 @@ export interface CentralGaugeConfig {
     temperature?: number;
     maxTokens?: number;
     timeout?: number;
+    /**
+     * Empty-response retry settings. Controls automatic retry when a
+     * provider returns 200 OK with empty content + finishReason="stop"
+     * (typical of reasoning models on hard prompts).
+     */
+    emptyRetry?: {
+      enabled?: boolean;
+      maxRetries?: number;
+      baseDelayMs?: number;
+      jitterMs?: number;
+    };
   };
 
   // Benchmark settings
@@ -364,6 +378,12 @@ export class ConfigManager {
         temperature: DEFAULT_TEMPERATURE,
         maxTokens: DEFAULT_MAX_TOKENS,
         timeout: DEFAULT_API_TIMEOUT_MS,
+        emptyRetry: {
+          enabled: true,
+          maxRetries: DEFAULT_EMPTY_RETRY_MAX_RETRIES,
+          baseDelayMs: DEFAULT_EMPTY_RETRY_BASE_DELAY_MS,
+          jitterMs: DEFAULT_EMPTY_RETRY_JITTER_MS,
+        },
       },
       benchmark: {
         attempts: 2,

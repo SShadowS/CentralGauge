@@ -36,6 +36,38 @@ export const DEFAULT_CONTINUATION_CONFIG: ContinuationConfig = {
   maxContinuations: 3,
 };
 
+/**
+ * Configuration for retrying empty LLM responses.
+ *
+ * Empty content with `finishReason="stop"` is treated as transient: the
+ * model returned 200 OK with no body. Continuation cannot help (it only
+ * activates on `finishReason="length"`). A fresh call with the same
+ * request usually succeeds.
+ *
+ * Skipped when:
+ *  - response is non-empty
+ *  - `finishReason="length"` (continuation handles)
+ *  - `finishReason="content_filter"` (deterministic block)
+ */
+export interface EmptyRetryConfig {
+  /** Whether empty-response retry is enabled (default: true) */
+  enabled: boolean;
+  /** Maximum number of retry attempts after the initial call (default: 2) */
+  maxRetries: number;
+  /** Base delay between retries in ms; multiplied by attempt index (default: 1000) */
+  baseDelayMs: number;
+  /** Random jitter added to each delay in ms (default: 250) */
+  jitterMs: number;
+}
+
+/** Default empty-retry configuration */
+export const DEFAULT_EMPTY_RETRY_CONFIG: EmptyRetryConfig = {
+  enabled: true,
+  maxRetries: 2,
+  baseDelayMs: 1000,
+  jitterMs: 250,
+};
+
 export interface LLMRequest {
   prompt: string;
   /** System prompt - sent as separate system role message (if provider supports it) */

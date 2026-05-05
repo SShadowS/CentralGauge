@@ -34,6 +34,25 @@ export const GEMINI_DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_API_TIMEOUT_MS = 30000;
 
 /**
+ * Empty-response retry defaults.
+ *
+ * Some providers (notably reasoning models like DeepSeek v4 pro, Gemini 3 Pro
+ * thinking, GPT-5.x with high reasoning effort) intermittently return a
+ * 200 OK with empty content + `finishReason="stop"`. The model thought hard,
+ * emitted no visible tokens, and considers itself done. Cross-run analysis
+ * shows the same (model, task) pair often succeeds on a fresh call: the
+ * empty is a transient artifact of reasoning-budget exhaustion, sampler
+ * dead-ends, or provider-side flake, not a permanent capability gap.
+ *
+ * 2 retries with linear backoff and small jitter recovers most of these
+ * without the bench falling through to attempt 2's fix-up template (which
+ * is fed an empty `previousCode` and is rarely productive).
+ */
+export const DEFAULT_EMPTY_RETRY_MAX_RETRIES = 2;
+export const DEFAULT_EMPTY_RETRY_BASE_DELAY_MS = 1000;
+export const DEFAULT_EMPTY_RETRY_JITTER_MS = 250;
+
+/**
  * Extended timeout for local models which may be slower.
  */
 export const LOCAL_MODEL_TIMEOUT_MS = 60000;

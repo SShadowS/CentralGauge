@@ -130,6 +130,20 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
+   * Configure empty-response retry behavior.
+   *
+   * When a provider returns 200 OK with empty content + `finishReason="stop"`
+   * (typical of reasoning models on hard prompts), the work pool retries
+   * the same request rather than letting the bench fall through to the
+   * attempt-2 fix-up template. See {@link EmptyRetryConfig}.
+   */
+  setEmptyRetryConfig(
+    config: import("../llm/types.ts").EmptyRetryConfig,
+  ): void {
+    this.llmPool.setEmptyRetryConfig(config);
+  }
+
+  /**
    * Subscribe to execution events
    */
   on(listener: EventListener): () => void {
