@@ -61,3 +61,7 @@
   display_name: GPT-5.5
   generation: 5
   released_at: "2026-04-23"
+- slug: anthropic/claude-sonnet-4-6
+  api_model_id: claude-sonnet-4-6
+  family: claude
+  display_name: Claude Sonnet 4 6
