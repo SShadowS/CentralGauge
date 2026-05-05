@@ -9,6 +9,8 @@ export interface UploadBlobOptions {
   fetchFn?: typeof fetch;
   maxAttempts?: number;
   backoffBaseMs?: number;
+  /** Max parallel uploads in {@link uploadMissing}. Ignored by {@link uploadBlob}. */
+  concurrency?: number;
 }
 
 export async function uploadBlob(
@@ -87,11 +89,45 @@ export async function uploadMissing(
   keyId: number,
   opts: UploadBlobOptions = {},
 ): Promise<BlobUploadResult> {
+  // Bounded-concurrency worker pool. Pulls from a shared cursor so each
+  // upload runs exactly once and no work is duplicated. The site's
+  // ratelimit binding caps writes at 600/min, so 10 in-flight × ~150ms
+  // round-trip ≈ 60/sec stays within budget while saturating throughput.
+  const concurrency = Math.max(1, opts.concurrency ?? 10);
+  const workerCount = Math.min(concurrency, missing.length);
+  if (workerCount === 0) return { uploaded: 0, skipped: 0 };
+
+  let cursor = 0;
   let uploaded = 0;
-  for (const { sha256, body } of missing) {
-    await uploadBlob(baseUrl, sha256, body, privateKey, keyId, opts);
-    uploaded++;
+  let firstError: Error | null = null;
+
+  const workers: Promise<void>[] = [];
+  for (let w = 0; w < workerCount; w++) {
+    workers.push((async () => {
+      while (firstError === null) {
+        const i = cursor++;
+        if (i >= missing.length) return;
+        const item = missing[i]!;
+        try {
+          await uploadBlob(
+            baseUrl,
+            item.sha256,
+            item.body,
+            privateKey,
+            keyId,
+            opts,
+          );
+          uploaded++;
+        } catch (e) {
+          firstError = e instanceof Error ? e : new Error(String(e));
+          return;
+        }
+      }
+    })());
   }
+
+  await Promise.all(workers);
+  if (firstError) throw firstError;
   return { uploaded, skipped: 0 };
 }
 

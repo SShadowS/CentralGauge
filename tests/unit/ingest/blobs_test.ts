@@ -87,3 +87,59 @@ Deno.test("uploadMissing uploads each blob and returns count", async () => {
   assertEquals(result, { uploaded: 2, skipped: 0 });
   assertEquals(uploads, 2);
 });
+
+Deno.test("uploadMissing runs uploads concurrently up to the cap", async () => {
+  const priv = ed.utils.randomSecretKey();
+  let inFlight = 0;
+  let peakInFlight = 0;
+  const fakeFetch: typeof fetch = () => {
+    inFlight++;
+    if (inFlight > peakInFlight) peakInFlight = inFlight;
+    return new Promise((resolve) =>
+      setTimeout(() => {
+        inFlight--;
+        resolve(new Response("", { status: 200 }));
+      }, 5)
+    );
+  };
+  const items = Array.from({ length: 20 }, (_, i) => ({
+    sha256: String(i).padStart(64, "0"),
+    body: new Uint8Array([i]),
+  }));
+  const result = await uploadMissing("https://h", items, priv, 1, {
+    fetchFn: fakeFetch,
+    concurrency: 5,
+  });
+  assertEquals(result.uploaded, 20);
+  // Peak concurrency must respect the cap and exceed 1 (i.e. parallel ran).
+  assertEquals(peakInFlight <= 5, true);
+  assertEquals(peakInFlight > 1, true);
+});
+
+Deno.test("uploadMissing surfaces the first error and stops scheduling", async () => {
+  const priv = ed.utils.randomSecretKey();
+  let calls = 0;
+  const fakeFetch: typeof fetch = () => {
+    calls++;
+    return Promise.resolve(
+      new Response("nope", { status: 401 }),
+    );
+  };
+  const items = Array.from({ length: 50 }, (_, i) => ({
+    sha256: String(i).padStart(64, "0"),
+    body: new Uint8Array([i]),
+  }));
+  let thrown: unknown = null;
+  try {
+    await uploadMissing("https://h", items, priv, 1, {
+      fetchFn: fakeFetch,
+      concurrency: 4,
+      backoffBaseMs: 1,
+    });
+  } catch (e) {
+    thrown = e;
+  }
+  assertEquals(thrown instanceof Error, true);
+  // Workers should bail out on first error rather than draining all 50 items.
+  assertEquals(calls < items.length, true);
+});
