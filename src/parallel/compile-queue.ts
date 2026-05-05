@@ -639,13 +639,20 @@ export class CompileQueue implements CompileWorkQueue {
   ): Promise<{ testResult: TestResult; testDuration: number }> {
     // Publish prereq apps to container (container operation — serial)
     const compiledPrereqs = compileResult._compiledPrereqs ?? [];
-    for (const prereq of compiledPrereqs) {
-      if (prereq.compiledAppPath) {
-        await this.containerProvider.publishApp(
-          this.containerName,
-          prereq.compiledAppPath,
-        );
-      }
+    const prereqPaths = compiledPrereqs
+      .map((p) => p.compiledAppPath)
+      .filter((p): p is string => p !== undefined);
+
+    // Sweep orphan prereqs left by prior tasks (cross-task ID collision guard)
+    if (this.containerProvider.cleanupOrphanedPrereqs) {
+      await this.containerProvider.cleanupOrphanedPrereqs(
+        this.containerName,
+        prereqPaths,
+      );
+    }
+
+    for (const prereqPath of prereqPaths) {
+      await this.containerProvider.publishApp(this.containerName, prereqPath);
     }
 
     // Load the project for test execution

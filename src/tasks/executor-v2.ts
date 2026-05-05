@@ -645,6 +645,14 @@ export class TaskExecutorV2 {
         .map((p) => p.compiledAppPath)
         .filter((p): p is string => p !== undefined);
 
+      // Sweep orphan prereqs left by prior tasks (cross-task ID collision guard)
+      if (containerProvider.cleanupOrphanedPrereqs) {
+        await containerProvider.cleanupOrphanedPrereqs(
+          context.containerName,
+          prereqAppPaths,
+        );
+      }
+
       for (const prereqPath of prereqAppPaths) {
         await containerProvider.publishApp(context.containerName, prereqPath);
       }

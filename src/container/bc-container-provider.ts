@@ -872,6 +872,59 @@ export class BcContainerProvider implements ContainerProvider {
     log.info("App published successfully");
   }
 
+  /**
+   * Unpublish lingering CentralGauge prereq apps whose Name is not in the
+   * expected set. Prevents cross-task ID collisions when a previous task's
+   * prereq remains installed (e.g. M001 Prereq's Product table 69001 vs
+   * E002 Prereq's Product Category table 69001).
+   *
+   * Filename convention: Publisher_Name_Version.app
+   */
+  async cleanupOrphanedPrereqs(
+    containerName: string,
+    expectedPrereqAppPaths: string[],
+  ): Promise<void> {
+    const expected = expectedPrereqAppPaths
+      .map((p) => p.split(/[/\\]/).pop() ?? "")
+      .map((fileName) => {
+        const parts = fileName.replace(".app", "").split("_");
+        const publisher = parts[0] ?? "";
+        const name = parts.slice(1, -1).join("_");
+        return { publisher, name };
+      })
+      .filter((x) => x.name.length > 0);
+
+    // Quote and join as PowerShell string array literals, e.g.
+    //   $expectedNames = @('CG-AL-E002 Prereq','CG-AL-H022 Prereq')
+    const escapeForPS = (s: string) => s.replace(/'/g, "''");
+    const expectedNamesLit = expected.length === 0 ? "@()" : "@(" +
+      expected.map((e) => `'${escapeForPS(e.name)}'`).join(",") +
+      ")";
+
+    const script = `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      $bcContainerHelperConfig.usePwshForBc24 = $false
+
+      $expectedNames = ${expectedNamesLit}
+      $orphans = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
+        $_.Publisher -eq "CentralGauge" -and
+        $_.Name -like "*Prereq*" -and
+        ($expectedNames -notcontains $_.Name)
+      })
+      foreach ($app in $orphans) {
+        try {
+          Write-Output "PREREQ_ORPHAN_REMOVE: $($app.Name) v$($app.Version)"
+          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
+        } catch {
+          Write-Output "PREREQ_ORPHAN_WARN: $($app.Name) - $($_.Exception.Message)"
+        }
+      }
+      Write-Output "PREREQ_CLEANUP_DONE"
+    `;
+
+    await this.executePowerShell(script);
+  }
+
   async runTests(
     containerName: string,
     project: ALProject,

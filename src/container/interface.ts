@@ -30,6 +30,18 @@ export interface ContainerProvider {
     appPath: string,
   ): Promise<void>;
 
+  // Unpublish CentralGauge prereq apps in the container that are NOT in the
+  // given expected set. Each task's prereqs are task-scoped — a prior task's
+  // prereq lingering on the container can collide with the current task's
+  // prereq IDs (e.g. M001 Prereq + E002 Prereq both declare table 69001).
+  // expectedPrereqAppPaths: array of compiled .app file paths whose
+  // Publisher_Name pairs (parsed from filename) form the allow-list.
+  // Optional — providers without a real BC catalog (mock/docker) can skip.
+  cleanupOrphanedPrereqs?(
+    containerName: string,
+    expectedPrereqAppPaths: string[],
+  ): Promise<void>;
+
   runTests(
     containerName: string,
     project: ALProject,

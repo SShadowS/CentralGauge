@@ -244,6 +244,13 @@ export class VerificationEngine {
 
     // Publish prereq apps before running tests
     if (prereqAppPaths && prereqAppPaths.length > 0) {
+      // Sweep orphan prereqs left by prior tasks (cross-task ID collision guard)
+      if (this.containerProvider.cleanupOrphanedPrereqs) {
+        await this.containerProvider.cleanupOrphanedPrereqs(
+          containerName,
+          prereqAppPaths,
+        );
+      }
       for (const prereqPath of prereqAppPaths) {
         if (debug) {
           log.debug("Publishing prereq", { path: prereqPath });
