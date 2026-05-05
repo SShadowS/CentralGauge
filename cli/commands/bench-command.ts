@@ -153,7 +153,6 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--no-continuation",
       "Disable automatic continuation for truncated responses",
-      { default: false },
     )
     .option(
       "--stream",
@@ -177,7 +176,6 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--no-notify",
       "Disable Pushbullet notification (even if token configured)",
-      { default: false },
     )
     .option(
       "--runs <number:integer>",
@@ -191,7 +189,6 @@ export function registerBenchCommand(cli: Command): void {
     .option(
       "--no-ingest",
       "Skip ingestion to the scoreboard API after the run completes",
-      { default: false },
     )
     .option(
       "-y, --yes",

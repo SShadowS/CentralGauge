@@ -304,6 +304,20 @@ export async function executeParallelBenchmark(
         orchestrator.setContinuationEnabled(false);
       }
 
+      // Apply empty-retry config from .centralgauge.yml (falls back to
+      // built-in defaults when unset). Retries an LLM call when the
+      // provider returns empty content with finishReason="stop", the
+      // dominant failure mode on reasoning models for hard prompts.
+      const emptyRetryCfg = appConfig.llm?.emptyRetry;
+      if (emptyRetryCfg) {
+        orchestrator.setEmptyRetryConfig({
+          enabled: emptyRetryCfg.enabled ?? true,
+          maxRetries: emptyRetryCfg.maxRetries ?? 2,
+          baseDelayMs: emptyRetryCfg.baseDelayMs ?? 1000,
+          jitterMs: emptyRetryCfg.jitterMs ?? 250,
+        });
+      }
+
       // Track pass rates per model (reset each run)
       const modelPassRates: ModelPassRates = new Map();
 
@@ -744,6 +758,8 @@ function subscribeToEvents(
     return "red";
   };
 
+  let lastProgressKey = "";
+
   orchestrator.on((event: ParallelExecutionEvent) => {
     // JSON events mode: output machine-readable JSON lines
     if (jsonEvents) {
@@ -878,12 +894,15 @@ function subscribeToEvents(
       }
       case "progress":
         if (!options.sequential) {
-          const pct =
-            ((event.progress.completedTasks / event.progress.totalTasks) *
-              100).toFixed(0);
-          log.progress(
-            `${pct}% (${event.progress.completedTasks}/${event.progress.totalTasks})`,
-          );
+          const key =
+            `${event.progress.completedTasks}/${event.progress.totalTasks}`;
+          if (key !== lastProgressKey) {
+            lastProgressKey = key;
+            const pct =
+              ((event.progress.completedTasks / event.progress.totalTasks) *
+                100).toFixed(0);
+            log.progress(`${pct}% (${key})`);
+          }
         }
         break;
       case "error":
