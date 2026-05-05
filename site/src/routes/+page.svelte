@@ -7,6 +7,7 @@
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
   import HeroChart from '$lib/components/domain/HeroChart.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
+  import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
@@ -87,11 +88,11 @@
 
 <div class="layout">
   <FilterRail>
-    <fieldset class="group">
-      <legend>Set</legend>
-      <Radio label="Current" name="set" value="current" group={setVal} onchange={() => pushFilter({ set: 'current' })} />
-      <Radio label="All"     name="set" value="all"     group={setVal} onchange={() => pushFilter({ set: 'all' })} />
-    </fieldset>
+    <SetPicker
+      sets={data.taskSets}
+      selected={setVal}
+      onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
+    />
 
     {#if data.categories.length > 0}
       <fieldset class="group">

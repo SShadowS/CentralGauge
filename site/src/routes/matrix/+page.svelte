@@ -4,6 +4,7 @@
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
+  import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
 
@@ -49,23 +50,11 @@
 
 <div class="layout">
   <FilterRail>
-    <fieldset class="group">
-      <legend>Set</legend>
-      <Radio
-        label="Current"
-        name="set"
-        value="current"
-        group={setValue}
-        onchange={() => pushFilter({ set: null })}
-      />
-      <Radio
-        label="All"
-        name="set"
-        value="all"
-        group={setValue}
-        onchange={() => pushFilter({ set: 'all' })}
-      />
-    </fieldset>
+    <SetPicker
+      sets={data.taskSets}
+      selected={setValue}
+      onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
+    />
 
     <fieldset class="group">
       <legend>Difficulty</legend>

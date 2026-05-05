@@ -4,6 +4,7 @@ import type {
   LeaderboardQuery,
   LeaderboardResponse,
   SummaryStats,
+  TaskSetsResponse,
 } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
 
@@ -27,10 +28,11 @@ export const load: PageServerLoad = async (
   // is cached at the edge with named cache `cg-summary` (Phase A7). Empty
   // data is expected in CC-1 production; the band still renders zero-shaped
   // values, the rail conditionally renders on data.
-  const [res, catRes, sumRes] = await Promise.all([
+  const [res, catRes, sumRes, tsRes] = await Promise.all([
     fetch(apiUrl),
     fetch("/api/v1/categories"),
     fetch("/api/v1/summary"),
+    fetch("/api/v1/task-sets"),
   ]);
 
   if (!res.ok) {
@@ -75,12 +77,17 @@ export const load: PageServerLoad = async (
       generated_at: new Date().toISOString(),
     };
 
+  const taskSets = tsRes.ok
+    ? ((await tsRes.json()) as TaskSetsResponse).data
+    : [];
+
   return {
     leaderboard: payload,
     sort,
     filters: payload.filters as LeaderboardQuery,
     categories,
     summary,
+    taskSets,
     serverTime: new Date().toISOString(),
   };
 };

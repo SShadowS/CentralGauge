@@ -1,5 +1,8 @@
 import type { PageServerLoad } from "./$types";
-import type { TasksIndexResponse } from "$shared/api-types";
+import type {
+  TasksIndexResponse,
+  TaskSetsResponse,
+} from "$shared/api-types";
 import { error } from "@sveltejs/kit";
 
 export const load: PageServerLoad = async (
@@ -17,7 +20,10 @@ export const load: PageServerLoad = async (
   const category = url.searchParams.get("category") ?? "";
   if (category) sp.set("category", category);
 
-  const res = await fetch(`/api/v1/tasks?${sp.toString()}`);
+  const [res, tsRes] = await Promise.all([
+    fetch(`/api/v1/tasks?${sp.toString()}`),
+    fetch("/api/v1/task-sets"),
+  ]);
   if (!res.ok) {
     let body: unknown;
     try {
@@ -34,9 +40,14 @@ export const load: PageServerLoad = async (
   const apiCache = res.headers.get("cache-control");
   if (apiCache) setHeaders({ "cache-control": apiCache });
 
+  const taskSets = tsRes.ok
+    ? ((await tsRes.json()) as TaskSetsResponse).data
+    : [];
+
   return {
     tasks: (await res.json()) as TasksIndexResponse,
     filters: { set, difficulty, category },
+    taskSets,
     cursor,
   };
 };
