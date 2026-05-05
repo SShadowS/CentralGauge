@@ -22,4 +22,5 @@ export { registerReportDbCommand } from "./report-db-command.ts";
 export { registerStatsCommands } from "./stats-command.ts";
 export { registerStatusCommand } from "./status-command.ts";
 export { registerSyncCatalogCommand } from "./sync-catalog-command.ts";
+export { registerTaskSetCommand } from "./task-set-command.ts";
 export { registerVerifyCommand } from "./verify-command.ts";
