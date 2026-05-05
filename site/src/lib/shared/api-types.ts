@@ -230,6 +230,25 @@ export interface RunsListResponse {
 }
 
 // =============================================================================
+// Task sets — GET /api/v1/task-sets
+// =============================================================================
+
+export interface TaskSetSummary {
+  hash: string;
+  short_hash: string;
+  display_name: string | null;
+  task_count: number;
+  run_count: number;
+  is_current: boolean;
+  created_at: string;
+}
+
+export interface TaskSetsResponse {
+  data: TaskSetSummary[];
+  generated_at: string;
+}
+
+// =============================================================================
 // Run detail — GET /api/v1/runs/:id
 // =============================================================================
 

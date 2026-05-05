@@ -1,6 +1,82 @@
 import type { RequestHandler } from "./$types";
 import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
+import { cachedJson } from "$lib/server/cache";
+import { getAll } from "$lib/server/db";
+import type {
+  TaskSetSummary,
+  TaskSetsResponse,
+} from "$lib/shared/api-types";
+
+const TASK_SETS_CACHE_TTL_SECONDS = 60;
+
+export const GET: RequestHandler = async ({ request, url, platform }) => {
+  if (!platform) {
+    return errorResponse(
+      new ApiError(500, "no_platform", "Cloudflare platform not available"),
+    );
+  }
+  try {
+    const cache = await platform.caches.open("cg-task-sets");
+    const cacheKey = new Request(new URL(url.toString()).toString(), {
+      method: "GET",
+    });
+
+    let payload: TaskSetsResponse | null = null;
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      payload = (await cached.json()) as TaskSetsResponse;
+    }
+
+    if (!payload) {
+      const rows = await getAll<{
+        hash: string;
+        display_name: string | null;
+        task_count: number;
+        run_count: number;
+        is_current: number;
+        created_at: string;
+      }>(
+        platform.env.DB,
+        `SELECT
+           ts.hash,
+           ts.display_name,
+           ts.task_count,
+           ts.is_current,
+           ts.created_at,
+           (SELECT COUNT(*) FROM runs WHERE task_set_hash = ts.hash) AS run_count
+         FROM task_sets ts
+         ORDER BY ts.is_current DESC, ts.created_at DESC`,
+        [],
+      );
+
+      const data: TaskSetSummary[] = rows.map((r) => ({
+        hash: r.hash,
+        short_hash: r.hash.slice(0, 8),
+        display_name: r.display_name,
+        task_count: +(r.task_count ?? 0),
+        run_count: +(r.run_count ?? 0),
+        is_current: r.is_current === 1,
+        created_at: r.created_at,
+      }));
+
+      payload = { data, generated_at: new Date().toISOString() };
+
+      const storeRes = new Response(JSON.stringify(payload), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control":
+            `public, s-maxage=${TASK_SETS_CACHE_TTL_SECONDS}`,
+        },
+      });
+      await cache.put(cacheKey, storeRes);
+    }
+
+    return cachedJson(request, payload);
+  } catch (err) {
+    return errorResponse(err);
+  }
+};
 
 interface TaskSetPayload {
   hash: string;
