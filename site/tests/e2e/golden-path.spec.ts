@@ -6,7 +6,7 @@ test.describe("golden path", () => {
     // networkidle: sort/filter buttons + Tabs use Svelte event handlers
     // wired during hydration. Default `load` returns before that.
     await page.goto("/", { waitUntil: "networkidle" });
-    await expect(page.getByRole("heading", { level: 1, name: /Leaderboard/ }))
+    await expect(page.getByRole("heading", { level: 1, name: /CentralGauge/i }))
       .toBeVisible();
 
     // 2. Sort by score (ScoreCell is an <h2 sr-only>; the sort button is a

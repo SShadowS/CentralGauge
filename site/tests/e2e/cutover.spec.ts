@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test.describe("P5.5 cutover", () => {
   test("/ shows leaderboard", async ({ page }) => {
+    // c19efe5 replaced the leaderboard h1 with the brand mark. The
+    // leaderboard table is the load-bearing assertion now.
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: /Leaderboard/i }))
+    await expect(page.getByRole("heading", { level: 1, name: /centralgauge/i }))
       .toBeVisible();
     await expect(page.getByRole("table")).toBeVisible();
   });
@@ -40,7 +42,7 @@ test.describe("P5.5 cutover", () => {
     const canonical = page.locator('link[rel="canonical"]');
     await expect(canonical).toHaveAttribute(
       "href",
-      /https:\/\/centralgauge\.sshadows\.workers\.dev\/?$/,
+      /https:\/\/ai\.sshadows\.dk\/?$/,
     );
   });
 
@@ -55,7 +57,7 @@ test.describe("P5.5 cutover", () => {
     expect(res.status()).toBe(200);
     const body = await res.text();
     expect(body).toContain(
-      "<loc>https://centralgauge.sshadows.workers.dev/</loc>",
+      "<loc>https://ai.sshadows.dk/</loc>",
     );
     expect(body).not.toContain("/leaderboard");
   });

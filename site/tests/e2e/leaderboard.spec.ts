@@ -2,8 +2,11 @@ import { expect, test } from "@playwright/test";
 
 test.describe("/", () => {
   test("renders header + table + filter rail", async ({ page }) => {
+    // Hero chart (c19efe5) replaced the "Leaderboard" h1 with the
+    // CentralGauge brand mark. The leaderboard table itself remains the
+    // primary page content.
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1, name: /leaderboard/i }))
+    await expect(page.getByRole("heading", { level: 1, name: /centralgauge/i }))
       .toBeVisible();
     await expect(page.getByRole("table")).toBeVisible();
     await expect(page.getByRole("navigation", { name: /primary/i }))

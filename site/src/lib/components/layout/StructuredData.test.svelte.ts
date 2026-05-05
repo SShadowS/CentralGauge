@@ -5,7 +5,7 @@ import StructuredData from "./StructuredData.svelte";
 describe("<StructuredData>", () => {
   it("emits WebSite + Organization JSON-LD scripts", () => {
     const { container } = render(StructuredData, {
-      props: { pageUrl: "https://centralgauge.sshadows.workers.dev/" },
+      props: { pageUrl: "https://ai.sshadows.dk/" },
     });
     const scripts = container.querySelectorAll(
       'script[type="application/ld+json"]',
@@ -15,7 +15,7 @@ describe("<StructuredData>", () => {
 
   it("WebSite script declares correct @type and url", () => {
     const { container } = render(StructuredData, {
-      props: { pageUrl: "https://centralgauge.sshadows.workers.dev/" },
+      props: { pageUrl: "https://ai.sshadows.dk/" },
     });
     const scripts = Array.from(
       container.querySelectorAll('script[type="application/ld+json"]'),
@@ -23,13 +23,13 @@ describe("<StructuredData>", () => {
     const websiteJson = scripts.map((s) => JSON.parse(s.textContent ?? "{}"))
       .find((j) => j["@type"] === "WebSite");
     expect(websiteJson).toBeDefined();
-    expect(websiteJson.url).toBe("https://centralgauge.sshadows.workers.dev");
+    expect(websiteJson.url).toBe("https://ai.sshadows.dk");
     expect(websiteJson.name).toBe("CentralGauge");
   });
 
   it("WebSite includes potentialAction.SearchAction with /search?q={search_term_string}", () => {
     const { container } = render(StructuredData, {
-      props: { pageUrl: "https://centralgauge.sshadows.workers.dev/" },
+      props: { pageUrl: "https://ai.sshadows.dk/" },
     });
     const scripts = Array.from(
       container.querySelectorAll('script[type="application/ld+json"]'),
@@ -46,7 +46,7 @@ describe("<StructuredData>", () => {
 
   it("Organization script declares CentralGauge metadata", () => {
     const { container } = render(StructuredData, {
-      props: { pageUrl: "https://centralgauge.sshadows.workers.dev/" },
+      props: { pageUrl: "https://ai.sshadows.dk/" },
     });
     const scripts = Array.from(
       container.querySelectorAll('script[type="application/ld+json"]'),
@@ -56,12 +56,12 @@ describe("<StructuredData>", () => {
     ) => j["@type"] === "Organization");
     expect(orgJson).toBeDefined();
     expect(orgJson.name).toBe("CentralGauge");
-    expect(orgJson.url).toBe("https://centralgauge.sshadows.workers.dev");
+    expect(orgJson.url).toBe("https://ai.sshadows.dk");
   });
 
   it("canonical URL link is absent from this component (handled separately by Task C3)", () => {
     const { container } = render(StructuredData, {
-      props: { pageUrl: "https://centralgauge.sshadows.workers.dev/" },
+      props: { pageUrl: "https://ai.sshadows.dk/" },
     });
     const links = container.querySelectorAll('link[rel="canonical"]');
     expect(links).toHaveLength(0);

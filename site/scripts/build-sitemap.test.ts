@@ -24,8 +24,8 @@ describe("buildSitemap", () => {
 
   it("emits the homepage with explicit trailing slash to match canonical", () => {
     const xml = buildSitemap();
-    // /  → https://centralgauge.sshadows.workers.dev/   (matches the
-    // canonical `<link rel="canonical">` for `/`, see Task C3).
+    // /  → https://ai.sshadows.dk/   (matches the canonical
+    // `<link rel="canonical">` for `/`, see Task C3).
     expect(xml).toContain(`<loc>${BASE_URL}/</loc>`);
   });
 

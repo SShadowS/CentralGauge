@@ -15,7 +15,7 @@ describe("GET /sitemap.xml", () => {
     const res = await SELF.fetch("http://x/sitemap.xml");
     const body = await res.text();
     expect(body).toContain(
-      "<loc>https://centralgauge.sshadows.workers.dev/</loc>",
+      "<loc>https://ai.sshadows.dk/</loc>",
     );
   });
 
@@ -35,7 +35,7 @@ describe("GET /sitemap.xml", () => {
       ]
     ) {
       expect(body).toContain(
-        `<loc>https://centralgauge.sshadows.workers.dev${route}</loc>`,
+        `<loc>https://ai.sshadows.dk${route}</loc>`,
       );
     }
   });

@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 // `SITE_BASE_URL=https://centralgauge.dev` in the build environment AND
 // edit `wrangler.toml` — both paths re-target atomically.
 export const BASE_URL = process.env.SITE_BASE_URL ??
-  "https://centralgauge.sshadows.workers.dev";
+  "https://ai.sshadows.dk";
 
 // ALPHABETIZED + DEDUPLICATED. Tests assert sortedness.
 export const SITEMAP_ROUTES: ReadonlyArray<string> = [
