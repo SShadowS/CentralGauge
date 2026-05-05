@@ -10,6 +10,7 @@ interface TaskSetUpsert {
   created_at: string;
   task_count: number;
   set_current?: boolean;
+  display_name?: string | null;
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -41,10 +42,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         "hash, created_at, task_count required",
       );
     }
-    // Idempotent by hash; repeated uploads of the same task_set noop
+    // Idempotent by hash; repeated uploads of the same task_set noop on the
+    // immutable fields and let the operator update the optional display_name.
     await db.prepare(
-      `INSERT OR IGNORE INTO task_sets(hash, created_at, task_count, is_current) VALUES (?, ?, ?, 0)`,
-    ).bind(p.hash, p.created_at, p.task_count).run();
+      `INSERT INTO task_sets(hash, created_at, task_count, display_name, is_current)
+       VALUES (?, ?, ?, ?, 0)
+       ON CONFLICT(hash) DO UPDATE SET
+         display_name = COALESCE(excluded.display_name, task_sets.display_name)`,
+    ).bind(p.hash, p.created_at, p.task_count, p.display_name ?? null).run();
     // Optional: atomically flip the current marker to this hash. Useful for
     // ingest paths where a freshly created task_set should immediately be
     // promoted as the leaderboard's "current" set.
