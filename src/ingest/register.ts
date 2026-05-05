@@ -25,6 +25,15 @@ export interface RegisterDeps {
   interactive: boolean;
 }
 
+// Process-local cache of (slug, api_model_id) already upserted in this run.
+// Lets the variant loop call ensureModel repeatedly without re-POSTing for
+// rows we just synced. Cleared on process exit; reset hook below for tests.
+const postedModelKeys = new Set<string>();
+
+function modelKey(slug: string, apiModelId: string): string {
+  return `${slug}\0${apiModelId}`;
+}
+
 export async function ensureModel(
   cat: Catalog,
   slug: string,
@@ -34,7 +43,17 @@ export async function ensureModel(
   const existing = cat.models.find(
     (m) => m.slug === slug && m.api_model_id === apiModelId,
   );
-  if (existing) return existing;
+  // Catalog row already in YAML — push it through the admin upsert so D1
+  // matches local state (catches drift from manual YAML edits or a missing
+  // sync-catalog --apply). The endpoint is INSERT … ON CONFLICT DO UPDATE
+  // so calling it for an unchanged row is a no-op write.
+  if (existing) {
+    if (!postedModelKeys.has(modelKey(slug, apiModelId))) {
+      await postAdmin(deps, "/api/v1/admin/catalog/models", { ...existing });
+      postedModelKeys.add(modelKey(slug, apiModelId));
+    }
+    return existing;
+  }
 
   const family = inferFamily(slug);
   const inferred: CatalogModelEntry = {
@@ -63,8 +82,15 @@ export async function ensureModel(
 
   await appendModel(`${deps.catalogDir}/models.yml`, inferred);
   await postAdmin(deps, "/api/v1/admin/catalog/models", { ...inferred });
+  postedModelKeys.add(modelKey(slug, apiModelId));
   cat.models.push(inferred);
   return inferred;
+}
+
+const postedPricingKeys = new Set<string>();
+
+function pricingKey(pricingVersion: string, modelSlug: string): string {
+  return `${pricingVersion}\0${modelSlug}`;
 }
 
 export async function ensurePricing(
@@ -78,7 +104,15 @@ export async function ensurePricing(
   const existing = cat.pricing.find(
     (p) => p.pricing_version === pricingVersion && p.model_slug === modelSlug,
   );
-  if (existing) return existing;
+  // Same drift-defense as ensureModel: replay the YAML row through the
+  // admin upsert so D1 reflects local state. Idempotent server-side.
+  if (existing) {
+    if (!postedPricingKeys.has(pricingKey(pricingVersion, modelSlug))) {
+      await postAdmin(deps, "/api/v1/admin/catalog/pricing", { ...existing });
+      postedPricingKeys.add(pricingKey(pricingVersion, modelSlug));
+    }
+    return existing;
+  }
 
   let rates: PricingRates | null = await fetchPricingFromSources(
     sourcesForFamily(family),
@@ -135,6 +169,7 @@ export async function ensurePricing(
   };
   await appendPricing(`${deps.catalogDir}/pricing.yml`, entry);
   await postAdmin(deps, "/api/v1/admin/catalog/pricing", { ...entry });
+  postedPricingKeys.add(pricingKey(pricingVersion, modelSlug));
   cat.pricing.push(entry);
   return entry;
 }
@@ -159,9 +194,11 @@ export async function ensureTaskSet(
   postedTaskSetHashes.add(hash);
 }
 
-/** Test hook — resets the task-set dedup cache between Deno.test invocations. */
+/** Test hook — resets all in-process upsert dedup caches. */
 export function _resetEnsureTaskSetCache(): void {
   postedTaskSetHashes.clear();
+  postedModelKeys.clear();
+  postedPricingKeys.clear();
 }
 
 async function postAdmin(
