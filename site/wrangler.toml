@@ -73,7 +73,7 @@ id = "4cb7accbc2884bc6bab9a4de1fff134b"
 name = "RL"
 type = "ratelimit"
 namespace_id = "1001"
-simple = { limit = 60, period = 60 }
+simple = { limit = 600, period = 60 }
 
 # Durable Object for SSE fan-out
 [[durable_objects.bindings]]
