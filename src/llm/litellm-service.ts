@@ -23,6 +23,8 @@ const CACHE_TTL_MS = 4 * 60 * 60 * 1000;
 export interface LiteLLMModelInfo {
   input_cost_per_token?: number;
   output_cost_per_token?: number;
+  cache_read_input_token_cost?: number;
+  cache_creation_input_token_cost?: number;
   max_output_tokens?: number;
   max_input_tokens?: number;
   max_tokens?: number;

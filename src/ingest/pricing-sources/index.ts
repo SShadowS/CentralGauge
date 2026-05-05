@@ -1,19 +1,17 @@
 import type { PricingRates } from "../types.ts";
 import type { PricingSource } from "./types.ts";
-import { AnthropicSource } from "./anthropic.ts";
-import { OpenAISource } from "./openai.ts";
-import { GeminiSource } from "./gemini.ts";
+import { LiteLLMSource } from "./litellm.ts";
 import { OpenRouterSource } from "./openrouter.ts";
 
 export function sourcesForFamily(family: string): PricingSource[] {
   const or = new OpenRouterSource();
   switch (family) {
     case "claude":
-      return [new AnthropicSource(), or];
+      return [new LiteLLMSource("anthropic"), or];
     case "gpt":
-      return [new OpenAISource(), or];
+      return [new LiteLLMSource("openai"), or];
     case "gemini":
-      return [new GeminiSource(), or];
+      return [new LiteLLMSource("gemini"), or];
     default:
       return [or];
   }

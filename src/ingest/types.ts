@@ -3,6 +3,7 @@ export type Source =
   | "openai-api"
   | "gemini-api"
   | "openrouter-api"
+  | "litellm-api"
   | "manual";
 
 export interface PricingRates {
