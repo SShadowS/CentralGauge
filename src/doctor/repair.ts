@@ -72,14 +72,27 @@ export const seedCatalogRepairer: Repairer = {
     if (check.remediation?.autoRepairable !== true) return false;
     const d = check.details as Record<string, unknown> | undefined;
     const missingModels = (d?.["missing_models"] ?? []) as unknown[];
-    return missingModels.length > 0;
+    const missingPricing = (d?.["missing_pricing"] ?? []) as unknown[];
+    return missingModels.length > 0 || missingPricing.length > 0;
   },
   async run(check) {
     const d = check.details as Record<string, unknown> | undefined;
     const missingModels = (d?.["missing_models"] ?? []) as Array<
       { slug: string }
     >;
-    const slugs = missingModels.map((m) => m.slug);
+    const missingPricing = (d?.["missing_pricing"] ?? []) as Array<
+      { slug: string }
+    >;
+    // Union slugs from both buckets so a slug whose model row exists but
+    // pricing snapshot for today is missing still triggers seedMissingSlugs.
+    // The seeder is idempotent: appendModel/appendPricingIfChanged are no-ops
+    // when nothing changed.
+    const slugs = Array.from(
+      new Set([
+        ...missingModels.map((m) => m.slug),
+        ...missingPricing.map((m) => m.slug),
+      ]),
+    );
     const catalogDir = `${Deno.cwd()}/site/catalog`;
 
     // Warm LiteLLM cache so synchronous getPricing() in defaultDeps works.
