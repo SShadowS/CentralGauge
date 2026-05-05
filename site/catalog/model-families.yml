@@ -13,3 +13,6 @@
 - slug: deepseek
   vendor: DeepSeek
   display_name: DeepSeek
+- slug: grok
+  vendor: xAI
+  display_name: Grok
