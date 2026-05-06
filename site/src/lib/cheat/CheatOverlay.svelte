@@ -131,6 +131,16 @@
       callout: { left: 0, top: 0, width: 200, rotation: t.rotation },
     }));
 
+    // If no callouts are inside the viewport (e.g. landing hero chart pushed
+    // the leaderboard below the fold), scroll the cheat scope into view so
+    // the user sees the annotated content immediately on overlay open.
+    const viewportH = window.innerHeight;
+    const anyInView = targetsInitial.some((t) => t.rect.top < viewportH && t.rect.bottom > 0);
+    if (!anyInView) {
+      const scope = document.querySelector('[data-cheat-scope]');
+      scope?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
     void tick().then(() => {
       scheduleLayout();
       closeButton?.focus();
