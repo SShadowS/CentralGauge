@@ -1,5 +1,6 @@
 import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
 import type { ServerTimer } from './server-timing';
+import { computeDenominator } from './denominator';
 
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
@@ -34,7 +35,10 @@ export interface Aggregate {
   latency_p50_ms: number | null;
   /** 95th percentile per-result total duration (ms). null when no data. */
   latency_p95_ms: number | null;
-  /** Wilson 95% CI on pass rate (per-task semantics, denominator = tasks_attempted_distinct). */
+  /** Wilson 95% CI on pass rate (strict per-set semantics; denominator =
+   * task_sets.task_count for whole-set, filtered COUNT(*) for category/difficulty
+   * scopes). Falls back to tasks_attempted_distinct when taskSetHash is not
+   * provided (legacy/deprecated callers). */
   pass_rate_ci: { lower: number; upper: number };
   /** Strict consistency: fraction of tasks where ALL runs passed. 0 when no runs. */
   pass_hat_at_n: number;
@@ -485,6 +489,26 @@ export async function computeModelAggregates(
       : computePassHatAtN(db, where, secondaryParams, resultJoinsStr));
   }
 
+  // Strict scope-aware denominator for Wilson CI (aligns with pass_at_n).
+  // When taskSetHash is provided, use computeDenominator (task_count for
+  // whole-set, filtered COUNT(*) for category/difficulty scopes). When
+  // taskSetHash is absent (legacy taskSetCurrent path), fall back to
+  // tasks_attempted_distinct for backward compat; B.4 will update those callers.
+  let strictDenominator: number | null = null;
+  if (opts.taskSetHash) {
+    strictDenominator = await (timer
+      ? timer.measure('ci_denominator', () => computeDenominator(db, {
+          taskSetHash: opts.taskSetHash!,
+          category: opts.category ?? null,
+          difficulty: opts.difficulty ?? null,
+        }, timer))
+      : computeDenominator(db, {
+          taskSetHash: opts.taskSetHash,
+          category: opts.category ?? null,
+          difficulty: opts.difficulty ?? null,
+        }));
+  }
+
   const out = new Map<number, Aggregate>();
   for (const row of rs.results ?? []) {
     const passedA1 = Number(row.tasks_passed_attempt_1 ?? 0);
@@ -532,7 +556,7 @@ export async function computeModelAggregates(
       last_run_at: row.last_run_at,
       latency_p50_ms: latencyPercentiles ? Math.round(latencyPercentiles.p50) : null,
       latency_p95_ms: latencyPercentiles ? Math.round(latencyPercentiles.p95) : null,
-      pass_rate_ci: wilsonInterval(tasksPassedDistinct, attemptedDistinct),
+      pass_rate_ci: wilsonInterval(tasksPassedDistinct, strictDenominator ?? attemptedDistinct),
       pass_hat_at_n: passHatByModel?.get(row.model_id) ?? 0,
       cost_per_pass_usd: costPerPassUsd,
       tasks_attempted: Number(row.tasks_attempted ?? 0),

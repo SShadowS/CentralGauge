@@ -509,3 +509,94 @@ describe("computeModelAggregates filter scope (B.1)", () => {
     expect(agg!.tasks_attempted_distinct).toBe(4);
   });
 });
+
+// ---------------------------------------------------------------------------
+// B.2: pass_rate_ci uses strict scope-aware denominator
+//
+// Seed: task_set 'aaaa' has task_count=10. Model M-A passed 4 of 5 attempted.
+// Old (per-attempted): n=5, p=4/5=0.8, CI ~ (0.38, 0.96)
+// New (strict): n=10, p=4/10=0.4, CI ~ (0.17, 0.69)
+// ---------------------------------------------------------------------------
+
+describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await seedB1();
+  });
+
+  it("uses scope-aware denominator (task_count=10) instead of attempted=5 for whole-set", async () => {
+    // seedB1: task_set 'aaaa' task_count=10, M-A passed e1/e2/e3 (3 passes) + failed h1 (4 attempted total)
+    // But for this test we seed a second run so total passed = 4 and attempted_distinct = 4
+    // Actually with seedB1: 3 passed (e1,e2,e3), 4 attempted (e1,e2,e3,h1)
+    // strict denominator = 10 (from task_sets.task_count)
+    // CI for 3/10 (strict) around (0.11, 0.52) vs CI for 3/4 (per-attempted) around (0.30, 0.94)
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetHash: "aaaa",
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+    // CI for 3/10 (strict): lower ~0.107, upper ~0.518
+    // CI for 3/4 (per-attempted): lower ~0.30, upper ~0.94
+    // The strict lower must be below 0.20 (per-attempted lower is ~0.30)
+    expect(agg.pass_rate_ci.lower).toBeLessThan(0.20);
+    // The strict upper must be below 0.70 (per-attempted upper is ~0.94)
+    expect(agg.pass_rate_ci.upper).toBeLessThan(0.70);
+    // Sanity: lower < upper
+    expect(agg.pass_rate_ci.lower).toBeLessThan(agg.pass_rate_ci.upper);
+  });
+
+  it("honors category filter — denominator scopes to filtered task count (easy=5)", async () => {
+    // category='easy': 3 passed (e1/e2/e3) out of 5 easy tasks in scope
+    // strict denominator = 5 (COUNT(*) easy tasks in 'aaaa')
+    // CI for 3/5: lower ~0.152, upper ~0.780
+    // CI for 3/3 per-attempted: lower ~0.432, upper ~1.0
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetHash: "aaaa",
+      category: "easy",
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+    // Strict CI for 3/5: lower ~0.152, upper ~0.780
+    expect(agg.pass_rate_ci.lower).toBeGreaterThan(0.10);
+    expect(agg.pass_rate_ci.lower).toBeLessThan(0.25);
+    expect(agg.pass_rate_ci.upper).toBeGreaterThan(0.65);
+    expect(agg.pass_rate_ci.upper).toBeLessThan(0.90);
+  });
+
+  it("honors difficulty filter — denominator scopes to filtered task count (hard=5)", async () => {
+    // difficulty='hard': 0 passed, 1 attempted (h1), 5 hard tasks in scope
+    // strict denominator = 5 (COUNT(*) hard tasks in 'aaaa')
+    // CI for 0/5: lower=0, upper ~0.522
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetHash: "aaaa",
+      difficulty: "hard",
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+    // CI for 0/5 (strict): lower=0, upper ~0.522
+    expect(agg.pass_rate_ci.lower).toBe(0);
+    expect(agg.pass_rate_ci.upper).toBeGreaterThan(0.35);
+    expect(agg.pass_rate_ci.upper).toBeLessThan(0.65);
+  });
+
+  it("legacy taskSetCurrent path falls back to tasks_attempted_distinct", async () => {
+    // When taskSetHash is NOT provided (taskSetCurrent path), fall back to
+    // per-attempted denominator for backward compat.
+    // seedB1 uses is_current=1 on 'aaaa', so taskSetCurrent fetches the same data.
+    // M-A: tasks_attempted_distinct=4, passed=3 → CI for 3/4 (per-attempted)
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetCurrent: true,
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+    // CI for 3/4 (per-attempted fallback): lower ~0.30, upper ~0.94
+    expect(agg.pass_rate_ci.lower).toBeGreaterThan(0.25);
+    expect(agg.pass_rate_ci.upper).toBeGreaterThan(0.85);
+  });
+});
