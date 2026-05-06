@@ -313,8 +313,9 @@ describe("GET /api/v1/leaderboard", () => {
     await res.arrayBuffer();
 
     // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
-    // a synthetic GET request URL — reproduce both here to verify the write.
-    const cacheKey = new Request(url, { method: "GET" });
+    // a synthetic GET request URL with _cv=v2 appended (A.7 cache versioning).
+    const cacheKeyUrl = `${url}&_cv=v2`;
+    const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(cacheKey);
     expect(cached).toBeDefined();
@@ -325,6 +326,29 @@ describe("GET /api/v1/leaderboard", () => {
   it("rejects limit > 100", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?limit=500");
     expect(res.status).toBe(400);
+  });
+
+  it("cache key includes _cv=v2 suffix (PR1 cache versioning, A.7)", async () => {
+    // Use a fresh URL so we are guaranteed a cache miss → the handler writes
+    // a new entry. After the write we reconstruct the same _cv-bearing URL
+    // and assert the entry exists under it.
+    const url = "https://x/api/v1/leaderboard?test=cache-version";
+    const res = await SELF.fetch(url);
+    expect(res.status).toBe(200);
+    // Drain so the inline cache.put commits before we inspect.
+    await res.arrayBuffer();
+
+    // The handler appends _cv=v2 to the synthetic cache key before storing.
+    // Reconstruct the exact URL the handler used and verify the entry exists.
+    const expectedKeyUrl = `${url}&_cv=v2`;
+    const cache = await caches.open("cg-leaderboard");
+    const cached = await cache.match(new Request(expectedKeyUrl, { method: "GET" }));
+    expect(cached, "cache entry must be stored under _cv=v2 key").toBeDefined();
+
+    // Sanity: the entry is NOT stored under the bare URL (without _cv).
+    const bareKey = new Request(url, { method: "GET" });
+    const cachedBare = await cache.match(bareKey);
+    expect(cachedBare, "entry must NOT be stored under bare URL").toBeUndefined();
   });
 
   // ===========================================================================

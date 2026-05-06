@@ -4,6 +4,7 @@ import { getFirst } from "$lib/server/db";
 import { errorResponse } from "$lib/server/errors";
 import { parseChangelog } from "$lib/server/changelog";
 import type { ChangelogEntry, SummaryStats } from "$lib/shared/api-types";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 // Build-time `?raw` import: Vite inlines the markdown file's contents as a
 // string at bundle time. The path crosses the site/ boundary; the precedent
 // is `site/src/lib/shared/canonical.ts` (re-export from `../../shared`).
@@ -31,7 +32,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
     const cache = await platform!.caches.open("cg-summary");
-    const cacheKey = new Request(new URL(url.toString()).toString(), {
+    const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl.toString(), {
       method: "GET",
     });
 

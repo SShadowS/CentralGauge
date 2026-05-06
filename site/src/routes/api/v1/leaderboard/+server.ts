@@ -8,6 +8,7 @@ import {
 import { ApiError, errorResponse } from '$lib/server/errors';
 import { ServerTimer } from '$lib/server/server-timing';
 import { isValidTaskSetHash } from '$lib/shared/task-set-hash';
+import { CACHE_VERSION } from '$lib/server/cache-version';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -33,6 +34,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // are still produced by `cachedJson` for the *outgoing* response.
     const cache = await platform!.caches.open('cg-leaderboard');
     const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
     const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
 
     let payload: LeaderboardResponse | null = null;

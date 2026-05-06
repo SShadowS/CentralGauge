@@ -3,6 +3,7 @@ import { cachedJson } from "$lib/server/cache";
 import { computeMatrix } from "$lib/server/matrix";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import type { MatrixResponse } from "$lib/shared/api-types";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -40,6 +41,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // from new ingest events.
     const cache = await platform!.caches.open("cg-matrix");
     const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
     const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
 
     let payload: MatrixResponse | null = null;

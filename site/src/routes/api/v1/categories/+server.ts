@@ -6,6 +6,7 @@ import type {
   CategoriesIndexItem,
   CategoriesIndexResponse,
 } from "$lib/shared/api-types";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -15,7 +16,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // Named cache (cg-categories) — same pattern as /api/v1/leaderboard.
     // 60s TTL is sufficient for a low-frequency aggregate endpoint.
     const cache = await platform!.caches.open("cg-categories");
-    const cacheKey = new Request(new URL(url.toString()).toString(), {
+    const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl.toString(), {
       method: "GET",
     });
 
