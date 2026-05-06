@@ -16,6 +16,8 @@
   import Button from '$lib/components/ui/Button.svelte';
   import { formatScore, formatCost, formatDuration } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
+  import CheatButton from '$lib/cheat/CheatButton.svelte';
+  import { modelDetailAnnotations } from '$lib/cheat/annotations/model-detail';
   import type { RunsListItem } from '$shared/api-types';
 
   let { data } = $props();
@@ -122,22 +124,28 @@
   </p>
 </header>
 
-<div class="layout">
+<div class="layout" data-cheat-scope>
   <main class="content">
     <section class="stats">
-      <StatTile label="Pass@N" value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%" sparklineValues={sparklineValues}
-        infoId="pass_at_n" />
+      <div data-cheat="pass-tile">
+        <StatTile label="Pass@N" value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%" sparklineValues={sparklineValues}
+          infoId="pass_at_n" />
+      </div>
       <AttemptBreakdownTile aggregates={m.aggregates} />
-      <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
-        infoId="avg_cost_usd"
-        delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
+      <div data-cheat="cost-tile">
+        <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
+          infoId="avg_cost_usd"
+          delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
+      </div>
       <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
-      <StatTile
-        label="Avg score"
-        value={formatScore(m.aggregates.avg_score)}
-        infoId="avg_score"
-        delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined}
-      />
+      <div data-cheat="avg-tile">
+        <StatTile
+          label="Avg score"
+          value={formatScore(m.aggregates.avg_score)}
+          infoId="avg_score"
+          delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined}
+        />
+      </div>
       <StatTile
         label="pass^n (strict)"
         value="{(m.aggregates.pass_hat_at_n * 100).toFixed(1)}%"
@@ -183,7 +191,7 @@
       </dl>
     </section>
 
-    <section id="history" class="chart-section">
+    <section id="history" class="chart-section" data-cheat="history-chart">
       <h2>History</h2>
       <TaskHistoryChart points={m.history} />
     </section>
@@ -221,6 +229,8 @@
   </main>
   <TableOfContents items={tocItems} />
 </div>
+
+<CheatButton annotations={modelDetailAnnotations} />
 
 <style>
   .page-header { padding: var(--space-6) 0; }
