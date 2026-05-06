@@ -80,8 +80,13 @@
       for (const t of targets) {
         const el = calloutEls.get(t.id);
         if (el) {
-          const r = el.getBoundingClientRect();
-          sizes[t.id] = { width: r.width || 200, height: r.height || 60 };
+          // offsetWidth/Height: untransformed layout box. Using
+          // getBoundingClientRect on a rotated element returns the
+          // axis-aligned bounding rect of the rotated geometry, which is
+          // strictly >= the layout box. That feeds back into the inline
+          // width, which grows the layout box on the next render, which
+          // further inflates the rotated bounding rect — runaway expansion.
+          sizes[t.id] = { width: el.offsetWidth || 200, height: el.offsetHeight || 60 };
         } else {
           sizes[t.id] = { width: 200, height: 60 };
         }

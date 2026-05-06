@@ -37,7 +37,7 @@
     opacity: {layout.visible ? 1 : 0};
   "
 >
-  {#if bodyPrefix}<strong>{bodyPrefix}</strong> {/if}{body}
+  {#if bodyPrefix}<strong>{bodyPrefix}</strong>{' '}{/if}{body}
 </div>
 
 <style>
