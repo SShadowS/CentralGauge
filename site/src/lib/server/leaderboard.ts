@@ -270,18 +270,21 @@ export async function computeLeaderboard(
     last_run_at: string;
   };
 
-  // Bind order matches appearance in the SQL string:
-  //   1. params[]          – outer WHERE (task_set, tier, family, since,
+  // Bind order MUST follow textual `?` position in the SQL string, not
+  // execution order. The three scope-IN subqueries appear in the SELECT list
+  // (lines for tasks_passed_attempt_1 and tasks_passed_attempt_2_only) which
+  // is BEFORE the FROM/JOIN/WHERE clauses, so their `?`s bind first.
+  //   1. scopeInA1.params  – task_id IN (...) inside tasks_passed_attempt_1
+  //   2. scopeInA2NotExists.params – task_id IN (...) inside the NOT EXISTS
+  //   3. scopeInA2.params  – task_id IN (...) for tasks_passed_attempt_2_only
+  //   4. params[]          – outer WHERE (task_set, tier, family, since,
   //                          difficulty JOIN, category WHERE)
-  //   2. scopeInA1.params  – task_id IN (...) inside tasks_passed_attempt_1
-  //   3. scopeInA2NotExists.params – task_id IN (...) inside the NOT EXISTS
-  //   4. scopeInA2.params  – task_id IN (...) for tasks_passed_attempt_2_only
   //   5. q.limit           – LIMIT clause
   const allParams = [
-    ...params,
     ...scopeInA1.params,
     ...scopeInA2NotExists.params,
     ...scopeInA2.params,
+    ...params,
     q.limit,
   ];
 

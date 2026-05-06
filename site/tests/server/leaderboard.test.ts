@@ -73,7 +73,7 @@ async function seedScaffold(): Promise<void> {
 }
 
 /** Insert a run row for model 1 in task_set 'aaaa'. Returns void. */
-async function insertRun(runId: string): Promise<void> {
+async function insertRun(runId: string, tier = "claimed"): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -87,7 +87,7 @@ async function insertRun(runId: string): Promise<void> {
       "2026-04-01T00:00:00Z",
       "2026-04-01T01:00:00Z",
       "completed",
-      "claimed",
+      tier,
       "v1",
       "sig",
       "2026-04-01T00:00:00Z",
@@ -517,5 +517,53 @@ describe("computeLeaderboard filtered numerator (A.5)", () => {
     expect(ma.tasks_passed_attempt_2_only).toBe(1);
     expect(ma.denominator).toBe(6);
     expect(ma.pass_at_n).toBeCloseTo(6 / 6, 6);
+  });
+
+  // ----- Bind-order regression tests (Fix 1) --------------------------------
+  //
+  // These tests use DISTINCT values for tier vs category so a parameter swap
+  // (where "verified" lands in the category slot or "hard" lands in the tier
+  // slot) would produce wrong results. The existing tests above used identical
+  // values across all param slots and therefore could not catch a bind-order
+  // bug.
+
+  it("bind-order: tier=verified + category=hard returns 0 passes (verified run only passed easy tasks)", async () => {
+    // Run r1 (already seeded in beforeEach) has tier='claimed' and passed
+    // easy tasks e1..e5. Insert a second run with tier='verified' that only
+    // attempted a hard task and failed it — so no hard tasks were passed by
+    // any verified run.
+    await insertRun("r2", "verified");
+    await insertResult("r2", "h1", 1, 0); // attempted h1, failed
+
+    // Query: tier=verified AND category=hard.
+    // Expected: tasks_passed_attempt_1 = 0 because the verified run (r2)
+    // passed nothing, and the claimed run (r1) is excluded by the tier filter.
+    // A bind-order swap would bind "verified" into the category slot and "hard"
+    // into the tier slot, returning the easy-task passes from the claimed run —
+    // exposing the bug.
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      tier: "verified",
+      category: "hard",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A");
+    expect(ma?.tasks_passed_attempt_1 ?? 0).toBe(0);
+  });
+
+  it("bind-order: family filter + category=hard returns 0 passes (family matched run only passed easy tasks)", async () => {
+    // The beforeEach seed creates model M-A in family 'test-fam'. The run r1
+    // (tier='claimed') passed 5 easy tasks. No hard tasks were passed.
+    // Query: family=test-fam AND category=hard.
+    // Expected: tasks_passed_attempt_1 = 0 (M-A attempted no hard tasks in r1
+    // other than those seeded in this test as failures).
+    await insertResult("r1", "h1", 1, 0); // attempted h1, failed — M-A appears
+
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      family: "test-fam",
+      category: "hard",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A");
+    expect(ma?.tasks_passed_attempt_1 ?? 0).toBe(0);
   });
 });
