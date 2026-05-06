@@ -719,22 +719,13 @@ describe("GET /api/v1/leaderboard", () => {
 });
 
 // =============================================================================
-// PR1 — set=all rejection for strict pass_at_n metric
+// PR1 — set=all rejection body shape
 // =============================================================================
-describe("GET /api/v1/leaderboard — set=all rejection (PR1)", () => {
-  it("returns 400 with code=invalid_set_for_metric when set=all is requested", async () => {
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all");
-    expect(res.status).toBe(400);
-    const body = await res.json() as { code?: string; message?: string };
-    expect(body.code).toBe("invalid_set_for_metric");
-  });
-
-  it("returns informative error body for set=all (error field is non-empty string)", async () => {
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
-    expect(res.status).toBe(400);
-    const body = await res.json() as { code?: string; error?: string };
-    expect(body.code).toBe("invalid_set_for_metric");
-    expect(typeof body.error).toBe("string");
-    expect((body.error as string).length).toBeGreaterThan(0);
-  });
+it("set=all returns informative error body (error field is non-empty string)", async () => {
+  const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
+  expect(res.status).toBe(400);
+  const body = await res.json() as { code?: string; error?: string };
+  expect(body.code).toBe("invalid_set_for_metric");
+  expect(typeof body.error).toBe("string");
+  expect((body.error as string).length).toBeGreaterThan(0);
 });

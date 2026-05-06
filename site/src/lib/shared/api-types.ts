@@ -7,16 +7,17 @@
  */
 
 /**
- * The set filter accepts three forms:
+ * The set filter accepts two forms:
  * - `'current'` — only runs against the task_set with `is_current = 1`
- * - `'all'` — every task_set, no filter
  * - 64-char lowercase hex — runs against that specific task_set hash
  *
- * Validation happens server-side in the route handler before reaching the
- * leaderboard/matrix query builders. Anything that isn't `current`/`all`
- * and doesn't match `/^[0-9a-f]{64}$/` is treated as `current`.
+ * Validation happens server-side in the route handler. Anything that isn't
+ * `'current'` and doesn't match `/^[0-9a-f]{64}$/` returns HTTP 400
+ * (including `'all'`, which was previously accepted but is rejected since
+ * commit 14e7494 because cross-set aggregation is incompatible with the
+ * strict pass_at_n metric).
  */
-export type SetFilter = 'current' | 'all' | string;
+export type SetFilter = 'current' | string;
 
 export interface LeaderboardQuery {
   set: SetFilter;
@@ -699,7 +700,7 @@ export interface MatrixModel {
 }
 
 export interface MatrixFilters {
-  /** 'current', 'all', or a 64-char hex task_set hash. See SetFilter. */
+  /** 'current' or a 64-char hex task_set hash. See SetFilter. */
   set: SetFilter;
   category: string | null;
   difficulty: 'easy' | 'medium' | 'hard' | null;
