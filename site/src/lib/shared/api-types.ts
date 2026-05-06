@@ -7,15 +7,19 @@
  */
 
 /**
- * The set filter accepts two forms:
- * - `'current'` — only runs against the task_set with `is_current = 1`
- * - 64-char lowercase hex — runs against that specific task_set hash
+ * The set filter accepts the following forms, but validation is
+ * per-endpoint:
  *
- * Validation happens server-side in the route handler. Anything that isn't
- * `'current'` and doesn't match `/^[0-9a-f]{64}$/` returns HTTP 400
- * (including `'all'`, which was previously accepted but is rejected since
- * commit 14e7494 because cross-set aggregation is incompatible with the
- * strict pass_at_n metric).
+ * - `'current'` — only runs against the task_set with `is_current = 1`.
+ *   Accepted by all endpoints.
+ * - 64-char lowercase hex — runs against that specific task_set hash.
+ *   Accepted by all endpoints.
+ * - `'all'` — accepted by `/api/v1/matrix` and `/matrix` as "every
+ *   task_set, no filter." Rejected by `/api/v1/leaderboard` with HTTP
+ *   400 `invalid_set_for_metric` because cross-set aggregation is
+ *   incompatible with the strict pass_at_n metric (since commit 14e7494).
+ *
+ * Any other value returns HTTP 400 from all endpoints.
  */
 export type SetFilter = 'current' | string;
 
@@ -700,7 +704,10 @@ export interface MatrixModel {
 }
 
 export interface MatrixFilters {
-  /** 'current' or a 64-char hex task_set hash. See SetFilter. */
+  /**
+   * `'current'`, a 64-char hex task_set hash, or `'all'` (every task_set,
+   * no filter). See SetFilter for per-endpoint validation rules.
+   */
   set: SetFilter;
   category: string | null;
   difficulty: 'easy' | 'medium' | 'hard' | null;

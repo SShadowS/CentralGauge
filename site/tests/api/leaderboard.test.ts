@@ -716,16 +716,16 @@ describe("GET /api/v1/leaderboard", () => {
     const m = sonnet!.model as Record<string, unknown>;
     expect(m.settings_suffix, "mixed settings → suffix omitted").toBe("");
   });
-});
 
-// =============================================================================
-// PR1 — set=all rejection body shape
-// =============================================================================
-it("set=all returns informative error body (error field is non-empty string)", async () => {
-  const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
-  expect(res.status).toBe(400);
-  const body = await res.json() as { code?: string; error?: string };
-  expect(body.code).toBe("invalid_set_for_metric");
-  expect(typeof body.error).toBe("string");
-  expect((body.error as string).length).toBeGreaterThan(0);
+  // ---------------------------------------------------------------------------
+  // PR1 — set=all rejection body shape
+  // ---------------------------------------------------------------------------
+  it("set=all returns informative error body (error field is non-empty string)", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string; error?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
+    expect(typeof body.error).toBe("string");
+    expect((body.error as string).length).toBeGreaterThan(0);
+  });
 });
