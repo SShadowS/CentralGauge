@@ -162,7 +162,7 @@ would otherwise re-precheck).
 
 ### Catalog sync quirks
 
-- **`model_families` is NOT pushed by `sync-catalog --apply`** — it is SQL-seeded at deploy time. Adding a new family requires a manual D1 `INSERT INTO model_families(slug, vendor, display_name) VALUES (...)` before `sync-catalog` will succeed for models that reference it.
+- **`model_families` is auto-pushed by `sync-catalog --apply`** via `/api/v1/admin/catalog/families`. New families in `site/catalog/model-families.yml` upsert before models, so adding a new family no longer needs a manual D1 `INSERT`. Initial deploy still seeds via `0001_core.sql`.
 - **`d1_migrations` can be empty even when the schema is fully present.** `wrangler d1 migrations apply` then tries to re-run 0001 and fails with `table ... already exists`. Backfill: `INSERT INTO d1_migrations(name) VALUES ('0001_core.sql'), ...` for each already-applied migration, then re-run apply.
 
 ### Cliffy CLI gotchas
@@ -337,8 +337,9 @@ Use `npm run test:main` (runs `vitest run && vitest run --config vitest.unit.con
 plus `npm run test:build` to mirror what CI runs. Bare `vitest run` covers only
 one of the two configs.
 
-If `npm run build` fails on Windows with `EPERM, Permission denied: .svelte-kit/cloudflare`,
-delete the stale build output: `rm -rf site/.svelte-kit/cloudflare site/.svelte-kit/cloudflare-tmp`.
+`npm run build` auto-cleans `.svelte-kit/cloudflare{,-tmp}` via the `prebuild` hook
+(`scripts/clean-build-output.mjs`) to dodge the Windows EPERM issue from
+adapter-cloudflare's rmSync. Run `npm run clean` to clean manually.
 
 **Site CI structure.** Three jobs run on push: `unit-and-build`, `e2e` (Playwright),
 `lighthouse`. `e2e` and `lighthouse` are gated on `unit-and-build` and get **skipped**
