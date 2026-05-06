@@ -1001,3 +1001,202 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     expect(rows[2].rank).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// B.3: filtered leaderboard aggregates use scope-aware metrics
+//
+// Verifies that pass_rate_ci, cost_per_pass_usd, and latency_p95_ms are
+// computed against the same task/run subset as the headline pass_at_n.
+// Prior to B.3, computeModelAggregates was called with taskSetCurrent:true
+// only, so those metrics were unscoped while pass_at_n was scoped.
+//
+// Seed: 5 easy tasks (e1..e5) + 5 hard tasks (h1..h5).
+// Model M-A: passed 3 easy tasks on attempt-1. No hard attempts.
+// task_count on the 'aaaa' set = 10 (from seedScaffold).
+//
+// Whole-set (no category filter):
+//   denominator = 10, successes = 3 → Wilson CI on 3/10
+//
+// category=easy filter:
+//   denominator = 5 (only easy tasks), successes = 3 → Wilson CI on 3/5
+//
+// Because Wilson CI is concave in (n, successes), the CI bounds differ
+// between 3/10 and 3/5 — the test asserts they are NOT close to each other,
+// confirming the scope is plumbed through.
+// ---------------------------------------------------------------------------
+
+describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // 5 easy tasks (category_id=1, difficulty='easy') + 5 hard tasks.
+    await insertTasks(["e1", "e2", "e3", "e4", "e5"], "easy", 1);
+    await insertTasks(["h1", "h2", "h3", "h4", "h5"], "hard", 2);
+
+    // M-A passes exactly 3 easy tasks on attempt 1. No hard tasks attempted.
+    await insertRun("r1");
+    for (const tid of ["e1", "e2", "e3"]) {
+      await insertResult("r1", tid, 1, 1);
+    }
+  });
+
+  it("pass_rate_ci on category=easy uses easy-only denominator (B.3)", async () => {
+    const rowsAll = await computeLeaderboard(env.DB, baseQuery);
+    const rowsEasy = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+    });
+
+    const maAll = rowsAll.find((r) => r.model.slug === "M-A");
+    const maEasy = rowsEasy.find((r) => r.model.slug === "M-A");
+
+    expect(maAll, "M-A row should be present in whole-set query").toBeDefined();
+    expect(maEasy, "M-A row should be present in category=easy query").toBeDefined();
+
+    const ciAll = maAll!.pass_rate_ci;
+    const ciEasy = maEasy!.pass_rate_ci;
+
+    // Whole-set: 3/10 → Wilson CI with denominator=10
+    // Easy-scoped: 3/5  → Wilson CI with denominator=5
+    // The CI bounds should be substantially different (not close to each other).
+    // A tolerance of 0.005 is tight enough to catch a regression where scope is
+    // ignored (both would compute CI against the same denominator = 10).
+    expect(ciAll.lower).not.toBeCloseTo(ciEasy.lower, 2);
+    expect(ciAll.upper).not.toBeCloseTo(ciEasy.upper, 2);
+
+    // Directional sanity: 3/5 > 3/10, so CI centre is higher for easy-scoped.
+    expect(ciEasy.lower).toBeGreaterThan(ciAll.lower);
+    expect(ciEasy.upper).toBeGreaterThan(ciAll.upper);
+  });
+
+  it("cost_per_pass_usd scoped to filtered passes (B.3)", async () => {
+    // cost_per_pass_usd = total_cost / tasks_passed_distinct.
+    // To make the whole-set and easy-scoped values differ, we use different
+    // token costs for easy vs hard tasks: easy tasks cost 100 in / 50 out,
+    // while the hard task costs 10000 in / 50 out (10x more expensive).
+    //
+    // Scenario:
+    //   3 easy passes: each costs (100*1 + 50*2)/1e6 = 200/1e6
+    //   1 hard pass:   each costs (10000*1 + 50*2)/1e6 = 10100/1e6
+    //
+    // Whole-set: total_cost = 3*200/1e6 + 10100/1e6 = 10700/1e6; passes=4
+    //   cost_per_pass = 10700/4 /1e6 = 2675/1e6 ≈ 0.002675
+    //
+    // Easy-scoped (category=easy): total_cost = 3*200/1e6 = 600/1e6; passes=3
+    //   cost_per_pass = 600/3 /1e6 = 200/1e6 = 0.0002
+    //
+    // These clearly differ, proving the aggregate is scoped to easy tasks only.
+
+    // Reset and re-seed with an extra hard pass so whole-set and easy-only
+    // have DIFFERENT cost_per_pass_usd values.
+    await resetDb();
+    await seedScaffold();
+    await insertTasks(["e1", "e2", "e3", "e4", "e5"], "easy", 1);
+    await insertTasks(["h1", "h2", "h3", "h4", "h5"], "hard", 2);
+
+    // M-A: 3 easy passes (low cost: tokens_in=100) + 1 hard pass (high cost: tokens_in=10000).
+    await insertRun("r1");
+    for (const tid of ["e1", "e2", "e3"]) {
+      // Use default insertResult which has tokens_in=100, tokens_out=50.
+      await insertResult("r1", tid, 1, 1);
+    }
+    // Hard pass with much higher token cost.
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+       VALUES ('r1','h1',1,1,1.0,1,1,1,10000,50)`,
+    ).run();
+
+    const rowsAll = await computeLeaderboard(env.DB, baseQuery);
+    const rowsEasy = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+    });
+
+    const maAll = rowsAll.find((r) => r.model.slug === "M-A")!;
+    const maEasy = rowsEasy.find((r) => r.model.slug === "M-A")!;
+
+    expect(maAll.cost_per_pass_usd).not.toBeNull();
+    expect(maEasy.cost_per_pass_usd).not.toBeNull();
+    // Whole-set includes the expensive hard pass, raising cost_per_pass.
+    // Easy-scoped excludes it, so cost_per_pass is much lower.
+    expect(maEasy.cost_per_pass_usd!).not.toBeCloseTo(maAll.cost_per_pass_usd!, 4);
+    // Directional sanity: easy-only cost is lower (no expensive hard pass).
+    expect(maEasy.cost_per_pass_usd!).toBeLessThan(maAll.cost_per_pass_usd!);
+  });
+
+  it("latency_p95_ms scoped to matching runs (tier filter, B.3)", async () => {
+    // Use a tier filter to demonstrate scope-awareness of latency aggregates.
+    // Seed many claimed low-latency results and a single verified high-latency
+    // result so that all-tier p95 is much lower than verified-only p95.
+    //
+    // Design:
+    //   claimed run: 20 tasks, each with llm_duration_ms=100 (low latency)
+    //   verified run: 1 task, llm_duration_ms=900 (high latency)
+    //
+    // All-tier p95: 21 data points [100, 100, ... (20x), 900]
+    //   sorted: [100]*20 + [900]*1
+    //   p95 index = 0.95 * 20 = 19.0 → index 19 → 900
+    //
+    // That still gives p95=900! Need >20 low-latency points to push p95 below
+    // the single 900ms value. With 99 low-latency + 1 high-latency (100 total):
+    //   p95 index = 0.95 * 99 = 94.05 → interpolated at index 94 = 100
+    //
+    // So: 99 claimed results at 100ms + 1 verified result at 900ms.
+    // All-tier p95 ≈ 100; verified-only p95 = 900. Clearly different.
+    await resetDb();
+    await seedScaffold();
+
+    // Seed 99 task IDs for claimed run (use task_set_hash='aaaa', no category required).
+    const claimedTaskIds: string[] = Array.from({ length: 99 }, (_, i) => `lat-t${i + 1}`);
+    // Insert tasks without a category (category_id=null is allowed by the schema).
+    for (const tid of claimedTaskIds) {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+         VALUES ('aaaa',?,?,?,'1','{}')`,
+      ).bind(tid, `hash-${tid}`, "easy").run();
+    }
+    // Claimed run: 99 low-latency results.
+    await insertRun("r-claimed"); // default tier='claimed'
+    for (const tid of claimedTaskIds) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
+         VALUES ('r-claimed',?,1,1,1.0,1,1,1,100,50,100)`,
+      ).bind(tid).run();
+    }
+
+    // Verified run: 1 task, high latency.
+    const verifiedTaskId = "lat-v1";
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('aaaa',?,?,?,'1','{}')`,
+    ).bind(verifiedTaskId, `hash-${verifiedTaskId}`, "easy").run();
+    await insertRun("r-verified", "verified");
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
+       VALUES ('r-verified',?,1,1,1.0,1,1,1,100,50,900)`,
+    ).bind(verifiedTaskId).run();
+
+    // tier=all: 99 * 100ms + 1 * 900ms = 100 data points; p95 ≈ 100ms
+    const rowsAll = await computeLeaderboard(env.DB, baseQuery);
+    // tier=verified: 1 result at 900ms → p95 = 900ms
+    const rowsVerified = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      tier: "verified",
+    });
+
+    const maAll = rowsAll.find((r) => r.model.slug === "M-A")!;
+    const maVerified = rowsVerified.find((r) => r.model.slug === "M-A")!;
+
+    // Verified-only p95 must be 900ms (only one high-latency result).
+    expect(maVerified.latency_p95_ms).toBe(900);
+    // All-tier p95 should be much lower (≈100ms) since 99/100 results are 100ms.
+    // With 100 data points [100]*99 + [900]*1, p95 = percentileLinear at 0.95*(99) = 94.05
+    //   → interpolated between index 94 (100) and 95 (100) = 100.
+    expect(maAll.latency_p95_ms).toBeLessThan(maVerified.latency_p95_ms!);
+    expect(maAll.latency_p95_ms).not.toBe(maVerified.latency_p95_ms);
+  });
+});

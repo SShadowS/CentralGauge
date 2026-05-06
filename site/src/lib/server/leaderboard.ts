@@ -477,14 +477,23 @@ export async function computeLeaderboard(
 
   // Verified run count: delegate to computeModelAggregates so all callers
   // (this function, /api/v1/models, /api/v1/models/[slug]) compute it the
-  // same way. The is_current=1 filter is preserved via taskSetCurrent.
+  // same way. B.3: pass the full filter scope (taskSetHash, category,
+  // difficulty, tier, since) so that pass_rate_ci, cost_per_pass_usd, and
+  // latency_p95_ms are computed against the same task/run subset as the
+  // headline pass_at_n. Prior to B.3 these aggregates were unscoped
+  // (taskSetCurrent=true only), producing inconsistent visible numbers when
+  // category/difficulty/tier/since filters were active.
   const modelIds = rows.map((r) => r.model_id);
   const aggMap =
     modelIds.length === 0
       ? new Map<number, Aggregate>()
       : await computeModelAggregates(db, {
           modelIds,
-          taskSetCurrent: q.set === "current",
+          taskSetHash: resolvedHash,
+          category: q.category,
+          difficulty: q.difficulty,
+          tier: q.tier === "all" ? undefined : q.tier,
+          since: q.since,
           includeLatencyP50: true,
           includePassHatAtN: true,
           timer,
