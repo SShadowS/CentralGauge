@@ -47,4 +47,21 @@ describe("FamiliesGrid", () => {
     const a = container.querySelector('a[href="/families/claude"]');
     expect(a).not.toBeNull();
   });
+
+  it("shows pass rate as headline metric (not avg score)", () => {
+    render(FamiliesGrid, { items });
+    // "Pass rate" label should appear (not "Best avg")
+    expect(screen.getAllByText("Pass rate").length).toBeGreaterThan(0);
+    // ScoreCell renders pass_at_n * 100: 0.82 → "82.0", 0.71 → "71.0"
+    expect(screen.getByText("82.0")).toBeDefined();
+    expect(screen.getByText("71.0")).toBeDefined();
+  });
+
+  it("renders dash for families with null pass_at_n", () => {
+    const noRunItems: typeof items = [
+      { ...items[0], pass_at_n: null },
+    ];
+    const { container } = render(FamiliesGrid, { items: noRunItems });
+    expect(container.textContent).toContain("—");
+  });
 });

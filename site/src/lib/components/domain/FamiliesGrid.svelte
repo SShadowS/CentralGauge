@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { FamiliesIndexItem } from '$shared/api-types';
-  import { formatScore } from '$lib/client/format';
   import Card from '$lib/components/ui/Card.svelte';
+  import ScoreCell from './ScoreCell.svelte';
 
   interface Props { items: FamiliesIndexItem[]; }
   let { items }: Props = $props();
@@ -19,9 +19,13 @@
           <dl>
             <div><dt>Models</dt><dd class="text-mono">{f.model_count}</dd></div>
             <div>
-              <dt>Best avg</dt>
-              <dd class="text-mono">
-                {#if f.latest_avg_score !== null}{formatScore(f.latest_avg_score)}{:else}<span class="text-faint">—</span>{/if}
+              <dt>Pass rate</dt>
+              <dd>
+                {#if f.pass_at_n !== null}
+                  <ScoreCell score={f.pass_at_n} kind="pass_rate" />
+                {:else}
+                  <span class="text-faint">—</span>
+                {/if}
               </dd>
             </div>
             {#if f.latest_model_slug}
