@@ -5,7 +5,7 @@ import type { LeaderboardRow } from "$shared/api-types";
 
 function row(
   slug: string,
-  score: number,
+  passAtN: number,
   cost: number,
   rank = 1,
 ): LeaderboardRow {
@@ -24,8 +24,8 @@ function row(
     tasks_attempted_distinct: 0,
     tasks_passed_attempt_1: 0,
     tasks_passed_attempt_2_only: 0,
-    pass_at_n: 0,
-    avg_score: score,
+    pass_at_n: passAtN,
+    avg_score: 0,
     avg_cost_usd: cost,
     verified_runs: 0,
     last_run_at: "2026-04-01T00:00:00Z",
@@ -46,7 +46,7 @@ describe("PerformanceVsCostChart", () => {
   });
 
   it("renders one bar per row (3 rows -> 3 bars, no cost overlay)", () => {
-    const rows = [row("a", 90, 0.01), row("b", 70, 0.05), row("c", 50, 0.02)];
+    const rows = [row("a", 0.9, 0.01), row("b", 0.7, 0.05), row("c", 0.5, 0.02)];
     const { container } = render(PerformanceVsCostChart, { rows });
     expect(container.querySelector("svg")).not.toBeNull();
     // Bar rects all carry an inline <title>; filter to just those.
@@ -54,12 +54,12 @@ describe("PerformanceVsCostChart", () => {
       (r) => r.querySelector("title") !== null,
     );
     expect(bars).toHaveLength(3);
-    // Cost dot was removed; the chart is score-only.
+    // Cost dot was removed; the chart is pass-rate-only.
     expect(container.querySelectorAll("circle")).toHaveLength(0);
   });
 
-  it("exposes a score tooltip via <title> on each bar", () => {
-    const rows = [row("claude-sonnet", 80, 0.0123)];
+  it("exposes a pass rate tooltip via <title> on each bar", () => {
+    const rows = [row("claude-sonnet", 0.8, 0.0123)];
     const { container } = render(PerformanceVsCostChart, { rows });
 
     const titles = Array.from(container.querySelectorAll("title")).map(
@@ -67,14 +67,14 @@ describe("PerformanceVsCostChart", () => {
     );
     expect(
       titles.some(
-        (t) => t.includes("claude-sonnet") && t.includes("score 80.00"),
+        (t) => t.includes("claude-sonnet") && t.includes("pass rate 80.00%"),
       ),
     ).toBe(true);
   });
 
   it("caps display at top N=12 even when 20 rows are provided", () => {
     const rows = Array.from({ length: 20 }, (_, i) =>
-      row(`m${i}`, 50 + (i % 5) * 5, 0.01 + i * 0.001, i + 1),
+      row(`m${i}`, 0.5 + (i % 5) * 0.05, 0.01 + i * 0.001, i + 1),
     );
     const { container } = render(PerformanceVsCostChart, { rows });
     const bars = Array.from(container.querySelectorAll("rect")).filter(
@@ -85,10 +85,10 @@ describe("PerformanceVsCostChart", () => {
 
   it("keeps a sane minimum bar width with sparse data (4 rows)", () => {
     const rows = [
-      row("a", 90, 0.01),
-      row("b", 70, 0.02),
-      row("c", 50, 0.03),
-      row("d", 30, 0.04),
+      row("a", 0.9, 0.01),
+      row("b", 0.7, 0.02),
+      row("c", 0.5, 0.03),
+      row("d", 0.3, 0.04),
     ];
     const { container } = render(PerformanceVsCostChart, { rows });
     const bars = Array.from(container.querySelectorAll("rect")).filter(
@@ -101,9 +101,31 @@ describe("PerformanceVsCostChart", () => {
     }
   });
 
-  it("renders the score number on each bar", () => {
-    const rows = [row("a", 68.13, 0.05)];
+  it("renders the pass rate number on each bar", () => {
+    const rows = [row("a", 0.6813, 0.05)];
     const { container } = render(PerformanceVsCostChart, { rows });
     expect(container.textContent).toContain("68.1");
+  });
+
+  it("Y-axis maps from pass_at_n (0..1) to chart pixels", () => {
+    const rows = [row("A", 0.5, 0.001)];
+    const { container } = render(PerformanceVsCostChart, { rows });
+    // Bar height should be 50% of inner height (pass_at_n=0.5 => 50%)
+    const bars = Array.from(container.querySelectorAll("rect")).filter(
+      (r) => r.querySelector("title") !== null,
+    );
+    expect(bars).toHaveLength(1);
+    const barH = parseFloat(bars[0].getAttribute("height") ?? "0");
+    // innerH = H - PADDING.top - PADDING.bottom
+    // For 1 row (not rotating labels): H=240, PADDING={top:28,right:24,bottom:56,left:50}
+    // innerH = 240 - 28 - 56 = 156. 50% => 78.
+    expect(barH).toBeCloseTo(78, 0);
+  });
+
+  it('axis label says "Pass rate (%)"', () => {
+    const { container } = render(PerformanceVsCostChart, {
+      rows: [row("x", 0.5, 0.001)],
+    });
+    expect(container.textContent).toContain("Pass rate");
   });
 });
