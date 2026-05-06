@@ -16,6 +16,8 @@
  * in sync on write.
  */
 
+import { CACHE_VERSION } from "$lib/server/cache-version";
+
 const CACHE_NAME = "cg-concepts";
 
 /**
@@ -59,16 +61,30 @@ export async function invalidateConcept(
   const cache = await caches.open(CACHE_NAME);
   const targets = [slug, ...aliases];
   for (const s of targets) {
-    const url = `${origin}/api/v1/concepts/${encodeURIComponent(s)}`;
-    // Cache.delete accepts a Request or URL string.
-    await cache.delete(new Request(url));
+    const base = `${origin}/api/v1/concepts/${encodeURIComponent(s)}`;
+    // Delete both the legacy unsuffixed key (for any entries written before
+    // the _cv deploy) and the current versioned key that the detail handler
+    // now stores under. Cache.delete is a no-op when the entry is absent,
+    // so the extra delete is free.
+    await cache.delete(new Request(base));
+    await cache.delete(new Request(`${base}?_cv=${CACHE_VERSION}`));
   }
   // Also clear the list endpoint, which embeds these slugs in its rollup.
-  // Bare `/concepts` plus every canonical `?recent=N` variant the list
-  // handler may produce.
+  // Delete both the legacy unsuffixed keys (entries from before the _cv
+  // deploy) and the current versioned keys. cache.delete is a no-op when
+  // the entry is absent, so the extra deletes are free.
   await cache.delete(new Request(`${origin}/api/v1/concepts`));
   for (const n of CANONICAL_RECENT_NS) {
-    await cache.delete(new Request(`${origin}/api/v1/concepts?recent=${n}`));
+    // Legacy unsuffixed key (pre-_cv deploy entries).
+    await cache.delete(
+      new Request(`${origin}/api/v1/concepts?recent=${n}`),
+    );
+    // Current versioned key (post-_cv deploy entries stored by the list
+    // handler). Both must be deleted so mutation→read stays consistent
+    // regardless of which entry a colo has in cache.
+    await cache.delete(
+      new Request(`${origin}/api/v1/concepts?recent=${n}&_cv=${CACHE_VERSION}`),
+    );
   }
 }
 

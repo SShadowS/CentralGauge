@@ -1,6 +1,10 @@
 /**
  * Cache helper for `GET /api/v1/families/<slug>/diff`.
  *
+ * All cache keys include `_cv=${CACHE_VERSION}` so old-version entries
+ * retire automatically on deploy. Invalidation (buildFamilyDiffCacheKeys)
+ * and the GET handler must use the same suffix.
+ *
  * Wraps `caches.open(FAMILY_DIFF_CACHE_NAME)` with the same inline-write
  * discipline used by `concept-cache.ts`:
  *
@@ -22,6 +26,8 @@
  *   eviction back in our hands. CLAUDE.md "Workers KV / Cache API" section
  *   spells out the same trap.
  */
+
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 const CACHE_NAME = "lifecycle-family-diff";
 
@@ -60,15 +66,18 @@ export function buildFamilyDiffCacheKeys(opts: {
   const slug = encodeURIComponent(opts.family_slug);
   const base = `${origin}/api/v1/families/${slug}/diff`;
   const tsh = encodeURIComponent(opts.task_set_hash);
+  const cv = `_cv=${CACHE_VERSION}`;
   const urls = new Set<string>();
 
   // Bare default (no query) — UI surfaces hit this for the latest pair
-  // under the current task set.
-  urls.add(base);
+  // under the current task set. The GET handler appends _cv to every URL
+  // (cacheUrl.searchParams.set('_cv', CACHE_VERSION)), so invalidation
+  // must include the same suffix to actually hit those entries.
+  urls.add(`${base}?${cv}`);
 
   if (opts.to_gen_event_id != null) {
-    urls.add(`${base}?to=${opts.to_gen_event_id}`);
-    urls.add(`${base}?task_set=${tsh}&to=${opts.to_gen_event_id}`);
+    urls.add(`${base}?to=${opts.to_gen_event_id}&${cv}`);
+    urls.add(`${base}?task_set=${tsh}&to=${opts.to_gen_event_id}&${cv}`);
 
     if (opts.from_gen_event_id != null) {
       // Explicit-pair shape. Both `from` and `to` queries always emitted
@@ -76,14 +85,14 @@ export function buildFamilyDiffCacheKeys(opts: {
       // here matches the cache-key the handler will produce on a
       // subsequent fetch.
       urls.add(
-        `${base}?from=${opts.from_gen_event_id}&to=${opts.to_gen_event_id}`,
+        `${base}?from=${opts.from_gen_event_id}&to=${opts.to_gen_event_id}&${cv}`,
       );
       urls.add(
-        `${base}?task_set=${tsh}&from=${opts.from_gen_event_id}&to=${opts.to_gen_event_id}`,
+        `${base}?task_set=${tsh}&from=${opts.from_gen_event_id}&to=${opts.to_gen_event_id}&${cv}`,
       );
     } else {
       // baseline_missing — no from in URL.
-      urls.add(`${base}?task_set=${tsh}&to=${opts.to_gen_event_id}`);
+      urls.add(`${base}?task_set=${tsh}&to=${opts.to_gen_event_id}&${cv}`);
     }
   }
 

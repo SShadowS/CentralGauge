@@ -15,6 +15,7 @@ import type { RequestHandler } from "./$types";
 import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 import { SLUG_REGEX } from "$lib/shared/slug";
 
 const CACHE_TTL_S = 300;
@@ -54,7 +55,13 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     }
 
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    const cached = await cache.match(request);
+    // Canonical key: strip junk query params (e.g. _cb=...) and append _cv
+    // so mismatched param sets share one slot and old-version entries retire
+    // on deploy. Must match the key used for cache.put below.
+    const cacheUrl = new URL(request.url);
+    cacheUrl.search = `?_cv=${CACHE_VERSION}`;
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
     // Try direct slug match first.
@@ -137,7 +144,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         "x-api-version": "v1",
       },
     });
-    await cache.put(request, response.clone());
+    await cache.put(cacheKey, response.clone());
     return response;
   } catch (err) {
     return errorResponse(err);
