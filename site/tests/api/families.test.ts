@@ -216,6 +216,100 @@ describe("GET /api/v1/families/:slug", () => {
     expect(future.denominator).toBeNull();
   });
 
+  it("CR-5: pass_at_n does not exceed 1.0 when a model has runs in multiple task sets", async () => {
+    // Seed: ts-old (task_count=2, not current), ts-current already seeded as 'ts' (task_count=1, is_current=1).
+    // Model M-X runs in BOTH sets:
+    //   - ts-old: 1 run ('rold-mx'), passed task 'easy/a' on attempt 1 AND task 'easy/b' on attempt 1 (2 passes).
+    //   - ts ('ts', current): 1 run ('rcurr-mx'), passed task 'easy/a' on attempt 1 (1 pass).
+    // dominant_set for M-X = 'ts' (is_current=1, model has runs there).
+    // denominator = task_count from 'ts' = 1.
+    // Pre-fix: p1 = 3 (2 from ts-old + 1 from ts), denominator = 1 → pass_at_n = 3.0 (BUG).
+    // Post-fix: p1 = 1 (only ts contributions), denominator = 1 → pass_at_n = 1.0.
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts-old-cr5','2025-01-01T00:00:00Z',2,0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (20,1,'mx-model','mx-model','MX Model',20)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',20,3,15,'2026-01-01')`,
+    ).run();
+    // Run in old set - passes two tasks
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rold-mx','ts-old-cr5',20,'s','r','2025-06-01T00:00:00Z','2025-06-01T01:00:00Z','completed','claimed','v1','sig','2025-06-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('rold-mx','easy/a',1,1,0.8,1),('rold-mx','easy/b',1,1,0.8,1)`,
+    ).run();
+    // Run in current set - passes one task
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rcurr-mx','ts',20,'s','r','2026-03-01T00:00:00Z','2026-03-01T01:00:00Z','completed','claimed','v1','sig','2026-03-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('rcurr-mx','easy/a',1,1,0.9,1)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/families/claude?_cb=cr5a");
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      trajectory: Array<{ model: { slug: string }; pass_at_n: number | null; denominator: number | null }>;
+    };
+    const mx = body.trajectory.find((t) => t.model.slug === "mx-model")!;
+    // dominant = 'ts' (current), denominator = 1, p1 (scoped) = 1
+    expect(mx.denominator).toBe(1);
+    expect(mx.pass_at_n).toBeCloseTo(1.0, 5);
+    // Critically: must NOT be > 1.0
+    expect(mx.pass_at_n!).toBeLessThanOrEqual(1.0);
+  });
+
+  it("CR-5: pass_at_n is 0 (not >1) when model passes old-set tasks but fails current-set tasks", async () => {
+    // Seed: ts-old-cr5b (task_count=1, not current), current set 'ts' (task_count=1).
+    // Model M-Y runs in BOTH sets:
+    //   - ts-old-cr5b: passed 'easy/a' on attempt 1 (p1=1).
+    //   - ts (current): 0 passes (attempted 'easy/a', failed).
+    // dominant_set for M-Y = 'ts' (current).
+    // Pre-fix: p1 = 1 (from ts-old) + 0 (from ts), denominator = 1 → pass_at_n = 1.0 (wrong, shows old success).
+    // Post-fix: p1 = 0 (only ts contributions), denominator = 1 → pass_at_n = 0.0.
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('ts-old-cr5b','2025-01-01T00:00:00Z',1,0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (21,1,'my-model','my-model','MY Model',21)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',21,3,15,'2026-01-01')`,
+    ).run();
+    // Run in old set - passes
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rold-my','ts-old-cr5b',21,'s','r','2025-06-01T00:00:00Z','2025-06-01T01:00:00Z','completed','claimed','v1','sig','2025-06-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('rold-my','easy/a',1,1,0.8,1)`,
+    ).run();
+    // Run in current set - fails
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rcurr-my','ts',21,'s','r','2026-03-01T00:00:00Z','2026-03-01T01:00:00Z','completed','claimed','v1','sig','2026-03-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ('rcurr-my','easy/a',1,0,0.0,0)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/families/claude?_cb=cr5b");
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      trajectory: Array<{ model: { slug: string }; pass_at_n: number | null; denominator: number | null }>;
+    };
+    const my = body.trajectory.find((t) => t.model.slug === "my-model")!;
+    // dominant = 'ts' (current), denominator = 1, p1 (scoped) = 0 (failed in current set)
+    expect(my.denominator).toBe(1);
+    expect(my.pass_at_n).toBeCloseTo(0.0, 5);
+    expect(my.pass_at_n!).toBeLessThanOrEqual(1.0);
+  });
+
   it("denominator per trajectory item tracks the model's dominant task set", async () => {
     // Seed a second task set with a different task_count.
     // Add a new model in the claude family with runs only in the old set.

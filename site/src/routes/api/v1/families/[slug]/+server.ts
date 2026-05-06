@@ -46,34 +46,50 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       ),
       -- Determine which task_set_hash to use as the denominator anchor for
       -- each model: prefer the current set (if the model has runs there),
-      -- fall back to the most-recent set that has runs for this model.
+      -- fall back to the most-recent (by started_at) set that has runs for
+      -- this model. CR-5: all per-model numerator CTEs must JOIN this CTE
+      -- and filter runs.task_set_hash = dominant_hash so cross-hash data
+      -- cannot bleed into the numerator while the denominator is hash-scoped.
       dominant_set AS (
-        SELECT runs.model_id,
-               COALESCE(
-                 MAX(CASE WHEN runs.task_set_hash = (SELECT hash FROM current_set) THEN runs.task_set_hash END),
-                 MAX(runs.task_set_hash)
-               ) AS dominant_task_set_hash
+        SELECT
+          runs.model_id,
+          COALESCE(
+            MAX(CASE WHEN runs.task_set_hash = (SELECT hash FROM current_set)
+                     THEN runs.task_set_hash END),
+            (SELECT r2.task_set_hash
+             FROM runs r2
+             WHERE r2.model_id = runs.model_id
+             ORDER BY r2.started_at DESC
+             LIMIT 1)
+          ) AS dominant_hash
         FROM runs
         GROUP BY runs.model_id
       ),
+      -- CR-5: p1_by_model counts only tasks in the model's dominant hash.
       p1_by_model AS (
         SELECT ru1.model_id,
                COUNT(DISTINCT r1.task_id) AS tasks_passed_attempt_1
         FROM results r1
         JOIN runs ru1 ON ru1.id = r1.run_id
-        WHERE r1.attempt = 1 AND r1.passed = 1
+        JOIN dominant_set ds1 ON ds1.model_id = ru1.model_id
+        WHERE ru1.task_set_hash = ds1.dominant_hash
+          AND r1.attempt = 1 AND r1.passed = 1
         GROUP BY ru1.model_id
       ),
+      -- CR-5: p2_only_by_model counts only tasks in the model's dominant hash.
       p2_only_by_model AS (
         SELECT ru2.model_id,
                COUNT(DISTINCT r2.task_id) AS tasks_passed_attempt_2_only
         FROM results r2
         JOIN runs ru2 ON ru2.id = r2.run_id
-        WHERE r2.attempt = 2 AND r2.passed = 1
+        JOIN dominant_set ds2 ON ds2.model_id = ru2.model_id
+        WHERE ru2.task_set_hash = ds2.dominant_hash
+          AND r2.attempt = 2 AND r2.passed = 1
           AND NOT EXISTS (
             SELECT 1 FROM results r1b
             JOIN runs ru1b ON ru1b.id = r1b.run_id
             WHERE ru1b.model_id = ru2.model_id
+              AND ru1b.task_set_hash = ds2.dominant_hash
               AND r1b.task_id = r2.task_id
               AND r1b.attempt = 1 AND r1b.passed = 1
           )
@@ -87,8 +103,10 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
                / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
              p1.tasks_passed_attempt_1,
              p2.tasks_passed_attempt_2_only,
-             COUNT(DISTINCT r.task_id) AS tasks_attempted_distinct,
-             ds.dominant_task_set_hash
+             -- CR-5: tasks_attempted_distinct scoped to dominant hash only.
+             COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.task_id END)
+               AS tasks_attempted_distinct,
+             ds.dominant_hash AS dominant_task_set_hash
       FROM models m
       LEFT JOIN runs ON runs.model_id = m.id
       LEFT JOIN results r ON r.run_id = runs.id
