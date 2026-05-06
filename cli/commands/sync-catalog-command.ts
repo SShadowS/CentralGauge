@@ -49,12 +49,17 @@ async function handleSyncCatalog(options: SyncCatalogOptions): Promise<void> {
     return;
   }
 
-  if (cat.families.length > 0) {
-    console.log(
-      colors.gray(
-        `[SKIP] ${cat.families.length} families (seeded via D1 SQL at deploy time)`,
-      ),
+  for (const f of cat.families) {
+    const payload = f as unknown as Record<string, unknown>;
+    const sig = await signPayload(payload, adminPriv, config.adminKeyId);
+    const resp = await postWithRetry(
+      `${config.url}/api/v1/admin/catalog/families`,
+      { version: 1, signature: sig, payload },
     );
+    const tag = resp.ok ? colors.green(`[${resp.status}]`) : colors.red(
+      `[${resp.status}]`,
+    );
+    console.log(`${tag} family ${f.slug}`);
   }
 
   for (const m of cat.models) {

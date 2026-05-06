@@ -33,6 +33,95 @@ describe("admin catalog endpoints", () => {
     ).bind("claude", "Anthropic", "Claude").run();
   });
 
+  it("upserts a family", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "test-fam",
+      vendor: "TestVendor",
+      display_name: "Test Family",
+    });
+
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      `SELECT vendor, display_name FROM model_families WHERE slug = ?`,
+    ).bind("test-fam").first<{ vendor: string; display_name: string }>();
+    expect(row?.vendor).toBe("TestVendor");
+    expect(row?.display_name).toBe("Test Family");
+  });
+
+  it("updates an existing family on slug conflict", async () => {
+    const { signedRequest: first } = await signAsAdmin({
+      slug: "test-fam-2",
+      vendor: "OldVendor",
+      display_name: "Old Name",
+    });
+    await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(first),
+    });
+
+    const { signedRequest: second } = await signAsAdmin({
+      slug: "test-fam-2",
+      vendor: "NewVendor",
+      display_name: "New Name",
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(second),
+    });
+    expect(resp.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      `SELECT vendor, display_name FROM model_families WHERE slug = ?`,
+    ).bind("test-fam-2").first<{ vendor: string; display_name: string }>();
+    expect(row?.vendor).toBe("NewVendor");
+    expect(row?.display_name).toBe("New Name");
+  });
+
+  it("rejects family upsert with missing fields", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "incomplete-fam",
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(400);
+    const json = await resp.json() as { code: string };
+    expect(json.code).toBe("missing_field");
+  });
+
+  it("rejects ingest-scope key on family endpoint", async () => {
+    const { keyId: ingestKeyId, keypair: ingestKeypair } =
+      await registerMachineKey("ingest-fam-attacker", "ingest");
+    const { signedRequest } = await createSignedPayload(
+      {
+        slug: "evil-fam",
+        vendor: "Evil",
+        display_name: "Evil",
+      } as Record<string, unknown>,
+      ingestKeyId,
+      undefined,
+      ingestKeypair,
+    );
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(403);
+    const json = await resp.json() as { code: string };
+    expect(json.code).toBe("insufficient_scope");
+  });
+
   it("upserts a model", async () => {
     const { signedRequest } = await signAsAdmin({
       slug: "anthropic/claude-opus-test",

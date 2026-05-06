@@ -23,6 +23,8 @@ interface CycleFlags {
   dryRun: boolean;
   forceUnlock: boolean;
   yes: boolean;
+  debugDir?: string;
+  session?: string;
 }
 
 /**
@@ -88,6 +90,8 @@ async function handleCycle(flags: CycleFlags): Promise<void> {
     dryRun: flags.dryRun,
     forceUnlock: flags.forceUnlock,
     yes: flags.yes,
+    ...(flags.debugDir !== undefined ? { debugDir: flags.debugDir } : {}),
+    ...(flags.session !== undefined ? { sessionId: flags.session } : {}),
   };
   const { runCycle } = await import("../../src/lifecycle/orchestrator.ts");
   await runCycle(opts);
@@ -142,6 +146,14 @@ export function registerCycleCommand(cli: Command): void {
       "--yes",
       "Skip interactive confirmations (required with --force-unlock)",
       { default: false },
+    )
+    .option(
+      "--debug-dir <path:string>",
+      "Override debug session dir (default: <cwd>/debug)",
+    )
+    .option(
+      "--session <id:string>",
+      "Pin to a specific session id (default: findLatestSession). Use when a concurrent bench produces newer sessions for a different provider.",
     )
     .example(
       "Dry run for a single model",

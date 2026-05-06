@@ -82,3 +82,21 @@
   display_name: 'xAI: Grok 4.3'
   generation: 4
   released_at: '2026-04-30'
+- slug: openrouter/qwen/qwen3.6-max-preview
+  api_model_id: qwen/qwen3.6-max-preview
+  family: qwen3.6
+  display_name: 'Qwen: Qwen3.6 Max Preview'
+  generation: 3
+  released_at: '2026-04-27'
+- slug: openrouter/qwen/qwen3.5-plus-20260420
+  api_model_id: qwen/qwen3.5-plus-20260420
+  family: qwen3.5
+  display_name: 'Qwen: Qwen3.5 Plus 2026-04-20'
+  generation: 3
+  released_at: '2026-04-27'
+- slug: openrouter/qwen/qwen3.6-35b-a3b
+  api_model_id: qwen/qwen3.6-35b-a3b
+  family: qwen3.6
+  display_name: 'Qwen: Qwen3.6 35B A3B'
+  generation: 3
+  released_at: '2026-04-27'

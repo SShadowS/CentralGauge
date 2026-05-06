@@ -134,3 +134,33 @@
   cache_write_per_mtoken: 0
   source: openrouter
   fetched_at: '2026-05-05T08:17:05.728Z'
+- pricing_version: '2026-05-05'
+  model_slug: openrouter/qwen/qwen3.6-max-preview
+  effective_from: '2026-05-05T17:30:15.538Z'
+  effective_until: null
+  input_per_mtoken: 1.04
+  output_per_mtoken: 6.24
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: '2026-05-05T17:30:15.538Z'
+- pricing_version: '2026-05-05'
+  model_slug: openrouter/qwen/qwen3.5-plus-20260420
+  effective_from: '2026-05-05T17:30:15.543Z'
+  effective_until: null
+  input_per_mtoken: 0.39999999999999997
+  output_per_mtoken: 2.4
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: '2026-05-05T17:30:15.543Z'
+- pricing_version: '2026-05-05'
+  model_slug: openrouter/qwen/qwen3.6-35b-a3b
+  effective_from: '2026-05-05T17:30:15.546Z'
+  effective_until: null
+  input_per_mtoken: 0.15
+  output_per_mtoken: 1
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: openrouter
+  fetched_at: '2026-05-05T17:30:15.546Z'

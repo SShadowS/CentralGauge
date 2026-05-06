@@ -16,3 +16,9 @@
 - slug: grok
   vendor: xAI
   display_name: Grok
+- slug: qwen3.6
+  vendor: Qwen
+  display_name: Qwen3.6
+- slug: qwen3.5
+  vendor: Qwen
+  display_name: Qwen3.5
