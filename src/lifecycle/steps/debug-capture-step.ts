@@ -43,10 +43,38 @@ async function fileCountAndSize(
 }
 
 /**
- * Run `tar -cf - <files…> | zstd -19 -o <out>` from `cwd=debugDir`. The
- * file list is the set of `*-session-{sessionId}.jsonl` files (sessions
- * are file-per-record in the debug-parser's layout, NOT a subdir).
+ * Tar + zstd-compress session files in two stages via a temp .tar file.
+ *
+ * Why two stages instead of `tar | zstd` (shell) or `tar.stdout.pipeTo(zstd.stdin)`
+ * (Deno native pipe): both the bash-shell pipeline AND a live Deno-managed pipe
+ * between sibling child processes are unreliable on Windows when this command
+ * is launched inside a PowerShell `Start-Job`. The shell variant fails with
+ * `zstd: command not found` (PATH not propagated to git-bash); the native pipe
+ * fails with `BrokenPipe: The pipe is being closed (os error 232)` when run
+ * from `Start-Job` even though it works in a direct `deno run` (the job host
+ * apparently disturbs the inter-process pipe handle inheritance).
+ *
+ * Writing tar to a temp file and zstd-compressing the file is launcher-agnostic:
+ * each child process owns its own handles, no shell, no live pipe. Costs one
+ * extra temp file (cleaned up on exit), gains determinism across launchers.
  */
+async function runOrThrow(
+  cmd: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  const out = await new Deno.Command(cmd, {
+    args,
+    cwd,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  if (!out.success) {
+    const stderr = new TextDecoder().decode(out.stderr);
+    throw new Error(`${cmd} failed (code ${out.code}): ${stderr}`);
+  }
+}
+
 async function tarAndCompress(
   debugDir: string,
   sessionId: string,
@@ -59,23 +87,21 @@ async function tarAndCompress(
       `no session files found for session ${sessionId} under ${debugDir}`,
     );
   }
-  // Quote each file individually for the shell. tar | zstd via Git Bash on
-  // Windows; native bash on POSIX.
-  const fileArgs = sessionFiles.map((f) => `"${f}"`).join(" ");
-  const cmd = new Deno.Command("bash", {
-    args: [
-      "-c",
-      `tar -cf - ${fileArgs} | zstd -19 -o "${outPath}"`,
-    ],
-    cwd: debugDir,
-    stdout: "piped",
-    stderr: "piped",
+
+  const tarPath = await Deno.makeTempFile({
+    prefix: `debug-${sessionId}-`,
+    suffix: ".tar",
   });
-  const { code, stderr } = await cmd.output();
-  if (code !== 0) {
-    throw new Error(
-      `tar|zstd failed (code ${code}): ${new TextDecoder().decode(stderr)}`,
-    );
+  try {
+    await runOrThrow("tar", ["-cf", tarPath, ...sessionFiles], debugDir);
+    await runOrThrow("zstd", ["-19", "-f", "-o", outPath, tarPath], debugDir);
+  } finally {
+    try {
+      await Deno.remove(tarPath);
+    } catch {
+      // best-effort cleanup; the temp file is in OS temp dir and will be
+      // reaped eventually if removal races with a crash.
+    }
   }
 }
 
@@ -96,9 +122,9 @@ export async function runDebugCaptureStep(
   ctx: StepContext,
   opts: DebugCaptureOptions = {},
 ): Promise<StepResult> {
-  const debugDir = `${ctx.cwd}/debug`;
+  const debugDir = ctx.debugDir ?? `${ctx.cwd}/debug`;
 
-  const sessionId = opts.sessionIdOverride ??
+  const sessionId = opts.sessionIdOverride ?? ctx.sessionId ??
     await findLatestSession(debugDir);
   if (!sessionId) {
     // Pre-flight failure: emit `debug.failed` so the failure is visible at the

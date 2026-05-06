@@ -118,6 +118,42 @@ Deno.test("debug-capture invokes injected uploader with expected r2_key", async 
   }
 });
 
+Deno.test("debug-capture honors ctx.debugDir override (off-cwd path)", async () => {
+  const cwdTmp = await createTempDir("cycle-debug-capture-cwd");
+  const externalTmp = await createTempDir("cycle-debug-capture-external");
+  try {
+    const sessionId = "1700000000001";
+    // Sessions live under externalTmp, NOT cwdTmp/debug. The override must
+    // route the step at externalTmp directly.
+    await Deno.writeTextFile(
+      `${externalTmp}/compilation-anthropic-2026-05-05T00-00-00-000Z-session-${sessionId}.jsonl`,
+      '{"type":"compilation_result","success":false,"taskId":"x","model":"y","attempt":1,"errors":[]}\n',
+    );
+
+    const result = await runDebugCaptureStep(
+      {
+        modelSlug: "anthropic/claude-opus-4-7",
+        taskSetHash: "current",
+        lockToken: "tok-1",
+        envelope: {},
+        toolVersions: {},
+        analyzerModel: "anthropic/claude-opus-4-6",
+        dryRun: true,
+        cwd: cwdTmp,
+        debugDir: externalTmp,
+      },
+      { sessionIdOverride: sessionId },
+    );
+    assertEquals(result.success, true);
+    assertEquals(result.eventType, "debug.skipped");
+    assertEquals(result.payload["session_id"], sessionId);
+    assertEquals(result.payload["file_count"], 1);
+  } finally {
+    await cleanupTempDir(cwdTmp);
+    await cleanupTempDir(externalTmp);
+  }
+});
+
 Deno.test("debug-capture returns no_debug_session when debug dir empty", async () => {
   const tmp = await createTempDir("cycle-debug-capture-empty");
   try {

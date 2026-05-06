@@ -43,16 +43,25 @@ interface BatchPayload {
     incorrect_pattern_sha256: string;
     error_codes: string[];
     occurrences: Array<{
-      result_id: number;
+      /** Optional. Server resolves to latest matching results.id when null. */
+      result_id: number | null;
       task_id: string;
       error_code: string | null;
     }>;
   }>;
 }
 
-async function buildPayload(file: AnalyzerOutput): Promise<BatchPayload> {
+async function buildPayload(
+  file: AnalyzerOutput,
+  modelSlug: string,
+): Promise<BatchPayload> {
+  // Always emit the vendor-prefixed slug from the cycle context. The JSON's
+  // `file.model` is the bare api_model_id verify wrote (e.g.
+  // `claude-opus-4-6`), which is NOT what the prod `/api/v1/shortcomings/batch`
+  // endpoint looks up — that endpoint queries `models.slug` which is
+  // vendor-prefixed (`anthropic/claude-opus-4-6`).
   const out: BatchPayload = {
-    model_slug: file.model,
+    model_slug: modelSlug,
     shortcomings: [],
   };
   for (const entry of file.shortcomings) {
@@ -64,9 +73,16 @@ async function buildPayload(file: AnalyzerOutput): Promise<BatchPayload> {
       correct_pattern: entry.correctPattern,
       incorrect_pattern_sha256: await sha256Hex(entry.incorrectPattern),
       error_codes: entry.errorCodes,
-      // Occurrences resolved server-side from result_id JOIN; cycle does not
-      // pre-resolve them. The endpoint accepts empty arrays per Plan D-prompt.
-      occurrences: [],
+      // Emit one occurrence per affected task with `result_id: null`. The
+      // worker resolves to the latest matching `results.id` for
+      // (model_id, task_id) — the cycle doesn't have D1 access locally to do
+      // it itself. Picks the FIRST error_code as a representative; the full
+      // list lives on `shortcomings.error_codes_json`.
+      occurrences: entry.affectedTasks.map((taskId) => ({
+        result_id: null,
+        task_id: taskId,
+        error_code: entry.errorCodes[0] ?? null,
+      })),
     };
     if (entry.concept_slug_proposed) {
       sc.concept_slug_proposed = entry.concept_slug_proposed;
@@ -108,7 +124,7 @@ export async function runPublishStep(
     };
   }
 
-  const payload = await buildPayload(parsed);
+  const payload = await buildPayload(parsed, ctx.modelSlug);
   const canonical = canonicalJSON(
     payload as unknown as Record<string, unknown>,
   );
@@ -166,42 +182,60 @@ export async function runPublishStep(
   const keyPath = config.adminKeyPath;
   const keyId = config.adminKeyId;
   const privKey = await readPrivateKey(keyPath);
-  const signature = await signPayload(
-    payload as unknown as Record<string, unknown>,
-    privKey,
-    keyId,
-  );
-  const body = { payload, signature };
 
-  const resp = await postWithRetry(
-    `${config.url}/api/v1/shortcomings/batch`,
-    body,
-    {
-      maxAttempts: 3,
-      ...(opts.fetchFn ? { fetchFn: opts.fetchFn } : {}),
-    },
-  );
-  const respText = await resp.text();
-  let respJson: unknown = null;
-  try {
-    respJson = JSON.parse(respText);
-  } catch { /* keep raw */ }
-
-  if (!resp.ok) {
-    return {
-      success: false,
-      eventType: "publish.failed",
-      payload: {
-        error_code: "http_non_2xx",
-        http_status: resp.status,
-        error_message: respText.slice(0, 500),
-      },
+  // Chunk before signing+POSTing. The worker endpoint hits Cloudflare's
+  // per-invocation subrequest cap (50 on Workers Bundled, 1000 on Unbound)
+  // because each shortcoming triggers concept-resolver queries + an upsert
+  // + per-occurrence batch inserts. Empirically a single batch of 9-10
+  // entries trips the limit on Bundled. Cap each POST at 5 entries; the
+  // endpoint is idempotent (`INSERT ... ON CONFLICT DO UPDATE`) so multiple
+  // chunks for the same model are safe.
+  const CHUNK_SIZE = 5;
+  let totalUpserted = 0;
+  let totalOccurrences = 0;
+  for (let i = 0; i < payload.shortcomings.length; i += CHUNK_SIZE) {
+    const chunkPayload = {
+      ...payload,
+      shortcomings: payload.shortcomings.slice(i, i + CHUNK_SIZE),
     };
+    const sig = await signPayload(
+      chunkPayload as unknown as Record<string, unknown>,
+      privKey,
+      keyId,
+    );
+    const resp = await postWithRetry(
+      `${config.url}/api/v1/shortcomings/batch`,
+      { payload: chunkPayload, signature: sig },
+      {
+        maxAttempts: 3,
+        ...(opts.fetchFn ? { fetchFn: opts.fetchFn } : {}),
+      },
+    );
+    const respText = await resp.text();
+    if (!resp.ok) {
+      return {
+        success: false,
+        eventType: "publish.failed",
+        payload: {
+          error_code: "http_non_2xx",
+          http_status: resp.status,
+          error_message: respText.slice(0, 500),
+          chunk_offset: i,
+        },
+      };
+    }
+    let respJson: unknown = null;
+    try {
+      respJson = JSON.parse(respText);
+    } catch { /* keep raw */ }
+    const okJson = (respJson ?? {}) as {
+      upserted?: number;
+      occurrences?: number;
+    };
+    totalUpserted += okJson.upserted ?? 0;
+    totalOccurrences += okJson.occurrences ?? 0;
   }
-  const okJson = (respJson ?? {}) as {
-    upserted?: number;
-    occurrences?: number;
-  };
+  const okJson = { upserted: totalUpserted, occurrences: totalOccurrences };
   return {
     success: true,
     eventType: "publish.completed",

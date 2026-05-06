@@ -386,7 +386,19 @@ export class FailureAnalyzer {
   private config: AnalyzerConfig;
 
   constructor(config?: Partial<AnalyzerConfig>) {
-    this.config = { ...DEFAULT_ANALYZER_CONFIG, ...config };
+    const merged: AnalyzerConfig = { ...DEFAULT_ANALYZER_CONFIG, ...config };
+    // The CLI accepts a vendor-prefixed slug (e.g. `anthropic/claude-opus-4-6`,
+    // `openrouter/x-ai/grok-4.3`) for `--model`. Adapters expect a bare API
+    // model id and the provider as separate fields, so split the first segment
+    // off the slug and use it as the provider when present. Without this,
+    // the full slug gets POSTed verbatim to Anthropic and the API returns
+    // 404 not_found_error with `model: anthropic/claude-opus-4-6`.
+    if (merged.model && merged.model.includes("/")) {
+      const slash = merged.model.indexOf("/");
+      merged.provider = merged.model.slice(0, slash);
+      merged.model = merged.model.slice(slash + 1);
+    }
+    this.config = merged;
   }
 
   /**

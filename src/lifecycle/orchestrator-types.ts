@@ -26,6 +26,18 @@ export interface CycleOptions {
   dryRun: boolean;
   forceUnlock: boolean;
   yes: boolean;
+  /**
+   * Optional override for where the debug-capture step looks for
+   * `*-session-*.jsonl` files. Defaults to `${cwd}/debug` when omitted.
+   */
+  debugDir?: string;
+  /**
+   * Optional explicit session id. When omitted, debug-capture + analyze fall
+   * back to `findLatestSession(debugDir)`, which picks the largest sessionId
+   * — wrong when the active bench is producing newer sessions for unrelated
+   * providers (e.g., re-cycling anthropic while qwen is benching).
+   */
+  sessionId?: string;
 }
 
 export type StepDecision =
@@ -44,6 +56,10 @@ export interface StepContext {
   analyzerModel: string;
   dryRun: boolean;
   cwd: string;
+  /** Optional override for debug session dir; defaults to `${cwd}/debug`. */
+  debugDir?: string;
+  /** Optional explicit session id; debug-capture + analyze use this. */
+  sessionId?: string;
   /**
    * Hash of the most-recent `analysis.completed.payload` (or, when analyze
    * was skipped this run, the prior completed event's payload_hash).

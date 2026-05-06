@@ -261,6 +261,19 @@ export async function queryEvents(
     { method: "GET", headers: { ...headers, ...cfAccessHeaders() } },
   );
   if (!resp.ok) throw new Error(`queryEvents failed (${resp.status})`);
+  // Detect CF Access edge interception: the request escaped the worker and
+  // hit the OAuth login page. Without this guard the next `resp.json()` blows
+  // up with `Unexpected token '<', "<!DOCTYPE "...` and the operator has to
+  // dig through a stack trace to find the actual cause.
+  const contentType = resp.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    const sample = (await resp.text()).slice(0, 200);
+    throw new Error(
+      `queryEvents got non-JSON response (content-type=${contentType}). ` +
+        `Likely CF Access service token missing — set CF_ACCESS_CLIENT_ID + ` +
+        `CF_ACCESS_CLIENT_SECRET. Body sample: ${sample}`,
+    );
+  }
   const raw = await resp.json() as LifecycleEvent[];
   // Symmetric with worker-side: populate parsed fields so CLI consumers
   // (Plan C orchestrator, Plan H status renderer) read `e.payload.field`

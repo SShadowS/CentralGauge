@@ -63,20 +63,49 @@ export async function runAnalyzeStep(
     };
   }
 
+  // Skip verify when a recent slug-form JSON file already exists. This is the
+  // recovery path for an earlier analyze run that produced valid JSON but
+  // crashed downstream (publish failed, file path mismatch, etc.) — re-running
+  // verify costs analyzer-LLM tokens for no new signal. Tests pass via
+  // `opts.fixtureJson`; this branch only fires for production reruns.
+  let skipVerify = false;
+  if (!opts.fixtureJson) {
+    try {
+      await Deno.stat(outFile);
+      skipVerify = true;
+    } catch { /* file missing — fall through and run verify */ }
+  }
+
   if (opts.fixtureJson) {
     await Deno.mkdir(shortcomingsDir, { recursive: true });
     await Deno.writeTextFile(outFile, JSON.stringify(opts.fixtureJson));
+  } else if (skipVerify) {
+    console.log(
+      colors.gray(
+        `[SKIP] verify: ${outFile} already present (reusing prior analyze output)`,
+      ),
+    );
   } else {
     // The orchestrator emits analysis.started before invoking this step.
+    // Pass through ctx.debugDir so the analyzer reads the SAME bundle the
+    // debug-capture step uploaded — otherwise verify falls back to <cwd>/debug
+    // and crunches whatever stale sessions happen to be there.
+    const debugDirArg = ctx.debugDir ?? "debug/";
+    // Pass --session when the orchestrator pinned a specific session id —
+    // otherwise verify falls back to `findLatestSession` and may analyze a
+    // session unrelated to the bench model under cycle (e.g., a concurrent
+    // bench against a different provider produced a newer sessionId).
+    const sessionArgs = ctx.sessionId ? ["--session", ctx.sessionId] : [];
     const cmdArgs = opts.verifyCmd ?? [
       "deno",
       "task",
       "start",
       "verify",
-      "debug/",
+      debugDirArg,
       "--shortcomings-only",
       "--model",
       ctx.analyzerModel,
+      ...sessionArgs,
     ];
     const cmd = new Deno.Command(cmdArgs[0]!, {
       args: cmdArgs.slice(1),
@@ -98,6 +127,26 @@ export async function runAnalyzeStep(
           error_message: `verify exited with code ${code}`,
         },
       };
+    }
+  }
+
+  // Verify writes the JSON keyed on the failure record's `model` field, which
+  // is the bare api_model_id (e.g. `claude-opus-4-6.json`) for direct
+  // providers — NOT the vendor-prefixed slug (`anthropic_claude-opus-4-6.json`)
+  // the cycle uses everywhere else. If the slug-form file is missing but a
+  // bare-api-id file exists (slug minus `<vendor>/`), rename to the slug-form
+  // so this step + publish read a single canonical name.
+  try {
+    await Deno.stat(outFile);
+  } catch {
+    const slashIdx = ctx.modelSlug.indexOf("/");
+    if (slashIdx >= 0) {
+      const bareId = ctx.modelSlug.slice(slashIdx + 1).replaceAll("/", "_");
+      const fallback = `${shortcomingsDir}/${bareId}.json`;
+      try {
+        await Deno.stat(fallback);
+        await Deno.rename(fallback, outFile);
+      } catch { /* fallback also missing — let the next read throw */ }
     }
   }
 

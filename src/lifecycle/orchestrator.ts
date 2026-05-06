@@ -546,6 +546,8 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
       analyzerModel: opts.analyzerModel,
       dryRun: opts.dryRun,
       cwd,
+      ...(opts.debugDir !== undefined ? { debugDir: opts.debugDir } : {}),
+      ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     };
     const stepsRun: CycleStep[] = [];
     const stepsSkipped: CycleStep[] = [];
