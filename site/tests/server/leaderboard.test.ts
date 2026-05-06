@@ -519,51 +519,103 @@ describe("computeLeaderboard filtered numerator (A.5)", () => {
     expect(ma.pass_at_n).toBeCloseTo(6 / 6, 6);
   });
 
-  // ----- Bind-order regression tests (Fix 1) --------------------------------
+  // ----- Bind-order regression tests (Fix from commit 177d072) ---------------
   //
-  // These tests use DISTINCT values for tier vs category so a parameter swap
-  // (where "verified" lands in the category slot or "hard" lands in the tier
-  // slot) would produce wrong results. The existing tests above used identical
-  // values across all param slots and therefore could not catch a bind-order
-  // bug.
+  // These tests require a NONZERO expected value so the wrong bind order
+  // (where 'verified' lands in the category slot instead of the tier slot)
+  // produces a DIFFERENT result (p1=0) than the correct bind order (p1=1).
+  //
+  // Scenario: two tasks, one easy (t-easy) and one hard (t-hard).
+  //   r1 (tier='verified')  passed t-easy on attempt 1.
+  //   r2 (tier='claimed')   passed t-hard on attempt 1.
+  //
+  // Query: tier='verified' + category='easy'
+  //   Fixed code:  scopeInA1 slot gets 'easy'     -> category='easy'    -> p1=1
+  //   Buggy code:  scopeInA1 slot gets 'verified' -> category='verified' -> p1=0
+  //
+  // The test asserts p1=1 and denominator=1, which only passes under the fix.
 
-  it("bind-order: tier=verified + category=hard returns 0 passes (verified run only passed easy tasks)", async () => {
-    // Run r1 (already seeded in beforeEach) has tier='claimed' and passed
-    // easy tasks e1..e5. Insert a second run with tier='verified' that only
-    // attempted a hard task and failed it — so no hard tasks were passed by
-    // any verified run.
-    await insertRun("r2", "verified");
-    await insertResult("r2", "h1", 1, 0); // attempted h1, failed
+  it("bind-order: tier=verified + category=easy returns p1=1 (discriminates wrong bind)", async () => {
+    // Reset to a clean slate for this specific scenario so the beforeEach
+    // easy-pass rows (r1 tier='claimed') do not interfere.
+    await resetDb();
+    await seedScaffold();
 
-    // Query: tier=verified AND category=hard.
-    // Expected: tasks_passed_attempt_1 = 0 because the verified run (r2)
-    // passed nothing, and the claimed run (r1) is excluded by the tier filter.
-    // A bind-order swap would bind "verified" into the category slot and "hard"
-    // into the tier slot, returning the easy-task passes from the claimed run —
-    // exposing the bug.
+    // One easy task and one hard task.
+    await insertTasks(["t-easy"], "easy", 1);
+    await insertTasks(["t-hard"], "hard", 2);
+
+    // Verified run passed the easy task on attempt 1.
+    await insertRun("r1", "verified");
+    await insertResult("r1", "t-easy", 1, 1);
+
+    // Claimed run passed the hard task on attempt 1. Its results must NOT
+    // appear when filtering to tier='verified', so this seeds a value that
+    // would leak in under the wrong bind order.
+    await insertRun("r2", "claimed");
+    await insertResult("r2", "t-hard", 1, 1);
+
     const rows = await computeLeaderboard(env.DB, {
       ...baseQuery,
       tier: "verified",
-      category: "hard",
+      category: "easy",
     });
+
     const ma = rows.find((r) => r.model.slug === "M-A");
-    expect(ma?.tasks_passed_attempt_1 ?? 0).toBe(0);
+    // Fixed bind order: scopeInA1 receives 'easy' -> finds t-easy -> p1=1
+    // Buggy bind order: scopeInA1 receives 'verified' -> category='verified' -> p1=0
+    expect(ma).toBeDefined();
+    expect(ma!.tasks_passed_attempt_1).toBe(1);
+    // denominator=1 because only 1 task has category='easy' in this task_set
+    expect(ma!.denominator).toBe(1);
   });
 
-  it("bind-order: family filter + category=hard returns 0 passes (family matched run only passed easy tasks)", async () => {
-    // The beforeEach seed creates model M-A in family 'test-fam'. The run r1
-    // (tier='claimed') passed 5 easy tasks. No hard tasks were passed.
-    // Query: family=test-fam AND category=hard.
-    // Expected: tasks_passed_attempt_1 = 0 (M-A attempted no hard tasks in r1
-    // other than those seeded in this test as failures).
-    await insertResult("r1", "h1", 1, 0); // attempted h1, failed — M-A appears
+  it("bind-order: family=test-fam + category=easy returns p1=1 (discriminates wrong bind)", async () => {
+    // Reset to a clean slate so beforeEach 'claimed' runs do not contribute.
+    await resetDb();
+    await seedScaffold();
+
+    // One easy task and one hard task.
+    await insertTasks(["t-easy"], "easy", 1);
+    await insertTasks(["t-hard"], "hard", 2);
+
+    // M-A (family='test-fam') passes the easy task on attempt 1.
+    await insertRun("r1", "claimed");
+    await insertResult("r1", "t-easy", 1, 1);
+
+    // Seed a second model in a different family that passes the hard task.
+    // Its results must NOT bleed in under the wrong bind order for the
+    // family+category query.
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (2,'other-fam','OtherVendor','Other Family')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+       VALUES (2,2,'M-B','m-b','Model B',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+       VALUES ('v1',2,1.0,2.0,'2026-01-01')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r2','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await insertResult("r2", "t-hard", 1, 1);
 
     const rows = await computeLeaderboard(env.DB, {
       ...baseQuery,
       family: "test-fam",
-      category: "hard",
+      category: "easy",
     });
+
     const ma = rows.find((r) => r.model.slug === "M-A");
-    expect(ma?.tasks_passed_attempt_1 ?? 0).toBe(0);
+    // Fixed bind order: scopeInA1 receives 'easy' -> finds t-easy -> p1=1
+    // Buggy bind order: scopeInA1 receives 'test-fam' -> category='test-fam' -> p1=0
+    expect(ma).toBeDefined();
+    expect(ma!.tasks_passed_attempt_1).toBe(1);
+    expect(ma!.denominator).toBe(1);
   });
 });
