@@ -379,3 +379,143 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     expect(ma.pass_at_n).toBeCloseTo(1 / 10, 6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// computeLeaderboard filtered numerator tests (A.5)
+//
+// Seed: task_set 'aaaa' contains 5 easy tasks (e1..e5) and 5 hard tasks
+// (h1..h5). Model M-A passed all 5 easy tasks on attempt 1 (no hard tasks
+// attempted).
+//
+// Expected (before A.5 fix, p1/p2_only subqueries are NOT scope-filtered):
+//   ?category=null:  denominator=10, p1=5 → pass_at_n = 0.5
+//   ?category=easy:  denominator=5,  p1=5 → pass_at_n = 1.0  (A.5 needed)
+//   ?category=hard:  denominator=5,  p1=0 → pass_at_n = 0    (A.5 needed)
+//   ?difficulty=easy: same as ?category=easy (difficulty column)
+//
+// After A.5 the subqueries are also filtered so numerator reflects the scope.
+// ---------------------------------------------------------------------------
+
+describe("computeLeaderboard filtered numerator (A.5)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // Seed 5 easy tasks (category_id=1, difficulty='easy') and
+    // 5 hard tasks (category_id=2, difficulty='hard').
+    await insertTasks(["e1", "e2", "e3", "e4", "e5"], "easy", 1);
+    await insertTasks(["h1", "h2", "h3", "h4", "h5"], "hard", 2);
+
+    // Model M-A runs and passes all 5 easy tasks on attempt 1 only.
+    await insertRun("r1");
+    for (const tid of ["e1", "e2", "e3", "e4", "e5"]) {
+      await insertResult("r1", tid, 1, 1);
+    }
+  });
+
+  it("whole-set scope: p1=5, pass_at_n=0.5 (baseline sanity)", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.tasks_passed_attempt_2_only).toBe(0);
+    expect(ma.denominator).toBe(10);
+    expect(ma.pass_at_n).toBeCloseTo(0.5, 6);
+  });
+
+  it("category=easy: p1=5, denominator=5, pass_at_n=1.0", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.tasks_passed_attempt_2_only).toBe(0);
+    expect(ma.denominator).toBe(5);
+    expect(ma.pass_at_n).toBeCloseTo(1.0, 6);
+  });
+
+  it("category=hard with hard attempts: p1 counts only hard passes", async () => {
+    // Add one failed hard attempt so M-A appears in the hard-category result.
+    // The critical check: p1 must NOT include the 5 easy passes.
+    await insertResult("r1", "h1", 1, 0); // attempted h1, failed
+
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "hard",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    // Before A.5 fix, the unfiltered subquery would return 5 (all easy passes).
+    // After A.5, it must return 0 (no hard passes).
+    expect(ma.tasks_passed_attempt_1).toBe(0);
+    expect(ma.tasks_passed_attempt_2_only).toBe(0);
+    expect(ma.denominator).toBe(5);
+    expect(ma.pass_at_n).toBe(0);
+  });
+
+  it("difficulty=easy: p1=5, denominator=5, pass_at_n=1.0", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      difficulty: "easy",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.denominator).toBe(5);
+    expect(ma.pass_at_n).toBeCloseTo(1.0, 6);
+  });
+
+  it("difficulty=hard with hard attempts: p1 counts only hard passes", async () => {
+    // Add one failed hard attempt so M-A appears in difficulty=hard result.
+    // The critical check: p1 must NOT bleed in easy passes.
+    await insertResult("r1", "h1", 1, 0); // attempted h1, failed
+
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      difficulty: "hard",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    // Before A.5 fix, unfiltered subquery returns 5 (all easy passes).
+    // After A.5, must return 0 (no hard passes).
+    expect(ma.tasks_passed_attempt_1).toBe(0);
+    expect(ma.denominator).toBe(5);
+    expect(ma.pass_at_n).toBe(0);
+  });
+
+  it("category=easy + difficulty=easy: p1=5, denominator=5, pass_at_n=1.0", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+      difficulty: "easy",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.denominator).toBe(5);
+    expect(ma.pass_at_n).toBeCloseTo(1.0, 6);
+  });
+
+  it("p2_only scope: attempt-2-only tasks respect category filter", async () => {
+    // Add a task e6 where M-A fails a1 but passes a2 (p2_only).
+    await insertTasks(["e6"], "easy", 1);
+    await insertResult("r1", "e6", 1, 0); // fail a1
+    await insertResult("r1", "e6", 2, 1); // pass a2
+
+    // With category=easy: p1=5, p2_only=1, denominator=6 (e1..e6)
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.tasks_passed_attempt_2_only).toBe(1);
+    expect(ma.denominator).toBe(6);
+    expect(ma.pass_at_n).toBeCloseTo(6 / 6, 6);
+  });
+});

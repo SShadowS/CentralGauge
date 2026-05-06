@@ -126,6 +126,37 @@ export async function computeLeaderboard(
     taskSetClauseSubA2 = `AND ru2.task_set_hash = '${q.set}'`;
     taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = '${q.set}'`;
   }
+
+  // A.5: Scope-aware IN-clause for numerator correlated subqueries.
+  // When category or difficulty filters are active, p1 / p2_only must count
+  // only tasks that belong to the active scope — otherwise a model that passed
+  // easy tasks would show inflated numerators on a hard-filtered leaderboard.
+  //
+  // Three slots are needed because each correlated subquery uses a different
+  // run/result alias (r1/ru1, r2/ru2, r1b/ru1b for the NOT EXISTS inner query).
+  function buildScopeInClause(
+    rAlias: string,
+    ruAlias: string,
+  ): { clause: string; params: Array<string | number> } {
+    if (!q.category && !q.difficulty) return { clause: "", params: [] };
+    const tc = q.category
+      ? `JOIN task_categories tc_sub ON tc_sub.id = t_sub.category_id`
+      : "";
+    const tcWhere = q.category ? `AND tc_sub.slug = ?` : "";
+    const diffWhere = q.difficulty ? `AND t_sub.difficulty = ?` : "";
+    const clause = `AND ${rAlias}.task_id IN (
+      SELECT t_sub.task_id FROM tasks t_sub ${tc}
+      WHERE t_sub.task_set_hash = ${ruAlias}.task_set_hash ${diffWhere} ${tcWhere}
+    )`;
+    const bindParams: Array<string | number> = [];
+    if (q.difficulty) bindParams.push(q.difficulty);
+    if (q.category) bindParams.push(q.category);
+    return { clause, params: bindParams };
+  }
+
+  const scopeInA1 = buildScopeInClause("r1", "ru1");
+  const scopeInA2 = buildScopeInClause("r2", "ru2");
+  const scopeInA2NotExists = buildScopeInClause("r1b", "ru1b");
   if (q.tier !== "all") {
     wheres.push(`runs.tier = ?`);
     params.push(q.tier);
@@ -184,6 +215,7 @@ export async function computeLeaderboard(
        FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
        WHERE ru1.model_id = m.id AND r1.attempt = 1 AND r1.passed = 1
          ${taskSetClauseSubA1}
+         ${scopeInA1.clause}
       ) AS tasks_passed_attempt_1,
       (SELECT COUNT(DISTINCT r2.task_id)
        FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
@@ -193,8 +225,10 @@ export async function computeLeaderboard(
            WHERE ru1b.model_id = m.id AND r1b.task_id = r2.task_id
              AND r1b.attempt = 1 AND r1b.passed = 1
              ${taskSetClauseSubA2NotExists}
+             ${scopeInA2NotExists.clause}
          )
          ${taskSetClauseSubA2}
+         ${scopeInA2.clause}
       ) AS tasks_passed_attempt_2_only,
       AVG(r.score) AS avg_score,
       -- Per-task cost: total $ spent / distinct task count. Per-task is a
@@ -236,11 +270,24 @@ export async function computeLeaderboard(
     last_run_at: string;
   };
 
+  // Bind order matches appearance in the SQL string:
+  //   1. params[]          – outer WHERE (task_set, tier, family, since,
+  //                          difficulty JOIN, category WHERE)
+  //   2. scopeInA1.params  – task_id IN (...) inside tasks_passed_attempt_1
+  //   3. scopeInA2NotExists.params – task_id IN (...) inside the NOT EXISTS
+  //   4. scopeInA2.params  – task_id IN (...) for tasks_passed_attempt_2_only
+  //   5. q.limit           – LIMIT clause
+  const allParams = [
+    ...params,
+    ...scopeInA1.params,
+    ...scopeInA2NotExists.params,
+    ...scopeInA2.params,
+    q.limit,
+  ];
+
   const rows = await (timer
-    ? timer.measure("leaderboard_main", () =>
-        getAll<Row>(db, sql, [...params, q.limit]),
-      )
-    : getAll<Row>(db, sql, [...params, q.limit]));
+    ? timer.measure("leaderboard_main", () => getAll<Row>(db, sql, allParams))
+    : getAll<Row>(db, sql, allParams));
 
   // Resolve settings profiles in a separate batch lookup (only for rows with
   // a unique settings_hash). Sidesteps the SQLite "misuse of aggregate"
@@ -291,8 +338,8 @@ export async function computeLeaderboard(
     const attemptedDistinct = Number(r.tasks_attempted_distinct ?? 0);
 
     // Strict pass rates: denominator = task_count of the active scope.
-    // For A.4, the numerators (p1, p2_only) are NOT yet scope-filtered by
-    // category/difficulty — that lands in A.5. Whole-set tests pass now.
+    // Numerators (p1, p2_only) are scope-filtered by category/difficulty (A.5)
+    // so numerator and denominator always reflect the same task subset.
     const passAtNStrict =
       denominator > 0 ? (passedA1 + passedA2Only) / denominator : 0;
     const passAt1Strict = denominator > 0 ? passedA1 / denominator : 0;
