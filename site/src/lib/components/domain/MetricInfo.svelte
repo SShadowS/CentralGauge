@@ -1,5 +1,6 @@
 <script lang="ts">
   import { METRICS } from '$lib/shared/metrics';
+  import { onMount } from 'svelte';
 
   interface Props {
     id: string;
@@ -9,18 +10,42 @@
   const def = $derived(METRICS[id]);
 
   let open = $state(false);
+  let cheatActive = $state(false);
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape' && open) {
       open = false;
     }
   }
+
+  function handleSummaryClick(e: MouseEvent) {
+    if (cheatActive) {
+      e.preventDefault();
+      open = false;
+    }
+  }
+
+  onMount(() => {
+    const onCheatOpen = () => {
+      cheatActive = true;
+      open = false;
+    };
+    const onCheatClose = () => {
+      cheatActive = false;
+    };
+    document.addEventListener('cheat:open', onCheatOpen);
+    document.addEventListener('cheat:close', onCheatClose);
+    return () => {
+      document.removeEventListener('cheat:open', onCheatOpen);
+      document.removeEventListener('cheat:close', onCheatClose);
+    };
+  });
 </script>
 
 {#if def}
   <span class="wrap">
     <details bind:open onkeydown={handleKeydown}>
-      <summary aria-label="Metric info: {def.label}">
+      <summary aria-label="Metric info: {def.label}" onclick={handleSummaryClick}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="12" cy="12" r="10"/>
           <path d="M12 16v-4"/>
