@@ -605,15 +605,15 @@ describe("GET /api/v1/leaderboard", () => {
   // I-1 complete-fix — cost_per_pass_usd + latency_p95_ms sort
   // ===========================================================================
 
-  it('?sort=cost_per_pass_usd orders rows ascending by cost per passed task (I-1)', async () => {
+  it('?sort=cost_per_pass_usd:asc orders rows ascending by cost per passed task (I-1)', async () => {
     // seed cost_snapshots:
     //   sonnet (model_id=1): input=3.0, output=15.0 $/M
     //   opus   (model_id=2): input=15.0, output=75.0 $/M
-    // r1+r2 (sonnet, current): tokens_in=1000+900+1000=... actually per result row
     // The exact numerical cost_per_pass_usd values are complex; what matters is
     // that opus (10x more expensive) ends up AFTER sonnet when sorted ascending.
     // Verify: rows are sorted ascending (each row cost_per_pass_usd ≤ next).
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd&_cb=cpp');
+    // Note: A.6 default direction is 'desc'; use ':asc' suffix for ascending order.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd:asc&_cb=cpp');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThanOrEqual(2);
@@ -627,7 +627,7 @@ describe("GET /api/v1/leaderboard", () => {
       expect(costs[i]).toBeLessThanOrEqual(costs[i + 1]);
     }
 
-    // Sonnet is cheaper (lower $/M) so should appear first.
+    // Sonnet is cheaper (lower $/M) so should appear first when ascending.
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
     expect(firstSlug).toBe('sonnet-4.7');
   });
@@ -652,18 +652,20 @@ describe("GET /api/v1/leaderboard", () => {
     }
   });
 
-  it('?sort=invalid falls back to default avg_score sort (I-1)', async () => {
-    // An unrecognised sort value must not 400 — it silently falls back to avg_score.
+  it('?sort=invalid falls back to default pass_at_n sort (A.6)', async () => {
+    // An unrecognised sort value must not 400 — it silently falls back to pass_at_n
+    // (default flipped from avg_score to pass_at_n in A.6).
     const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
-    // Default seed: opus has avg_score=1.0, sonnet=0.75 → opus first.
+    // Default seed: both sonnet and opus have pass_at_n=1.0 (both pass 2/2 tasks).
+    // Tiebreaker is m.id DESC → opus (id=2) sorts before sonnet (id=1).
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
     expect(firstSlug).toBe('opus-4.7');
     // filters.sort should reflect the normalised fallback value.
     expect((body as Record<string, unknown>).filters).toBeDefined();
     const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('avg_score');
+    expect(filters.sort).toBe('pass_at_n');
   });
 
   // ===========================================================================

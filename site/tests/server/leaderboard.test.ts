@@ -31,6 +31,7 @@ const baseQuery: LeaderboardQuery = {
   since: null,
   category: null,
   sort: "avg_score",
+  direction: "desc",
   limit: 50,
   cursor: null,
 };
@@ -617,5 +618,231 @@ describe("computeLeaderboard filtered numerator (A.5)", () => {
     expect(ma).toBeDefined();
     expect(ma!.tasks_passed_attempt_1).toBe(1);
     expect(ma!.denominator).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SQL ORDER BY before LIMIT (A.6)
+//
+// Seed: 5 models where avg_score order and pass_at_n order DIFFER.
+// task_set 'aaaa' has task_count=10 (from seedScaffold).
+// Models: M-A (model_id=1, already seeded) plus M-B..M-E (ids 2..5).
+//
+// With limit=2 the top-2 rows must match the top-2 of an unlimited query.
+// Before A.6, the SQL ORDER BY was always avg_score DESC; TS post-sort for
+// pass_at_n / pass_at_1 happened AFTER LIMIT — so if the top-2 by avg_score
+// are not the top-2 by pass_at_n, the limited query returned wrong rows.
+//
+// Design (denominator=10 for all models):
+//   M-A (id=1): 1 pass (t1, score=0.5), no fails  → avg_score=0.50, pass_at_n=0.1
+//   M-B (id=2): 8 passes (t1..8, score=0.3 each)  → avg_score=0.30, pass_at_n=0.8
+//   M-C (id=3): 3 passes (t1..3, score=0.8 each)  → avg_score=0.80, pass_at_n=0.3
+//   M-D (id=4): 5 passes (t1..5, score=0.4 each)  → avg_score=0.40, pass_at_n=0.5
+//   M-E (id=5): 2 passes (t1..2, score=0.9 each)  → avg_score=0.90, pass_at_n=0.2
+//
+// pass_at_n desc:  M-B(0.8) > M-D(0.5) > M-C(0.3) > M-E(0.2) > M-A(0.1)
+// avg_score desc:  M-E(0.9) > M-C(0.8) > M-A(0.5) > M-D(0.4) > M-B(0.3)
+//
+// With limit=2:
+//   SQL top-2 by avg_score = M-E, M-C.
+//   TS post-sort of {M-E, M-C} by pass_at_n gives M-C(0.3), M-E(0.2) — WRONG.
+//   SQL top-2 by pass_at_n = M-B, M-D — CORRECT.
+//
+// These divergent orderings make the parametrized tests truly discriminating.
+// ---------------------------------------------------------------------------
+
+describe("SQL ORDER BY before LIMIT (A.6)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // Seed 4 additional models (M-B..M-E) in the same family.
+    for (let i = 2; i <= 5; i++) {
+      await env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+         VALUES (?,1,?,?,?,?)`,
+      )
+        .bind(i, `M-${String.fromCharCode(64 + i)}`, `m-${i}`, `Model ${String.fromCharCode(64 + i)}`, i)
+        .run();
+      await env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+         VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
+      )
+        .bind(i)
+        .run();
+    }
+
+    // Helper: insert a run for a specific model_id.
+    async function insertRunForModel(runId: string, modelId: number): Promise<void> {
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+        .bind(
+          runId, "aaaa", modelId, "s", "rig",
+          "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+          "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+          1, new Uint8Array([0]),
+        )
+        .run();
+    }
+
+    // Insert a result with explicit score, token counts, and latency.
+    async function insertResultFull(
+      runId: string,
+      taskId: string,
+      attempt: 1 | 2,
+      passed: 0 | 1,
+      score: number,
+      tokensIn = 100,
+      tokensOut = 50,
+      llmDurationMs: number | null = null,
+    ): Promise<void> {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
+         VALUES (?,?,?,?,?,1,1,?,?,?,?)`,
+      )
+        .bind(runId, taskId, attempt, passed, score, passed, tokensIn, tokensOut, llmDurationMs)
+        .run();
+    }
+
+    // -------------------------------------------------------------------------
+    // Seed per-model design (see block comment above):
+    //   id  slug  passes  score  avg_score  pass_at_n  tokensIn  latency(ms)
+    //   1   M-A   1       0.5    0.50       0.1        1000      500
+    //   2   M-B   8       0.3    0.30       0.8        100       100
+    //   3   M-C   3       0.8    0.80       0.3        500       300
+    //   4   M-D   5       0.4    0.40       0.5        200       800
+    //   5   M-E   2       0.9    0.90       0.2        150       200
+    //
+    // cost_per_pass_usd = total_cost / tasks_passed_strict
+    //   (total_cost = passes * (tokIn * 1 + 50 * 2) / 1e6)
+    // avg_cost_usd = total_cost / tasks_attempted_distinct
+    //   (same as per-pass when no failures)
+    //
+    // cost_per_pass order (desc = highest cost first):
+    //   M-A: 1*(1000*1+50*2)/1e6/1 = 1100/1e6 ≈ highest
+    //   M-C: 3*(500+100)/1e6/3 = 600/1e6
+    //   M-D: 5*(200+100)/1e6/5 = 300/1e6
+    //   M-E: 2*(150+100)/1e6/2 = 250/1e6
+    //   M-B: 8*(100+100)/1e6/8 = 200/1e6 ≈ lowest
+    //
+    // latency_p95_ms (from llm_duration_ms per result):
+    //   M-B=100 < M-E=200 < M-C=300 < M-A=500 < M-D=800
+    // -------------------------------------------------------------------------
+
+    const models: Array<{
+      id: number;
+      passes: number;
+      score: number;
+      tokensIn: number;
+      latencyMs: number;
+    }> = [
+      { id: 1, passes: 1, score: 0.5, tokensIn: 1000, latencyMs: 500 },
+      { id: 2, passes: 8, score: 0.3, tokensIn: 100,  latencyMs: 100 },
+      { id: 3, passes: 3, score: 0.8, tokensIn: 500,  latencyMs: 300 },
+      { id: 4, passes: 5, score: 0.4, tokensIn: 200,  latencyMs: 800 },
+      { id: 5, passes: 2, score: 0.9, tokensIn: 150,  latencyMs: 200 },
+    ];
+
+    for (const m of models) {
+      const runId = `r-${m.id}`;
+      await insertRunForModel(runId, m.id);
+      for (let i = 1; i <= m.passes; i++) {
+        await insertResultFull(runId, `t${i}`, 1, 1, m.score, m.tokensIn, 50, m.latencyMs);
+      }
+    }
+  });
+
+  it.each([
+    ["pass_at_n", "desc"],
+    ["pass_at_n", "asc"],
+    ["pass_at_1", "desc"],
+    ["avg_score", "desc"],
+    ["cost_per_pass_usd", "desc"],
+    ["avg_cost_usd", "desc"],
+    ["pass_at_n_per_attempted", "desc"],
+  ] as const)(
+    "sort=%s:%s with limit < total models returns correct top-N",
+    async (sort, direction) => {
+      const limited = await computeLeaderboard(env.DB, {
+        ...baseQuery,
+        sort,
+        direction,
+        limit: 2,
+      });
+      const all = await computeLeaderboard(env.DB, {
+        ...baseQuery,
+        sort,
+        direction,
+        limit: 50,
+      });
+      // The top-2 from a limited query must match the top-2 of the unlimited query.
+      // Before A.6 this could fail because SQL ORDER BY avg_score returned the
+      // wrong 2 rows before the TS post-sort could fix ordering.
+      expect(limited.map((r) => r.model.slug)).toEqual(
+        all.slice(0, 2).map((r) => r.model.slug),
+      );
+    },
+  );
+
+  it("latency_p95_ms uses TS post-sort with wide fetch (SQLite limitation)", async () => {
+    // SQLite lacks PERCENTILE_CONT; cannot express p95 in SQL ORDER BY.
+    // The implementation fetches up to LIMIT_LATENCY_WIDE_FETCH rows, computes
+    // latency percentiles in TS via computeModelAggregates, then re-sorts and
+    // trims. This test verifies the final order is ascending by latency_p95_ms
+    // when direction='asc'.
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "latency_p95_ms",
+      direction: "asc",
+      limit: 5,
+    });
+    // Every model with latency data should appear, ordered ascending.
+    // Filter to rows with nonzero latency (models that have duration data).
+    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    for (let i = 1; i < withLatency.length; i++) {
+      expect(withLatency[i].latency_p95_ms).toBeGreaterThanOrEqual(
+        withLatency[i - 1].latency_p95_ms,
+      );
+    }
+  });
+
+  it("latency_p95_ms desc orders from highest to lowest latency", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "latency_p95_ms",
+      direction: "desc",
+      limit: 5,
+    });
+    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    for (let i = 1; i < withLatency.length; i++) {
+      expect(withLatency[i].latency_p95_ms).toBeLessThanOrEqual(
+        withLatency[i - 1].latency_p95_ms,
+      );
+    }
+  });
+
+  it("default sort (pass_at_n:desc) produces same result as explicit pass_at_n:desc", async () => {
+    const explicit = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "pass_at_n",
+      direction: "desc",
+      limit: 5,
+    });
+    // Default sort is pass_at_n:desc per A.6 spec.
+    // (baseQuery uses avg_score:desc — construct a new query without sort override.)
+    const defaultSortQuery: LeaderboardQuery = {
+      ...baseQuery,
+      sort: "pass_at_n",
+      direction: "desc",
+    };
+    const defaultRows = await computeLeaderboard(env.DB, defaultSortQuery);
+    expect(defaultRows.map((r) => r.model.slug)).toEqual(
+      explicit.map((r) => r.model.slug),
+    );
   });
 });

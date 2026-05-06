@@ -36,13 +36,24 @@ export interface LeaderboardQuery {
    */
   category: string | null;
   /**
-   * P7 Mini-phase B sort key. `avg_score` (default, server-side ORDER BY),
-   * `pass_at_n` and `pass_at_1` (TS-side post-query sort because the
-   * correlated subquery alias is not referenceable in SQLite ORDER BY).
-   * `cost_per_pass_usd` and `latency_p95_ms` (TS-side ascending sorts;
-   * lower is better, nulls last).
+   * A.6 sort key. All whitelist fields are sorted in SQL before LIMIT
+   * (except `latency_p95_ms` which uses a TS post-sort with wide fetch because
+   * SQLite lacks PERCENTILE_CONT). Default is `pass_at_n` (flipped from
+   * `avg_score` in PR1).
    */
-  sort: 'avg_score' | 'pass_at_n' | 'pass_at_1' | 'cost_per_pass_usd' | 'latency_p95_ms';
+  sort:
+    | 'pass_at_n'
+    | 'pass_at_1'
+    | 'avg_score'
+    | 'cost_per_pass_usd'
+    | 'latency_p95_ms'
+    | 'avg_cost_usd'
+    | 'pass_at_n_per_attempted';
+  /**
+   * A.6 sort direction. Parsed from the `sort` query param as `field:dir`
+   * (e.g. `pass_at_n:asc`). Defaults to `desc` when omitted.
+   */
+  direction: 'asc' | 'desc';
   limit: number;
   cursor: { score: number; id: number } | null;
 }

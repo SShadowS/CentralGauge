@@ -191,6 +191,158 @@ export async function computeLeaderboard(
 
   const whereClause = wheres.length ? `WHERE ${wheres.join(" AND ")}` : "";
 
+  // ---------------------------------------------------------------------------
+  // A.6: Build SQL ORDER BY expression for the requested sort field.
+  //
+  // All whitelisted sort fields (except latency_p95_ms) are sorted in SQL
+  // BEFORE LIMIT so the correct top-N is fetched. Pre-A.6, the SQL always
+  // used ORDER BY avg_score DESC and TS post-sorted pass_at_n / pass_at_1 /
+  // cost_per_pass_usd / latency_p95_ms AFTER LIMIT — which dropped rows that
+  // would have been promoted by the TS re-sort when limit < total models.
+  //
+  // latency_p95_ms: SQLite lacks PERCENTILE_CONT; the p95 is computed in TS
+  // via computeModelAggregates after the SQL query. We widen the LIMIT to
+  // LATENCY_WIDE_FETCH so the TS post-sort operates on enough rows, then trim
+  // to q.limit. Direction is honoured in the TS sort.
+  //
+  // Bind order for the ORDER BY expressions that contain ? placeholders:
+  //   1. scopeInA1.params  (pass_at_1 / pass_at_n numerator SELECT subqueries)
+  //   2. scopeInA2NotExists.params
+  //   3. scopeInA2.params
+  //   4. params[]          (outer WHERE: task_set, tier, family, since,
+  //                         difficulty JOIN, category WHERE)
+  //   5. orderBy.extraParams  (scope-IN params duplicated for ORDER BY
+  //                            subquery expressions + denominator for /N)
+  //   6. sqlLimit          (LIMIT clause)
+  //
+  // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd /
+  // pass_at_n_per_attempted are correlated subqueries that reference m.id from
+  // the outer GROUP BY. They duplicate the same scope-IN params used in the
+  // SELECT list (those params appear at positions 1-3 above). SQLite textually
+  // evaluates ORDER BY after GROUP BY, so the ORDER BY ?s come AFTER the
+  // WHERE ?s in bind order.
+  // ---------------------------------------------------------------------------
+
+  const LATENCY_WIDE_FETCH = 200;
+
+  /**
+   * Build the SQL ORDER BY clause and any extra bind params needed for it.
+   *
+   * Returns `{ clause, extraParams, sqlLimit }`.
+   *   - `clause`       — the full `ORDER BY ... ` string (empty for latency).
+   *   - `extraParams`  — bind values for any `?` in the ORDER BY expression.
+   *   - `sqlLimit`     — the LIMIT value to pass to SQL (q.limit normally;
+   *                      LATENCY_WIDE_FETCH for latency_p95_ms).
+   */
+  function buildOrderBy(): {
+    clause: string;
+    extraParams: Array<string | number>;
+    sqlLimit: number;
+  } {
+    const dir = q.direction === "asc" ? "ASC" : "DESC";
+    // Final tiebreaker: model.id DESC for deterministic ordering.
+    const tie = `, m.id DESC`;
+
+    // Correlated subquery expressions reused from the SELECT list.
+    // These must include the same scope-IN clauses so ORDER BY matches the
+    // denominator semantics (same scope in SELECT and ORDER BY).
+    const P1_EXPR = `(SELECT COUNT(DISTINCT r1.task_id)
+       FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
+       WHERE ru1.model_id = m.id AND r1.attempt = 1 AND r1.passed = 1
+         ${taskSetClauseSubA1}
+         ${scopeInA1.clause})`;
+    const P2_ONLY_EXPR = `(SELECT COUNT(DISTINCT r2.task_id)
+       FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
+       WHERE ru2.model_id = m.id AND r2.attempt = 2 AND r2.passed = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM results r1b JOIN runs ru1b ON ru1b.id = r1b.run_id
+           WHERE ru1b.model_id = m.id AND r1b.task_id = r2.task_id
+             AND r1b.attempt = 1 AND r1b.passed = 1
+             ${taskSetClauseSubA2NotExists}
+             ${scopeInA2NotExists.clause}
+         )
+         ${taskSetClauseSubA2}
+         ${scopeInA2.clause})`;
+
+    switch (q.sort) {
+      case "pass_at_n":
+        // Strict: (p1 + p2_only) / denominator. Same denominator used in SELECT.
+        return {
+          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
+          extraParams: [
+            ...scopeInA1.params,
+            ...scopeInA2NotExists.params,
+            ...scopeInA2.params,
+            denominator,
+          ],
+          sqlLimit: q.limit,
+        };
+
+      case "pass_at_1":
+        // Strict first-try rate: p1 / denominator.
+        return {
+          clause: `ORDER BY ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
+          extraParams: [...scopeInA1.params, denominator],
+          sqlLimit: q.limit,
+        };
+
+      case "avg_score":
+        // AVG(r.score) is a plain aggregate — directly referenceable in ORDER BY.
+        return {
+          clause: `ORDER BY AVG(r.score) ${dir}${tie}`,
+          extraParams: [],
+          sqlLimit: q.limit,
+        };
+
+      case "avg_cost_usd":
+        // Repeat the expression (SQLite cannot reference SELECT aliases in ORDER BY).
+        return {
+          clause: `ORDER BY SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
+          extraParams: [],
+          sqlLimit: q.limit,
+        };
+
+      case "cost_per_pass_usd":
+        // Total cost / tasks_passed_strict (p1 + p2_only). Nullif prevents /0.
+        return {
+          clause: `ORDER BY (SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
+          extraParams: [
+            ...scopeInA1.params,
+            ...scopeInA2NotExists.params,
+            ...scopeInA2.params,
+            ...scopeInA1.params,
+            ...scopeInA2NotExists.params,
+            ...scopeInA2.params,
+          ],
+          sqlLimit: q.limit,
+        };
+
+      case "pass_at_n_per_attempted":
+        // Legacy per-attempted: (p1 + p2_only) / tasks_attempted_distinct.
+        return {
+          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
+          extraParams: [
+            ...scopeInA1.params,
+            ...scopeInA2NotExists.params,
+            ...scopeInA2.params,
+          ],
+          sqlLimit: q.limit,
+        };
+
+      case "latency_p95_ms":
+        // SQLite lacks PERCENTILE_CONT; the p95 is computed in TS via
+        // computeModelAggregates. Use a wide SQL LIMIT so the TS post-sort
+        // operates on a large enough pool; direction is honoured in TS.
+        return {
+          clause: `ORDER BY avg_score DESC${tie}`,
+          extraParams: [],
+          sqlLimit: LATENCY_WIDE_FETCH,
+        };
+    }
+  }
+
+  const orderBy = buildOrderBy();
+
   // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
   // so multi-run "best across runs per task" semantics hold (cf. plan B1 design
   // rationale). The settings_profile_json CASE emits NULL when the model's
@@ -248,7 +400,7 @@ export async function computeLeaderboard(
     JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
     ${whereClause}
     GROUP BY m.id
-    ORDER BY avg_score DESC, m.id DESC
+    ${orderBy.clause}
     LIMIT ?
   `;
 
@@ -279,13 +431,16 @@ export async function computeLeaderboard(
   //   3. scopeInA2.params  – task_id IN (...) for tasks_passed_attempt_2_only
   //   4. params[]          – outer WHERE (task_set, tier, family, since,
   //                          difficulty JOIN, category WHERE)
-  //   5. q.limit           – LIMIT clause
+  //   5. orderBy.extraParams – ORDER BY subquery scope-IN params + denominator
+  //                            (A.6: duplicated for the ORDER BY expressions)
+  //   6. orderBy.sqlLimit  – LIMIT clause
   const allParams = [
     ...scopeInA1.params,
     ...scopeInA2NotExists.params,
     ...scopeInA2.params,
     ...params,
-    q.limit,
+    ...orderBy.extraParams,
+    orderBy.sqlLimit,
   ];
 
   const rows = await (timer
@@ -391,48 +546,37 @@ export async function computeLeaderboard(
     };
   });
 
-  // P7 B5: TS-side sort for pass_at_n / pass_at_1. The correlated subquery
-  // aliases used for these metrics are not referenceable in SQLite ORDER BY,
-  // so we sort post-query. LIMIT applies before this re-sort — fine for
-  // current row count (low-N leaderboard); if rows exceed LIMIT, switch to
-  // repeating the subquery expression in ORDER BY.
-  if (q.sort === "pass_at_n") {
-    mapped.sort(
-      (a, b) =>
-        b.pass_at_n - a.pass_at_n || a.model.slug.localeCompare(b.model.slug),
-    );
-    mapped.forEach((row, idx) => {
+  // A.6: TS post-sort for latency_p95_ms only.
+  //
+  // All other sort fields are now handled in SQL ORDER BY before LIMIT
+  // (see buildOrderBy() above). latency_p95_ms is the sole exception because
+  // SQLite lacks PERCENTILE_CONT — the p95 is computed in TS from per-result
+  // duration rows via computeModelAggregates (latencyPercentilesByModel).
+  // To avoid the pre-A.6 LIMIT-then-sort bug, buildOrderBy() widens the SQL
+  // LIMIT to LATENCY_WIDE_FETCH (200) for this sort field, giving the TS
+  // post-sort a large enough pool to work with. The trimmed slice is returned.
+  if (q.sort === "latency_p95_ms") {
+    if (q.direction === "asc") {
+      // Ascending: lower latency first; 0 (no data) sorts last.
+      mapped.sort(
+        (a, b) =>
+          (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity) ||
+          b.model.slug.localeCompare(a.model.slug),
+      );
+    } else {
+      // Descending: higher latency first; 0 (no data) sorts last.
+      mapped.sort(
+        (a, b) =>
+          (b.latency_p95_ms || -Infinity) - (a.latency_p95_ms || -Infinity) ||
+          b.model.slug.localeCompare(a.model.slug),
+      );
+    }
+    // Trim to the requested limit (SQL fetched LATENCY_WIDE_FETCH rows).
+    const trimmed = mapped.slice(0, q.limit);
+    trimmed.forEach((row, idx) => {
       row.rank = idx + 1;
     });
-  } else if (q.sort === "pass_at_1") {
-    mapped.sort(
-      (a, b) =>
-        (b.pass_at_1 ?? 0) - (a.pass_at_1 ?? 0) ||
-        a.model.slug.localeCompare(b.model.slug),
-    );
-    mapped.forEach((row, idx) => {
-      row.rank = idx + 1;
-    });
-  } else if (q.sort === "cost_per_pass_usd") {
-    // Lower cost is better; null (0 tasks passed) sorts last.
-    mapped.sort(
-      (a, b) =>
-        (a.cost_per_pass_usd ?? Infinity) - (b.cost_per_pass_usd ?? Infinity) ||
-        a.model.slug.localeCompare(b.model.slug),
-    );
-    mapped.forEach((row, idx) => {
-      row.rank = idx + 1;
-    });
-  } else if (q.sort === "latency_p95_ms") {
-    // Lower latency is better; 0 (no data) sorts last.
-    mapped.sort(
-      (a, b) =>
-        (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity) ||
-        a.model.slug.localeCompare(b.model.slug),
-    );
-    mapped.forEach((row, idx) => {
-      row.rank = idx + 1;
-    });
+    return trimmed;
   }
 
   return mapped;
