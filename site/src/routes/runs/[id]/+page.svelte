@@ -134,8 +134,13 @@
 </header>
 
 <section class="stats">
-  <StatTile label="Score" value={formatScore(r.totals.avg_score)} />
-  <StatTile label="Tasks pass" value={formatTaskRatio(r.totals.tasks_passed, r.totals.tasks_attempted)} />
+  <StatTile
+    label="Pass Rate"
+    value="{r.totals.tasks_attempted > 0 ? ((r.totals.tasks_passed / r.totals.tasks_attempted) * 100).toFixed(1) : '—'}%"
+    note="{formatTaskRatio(r.totals.tasks_passed, r.totals.tasks_attempted)} tasks"
+    infoId="pass_at_n"
+  />
+  <StatTile label="Avg score" value={formatScore(r.totals.avg_score)} infoId="avg_score" />
   <StatTile label="Cost" value={formatCost(r.totals.cost_usd)} />
   <StatTile label="Duration" value={formatDuration(r.totals.duration_ms)} />
 </section>
