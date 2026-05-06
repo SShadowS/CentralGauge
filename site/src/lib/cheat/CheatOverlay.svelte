@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { draw } from 'svelte/transition';
   import { afterNavigate } from '$app/navigation';
   import { computeCalloutLayout } from './compute-layout';
   import { resolveTargets } from './resolve-targets';
@@ -21,14 +22,25 @@
   const calloutEls = new Map<string, HTMLElement>();
   let rafHandle: number | null = null;
 
+  // Hoisted ResizeObserver so registerCallout can observe late-arriving nodes.
+  let ro: ResizeObserver | null = null;
+
+  // Non-reactive flag: prevents registerCallout from calling scheduleLayout
+  // before onMount has installed the ResizeObserver.
+  let mounted = false;
+
   // Action used by CheatCallout's `register` prop. Returns a teardown fn
   // (NOT the Svelte action shape) so CheatCallout wraps it in `destroy()`.
   function registerCallout(node: HTMLElement, id: string): () => void {
     calloutEls.set(id, node);
-    scheduleLayout();
+    ro?.observe(node);
+    // Only schedule if onMount has already run; pre-mount calls are handled
+    // by the tick().then(scheduleLayout) inside onMount.
+    if (mounted) scheduleLayout();
     return () => {
+      ro?.unobserve(node);
       calloutEls.delete(id);
-      scheduleLayout();
+      if (mounted) scheduleLayout();
     };
   }
 
@@ -79,6 +91,7 @@
   });
 
   onMount(() => {
+    mounted = true;
     document.dispatchEvent(new CustomEvent('cheat:open'));
 
     // Portal: move layer under <body> to escape overflow:hidden ancestors.
@@ -101,14 +114,18 @@
 
     // --- Observers ---
 
-    const ro = new ResizeObserver(scheduleLayout);
-    ro.observe(document.body);
+    // Assign to the hoisted `ro` so registerCallout can observe late-arriving
+    // nodes, then capture a non-null local for use within this closure.
+    ro = new ResizeObserver(scheduleLayout);
+    const roLocal = ro;
+    roLocal.observe(document.body);
 
     const scrollParents = findScrollParents();
-    scrollParents.forEach((p) => ro.observe(p));
+    scrollParents.forEach((p) => roLocal.observe(p));
 
+    // Observe any callouts already registered before mount completed.
     for (const el of calloutEls.values()) {
-      ro.observe(el);
+      roLocal.observe(el);
     }
 
     const scopes = document.querySelectorAll('[data-cheat-scope]');
@@ -139,10 +156,16 @@
       }
       if (e.key !== 'Tab') return;
 
-      // Build ordered focus ring: X button first, then visible callouts.
-      const focusables: HTMLElement[] = [closeButton, ...calloutEls.values()].filter(
-        (el): el is HTMLElement => el !== undefined,
-      );
+      // Build ordered focus ring: X button first, then VISIBLE callouts only.
+      const visibleCalloutEls: HTMLElement[] = [];
+      for (const layout of layouts) {
+        if (!layout.visible) continue;
+        const el = calloutEls.get(layout.id);
+        if (el) visibleCalloutEls.push(el);
+      }
+      const focusables: HTMLElement[] = closeButton
+        ? [closeButton, ...visibleCalloutEls]
+        : visibleCalloutEls;
       if (focusables.length === 0) return;
 
       const first = focusables[0];
@@ -170,7 +193,9 @@
 
     // --- Teardown ---
     return () => {
-      ro.disconnect();
+      mounted = false;
+      ro?.disconnect();
+      ro = null;
       mo.disconnect();
 
       window.removeEventListener('scroll', onScroll);
@@ -211,12 +236,14 @@
   <svg class="cheat-arrows" aria-hidden="true">
     {#each layouts as layout (layout.id)}
       {#if layout.arrow}
+        {@const drawMs = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250}
         <path
           d={layout.arrow.d}
           fill="none"
           stroke="var(--cheat-arrow)"
           stroke-width="1.75"
           stroke-dasharray="3 3"
+          in:draw={{ duration: drawMs }}
         />
       {/if}
     {/each}
