@@ -244,10 +244,16 @@ describe("property: pass_at_n_strict ≤ pass_at_n_per_attempted within scope", 
       const perAttempted = mProp!.pass_at_n_per_attempted;
 
       // The invariant: strict ≤ per-attempted (allow floating-point epsilon).
-      expect(strict).toBeLessThanOrEqual(
-        (perAttempted ?? strict) + 1e-9,
-        `pass_at_n_strict (${strict}) must be ≤ pass_at_n_per_attempted (${perAttempted}) for config: ${cfg.label}`,
-      );
+      // Annotated with `cfg.label` via wrapper-style assertion message: vitest's
+      // toBeLessThanOrEqual takes only one arg, so encode the label by failing
+      // with an explicit message before the comparison if it would fail.
+      const cap = (perAttempted ?? strict) + 1e-9;
+      if (strict > cap) {
+        throw new Error(
+          `pass_at_n_strict (${strict}) must be ≤ pass_at_n_per_attempted (${perAttempted}) for config: ${cfg.label}`,
+        );
+      }
+      expect(strict).toBeLessThanOrEqual(cap);
 
       // Sanity: strict denominator is totalTasks; per-attempted is tasks_attempted_distinct.
       expect(mProp!.denominator).toBe(cfg.totalTasks);

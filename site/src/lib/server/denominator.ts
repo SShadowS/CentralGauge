@@ -27,7 +27,7 @@ export interface DenominatorScope {
 }
 
 /** Tiny helper that runs `stmt.first<T>()` under the timer when available. */
-async function timedFirst<T>(
+function timedFirst<T>(
   stmt: D1PreparedStatement,
   timer: ServerTimer | undefined,
   label: string,
