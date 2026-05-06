@@ -27,6 +27,12 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     );
 
     const allModelIds = rows.map((r) => r.id);
+
+    const currentSetRow = await env.DB
+      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+      .first<{ hash: string }>();
+    const taskSetHash = currentSetRow?.hash ?? null;
+
     const aggMap = allModelIds.length === 0
       ? new Map<
         number,
@@ -37,7 +43,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
           last_run_at: string | null;
         }
       >()
-      : await computeModelAggregates(env.DB, { modelIds: allModelIds });
+      : await computeModelAggregates(env.DB, { modelIds: allModelIds, taskSetHash });
 
     const data = rows.map((r) => {
       const agg = aggMap.get(r.id);

@@ -68,8 +68,15 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     //    supplies all per-task counts, so the legacy per-attempt SELECT below
     //    is no longer needed.
     const timer = new ServerTimer();
+
+    const currentSetRow = await env.DB
+      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+      .first<{ hash: string }>();
+    const taskSetHash = currentSetRow?.hash ?? null;
+
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
+      taskSetHash,
       includeLatencyP50: true,
       includePassHatAtN: true,
       timer,
@@ -139,6 +146,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       if (prior) {
         const priorAgg = await computeModelAggregates(env.DB, {
           modelIds: [prior.id],
+          taskSetHash,
         });
         const a = priorAgg.get(prior.id);
         if (a && a.run_count > 0) {

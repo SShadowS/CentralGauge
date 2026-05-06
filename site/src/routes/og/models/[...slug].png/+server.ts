@@ -32,18 +32,20 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   >();
   if (!m) return new Response(`Unknown model: ${slug}`, { status: 404 });
 
-  const agg = (await computeModelAggregates(env.DB, { modelIds: [m.id] })).get(
-    m.id,
-  );
   const taskSet = await env.DB.prepare(
     `SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`,
   ).first<{ hash: string }>();
+  const taskSetHash = taskSet?.hash ?? null;
+
+  const agg = (await computeModelAggregates(env.DB, { modelIds: [m.id], taskSetHash })).get(
+    m.id,
+  );
 
   const out = await renderOgPng({
     kind: "model",
     slug,
     blobs: env.BLOBS,
-    taskSetHash: taskSet?.hash,
+    taskSetHash: taskSetHash ?? undefined,
     payload: {
       kind: "model",
       displayName: m.display_name,
