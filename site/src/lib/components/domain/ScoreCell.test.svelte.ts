@@ -39,4 +39,34 @@ describe("ScoreCell", () => {
     const fill = container.querySelector(".fill") as HTMLElement;
     expect(fill?.dataset.band).toBe(expected);
   });
+
+  // kind prop tests
+  it("formats avg_attempt as 0..100 (default kind)", () => {
+    const { container } = render(ScoreCell, { score: 68.13 });
+    expect(container.textContent?.trim()).toContain("68.1");
+  });
+
+  it("formats pass_rate as percentage from 0..1", () => {
+    const { container } = render(ScoreCell, { score: 0.732, kind: "pass_rate" });
+    const num = container.querySelector(".num") as HTMLElement;
+    expect(num?.textContent?.trim()).toBe("73.2");
+  });
+
+  it("clamps pass_rate to 0..1 range", () => {
+    const { container } = render(ScoreCell, { score: 1.5, kind: "pass_rate" });
+    const num = container.querySelector(".num") as HTMLElement;
+    expect(num?.textContent?.trim()).toBe("100.0");
+  });
+
+  it("renders em-dash for null score", () => {
+    const { container } = render(ScoreCell, { score: null });
+    const num = container.querySelector(".num") as HTMLElement;
+    expect(num?.textContent?.trim()).toBe("—");
+  });
+
+  it("renders a 73.2% bar fill for pass_rate 0.732", () => {
+    const { container } = render(ScoreCell, { score: 0.732, kind: "pass_rate" });
+    const fill = container.querySelector(".fill") as HTMLElement;
+    expect(fill?.style.width).toBe("73.2%");
+  });
 });
