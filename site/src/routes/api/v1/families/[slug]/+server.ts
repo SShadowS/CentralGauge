@@ -189,6 +189,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
             passAtNPerAttempted === null
               ? null
               : Math.round(passAtNPerAttempted * 1e6) / 1e6,
+          task_set_hash: t.dominant_task_set_hash ?? null,
         };
       }),
     });

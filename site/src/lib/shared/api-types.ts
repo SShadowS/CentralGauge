@@ -490,6 +490,12 @@ export interface FamilyTrajectoryItem {
    * Migration alias; remove in PR2.
    */
   pass_at_n_per_attempted?: number | null;
+  /**
+   * The task-set hash whose task_count was used as the denominator for this
+   * trajectory point. Null when the model has no runs.
+   * Used by FamilyTrajectoryChart to render set-boundary badges.
+   */
+  task_set_hash?: string | null;
 }
 
 export interface FamilyDetail {
