@@ -9,6 +9,8 @@
   import Radio from '$lib/components/ui/Radio.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
+  import CheatButton from '$lib/cheat/CheatButton.svelte';
+  import { landingAnnotations } from '$lib/cheat/annotations/landing';
 
   let { data } = $props();
 
@@ -106,7 +108,7 @@
     {/if}
   </FilterRail>
 
-  <div class="results">
+  <div class="results" data-cheat-scope>
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}
       <div class="chips">
         {#each Array.from(page.url.searchParams.entries()).filter(([k]) => FILTER_KEYS.has(k)) as [key, value]}
@@ -121,14 +123,17 @@
         <p>No models match these filters.</p>
         <button class="clear" onclick={clearAll}>Clear filters</button>
       </div>
-    {:else}
-      <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
+    {/if}
+    <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
+    {#if data.leaderboard.data.length > 0}
       <p class="count text-muted">
         Showing {data.leaderboard.data.length} of {data.leaderboard.data.length}
       </p>
     {/if}
   </div>
 </div>
+
+<CheatButton annotations={landingAnnotations} />
 
 <style>
   .live-line { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
