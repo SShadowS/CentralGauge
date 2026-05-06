@@ -5,13 +5,26 @@
     layout: Layout;
     body: string;
     bodyPrefix?: string;
+    /** Called on mount with the root element; returns a teardown function. */
+    register?: (node: HTMLElement) => () => void;
   }
 
-  let { layout, body, bodyPrefix }: Props = $props();
+  let { layout, body, bodyPrefix, register }: Props = $props();
+
+  function maybeRegister(node: HTMLElement) {
+    if (!register) return;
+    const cleanup = register(node);
+    return {
+      destroy() {
+        cleanup();
+      },
+    };
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex: spec mandates focusable callouts; off-viewport flips to -1 + aria-hidden together. -->
 <div
+  use:maybeRegister
   class="cheat-callout"
   role="note"
   aria-hidden={!layout.visible}
