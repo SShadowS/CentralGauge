@@ -1,5 +1,26 @@
 # CentralGauge site — changelog
 
+## [Unreleased] - CHEAT overlay
+
+### Added
+
+- `CheatButton` (red FAB, bottom-right) on the landing page and
+  `/models/[slug]`. Opens a static annotated overlay with sticky-note
+  callouts pointing at columns and a worked-example row.
+- Per-page annotation registries under
+  `site/src/lib/cheat/annotations/` separate explanation copy from
+  rendering.
+- Mobile (`<= 1024px`) gets a native `<dialog>` numbered-list fallback
+  via `CheatMobileSheet`.
+- Pure `computeCalloutLayout` helper + impure `resolveTargets`
+  resolver, both unit-tested.
+- Page stays click-through usable while overlay is open
+  (`pointer-events: none` on the layer; only the X button is
+  interactive).
+- Existing `MetricInfo` ⓘ popovers suppress while CHEAT is active to
+  avoid two overlapping explanation systems
+  (`document` `cheat:open` / `cheat:close` events).
+
 ## [Unreleased] - PR1: Score display unification
 
 ### Changed (BREAKING semantics)
