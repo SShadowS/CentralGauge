@@ -71,4 +71,35 @@ describe('computeCalloutLayout (pure)', () => {
     const out = computeCalloutLayout([t], VIEWPORT, { a: STD_SIZE });
     expect(out[0].arrow?.d).toMatch(/^M /); // SVG path starts with Move
   });
+
+  it('returns all visible=false when all targets are off-viewport', () => {
+    const a = target('a', 'top', -500, -500);
+    const b = target('b', 'top', 2000, 2000);
+    const out = computeCalloutLayout([a, b], VIEWPORT, { a: STD_SIZE, b: STD_SIZE });
+    expect(out.every((l) => !l.visible)).toBe(true);
+  });
+
+  it('flips side=top to bottom when target is at viewport top edge', () => {
+    const t = target('a', 'top', 600, 0); // anchor.y=0; callout would be above (negative top)
+    const out = computeCalloutLayout([t], VIEWPORT, { a: STD_SIZE });
+    expect(out[0].visible).toBe(true);
+    // Original side=top would place callout above target (top < 0); after flip
+    // to bottom, callout sits BELOW the target's bottom edge (top >= 30).
+    expect(out[0].callout.top).toBeGreaterThanOrEqual(30);
+  });
+
+  it('arrow endpoint stays attached to the FLIPPED side after a side flip', () => {
+    // Force a flip: side=right, target at right edge → flips to left.
+    const t = target('a', 'right', 1200, 400);
+    const out = computeCalloutLayout([t], VIEWPORT, { a: STD_SIZE });
+    expect(out[0].arrow?.d).toBeDefined();
+    // Path "M anchorX,anchorY Q ctrlX,ctrlY endX,endY" — extract endX.
+    const match = out[0].arrow!.d.match(/Q [\d.]+,[\d.]+ ([\d.]+),[\d.]+$/);
+    expect(match).toBeTruthy();
+    const endX = Number(match![1]);
+    // After flip to left, callout sits to the LEFT of the target.
+    // Arrow endpoint is on callout's RIGHT edge (nearest to target),
+    // which equals callout.left + callout.width. That should be < target.left (1200).
+    expect(endX).toBeLessThan(1200);
+  });
 });

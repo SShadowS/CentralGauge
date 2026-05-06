@@ -3,6 +3,7 @@ import type { Layout, ResolvedTarget, Size, Viewport } from './types';
 const ANCHOR_OFFSET = 16; // px outside the anchor along `side`
 const COLLISION_STEP = 8;
 const COLLISION_MAX = 80;
+const DEFAULT_CALLOUT_SIZE: Size = { width: 200, height: 60 };
 
 function isOffViewport(rect: ResolvedTarget['rect'], viewport: Viewport): boolean {
   return (
@@ -68,18 +69,17 @@ function rectsOverlap(
 
 function arrowPath(
   target: ResolvedTarget,
-  callout: { left: number; top: number; width: number },
+  callout: { left: number; top: number; width: number; height: number },
   side: ResolvedTarget['side'],
-  size: Size,
 ): string {
-  const a = anchorPoint(target);
-  // Aim at nearest edge midpoint of callout box
+  const a = anchorPoint({ ...target, side });
+  // Aim at nearest edge MIDPOINT of callout box
   let cx: number;
   let cy: number;
   switch (side) {
     case 'top':
       cx = callout.left + callout.width / 2;
-      cy = callout.top + size.height;
+      cy = callout.top + callout.height;
       break;
     case 'bottom':
       cx = callout.left + callout.width / 2;
@@ -87,14 +87,13 @@ function arrowPath(
       break;
     case 'left':
       cx = callout.left + callout.width;
-      cy = callout.top + size.height / 2;
+      cy = callout.top + callout.height / 2;
       break;
     case 'right':
       cx = callout.left;
-      cy = callout.top + size.height / 2;
+      cy = callout.top + callout.height / 2;
       break;
   }
-  // Quadratic bezier with slight upward control point
   const ctrlX = (a.x + cx) / 2;
   const ctrlY = (a.y + cy) / 2 - 10;
   return `M ${a.x.toFixed(1)},${a.y.toFixed(1)} Q ${ctrlX.toFixed(1)},${ctrlY.toFixed(1)} ${cx.toFixed(1)},${cy.toFixed(1)}`;
@@ -112,7 +111,7 @@ export function computeCalloutLayout(
   const out: Layout[] = [];
 
   for (const t of sorted) {
-    const size = sizes[t.id] ?? { width: 200, height: 60 };
+    const size = sizes[t.id] ?? DEFAULT_CALLOUT_SIZE;
 
     // Off-viewport: skip layout, mark invisible
     if (isOffViewport(t.rect, viewport)) {
@@ -139,6 +138,9 @@ export function computeCalloutLayout(
       if (!clipsViewport(flipped.left, flipped.top, size, viewport)) {
         side = flippedSide;
         pos = flipped;
+      } else {
+        // Both sides clip; spec says use original and warn.
+        console.warn(`[cheat] callout "${t.id}" clips on both sides; keeping original side="${t.side}"`);
       }
     }
 
@@ -161,7 +163,7 @@ export function computeCalloutLayout(
     placed.push({ left: pushed.left, top: pushed.top, width: size.width, height: size.height });
 
     const calloutOut = { left: pushed.left, top: pushed.top, width: size.width };
-    const d = arrowPath(t, calloutOut, side, size);
+    const d = arrowPath(t, { ...calloutOut, height: size.height }, side);
 
     out.push({
       id: t.id,
