@@ -141,9 +141,21 @@ would otherwise re-precheck).
   7+ rows hits 429; retry after ~60 s pause.
 - `task_sets.is_current = 1` is required for leaderboard visibility. Admin
   task-sets endpoint accepts `set_current: true` to flip it atomically.
-- Leaderboard `avg_score` is **per-attempt** (averages all `results` rows);
-  local bench summary's "Score" column is **per-task** (final score). They
-  diverge — same data, different metric.
+- Leaderboard headline metric is **`pass_at_n`** (strict per-set: tasks
+  solved / tasks in scope, with up to 2 attempts). Aligns with local
+  bench summary's "Score" column. `avg_score` (per-attempt mean) is
+  retained as a drill-down column. Pre-PR1 readers may have stored URLs
+  using `pass_at_n` with the per-attempted denominator; that field is
+  now exposed under `pass_at_n_per_attempted` (deprecated; removed in
+  PR2).
+- `set=all` is no longer accepted on `/api/v1/leaderboard` - strict
+  pass rate has no well-defined denominator across multiple sets.
+  Use `set=current` or a specific 64-char hash. Returns `400
+  invalid_set_for_metric` for `set=all`.
+- Cache keys now versioned via `_cv=v2` suffix on synthetic cache-key
+  URLs. Bumped per release that changes cached response shape; old
+  versions age out within the 60s named-cache TTL. PR2 will bump to
+  `_cv=v3`.
 - `pricing_version` is today UTC `YYYY-MM-DD`. Pre-seed in
   `site/catalog/pricing.yml` + `sync-catalog --apply` to skip the bench's
   interactive pricing prompt for new models.
