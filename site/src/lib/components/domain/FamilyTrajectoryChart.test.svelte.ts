@@ -15,6 +15,10 @@ const items: FamilyTrajectoryItem[] = [
     run_count: 4,
     last_run_at: "2026-04-01T00:00:00Z",
     avg_cost_usd: 0.10,
+    pass_at_n: 0.72,
+    pass_at_1: 0.6,
+    denominator: 50,
+    pass_at_n_per_attempted: 0.75,
   },
   {
     model: {
@@ -27,6 +31,10 @@ const items: FamilyTrajectoryItem[] = [
     run_count: 6,
     last_run_at: "2026-04-15T00:00:00Z",
     avg_cost_usd: 0.11,
+    pass_at_n: 0.78,
+    pass_at_1: 0.65,
+    denominator: 50,
+    pass_at_n_per_attempted: 0.80,
   },
   {
     model: {
@@ -39,6 +47,10 @@ const items: FamilyTrajectoryItem[] = [
     run_count: 8,
     last_run_at: "2026-04-26T00:00:00Z",
     avg_cost_usd: 0.12,
+    pass_at_n: 0.84,
+    pass_at_1: 0.72,
+    denominator: 50,
+    pass_at_n_per_attempted: 0.86,
   },
 ];
 

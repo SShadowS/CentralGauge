@@ -444,6 +444,17 @@ export interface FamiliesIndexItem {
   model_count: number;
   latest_avg_score: number | null;
   latest_model_slug: string | null;
+  /** Strict pass rate: (p1 + p2_only) / denominator for the latest model. null when no runs. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator for the latest model. null when no runs. */
+  pass_at_1?: number | null;
+  /** Denominator (task_count of the current task set) for the latest model's pass_at_n. null when no runs. */
+  denominator?: number | null;
+  /**
+   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct for the latest model.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted?: number | null;
 }
 
 export interface FamiliesIndexResponse {
@@ -465,6 +476,20 @@ export interface FamilyTrajectoryItem {
   run_count: number;
   last_run_at: string | null;
   avg_cost_usd: number | null;
+  /** Strict pass rate: (p1 + p2_only) / denominator. null when no runs. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator. null when no runs. */
+  pass_at_1?: number | null;
+  /**
+   * Denominator (task_count of the task set the model's runs belong to).
+   * null when no runs.
+   */
+  denominator?: number | null;
+  /**
+   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted?: number | null;
 }
 
 export interface FamilyDetail {
