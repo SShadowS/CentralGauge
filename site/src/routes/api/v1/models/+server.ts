@@ -28,11 +28,10 @@ export const GET: RequestHandler = async ({ request, platform }) => {
 
     const allModelIds = rows.map((r) => r.id);
 
-    const currentSetRow = await env.DB
-      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
-      .first<{ hash: string }>();
-    const taskSetHash = currentSetRow?.hash ?? null;
-
+    // avg_score_all_runs is intentionally cross-set (no taskSetHash filter).
+    // The /models index is used for catalog discoverability — we want users to
+    // find models that have runs on any task set, not just the current one.
+    // See api-types.ts:402-408 for the documented contract.
     const aggMap = allModelIds.length === 0
       ? new Map<
         number,
@@ -43,7 +42,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
           last_run_at: string | null;
         }
       >()
-      : await computeModelAggregates(env.DB, { modelIds: allModelIds, taskSetHash });
+      : await computeModelAggregates(env.DB, { modelIds: allModelIds });
 
     const data = rows.map((r) => {
       const agg = aggMap.get(r.id);

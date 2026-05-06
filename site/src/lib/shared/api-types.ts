@@ -160,6 +160,15 @@ export interface FailureMode {
 }
 
 export interface ModelDetail {
+  /**
+   * The task-set hash that bounds `aggregates`, `history`, `recent_runs`, and
+   * `failure_modes`. All four sections are scoped to this hash (current set).
+   * `null` when no task set is marked `is_current = 1` in the database.
+   *
+   * `predecessor` is intentionally cross-set when the predecessor model has
+   * no runs on the current set, so the delta tile can still render.
+   */
+  task_set_hash: string | null;
   model: {
     slug: string;
     display_name: string;
