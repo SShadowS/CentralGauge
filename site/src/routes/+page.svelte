@@ -106,7 +106,7 @@
     {/if}
   </FilterRail>
 
-  <div class="results">
+  <div class="results" data-cheat-scope>
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}
       <div class="chips">
         {#each Array.from(page.url.searchParams.entries()).filter(([k]) => FILTER_KEYS.has(k)) as [key, value]}
@@ -121,8 +121,9 @@
         <p>No models match these filters.</p>
         <button class="clear" onclick={clearAll}>Clear filters</button>
       </div>
-    {:else}
-      <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
+    {/if}
+    <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
+    {#if data.leaderboard.data.length > 0}
       <p class="count text-muted">
         Showing {data.leaderboard.data.length} of {data.leaderboard.data.length}
       </p>
