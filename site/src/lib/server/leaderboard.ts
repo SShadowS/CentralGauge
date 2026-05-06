@@ -267,12 +267,21 @@ export async function computeLeaderboard(
     switch (q.sort) {
       case "pass_at_n":
         // Strict: (p1 + p2_only) / denominator. Same denominator used in SELECT.
+        // Tiebreaker chain: pass_at_1 (same dir), then m.id DESC. Without the
+        // pass_at_1 middle tier, models tied on pass_at_n collapse to m.id DESC
+        // alone — newer models win regardless of first-try quality, contrary
+        // to the spec's "rewards first-try when total pass rate ties" rule.
         return {
-          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
+          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}, ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
           extraParams: [
+            // Primary: (p1 + p2_only) / denominator
             ...scopeInA1.params,
             ...scopeInA2NotExists.params,
             ...scopeInA2.params,
+            denominator,
+            // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
+            // scope-IN params again).
+            ...scopeInA1.params,
             denominator,
           ],
           sqlLimit: q.limit,

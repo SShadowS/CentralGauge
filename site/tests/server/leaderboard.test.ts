@@ -1200,3 +1200,125 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
     expect(maAll.latency_p95_ms).not.toBe(maVerified.latency_p95_ms);
   });
 });
+
+// ---------------------------------------------------------------------------
+// pass_at_n tiebreak chain: pass_at_n desc → pass_at_1 desc → m.id DESC.
+//
+// Without the pass_at_1 middle tier, models tied on pass_at_n would collapse
+// to m.id DESC alone — newer models (higher m.id) win regardless of first-try
+// quality. Production hit this: three models tied at pass_at_n=0.78125 sorted
+// by m.id DESC instead of pass_at_1 desc.
+//
+// Discriminating fixture:
+//   M-LOW   m.id=10  p1=2  p2_only=3  pass_at_n=5/10=0.5  pass_at_1=2/10=0.2
+//   M-MID   m.id=20  p1=3  p2_only=2  pass_at_n=5/10=0.5  pass_at_1=3/10=0.3
+//   M-HIGH  m.id=30  p1=4  p2_only=1  pass_at_n=5/10=0.5  pass_at_1=4/10=0.4
+//
+// All tied at pass_at_n=0.5. Under correct tiebreak (pass_at_1 desc):
+//   M-HIGH > M-MID > M-LOW.
+// Under buggy m.id-only tiebreak (DESC):
+//   M-HIGH > M-MID > M-LOW (coincidentally also correct here — m.id ordering
+//   matches pass_at_1 ordering by construction).
+// To DISCRIMINATE the bug, swap m.id so highest-pass_at_1 has LOWEST m.id:
+//   M-LOW   m.id=30  p1=2  pass_at_1=0.2
+//   M-MID   m.id=20  p1=3  pass_at_1=0.3
+//   M-HIGH  m.id=10  p1=4  pass_at_1=0.4
+// Now correct tiebreak: M-HIGH (p1=0.4) > M-MID (p1=0.3) > M-LOW (p1=0.2).
+// Buggy m.id-only tiebreak: M-LOW (id=30) > M-MID (id=20) > M-HIGH (id=10).
+// Test asserts M-HIGH first → fails under bug, passes under fix.
+// ---------------------------------------------------------------------------
+
+describe("pass_at_n tiebreak chain (production hotfix)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // Override task_set 'aaaa' with task_count=10.
+    await env.DB.prepare(`UPDATE task_sets SET task_count = 10 WHERE hash = 'aaaa'`).run();
+
+    // Insert 10 tasks t1..t10.
+    for (let i = 1; i <= 10; i++) {
+      await env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('aaaa',?,?, 'easy','{}')`,
+      ).bind(`t${i}`, `h${i}`).run();
+    }
+
+    // Three models with reversed m.id ordering vs pass_at_1 ordering.
+    const seeds = [
+      { id: 30, slug: "M-LOW", p1: 2, p2only: 3 },
+      { id: 20, slug: "M-MID", p1: 3, p2only: 2 },
+      { id: 10, slug: "M-HIGH", p1: 4, p2only: 1 },
+    ];
+
+    for (const s of seeds) {
+      await env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+         VALUES (?,1,?,?,?,1)`,
+      ).bind(s.id, s.slug, `m-${s.id}`, s.slug).run();
+      await env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+         VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
+      ).bind(s.id).run();
+
+      const runId = `run-${s.id}`;
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        runId,
+        "aaaa",
+        s.id,
+        "s",
+        "rig",
+        "2026-04-01T00:00:00Z",
+        "2026-04-01T01:00:00Z",
+        "completed",
+        "claimed",
+        "v1",
+        "sig",
+        "2026-04-01T00:00:00Z",
+        1,
+        new Uint8Array([0]),
+      ).run();
+
+      // attempt-1 passes (p1)
+      for (let i = 0; i < s.p1; i++) {
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
+        ).bind(runId, `t${i + 1}`).run();
+      }
+      // attempt-2-only passes (p2only): attempt 1 fails, attempt 2 passes
+      for (let i = 0; i < s.p2only; i++) {
+        const taskId = `t${s.p1 + i + 1}`;
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,1,0,0.0,0,1,0,100,50)`,
+        ).bind(runId, taskId).run();
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,2,1,1.0,1,1,1,100,50)`,
+        ).bind(runId, taskId).run();
+      }
+    }
+  });
+
+  it("ranks tied pass_at_n by pass_at_1 desc (not m.id alone)", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const ranked = rows
+      .filter((r) => ["M-HIGH", "M-MID", "M-LOW"].includes(r.model.slug))
+      .map((r) => r.model.slug);
+    expect(ranked).toEqual(["M-HIGH", "M-MID", "M-LOW"]);
+  });
+
+  it("all three models share pass_at_n=0.5 (tied at primary)", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const subset = rows.filter((r) => ["M-HIGH", "M-MID", "M-LOW"].includes(r.model.slug));
+    for (const r of subset) {
+      expect(r.pass_at_n).toBeCloseTo(0.5, 6);
+    }
+  });
+});
