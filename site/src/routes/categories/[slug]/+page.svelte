@@ -53,7 +53,7 @@
       {/snippet}
     </EmptyState>
   {:else}
-    <LeaderboardTable rows={data.leaderboard.data} sort="avg_score:desc" />
+    <LeaderboardTable rows={data.leaderboard.data} sort="pass_at_n:desc" />
   {/if}
 </section>
 

@@ -38,5 +38,20 @@ export const load: PageServerLoad = async (
   if (apiCache) setHeaders({ "cache-control": apiCache });
   const leaderboard = (await lbRes.json()) as LeaderboardResponse;
 
-  return { meta, leaderboard };
+  // Override avg_pass_rate with the strict category-scoped value derived from
+  // the leaderboard response. The categories index endpoint computes
+  // AVG(r.passed) which is a per-attempt rate (wrong denominator). The
+  // leaderboard already uses the strict pass_at_n (p1+p2_only / denominator)
+  // scoped to this category. Averaging pass_at_n across all models in the
+  // leaderboard gives the correct category-level headline.
+  const strictAvgPassRate =
+    leaderboard.data.length > 0
+      ? leaderboard.data.reduce((sum, row) => sum + row.pass_at_n, 0) /
+        leaderboard.data.length
+      : null;
+
+  return {
+    meta: { ...meta, avg_pass_rate: strictAvgPassRate },
+    leaderboard,
+  };
 };
