@@ -215,14 +215,11 @@ describe("GET /api/v1/leaderboard", () => {
     expect(firstSlug).toBe("opus-4.7");
   });
 
-  it("set=all includes old task sets", async () => {
+  it("set=all returns 400 (not supported for strict pass_at_n metric)", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
-    );
-    // With ts-old included, sonnet picks up r4 too → 3 runs
-    expect(sonnet!.run_count).toBe(3);
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
   });
 
   it("set=<64-char-hex-hash> filters to that specific task set", async () => {
@@ -548,25 +545,14 @@ describe("GET /api/v1/leaderboard", () => {
         (fixD!.tasks_passed_attempt_2_only as number),
     ).toBeLessThanOrEqual(fixD!.tasks_attempted_distinct as number);
 
-    // set=all should aggregate both runs; OLD attempt-1 success now classifies T1.
+    // set=all is rejected (PR1: invalid_set_for_metric). Cross-set aggregation
+    // is not supported under strict pass_at_n semantics.
     const resAll = await SELF.fetch(
       "https://x/api/v1/leaderboard?set=all&test=fixD-all",
     );
-    const bodyAll = await resAll.json() as {
-      data: Array<Record<string, unknown>>;
-    };
-    const fixDAll = bodyAll.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixD"
-    );
-    expect(fixDAll).toBeDefined();
-    expect(
-      fixDAll!.tasks_passed_attempt_1,
-      "Fixture D set=all: OLD first-try classifies T1",
-    ).toBe(1);
-    expect(
-      fixDAll!.tasks_passed_attempt_2_only,
-      "Fixture D set=all: NOT double-counted",
-    ).toBe(0);
+    expect(resAll.status).toBe(400);
+    const bodyAllErr = await resAll.json() as { code?: string };
+    expect(bodyAllErr.code).toBe("invalid_set_for_metric");
   });
 
   it("emits settings_suffix when all runs share one settings_hash", async () => {
@@ -729,5 +715,26 @@ describe("GET /api/v1/leaderboard", () => {
     expect(sonnet).toBeDefined();
     const m = sonnet!.model as Record<string, unknown>;
     expect(m.settings_suffix, "mixed settings → suffix omitted").toBe("");
+  });
+});
+
+// =============================================================================
+// PR1 — set=all rejection for strict pass_at_n metric
+// =============================================================================
+describe("GET /api/v1/leaderboard — set=all rejection (PR1)", () => {
+  it("returns 400 with code=invalid_set_for_metric when set=all is requested", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all");
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string; message?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
+  });
+
+  it("returns informative error body for set=all (error field is non-empty string)", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string; error?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
+    expect(typeof body.error).toBe("string");
+    expect((body.error as string).length).toBeGreaterThan(0);
   });
 });

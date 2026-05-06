@@ -79,12 +79,15 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
 function parseQuery(url: URL): LeaderboardQuery {
   const set = url.searchParams.get('set') ?? 'current';
-  if (set !== 'current' && set !== 'all' && !/^[0-9a-f]{64}$/.test(set)) {
+  if (set === 'all') {
     throw new ApiError(
       400,
-      'invalid_set',
-      'set must be current, all, or a 64-char hex task_set hash',
+      'invalid_set_for_metric',
+      'set=all is not supported for the strict pass_at_n metric. Use set=current or a specific 64-char task_set hash.',
     );
+  }
+  if (set !== 'current' && !/^[0-9a-f]{64}$/.test(set)) {
+    throw new ApiError(400, 'invalid_set', 'set must be current or a 64-char hex task_set hash');
   }
 
   const tier = url.searchParams.get('tier') ?? 'all';
