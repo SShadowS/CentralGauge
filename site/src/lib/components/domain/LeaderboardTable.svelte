@@ -61,6 +61,7 @@
         <th
           scope="col"
           class="th-avg-attempt"
+          data-cheat="avg-attempt-col"
           aria-sort={ariaSort('avg_score')}
           title={METRICS.avg_score?.short}
         >

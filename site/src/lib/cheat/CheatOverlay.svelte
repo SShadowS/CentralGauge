@@ -138,7 +138,11 @@
     const anyInView = targetsInitial.some((t) => t.rect.top < viewportH && t.rect.bottom > 0);
     if (!anyInView) {
       const scope = document.querySelector('[data-cheat-scope]');
-      scope?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      // jsdom doesn't implement scrollIntoView; guard so unit tests don't
+      // crash before the rest of the mount sequence runs.
+      if (scope && typeof scope.scrollIntoView === 'function') {
+        scope.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
 
     void tick().then(() => {
