@@ -138,10 +138,18 @@
     const anyInView = targetsInitial.some((t) => t.rect.top < viewportH && t.rect.bottom > 0);
     if (!anyInView) {
       const scope = document.querySelector('[data-cheat-scope]');
-      // jsdom doesn't implement scrollIntoView; guard so unit tests don't
-      // crash before the rest of the mount sequence runs.
-      if (scope && typeof scope.scrollIntoView === 'function') {
-        scope.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (scope) {
+        // Leave ~140px of headroom above the scope so callouts placed on the
+        // `top` side of column headers have room to render. Without this,
+        // scrollIntoView({block:'start'}) lands headers at viewport.top=0,
+        // every top-side callout clips, all side-flip to bottom, and the
+        // alternating layout collapses to a single row.
+        const HEADROOM = 140;
+        const rect = scope.getBoundingClientRect();
+        const delta = rect.top - HEADROOM;
+        if (delta > 1) {
+          window.scrollBy({ top: delta, behavior: 'smooth' });
+        }
       }
     }
 
