@@ -97,7 +97,7 @@
 
 <svelte:head>
   <title>{m.model.display_name} · CentralGauge</title>
-  <meta name="description" content="{m.model.display_name} ({m.model.api_model_id}) on CentralGauge: {formatScore(m.aggregates.avg_score)} avg score across {m.aggregates.run_count} runs." />
+  <meta name="description" content="{m.model.display_name} ({m.model.api_model_id}) on CentralGauge: {(m.aggregates.pass_at_n * 100).toFixed(1)}% pass@N across {m.aggregates.run_count} runs." />
 </svelte:head>
 
 <Breadcrumbs crumbs={[
@@ -125,19 +125,18 @@
 <div class="layout">
   <main class="content">
     <section class="stats">
-      <StatTile label="Score" value={formatScore(m.aggregates.avg_score)} sparklineValues={sparklineValues}
-        infoId="avg_score"
-        delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined} />
+      <StatTile label="Pass@N" value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%" sparklineValues={sparklineValues}
+        infoId="pass_at_n" />
       <AttemptBreakdownTile aggregates={m.aggregates} />
       <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
         infoId="avg_cost_usd"
         delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
       <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
       <StatTile
-        label="Pass Rate"
-        value="{(m.aggregates.pass_at_n * 100).toFixed(1)}%"
-        note="95% CI: [{(m.aggregates.pass_rate_ci.lower * 100).toFixed(1)}–{(m.aggregates.pass_rate_ci.upper * 100).toFixed(1)}]%"
-        infoId="pass_at_n"
+        label="Avg score"
+        value={formatScore(m.aggregates.avg_score)}
+        infoId="avg_score"
+        delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined}
       />
       <StatTile
         label="pass^n (strict)"
@@ -184,12 +183,12 @@
       </dl>
     </section>
 
-    <section id="history">
+    <section id="history" class="chart-section">
       <h2>History</h2>
       <TaskHistoryChart points={m.history} />
     </section>
 
-    <section id="cost">
+    <section id="cost" class="chart-section">
       <h2>Cost</h2>
       <CostBarChart points={m.history} />
     </section>
@@ -250,6 +249,11 @@
   @media (max-width: 768px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 
   .seemore { margin-top: var(--space-4); font-size: var(--text-sm); }
+
+  /* Constrain chart sections to 720 px so TaskHistoryChart's fluid strip and
+     CostBarChart's fixed-720 SVG align on the same visual width. */
+  .chart-section :global(figure),
+  .chart-section :global(svg) { max-width: 720px; }
 
   /* Phase G: settings transparency block. Two-column dl that wraps on
      narrow viewports. Tabular numerals so the value column lines up. */
