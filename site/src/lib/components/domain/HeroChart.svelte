@@ -16,12 +16,10 @@
     rows,
     generatedAt,
     taskCount,
-    topN = 8,
   }: {
     rows: LeaderboardRow[];
     generatedAt: string;
     taskCount?: number;
-    topN?: number;
   } = $props();
 
   type Segs = { p1: number; p2: number; score: number };
@@ -38,8 +36,7 @@
     rows
       .map((r) => ({ row: r, s: segs(r) }))
       .filter(({ row }) => row.tasks_attempted_distinct > 0)
-      .sort((a, b) => b.s.score - a.s.score)
-      .slice(0, topN),
+      .sort((a, b) => b.s.score - a.s.score),
   );
 
   const modelCount = $derived(rows.length);
@@ -67,7 +64,7 @@
       <span class="axis">Pass rate (%)</span>
     </div>
 
-    <ol class="bars" aria-label="Top {top.length} models by pass rate">
+    <ol class="bars" aria-label="{top.length} models by pass rate">
       {#each top as { row, s }, i (row.model.slug)}
         <li class="bar-row">
           <span class="bar-rank">{i + 1}</span>

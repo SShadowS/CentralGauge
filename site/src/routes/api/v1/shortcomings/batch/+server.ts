@@ -8,7 +8,9 @@ import { appendEvent } from "$lib/server/lifecycle-event-log";
 import { SLUG_REGEX } from "$lib/shared/slug";
 
 interface ShortcomingOccurrence {
-  result_id: number;
+  /** Null when the client did not pre-resolve; the handler resolves
+   * server-side via `(model_id, task_id) → latest results.id`. */
+  result_id: number | null;
   task_id: string;
   error_code: string | null;
 }
@@ -36,12 +38,18 @@ function validateOccurrence(
 ): ShortcomingOccurrence {
   const o = occ as Record<string, unknown>;
   const { result_id, task_id, error_code } = o;
-  if (!Number.isInteger(result_id) || (result_id as number) <= 0) {
-    throw new ApiError(
-      400,
-      "bad_payload",
-      `shortcomings[${shortIdx}].occurrences[${occIdx}].result_id must be a positive integer`,
-    );
+  // result_id is OPTIONAL. When null/missing the handler resolves server-side
+  // via (model_id, task_id). When provided it must be a positive integer.
+  let resolvedResultId: number | null = null;
+  if (result_id !== null && result_id !== undefined) {
+    if (!Number.isInteger(result_id) || (result_id as number) <= 0) {
+      throw new ApiError(
+        400,
+        "bad_payload",
+        `shortcomings[${shortIdx}].occurrences[${occIdx}].result_id must be a positive integer or null`,
+      );
+    }
+    resolvedResultId = result_id as number;
   }
   if (typeof task_id !== "string" || task_id.length === 0) {
     throw new ApiError(
@@ -51,7 +59,7 @@ function validateOccurrence(
     );
   }
   return {
-    result_id: result_id as number,
+    result_id: resolvedResultId,
     task_id,
     error_code: typeof error_code === "string" ? error_code : null,
   };
@@ -420,23 +428,51 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       }
       upserted++;
 
-      // Batch occurrence inserts per shortcoming for efficiency
+      // Batch occurrence inserts per shortcoming for efficiency. Each
+      // occurrence may carry a null `result_id` — resolve it server-side
+      // by picking the most recent `results.id` for (model_id, task_id).
+      // Drop occurrences where no matching result exists; this is the
+      // expected case when the cycle's analyze step references a task that
+      // wasn't part of the most-recent bench (rare, e.g. task removed).
       if (item.occurrences.length > 0) {
-        const occStmts = item.occurrences.map((occ) =>
-          db
-            .prepare(
-              `INSERT OR IGNORE INTO shortcoming_occurrences(shortcoming_id, result_id, task_id, error_code)
-               VALUES (?, ?, ?, ?)`,
-            )
-            .bind(row.id, occ.result_id, occ.task_id, occ.error_code ?? null)
-        );
-
-        // Chunk at 500 to stay within D1 batch limits
-        for (let i = 0; i < occStmts.length; i += 500) {
-          const chunk = occStmts.slice(i, i + 500);
-          const results = await db.batch(chunk);
-          for (const r of results) {
-            occurrences += r.meta?.changes ?? 0;
+        const resolved: Array<
+          { result_id: number; task_id: string; error_code: string | null }
+        > = [];
+        for (const occ of item.occurrences) {
+          let rid: number | null = occ.result_id;
+          if (rid === null) {
+            const r = await db.prepare(
+              `SELECT r.id AS id FROM results r
+                 JOIN runs ON runs.id = r.run_id
+                WHERE runs.model_id = ? AND r.task_id = ?
+                ORDER BY runs.started_at DESC, r.id DESC
+                LIMIT 1`,
+            ).bind(modelId, occ.task_id).first<{ id: number }>();
+            rid = r?.id ?? null;
+          }
+          if (rid === null) continue;
+          resolved.push({
+            result_id: rid,
+            task_id: occ.task_id,
+            error_code: occ.error_code,
+          });
+        }
+        if (resolved.length > 0) {
+          const occStmts = resolved.map((occ) =>
+            db
+              .prepare(
+                `INSERT OR IGNORE INTO shortcoming_occurrences(shortcoming_id, result_id, task_id, error_code)
+                 VALUES (?, ?, ?, ?)`,
+              )
+              .bind(row.id, occ.result_id, occ.task_id, occ.error_code)
+          );
+          // Chunk at 500 to stay within D1 batch limits
+          for (let i = 0; i < occStmts.length; i += 500) {
+            const chunk = occStmts.slice(i, i + 500);
+            const results = await db.batch(chunk);
+            for (const r of results) {
+              occurrences += r.meta?.changes ?? 0;
+            }
           }
         }
       }
