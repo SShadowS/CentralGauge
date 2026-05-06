@@ -47,28 +47,22 @@ describe("ShortcomingsSection", () => {
     expect(container.querySelector("section.empty")).toBeNull();
   });
 
-  it('renders <EmptyState> with the "No shortcomings analyzed yet" title when items=[]', () => {
+  it('renders <EmptyState> with the "Shortcomings analysis queued" title when items=[]', () => {
     const { container } = render(ShortcomingsSection, { items: [] });
     const empty = container.querySelector("section.empty");
     expect(empty).not.toBeNull();
     expect(empty!.getAttribute("aria-label")).toBe(
-      "No shortcomings analyzed yet",
+      "Shortcomings analysis queued",
     );
     const h2 = empty!.querySelector("h2");
-    expect(h2?.textContent).toBe("No shortcomings analyzed yet");
+    expect(h2?.textContent).toBe("Shortcomings analysis queued");
     expect(container.querySelectorAll("article.shortcoming").length).toBe(0);
   });
 
-  it("empty-state body references the P8 analyzer roadmap", () => {
+  it("empty-state body says it will appear once processed", () => {
     const { container } = render(ShortcomingsSection, { items: [] });
-    expect(container.textContent).toContain("P8");
-  });
-
-  it("empty-state CTA links to /about#methodology (analyzer status)", () => {
-    const { container } = render(ShortcomingsSection, { items: [] });
-    const cta = container.querySelector("a.cta");
-    expect(cta).not.toBeNull();
-    expect(cta!.getAttribute("href")).toBe("/about#methodology");
+    expect(container.textContent).toContain("Queued for analysis");
+    expect(container.textContent).toContain("processed");
   });
 
   it("does NOT call fetch when items prop is provided", () => {
