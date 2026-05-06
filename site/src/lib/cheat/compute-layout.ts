@@ -142,25 +142,19 @@ export function computeCalloutLayout(
       }
     }
 
-    // Collision avoidance: check base position first, then push along the
-    // attachment axis until no overlap or COLLISION_MAX is exceeded.
+    // Step 5: collision avoidance — push PERPENDICULAR to `side`.
+    // For top/bottom (vertical attachment), perpendicular = horizontal (left).
+    // For left/right (horizontal attachment), perpendicular = vertical (top).
     let pushed = pos;
-    const baseCandidate = { ...pos, width: size.width, height: size.height };
-    if (placed.some((p) => rectsOverlap(baseCandidate, p))) {
-      for (let pushDistance = COLLISION_STEP; pushDistance <= COLLISION_MAX; pushDistance += COLLISION_STEP) {
-        // Compute candidate position shifted along the attachment axis
-        let candidate: { left: number; top: number; width: number; height: number };
-        if (side === 'top') {
-          candidate = { left: pos.left, top: pos.top - pushDistance, width: size.width, height: size.height };
-        } else if (side === 'bottom') {
-          candidate = { left: pos.left, top: pos.top + pushDistance, width: size.width, height: size.height };
-        } else if (side === 'left') {
-          candidate = { left: pos.left - pushDistance, top: pos.top, width: size.width, height: size.height };
-        } else {
-          candidate = { left: pos.left + pushDistance, top: pos.top, width: size.width, height: size.height };
-        }
-        pushed = { left: candidate.left, top: candidate.top };
-        if (!placed.some((p) => rectsOverlap(candidate, p))) break;
+    let pushDistance = 0;
+    while (pushDistance <= COLLISION_MAX) {
+      const candidate = { ...pushed, width: size.width, height: size.height };
+      if (!placed.some((p) => rectsOverlap(candidate, p))) break;
+      pushDistance += COLLISION_STEP;
+      if (side === 'top' || side === 'bottom') {
+        pushed = { left: pos.left + pushDistance, top: pos.top };
+      } else {
+        pushed = { left: pos.left, top: pos.top + pushDistance };
       }
     }
 

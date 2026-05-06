@@ -48,10 +48,22 @@ describe('computeCalloutLayout (pure)', () => {
     const a = target('a', 'top', 600, 400, 2);
     const b = target('b', 'top', 600, 400, 1); // same anchor, lower order
     const out = computeCalloutLayout([a, b], VIEWPORT, { a: STD_SIZE, b: STD_SIZE });
-    // b placed first; collision pushes a away
     const layoutA = out.find((l) => l.id === 'a')!;
     const layoutB = out.find((l) => l.id === 'b')!;
-    expect(layoutB.callout.top).not.toBe(layoutA.callout.top);
+    // b placed first (lower order), a is pushed perpendicular → lefts differ, tops equal
+    expect(layoutA.callout.top).toBe(layoutB.callout.top);
+    expect(layoutA.callout.left).not.toBe(layoutB.callout.left);
+  });
+
+  it('pushes perpendicular (vertical) for side=left collisions', () => {
+    const a = target('a', 'left', 600, 400, 2);
+    const b = target('b', 'left', 600, 400, 1);
+    const out = computeCalloutLayout([a, b], VIEWPORT, { a: STD_SIZE, b: STD_SIZE });
+    const layoutA = out.find((l) => l.id === 'a')!;
+    const layoutB = out.find((l) => l.id === 'b')!;
+    // perpendicular to left/right is vertical: lefts equal, tops differ
+    expect(layoutA.callout.left).toBe(layoutB.callout.left);
+    expect(layoutA.callout.top).not.toBe(layoutB.callout.top);
   });
 
   it('emits SVG arrow path d-attribute when visible', () => {
