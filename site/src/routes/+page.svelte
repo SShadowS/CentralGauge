@@ -9,6 +9,8 @@
   import Radio from '$lib/components/ui/Radio.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
+  import CheatButton from '$lib/cheat/CheatButton.svelte';
+  import { landingAnnotations } from '$lib/cheat/annotations/landing';
 
   let { data } = $props();
 
@@ -130,6 +132,8 @@
     {/if}
   </div>
 </div>
+
+<CheatButton annotations={landingAnnotations} />
 
 <style>
   .live-line { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
