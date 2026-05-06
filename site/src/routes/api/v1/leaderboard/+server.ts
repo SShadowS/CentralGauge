@@ -91,8 +91,8 @@ function parseQuery(url: URL): LeaderboardQuery {
   }
 
   const tier = url.searchParams.get('tier') ?? 'all';
-  if (tier !== 'all' && tier !== 'verified' && tier !== 'claimed') {
-    throw new ApiError(400, 'invalid_tier', 'tier must be verified, claimed, or all');
+  if (tier !== 'all' && tier !== 'verified' && tier !== 'claimed' && tier !== 'trusted') {
+    throw new ApiError(400, 'invalid_tier', 'tier must be verified, claimed, trusted, or all');
   }
 
   const difficulty = url.searchParams.get('difficulty');
@@ -130,7 +130,7 @@ function parseQuery(url: URL): LeaderboardQuery {
 
   return {
     set,
-    tier: tier as 'verified' | 'claimed' | 'all',
+    tier: tier as 'verified' | 'claimed' | 'trusted' | 'all',
     difficulty: (difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
     family,
     since,

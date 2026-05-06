@@ -25,7 +25,7 @@ export type SetFilter = 'current' | string;
 
 export interface LeaderboardQuery {
   set: SetFilter;
-  tier: 'verified' | 'claimed' | 'all';
+  tier: 'verified' | 'claimed' | 'trusted' | 'all';
   difficulty: 'easy' | 'medium' | 'hard' | null;
   family: string | null;
   since: string | null;

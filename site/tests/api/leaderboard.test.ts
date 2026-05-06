@@ -728,4 +728,21 @@ describe("GET /api/v1/leaderboard", () => {
     expect(typeof body.error).toBe("string");
     expect((body.error as string).length).toBeGreaterThan(0);
   });
+
+  // ---------------------------------------------------------------------------
+  // PR1 — tier=trusted filter (Task A.2)
+  // ---------------------------------------------------------------------------
+  describe("GET /api/v1/leaderboard — tier filter (PR1)", () => {
+    it("accepts tier=trusted and returns 200", async () => {
+      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=trusted&_cb=trusted");
+      expect(res.status).toBe(200);
+    });
+
+    it("rejects unknown tier with 400 and invalid_tier code", async () => {
+      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=bogus&_cb=bogus-tier");
+      expect(res.status).toBe(400);
+      const body = await res.json() as { code?: string };
+      expect(body.code).toBe("invalid_tier");
+    });
+  });
 });
