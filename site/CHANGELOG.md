@@ -1,5 +1,74 @@
 # CentralGauge site — changelog
 
+## [Unreleased] - PR1: Score display unification
+
+### Changed (BREAKING semantics)
+
+- `pass_at_n` and `pass_at_1` fields in `/api/v1/*` responses now use
+  strict per-set denominator (tasks in scope, including unattempted)
+  instead of per-attempted. The change makes ranking honest about
+  coverage. Pre-PR1 value available under `pass_at_n_per_attempted`
+  for one release. Removed in PR2.
+- Default sort on `/api/v1/leaderboard` now `pass_at_n:desc` (was
+  `avg_score:desc`).
+- `set=all` no longer accepted on `/api/v1/leaderboard`; returns
+  `400 invalid_set_for_metric`. Use `set=current` or a specific
+  64-char hash.
+- `pass_rate_ci` denominator now scope-aware (matches headline
+  metric). Wilson 95% CI computed on strict denominator.
+
+### Added
+
+- `denominator` field on aggregate rows (the scope-aware task count
+  used as denominator).
+- `pass_at_n_per_attempted` field (deprecated alias; removed next
+  release).
+- `tier=trusted` filter value (was previously schema-only, now exposed
+  via API).
+- `avg_cost_usd` is a server-honored sort field.
+- `_cv=v2` cache-key suffix on synthetic Cache API keys; old `_cv=v1`
+  entries age out via 60s TTL.
+
+### Fixed
+
+- `/api/v1/leaderboard` previously returned wrong top-N when `LIMIT`
+  was less than the full model count for sorts other than `avg_score`.
+  Now SQL-orders before `LIMIT` for every whitelisted sort.
+- Filtered (`category` / `difficulty`) leaderboards previously left
+  `tasks_passed_attempt_1` / `tasks_passed_attempt_2_only` unfiltered.
+  Now properly scope-filtered.
+- Filtered leaderboards previously rendered unscoped `pass_rate_ci`,
+  `cost_per_pass_usd`, `latency_p95_ms`. Now scope-aware via
+  `computeModelAggregates` extension.
+- Sort direction (`asc`/`desc`) was previously discarded; now honored.
+- `families/[slug]` per-trajectory `pass_at_n` could exceed 1.0 when a
+  model had runs in multiple task sets (numerator unscoped while
+  denominator scoped to dominant_task_set_hash). Now numerator scoped
+  to the same hash.
+- `invalidateConcept()` was deleting unsuffixed cache keys after PR1's
+  `_cv=v2` versioning landed; cache invalidation silently failed
+  for up to 5 minutes after concept mutations. Fixed to delete
+  versioned keys.
+
+### UI
+
+- LeaderboardTable: removed click affordance from non-server-honored
+  headers (`Model`, `Last seen`).
+- HeroChart: bar segments use strict denominator. Coverage subtitle
+  (`X/Y attempted`) renders for partial-coverage models.
+- FamilyTrajectoryChart: 4-char set-hash badges at task-set promotion
+  boundaries.
+- TaskHistoryChart: replaced score trace with binary pass/fail strip
+  + attempt-number annotation.
+- /about: rewritten metrics section with worked example.
+- OG images: pass_at_n strict as headline number ("Pass rate" label).
+
+### Internal
+
+- New `site/src/lib/server/denominator.ts` helper.
+- New `site/src/lib/server/cache-version.ts` constant (`v2`).
+- New `site/src/lib/shared/task-set-hash.ts` (regex + validator).
+
 ## Unreleased
 
 ### Added
