@@ -195,3 +195,18 @@
     --duration-slow: 0ms;
   }
 }
+
+/* CHEAT overlay tokens. See docs/superpowers/specs/2026-05-06-cheat-overlay-design.md */
+:root {
+  --cheat-note-bg: #fff8a8;
+  --cheat-arrow: #d97706;
+  --cheat-fab-bg: #dc2626;
+  --cheat-fab-bg-hover: #b91c1c;
+  --z-cheat-layer: 950;
+  --z-fab: 940;
+}
+
+html[data-theme="dark"] {
+  /* Lighter arrow for dark backgrounds; note background unchanged */
+  --cheat-arrow: #fbbf24;
+}
