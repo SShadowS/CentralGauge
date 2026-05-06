@@ -185,6 +185,8 @@
     --diff-add: #1a3a26;
     --diff-remove: #3a1a1a;
     --selection: #1a3a7d;
+    /* I6: match html[data-theme="dark"] override for system-dark users without explicit theme. */
+    --cheat-arrow: #fbbf24;
   }
 }
 

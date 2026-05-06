@@ -8,6 +8,8 @@
   let { annotations }: Props = $props();
 
   let open = $state(false);
+  // I1: hold a ref to the FAB so we can restore focus after overlay closes.
+  let fabEl: HTMLButtonElement | undefined = $state();
   let DesktopOverlay: Component<{ annotations: Annotation[]; onClose: () => void }> | null = $state(null);
   let MobileSheet: Component<{ annotations: Annotation[]; onClose: () => void }> | null = $state(null);
 
@@ -34,6 +36,8 @@
 
   function handleClose() {
     open = false;
+    // I1: return focus to FAB after Svelte unmounts the overlay/sheet.
+    queueMicrotask(() => fabEl?.focus());
   }
 
   // Breakpoint crossing while open: dismiss
@@ -47,6 +51,7 @@
 </script>
 
 <button
+  bind:this={fabEl}
   class="cheat-fab"
   class:active={open}
   type="button"

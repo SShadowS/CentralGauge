@@ -49,7 +49,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: dialog is a native interactive element; click handler only handles backdrop dismissal via geometric check, not element-level interaction. -->
-<dialog bind:this={dialogEl} class="cheat-sheet">
+<!-- I2: id="cheat-overlay" matches aria-controls on the FAB; only one of overlay/sheet is mounted at a time. -->
+<dialog id="cheat-overlay" bind:this={dialogEl} class="cheat-sheet">
   <div class="sheet">
     <header>
       <span class="label">CHEAT</span>
