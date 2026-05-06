@@ -25,11 +25,19 @@ export interface MetricDef {
 export const METRICS: Record<string, MetricDef> = {
   pass_at_n: {
     id: 'pass_at_n',
-    label: 'Pass Rate',
-    short: 'Fraction of distinct tasks solved in any attempt across all runs.',
-    formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / tasks_attempted_distinct',
-    when: 'Primary ranking metric. Compare models here first: it directly measures how often the model delivers working code.',
+    label: 'Pass rate',
+    short: 'Tasks solved / tasks in scope, up to 2 attempts (strict per-set denominator).',
+    formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / task_set_size',
+    when: 'Includes unattempted tasks as failures. Scope-aware; reflects active filters (set, category, difficulty). Primary ranking metric.',
     link: { href: 'https://arxiv.org/abs/2107.03374', text: 'HumanEval paper (Chen et al., 2021)' },
+  },
+
+  pass_at_1: {
+    id: 'pass_at_1',
+    label: 'First-try pass rate',
+    short: 'Tasks solved on the first attempt / tasks in scope (strict).',
+    formula: 'tasks_passed_attempt_1 / task_set_size',
+    when: 'Measures single-shot accuracy without retry credit. Useful when comparing models where the second attempt is not available.',
   },
 
   pass_rate_ci: {
@@ -49,12 +57,20 @@ export const METRICS: Record<string, MetricDef> = {
     when: 'Measures reliability under repetition. High pass^n means the model is unlikely to regress on a re-run, important for CI and production use.',
   },
 
+  pass_at_n_per_attempted: {
+    id: 'pass_at_n_per_attempted',
+    label: 'Per-attempted pass rate',
+    short: 'Deprecated. Pre-PR1 metric using tasks_attempted as denominator.',
+    formula: 'tasks_passed / tasks_attempted_distinct (excludes unattempted tasks from denominator)',
+    when: 'Deprecated. Pre-PR1 metric. Replaced by pass_at_n which uses the strict per-set denominator. Removed next release.',
+  },
+
   avg_score: {
     id: 'avg_score',
-    label: 'Score',
-    short: 'Average score per attempt row (0–1). Rewards partial credit.',
+    label: 'Avg attempt score',
+    short: 'Mean per-attempt score (0–1). Drill-down only; lower than pass_at_n.',
     formula: 'Mean of all attempt scores across all results rows: SUM(score) / COUNT(*) over the results table.',
-    when: 'Ranks models that make consistent partial progress on hard tasks. A model that scores 0.5 on every task beats one that passes half and fails the rest on this metric.',
+    when: 'Drill-down companion to pass_at_n. Rewards partial credit but not directly comparable to pass rate; use for within-model analysis.',
   },
 
   avg_cost_usd: {

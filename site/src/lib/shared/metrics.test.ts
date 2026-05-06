@@ -30,6 +30,8 @@ describe('METRICS registry', () => {
   it('required metrics for leaderboard + model detail are registered', () => {
     const required = [
       'pass_at_n',
+      'pass_at_1',
+      'pass_at_n_per_attempted',
       'pass_rate_ci',
       'pass_hat_at_n',
       'cost_per_pass_usd',
