@@ -211,8 +211,8 @@ export async function computeLeaderboard(
   //   3. scopeInA2.params
   //   4. params[]          (outer WHERE: task_set, tier, family, since,
   //                         difficulty JOIN, category WHERE)
-  //   5. orderBy.extraParams  (scope-IN params duplicated for ORDER BY
-  //                            subquery expressions + denominator for /N)
+  //   5. orderBy.extraParams  (scope-IN params for ORDER BY subquery
+  //                            expressions + denominator for /N)
   //   6. sqlLimit          (LIMIT clause)
   //
   // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd /
@@ -304,12 +304,12 @@ export async function computeLeaderboard(
 
       case "cost_per_pass_usd":
         // Total cost / tasks_passed_strict (p1 + p2_only). Nullif prevents /0.
+        // The SQL expression contains P1_EXPR + P2_ONLY_EXPR ONCE each, so only
+        // ONE set of scope-IN params is required (not two). Duplicating them
+        // causes a bind-order bug when category/difficulty filters are active.
         return {
           clause: `ORDER BY (SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
           extraParams: [
-            ...scopeInA1.params,
-            ...scopeInA2NotExists.params,
-            ...scopeInA2.params,
             ...scopeInA1.params,
             ...scopeInA2NotExists.params,
             ...scopeInA2.params,
@@ -432,7 +432,7 @@ export async function computeLeaderboard(
   //   4. params[]          – outer WHERE (task_set, tier, family, since,
   //                          difficulty JOIN, category WHERE)
   //   5. orderBy.extraParams – ORDER BY subquery scope-IN params + denominator
-  //                            (A.6: duplicated for the ORDER BY expressions)
+  //                            (A.6: one set per ORDER BY expression)
   //   6. orderBy.sqlLimit  – LIMIT clause
   const allParams = [
     ...scopeInA1.params,

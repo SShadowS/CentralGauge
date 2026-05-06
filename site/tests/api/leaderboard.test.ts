@@ -669,6 +669,64 @@ describe("GET /api/v1/leaderboard", () => {
   });
 
   // ===========================================================================
+  // Bug 4: default sort is pass_at_n:desc (A.6 default-flip lock-in)
+  //
+  // Seeds two models where pass_at_n order DIFFERS from avg_score order so the
+  // two sort fields produce distinct rankings. The no-sort-param response must
+  // match pass_at_n:desc, not avg_score:desc.
+  // ===========================================================================
+
+  it('no sort param: default is pass_at_n:desc not avg_score:desc (Bug 4)', async () => {
+    // Add a third model (M-X, id=20) with HIGH avg_score but LOW pass_at_n,
+    // to force a divergence between pass_at_n and avg_score orderings.
+    //   sonnet (id=1): r1+r2 combined → pass_at_n = 2/2 = 1.0, avg_score ~0.75
+    //   opus   (id=2): r3      → pass_at_n = 2/2 = 1.0, avg_score = 1.0
+    //   M-X   (id=20): single attempt-1 pass with score=1.0 but denominator=2
+    //                  → pass_at_n = 1/2 = 0.5, avg_score = 1.0
+    //
+    // avg_score desc:  opus(1.0) ~ M-X(1.0) > sonnet(0.75) [tie between opus+MX]
+    // pass_at_n desc:  sonnet(1.0) ~ opus(1.0) > M-X(0.5)
+    //
+    // If default is pass_at_n:desc → M-X must be LAST.
+    // If default were avg_score:desc → M-X would be in the top 2 (tied with opus).
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (20,1,'m-x','m-x-api','Model X')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',20,3.0,15.0,'2026-04-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('r-mx','ts-current',20,'s1','rig','2026-04-22T00:00:00Z','2026-04-22T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-22T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('r-mx','easy/a',1,1,1.0,1,1,1,1000,500)`,
+      ),
+    ]);
+
+    // No sort param → must use default (pass_at_n:desc).
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?_cb=default-sort');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    // filters.sort must reflect the default pass_at_n value.
+    const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
+    expect(filters.sort).toBe('pass_at_n');
+
+    // M-X has pass_at_n=0.5 (1 of 2 tasks passed) → must sort AFTER sonnet/opus
+    // which each have pass_at_n=1.0. Under avg_score:desc, M-X would tie opus at 1.0.
+    const slugs = body.data.map((r) => (r.model as Record<string, unknown>).slug);
+    const mxPos = slugs.indexOf('m-x');
+    expect(mxPos).toBeGreaterThan(-1);
+    // sonnet and opus both have pass_at_n=1.0 and must precede M-X.
+    const sonnetPos = slugs.indexOf('sonnet-4.7');
+    const opusPos = slugs.indexOf('opus-4.7');
+    expect(sonnetPos).toBeLessThan(mxPos);
+    expect(opusPos).toBeLessThan(mxPos);
+  });
+
+  // ===========================================================================
   // P7 Phase C1 — Category filter on leaderboard endpoint
   // ===========================================================================
 

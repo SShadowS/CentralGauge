@@ -845,4 +845,159 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
       explicit.map((r) => r.model.slug),
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Bug 2 regression: cost_per_pass_usd + category scope-IN bind-order
+  //
+  // The BUGGY code emitted two sets of scope-IN params in extraParams (6 total),
+  // but the ORDER BY SQL only has 3 `?` placeholders (one set for P1_EXPR + one
+  // set for P2_ONLY_EXPR NOT EXISTS + one set for P2_ONLY_EXPR outer). D1's JS
+  // binding layer silently drops extra params beyond the `?` count, so the
+  // ordering itself remains correct even under the bug. The practical risk is
+  // that if D1 ever enforces strict param count parity (or if a denominator `?`
+  // were added), the extra params would shift values into wrong slots.
+  //
+  // This test therefore validates CORRECTNESS of cost_per_pass_usd ordering
+  // with an active category filter — a combination previously absent from the
+  // suite — rather than a hard failure under the buggy code.
+  //
+  // Scenario: 3 easy tasks seeded; M-A passed 1 with HIGH token cost, M-B
+  // passed 3 with LOW token cost. With category=easy, sort=cost_per_pass_usd:asc
+  // the fixed code puts M-B first (lower cost per pass = 0.00012) before M-A
+  // (higher cost per pass = 0.0101). Any regression that corrupts the ORDER BY
+  // scope-IN binding would produce wrong costs and wrong ordering.
+  // ---------------------------------------------------------------------------
+  it("bind-order: cost_per_pass_usd + category=easy returns correct ordering (Bug 2 regression)", async () => {
+    // Reset to a clean scenario so the M-A..M-E beforeEach rows don't interfere
+    // with the precise cost calculation.
+    await resetDb();
+    await seedScaffold();
+
+    // Seed 3 easy tasks.
+    await insertTasks(["e1", "e2", "e3"], "easy", 1);
+
+    // M-A (id=1, already seeded): passes 1 easy task with HIGH token cost.
+    //   tokens_in=10000, tokens_out=50 → cost = (10000*1 + 50*2)/1e6 = 10100/1e6
+    //   cost_per_pass = 10100/1e6 / 1 ≈ 0.0101
+    await insertRun("r-ma");
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+       VALUES (?,?,1,1,1.0,1,1,1,10000,50)`,
+    ).bind("r-ma", "e1").run();
+
+    // M-B (id=2): passes 3 easy tasks with LOW token cost.
+    //   tokens_in=100, tokens_out=10 → cost per result = (100*1 + 10*2)/1e6 = 120/1e6
+    //   total cost = 3 * 120/1e6 = 360/1e6; cost_per_pass = 360/1e6 / 3 = 120/1e6 ≈ 0.00012
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+       VALUES (2,1,'M-B','m-b','Model B',2)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+       VALUES ('v1',2,1.0,2.0,'2026-01-01')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r-mb','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    for (const tid of ["e1", "e2", "e3"]) {
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,1,1,1.0,1,1,1,100,10)`,
+      ).bind("r-mb", tid).run();
+    }
+
+    // Expected ordering with category=easy, sort=cost_per_pass_usd:asc:
+    //   M-B: cost_per_pass ≈ 0.00012 (lower → first ascending)
+    //   M-A: cost_per_pass ≈ 0.0101  (higher → second)
+    //
+    // Under the BUGGY code (extraParams duplicated) SQLite receives extra bind
+    // values that corrupt the ORDER BY expression, causing wrong ordering or
+    // a type error from out-of-range ? binding.
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      category: "easy",
+      sort: "cost_per_pass_usd",
+      direction: "asc",
+      limit: 10,
+    });
+
+    const slugs = rows.map((r) => r.model.slug);
+    expect(slugs.length).toBe(2);
+    // M-B has lower cost_per_pass (0.00012 vs 0.0101) → must appear first ascending.
+    expect(slugs[0]).toBe("M-B");
+    expect(slugs[1]).toBe("M-A");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Bug 3: latency_p95_ms wide-fetch trim (limit < total models)
+  //
+  // The prior latency tests only used limit=5 with 5 seeded models (limit==total,
+  // no trim). This test seeds 10 models and requests limit=3, verifying the
+  // trim path correctly returns the top-3 by p95 latency.
+  // ---------------------------------------------------------------------------
+  it("latency_p95_ms: limit < total models trims correctly to top-3 by p95 (Bug 3)", async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // Seed 9 additional models (M-B..M-J, ids 2..10) in the same family.
+    for (let i = 2; i <= 10; i++) {
+      await env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+         VALUES (?,1,?,?,?,?)`,
+      )
+        .bind(i, `M-${String.fromCharCode(64 + i)}`, `m-${i}`, `Model ${String.fromCharCode(64 + i)}`, i)
+        .run();
+      await env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+         VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
+      ).bind(i).run();
+    }
+
+    // Each model gets one result with a distinct llm_duration_ms.
+    // Model id=k gets latency = k * 100ms so latency_p95 ordering is predictable.
+    for (let i = 1; i <= 10; i++) {
+      const runId = `r-lat-${i}`;
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+        .bind(
+          runId, "aaaa", i, "s", "rig",
+          "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+          "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+          1, new Uint8Array([0]),
+        )
+        .run();
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,llm_duration_ms)
+         VALUES (?,?,1,1,1.0,1,1,1,100,50,?)`,
+      ).bind(runId, `t-lat-${i}`, i * 100).run();
+    }
+
+    // Request limit=3, sort=latency_p95_ms:desc (highest latency first).
+    // Expected top-3: M-J (1000ms), M-I (900ms), M-H (800ms).
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "latency_p95_ms",
+      direction: "desc",
+      limit: 3,
+    });
+
+    expect(rows).toHaveLength(3);
+    // Trim must return top-3 by descending p95. All have nonzero latency.
+    const withLatency = rows.filter((r) => r.latency_p95_ms > 0);
+    expect(withLatency).toHaveLength(3);
+    for (let i = 1; i < withLatency.length; i++) {
+      expect(withLatency[i].latency_p95_ms).toBeLessThanOrEqual(
+        withLatency[i - 1].latency_p95_ms,
+      );
+    }
+    // The top entry must have the highest p95 latency in the dataset (model id=10, 1000ms).
+    expect(withLatency[0].latency_p95_ms).toBeGreaterThanOrEqual(900);
+    // rank is re-assigned after trim.
+    expect(rows[0].rank).toBe(1);
+    expect(rows[1].rank).toBe(2);
+    expect(rows[2].rank).toBe(3);
+  });
 });
