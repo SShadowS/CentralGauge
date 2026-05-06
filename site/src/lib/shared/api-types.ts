@@ -92,12 +92,26 @@ export interface LeaderboardRow {
    * pass count.
    */
   tasks_passed_attempt_2_only: number;
-  /**
-   * P7 Mini-phase A. Run-aggregate probability:
-   * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
-   * tasks_attempted_distinct. 0 when no attempts.
-   */
+  /** Strict-per-set pass rate: (p1 + p2_only) / denominator. 0..1. */
   pass_at_n: number;
+  /**
+   * Strict-per-set first-try rate: p1 / denominator. 0..1. Tiebreaker for ranking.
+   * Optional during PR1 until A.4 lands server-side emission; tighten to required
+   * in a cleanup commit at end of PR1.
+   */
+  pass_at_1?: number;
+  /**
+   * Strict-per-set denominator: count of tasks in active scope
+   * (set ∩ category ∩ difficulty). Used as denominator for pass_at_n.
+   * From PR1 onward. Optional during PR1 until A.4 lands server-side emission.
+   */
+  denominator?: number;
+  /**
+   * @deprecated Per-attempted denominator (`tasks_passed / tasks_attempted_distinct`).
+   * Kept for one release as a migration alias for consumers using the old
+   * pass rate. Removed in PR2. Optional during PR1 until A.4 lands server-side emission.
+   */
+  pass_at_n_per_attempted?: number;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
