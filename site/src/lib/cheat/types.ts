@@ -11,11 +11,19 @@ export interface Rect {
   height: number;
 }
 
+/**
+ * Viewport bounds in CSS pixels. No scrollX/scrollY: the cheat layer is
+ * `position: fixed; inset: 0`, so all coordinates are viewport-relative.
+ * Adding scroll offsets would invite document-coordinate confusion and
+ * arrow drift.
+ */
 export interface Viewport {
   width: number;
   height: number;
 }
 
+/** Measured callout dimensions in CSS pixels. Distinct from Viewport
+ *  (structurally identical) to make intent clear at call sites. */
 export interface Size {
   width: number;
   height: number;
