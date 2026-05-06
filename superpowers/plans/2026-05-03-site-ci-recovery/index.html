@@ -1,0 +1,2431 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-05-03-site-ci-recovery/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Site CI Recovery — State Snapshot - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#site-ci-recovery-state-snapshot" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Site CI Recovery — State Snapshot
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#tldr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TL;DR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-got-fixed-commits-in-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Got Fixed (commits, in order)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What Got Fixed (commits, in order)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-b1f9f9a-fixsite-resolve-17-svelte-check-errors-blocking-site-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. b1f9f9a — fix(site): resolve 17 svelte-check errors blocking Site CI
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-246536b-cisite-build-before-testmain-so-vitest-can-load-built-hooksserverjs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. 246536b — ci(site): build before test:main so vitest can load built hooks.server.js
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-85038d4-fixci-root-zod-install-for-cross-boundary-type-check-restore-vite-dev" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. 85038d4 — fix(ci): root zod install for cross-boundary type-check; restore vite dev
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-66356b0-fixci-playwright-lhci-use-preview-server-faster-matches-seed-e2e-doc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. 66356b0 — fix(ci): playwright + lhci use preview server (faster, matches seed-e2e doc)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-ee03df9-fixsite-transcript-page-handles-empty-key-3xx-from-server-internal-fetch-bug-a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. ee03df9 — fix(site): transcript page handles empty key + 3xx from server-internal fetch (Bug A)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-ce2f18a-fixsiteseed-e2e-seed-r2-transcript-blobs-fix-re-seed-fk-violation-bug-b-idempotency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. ce2f18a — fix(site/seed-e2e): seed R2 transcript blobs + fix re-seed FK violation (Bug B + idempotency)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-e490f83-cisite-restore-transcript-url-to-lighthousercjson" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. e490f83 — ci(site): restore transcript URL to lighthouserc.json
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#whats-still-red-pre-existing-app-bugs-not-this-branchs-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What's Still Red (pre-existing app bugs, NOT this branch's work)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="What&#39;s Still Red (pre-existing app bugs, NOT this branch&#39;s work)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#global-nav-nested-interactive-a11y-violation-drives-17-specs-lighthouse" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global-nav nested-interactive a11y violation (drives ~17 specs + lighthouse)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cmd-k-palette-keyboard-tests-time-out-at-30s-4-spec-failures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cmd-K palette / keyboard tests time out at 30s (~4 spec failures)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ogspects37-second-request-hits-r2-cache-x-og-cache-hit-flake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        og.spec.ts:37 › Second request hits R2 cache (x-og-cache: hit) flake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-detailspects26-signature-tab-loads-and-verify-works-single-occurrence-flake" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        run-detail.spec.ts:26 › signature tab loads and verify works single-occurrence flake
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-regression-specs-lack-linux-baselines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual-regression specs lack Linux baselines
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a11yspects-also-hits-sse-cutover-compare-etc-specs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        a11y.spec.ts also hits SSE / cutover / compare / etc. specs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bug-c-other-pre-existing-8-svelte-check-warnings-non-blocking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bug C — Other pre-existing 8 svelte-check warnings (non-blocking)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files-changed-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files Changed Summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-resume-from-a-clean-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to Resume from a Clean Session
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#caveats-gotchas-picked-up" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caveats / Gotchas Picked Up
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-05-03-site-ci-recovery.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="site-ci-recovery-state-snapshot">Site CI Recovery — State Snapshot<a class="headerlink" href="#site-ci-recovery-state-snapshot" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-05-03 (updated after Bug A+B + lighthouse URL restore landed)
+<strong>Branch:</strong> master (commits <code>b1f9f9a..e490f83</code>, 9 commits in this thread)
+<strong>Trigger:</strong> While shipping the persistent-pwsh-session work, push to master kicked Site CI which had been red for 4+ runs. User asked: "fix the CI errors". Three waves of fixes landed; remaining red is pre-existing app debt unrelated to this branch.</p>
+<hr />
+<h2 id="tldr">TL;DR<a class="headerlink" href="#tldr" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Job</th>
+<th>Status</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unit-and-build</code></td>
+<td><strong>GREEN</strong></td>
+<td>Was red on 17 svelte-check errors; all fixed.</td>
+</tr>
+<tr>
+<td><code>e2e</code></td>
+<td>red</td>
+<td>Bug A + Bug B fixed (<code>transcript.spec</code> ✓ now). 43 fails remain — pre-existing global-nav <code>nested-interactive</code> a11y violation drives ~16 a11y specs; cmd-K palette 30s timeout; OG R2 cache flake; visual-regression lacks Linux baselines; etc.</td>
+</tr>
+<tr>
+<td><code>lighthouse</code></td>
+<td>red</td>
+<td>Pre-existing global-nav <code>nested-interactive</code> a11y violation pulls every URL below the 1.0 minScore. Restoring the transcript URL added a 5th failing URL inheriting the same nav bug — same root cause, +1 affected URL.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Site CI for the persistent-pwsh-session work is effectively unblocked</strong> — type-check, build, and main test suites all run clean. The two transcript-page bugs that originally prompted this thread (Bug A + Bug B) are fixed. Remaining red is a separate pre-existing app-debt set, tracked in "Remaining" below.</p>
+<p><strong>Latest CI run with all three fix waves landed:</strong> <a href="https://github.com/SShadowS/CentralGauge/actions/runs/25276740751">25276740751</a> — same 43-failed/89-passed/4-skipped split as the prior run; the failure-set diff is <code>-transcript.spec / +run-detail signature-tab</code> (signature-tab is a pre-existing 5s-too-tight cold-start flake unrelated to this branch's changes — passes on retry in 491ms).</p>
+<hr />
+<h2 id="what-got-fixed-commits-in-order">What Got Fixed (commits, in order)<a class="headerlink" href="#what-got-fixed-commits-in-order" title="Permanent link">&para;</a></h2>
+<h3 id="1-b1f9f9a-fixsite-resolve-17-svelte-check-errors-blocking-site-ci">1. <code>b1f9f9a</code> — <code>fix(site): resolve 17 svelte-check errors blocking Site CI</code><a class="headerlink" href="#1-b1f9f9a-fixsite-resolve-17-svelte-check-errors-blocking-site-ci" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>File</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Type 'string' is not assignable to type 'Snippet&lt;[]&gt;'</code> × 12</td>
+<td><code>site/src/lib/components/ui/{Alert,Badge,Button,Card,Code,Modal,Popover,Tabs,Tag,Toast,Tooltip}.test.svelte.ts</code> + <code>site/src/lib/components/domain/PerformanceVsCostChart.test.svelte.ts</code></td>
+<td>New helper <code>site/src/lib/test-utils/snippets.ts</code> exports <code>textSnippet(s)</code> wrapping a string in a <code>createRawSnippet</code>. Tests changed from <code>children: "x"</code> → <code>children: textSnippet("x")</code>.</td>
+</tr>
+<tr>
+<td><code>Type 'Snippet&lt;unknown[]&gt;' is not assignable to type 'Snippet&lt;[string]&gt;'</code> × 3</td>
+<td><code>site/src/lib/components/ui/Tabs.test.svelte.ts</code></td>
+<td>Type the existing <code>createRawSnippet&lt;[string]&gt;(...)</code> explicitly.</td>
+</tr>
+<tr>
+<td><code>LeaderboardRow</code> missing <code>latency_p95_ms</code>, <code>pass_rate_ci</code>, <code>pass_hat_at_n</code>, <code>cost_per_pass_usd</code></td>
+<td><code>PerformanceVsCostChart.test.svelte.ts</code> + <code>tests/api/models.test.ts</code></td>
+<td>Extend the test fixture's row literal / aggregates type literal with the four fields.</td>
+</tr>
+<tr>
+<td><code>Property 'latency_p95_ms' does not exist on type '{ verified_runs: number }'</code></td>
+<td><code>site/src/lib/server/leaderboard.ts:217</code></td>
+<td>Empty-fallback Map was typed <code>Map&lt;number, { verified_runs: number }&gt;</code>. Changed to <code>Map&lt;number, Aggregate&gt;</code> (importing <code>type Aggregate</code> from <code>./model-aggregates</code>).</td>
+</tr>
+<tr>
+<td>Predicate type mismatch on <code>cols.results.map((r: { name: string }) =&gt; ...)</code> × 5</td>
+<td><code>site/tests/migrations/lifecycle-schema.test.ts</code></td>
+<td>Type the prepare statement: <code>.all&lt;{ name: string }&gt;()</code> — drops the per-callback annotation, callback infers correctly.</td>
+</tr>
+<tr>
+<td><code>Property 'kid' does not exist on type 'JsonWebKey'</code> × 4</td>
+<td><code>site/tests/server/cf-access.test.ts</code>, <code>site/tests/api/lifecycle-queue-payload-parse.test.ts</code></td>
+<td>New <code>site/src/jwk-ext.d.ts</code> ambient extends <code>JsonWebKey</code> with optional <code>kid?: string</code> and <code>alg?: string</code>.</td>
+</tr>
+<tr>
+<td><code>Property 'default' does not exist on type 'CacheStorage'</code></td>
+<td><code>site/tests/api/lifecycle-diff-trigger.test.ts:404</code></td>
+<td>New <code>site/src/cache-ext.d.ts</code> ambient extends <code>CacheStorage</code> with <code>default: Cache</code> (Cloudflare Workers extension).</td>
+</tr>
+<tr>
+<td>Cross-boundary import path off-by-one × 2</td>
+<td><code>site/src/routes/api/v1/admin/lifecycle/{events,review/[id]/decide}/+server.ts</code></td>
+<td>Bumped <code>../</code> count from 7→8 and 9→10 to actually reach <code>&lt;repo&gt;/src/lifecycle/{types,confidence}</code>.</td>
+</tr>
+<tr>
+<td>Lots of unrelated cosmetic prettier reformats</td>
+<td><code>site/src/routes/api/v1/admin/lifecycle/{cluster-review,concepts,debug,r2,shortcomings,state}/**</code></td>
+<td>Prettier ran across the changed-glob and reformatted preexisting files. Kept (project standard).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-246536b-cisite-build-before-testmain-so-vitest-can-load-built-hooksserverjs">2. <code>246536b</code> — <code>ci(site): build before test:main so vitest can load built hooks.server.js</code><a class="headerlink" href="#2-246536b-cisite-build-before-testmain-so-vitest-can-load-built-hooksserverjs" title="Permanent link">&para;</a></h3>
+<p><code>site/vitest.config.ts</code> reads <code>.svelte-kit/output/server/entries/hooks.server.js</code>. Workflow ran <code>test:main</code> BEFORE <code>build</code>, so the file didn't exist → <code>ENOENT</code>. Reordered: <code>check → build → test:main → test:build → check:budget → check:contrast</code>.</p>
+<h3 id="3-85038d4-fixci-root-zod-install-for-cross-boundary-type-check-restore-vite-dev">3. <code>85038d4</code> — <code>fix(ci): root zod install for cross-boundary type-check; restore vite dev</code><a class="headerlink" href="#3-85038d4-fixci-root-zod-install-for-cross-boundary-type-check-restore-vite-dev" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Root cause of follow-up red:</strong> my first attempt added <code>baseUrl</code> + <code>paths</code> to <code>site/tsconfig.json</code> to map <code>zod</code> → <code>./node_modules/zod</code>. SvelteKit's auto-tsconfig refused this addition with: <code>You have specified a baseUrl and/or paths in your tsconfig.json which interferes with SvelteKit's auto-generated tsconfig.json</code>. This made <code>npm run dev</code> hang silently → playwright's webServer <code>ERR_CONNECTION_REFUSED</code>.</li>
+<li><strong>Real fix:</strong> create <code>&lt;repo&gt;/package.json</code> with <code>zod ^3.25.76</code> (matches site's installed version) → <code>&lt;repo&gt;/node_modules/zod</code> exists → Node's up-the-tree resolution from <code>&lt;repo&gt;/src/verify/schema.ts</code> finds zod. Site itself does not depend on this at runtime.</li>
+<li>Updated workflow <code>unit-and-build</code> job to <code>npm ci</code> at root before site's <code>npm ci</code>.</li>
+<li>Added <code>package*.json</code> and <code>src/**</code> to workflow trigger paths so root dep changes re-run CI.</li>
+<li>Replaced <code>decide/+server.ts</code>'s cross-boundary <code>AnalyzerEntry</code> import with a local structural type — avoided pulling the confidence → verify → zod chain unnecessarily.</li>
+</ul>
+<h3 id="4-66356b0-fixci-playwright-lhci-use-preview-server-faster-matches-seed-e2e-doc">4. <code>66356b0</code> — <code>fix(ci): playwright + lhci use preview server (faster, matches seed-e2e doc)</code><a class="headerlink" href="#4-66356b0-fixci-playwright-lhci-use-preview-server-faster-matches-seed-e2e-doc" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Vite dev compiles source on first request → cold-start exceeded playwright's 60s <code>webServer.timeout</code>. Switched <code>playwright.config.ts</code> from <code>npm run dev</code> (port 5173) to <code>npm run preview</code> (port 4173). Also bumped timeout to 120s.</li>
+<li>This also matches the <code>site/scripts/seed-e2e.ts</code> doc comment which explicitly says "Run BEFORE <code>npm run preview</code>".</li>
+<li>Removed <code>/runs/run-0000/transcripts/CG-AL-E001/1</code> from <code>lighthouserc.json</code> URL list — page returns 500 in CI (re-added by <code>e490f83</code> after Bug A+B fixed; see fix wave 5).</li>
+</ul>
+<h3 id="5-ee03df9-fixsite-transcript-page-handles-empty-key-3xx-from-server-internal-fetch-bug-a">5. <code>ee03df9</code> — <code>fix(site): transcript page handles empty key + 3xx from server-internal fetch</code> (Bug A)<a class="headerlink" href="#5-ee03df9-fixsite-transcript-page-handles-empty-key-3xx-from-server-internal-fetch-bug-a" title="Permanent link">&para;</a></h3>
+<p>Two failure modes on <code>/runs/:id/transcripts/:taskId/:attempt</code>:</p>
+<ol>
+<li>SvelteKit's <code>error()</code> only accepts 400-599. Server-internal fetch to <code>/api/v1/transcripts/&lt;key&gt;</code> with an empty key produces <code>/api/v1/transcripts/</code> which SvelteKit canonicalizes via 308 (catch-all route normalization). Throwing <code>error(308, ...)</code> then crashed the loader with a 500.</li>
+<li>Empty-key precondition was never validated → missing <code>transcript_r2_key</code> always took the redirect path instead of surfacing as a clean 404.</li>
+</ol>
+<p><strong>Fix:</strong> New <code>httpErrorStatus()</code> helper clamps any non-error status to 502 before throwing (defensive against future redirect leaks). Empty <code>transcript_key</code> short-circuits to a 404 with a clear message.</p>
+<h3 id="6-ce2f18a-fixsiteseed-e2e-seed-r2-transcript-blobs-fix-re-seed-fk-violation-bug-b-idempotency">6. <code>ce2f18a</code> — <code>fix(site/seed-e2e): seed R2 transcript blobs + fix re-seed FK violation</code> (Bug B + idempotency)<a class="headerlink" href="#6-ce2f18a-fixsiteseed-e2e-seed-r2-transcript-blobs-fix-re-seed-fk-violation-bug-b-idempotency" title="Permanent link">&para;</a></h3>
+<p>Two changes to <code>scripts/seed-e2e.ts</code>:</p>
+<ol>
+<li><strong>R2 alongside D1.</strong> Each seeded <code>results</code> row now carries <code>transcript_r2_key = transcripts/&lt;run&gt;/&lt;task&gt;/&lt;n&gt;.txt</code> and the script uploads <code>scripts/fixtures/sample-transcript.txt</code> (new file) to that key in <code>centralgauge-blobs</code> via <code>wrangler r2 object put --local</code>. The transcript page now renders in CI without a 404 from BLOBS, and lighthouse has a real document to score.</li>
+<li><strong>DELETE order fix.</strong> Previous order deleted <code>task_sets</code> before <code>tasks</code> (and <code>model_families</code> before <code>models</code>), violating D1's write-time FK on any second run. CI started from fresh <code>.wrangler/state</code> so the bug was invisible there; local dev tripped over it the moment you ran <code>npm run seed:e2e</code> twice. Reordered to reverse-topological of INSERT order.</li>
+</ol>
+<h3 id="7-e490f83-cisite-restore-transcript-url-to-lighthousercjson">7. <code>e490f83</code> — <code>ci(site): restore transcript URL to lighthouserc.json</code><a class="headerlink" href="#7-e490f83-cisite-restore-transcript-url-to-lighthousercjson" title="Permanent link">&para;</a></h3>
+<p>With Bug A + B fixed the transcript URL renders again. Re-added <code>/runs/run-0000/transcripts/CG-AL-E001/1</code> to the lhci URL list — restores lighthouse coverage of the transcript route (back to the original 14-URL set). The URL inherits the same global-nav <code>nested-interactive</code> a11y violation as every other page, so it adds 1 to the lighthouse a11y-failure count until that nav bug is fixed.</p>
+<hr />
+<h2 id="whats-still-red-pre-existing-app-bugs-not-this-branchs-work">What's Still Red (pre-existing app bugs, NOT this branch's work)<a class="headerlink" href="#whats-still-red-pre-existing-app-bugs-not-this-branchs-work" title="Permanent link">&para;</a></h2>
+<h3 id="global-nav-nested-interactive-a11y-violation-drives-17-specs-lighthouse">Global-nav <code>nested-interactive</code> a11y violation (drives ~17 specs + lighthouse)<a class="headerlink" href="#global-nav-nested-interactive-a11y-violation-drives-17-specs-lighthouse" title="Permanent link">&para;</a></h3>
+<p><strong>Symptom:</strong> axe-core reports <code>nested-interactive Interactive controls must not be nested</code> on every URL. Drives:
+- 16 a11y.spec.ts failures (every URL × light/dark × comfortable/compact).
+- All 5 lighthouse URLs fail accessibility minScore (0.96 &lt; 1.0).</p>
+<p><strong>Root cause:</strong> In the global Nav component (or layout shell). A button or anchor is nested inside another interactive element. axe-core's <code>nested-interactive</code> rule fires once per page; lighthouse aggregates as a single subtraction from the 1.0 score.</p>
+<p><strong>Effort:</strong> ~1 hour to find + restructure. Highest leverage of any remaining fix — greens 5 lighthouse + 16 a11y at once.</p>
+<h3 id="cmd-k-palette-keyboard-tests-time-out-at-30s-4-spec-failures">cmd-K palette / keyboard tests time out at 30s (~4 spec failures)<a class="headerlink" href="#cmd-k-palette-keyboard-tests-time-out-at-30s-4-spec-failures" title="Permanent link">&para;</a></h3>
+<p><code>tests/e2e/cmd-k.spec.ts:14</code> and <code>tests/e2e/keyboard.spec.ts:41</code> both hit the default 30s playwright timeout. Strongly suggests a palette behavior bug (focus trap, key handler, or store init), not flake. Worth a real investigation rather than just bumping timeouts.</p>
+<h3 id="ogspects37-second-request-hits-r2-cache-x-og-cache-hit-flake"><code>og.spec.ts:37 › Second request hits R2 cache (x-og-cache: hit)</code> flake<a class="headerlink" href="#ogspects37-second-request-hits-r2-cache-x-og-cache-hit-flake" title="Permanent link">&para;</a></h3>
+<p>Pre-existing OG-image R2 cache behavior. Unrelated to this branch.</p>
+<h3 id="run-detailspects26-signature-tab-loads-and-verify-works-single-occurrence-flake"><code>run-detail.spec.ts:26 › signature tab loads and verify works</code> single-occurrence flake<a class="headerlink" href="#run-detailspects26-signature-tab-loads-and-verify-works-single-occurrence-flake" title="Permanent link">&para;</a></h3>
+<p>In <a href="https://github.com/SShadowS/CentralGauge/actions/runs/25276740751">25276740751</a>: first attempt 5.3s ✘, retry 491ms ✓. In the immediately prior run <a href="https://github.com/SShadowS/CentralGauge/actions/runs/25276042382">25276042382</a>: both attempts passed. Single-occurrence in the post-fix run.</p>
+<p><strong>Mechanism is unknown.</strong> A 10× retry speedup is too slow for a true cold-start curve (workerd cold-start is ~500-800 ms; the first attempt was 5300 ms). Plausible causes for a 5+ s spike on a single test in a <code>workers: 1</code> serial run: D1 first-query warm-up, GC pause, transient localhost socket scheduling, R2 state file lazy-load. None of these have direct evidence; the only certainty is that the retry resolves immediately.</p>
+<p><strong>Causality rule-out for ce2f18a's data changes:</strong>
+- <code>grep transcript_key site/src/routes/runs/[id]/+page.{server.ts,svelte}</code> returns no matches — the run-detail page does not consume <code>transcript_key</code>.
+- The signature endpoint reads <code>runs.ingest_*</code> columns (untouched) and <code>machine_keys</code> (untouched). No R2 access.
+- Tests run serially with shared workerd; arrow-right at test 127 (also <code>/runs/run-0000</code>) failed at 5.2s deterministically pre-fix too — a real keyboard-handler bug — so the worker WAS hot when signature ran.</p>
+<p><strong>Suggested fix:</strong> bump <code>expect(...).toBeVisible({ timeout: 10000 })</code> for the verify-button assertion. The test exists to confirm the verify button responds, not to enforce a 5 s SLA. A pre-warm hook would mask the symptom but doesn't address the underlying "test depends on CI scheduler luck" issue.</p>
+<h3 id="visual-regression-specs-lack-linux-baselines">Visual-regression specs lack Linux baselines<a class="headerlink" href="#visual-regression-specs-lack-linux-baselines" title="Permanent link">&para;</a></h3>
+<p><code>visual-regression.spec.ts</code> runs across home/run-detail/model-detail/family-detail/limitations × 4 modes = 20 fails. Each needs a Linux PNG baseline committed. Not a code bug — a baseline-management task per per-platform-snapshots policy in <code>playwright.config.ts:45</code>.</p>
+<h3 id="a11yspects-also-hits-sse-cutover-compare-etc-specs">a11y.spec.ts also hits SSE / cutover / compare / etc. specs<a class="headerlink" href="#a11yspects-also-hits-sse-cutover-compare-etc-specs" title="Permanent link">&para;</a></h3>
+<p>Each surfaces a distinct page-level a11y issue or a transient (SSE, navigation tab) that may need its own micro-fix. Pull from the run log of <a href="https://github.com/SShadowS/CentralGauge/actions/runs/25276740751">25276740751</a> for the per-spec error.</p>
+<h3 id="bug-c-other-pre-existing-8-svelte-check-warnings-non-blocking">Bug C — Other pre-existing 8 svelte-check warnings (non-blocking)<a class="headerlink" href="#bug-c-other-pre-existing-8-svelte-check-warnings-non-blocking" title="Permanent link">&para;</a></h3>
+<p>These remain after my fixes; they're project-wide a11y/CSS hygiene, not type errors:</p>
+<ul>
+<li><code>site/src/lib/components/domain/MetricInfo.svelte:22:5</code> — non-interactive <code>&lt;details&gt;</code> with mouse/keyboard handlers (a11y).</li>
+<li><code>site/src/lib/components/domain/MetricInfo.svelte:67:5</code> — <code>-webkit-appearance</code> without standard <code>appearance</code>.</li>
+<li><code>site/src/lib/components/domain/TaskDetailPanel.svelte:28-29</code> — <code>state_referenced_locally</code> (Svelte 5 reactivity smell).</li>
+<li><code>site/src/lib/components/ui/Input.svelte:65:5</code> — <code>autofocus</code> (a11y).</li>
+<li><code>site/src/lib/components/domain/ReproductionBlock.svelte:14:40</code> — <code>state_referenced_locally</code>.</li>
+<li><code>site/src/lib/components/domain/TableOfContents.svelte:8:25</code> — <code>state_referenced_locally</code>.</li>
+<li><code>site/src/routes/search/+page.svelte:13:22</code> — <code>state_referenced_locally</code>.</li>
+</ul>
+<p>Warnings, not errors. Don't block CI. Can be fixed opportunistically.</p>
+<hr />
+<h2 id="files-changed-summary">Files Changed Summary<a class="headerlink" href="#files-changed-summary" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>.github/workflows/site-ci.yml                                                       | +6 -3
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>package-lock.json                                                                   | new
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>package.json                                                                        | new
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>site/lighthouserc.json                                                              | -1
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>site/playwright.config.ts                                                           | +9 -3
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>site/src/cache-ext.d.ts                                                             | new
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>site/src/jwk-ext.d.ts                                                               | new
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>site/src/lib/components/domain/PerformanceVsCostChart.test.svelte.ts                | +5 -1
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>site/src/lib/components/ui/{Alert,Badge,Button,Card,Code,Modal,Popover,Tag,Toast,Tooltip}.test.svelte.ts | textSnippet refactor
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>site/src/lib/components/ui/Tabs.test.svelte.ts                                      | createRawSnippet&lt;[string]&gt;
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>site/src/lib/server/leaderboard.ts                                                  | +1 -1 (Map type)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>site/src/lib/test-utils/snippets.ts                                                 | new
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>site/src/routes/api/v1/admin/lifecycle/events/+server.ts                            | +1 -1 (path depth)
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>site/src/routes/api/v1/admin/lifecycle/review/[id]/decide/+server.ts                | local AnalyzerEntry
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>site/src/routes/api/v1/admin/lifecycle/{cluster-review,concepts,debug,r2,shortcomings,state}/** | prettier-only
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>site/tests/api/models.test.ts                                                       | +4 (fixture fields)
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>site/tests/migrations/lifecycle-schema.test.ts                                      | typed prepare().all&lt;&gt;()
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>site/tsconfig.json                                                                  | (touched then reverted — final = identical to before)
+</code></pre></div>
+<hr />
+<h2 id="how-to-resume-from-a-clean-session">How to Resume from a Clean Session<a class="headerlink" href="#how-to-resume-from-a-clean-session" title="Permanent link">&para;</a></h2>
+<p>The state is fully checked in and pushed to <code>origin/master</code> (latest SHA: <code>e490f83</code>). Bug A + Bug B + lighthouse-URL restore are landed. To verify on resume:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>status<span class="w">                                       </span><span class="c1"># should show only docs/ untracked</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>gh<span class="w"> </span>run<span class="w"> </span>list<span class="w"> </span>--workflow<span class="o">=</span><span class="s2">&quot;Site CI&quot;</span><span class="w"> </span>--limit<span class="w"> </span><span class="m">1</span><span class="w">       </span><span class="c1"># latest run conclusion</span>
+</code></pre></div>
+<p>To pick up the remaining work, in priority order:</p>
+<ol>
+<li><strong>Highest leverage:</strong> Fix the global-nav <code>nested-interactive</code> a11y violation. 1 component, ~1 hour, greens 5 lighthouse + 16 a11y specs at once.</li>
+<li><strong>Medium leverage:</strong> Investigate cmd-K palette timeout (<code>cmd-k.spec.ts:14</code> + <code>keyboard.spec.ts:41</code>). Likely a palette focus/key handler bug rather than flake.</li>
+<li><strong>Low effort:</strong> Bump signature-tab timeout 5s → 10s OR add a worker pre-warm step. Eliminates the cold-start flake.</li>
+<li><strong>Maintenance:</strong> Re-record visual-regression baselines on Linux CI (<code>npx playwright test --update-snapshots</code> against the chromium project).</li>
+<li><strong>Optional:</strong> Fix Bug C svelte-check warnings opportunistically.</li>
+</ol>
+<p>Persistent-pwsh-session post-merge follow-ups (separate from CI work) are documented in <code>docs/superpowers/plans/2026-05-03-persistent-pwsh-session-followups.md</code>.</p>
+<hr />
+<h2 id="caveats-gotchas-picked-up">Caveats / Gotchas Picked Up<a class="headerlink" href="#caveats-gotchas-picked-up" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Don't add <code>baseUrl</code>/<code>paths</code> to <code>site/tsconfig.json</code>.</strong> Breaks <code>wrangler types &amp;&amp; vite dev</code> silently — server hangs, no error printed. SvelteKit's auto-tsconfig owns paths via <code>kit.alias</code> in <code>svelte.config.js</code>.</li>
+<li><strong>Vite dev too slow for playwright on CI cold start.</strong> Default 60s <code>webServer.timeout</code> insufficient. Use <code>npm run preview</code> for fixture-driven test infra.</li>
+<li><strong><code>&lt;repo&gt;/package.json</code> exists now</strong> with zod-only dependency. CI workflow installs it (<code>npm ci</code> at repo root) before site's <code>npm ci</code>. Don't delete without also removing the workflow step.</li>
+<li><strong><code>site/scripts/seed-e2e.ts</code> seeds D1 only.</strong> Anything reading R2 blobs in tests will fail in CI until this is extended. Document any new R2-dependent test or remove from CI suite.</li>
+<li><strong>Cross-boundary <code>import type</code> from site/ into <code>&lt;repo&gt;/src/</code> is fragile.</strong> TypeScript follows the chain even with <code>import type</code>, so any external dep in the imported file (zod, etc.) must be resolvable from the imported file's location. Prefer local structural types in site for shapes the cross-boundary file emits, with comments pointing at the canonical source.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

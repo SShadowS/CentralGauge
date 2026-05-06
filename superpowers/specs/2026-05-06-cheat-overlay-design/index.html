@@ -1,0 +1,3322 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-05-06-cheat-overlay-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>CHEAT Overlay - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cheat-overlay" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CHEAT Overlay
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#annotation-registry-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Annotation Registry Shape
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#computecalloutlayout-algorithm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        computeCalloutLayout Algorithm
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="computeCalloutLayout Algorithm">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#per-annotation-steps-post-resolution-pure-function" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-annotation steps (post-resolution; pure function)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reactivity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reactivity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-cleanup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle cleanup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#callout-size-measurement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Callout size measurement
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edge-cases-tested" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edge cases tested
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visual-style" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual Style
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Visual Style">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sticky-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sticky note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#arrow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Arrow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fab-cheat-button" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAB (CHEAT button)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#z-index-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Z-index chain
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pointer-events-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pointer-events strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#theme" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Theme
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#animation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Animation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mobile-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mobile Fallback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#accessibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Accessibility">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fab-button" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAB button
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#desktop-overlay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Desktop overlay
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyboard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Keyboard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mobile-sheet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mobile sheet
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reduced-motion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reduced motion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#color-contrast" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Color contrast
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#off-viewport-callouts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Off-viewport callouts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#telemetry-hook-no-op-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telemetry hook (no-op v1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Test Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unit-vitest-pure-helper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit (Vitest, pure helper)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#component-vitest-plus-svelte" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component (Vitest plus Svelte)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e2e-playwright" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E2E (Playwright)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#accessibility-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessibility tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope-v1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Out of Scope (v1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-recorded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions Recorded
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-05-06-cheat-overlay-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="cheat-overlay">CHEAT Overlay<a class="headerlink" href="#cheat-overlay" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-05-06
+<strong>Status:</strong> Design. Awaiting user spec review.</p>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>Visitors arriving at the leaderboard see columns labeled <code>Score</code>, <code>Pass</code>,
+<code>CI</code>, <code>Cost</code>, <code>$/Pass</code>, <code>p95</code>, plus a hero stacked-bar chart. The
+existing <code>MetricInfo</code> ⓘ tooltips give one-column-at-a-time definitions,
+and <code>/about</code> carries the long-form glossary. Neither shows how the
+metrics relate to the actual numbers on screen, and neither answers the
+"what is this whole page" question for first-time visitors.</p>
+<p>A guided overlay layered on top of the live page, with arrows pointing
+at columns and an example row, would teach the leaderboard at a glance.</p>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>New visitor (90% of traffic) understands the leaderboard layout in
+  one click.</li>
+<li>Plain-language explanations tied to the actual numbers on screen
+  ("Opus 4.6 passed 51 of 64 tasks").</li>
+<li>Page stays visually live while the overlay is on (no dim, no scroll
+  lock). Mouse interaction with underlying page elements continues to
+  work (sort columns, click links). Keyboard interaction is consciously
+  scoped to the overlay's controls (X button, callouts) for the
+  duration; pressing Esc returns full keyboard control to the page.
+  This is a non-modal-but-keyboard-scoped interaction model;
+  consequences for the desktop focus model appear in Accessibility.</li>
+<li>Mobile audience reaches the same teaching content via a degraded
+  presentation that does not depend on the visual conceit.</li>
+<li>Accessible: keyboard, screen reader, reduced-motion all first-class.</li>
+</ul>
+<h2 id="non-goals">Non-Goals<a class="headerlink" href="#non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Step-by-step guided tour. The overlay shows everything at once.</li>
+<li>Auto-show on first visit. Pure opt-in via the CHEAT button.</li>
+<li>Site-wide coverage. Only the landing page and <code>/models/[...slug]</code> get
+  registries in v1.</li>
+<li>Internationalization. Copy lives in a registry as plain English; i18n
+  is a future wrap.</li>
+<li>Analytics integration in v1. Telemetry hook stubbed for future.</li>
+</ul>
+<h2 id="audience">Audience<a class="headerlink" href="#audience" title="Permanent link">&para;</a></h2>
+<p>Same audience split as the score-display unification PR1 spec:</p>
+<ul>
+<li><strong>90% landing-page visitors.</strong> Want to know "who is best" and what
+  the headline numbers mean. Primary CHEAT consumer.</li>
+<li><strong>10% practitioners.</strong> Use the existing per-column tooltips and
+  <code>/about</code> glossary. CHEAT remains available but is not aimed at them.</li>
+</ul>
+<h2 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>| Per-page mount points                                     |
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>|   site/src/routes/+page.svelte adds                       |
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>|     &lt;CheatButton page=&quot;landing&quot;&gt;                          |
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>|   site/src/routes/models/[...slug]/+page.svelte adds      |
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>|     &lt;CheatButton page=&quot;model-detail&quot;&gt;                     |
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>|   NOT mounted in +layout.svelte (would scope to all       |
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>|   routes, breaking the v1 &quot;landing + model-detail&quot; goal). |
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                  |
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>                  v (button click toggles open state)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>| &lt;CheatButton&gt;                                             |
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|   Red FAB, bottom-right, fixed.                           |
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>|   On click &gt;=1025px: dynamic-imports CheatOverlay.        |
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>|   On click  &lt;=1024px: opens CheatMobileSheet.             |
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>                  |
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                  v (lazy-loaded)
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>| &lt;CheatOverlay page={page}&gt;  client-only                   |
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|   Reads annotations registry for `page`.                  |
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>|   Mounts portal under &lt;body&gt; to escape any                |
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>|   overflow:hidden ancestor.                               |
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>|   ResizeObserver + scroll listener -&gt; recompute layouts.  |
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>|   Esc + X dismiss.                                        |
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>                  |
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>                  v (data, not import)
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>| Annotations registry                                      |
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>|   site/src/lib/cheat/annotations/landing.ts               |
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>|   site/src/lib/cheat/annotations/model-detail.ts          |
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>|   Each exports Annotation[].                              |
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>                  |
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                  v (pure helper)
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>+-----------------------------------------------------------+
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>| computeCalloutLayout(targets, viewport, sizes)            |
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>|   Pure function. Returns Layout[] with positioned         |
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>|   callouts and arrow paths.                               |
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>|   Handles collision, side-flip at edges, off-viewport     |
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>|   opacity. Exhaustively unit-testable.                    |
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>+-----------------------------------------------------------+
+</code></pre></div>
+<p>Four components (<code>CheatButton</code>, <code>CheatOverlay</code>, <code>CheatCallout</code>,
+<code>CheatMobileSheet</code>), one data registry (per-page annotation modules),
+one pure helper (<code>computeCalloutLayout</code>). No new dependencies.</p>
+<h2 id="annotation-registry-shape">Annotation Registry Shape<a class="headerlink" href="#annotation-registry-shape" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">// site/src/lib/cheat/types.ts</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">export</span><span class="w"> </span><span class="kd">interface</span><span class="w"> </span><span class="nx">Annotation</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="cm">/** Unique within a page. Used as anchor id and arrow path key. */</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="cm">/** CSS selector resolved on each redraw. Never holds element refs. */</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nx">targetSelector</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="cm">/** What the callout says. Plain text only; rendered via Svelte&#39;s</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="cm">   *  default text interpolation (auto-escaped). Use `bodyPrefix` for</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="cm">   *  bold emphasis. No inline HTML; no `{@html}` sink. */</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="cm">/** Where to anchor the callout relative to target. */</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="nx">side</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;top&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;right&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;bottom&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;left&#39;</span><span class="p">;</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">  </span><span class="cm">/** Sticky-note rotation in degrees. Range -3 to +3. Default 0. */</span>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">  </span><span class="nx">rotation?</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">  </span><span class="cm">/** Mobile-sheet fallback text. Defaults to body. Useful when desktop</span>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="cm">   *  text says &quot;this column&quot; but the mobile list needs explicit naming. */</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="nx">mobileText?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">  </span><span class="cm">/** Mobile-sheet card title. Falls back to a derivation of `id`</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="cm">   *  (dashes replaced with spaces, first letter capitalized).</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="cm">   *  Set explicitly when the derived title reads poorly. */</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">  </span><span class="nx">mobileTitle?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">  </span><span class="cm">/** Optional bold prefix appended ahead of body. Plain text only;</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="cm">   *  rendered as `&lt;strong&gt;{bodyPrefix}&lt;/strong&gt;` followed by the</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="cm">   *  escaped body text. Use instead of inline HTML inside `body`. */</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">  </span><span class="nx">bodyPrefix?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">  </span><span class="cm">/** When true, the overlay substitutes runtime values from the</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="cm">   *  resolved target. Pulls values from data-cheat-* attributes on</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="cm">   *  the target element. */</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">  </span><span class="nx">template?</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="p">}</span>
+</code></pre></div>
+<p><strong>File layout:</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>site/src/lib/cheat/
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  types.ts
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  annotations/
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    landing.ts
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    model-detail.ts
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    index.ts
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>  compute-layout.ts        (pure helper)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  resolve-targets.ts       (impure resolver; standalone module for testability)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>  CheatButton.svelte
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>  CheatOverlay.svelte
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>  CheatCallout.svelte
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>  CheatMobileSheet.svelte
+</code></pre></div>
+<p><strong>Worked-example annotation (template substitution):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;row-1-pass&#39;</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nx">targetSelector</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;[data-cheat=&quot;worked-example-pass&quot;]&#39;</span><span class="p">,</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;{passed}/{total} solved. Green = first try ({p1}). Amber = retry win ({p2only}).&#39;</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nx">side</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;right&#39;</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nx">rotation</span><span class="o">:</span><span class="w"> </span><span class="o">-</span><span class="mf">1.5</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nx">template</span><span class="o">:</span><span class="w"> </span><span class="kt">true</span><span class="p">,</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="p">}</span>
+</code></pre></div>
+<p>The corresponding row in <code>LeaderboardTable.svelte</code> gains a
+production-owned <code>data-cheat="worked-example-pass"</code> anchor plus the
+template's <code>data-cheat-passed</code>, <code>data-cheat-total</code>, <code>data-cheat-p1</code>,
+<code>data-cheat-p2only</code> attributes. <strong>Selector binding uses dedicated
+<code>data-cheat="..."</code> anchors, never <code>data-test</code> (which is for test
+harnesses and may be churned by test refactors) or styling classes
+(<code>.attempts-cell</code>, which carry layout intent and may be renamed).</strong></p>
+<p><strong>Template substitution scope.</strong> Values come ONLY from the resolved
+<code>targetSelector</code> element's own <code>data-cheat-*</code> attributes. The resolver
+walks no ancestors and reads no other elements. Missing attributes
+substitute as the literal string <code>?</code> and log a dev-mode warning.
+Missing target (<code>querySelector</code> returns null) → annotation is omitted
+from the output entirely (see "Per-annotation steps").</p>
+<p><strong>Body markup.</strong> <code>body</code> is plain text. The renderer escapes it via
+Svelte's default text interpolation. Rich emphasis (e.g. bold for the
+metric name) uses the optional <code>bodyPrefix</code> field declared in the
+<code>Annotation</code> interface above. The CheatCallout component renders
+<code>&lt;strong&gt;{bodyPrefix}&lt;/strong&gt; {body}</code> where both halves are auto-
+escaped. v1 ships without <code>bodyPrefix</code> if no annotation needs it.
+No <code>{@html ...}</code> sink anywhere in the cheat module.</p>
+<h2 id="computecalloutlayout-algorithm"><code>computeCalloutLayout</code> Algorithm<a class="headerlink" href="#computecalloutlayout-algorithm" title="Permanent link">&para;</a></h2>
+<p>The work is split into two layers to keep the math truly pure and
+unit-testable:</p>
+<ol>
+<li><strong><code>resolveTargets()</code> (impure, standalone module).</strong> Lives in
+   <code>site/src/lib/cheat/resolve-targets.ts</code> (NOT inside
+   <code>CheatOverlay.svelte</code>). Stateless function exported for direct
+   unit testing. Calls <code>document.querySelector</code> per annotation,
+   captures <code>getBoundingClientRect()</code>, reads any <code>data-cheat-*</code>
+   attributes on the resolved target for template substitution,
+   computes document order via DOM traversal. Returns
+   <code>ResolvedTarget[]</code>. Holds no element refs across calls; resolved
+   fresh on each layout pass. <code>CheatOverlay.svelte</code> imports and
+   invokes it from its effect lifecycle.</li>
+</ol>
+<p><strong>Selector error handling.</strong> <code>document.querySelector()</code> throws
+   <code>SyntaxError</code> for malformed selector strings (it does NOT return
+   null). The resolver wraps each call in <code>try/catch</code>, logs a
+   dev-mode warning naming the annotation <code>id</code> and the offending
+   selector, and continues. Both "selector throws" and "selector
+   returns null" paths skip the annotation entirely:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kd">let</span><span class="w"> </span><span class="nx">el</span><span class="o">:</span><span class="w"> </span><span class="kt">Element</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">;</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">try</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nx">el</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">document</span><span class="p">.</span><span class="nx">querySelector</span><span class="p">(</span><span class="nx">annotation</span><span class="p">.</span><span class="nx">targetSelector</span><span class="p">);</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="p">}</span><span class="w"> </span><span class="k">catch</span><span class="w"> </span><span class="p">(</span><span class="nx">err</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">dev</span><span class="p">)</span><span class="w"> </span><span class="nx">console</span><span class="p">.</span><span class="nx">warn</span><span class="p">(</span><span class="sb">`[cheat] Invalid selector for &quot;</span><span class="si">${</span><span class="nx">annotation</span><span class="p">.</span><span class="nx">id</span><span class="si">}</span><span class="sb">&quot;: </span><span class="si">${</span><span class="nx">annotation</span><span class="p">.</span><span class="nx">targetSelector</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">);</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="k">continue</span><span class="p">;</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="p">}</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">el</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">dev</span><span class="p">)</span><span class="w"> </span><span class="nx">console</span><span class="p">.</span><span class="nx">warn</span><span class="p">(</span><span class="sb">`[cheat] Missing target for &quot;</span><span class="si">${</span><span class="nx">annotation</span><span class="p">.</span><span class="nx">id</span><span class="si">}</span><span class="sb">&quot;: </span><span class="si">${</span><span class="nx">annotation</span><span class="p">.</span><span class="nx">targetSelector</span><span class="si">}</span><span class="sb">`</span><span class="p">);</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">  </span><span class="k">continue</span><span class="p">;</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="p">}</span>
+</code></pre></div></p>
+<ol>
+<li><strong><code>computeCalloutLayout()</code> (pure, fully testable).</strong> No <code>document</code>,
+   <code>window</code>, <code>Element</code>, or <code>ResizeObserver</code> access. Inputs are plain
+   data; output is plain data. Lives in <code>compute-layout.ts</code>.</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1">// Pure function signature (compute-layout.ts)</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="cm">/** Plain rect type. The pure helper has zero DOM knowledge; the</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="cm"> *  resolver converts DOMRectReadOnly to this shape. */</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">Rect</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nx">left</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nx">top</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nx">right</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nx">bottom</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nx">width</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nx">height</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="p">}</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">ResolvedTarget</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                  </span><span class="c1">// annotation id</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="cm">/** Document order index, assigned by resolver. Used as the primary</span>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="cm">   *  sort key for collision avoidance. Resolver computes via DOM</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="cm">   *  traversal; pure helper just consumes. */</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">  </span><span class="nx">order</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nx">rect</span><span class="o">:</span><span class="w"> </span><span class="kt">Rect</span><span class="p">;</span><span class="w">                  </span><span class="c1">// viewport-relative CSS pixels</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">  </span><span class="nx">values</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">string</span><span class="o">&gt;</span><span class="p">;</span><span class="w">  </span><span class="c1">// template substitution data</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">  </span><span class="nx">side</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;top&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;right&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;bottom&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;left&#39;</span><span class="p">;</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">  </span><span class="nx">rotation</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">  </span><span class="nx">body</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">                </span><span class="c1">// substituted plain text; NOT pre-escaped.</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">                               </span><span class="c1">// Svelte text interpolation escapes at</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">                               </span><span class="c1">// the render sink. Resolver does</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">                               </span><span class="c1">// substitution only, never escaping.</span>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">  </span><span class="nx">bodyPrefix?</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span><span class="w">         </span><span class="c1">// plain text; NOT pre-escaped.</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="p">}</span>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">Viewport</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">  </span><span class="nx">width</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">  </span><span class="nx">height</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">  </span><span class="c1">// No scrollX/scrollY: the layer is `position: fixed; inset: 0`,</span>
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">  </span><span class="c1">// so all coordinates are viewport-relative CSS pixels. Adding</span>
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">  </span><span class="c1">// scroll offsets here would invite document-coordinate confusion</span>
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">  </span><span class="c1">// and arrow drift.</span>
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="p">}</span>
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">Size</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">width</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">height</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="k">export</span><span class="w"> </span><span class="kd">function</span><span class="w"> </span><span class="nx">computeCalloutLayout</span><span class="p">(</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">  </span><span class="nx">targets</span><span class="o">:</span><span class="w"> </span><span class="kt">ResolvedTarget</span><span class="p">[],</span>
+<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">  </span><span class="nx">viewport</span><span class="o">:</span><span class="w"> </span><span class="kt">Viewport</span><span class="p">,</span>
+<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="w">  </span><span class="nx">sizes</span><span class="o">:</span><span class="w"> </span><span class="kt">Record</span><span class="o">&lt;</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">Size</span><span class="o">&gt;</span><span class="p">,</span>
+<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">Layout</span><span class="p">[];</span>
+</code></pre></div>
+<p>All coordinates in <code>Rect</code>, <code>Layout.callout</code>, and <code>Layout.arrow.d</code> are
+<strong>viewport-relative CSS pixels</strong> (matching <code>getBoundingClientRect()</code>'s
+output and the layer's <code>position: fixed</code> placement).</p>
+<p>Output:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kd">interface</span><span class="w"> </span><span class="nx">Layout</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">  </span><span class="nx">id</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">;</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nx">visible</span><span class="o">:</span><span class="w"> </span><span class="kt">boolean</span><span class="p">;</span><span class="w">     </span><span class="c1">// false when target is off-viewport</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">  </span><span class="nx">callout</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">left</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">top</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">width</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">rotation</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">  </span><span class="nx">arrow</span><span class="o">?:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">d</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">};</span><span class="w">  </span><span class="c1">// SVG path &quot;d&quot; attribute. Omitted entirely</span>
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">                          </span><span class="c1">// when visible === false (no arrow drawn).</span>
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="p">}</span>
+</code></pre></div>
+<h3 id="per-annotation-steps-post-resolution-pure-function">Per-annotation steps (post-resolution; pure function)<a class="headerlink" href="#per-annotation-steps-post-resolution-pure-function" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p><strong>Missing target handling.</strong> Targets that failed to resolve
+   (<code>document.querySelector</code> returned null) are NOT included in the
+   <code>targets</code> array passed to the pure function. The pure function does
+   not need to handle this case. The impure resolver logs a dev-mode
+   <code>console.warn</code> for unresolved selectors and omits them from the
+   output entirely. Empty <code>targets[]</code> → empty <code>Layout[]</code>.</p>
+</li>
+<li>
+<p><strong>Off-viewport early exit (first per-target check).</strong> If the
+   target's rect is entirely outside the viewport, return
+   <code>{ id, visible: false, callout: { ... default placement }, arrow undefined }</code>
+   immediately, BEFORE side-flipping or collision avoidance. This
+   avoids spurious "both sides clip" warnings for targets that are
+   simply scrolled off-screen and saves collision work.</p>
+</li>
+<li>
+<p><strong>Choose anchor point on target.</strong> Based on <code>side</code>: midpoint of
+   target's top, right, bottom, or left edge.</p>
+</li>
+<li>
+<p><strong>Choose callout position.</strong> Place callout 12 to 20 pixels outside
+   the anchor along <code>side</code>, with sticky-note rotation applied. Check
+   viewport bounds: if the callout would clip, flip to the opposite
+   side. Single flip only; if both sides clip, log a dev-mode warning
+   and use the original side.</p>
+</li>
+<li>
+<p><strong>Collision avoidance.</strong> Greedy pass. Sort callouts by
+   <code>ResolvedTarget.order</code> (assigned by resolver from DOM document
+   order), with <code>id</code> as a stable secondary sort to guarantee
+   deterministic ordering when two annotations target the same
+   element. The pure helper does no DOM traversal; it only sorts the
+   plain numeric <code>order</code> field. For each callout, if its bounding rect
+   intersects any already-placed callout's rect, push perpendicular to
+   <code>side</code> by 8px increments until no intersection (cap at 80px). If no
+   slot found, accept overlap rather than infinite loop.</p>
+</li>
+<li>
+<p><strong>Arrow path.</strong> From anchor point on target to callout's nearest
+   edge corner. Quadratic bezier with slight upward control point for
+   the hand-drawn vibe; dashed stroke. Tip arrowhead is a 6px
+   equilateral polygon oriented along the final tangent.</p>
+</li>
+</ol>
+<h3 id="reactivity">Reactivity<a class="headerlink" href="#reactivity" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Called on overlay open.</li>
+<li>Called on <code>scroll</code> (passive listener on <code>window</code> and on each target's
+  nearest scrollable ancestor). Scroll-parent discovery walks
+  <code>parentElement</code> and inspects <code>getComputedStyle(el).overflowX</code> and
+  <code>overflowY</code> for <code>auto</code> / <code>scroll</code> / <code>overlay</code> values. <strong>Not</strong>
+  <code>offsetParent</code> (which finds positioned ancestors, not scroll
+  containers; would miss <code>LeaderboardTable.svelte</code>'s <code>.wrap</code> which is
+  <code>overflow-x: auto</code> but not positioned).</li>
+<li>Called on <code>window.resize</code> (passive listener). <code>ResizeObserver</code> on
+  body is not a reliable viewport-change signal: a wide body may not
+  resize even when the viewport does. The explicit window listener
+  catches viewport width/height changes.</li>
+<li>Called on <code>ResizeObserver</code> callback (observes body, each target's
+  nearest scroll parent, AND each callout element). Callout-element
+  observation catches text reflow when fonts load or when bodyPrefix
+  is added/removed; these change the callout's intrinsic size and
+  must trigger a layout recompute.</li>
+<li>Called on <code>MutationObserver</code> callback. Observes the smallest stable
+  container containing the page's cheat targets, identified by a
+  <code>data-cheat-scope</code> wrapper attribute on the route's content/table
+  region (e.g. <code>&lt;div data-cheat-scope class="results"&gt;</code> on landing).
+  NOT <code>#main</code>, which would trigger on unrelated DOM changes elsewhere
+  on the page. Watch options: <code>childList: true, subtree: true,
+  attributes: true</code>. Callback filters records to only react to
+  <code>data-cheat</code>-prefixed attribute names plus all childList changes:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">relevant</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">records</span><span class="p">.</span><span class="nx">some</span><span class="p">((</span><span class="nx">record</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">record</span><span class="p">.</span><span class="kr">type</span><span class="w"> </span><span class="o">===</span><span class="w"> </span><span class="s1">&#39;childList&#39;</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">record</span><span class="p">.</span><span class="kr">type</span><span class="w"> </span><span class="o">!==</span><span class="w"> </span><span class="s1">&#39;attributes&#39;</span><span class="p">)</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="nx">record</span><span class="p">.</span><span class="nx">attributeName</span><span class="o">?</span><span class="p">.</span><span class="nx">startsWith</span><span class="p">(</span><span class="s1">&#39;data-cheat&#39;</span><span class="p">)</span><span class="w"> </span><span class="o">??</span><span class="w"> </span><span class="kc">false</span><span class="p">;</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="p">});</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">relevant</span><span class="p">)</span><span class="w"> </span><span class="nx">scheduleLayout</span><span class="p">();</span>
+</code></pre></div>
+  Filtering in the callback (not via <code>attributeFilter</code>) keeps the
+  observer generic across landing + model-detail + future page
+  registries without hardcoding template field names.</li>
+<li>Called after SvelteKit navigation completes (<code>afterNavigate</code> hook)
+  to handle sort/filter URL changes that swap rows beneath the
+  selectors. Note: <code>afterNavigate</code> and <code>MutationObserver</code> may both
+  fire for the same change; rAF debounce coalesces them into one
+  layout pass.</li>
+<li><code>requestAnimationFrame</code> debouncing: at most one layout pass per frame.</li>
+</ul>
+<h3 id="lifecycle-cleanup">Lifecycle cleanup<a class="headerlink" href="#lifecycle-cleanup" title="Permanent link">&para;</a></h3>
+<p><code>afterNavigate</code> is registered at component initialization (NOT inside
+<code>$effect</code>); SvelteKit removes the listener automatically on component
+unmount. All other listeners and observers are installed in the
+overlay's mount effect and torn down in the corresponding cleanup
+function:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">afterNavigate</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s1">&#39;$app/navigation&#39;</span><span class="p">;</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nx">afterNavigate</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nx">scheduleLayout</span><span class="p">();</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="p">});</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="nx">$effect</span><span class="p">(()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">cleanup</span><span class="o">:</span><span class="w"> </span><span class="kt">Array</span><span class="o">&lt;</span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="ow">void</span><span class="o">&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[];</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="c1">// window.addEventListener(&#39;scroll&#39;, scheduleLayout, { passive: true })</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="c1">// window.addEventListener(&#39;resize&#39;, scheduleLayout, { passive: true })</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="c1">// each scroll-parent: addEventListener(&#39;scroll&#39;, ...)</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">  </span><span class="c1">// ResizeObserver (body + scroll parents + callout elements)</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">  </span><span class="c1">// MutationObserver (data-cheat-scope container)</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">  </span><span class="c1">// document.addEventListener(&#39;focusin&#39;, ..., true)</span>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">  </span><span class="c1">// document.addEventListener(&#39;keydown&#39;, escHandler)</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">  </span><span class="c1">// document-level Tab/Shift+Tab keydown listener (focus scope)</span>
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="w">  </span><span class="c1">// pending requestAnimationFrame handle (cancelAnimationFrame on cleanup)</span>
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a><span class="w">  </span><span class="c1">// ... each setup pushes cleanup() into the array ...</span>
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a><span class="w">  </span><span class="k">return</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">cleanup</span><span class="p">.</span><span class="nx">forEach</span><span class="p">((</span><span class="nx">fn</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">fn</span><span class="p">());</span>
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a><span class="p">});</span>
+</code></pre></div>
+<p>No leaked observers across repeated open/close cycles. The
+<code>afterNavigate</code> callback is harmless when the overlay is closed (it
+calls <code>scheduleLayout</code>, which checks the open flag and returns early).</p>
+<h3 id="callout-size-measurement">Callout size measurement<a class="headerlink" href="#callout-size-measurement" title="Permanent link">&para;</a></h3>
+<p>The pure helper requires <code>sizes: Record&lt;string, Size&gt;</code> mapping
+annotation <code>id</code> to measured callout dimensions. Sequence on overlay
+open:</p>
+<ol>
+<li>Mount each callout into the layer with <code>visibility: hidden;
+   opacity: 0; pointer-events: none</code> so they take up layout space
+   without flashing visually.</li>
+<li><code>await tick()</code> so Svelte commits the DOM.</li>
+<li>Iterate the bound callout element refs (one per annotation ID),
+   collect <code>getBoundingClientRect()</code> width/height into <code>sizes</code>.</li>
+<li>Run <code>resolveTargets()</code> + <code>computeCalloutLayout(...)</code> with the
+   measured <code>sizes</code>.</li>
+<li>Apply computed positions; remove <code>visibility: hidden</code>; opacity
+   transitions to 1 per the open animation.</li>
+<li>The callout-element <code>ResizeObserver</code> (see Reactivity) catches
+   subsequent text reflow (font load, bodyPrefix change) and
+   triggers <code>scheduleLayout</code> to remeasure + recompute.</li>
+</ol>
+<h3 id="edge-cases-tested">Edge cases tested<a class="headerlink" href="#edge-cases-tested" title="Permanent link">&para;</a></h3>
+<ul>
+<li>0 visible targets returns empty <code>Layout[]</code>.</li>
+<li>All targets off-viewport returns all <code>visible: false</code>.</li>
+<li>Two callouts identical anchor: collision push deterministic.</li>
+<li>Target at extreme right of viewport: side flips to <code>left</code>.</li>
+<li>Annotation with malformed selector: skipped silently with
+  <code>console.warn</code> in dev mode.</li>
+</ul>
+<h2 id="visual-style">Visual Style<a class="headerlink" href="#visual-style" title="Permanent link">&para;</a></h2>
+<h3 id="sticky-note">Sticky note<a class="headerlink" href="#sticky-note" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Background: <code>#fff8a8</code> (warm yellow). Token <code>--cheat-note-bg</code>.</li>
+<li>Border-radius: <code>4px</code>.</li>
+<li>Box-shadow: <code>2px 2px 0 rgba(0, 0, 0, 0.15)</code> (paper-cut illusion).</li>
+<li>Padding: <code>8px 10px</code>.</li>
+<li>Max-width: <code>200px</code> desktop. Wraps naturally.</li>
+<li>Font: site default sans, size <code>var(--text-xs)</code> (11 to 12px).</li>
+<li>Line-height: <code>1.3</code>.</li>
+<li>Color: <code>#1a1a1a</code> (high-contrast on yellow; ratio 13.4:1, AAA).</li>
+<li>Rotation: per-annotation, default 0; range -3 to +3 degrees.</li>
+<li>Bold emphasis comes from the optional <code>bodyPrefix</code> field, rendered
+  as <code>&lt;strong&gt;{bodyPrefix}&lt;/strong&gt;</code> ahead of the escaped body text.
+  No inline HTML inside <code>body</code> itself.</li>
+</ul>
+<h3 id="arrow">Arrow<a class="headerlink" href="#arrow" title="Permanent link">&para;</a></h3>
+<ul>
+<li>SVG <code>&lt;path&gt;</code>, dashed stroke <code>3 3</code>, color <code>var(--cheat-arrow)</code> =
+  <code>#d97706</code> (warm orange, sticky-note family).</li>
+<li>Stroke-width: <code>1.75</code>.</li>
+<li>Quadratic bezier with slight upward control point.</li>
+<li>Arrowhead: 6px filled triangle at path tip, same color, oriented to
+  path tangent.</li>
+</ul>
+<h3 id="fab-cheat-button">FAB (CHEAT button)<a class="headerlink" href="#fab-cheat-button" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Color: <code>#dc2626</code> (red-600).</li>
+<li>Hover: <code>#b91c1c</code> (red-700).</li>
+<li>Padding: <code>11px 16px</code>.</li>
+<li>Font: <code>font-weight: 700; letter-spacing: 0.7px;</code> uppercase
+  "CHEAT" plus 📖 emoji.</li>
+<li>Border-radius: <code>999px</code>.</li>
+<li>Box-shadow: <code>0 4px 12px rgba(220, 38, 38, 0.4)</code>.</li>
+<li>Position: <code>fixed; bottom: 24px; right: 24px; z-index: var(--z-fab)</code>.</li>
+<li>Active state when overlay open: filled inverted (white background,
+  red text, "CHEATING" label) so users know where to click to close.</li>
+</ul>
+<h3 id="z-index-chain">Z-index chain<a class="headerlink" href="#z-index-chain" title="Permanent link">&para;</a></h3>
+<ul>
+<li>New token <code>--z-cheat-layer: 950</code> (below toasts at 1000, above
+  everything else).</li>
+<li>FAB at <code>--z-fab: 940</code>. Stays at this value at all times. When the
+  overlay is open (layer mounted at 950), FAB sits below the layer's
+  X button so the X is the closer click target. When closed (no layer
+  mounted), FAB sits above all page content so it remains visible.</li>
+</ul>
+<p><strong>Existing <code>MetricInfo</code> popovers.</strong> <code>MetricInfo.svelte</code> uses <code>&lt;details&gt;</code>
+with the panel at <code>z-index: var(--z-popover)</code> (which sits below
+<code>--z-cheat-layer</code>). Because the page is click-through under CHEAT,
+users could otherwise click the ⓘ icon underneath and re-open a
+MetricInfo popover, producing two overlapping explanation systems.
+Contract:</p>
+<ul>
+<li>On <code>CheatOverlay</code> mount: dispatch a custom <code>cheat:open</code> event on
+  <code>document</code>. <code>MetricInfo.svelte</code> listens, sets <code>open = false</code>, AND
+  sets a local <code>cheatActive = true</code> flag that suppresses any future
+  open (the <code>&lt;summary&gt;</code> click handler checks this flag and prevents
+  default).</li>
+<li>On <code>CheatOverlay</code> cleanup/dismiss: dispatch <code>cheat:close</code> on
+  <code>document</code>. <code>MetricInfo.svelte</code> clears <code>cheatActive</code>; subsequent
+  clicks open normally again.</li>
+<li>Both listeners registered/cleaned up in <code>MetricInfo.svelte</code>'s
+  <code>onMount</code> lifecycle.</li>
+</ul>
+<h3 id="pointer-events-strategy">Pointer-events strategy<a class="headerlink" href="#pointer-events-strategy" title="Permanent link">&para;</a></h3>
+<p>The "no dim + page stays usable" decision requires a deliberate CSS
+contract; without it the layer would swallow all clicks.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">.</span><span class="nc">cheat-layer</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span><span class="k">position</span><span class="p">:</span><span class="w"> </span><span class="kc">fixed</span><span class="p">;</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="k">inset</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="k">z-index</span><span class="p">:</span><span class="w"> </span><span class="nf">var</span><span class="p">(</span><span class="nv">--z-cheat-layer</span><span class="p">);</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w">       </span><span class="c">/* layer itself is click-through */</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">}</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="p">.</span><span class="nc">cheat-layer</span><span class="w"> </span><span class="nt">svg</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w">       </span><span class="c">/* arrow SVG is decorative */</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="p">}</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="p">.</span><span class="nc">cheat-callout</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">  </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">none</span><span class="p">;</span><span class="w">       </span><span class="c">/* sticky notes are click-through */</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="p">}</span>
+<a id="__codelineno-9-15" name="__codelineno-9-15" href="#__codelineno-9-15"></a>
+<a id="__codelineno-9-16" name="__codelineno-9-16" href="#__codelineno-9-16"></a><span class="p">.</span><span class="nc">cheat-close</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-17" name="__codelineno-9-17" href="#__codelineno-9-17"></a><span class="w">  </span><span class="k">pointer-events</span><span class="p">:</span><span class="w"> </span><span class="kc">auto</span><span class="p">;</span><span class="w">       </span><span class="c">/* X button is the only interactive</span>
+<a id="__codelineno-9-18" name="__codelineno-9-18" href="#__codelineno-9-18"></a><span class="c">                                 element on the layer */</span>
+<a id="__codelineno-9-19" name="__codelineno-9-19" href="#__codelineno-9-19"></a><span class="p">}</span>
+</code></pre></div>
+<p>This means callouts cover real estate visually but do NOT block clicks
+on table cells, sort buttons, or links underneath. The X button (and
+nothing else on the layer) remains clickable. Acknowledged trade-off:
+users cannot click ON a callout to dismiss that one callout
+individually; dismissing the whole overlay (X / Esc / FAB toggle) is
+the only path. This matches the "static annotated overlay" intent
+chosen earlier.</p>
+<h3 id="theme">Theme<a class="headerlink" href="#theme" title="Permanent link">&para;</a></h3>
+<p>Light theme uses the values above. Dark theme already exists on the
+site, toggled by <code>data-theme="dark"</code> on <code>&lt;html&gt;</code>. <strong>Cheat tokens are
+defined as global CSS custom properties in <code>site/src/styles/tokens.css</code>
+(or the appropriate global stylesheet), NOT inside Svelte component
+<code>&lt;style&gt;</code> blocks.</strong> Svelte's CSS scoping would otherwise prevent a
+bare <code>[data-theme="dark"]</code> selector from matching <code>&lt;html&gt;</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c">/* site/src/styles/tokens.css */</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="p">:</span><span class="nd">root</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nv">--cheat-arrow</span><span class="p">:</span><span class="w"> </span><span class="mh">#d97706</span><span class="p">;</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">  </span><span class="nv">--cheat-note-bg</span><span class="p">:</span><span class="w"> </span><span class="mh">#fff8a8</span><span class="p">;</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="p">}</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="nt">html</span><span class="o">[</span><span class="nt">data-theme</span><span class="o">=</span><span class="s2">&quot;dark&quot;</span><span class="o">]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">  </span><span class="nv">--cheat-arrow</span><span class="p">:</span><span class="w"> </span><span class="mh">#fbbf24</span><span class="p">;</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="c">/* note background unchanged; yellow still reads on dark */</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="p">}</span>
+</code></pre></div>
+<p>Component CSS references the variables (<code>background: var(--cheat-note-bg)</code>)
+without needing to be theme-aware.</p>
+<h3 id="animation">Animation<a class="headerlink" href="#animation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Open: callouts fade-in with 60ms staggered delay
+  (<code>transition: opacity 200ms ease-out</code>).</li>
+<li>Close: 100ms fade-out, then unmount.</li>
+<li>Arrows draw via <code>stroke-dashoffset</code> from full length to 0, 250ms
+  ease-out, <strong>only on initial open</strong>. Subsequent layout passes
+  (scroll / resize / mutation / navigation) update the path's <code>d</code>
+  attribute without replaying the dashoffset animation. The path
+  retains its <code>stroke-dasharray</code> but <code>stroke-dashoffset</code> is left at 0
+  after the initial draw, so updates are instant. Without this
+  scoping, recomputing <code>d</code> mid-animation produces visible jitter.</li>
+<li><code>@media (prefers-reduced-motion: reduce)</code>: all animations disabled.
+  Instant on/off.</li>
+</ul>
+<h2 id="mobile-fallback">Mobile Fallback<a class="headerlink" href="#mobile-fallback" title="Permanent link">&para;</a></h2>
+<p><strong>Trigger threshold:</strong> <code>window.matchMedia('(min-width: 1025px)')</code>.
+The existing landing layout collapses to one column at
+<code>max-width: 1024px</code> (<code>site/src/routes/+page.svelte:142-144</code>), so
+1024px and below is "mobile-shaped"; the desktop overlay starts at
+1025px. Below 1025px the FAB still renders but <code>onclick</code> opens
+<code>&lt;CheatMobileSheet&gt;</code> instead of <code>&lt;CheatOverlay&gt;</code>.</p>
+<p><strong>Breakpoint crossing while CHEAT is open.</strong> If the viewport crosses
+the 1024/1025px boundary while CHEAT is already open (e.g. user
+rotates a tablet, or resizes a desktop window narrow), dismiss the
+current presentation (close overlay or sheet) and return focus to the
+FAB. The user's next click opens the correct mode for the new
+viewport. v1 does NOT live-swap overlay/sheet inline; that's a future
+enhancement if observed user friction warrants it.</p>
+<p><code>window.matchMedia</code> and <code>HTMLDialogElement</code> are accessed only after
+mount (in <code>onMount</code> and click handlers), never at module init or
+during SSR. SSR renders the FAB as a plain button with no dynamic
+behavior; client hydration attaches the click listener.</p>
+<p><strong><code>&lt;CheatMobileSheet&gt;</code> shape:</strong></p>
+<ul>
+<li>Native <code>&lt;dialog&gt;</code> element opened via <code>dialog.showModal()</code>. Browser
+  provides Esc (via the <code>cancel</code> event) and focus trap. Backdrop
+  click dismissal is <strong>not</strong> automatic; implement explicitly with a
+  geometric bounds check (the <code>e.target === dialog</code> shortcut also
+  fires on dialog padding, so we use a bounding-rect test instead):
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nx">dialog</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;click&#39;</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="nx">e</span><span class="p">)</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">rect</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">dialog</span><span class="p">.</span><span class="nx">getBoundingClientRect</span><span class="p">();</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">insideContent</span><span class="w"> </span><span class="o">=</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nx">e</span><span class="p">.</span><span class="nx">clientX</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">rect</span><span class="p">.</span><span class="nx">left</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="nx">e</span><span class="p">.</span><span class="nx">clientX</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">rect</span><span class="p">.</span><span class="nx">right</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="nx">e</span><span class="p">.</span><span class="nx">clientY</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">rect</span><span class="p">.</span><span class="nx">top</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="nx">e</span><span class="p">.</span><span class="nx">clientY</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">rect</span><span class="p">.</span><span class="nx">bottom</span><span class="p">;</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">insideContent</span><span class="p">)</span><span class="w"> </span><span class="nx">dialog</span><span class="p">.</span><span class="nx">close</span><span class="p">();</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="p">});</span>
+</code></pre></div>
+  Combined with <code>dialog { padding: 0 }</code> styling and an inner <code>.sheet</code>
+  wrapper that fills the visible dialog box, this dismisses only on
+  true backdrop clicks.</li>
+<li>Slides up from bottom: <code>transform: translateY(100%) -&gt; 0</code>, 200ms
+  ease-out.</li>
+<li>Full-width, <code>max-height: 90vh</code>, scrollable interior.</li>
+<li>Backdrop: <code>dialog::backdrop { background: rgba(0, 0, 0, 0.5); }</code>.
+  Mobile users are not reading the page underneath simultaneously, so
+  dim is fine here.</li>
+</ul>
+<p><strong>Content:</strong></p>
+<ul>
+<li>Header: small "CHEAT" label, page title (e.g. "Leaderboard"), X
+  button.</li>
+<li>Body: numbered cards, one per <strong>resolved</strong> <code>Annotation</code>, in registry
+  order. The mobile sheet uses the same <code>resolveTargets()</code> semantics
+  as desktop: <code>template: true</code> annotations whose target is missing are
+  omitted entirely, NOT rendered with <code>{passed}</code> placeholders or <code>?</code>
+  substitutions. Numbering is computed AFTER omission, so the visible
+  list always reads <code>1, 2, 3, ...</code> without gaps. This handles the
+  empty-filter case (e.g. <code>?category=easy</code> with 0 rows): the row-bound
+  worked-example card disappears; column cards still render.</li>
+<li>Each card:</li>
+<li>Number badge (<code>1</code>, <code>2</code>, ...) with sticky-note yellow background.</li>
+<li>Title from optional <code>Annotation.mobileTitle</code> field (added to the
+    type interface). Falls back to a default derived from <code>id</code>:
+    replace dashes with spaces, capitalize first letter
+    (e.g. <code>score-col</code> -&gt; "Score col"). Annotations whose default title
+    reads poorly should set <code>mobileTitle</code> explicitly.</li>
+<li>Body text: <code>mobileText ?? body</code> with template substitution.</li>
+<li>No arrows, no positioning. Simple list view.</li>
+<li>Footer: "Read full glossary -&gt; /about#metrics" link.</li>
+</ul>
+<p><strong>Why <code>&lt;dialog&gt;</code> over a custom modal:</strong> native focus trap, native Esc
+handling, native ARIA semantics (implicit <code>role="dialog"</code>). Fewer bugs
+to write.</p>
+<p><strong>Tablet widths 768 to 1024px:</strong> use the mobile sheet (matches the
+existing layout collapse). Desktop overlay starts at 1025px.</p>
+<h2 id="accessibility">Accessibility<a class="headerlink" href="#accessibility" title="Permanent link">&para;</a></h2>
+<h3 id="fab-button">FAB button<a class="headerlink" href="#fab-button" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Native <code>&lt;button&gt;</code> element, tab-focusable.</li>
+<li><code>aria-pressed={open}</code> indicates toggled state.</li>
+<li><code>aria-controls="cheat-overlay"</code> (or the mobile sheet's id).</li>
+<li>Visible label: "CHEAT" / "CHEATING" (when open). Same for screen
+  readers.</li>
+<li>Focus ring: <code>2px solid var(--accent); outline-offset: 2px</code>.</li>
+</ul>
+<h3 id="desktop-overlay">Desktop overlay<a class="headerlink" href="#desktop-overlay" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Mounted via portal to <code>&lt;body&gt;</code>.</li>
+<li>Container: <code>role="region" aria-label="Cheat overlay: &lt;page-title&gt;"</code>.</li>
+<li>Each callout: <code>role="note"</code>. <code>tabindex="0"</code> ONLY when
+  <code>layout.visible === true</code>. Off-viewport callouts get
+  <code>tabindex="-1"</code> and <code>aria-hidden="true"</code> together; including
+  <code>tabindex="0"</code> inside an <code>aria-hidden</code> subtree is an axe violation.
+  When the user scrolls the target back into the viewport, both
+  attributes flip back. Implementation:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>&lt;div
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>  role=&quot;note&quot;
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>  aria-hidden={!layout.visible}
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>  tabindex={layout.visible ? 0 : -1}
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>&gt;...&lt;/div&gt;
+</code></pre></div></li>
+<li>Arrow <code>&lt;path&gt;</code> and <code>&lt;polygon&gt;</code> inside an SVG with
+  <code>aria-hidden="true"</code> (decorative; the callout text is the content).</li>
+<li>X button: <code>&lt;button aria-label="Close cheat overlay"&gt;</code> in fixed
+  top-right of overlay layer.</li>
+<li><code>aria-describedby</code> is not used in v1 (the description would just
+  duplicate the visible text, adding screen-reader noise without
+  value). Reserved for a future case where expanded explanations
+  exist.</li>
+</ul>
+<h3 id="keyboard">Keyboard<a class="headerlink" href="#keyboard" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Esc</code> closes. Listener registered on overlay open, cleaned up on
+  close (effect return).</li>
+<li><strong>Desktop overlay uses a non-modal focus scope.</strong> The page remains
+  pointer-interactive via the click-through layer, but keyboard focus
+  is constrained to the overlay's controls (X button + callouts).
+  Initial focus on open lands on the X button. <code>Tab</code> and <code>Shift+Tab</code>
+  cycle: X -&gt; callout 1 -&gt; callout 2 -&gt; ... -&gt; X (forward) and the
+  reverse on <code>Shift+Tab</code>. Implement explicit Tab/Shift+Tab wrapping
+  via keydown listener at the layer.</li>
+<li><strong>Mouse click-through can move focus to underlying page elements.</strong>
+  When the user clicks an underlying sort button or link via the
+  click-through layer, the browser would normally move focus to the
+  underlying control. A document-level <code>focusin</code> listener (capture
+  phase) redirects focus back to the X button when focus lands
+  outside the overlay:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="kd">function</span><span class="w"> </span><span class="nx">onFocusIn</span><span class="p">(</span><span class="nx">e</span><span class="o">:</span><span class="w"> </span><span class="kt">FocusEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">overlayEl</span><span class="p">.</span><span class="nx">contains</span><span class="p">(</span><span class="nx">e</span><span class="p">.</span><span class="nx">target</span><span class="w"> </span><span class="kr">as</span><span class="w"> </span><span class="nx">Node</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nx">closeButton</span><span class="p">.</span><span class="nx">focus</span><span class="p">();</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="p">}</span>
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="nb">document</span><span class="p">.</span><span class="nx">addEventListener</span><span class="p">(</span><span class="s1">&#39;focusin&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">onFocusIn</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">);</span>
+</code></pre></div>
+  Do NOT use <code>inert</code> on the page (would block the intended pointer
+  interaction). Do NOT use a modal <code>&lt;dialog&gt;</code>/<code>showModal()</code> pattern
+  on desktop (would block click-through too).</li>
+<li>When closed, focus returns to FAB. Document-level <code>focusin</code>
+  listener and Tab/Shift+Tab keydown listener removed.</li>
+</ul>
+<h3 id="mobile-sheet">Mobile sheet<a class="headerlink" href="#mobile-sheet" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Native <code>&lt;dialog&gt;</code> provides focus trap and Esc; backdrop click is
+  handled explicitly with the bounding-rect check described in
+  Mobile Fallback (NOT with the naive <code>e.target === dialog</code>
+  shortcut, which also fires on dialog padding).</li>
+<li>Numbered cards use <code>&lt;ol&gt;</code> so screen readers announce ordinal
+  position.</li>
+</ul>
+<h3 id="reduced-motion">Reduced motion<a class="headerlink" href="#reduced-motion" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>@media (prefers-reduced-motion: reduce)</code>: callout fade-in, arrow
+  stroke-dashoffset draw, FAB hover transitions all disabled. Instant
+  on/off.</li>
+</ul>
+<h3 id="color-contrast">Color contrast<a class="headerlink" href="#color-contrast" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Yellow <code>#fff8a8</code> plus black text <code>#1a1a1a</code> -&gt; 13.4:1 (AAA).</li>
+<li>Red FAB <code>#dc2626</code> plus white text -&gt; 4.7:1 (AA for normal text:
+  WCAG threshold is 4.5:1). 12px bold satisfies AA; if a future
+  tweak drops contrast below 4.5:1, the red must darken or text
+  size increase.</li>
+</ul>
+<h3 id="off-viewport-callouts">Off-viewport callouts<a class="headerlink" href="#off-viewport-callouts" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Visually hidden but stay in DOM with <code>aria-hidden="true"</code> so screen
+  readers do not announce them. When the user scrolls and the target
+  re-enters the viewport, <code>aria-hidden</code> is removed.</li>
+</ul>
+<h3 id="telemetry-hook-no-op-v1">Telemetry hook (no-op v1)<a class="headerlink" href="#telemetry-hook-no-op-v1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>&lt;CheatOverlay onOpen onDismiss&gt;</code> callbacks fire empty events. PR2
+  or a future change wires to analytics. Listed for structure; no
+  implementation cost in v1.</li>
+</ul>
+<h2 id="test-surface">Test Surface<a class="headerlink" href="#test-surface" title="Permanent link">&para;</a></h2>
+<h3 id="unit-vitest-pure-helper">Unit (Vitest, pure helper)<a class="headerlink" href="#unit-vitest-pure-helper" title="Permanent link">&para;</a></h3>
+<p><code>compute-layout.test.ts</code>:</p>
+<ul>
+<li>0 visible targets returns empty.</li>
+<li>All targets off-viewport returns all <code>visible: false</code>.</li>
+<li>Two annotations with the same anchor: collision push deterministic.</li>
+<li>Target at right viewport edge: side flip from <code>right</code> to <code>left</code>.</li>
+<li>Target at top edge: side flip from <code>top</code> to <code>bottom</code>.</li>
+<li>Bezier path end coordinates match the callout's nearest edge corner.</li>
+<li>Off-viewport target produces <code>visible: false</code> and no arrow path.</li>
+</ul>
+<h3 id="component-vitest-plus-svelte">Component (Vitest plus Svelte)<a class="headerlink" href="#component-vitest-plus-svelte" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>CheatButton.test.svelte.ts</code>: aria-pressed toggles, click dispatches.
+  FAB visible at all viewport sizes (mobile click opens the dialog
+  sheet; desktop click opens the overlay; the FAB itself is rendered
+  in both cases).</li>
+<li><code>CheatOverlay.test.svelte.ts</code>: renders one callout per annotation,
+  Esc dismisses, X dismisses, scoped focus cycles X -&gt; callouts -&gt; X.</li>
+<li><code>CheatCallout.test.svelte.ts</code>: renders already-substituted, escaped
+  body text plus optional <code>bodyPrefix</code>. Verifies rotation applied.
+  Does NOT test template substitution (that lives in the resolver).</li>
+<li><code>resolve-targets.test.ts</code>: template substitution from the resolved
+  target element's own <code>data-cheat-*</code> attributes; missing attribute
+  substitutes <code>?</code> with dev-mode warning; missing target is omitted
+  entirely. Resolver does NOT escape values (the render sink does).
+  Test asserts substituted values pass through verbatim AND, in a
+  separate component test, that those values render as text (not
+  parsed as HTML) in the final DOM.</li>
+<li><code>CheatMobileSheet.test.svelte.ts</code>: opens <code>&lt;dialog&gt;</code> with <code>showModal</code>,
+  renders numbered list, Esc closes.</li>
+</ul>
+<h3 id="e2e-playwright">E2E (Playwright)<a class="headerlink" href="#e2e-playwright" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>cheat-overlay-landing.spec.ts</code>:</li>
+<li>Visit <code>/</code>, click CHEAT FAB.</li>
+<li>Assert callouts visible (<code>role=note</code> count matches <code>landing.ts</code>).</li>
+<li>Scroll page; assert callout positions update (use <code>boundingBox()</code>
+    before/after).</li>
+<li><strong>Click-through assertion</strong>: with overlay open, click an
+    underlying sortable column header (e.g. the Score column);
+    assert the page action occurs (URL <code>?sort=</code> updates,
+    <code>aria-sort</code> flips) AND the overlay remains present. This locks
+    in the "page stays usable" promise.</li>
+<li>Press Esc; assert overlay gone, FAB unpressed.</li>
+<li><code>cheat-overlay-mobile.spec.ts</code>: three viewports <code>375x667</code> (phone),
+  <code>900x800</code> (tablet), and <code>1024x768</code> (boundary). All three must open
+  <code>&lt;dialog&gt;</code> (mobile sheet), NOT the desktop overlay. Asserts no SVG
+  arrows, X closes.</li>
+<li><code>cheat-overlay-desktop-min.spec.ts</code>: viewport <code>1025x768</code>; click FAB;
+  assert desktop overlay (not dialog) opens. Confirms the<blockquote>
+<p>=1025 cutoff.</p>
+</blockquote>
+</li>
+</ul>
+<h3 id="accessibility-tests">Accessibility tests<a class="headerlink" href="#accessibility-tests" title="Permanent link">&para;</a></h3>
+<ul>
+<li>axe-core via Playwright on <code>/</code> with overlay open. Expect 0
+  violations.</li>
+</ul>
+<h2 id="risks">Risks<a class="headerlink" href="#risks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Callout rotation breaks <code>getBoundingClientRect</code> collision math</td>
+<td>Compute collision on rotated bounding box (use rotated rect coords). Tests cover ±3 degree cases</td>
+</tr>
+<tr>
+<td>Sticky table headers cause arrow drift on scroll</td>
+<td>Targets resolved fresh per redraw; sticky elements report current rect correctly</td>
+</tr>
+<tr>
+<td>User sorts column while overlay open and the row 1 changes</td>
+<td>Acceptable and intended (annotation says "this row's model"). Re-evaluate template substitution on each sort change. Selector-based binding hands a new element on re-render</td>
+</tr>
+<tr>
+<td>Off-screen targets that become visible mid-scroll need to fade IN</td>
+<td><code>transition: opacity 200ms</code> on each callout; <code>visible</code> flag drives opacity</td>
+</tr>
+<tr>
+<td>Many annotations on small viewports cause callouts to pile up</td>
+<td>Collision push has 80px max; v1 caps page registry at 6 callouts. Over-spec'd registry triggers a runtime warning + test</td>
+</tr>
+<tr>
+<td>Empty filter (e.g. <code>?category=easy</code> returning 0 rows) means the worked-example row callout silently disappears while column callouts remain</td>
+<td>Acceptable, but requires implementation discipline: <code>+page.svelte</code> must keep <code>LeaderboardTable</code> (or at minimum its <code>&lt;thead&gt;</code>) mounted inside the <code>data-cheat-scope</code> wrapper even when <code>data.leaderboard.data.length === 0</code>, so column header anchors still resolve. Current <code>+page.svelte:119-125</code> swaps out the table entirely on empty results; the implementation must change to render the empty-state message ABOVE or BESIDE a still-mounted table header. Tests cover both populated and empty-result cases.</td>
+</tr>
+<tr>
+<td><code>CheatButton</code> ships in the main bundle on every page (overlay/sheet/registry are dynamically imported)</td>
+<td>Accepted cost. The button is small (~1KB minified+gzipped). It must NOT statically import <code>CheatOverlay</code>, <code>CheatMobileSheet</code>, <code>compute-layout</code>, or any annotation registry. Lazy-load the appropriate presentation component on first click: <code>ts if (window.matchMedia('(min-width: 1025px)').matches) { const { default: CheatOverlay } = await import('./CheatOverlay.svelte'); /* mount/open overlay */ } else { const { default: CheatMobileSheet } = await import('./CheatMobileSheet.svelte'); /* mount/open sheet */ }</code> Annotation imports happen inside the lazy-loaded overlay/sheet path.</td>
+</tr>
+<tr>
+<td>First-click latency on dynamic import of <code>CheatOverlay</code></td>
+<td>Pre-warm via <code>&lt;link rel="modulepreload"&gt;</code> on the page that hosts <code>CheatButton</code>. Adds the import to browser cache without executing. v1 ships without preload; if user reports lag, add in a follow-up.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="out-of-scope-v1">Out of Scope (v1)<a class="headerlink" href="#out-of-scope-v1" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Step-by-step variant. Would require a tour state machine.</li>
+<li>Per-user dismissal memory. Pure opt-in chosen.</li>
+<li>Per-callout deep links (<code>/?cheat=score</code>). Future add for sharing
+  explanations.</li>
+<li>Internationalization. Copy is plain English in the registry; future
+  i18n loop wraps with <code>t(...)</code>.</li>
+<li>Analytics integration. Telemetry hook stubbed, wired in a follow-up.</li>
+<li><code>/compare</code> and <code>/families/[slug]</code> coverage. Existing MetricInfo plus
+  <code>/about</code> covers them. Add registries later if traffic warrants.</li>
+</ul>
+<h2 id="decisions-recorded">Decisions Recorded<a class="headerlink" href="#decisions-recorded" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Scope</strong>: <code>/</code> (landing) plus <code>/models/[...slug]</code> only.</li>
+<li><strong>Style</strong>: static annotated overlay (no step-by-step, no
+  hover-reveal).</li>
+<li><strong>Depth</strong>: column callouts plus a worked-example row.</li>
+<li><strong>Visual</strong>: sticky-note yellow, dashed orange arrows, ±3° rotation.</li>
+<li><strong>Position</strong>: red FAB bottom-right, no dim.</li>
+<li><strong>Dismiss</strong>: X, Esc, or FAB toggle. No outside-click dismissal
+  since the page remains live/click-through underneath.</li>
+<li><strong>Mobile</strong>: native <code>&lt;dialog&gt;</code> sheet with numbered list (no arrows).
+  Threshold: desktop overlay &gt;=1025px; mobile sheet &lt;=1024px
+  (matches existing layout breakpoint at <code>max-width: 1024px</code>). Mobile
+  uses <code>showModal()</code> for true browser-managed focus trap; desktop is
+  non-modal scoped focus.</li>
+<li><strong>Persistence</strong>: pure opt-in, no localStorage flag.</li>
+<li><strong>Architecture</strong>: hand-rolled Svelte component plus pure layout
+  helper plus data registry. Pure helper holds zero DOM knowledge;
+  resolution lives in component-side <code>resolveTargets</code>. No new
+  dependencies.</li>
+<li><strong>Reactivity</strong>: passive scroll listener + ResizeObserver +
+  MutationObserver + <code>afterNavigate</code> hook + rAF debounce.</li>
+<li><strong>Accessibility</strong>: portal-mounted overlay, focus scoped to overlay
+  controls (not trapped to page), <code>aria-hidden</code>/<code>tabindex</code> co-managed
+  for off-viewport callouts, native <code>&lt;dialog&gt;</code> on mobile with
+  explicit backdrop click handler, axe-core in CI.</li>
+<li><strong>Click-through</strong>: <code>pointer-events: none</code> on layer/SVG/callouts;
+  <code>pointer-events: auto</code> only on the X close button.</li>
+<li><strong>Body markup</strong>: plain text only, escaped by default. Optional
+  <code>bodyPrefix</code> for emphasis. No <code>{@html}</code> sink.</li>
+<li><strong>Selectors</strong>: <code>data-cheat="..."</code> anchors only. Never <code>data-test</code>
+  or styling classes.</li>
+<li><strong>MetricInfo coexistence</strong>: opening CHEAT closes any open
+  MetricInfo <code>&lt;details&gt;</code> via document-level <code>cheat:open</code> event.</li>
+<li><strong>Mount points</strong>: <code>+page.svelte</code> per route. Not <code>+layout.svelte</code>
+  (would scope to all routes).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

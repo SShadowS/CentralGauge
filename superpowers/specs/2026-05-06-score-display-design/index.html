@@ -1,0 +1,3211 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-05-06-score-display-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Score Display Unification - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#score-display-unification" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Score Display Unification
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#audience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Audience
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metric-definition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metric Definition
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Metric Definition">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#primary-pass_at_n-new-strict-semantics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Primary: pass_at_n (new strict semantics)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filter-classification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filter Classification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#denominator-by-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Denominator by Scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sort-order-deterministic-all-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sort Order (deterministic, all surfaces)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edge-cases" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edge Cases
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#retained-drill-down-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Retained Drill-Down Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#confidence-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Confidence Interval
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-contract-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API Contract Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="API Contract Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#default-sort-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default Sort Flip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sort-field-whitelist-server-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sort-Field Whitelist (server contract)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#field-payload-sort-field-alignment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field-Payload / Sort-Field Alignment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#field-changes-pr1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field Changes (PR1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#endpoints-touched-read-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Endpoints Touched (read-only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#helper-scope-propagation-model-aggregatests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Helper Scope Propagation (model-aggregates.ts)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-invalidation-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache Invalidation Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#time-series-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time-Series Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ui-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UI Changes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="UI Changes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#herochart-landing-hero" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        HeroChart (landing hero)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leaderboardtable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LeaderboardTable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cross-sectional-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Sectional Charts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#time-series-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Time-Series Charts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#set-boundary-policy-on-trajectory-charts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set-Boundary Policy on Trajectory Charts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-surfaces-audited-must-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Surfaces (audited, must flip)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#other-tables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other Tables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#og-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OG Images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#url-backcompat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        URL Backcompat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backwards-compatibility-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backwards Compatibility &amp; Migration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Backwards Compatibility &amp; Migration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#field-naming-strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Field-Naming Strategy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollout-sequence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollout Sequence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#documentation-updates-pr1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Documentation Updates (PR1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test Surface
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Test Surface">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#unit-server-vitest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unit / Server (Vitest)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#component-vitest-svelte" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component (Vitest + Svelte)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#e2e-playwright" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        E2E (Playwright)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#property-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Property Test
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#observability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Observability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Out of Scope
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-recorded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions Recorded
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-05-06-score-display-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="score-display-unification">Score Display Unification<a class="headerlink" href="#score-display-unification" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-05-06
+<strong>Status:</strong> Design. Awaiting user spec review.</p>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>The CentralGauge site currently presents two different rank orders for the
+same data:</p>
+<ul>
+<li><code>HeroChart</code> (landing-page bar list) sorts by per-task pass rate
+  <code>(p1 + p2_only) / tasks_attempted_distinct</code>.</li>
+<li><code>LeaderboardTable</code> (default sort) sorts by <code>avg_score</code>, which is the
+  per-attempt mean of <code>results.score</code>.</li>
+</ul>
+<p>These metrics legitimately diverge. A model that fails attempt 1 then passes
+attempt 2 carries a "0" row that drags <code>avg_score</code> down even though the model
+ultimately solves the task. Readers asked which ranking to trust.</p>
+<p>CLAUDE.md already documents the divergence: "Leaderboard <code>avg_score</code> is
+per-attempt; local bench summary's Score column is per-task. They diverge.
+Same data, different metric." The current design picks <strong>one</strong> metric and
+applies it everywhere.</p>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>One headline metric across every surface (hero, tables, charts, OG images,
+  <code>/about</code> copy).</li>
+<li>Rank order matches visual order on the hero bars.</li>
+<li>Fair denominator: a model's score reflects its performance on the entire
+  task set, not on the subset it chose to attempt.</li>
+<li>Drill-down metrics (per-attempt mean, pass@1) remain available for
+  practitioners.</li>
+<li>Two-PR rollout. PR1 makes a deliberate semantic change to canonical
+  <code>pass_at_n</code> and <code>pass_at_1</code> and ships a one-release deprecated alias
+  (<code>pass_at_n_per_attempted</code>) for any consumer holding the old
+  denominator. PR2 removes the alias. The release is breaking by
+  design; the alias is the migration courtesy.</li>
+</ul>
+<h2 id="non-goals">Non-Goals<a class="headerlink" href="#non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Bench-side score-writing changes. Per-attempt rows continue unchanged.</li>
+<li>New composite scoring schemes (e.g. <code>p1 + 0.5 * p2</code>).</li>
+<li>Time-decay or freshness weighting on the leaderboard.</li>
+<li>Required D1 schema migrations. PR1 ships pure read-side aggregate
+  changes. Optional index-only migration (<code>idx_tasks_set_difficulty</code>,
+  <code>idx_tasks_set_category</code>) is a separate follow-up gated on
+  <code>denominator_query</code> ServerTimer measurements.</li>
+</ul>
+<h2 id="audience">Audience<a class="headerlink" href="#audience" title="Permanent link">&para;</a></h2>
+<p>User survey: 90% landing-page visitors who want one obvious "who is best,"
+10% practitioners drilling into cost/latency/methodology. The headline metric
+must be legible at a glance; secondary metrics are surfaced through column
+expansion and dedicated drill-down pages.</p>
+<h2 id="architecture-overview">Architecture Overview<a class="headerlink" href="#architecture-overview" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>| D1                                                           |
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>|   results.score (per-attempt 0..1)                           |
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>|   task_sets.task_count + tasks (denominator source)           |
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                  |
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>                  v (existing aggregate SQL extended)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>| Aggregate compute (server)                                   |
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>|   leaderboard.ts, model-aggregates.ts, families, compare     |
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>|   semantic shift: pass_at_n + pass_at_1 = strict (per-set)   |
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>|   adds: denominator (transparency)                           |
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>|   adds: pass_at_n_per_attempted (deprecated alias of legacy) |
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>|   keeps: avg_score (per-attempt mean, drill-down)            |
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                  |
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                  v (cached via versioned named cache keys)
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>| API responses (/api/v1/*)                                    |
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>|   pass_at_n (strict) on every aggregate row + bucket         |
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>|   pass_at_n_per_attempted (deprecated alias) for one release |
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>|   avg_score retained for drill-down                          |
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>                  |
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>                  v
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>+--------------------------------------------------------------+
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>| UI (Svelte components, site-wide)                            |
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>|   &quot;Score&quot; header = pass_at_n (strict)                        |
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>|   Default sort = pass_at_n desc, tiebreak pass_at_1 desc     |
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>|   avg_score demoted, labeled &quot;Avg attempt score&quot;             |
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>|   Chart Y-axes = pass_at_n (strict)                          |
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>+--------------------------------------------------------------+
+</code></pre></div>
+<p>The change is purely read-side. No DB migration. No bench/ingest changes.</p>
+<h2 id="metric-definition">Metric Definition<a class="headerlink" href="#metric-definition" title="Permanent link">&para;</a></h2>
+<h3 id="primary-pass_at_n-new-strict-semantics">Primary: <code>pass_at_n</code> (new strict semantics)<a class="headerlink" href="#primary-pass_at_n-new-strict-semantics" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>              p1 + p2_only
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>pass_at_n  =  -------------
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>              denominator
+</code></pre></div>
+<p>Where:</p>
+<ul>
+<li><code>p1</code> = distinct tasks the model passed on attempt 1 within the
+  active filter scope. Active filters: <code>set</code> ∩ <code>category</code> ∩
+  <code>difficulty</code> (task-scope) plus <code>tier</code> ∩ <code>since</code> (run-scope filters
+  on which runs contribute). <code>family</code> filters which model rows are
+  surfaced and does not affect any single model's numerator.</li>
+<li><code>p2_only</code> = distinct tasks passed on attempt 2 <em>but failed attempt 1</em>,
+  same scope as <code>p1</code>.</li>
+<li><code>denominator</code> = count of tasks in scope. Definition depends on filter
+  combination (see "Denominator by Scope" below).</li>
+</ul>
+<p>Range: <code>0..1</code> internally, multiplied by 100 for display (matching the
+existing <code>avg_score</code> display scale).</p>
+<h3 id="filter-classification">Filter Classification<a class="headerlink" href="#filter-classification" title="Permanent link">&para;</a></h3>
+<p><code>/api/v1/leaderboard</code> accepts six filters (<code>set</code>, <code>category</code>,
+<code>difficulty</code>, <code>family</code>, <code>tier</code>, <code>since</code>). They divide into two classes:</p>
+<ul>
+<li><strong>Task-scope filters</strong> (change the denominator):</li>
+<li><code>set</code>: selects the <code>task_set_hash</code>.</li>
+<li><code>category</code>: restricts to tasks in a given category.</li>
+<li><code>difficulty</code>: restricts to tasks of a given difficulty.</li>
+<li><strong>Run-scope filters</strong> (filter rows in <code>runs</code>/<code>results</code>, do <strong>not</strong>
+  change the denominator):</li>
+<li><code>family</code>: model-level filter; selects which models to display.</li>
+<li><code>tier</code>: run quality. Schema allows <code>claimed</code>, <code>verified</code>,
+    <code>trusted</code>. The API parser whitelists <code>verified</code>, <code>claimed</code>, <code>all</code>
+    today. PR1 adds <code>trusted</code> to the API whitelist so it can be
+    queried directly. <code>tier=all</code> continues to sum all three tiers
+    (the SQL clause is omitted entirely for <code>all</code>).</li>
+<li><code>since</code>: time window on <code>runs.started_at</code>; selects which runs count.</li>
+</ul>
+<p>Critical semantic: <code>since</code> does <strong>not</strong> alter the denominator. A
+"how many tasks in scope" question is a function of the <em>task set</em>, not
+of the time window we choose to look at runs in. A model that ran a
+single task during the window and passed it scores as
+<code>pass_at_n = 1/total_in_set</code>, not <code>1/1</code>. This matches user intent: the
+filter answers "how did models do recently on this task set," not "how
+did models do on tasks they happened to attempt recently."</p>
+<h3 id="denominator-by-scope">Denominator by Scope<a class="headerlink" href="#denominator-by-scope" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Filter combination</th>
+<th>Denominator source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>set=&lt;hash&gt;</code>, no <code>category</code>, no <code>difficulty</code></td>
+<td><code>task_sets.task_count WHERE hash=?</code> (denormalized, single-row lookup)</td>
+</tr>
+<tr>
+<td><code>set=&lt;hash&gt;</code> + <code>category</code> and/or <code>difficulty</code></td>
+<td><code>SELECT COUNT(*) FROM tasks t [LEFT JOIN task_categories tc ON tc.id = t.category_id] WHERE t.task_set_hash=? AND [t.difficulty=? AND] [tc.slug=?]</code> (joins added per active filter)</td>
+</tr>
+<tr>
+<td><code>set=current</code></td>
+<td>Resolved to current <code>task_sets.hash</code> first, then row 1 or 2 above</td>
+</tr>
+<tr>
+<td><code>set=all</code></td>
+<td><strong>Disallowed for strict-metric endpoints in PR1.</strong> Returns 400 <code>invalid_set_for_metric</code>. Cross-set aggregation has no single denominator. May be re-added in a future spec with explicit cross-set semantics.</td>
+</tr>
+<tr>
+<td>Any combination + <code>family</code>, <code>tier</code>, <code>since</code></td>
+<td>Run-scope filters do not affect the denominator. They only narrow the runs/results that contribute to <code>p1</code> and <code>p2_only</code> numerators.</td>
+</tr>
+</tbody>
+</table>
+<p>The same scope filter MUST be applied to the <code>p1</code> and <code>p2_only</code>
+correlated subqueries. The current implementation
+(<code>leaderboard.ts:103-118</code>) leaves them unfiltered; this spec corrects
+that as part of PR1.</p>
+<h3 id="sort-order-deterministic-all-surfaces">Sort Order (deterministic, all surfaces)<a class="headerlink" href="#sort-order-deterministic-all-surfaces" title="Permanent link">&para;</a></h3>
+<ol>
+<li><code>pass_at_n</code> desc (new strict semantics).</li>
+<li><code>pass_at_1 = p1 / denominator</code> desc (tiebreak. Rewards first-try
+   quality when total pass rate ties).</li>
+<li><code>model.id</code> desc (final tiebreak. Stable across renders, no flicker on
+   identical numbers).</li>
+</ol>
+<p>This order is enforced <strong>in SQL before LIMIT</strong>, not in TypeScript
+post-processing. The current code applies <code>ORDER BY avg_score ... LIMIT ?</code>
+in SQL and re-sorts in TS after fetch (<code>leaderboard.ts:250-294</code>). With
+more models than the limit, the SQL top-N can drop a row that the
+post-sort would have promoted. The same SQL-before-LIMIT rule applies
+to <strong>every</strong> field in the Sort-Field Whitelist (<code>pass_at_n</code>,
+<code>pass_at_1</code>, <code>avg_score</code>, <code>cost_per_pass_usd</code>, <code>latency_p95_ms</code>,
+<code>pass_at_n_per_attempted</code>). The current TS post-sort (<code>mapped.sort(...)</code>
+for <code>pass_at_1</code>, <code>cost_per_pass_usd</code>, <code>latency_p95_ms</code>) is replaced by
+a switch that builds the appropriate SQL ORDER BY expression per
+requested sort field. Every variant ends with <code>model.id DESC</code> as a
+deterministic final tiebreaker.</p>
+<h3 id="edge-cases">Edge Cases<a class="headerlink" href="#edge-cases" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>denominator = 0</code> (set is empty, or filter combination matches no tasks)
+  → endpoint returns empty result set. No row with <code>pass_at_n = 0</code>
+  fabricated. Renderer shows empty state.</li>
+<li>Model with <strong>zero rows</strong> in the filtered scope (no runs against any
+  in-scope task) → omitted from leaderboard entirely. PR1 keeps the
+  current INNER JOIN behavior (<code>leaderboard.ts:128-136</code>); a model that
+  never ran against this set/category/difficulty is not surfaced as
+  "ranks last with 0%." Adding such models would require LEFT JOIN +
+  null-handling for cost, latency, CI, last_run_at. Out of scope for
+  this design. May be revisited under a "complete coverage matrix"
+  feature.</li>
+<li>Model with <strong>partial coverage</strong> (≥1 run in scope, but did not attempt
+  every in-scope task) → ranked normally. Unattempted tasks count as
+  failures in the strict denominator. Bar shows green (p1) + amber
+  (p2_only) + grey (failed + unattempted) summing to 100%. Coverage
+  subtitle "X/Y attempted" rendered when partial.</li>
+</ul>
+<h3 id="retained-drill-down-metrics">Retained Drill-Down Metrics<a class="headerlink" href="#retained-drill-down-metrics" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>avg_score</code> (= <code>AVG(results.score)</code>, per-attempt). Demoted column in the
+  table. Retained in API. Never default sort, never chart axis.</li>
+<li><code>pass_at_1</code> (new strict semantics) used for tiebreaker. Already implicit
+  in the stacked bar's first-try segment.</li>
+<li><code>pass_at_n_per_attempted</code> (deprecated alias of legacy <code>pass_at_n</code> value)
+  retained for one release as the migration hint for any external
+  consumer relying on the old denominator. See "Field-Naming Strategy."</li>
+</ul>
+<h3 id="confidence-interval">Confidence Interval<a class="headerlink" href="#confidence-interval" title="Permanent link">&para;</a></h3>
+<p><code>pass_rate_ci</code> is a Wilson 95% CI on the pass rate. The existing
+implementation in <code>model-aggregates.ts</code> uses
+<code>tasks_attempted_distinct</code> as the denominator (per-task,
+per-attempted). PR1 must switch the CI denominator to the strict
+denominator (the same scope-aware count used for <code>pass_at_n</code>) so the
+CI reads as the confidence band on the headline number, not on a
+quietly-different metric.</p>
+<p>Numerator: <code>tasks_passed_attempt_1 + tasks_passed_attempt_2_only</code>
+(unchanged).</p>
+<p>Denominator: scope-aware (<code>task_sets.task_count</code> or
+filtered <code>COUNT(*) FROM tasks</code>), same as <code>pass_at_n</code>.</p>
+<p>PR1 recomputes <code>pass_rate_ci</code> on the same strict, scope-aware
+denominator as <code>pass_at_n</code> so the CI aligns with the headline metric.
+Width relative to the previous per-attempted CI is not strictly
+predictable for Wilson intervals; the goal is alignment, not "wider"
+or "narrower."</p>
+<h2 id="api-contract-changes">API Contract Changes<a class="headerlink" href="#api-contract-changes" title="Permanent link">&para;</a></h2>
+<h3 id="default-sort-flip">Default Sort Flip<a class="headerlink" href="#default-sort-flip" title="Permanent link">&para;</a></h3>
+<p><code>/api/v1/leaderboard</code> default <code>sort</code> changes from <code>avg_score:desc</code> to
+<code>pass_at_n:desc</code>. Existing <code>?sort=avg_score:desc</code> continues to work
+(column still exists, served as the per-attempt mean drill-down).</p>
+<h3 id="sort-field-whitelist-server-contract">Sort-Field Whitelist (server contract)<a class="headerlink" href="#sort-field-whitelist-server-contract" title="Permanent link">&para;</a></h3>
+<p>PR1 documents the explicit list of server-honored sort fields:</p>
+<table>
+<thead>
+<tr>
+<th>Sort field</th>
+<th>Order direction</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pass_at_n</code></td>
+<td><code>desc</code> (default) / <code>asc</code></td>
+<td>Primary metric. Strict semantics. SQL ORDER BY before LIMIT.</td>
+</tr>
+<tr>
+<td><code>pass_at_1</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td>First-try strict. Used as default tiebreaker.</td>
+</tr>
+<tr>
+<td><code>avg_score</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td>Drill-down (per-attempt mean).</td>
+</tr>
+<tr>
+<td><code>cost_per_pass_usd</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td>Existing.</td>
+</tr>
+<tr>
+<td><code>latency_p95_ms</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td>Existing.</td>
+</tr>
+<tr>
+<td><code>pass_at_n_per_attempted</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td><strong>Deprecated</strong>; one-release migration aid.</td>
+</tr>
+<tr>
+<td><code>avg_cost_usd</code></td>
+<td><code>desc</code> / <code>asc</code></td>
+<td>Per-task total cost. Promoted from UI-only to server-honored in PR1.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>UI ↔ server sort alignment.</strong> Today, <code>LeaderboardTable.svelte</code> renders
+clickable headers for <code>model</code>, <code>avg_cost_usd</code>, and <code>last_run_at</code> that
+the server does not honor; clicks silently fall back to the default
+sort. PR1 closes this drift by making the UI affordances 1:1 with the
+server whitelist:</p>
+<ul>
+<li>Headers backed by whitelisted server-honored fields remain sortable.</li>
+<li>Headers without a corresponding server-honored field
+  (<code>model</code>, <code>last_run_at</code>) become <strong>non-sortable</strong> in PR1 (rendered as
+  static <code>&lt;th&gt;</code> text, no click affordance).</li>
+<li><code>avg_cost_usd</code> becomes server-honored and added to the whitelist
+  alongside <code>cost_per_pass_usd</code>. Concrete: a leaderboard sort by total
+  per-task cost.</li>
+</ul>
+<p>After PR1 every clickable header drives a real, server-respected sort.</p>
+<p>Sort <em>direction</em> is honored. Today's <code>parseQuery</code> discards direction
+(<code>split(':')[0]</code>). PR1 corrects this.</p>
+<h3 id="field-payload-sort-field-alignment">Field-Payload / Sort-Field Alignment<a class="headerlink" href="#field-payload-sort-field-alignment" title="Permanent link">&para;</a></h3>
+<p><code>sort=pass_at_n</code> orders rows by the same number that ships in the
+response's <code>pass_at_n</code> field. Both carry strict semantics from PR1
+onward. The deprecated legacy denominator is exposed only under the
+explicit <code>pass_at_n_per_attempted</code> field name. No invariant violation:
+sort field name = response field name = same metric definition.</p>
+<h3 id="field-changes-pr1">Field Changes (PR1)<a class="headerlink" href="#field-changes-pr1" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1">// LeaderboardRow + ModelRow + FamilyRow + CompareRow</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1">// SEMANTICS-CHANGED from PR1 onward (canonical names, strict denominator):</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nx">pass_at_n</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w">               </span><span class="c1">// 0..1, primary headline (was per-attempted)</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nx">pass_at_1</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w">               </span><span class="c1">// 0..1, tiebreaker (was per-attempted)</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="c1">// NEW additive fields:</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nx">denominator</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w">             </span><span class="c1">// exposed denominator for transparency</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="c1">// DEPRECATED ALIAS (one-release migration):</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="nx">pass_at_n_per_attempted</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="c1">// @deprecated. Legacy per-attempted value.</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="c1">// PRESERVED unchanged:</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="nx">avg_score</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w">               </span><span class="c1">// per-attempt mean (drill-down only)</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="nx">tasks_passed_attempt_1</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="nx">tasks_passed_attempt_2_only</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="nx">tasks_attempted_distinct</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="nx">pass_rate_ci</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">lower</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="p">;</span><span class="w"> </span><span class="nx">upper</span><span class="o">:</span><span class="w"> </span><span class="kt">number</span><span class="w"> </span><span class="p">};</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="c1">// ...</span>
+</code></pre></div>
+<p>PR1 changes the <strong>meaning</strong> of <code>pass_at_n</code> and <code>pass_at_1</code> to strict
+semantics on the canonical names. The old per-attempted value lives only
+under the explicit <code>pass_at_n_per_attempted</code> alias. PR2 removes the
+deprecated alias.</p>
+<p>This shape replaces the earlier <code>pass_at_n_strict</code>-suffix proposal:
+- Sort-field name and payload-field name agree from PR1 onward.
+- No <code>_strict</code> suffix ever ships, eliminating the rename-back churn.
+- External consumers see one breaking semantic change on <code>pass_at_n</code> plus
+  a one-release escape hatch (<code>pass_at_n_per_attempted</code>).</p>
+<h3 id="endpoints-touched-read-only">Endpoints Touched (read-only)<a class="headerlink" href="#endpoints-touched-read-only" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/api/v1/leaderboard</code></li>
+<li><code>/api/v1/models</code> (index)</li>
+<li><code>/api/v1/models/[...slug]</code></li>
+<li><code>/api/v1/families</code>, <code>/[slug]</code>, <code>/[slug]/diff</code></li>
+<li><code>/api/v1/compare</code></li>
+<li><code>/api/v1/categories</code> (index; no slug subroute. The
+  <code>/categories/[slug]</code> page aggregates via leaderboard query with a
+  <code>category</code> filter)</li>
+<li>Aggregate helper: <code>lib/server/model-aggregates.ts</code></li>
+</ul>
+<h3 id="helper-scope-propagation-model-aggregatests">Helper Scope Propagation (<code>model-aggregates.ts</code>)<a class="headerlink" href="#helper-scope-propagation-model-aggregatests" title="Permanent link">&para;</a></h3>
+<p><code>computeModelAggregates(...)</code> produces <code>pass_rate_ci</code>,
+<code>cost_per_pass_usd</code>, <code>latency_p95_ms</code>, and <code>pass_hat_at_n</code> for each
+leaderboard row. Today it accepts only <code>taskSetCurrent</code>
+(<code>leaderboard.ts:200-206</code>). Filtered leaderboards (by <code>category</code>,
+<code>difficulty</code>, <code>tier</code>, <code>since</code>) currently render those metrics
+<strong>unscoped</strong>, mixing scoped pass-rate with unscoped CI/cost/latency.</p>
+<p>PR1 must extend the helper signature to accept the same effective
+scope as <code>computeLeaderboard</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nx">computeModelAggregates</span><span class="p">(</span><span class="nx">db</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nx">modelIds</span><span class="p">,</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nx">taskSetHash</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">    </span><span class="c1">// resolved from set</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nx">category</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nx">difficulty</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;easy&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;medium&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;hard&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nx">tier</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;verified&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;claimed&#39;</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="s1">&#39;all&#39;</span><span class="p">,</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nx">since</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">          </span><span class="c1">// ISO date</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="c1">// ...</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="p">});</span>
+</code></pre></div>
+<p>Internal queries propagate these filters through the same JOIN clauses
+used in <code>computeLeaderboard</code>. Tests verify scope alignment per
+filter combination; this is a non-trivial slice of PR1's test
+surface (see Test Surface).</p>
+<h3 id="cache-invalidation-strategy">Cache Invalidation Strategy<a class="headerlink" href="#cache-invalidation-strategy" title="Permanent link">&para;</a></h3>
+<p>Cloudflare named caches (<code>cg-leaderboard</code>, <code>cg-summary</code>, model-aggregate
+caches) are <strong>per-colo</strong>. A <code>cache.delete()</code> loop in one worker invocation
+cannot purge globally; another colo will keep serving the stale entry
+until its 60s TTL expires.</p>
+<p>PR1 introduces <strong>versioned cache keys</strong> instead of attempting a global
+purge. Synthetic cache-key URLs gain a constant suffix:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kd">const</span><span class="w"> </span><span class="nx">CACHE_VERSION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;v2&#39;</span><span class="p">;</span><span class="w"> </span><span class="c1">// pass_at_n strict (PR1)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="kd">const</span><span class="w"> </span><span class="nx">cacheUrl</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">URL</span><span class="p">(</span><span class="nx">url</span><span class="p">.</span><span class="nx">toString</span><span class="p">());</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nx">cacheUrl</span><span class="p">.</span><span class="nx">searchParams</span><span class="p">.</span><span class="nx">set</span><span class="p">(</span><span class="s1">&#39;_cv&#39;</span><span class="p">,</span><span class="w"> </span><span class="nx">CACHE_VERSION</span><span class="p">);</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="kd">const</span><span class="w"> </span><span class="nx">cacheKey</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="ow">new</span><span class="w"> </span><span class="nx">Request</span><span class="p">(</span><span class="nx">cacheUrl</span><span class="p">.</span><span class="nx">toString</span><span class="p">(),</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">method</span><span class="o">:</span><span class="w"> </span><span class="s1">&#39;GET&#39;</span><span class="w"> </span><span class="p">});</span>
+</code></pre></div>
+<p>The <code>_cv</code> param is internal, never appears in user-facing URLs. The
+constant is bumped to <code>v3</code> on PR2 deploy. Old <code>v1</code> cache entries age out
+naturally (60s TTL).</p>
+<p>Benefits over <code>cache.delete()</code> purge:
+- No multi-colo coordination required.
+- Atomic: deploy ships new code + new cache key in one push.
+- Reversible: roll back the deploy → old code reads old <code>_cv</code> keys.
+- No admin endpoint needed.</p>
+<p>Affected cache namespaces touched by PR1: <code>cg-leaderboard</code>, <code>cg-summary</code>,
+<code>cg-model-aggregate</code> (and any other named caches caching score-shaped
+JSON). Audit during implementation.</p>
+<h3 id="time-series-endpoints">Time-Series Endpoints<a class="headerlink" href="#time-series-endpoints" title="Permanent link">&para;</a></h3>
+<p>Two distinct chart shapes:</p>
+<ul>
+<li><strong><code>FamilyTrajectoryChart</code></strong> plots a family's pass rate over generations
+  or time. Backend gains <code>pass_at_n</code> (strict) per bucket. Each bucket
+  binds to whichever <code>task_set_hash</code> was current at run time;
+  denominator is constant per hash, sourced from <code>task_sets.task_count</code>
+  for unfiltered scopes, or
+  <code>COUNT(*) FROM tasks WHERE task_set_hash=? AND &lt;filters&gt;</code> for
+  filtered scopes (joining <code>task_categories</code> when category is filtered).</li>
+<li><strong><code>TaskHistoryChart</code></strong> is per-task: shows whether a single task passed
+  or failed for each model attempt. No bucketed strict-metric shape; no
+  denominator math. The change is purely cosmetic (binary pass/fail
+  strip with attempt-number annotation), no aggregate API changes.</li>
+</ul>
+<h2 id="ui-changes">UI Changes<a class="headerlink" href="#ui-changes" title="Permanent link">&para;</a></h2>
+<h3 id="herochart-landing-hero"><code>HeroChart</code> (landing hero)<a class="headerlink" href="#herochart-landing-hero" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Sort: <code>pass_at_n</code> desc, <code>pass_at_1</code> desc, <code>model.id</code> desc.</li>
+<li>Bar segments: green = <code>p1 / denominator</code>, amber =
+  <code>p2_only / denominator</code>. Grey region (failed + unattempted) auto-sizes.</li>
+<li>Score label: <code>(pass_at_n * 100).toFixed(1)</code>.</li>
+<li>Coverage subtitle (new): <code>"42/50 attempted"</code> shown only when partial.</li>
+</ul>
+<h3 id="leaderboardtable"><code>LeaderboardTable</code><a class="headerlink" href="#leaderboardtable" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Default sort: <code>pass_at_n:desc</code>.</li>
+<li>"Score" column: <code>pass_at_n * 100</code>. <code>MetricInfo</code> tooltip explains
+  "tasks solved / tasks in scope, with up to 2 attempts."</li>
+<li>New demoted column "Avg attempt": <code>avg_score</code>. Hidden in compact density,
+  visible in comfortable. <code>MetricInfo</code> explains per-attempt mean.</li>
+<li>"Pass" column (stacked bar): unchanged shape; ratio text becomes
+  <code>(p1 + p2) / denominator</code>.</li>
+<li>CI column: unchanged.</li>
+</ul>
+<h3 id="cross-sectional-charts">Cross-Sectional Charts<a class="headerlink" href="#cross-sectional-charts" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>PerformanceVsCostChart</code>: Y-axis from <code>avg_score</code> to <code>pass_at_n * 100</code>.
+  Axis label "Pass rate (%)".</li>
+</ul>
+<h3 id="time-series-charts">Time-Series Charts<a class="headerlink" href="#time-series-charts" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>FamilyTrajectoryChart</code>: Y-axis switches to <code>pass_at_n</code> (strict).
+  Backend computes per-bucket using each bucket's <code>task_set_hash</code>.</li>
+<li><code>TaskHistoryChart</code>: replace score trace with binary pass/fail strip
+  plus attempt-number annotation. Cosmetic only, no denominator math
+  (see Time-Series Endpoints above).</li>
+</ul>
+<h3 id="set-boundary-policy-on-trajectory-charts">Set-Boundary Policy on Trajectory Charts<a class="headerlink" href="#set-boundary-policy-on-trajectory-charts" title="Permanent link">&para;</a></h3>
+<p>When a bucket spans a set promotion, render <strong>per-(bucket, set) points</strong>:
+multiple points at the boundary, one per <code>task_set_hash</code>. Add a small 4-char
+set-hash badge on the line at the promotion point, with a tooltip explaining
+the set change. Honest, low-density visual, no data loss.</p>
+<h3 id="other-surfaces-audited-must-flip">Other Surfaces (audited, must flip)<a class="headerlink" href="#other-surfaces-audited-must-flip" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/categories/[slug]/+page.svelte</code> (line 56) hardcodes
+  <code>sort="avg_score:desc"</code> on its <code>LeaderboardTable</code>. Change to
+  <code>pass_at_n:desc</code>.</li>
+<li>Same page's <code>data.meta.avg_pass_rate</code> already carries pass-rate
+  semantics (already correct shape; verify formula matches new strict
+  denominator under the active category filter).</li>
+<li><code>/api/v1/categories</code> index endpoint plus the per-category aggregator
+  feeding <code>/categories/[slug]</code> (<code>+page.server.ts</code>): apply category-scope
+  denominator rule from "Denominator by Scope" table.</li>
+</ul>
+<h3 id="other-tables">Other Tables<a class="headerlink" href="#other-tables" title="Permanent link">&para;</a></h3>
+<p><code>ModelsIndexTable</code>, <code>RunsTable</code>, <code>CompareTable</code>, <code>PerTaskResultsTable</code>,
+<code>FamiliesGrid</code>: same treatment. Headline column = <code>pass_at_n</code> (strict),
+<code>avg_score</code> demoted. <code>ScoreCell.svelte</code> formatter generalized with a
+<code>kind: 'pass_rate' | 'avg_attempt'</code> prop.</p>
+<h3 id="pages">Pages<a class="headerlink" href="#pages" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/about</code>: rewrite metrics section. Define each metric, show worked example.</li>
+<li><code>/models/[slug]</code>, <code>/families/[slug]</code>, <code>/categories/[slug]</code>, <code>/compare</code>,
+  <code>/runs/[id]</code>: headline numbers switch to <code>pass_at_n</code> (strict). Drill-down
+  sections retain <code>avg_score</code>.</li>
+</ul>
+<h3 id="og-images">OG Images<a class="headerlink" href="#og-images" title="Permanent link">&para;</a></h3>
+<p>OG endpoints exist as Worker <code>+server.ts</code> handlers
+(<code>og/models/[...slug].png</code>, <code>og/families/[slug].png</code>, <code>og/runs/[id].png</code>,
+<code>og/index.png</code>) and render dynamically per request. No R2 caching layer
+to invalidate; next request after deploy renders the new headline
+number automatically.</p>
+<p>Implementation must update the headline number rendered in each
+template to <code>pass_at_n</code> (strict semantics) and update any embedded
+denominator label.</p>
+<h3 id="url-backcompat">URL Backcompat<a class="headerlink" href="#url-backcompat" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>?sort=avg_score:desc</code> continues to work (column still present).</li>
+<li><code>?sort=pass_at_n:desc</code> continues to work, now with strict semantics. Same
+  param name, fairer number; bookmarks naturally migrate.</li>
+</ul>
+<h2 id="backwards-compatibility-migration">Backwards Compatibility &amp; Migration<a class="headerlink" href="#backwards-compatibility-migration" title="Permanent link">&para;</a></h2>
+<h3 id="field-naming-strategy">Field-Naming Strategy<a class="headerlink" href="#field-naming-strategy" title="Permanent link">&para;</a></h3>
+<p><code>pass_at_n</code> and <code>pass_at_1</code> carry strict-per-set semantics from PR1
+onward (canonical names, no <code>_strict</code> suffix). The legacy per-attempted
+denominator value lives only under <code>pass_at_n_per_attempted</code> for one
+release as a migration alias, then is removed in PR2.</p>
+<p>PR1 ships:
+- <code>pass_at_n</code> (strict, primary)
+- <code>pass_at_1</code> (strict, tiebreaker)
+- <code>denominator</code> (transparency)
+- <code>pass_at_n_per_attempted</code> (deprecated alias, one-release migration aid)
+- <code>avg_score</code> (unchanged, drill-down)</p>
+<p>PR2 removes:
+- <code>pass_at_n_per_attempted</code></p>
+<p>No field renames at any step. Consumers see one breaking semantic change
+on <code>pass_at_n</code> (in PR1) plus a planned removal of the alias (in PR2).</p>
+<h3 id="rollout-sequence">Rollout Sequence<a class="headerlink" href="#rollout-sequence" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>PR1</strong>: SQL changes (filtered-scope denominator, ORDER BY before
+   LIMIT, deprecated alias), API field changes, UI flip, cache key
+   versioning bump (<code>_cv=v2</code>), tests, docs, CLAUDE.md update.</li>
+<li>Deploy to ai.sshadows.dk via manual <code>wrangler deploy</code> (per existing
+   project convention; merge to master does not auto-deploy).</li>
+<li>Cache cutover is automatic via <code>_cv=v2</code> key suffix (no manual purge).</li>
+<li>Verify on production.</li>
+<li>Wait one release cycle (≥7 days; allows external consumers to migrate
+   off <code>pass_at_n_per_attempted</code> if any exist).</li>
+<li><strong>PR2</strong>: drop <code>pass_at_n_per_attempted</code> field. Bump cache key to
+   <code>_cv=v3</code>. External-consumer audit before merge.</li>
+</ol>
+<h3 id="documentation-updates-pr1">Documentation Updates (PR1)<a class="headerlink" href="#documentation-updates-pr1" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>/about</code> rewrite (Section 4).</li>
+<li>CLAUDE.md "Wrangler / admin API" subsection: remove the
+  "avg_score is per-attempt" caveat; document new headline metric.</li>
+<li>CHANGELOG entry naming the breaking semantic change for the deprecated
+  <code>pass_at_n</code> field.</li>
+<li>Site README touch-up if it cites <code>avg_score</code>.</li>
+<li><code>docs/site/*</code> if metrics are documented there.</li>
+</ul>
+<h2 id="test-surface">Test Surface<a class="headerlink" href="#test-surface" title="Permanent link">&para;</a></h2>
+<h3 id="unit-server-vitest">Unit / Server (Vitest)<a class="headerlink" href="#unit-server-vitest" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>tests/server/leaderboard.test.ts</code>:</li>
+<li>Strict denominator math (whole-set via <code>task_count</code>).</li>
+<li>Filtered-scope denominator (category, difficulty, both combined).</li>
+<li>Run-scope filter independence (since/family/tier do NOT alter
+    denominator; only narrow numerator runs).</li>
+<li>Tiebreaker priority: identical <code>pass_at_n</code> → <code>pass_at_1</code> decides;
+    identical both → <code>model.id</code> decides.</li>
+<li>Partial-coverage ranking (model attempted 3/4 of in-scope tasks).</li>
+<li>Empty-scope edge (<code>denominator = 0</code> → empty result, no fabricated 0%).</li>
+<li>Zero-attempt-model edge (omitted via INNER JOIN, NOT ranked-last-with-0).</li>
+<li><code>set=all</code> returns 400 with <code>invalid_set_for_metric</code>.</li>
+<li>SQL ORDER BY before LIMIT for <strong>every</strong> whitelisted sort field
+    (<code>pass_at_n</code>, <code>pass_at_1</code>, <code>avg_score</code>, <code>cost_per_pass_usd</code>,
+    <code>latency_p95_ms</code>, <code>pass_at_n_per_attempted</code>): with
+    <code>limit &lt; total models</code>, top-N matches full sort. One test per
+    field; parametrized.</li>
+<li>Sort direction (<code>desc</code> vs <code>asc</code>) honored after <code>parseQuery</code> fix.</li>
+<li><code>tests/server/model-aggregates.test.ts</code>:</li>
+<li><code>pass_at_n</code> field presence + strict value.</li>
+<li>Helper accepts and propagates filter scope (<code>category</code>,
+    <code>difficulty</code>, <code>tier</code>, <code>since</code>).</li>
+<li>Filtered leaderboard rows show <strong>scoped</strong> <code>pass_rate_ci</code>,
+    <code>cost_per_pass_usd</code>, <code>latency_p95_ms</code> (regression test for the
+    pre-PR1 behavior where these were unscoped).</li>
+<li><code>tests/api/*</code>: assertion shifts from <code>avg_score</code> default sort to
+  <code>pass_at_n</code> default. New assertions for <code>pass_at_n_per_attempted</code>
+  deprecated alias presence and <code>denominator</code> field presence. Add a
+  test for <code>tier=trusted</code> (post-PR1 whitelist addition).</li>
+<li><code>tests/routes/categories-slug.test.ts</code> (new):</li>
+<li><code>/categories/[slug]</code> page server load returns rows sorted
+    <code>pass_at_n:desc</code>, not <code>avg_score:desc</code>.</li>
+<li><code>data.meta.avg_pass_rate</code> uses the strict, category-scoped
+    denominator (<code>COUNT(*) FROM tasks WHERE task_set_hash=? AND
+    category_id=?</code>), not per-attempted.</li>
+<li>Verifies the source file change at <code>+page.svelte:56</code> from
+    <code>sort="avg_score:desc"</code> to <code>sort="pass_at_n:desc"</code> reflects in
+    rendered output.</li>
+</ul>
+<h3 id="component-vitest-svelte">Component (Vitest + Svelte)<a class="headerlink" href="#component-vitest-svelte" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>LeaderboardTable.test.svelte.ts</code>: column rename, default sort, demoted
+  column visibility per density mode.</li>
+<li><code>HeroChart.test.svelte.ts</code> (new): rank-order matches API order, bar
+  segment widths sum to <code>pass_at_n</code>, partial-coverage subtitle.</li>
+<li><code>PerformanceVsCostChart.test.svelte.ts</code>: Y-axis values from new field.</li>
+<li><code>FamilyTrajectoryChart.test.svelte.ts</code>: set-boundary point doubling at
+  promotion.</li>
+</ul>
+<h3 id="e2e-playwright">E2E (Playwright)<a class="headerlink" href="#e2e-playwright" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Landing page rank-order screenshot test.</li>
+<li>Sort header click cycle (asc / desc / back-to-default).</li>
+<li>Deep-link <code>?sort=avg_score:desc</code> still functional.</li>
+</ul>
+<h3 id="property-test">Property Test<a class="headerlink" href="#property-test" title="Permanent link">&para;</a></h3>
+<p>For any <code>(model, task_set)</code> evaluated <strong>with the same scope</strong> (the
+scope filters apply to numerator and to both denominators identically),
+<code>pass_at_n (strict) ≤ pass_at_n_per_attempted</code>. The strict denominator
+(scope task count) is always ≥ the per-attempted denominator (scope
+tasks the model touched), so the strict ratio is always ≤ the
+per-attempted ratio. The invariant is a cheap regression net but only
+holds within a single scope; cross-scope comparisons are not
+well-defined.</p>
+<h2 id="observability">Observability<a class="headerlink" href="#observability" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>ServerTimer</code> spans: add <code>pass_at_n_subquery</code> segment in leaderboard +
+  family aggregates.</li>
+<li>Cache hit/miss already tracked via Server-Timing header; watch first
+  24h for cache thrash after deploy.</li>
+<li>Filtered-scope denominator query (<code>COUNT(*) FROM tasks WHERE
+  task_set_hash=? AND ...</code>) gets its own <code>denominator_query</code> span so
+  hotpaths are visible.</li>
+</ul>
+<h2 id="risks">Risks<a class="headerlink" href="#risks" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>External consumer reads old <code>pass_at_n</code> semantics silently</td>
+<td>One-release deprecated alias; CHANGELOG entry; CLAUDE.md update</td>
+</tr>
+<tr>
+<td>Cache mismatch window after deploy (60s TTL)</td>
+<td>Versioned cache key <code>_cv</code> bump on deploy; old keys age out naturally</td>
+</tr>
+<tr>
+<td>Partial-coverage models drop on the leaderboard, looks like a regression</td>
+<td><code>/about</code> explainer + coverage subtitle on rows</td>
+</tr>
+<tr>
+<td>Promotion-bucket double-points confuse trajectory readers</td>
+<td>4-char set-hash badge + tooltip</td>
+</tr>
+<tr>
+<td>Subquery cost on time-series charts at scale</td>
+<td><code>ServerTimer</code> measurement; fall back to materialized <code>model_set_summary</code> view if hot</td>
+</tr>
+<tr>
+<td>Tests asserting old default sort skip silently when <code>unit-and-build</code> fails</td>
+<td>Watch downstream e2e/lighthouse runs after fix lands (CLAUDE.md Site CI note)</td>
+</tr>
+<tr>
+<td>Filtered-scope subquery (category × difficulty) cost balloons</td>
+<td><code>denominator_query</code> ServerTimer span; <code>tasks</code> table PK on <code>(task_set_hash, task_id)</code> covers the prefix lookup but not <code>category_id</code>/<code>difficulty</code> predicates. Add <code>idx_tasks_set_difficulty</code> and <code>idx_tasks_set_category</code> if measurement shows it.</td>
+</tr>
+<tr>
+<td><code>set=all</code> users hit 400 errors with no migration path</td>
+<td>Add an explanatory error body suggesting <code>set=current</code> or a specific hash; document in <code>/about</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="out-of-scope">Out of Scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Bench-side score-writing changes.</li>
+<li>Ingest pipeline, sigchain, R2 blob layer.</li>
+<li>Required D1 schema migrations (see Non-Goals; index-only follow-up
+  is its own PR gated on measurement).</li>
+<li>New scoring schemes (composite, weighted, time-decay).</li>
+<li>Materialized views (Approach 3 from brainstorming). Kept as fallback if
+  read-time subquery cost becomes a problem.</li>
+</ul>
+<h2 id="decisions-recorded">Decisions Recorded<a class="headerlink" href="#decisions-recorded" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Headline metric</strong>: <code>pass_at_n</code> with strict semantics
+  (eventually-passes rate, scope-aware denominator).</li>
+<li><strong>Tiebreaker</strong>: <code>pass_at_1</code> desc, then <code>model.id</code> desc.</li>
+<li><strong>Drill-down retained</strong>: <code>avg_score</code>, demoted column, retained in API.</li>
+<li><strong>Scope</strong>: site-wide (every surface, every chart type, OG images).</li>
+<li><strong>Denominator policy</strong>: <code>task_sets.task_count</code> for unfiltered scopes;
+  <code>COUNT(*) FROM tasks</code> with filters for filtered scopes (joining
+  <code>task_categories</code> when category is filtered). <code>set=all</code> rejected for
+  strict-metric endpoints.</li>
+<li><strong>Charts</strong>: cross-sectional + time-series both flip. Time-series uses
+  per-(bucket, set) points at promotion boundaries.</li>
+<li><strong>API naming</strong>: <code>pass_at_n</code> reclaims its canonical name with strict
+  semantics in PR1. Legacy lives only under deprecated alias
+  <code>pass_at_n_per_attempted</code>. PR2 removes the alias. No <code>_strict</code> suffix
+  ever ships.</li>
+<li><strong>Sort/payload alignment</strong>: same metric definition for sort field name
+  and response field name from PR1 onward.</li>
+<li><strong>SQL ordering</strong>: pass-rate expression in SQL ORDER BY before LIMIT.
+  No post-query re-sort. Sort direction honored.</li>
+<li><strong>Cache invalidation</strong>: <code>_cv</code> cache-key suffix, bumped per release.
+  No global purge attempted (per-colo named caches make it impossible).</li>
+<li><strong>Approach</strong>: compute the metric in the API SQL layer (single source
+  of truth, cache-friendly).</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

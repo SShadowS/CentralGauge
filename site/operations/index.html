@@ -1,0 +1,4990 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/site/operations/">
+      
+      
+        <link rel="prev" href="../design-system/">
+      
+      
+        <link rel="next" href="../lifecycle/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Operations - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#site-operations-runbook" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Operations
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set-rotate-the-rum-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set / rotate the RUM token
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flag-flip-procedure-zero-code-change-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flag-flip procedure (zero-code-change deploy)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canary-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary review
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canary review">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cmd-shift-d-conflict-and-nav-button-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cmd-shift-d conflict and Nav-button fallback
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rum-review-cadence-weekly-while-in-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM review cadence (weekly while in beta)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="RUM review cadence (weekly while in beta)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rum-dashboard-pointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM dashboard pointers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-threats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security threats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security threats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-only-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test-only endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables / secrets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-write-counter-assertion-refactor-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV write-counter assertion (refactor invariant)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#incident-response-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incident response runbook
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#p54-final-acceptance-ledger-closed-2026-04-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P5.4 final-acceptance ledger (closed 2026-04-27)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P5.4 final-acceptance ledger (closed 2026-04-27)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#met-locally-at-p54-close" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Met locally at P5.4 close
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-gated-on-ci-runtime-next-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred — gated on CI / runtime / next phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pushed-to-p55-cutover-out-of-p54-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pushed to P5.5 cutover (out of P5.4 scope)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pushed-to-p6-later-out-of-p54-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pushed to P6 / later (out of P5.4 scope)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#p55-cutover-post-deploy-notes-2026-04-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P5.5 cutover — post-deploy notes (2026-04-30)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P5.5 cutover — post-deploy notes (2026-04-30)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-cutover-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-cutover verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloudflare-worker-swap-window-architect-r1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloudflare worker swap window (architect R1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sse-stale-tab-transient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SSE stale-tab transient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#durable-object-recent-buffer-staleness-architect-r3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Durable-Object recent-buffer staleness (architect R3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-invalidation-transient-architect-r4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache invalidation transient (architect R4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rum-week-1-baseline-architect-r5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM week-1 baseline (architect R5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canary-noindex-preserved-architect-r6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary noindex preserved (architect R6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sse-alias-sunset-checklist-due-2026-05-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SSE alias sunset checklist (DUE 2026-05-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canary-redirect-aware-proxy-deferred-to-p6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary redirect-aware proxy (deferred to P6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tasks-empty-symptom-cc-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tasks-empty symptom (CC-1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shortcomings-empty-cc-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shortcomings empty (CC-2)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalog-drift-remediation-p6-a4a5a6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog drift remediation (P6 A4/A5/A6)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalog drift remediation (P6 A4/A5/A6)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#symptom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symptom
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cause" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cause
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remediation-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remediation runbook
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daily-catalog-drift-ci-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily catalog-drift CI probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visual-regression-baseline-capture-one-time-ubuntu-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual-regression baseline capture (one-time, Ubuntu CI)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Visual-regression baseline capture (one-time, Ubuntu CI)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time capture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-lifecycle-baselines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred lifecycle baselines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-domain-flip-pre-flight-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom-domain flip pre-flight checklist
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom-domain flip pre-flight checklist">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-source-of-truth-verify-before-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single source of truth — verify before flip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-flight-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-domain-flip-operator-runbook-phase-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom-domain flip operator runbook (Phase G)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom-domain flip operator runbook (Phase G)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-flip-operator-30-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flip (operator, ~30 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-change-developer-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code change (developer, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploy-verify-developer-10-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy + verify (developer, ~10 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-flip-operator-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-flip (operator, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollback-developer-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollback (developer, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-status-json-schema-plan-g-ci-consumers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle status --json schema (Plan G CI consumers)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="centralgauge lifecycle status --json schema (Plan G CI consumers)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partial-failure-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partial-failure contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripted-consumption-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripted consumption pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-contract-for-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure contract for --json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stability-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stability contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#admin-lifecycle-ui-access-cloudflare-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin lifecycle UI access (Cloudflare Access)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Admin lifecycle UI access (Cloudflare Access)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-setup-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time setup (operator)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wranglertoml-vs-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wrangler.toml vs secrets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#revoking-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revoking access
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-reviewer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a new reviewer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rotating-the-aud-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotating the AUD tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle-runbooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle runbooks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lifecycle runbooks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-authorize-a-new-operator-for-adminlifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to authorize a new operator for /admin/lifecycle/*
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-triage-a-stuck-cycle-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to triage a stuck cycle lock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-recover-from-a-bad-merge-in-concept-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to recover from a bad merge in concept registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-refresh-stale-models-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to refresh stale models manually
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-apply-plan-e-migration-to-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to apply Plan E migration to production
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-interpret-a-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to interpret a digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#set-rotate-the-rum-token" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Set / rotate the RUM token
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#flag-flip-procedure-zero-code-change-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flag-flip procedure (zero-code-change deploy)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#canary-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary review
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Canary review">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cmd-shift-d-conflict-and-nav-button-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        cmd-shift-d conflict and Nav-button fallback
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollback
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rum-review-cadence-weekly-while-in-beta" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM review cadence (weekly while in beta)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="RUM review cadence (weekly while in beta)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rum-dashboard-pointers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM dashboard pointers
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-threats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security threats
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Security threats">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-only-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Test-only endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment variables / secrets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#kv-write-counter-assertion-refactor-invariant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KV write-counter assertion (refactor invariant)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#incident-response-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Incident response runbook
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#p54-final-acceptance-ledger-closed-2026-04-27" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P5.4 final-acceptance ledger (closed 2026-04-27)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P5.4 final-acceptance ledger (closed 2026-04-27)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#met-locally-at-p54-close" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Met locally at P5.4 close
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-gated-on-ci-runtime-next-phase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred — gated on CI / runtime / next phase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pushed-to-p55-cutover-out-of-p54-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pushed to P5.5 cutover (out of P5.4 scope)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pushed-to-p6-later-out-of-p54-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pushed to P6 / later (out of P5.4 scope)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#p55-cutover-post-deploy-notes-2026-04-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P5.5 cutover — post-deploy notes (2026-04-30)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="P5.5 cutover — post-deploy notes (2026-04-30)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#post-cutover-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-cutover verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cloudflare-worker-swap-window-architect-r1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cloudflare worker swap window (architect R1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sse-stale-tab-transient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SSE stale-tab transient
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#durable-object-recent-buffer-staleness-architect-r3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Durable-Object recent-buffer staleness (architect R3)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cache-invalidation-transient-architect-r4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cache invalidation transient (architect R4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rum-week-1-baseline-architect-r5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RUM week-1 baseline (architect R5)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canary-noindex-preserved-architect-r6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary noindex preserved (architect R6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sse-alias-sunset-checklist-due-2026-05-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SSE alias sunset checklist (DUE 2026-05-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#canary-redirect-aware-proxy-deferred-to-p6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Canary redirect-aware proxy (deferred to P6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tasks-empty-symptom-cc-1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tasks-empty symptom (CC-1)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shortcomings-empty-cc-2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shortcomings empty (CC-2)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#catalog-drift-remediation-p6-a4a5a6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Catalog drift remediation (P6 A4/A5/A6)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Catalog drift remediation (P6 A4/A5/A6)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#symptom" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Symptom
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cause" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cause
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#remediation-runbook" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Remediation runbook
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daily-catalog-drift-ci-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Daily catalog-drift CI probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visual-regression-baseline-capture-one-time-ubuntu-ci" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual-regression baseline capture (one-time, Ubuntu CI)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Visual-regression baseline capture (one-time, Ubuntu CI)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time capture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deferred-lifecycle-baselines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deferred lifecycle baselines
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-domain-flip-pre-flight-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom-domain flip pre-flight checklist
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom-domain flip pre-flight checklist">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#single-source-of-truth-verify-before-flip" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Single source of truth — verify before flip
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pre-flight-checklist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flight checklist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#custom-domain-flip-operator-runbook-phase-g" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom-domain flip operator runbook (Phase G)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Custom-domain flip operator runbook (Phase G)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-flip-operator-30-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-flip (operator, ~30 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#code-change-developer-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Code change (developer, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#deploy-verify-developer-10-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deploy + verify (developer, ~10 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#post-flip-operator-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-flip (operator, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollback-developer-5-min" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollback (developer, ~5 min)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-status-json-schema-plan-g-ci-consumers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle status --json schema (Plan G CI consumers)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="centralgauge lifecycle status --json schema (Plan G CI consumers)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#partial-failure-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Partial-failure contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scripted-consumption-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scripted consumption pattern
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failure-contract-for-json" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure contract for --json
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stability-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stability contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#admin-lifecycle-ui-access-cloudflare-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin lifecycle UI access (Cloudflare Access)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Admin lifecycle UI access (Cloudflare Access)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#one-time-setup-operator" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-time setup (operator)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wranglertoml-vs-secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wrangler.toml vs secrets
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#revoking-access" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revoking access
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-reviewer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a new reviewer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rotating-the-aud-tag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rotating the AUD tag
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle-runbooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle runbooks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lifecycle runbooks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-to-authorize-a-new-operator-for-adminlifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to authorize a new operator for /admin/lifecycle/*
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-triage-a-stuck-cycle-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to triage a stuck cycle lock
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-recover-from-a-bad-merge-in-concept-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to recover from a bad merge in concept registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-refresh-stale-models-manually" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to refresh stale models manually
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-apply-plan-e-migration-to-production" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to apply Plan E migration to production
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-to-interpret-a-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to interpret a digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/site/operations.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="site-operations-runbook">Site operations runbook<a class="headerlink" href="#site-operations-runbook" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Deploy, flag-flip, rollback, monitoring procedures.
+Spec sections: §11.4 (pre-cutover gates), §11.5 (observability), §11.6 (rollback).</p>
+</blockquote>
+<h2 id="deploy">Deploy<a class="headerlink" href="#deploy" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>site
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>npm<span class="w"> </span>run<span class="w"> </span>check<span class="w">         </span><span class="c1"># tsc strict</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>npm<span class="w"> </span>run<span class="w"> </span>test:main<span class="w">     </span><span class="c1"># vitest (~2 min)</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>npm<span class="w"> </span>run<span class="w"> </span>build<span class="w">         </span><span class="c1"># produces .svelte-kit/cloudflare/_worker.js</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>npm<span class="w"> </span>run<span class="w"> </span>check:budget<span class="w">  </span><span class="c1"># bundle-size</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>npm<span class="w"> </span>run<span class="w"> </span>check:contrast<span class="w"> </span><span class="c1"># WCAG token pairings</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>npx<span class="w"> </span>wrangler<span class="w"> </span>deploy<span class="w">   </span><span class="c1"># ships to centralgauge.sshadows.workers.dev</span>
+</code></pre></div>
+<p>Tag the deploy:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>git<span class="w"> </span>tag<span class="w"> </span>site-v<span class="k">$(</span>git<span class="w"> </span>rev-parse<span class="w"> </span>--short<span class="w"> </span>HEAD<span class="k">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>git<span class="w"> </span>push<span class="w"> </span>--tags
+</code></pre></div>
+<h2 id="set-rotate-the-rum-token">Set / rotate the RUM token<a class="headerlink" href="#set-rotate-the-rum-token" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Get the token from https://dash.cloudflare.com/.../web-analytics</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>wrangler<span class="w"> </span>secret<span class="w"> </span>put<span class="w"> </span>CF_WEB_ANALYTICS_TOKEN
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="c1"># Paste when prompted.</span>
+</code></pre></div>
+<p>The placeholder in <code>wrangler.toml [vars]</code> is overwritten by the secret at
+runtime. To remove the beacon entirely, flip <code>FLAG_RUM_BEACON = "off"</code>.</p>
+<h2 id="flag-flip-procedure-zero-code-change-deploy">Flag-flip procedure (zero-code-change deploy)<a class="headerlink" href="#flag-flip-procedure-zero-code-change-deploy" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Open a PR editing <code>site/wrangler.toml [vars]</code> block:
+   <code>FLAG_&lt;NAME&gt; = "on"</code>.</li>
+<li>Wait for CI green.</li>
+<li>Merge.</li>
+<li><code>wrangler deploy</code> from master.</li>
+<li>Verify the flag took effect: hit the route, check the page does what
+   the flag enables.</li>
+<li>Watch <code>wrangler tail --format=pretty</code> for 1 hour. No new error rates.</li>
+</ol>
+<h2 id="canary-review">Canary review<a class="headerlink" href="#canary-review" title="Permanent link">&para;</a></h2>
+<p>Every PR's merge commit produces a canary URL:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>https://centralgauge.sshadows.workers.dev/_canary/&lt;sha&gt;/&lt;route&gt;
+</code></pre></div>
+<p>The canary URL serves the wrapped route inside an <code>&lt;iframe&gt;</code> with a
+warning banner. All flags are forced ON in canary mode regardless of
+<code>[vars]</code>. The <code>X-Canary</code> response header is set on every canary request.</p>
+<p>Canary review checklist:</p>
+<ul>
+<li>[ ] Open <code>/_canary/&lt;sha&gt;/</code> — banner visible, leaderboard table renders, sort works (P5.5: leaderboard now at <code>/</code>; do NOT review <code>/_canary/&lt;sha&gt;/leaderboard</code> — that path 302s out of canary scope, see architect C6)</li>
+<li>[ ] Open <code>/_canary/&lt;sha&gt;/runs/&lt;id&gt;</code> — tabs work, signature panel verifies</li>
+<li>[ ] Cmd-K opens palette (flag forced on in canary)</li>
+<li>[ ] Cmd-shift-d toggles density (visible row-height change)</li>
+<li>[ ] LiveStatus shows "live" (SSE flag forced on)</li>
+<li>[ ] <code>/_canary/&lt;sha&gt;/og/index.png</code> returns image/png (OG flag forced on)</li>
+<li>[ ] No console errors in DevTools</li>
+<li>[ ] No new entries in <code>wrangler tail</code></li>
+</ul>
+<h3 id="cmd-shift-d-conflict-and-nav-button-fallback"><code>cmd-shift-d</code> conflict and Nav-button fallback<a class="headerlink" href="#cmd-shift-d-conflict-and-nav-button-fallback" title="Permanent link">&para;</a></h3>
+<p>The <code>cmd-shift-d</code> chord collides with browser-native shortcuts on some
+platforms (Firefox: bookmark-all-tabs; some Linux WMs: workspace switch).
+If the chord is intercepted, the Nav <code>DensityToggle</code> button is the
+non-chord fallback — always reachable via keyboard tab order, always
+clickable. Reviewers verifying density behavior should confirm BOTH
+the chord and the button work; if a chord regresses on a specific
+browser, document the conflict in the postmortem (<code>docs/postmortems/</code>)
+rather than removing the chord — the button keeps users unblocked
+while the chord conflict is investigated.</p>
+<h2 id="rollback">Rollback<a class="headerlink" href="#rollback" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Speed</th>
+<th>Mechanism</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Seconds</td>
+<td>Flip flag <code>off</code> via PR + <code>wrangler deploy</code></td>
+<td>New feature broke; existing surface unaffected</td>
+</tr>
+<tr>
+<td>Minutes</td>
+<td><code>wrangler rollback</code> to prior <code>site-v&lt;sha&gt;</code> tag</td>
+<td>Code regression in shared code</td>
+</tr>
+<tr>
+<td>Hours</td>
+<td>Revert PR + redeploy</td>
+<td>Schema breakage that flag can't bypass</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># Wrangler rollback (immediate)</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>wrangler<span class="w"> </span>deployments<span class="w"> </span>list
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>wrangler<span class="w"> </span>rollback<span class="w"> </span>--message<span class="w"> </span><span class="s2">&quot;P5.4 SSE regression — rolling to abc1234&quot;</span>
+</code></pre></div>
+<p>Public post-mortem for any user-visible incident under
+<code>docs/postmortems/</code>. Use <code>docs/postmortems/_template.md</code>.</p>
+<h2 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>What</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>L1</td>
+<td>Cloudflare Web Analytics — LCP/FID/CLS/TTFB by route, 7-day</td>
+<td>dash.cloudflare.com</td>
+</tr>
+<tr>
+<td>L2</td>
+<td>Workers Logs — structured JSON <code>{ method, path, status, ip, dur_ms }</code></td>
+<td><code>wrangler tail --format=pretty</code></td>
+</tr>
+<tr>
+<td>L3</td>
+<td><code>/_internal/metrics</code> (admin-gated, future)</td>
+<td>(P6)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="rum-review-cadence-weekly-while-in-beta">RUM review cadence (weekly while in beta)<a class="headerlink" href="#rum-review-cadence-weekly-while-in-beta" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Open the Web Analytics dashboard</li>
+<li>Filter to <code>centralgauge.sshadows.workers.dev</code>, last 7 days</li>
+<li>Note p75 LCP per top-5 routes (<code>/</code>, <code>/models</code>, <code>/runs</code>, <code>/about</code>, <code>/compare</code>)</li>
+<li>If p75 LCP &gt; 1.5 s on any route, file an issue tagged <code>perf-regression</code></li>
+<li>If p75 TTFB &gt; 100 ms on any route, file an issue tagged <code>cache-regression</code></li>
+</ol>
+<p>Acceptance threshold per spec §9.2:</p>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LCP p75</td>
+<td>&lt; 1.5 s</td>
+</tr>
+<tr>
+<td>INP p75</td>
+<td>&lt; 200 ms</td>
+</tr>
+<tr>
+<td>CLS p75</td>
+<td>&lt; 0.05</td>
+</tr>
+<tr>
+<td>FCP p75</td>
+<td>&lt; 1.0 s</td>
+</tr>
+<tr>
+<td>TTFB p75</td>
+<td>&lt; 100 ms</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rum-dashboard-pointers">RUM dashboard pointers<a class="headerlink" href="#rum-dashboard-pointers" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>By-route LCP/CLS card</strong> — Web Analytics → <code>Performance</code> → group-by
+  <code>request.path</code>. Gives the per-route p75 read needed for the cadence
+  list above.</li>
+<li><strong>By-country LCP card</strong> — only relevant once we have non-North-American
+  traffic; flag a regression if any country's p75 LCP exceeds the global
+  threshold by &gt; 50 %.</li>
+<li><strong>Pageviews vs. errors timeseries</strong> — Web Analytics → <code>Errors</code> tab. A
+  divergence here is an early signal a flag flip introduced a hot-path
+  exception. Cross-reference with <code>wrangler tail</code> to pin down the route.</li>
+</ul>
+<h2 id="security-threats">Security threats<a class="headerlink" href="#security-threats" title="Permanent link">&para;</a></h2>
+<p>The site exposes a small admin / test surface that requires extra
+hardening. Document each one here so a reviewer can confirm the
+mitigation hasn't regressed.</p>
+<h3 id="test-only-endpoints">Test-only endpoints<a class="headerlink" href="#test-only-endpoints" title="Permanent link">&para;</a></h3>
+<p><code>api/v1/__test_only__/*</code> (the broadcast helper plus future fixtures)
+must NEVER be reachable in production. Mitigation: gated on
+<code>env.ALLOW_TEST_BROADCAST === "on"</code>. The CI workflow sets this in its
+job-level <code>env:</code> block; production <code>wrangler.toml [vars]</code> does NOT.
+A worker-pool test (<code>tests/api/test-only-broadcast.test.ts</code>) asserts a
+401 / 404 in absence of the env var.</p>
+<p>If you add a new <code>__test_only__</code> endpoint:</p>
+<ol>
+<li>Gate it on the same <code>env.ALLOW_TEST_BROADCAST</code> check.</li>
+<li>Add a test asserting the 401 / 404 path.</li>
+<li>Verify <code>wrangler.toml</code> does NOT contain <code>ALLOW_TEST_BROADCAST</code> in
+   <code>[vars]</code> (it is set ONLY in the CI workflow <code>env:</code> block).</li>
+</ol>
+<h3 id="environment-variables-secrets">Environment variables / secrets<a class="headerlink" href="#environment-variables-secrets" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>CF_WEB_ANALYTICS_TOKEN</code> — set via <code>wrangler secret put</code>. Empty
+  placeholder lives in <code>wrangler.toml [vars]</code> so type-checking compiles
+  during CI; the secret overwrites at runtime.</li>
+<li><code>INGEST_HMAC_SECRET</code> (legacy) and any future signing keys — secret
+  only. NEVER commit to <code>wrangler.toml</code>.</li>
+<li><code>ALLOW_TEST_BROADCAST</code> — workflow-level only; absence in production is
+  the production safety. Confirmed by <code>wrangler.toml</code> never declaring it
+  in <code>[vars]</code>.</li>
+</ul>
+<p>Threat model (today):</p>
+<table>
+<thead>
+<tr>
+<th>Threat</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Forged ingest payload (tampered run results)</td>
+<td>Ed25519 signature verified on <code>/api/v1/runs/&lt;id&gt;/signature</code> (existing pre-P5)</td>
+</tr>
+<tr>
+<td>Unauthorized leaderboard mutation</td>
+<td>Test-only endpoints gated on <code>ALLOW_TEST_BROADCAST</code> env var; production has no admin write surface</td>
+</tr>
+<tr>
+<td>RUM-token leak in HTML</td>
+<td>Token is public per Cloudflare Web Analytics design (it identifies the dashboard, not the requester). No mitigation needed; rotation procedure documented above</td>
+</tr>
+<tr>
+<td>KV-quota exhaustion (1000-puts/day)</td>
+<td>Hot paths use Cache API only; asserted by <code>tests/api/kv-writes.test.ts</code></td>
+</tr>
+<tr>
+<td>Canary URL leaking unreleased flag state</td>
+<td>Canary URLs are <code>noindex</code>; only reachable to reviewers who have the SHA</td>
+</tr>
+</tbody>
+</table>
+<h2 id="kv-write-counter-assertion-refactor-invariant">KV write-counter assertion (refactor invariant)<a class="headerlink" href="#kv-write-counter-assertion-refactor-invariant" title="Permanent link">&para;</a></h2>
+<p>The leaderboard read path moved from KV to Cache API to avoid the
+1000-puts/day quota. We assert no KV puts occur on hot paths via:</p>
+<ul>
+<li><code>site/tests/api/kv-writes.test.ts</code> (CI gate)</li>
+<li><code>site/scripts/check-kv-writes.ts</code> (manual via wrangler tail during canary)</li>
+</ul>
+<p>If either flags a regression, the offending PR must move the affected
+write back to Cache API or R2 before merge.</p>
+<h2 id="incident-response-runbook">Incident response runbook<a class="headerlink" href="#incident-response-runbook" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Reproduce. Note the failing surface (route, time, request id from <code>cf-ray</code>).</li>
+<li>Check <code>wrangler tail</code> for matching error logs.</li>
+<li>If error rate &gt; 1 % on any route, flip the relevant flag off via the procedure above.</li>
+<li>If error rate &gt; 5 % or signed-payload tamper detected, <code>wrangler rollback</code>.</li>
+<li>Post-mortem within 7 days using <code>docs/postmortems/_template.md</code>.</li>
+</ol>
+<h2 id="p54-final-acceptance-ledger-closed-2026-04-27">P5.4 final-acceptance ledger (closed 2026-04-27)<a class="headerlink" href="#p54-final-acceptance-ledger-closed-2026-04-27" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Cross-references spec §13 done-criteria. Updated whenever a phase
+closes; the bullets below are the P5.4-close snapshot.</p>
+</blockquote>
+<h3 id="met-locally-at-p54-close">Met locally at P5.4 close<a class="headerlink" href="#met-locally-at-p54-close" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Status</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Build green (<code>npm run build</code>)</td>
+<td>met</td>
+<td><code>.svelte-kit/cloudflare/_worker.js</code> produced; only adapter-cloudflare <code>unsafe</code> warning (pre-existing)</td>
+</tr>
+<tr>
+<td><code>npm run check:budget</code></td>
+<td>met</td>
+<td>All bundle chunks under their declared budgets (cmd-K palette chunk under 6 KB gz post Task I0 split)</td>
+</tr>
+<tr>
+<td><code>npm run check:contrast</code></td>
+<td>met</td>
+<td>All WCAG AAA body / AA chrome token pairs pass in light + dark</td>
+</tr>
+<tr>
+<td>Worker test suite (<code>test:main</code>)</td>
+<td>met (≈)</td>
+<td>278/279 green; 1 cold-WASM OG init flake under heavy concurrent load, isolated re-run 6/6 green — pre-existing transient</td>
+</tr>
+<tr>
+<td>Unit test suite (<code>test:unit</code>)</td>
+<td>met</td>
+<td>211/211 green</td>
+</tr>
+<tr>
+<td>Broadcaster test suite (<code>test:broadcaster</code>)</td>
+<td>met</td>
+<td>12/12 green</td>
+</tr>
+<tr>
+<td>Build-smoke suite (<code>test:build</code>)</td>
+<td>met</td>
+<td>5/5 green</td>
+</tr>
+<tr>
+<td>All 7 site flags <code>on</code> in <code>[vars]</code></td>
+<td>met</td>
+<td><code>grep -nE '^FLAG_' site/wrangler.toml</code> → 7 lines, each <code>= "on"</code> (5 P5.4 NEW + <code>print_stylesheet</code> P5.2 + <code>trajectory_charts</code> P5.3 carry)</td>
+</tr>
+<tr>
+<td>Wrangler config parses + binds (dry-run)</td>
+<td>met</td>
+<td><code>wrangler deploy --dry-run</code> lists each <code>FLAG_*</code> env var binding at the expected <code>"on"</code> value</td>
+</tr>
+<tr>
+<td>Documentation deliverables published</td>
+<td>met</td>
+<td><code>docs/site/{architecture,design-system,operations}.md</code>, <code>docs/postmortems/_template.md</code>, <code>site/CHANGELOG.md</code>, <code>site/CONTRIBUTING.md</code> P5.4 notes; <code>mkdocs.yml</code> Site + Postmortems sections</td>
+</tr>
+<tr>
+<td>Rollback drill executed</td>
+<td>met</td>
+<td><code>site/CONTRIBUTING.md</code> records the cmd-K-palette flip cycle outcome (Task K2). Drill performed on a per-version preview URL, NOT production; canary review checklist walked for the 5 SSE-subscribing routes</td>
+</tr>
+<tr>
+<td>KV write-counter test</td>
+<td>met</td>
+<td><code>tests/api/kv-writes.test.ts</code> green in worker pool</td>
+</tr>
+</tbody>
+</table>
+<h3 id="deferred-gated-on-ci-runtime-next-phase">Deferred — gated on CI / runtime / next phase<a class="headerlink" href="#deferred-gated-on-ci-runtime-next-phase" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Status</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>npm run test:e2e:ci</code> (8 specs + visual-regression)</td>
+<td>deferred to CI</td>
+<td>E2E suite requires the seeded preview server on port 4173 + Playwright workers; runs on every PR via <code>.github/workflows/site-ci.yml</code>. Not run locally as part of P5.4 close</td>
+</tr>
+<tr>
+<td>Lighthouse CI (perf 95 / a11y 100 / best 95 / seo 90)</td>
+<td>deferred to CI</td>
+<td>LHCI runs on every PR via <code>.github/workflows/site-ci.yml</code> — needs an Ubuntu runner for stable budgets. Local runs on Windows produce drift</td>
+</tr>
+<tr>
+<td>Visual-regression baseline PNGs (5 pages × 2 themes × 2 densities = 20)</td>
+<td>deferred to first CI capture</td>
+<td>Baselines are captured from an Ubuntu runner to avoid Windows-vs-Linux font-rendering drift; Task G2 spec exists, screenshots committed by CI on first green run</td>
+</tr>
+<tr>
+<td><code>wrangler tail --format=pretty</code> for 1 hour post-flip clean</td>
+<td>deferred to runtime</td>
+<td>Operator-monitored after the actual <code>wrangler deploy</code>. <code>wrangler deploy --dry-run</code> has been validated; the post-flip watch belongs in the deploy operator's runbook and is not gateable from a local CI run</td>
+</tr>
+<tr>
+<td><code>wrangler secret put CF_WEB_ANALYTICS_TOKEN</code> set</td>
+<td>deferred to runtime</td>
+<td>The token is rotated via runtime secret (operator action — see "Set / rotate the RUM token" section). The placeholder in <code>[vars]</code> is overwritten at runtime; flipping <code>FLAG_RUM_BEACON = "off"</code> disables the beacon entirely without rotating the token</td>
+</tr>
+<tr>
+<td>Production deploy live + verified curl probes</td>
+<td>deferred to runtime</td>
+<td>Operator action post-merge: <code>cd site &amp;&amp; wrangler deploy</code> then run the §13 verification probes (<code>/og/index.png</code>, <code>/api/v1/events/live?routes=…</code>, <code>/ cloudflareinsights</code> grep)</td>
+</tr>
+<tr>
+<td>LCP / INP / CLS / FCP / TTFB p75 thresholds met in RUM</td>
+<td>deferred to first weekly RUM review post-deploy (P6 cadence)</td>
+<td>Spec §9.2 thresholds are field-measured — not enforceable at build time. First review per <code>RUM review cadence</code> section above</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pushed-to-p55-cutover-out-of-p54-scope">Pushed to P5.5 cutover (out of P5.4 scope)<a class="headerlink" href="#pushed-to-p55-cutover-out-of-p54-scope" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Plan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rename <code>/leaderboard</code> → <code>/</code>, retire placeholder <code>+page.svelte</code></td>
+<td>DONE 2026-04-30 (commit <code>f79bfc9</code>)</td>
+</tr>
+<tr>
+<td>Remove <code>&lt;meta name="robots" content="noindex"&gt;</code> from layout</td>
+<td>DONE 2026-04-30 (commit <code>ab24b3d</code>)</td>
+</tr>
+<tr>
+<td>Publish <code>sitemap.xml</code> + <code>robots.txt</code></td>
+<td>DONE 2026-04-30 (commits <code>b6da131</code>, <code>c544be2</code>)</td>
+</tr>
+<tr>
+<td>Atomic single-deploy cutover</td>
+<td>DONE 2026-04-30 (commit <code>f79bfc9</code>)</td>
+</tr>
+<tr>
+<td>Final canary review walking the cut-over surfaces</td>
+<td>DONE 2026-04-30 (canary review against <code>/_canary/&lt;sha&gt;/</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="pushed-to-p6-later-out-of-p54-scope">Pushed to P6 / later (out of P5.4 scope)<a class="headerlink" href="#pushed-to-p6-later-out-of-p54-scope" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Plan</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Custom-domain DNS</td>
+<td>P7</td>
+</tr>
+<tr>
+<td>Automated RUM regression alerting (Workers Analytics Engine + alarm)</td>
+<td>P6</td>
+</tr>
+<tr>
+<td><code>prefers-contrast: more</code> and <code>forced-colors: active</code> mode audit</td>
+<td>P6</td>
+</tr>
+<tr>
+<td>Per-density visual-regression for every atom</td>
+<td>P6 if needed</td>
+</tr>
+<tr>
+<td>Marketing copy / launch announcement</td>
+<td>P6</td>
+</tr>
+</tbody>
+</table>
+<p>P5.4 is closed when the deferred-to-CI rows turn green on the master
+post-merge build. P5.5 cutover plan author should confirm this ledger
+before cutting that branch.</p>
+<h2 id="p55-cutover-post-deploy-notes-2026-04-30">P5.5 cutover — post-deploy notes (2026-04-30)<a class="headerlink" href="#p55-cutover-post-deploy-notes-2026-04-30" title="Permanent link">&para;</a></h2>
+<p>The atomic cutover landed 2026-04-30 (commit <code>f79bfc9</code>). This section
+documents transients, post-deploy verification, and the sunset
+checklist. Reference plan: <code>docs/superpowers/plans/2026-04-30-p5-5-cutover.md</code>.</p>
+<h3 id="post-cutover-verification">Post-cutover verification<a class="headerlink" href="#post-cutover-verification" title="Permanent link">&para;</a></h3>
+<p>After <code>wrangler deploy</code> lands the cutover:</p>
+<ol>
+<li><code>curl -sI https://centralgauge.sshadows.workers.dev/</code> → 200</li>
+<li><code>curl -sI https://centralgauge.sshadows.workers.dev/leaderboard</code> → 302; <code>Location: /</code></li>
+<li><code>curl https://centralgauge.sshadows.workers.dev/sitemap.xml | head -10</code> → XML with 9 routes including <code>&lt;loc&gt;https://centralgauge.sshadows.workers.dev/&lt;/loc&gt;</code></li>
+<li><code>curl https://centralgauge.sshadows.workers.dev/robots.txt</code> → <code>User-agent: *</code> / <code>Allow: /</code> / <code>Sitemap: ...</code></li>
+<li><code>curl https://centralgauge.sshadows.workers.dev/ | grep -c 'application/ld+json'</code> → 2</li>
+<li><code>curl https://centralgauge.sshadows.workers.dev/ | grep -i robots</code> → no <code>noindex</code> (only beacon-related directives if any)</li>
+<li><code>curl https://centralgauge.sshadows.workers.dev/ | grep canonical</code> → <code>&lt;link rel="canonical" href="https://centralgauge.sshadows.workers.dev/" /&gt;</code></li>
+</ol>
+<h3 id="cloudflare-worker-swap-window-architect-r1">Cloudflare worker swap window (architect R1)<a class="headerlink" href="#cloudflare-worker-swap-window-architect-r1" title="Permanent link">&para;</a></h3>
+<p>Cloudflare's worker version-swap is atomic per request but not
+instantaneous globally — the propagation window across data centers
+is ~30-60 s. During that window, some requests hit the new worker
+(302 on <code>/leaderboard</code>, leaderboard on <code>/</code>) and some hit the old
+(placeholder on <code>/</code>, leaderboard on <code>/leaderboard</code>). Internal links
+(Nav, anchor tags) work either way (the old worker's Nav still points
+at <code>/leaderboard</code>, the new at <code>/</code>); SSE clients on the old worker
+receive <code>/leaderboard</code>-tagged events and the I1 alias on the new
+worker accepts the legacy subscription. No user-visible breakage
+during the window; document for completeness.</p>
+<h3 id="sse-stale-tab-transient">SSE stale-tab transient<a class="headerlink" href="#sse-stale-tab-transient" title="Permanent link">&para;</a></h3>
+<p>Tabs held open across the cutover deploy keep the OLD
+<code>routes=%2Fleaderboard</code> query in their EventSource URL. After the
+worker reload they reconnect (3-attempt backoff in <code>useEventSource</code>),
+but the new <code>eventToRoutes()</code> doesn't map any event to <code>/leaderboard</code>.
+Result: the stale tab's <code>&lt;LiveStatus&gt;</code> shows "live" but no
+invalidations fire. The user's first navigation (e.g. clicking a sort
+header) triggers a fresh page load that opens a new EventSource with
+<code>routes=%2F</code>. No action needed — documented for completeness.</p>
+<h3 id="durable-object-recent-buffer-staleness-architect-r3">Durable-Object recent-buffer staleness (architect R3)<a class="headerlink" href="#durable-object-recent-buffer-staleness-architect-r3" title="Permanent link">&para;</a></h3>
+<p><code>LeaderboardBroadcaster.recent[]</code> retains pre-cutover <code>BroadcastEvent</code>
+records that are tagged <code>routes: ['/leaderboard']</code>. Post-cutover, when
+a fresh <code>EventSource('/...?routes=%2F')</code> connects, the DO's replay
+logic emits these legacy-tagged events, but <code>routePatternMatches()</code>
+with the I1 alias is intentionally unidirectional (incoming
+<code>/leaderboard</code> → <code>/</code>, NOT outgoing). Result: legacy-tagged events
+DON'T replay to new subscribers tagged <code>/</code>. Acceptable given the
+14-day SSE alias from I1 and the buffer's natural decay (size cap or
+TTL).</p>
+<h3 id="cache-invalidation-transient-architect-r4">Cache invalidation transient (architect R4)<a class="headerlink" href="#cache-invalidation-transient-architect-r4" title="Permanent link">&para;</a></h3>
+<p>The <code>caches.default</code> adapter cache may serve old <code>/leaderboard</code> HTML
+for ≤ 60 s post-deploy from some colos (s-maxage from the
+<code>+page.server.ts</code> setHeaders). After expiry, the URL hits the 302
+redirect handler. Likewise, any pre-cutover <code>/</code> (placeholder)
+responses cached in <code>caches.default</code> may persist ≤ 60 s — colo cache
+hits serve the old placeholder HTML while the worker has already
+swung to the leaderboard. Acceptable: a 60-second transient is the
+smallest possible footprint of the cutover. Document user-visible
+weirdness in <code>docs/postmortems/</code> if reported.</p>
+<blockquote>
+<p><strong>Optional first-deploy mitigation (out of scope, deferred to
+post-cutover review):</strong> the new <code>/</code> route's first deploy could ship
+<code>Cache-Control: no-store</code> to bypass <code>caches.default</code> until the
+cutover settles, then revert to the normal s-maxage in a follow-up.
+Not needed unless RUM shows a measurable spike in stale-cache
+reports.</p>
+</blockquote>
+<h3 id="rum-week-1-baseline-architect-r5">RUM week-1 baseline (architect R5)<a class="headerlink" href="#rum-week-1-baseline-architect-r5" title="Permanent link">&para;</a></h3>
+<p>Cloudflare Web Analytics history per-route on <code>/leaderboard</code> is
+preserved (the route still serves a 302 for 30 days; the data point
+is recorded). Post-cutover, RUM data on <code>/</code> replaces what was
+previously captured for the placeholder. Week-1 post-deploy
+establishes a NEW baseline for <code>/</code>; week-over-week comparison against
+pre-cutover <code>/leaderboard</code> is apples-to-oranges. Document the
+discontinuity in any week-1 report; don't flag the gap as a
+regression.</p>
+<h3 id="canary-noindex-preserved-architect-r6">Canary noindex preserved (architect R6)<a class="headerlink" href="#canary-noindex-preserved-architect-r6" title="Permanent link">&para;</a></h3>
+<p><code>_canary/[sha]/[...path]/+page.svelte</code> retains <code>&lt;meta name="robots"
+content="noindex"&gt;</code> so canary pages never get indexed even after the
+global noindex removal. The canary route's noindex is independent of
+the layout-level meta — it lives at the route level. Verified by
+<code>tests/api/canary-noindex.test.ts</code> (P5.4); re-verified as part of
+P5.5 D4.</p>
+<h3 id="sse-alias-sunset-checklist-due-2026-05-30">SSE alias sunset checklist (DUE 2026-05-30)<a class="headerlink" href="#sse-alias-sunset-checklist-due-2026-05-30" title="Permanent link">&para;</a></h3>
+<p>The SSE I1 alias and the <code>/leaderboard</code> 302 redirect are both
+time-bounded resources scheduled for deletion on 2026-05-30. The CI
+guard <code>tests/build/redirect-sunset.test.ts</code> fails 14 days BEFORE
+sunset (2026-05-16) to force operator attention.</p>
+<p>Deliverables:</p>
+<ul>
+<li>[ ] Delete <code>site/src/routes/leaderboard/+server.ts</code> (the 302 redirect)</li>
+<li>[ ] Delete the <code>LEGACY_LEADERBOARD_ROUTES</code> alias from <code>site/src/lib/server/sse-routes.ts</code> (architect I1 — sunset alongside the redirect)</li>
+<li>[ ] Delete <code>site/tests/api/leaderboard-redirect.test.ts</code> (becomes meaningless)</li>
+<li>[ ] Delete <code>site/tests/build/redirect-sunset.test.ts</code> itself once it has served its purpose</li>
+<li>[ ] Update <code>site/CHANGELOG.md</code> with a sunset entry</li>
+</ul>
+<h3 id="canary-redirect-aware-proxy-deferred-to-p6">Canary redirect-aware proxy (deferred to P6)<a class="headerlink" href="#canary-redirect-aware-proxy-deferred-to-p6" title="Permanent link">&para;</a></h3>
+<p>The canary proxy is NOT redirect-aware: a 302 emitted by the inner
+worker (e.g. for <code>/leaderboard</code>) drops the reviewer out of canary
+scope. Architect C6 notes this; the post-P5.5 follow-up is to make
+the canary proxy rewrite <code>Location: /foo</code> → <code>Location:
+/_canary/&lt;sha&gt;/foo</code> so 302s stay scoped. Until then, do NOT review
+redirected URLs through canary; review the destination path directly
+(see Canary review checklist above for the post-cutover entry).</p>
+<h2 id="tasks-empty-symptom-cc-1">Tasks-empty symptom (CC-1)<a class="headerlink" href="#tasks-empty-symptom-cc-1" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>P7 audit-finding pointer. Cross-link only — the runbook lives below in
+§"Catalog drift remediation (P6 A4/A5/A6)".</p>
+</blockquote>
+<p><strong>Symptom (audit wording):</strong> <code>/api/v1/tasks</code> returns <code>{data: []}</code> despite
+many <code>results</code> rows referencing task IDs.</p>
+<p><strong>Status (verified 2026-04-27):</strong> Production diagnostics returned
+<code>tasks_in_catalog: 0</code>, <code>drift_count: 64</code>. Root cause is the operator never
+ran <code>centralgauge sync-catalog --apply</code> after the latest task-set ingest.</p>
+<p><strong>Fix:</strong> follow the §"Catalog drift remediation" runbook below — single
+operator command (<code>deno task start sync-catalog --apply</code>).</p>
+<p><strong>UI fallback (P7 Phases C/D):</strong> the <code>/api/v1/categories</code> and
+<code>/api/v1/matrix</code> endpoints handle <code>tasks_in_catalog=0</code> gracefully and emit
+empty arrays; consumer pages render an empty-state. Operators do NOT need
+to run sync before the site builds; once they do, the UI auto-populates.
+No new diagnostic script is added by P7 — <code>/api/v1/health/catalog-drift</code>
+shipped in P6 already reports the same data the audit surfaced.</p>
+<h2 id="shortcomings-empty-cc-2">Shortcomings empty (CC-2)<a class="headerlink" href="#shortcomings-empty-cc-2" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>P7 audit-finding acknowledgment. No fix in P7 — analyzer is a P8
+bench-side deliverable.</p>
+</blockquote>
+<p><strong>Symptom:</strong> <code>/api/v1/shortcomings</code> and
+<code>/api/v1/models/[slug]/limitations?accept=application/json</code> return
+<code>{data: []}</code> for ALL models globally.</p>
+<p><strong>Root cause:</strong> no shortcomings analyzer has run on any results. The
+server-side write endpoint (<code>/api/v1/admin/shortcomings/batch</code>) exists,
+but no caller has invoked it. Building the analyzer involves LLM-driven
+failure-mode classification + signed batch writes — out of P7 scope.</p>
+<p><strong>Status:</strong> deferred to P8 (bench-side analyzer build).</p>
+<p><strong>UI behavior (P7 Phase E):</strong> the model-detail Shortcomings section ships
+with mandatory empty-state messaging (e.g. "Pedagogical analysis pending —
+the analyzer has not yet run for this model"). When P8 ships, the same UI
+auto-populates via the existing
+<code>/api/v1/models/[slug]/limitations?accept=application/json</code> endpoint —
+NO new endpoint, NO migration. The global aggregate
+endpoint (<code>/api/v1/shortcomings</code>) is NOT extended with <code>?model=</code>; the
+per-model endpoint is the right surface.</p>
+<h2 id="catalog-drift-remediation-p6-a4a5a6">Catalog drift remediation (P6 A4/A5/A6)<a class="headerlink" href="#catalog-drift-remediation-p6-a4a5a6" title="Permanent link">&para;</a></h2>
+<h3 id="symptom">Symptom<a class="headerlink" href="#symptom" title="Permanent link">&para;</a></h3>
+<p><code>/tasks</code> and <code>/tasks/&lt;id&gt;</code> render 0 rows (or 404) despite results existing.</p>
+<h3 id="cause">Cause<a class="headerlink" href="#cause" title="Permanent link">&para;</a></h3>
+<p>The <code>tasks</code> D1 table is empty while <code>results.task_id</code> references rows.
+This happens when <code>centralgauge sync-catalog --apply</code> is missed after a
+new task-set is ingested.</p>
+<h3 id="detection">Detection<a class="headerlink" href="#detection" title="Permanent link">&para;</a></h3>
+<p>The <code>/api/v1/health/catalog-drift</code> endpoint (P6 Task A5) returns
+<code>{ tasks_referenced: N, tasks_in_catalog: M, drift: bool, drift_count: N - M, generated_at: ISO }</code>.
+The daily cron at 03:00 UTC (P6 Task A6 — inline, no HTTP indirection)
+writes a <code>catalog_health</code> row when <code>drift_count &gt; 0</code>.</p>
+<p>To check manually:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">&#39;https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift&#39;</span>
+</code></pre></div>
+<p>Expected response: <code>{"tasks_referenced": 38, "tasks_in_catalog": 38, "drift": false, "drift_count": 0, ...}</code>.</p>
+<h3 id="remediation-runbook">Remediation runbook<a class="headerlink" href="#remediation-runbook" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Pre-check (idempotency): every catalog admin endpoint
+   (<code>/api/v1/admin/catalog/{models,pricing,task-sets}</code>) implements
+   <code>INSERT ... ON CONFLICT ... DO UPDATE</code>, so re-running the sync
+   against a partially-populated catalog is safe.</li>
+<li>Dry-run the sync first (no writes):</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nb">cd</span><span class="w"> </span>/u/Git/CentralGauge<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>sync-catalog
+</code></pre></div>
+<p>The CLI prints the rows it WOULD upsert. Verify the output looks
+   sane (no surprise deletions; row counts match the local catalog
+   YAML).
+3. Apply:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nb">cd</span><span class="w"> </span>/u/Git/CentralGauge<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>deno<span class="w"> </span>task<span class="w"> </span>start<span class="w"> </span>sync-catalog<span class="w"> </span>--apply
+</code></pre></div>
+<p>Note: admin endpoints rate-limit at ~10 req/min — the CLI handles
+   the inevitable 429 with a ~60s pause and retry.
+4. Verify drift is clean post-apply:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="s1">&#39;https://centralgauge.sshadows.workers.dev/api/v1/health/catalog-drift&#39;</span>
+</code></pre></div>
+<p>Expected <code>drift: false</code>, <code>drift_count: 0</code>.</p>
+<h3 id="daily-catalog-drift-ci-probe">Daily catalog-drift CI probe<a class="headerlink" href="#daily-catalog-drift-ci-probe" title="Permanent link">&para;</a></h3>
+<p>A dedicated GitHub Actions workflow (<code>.github/workflows/catalog-drift.yml</code>)
+runs at 04:00 UTC daily. It sets <code>CI_PROD_PROBE=1</code> and runs
+<code>npx vitest run --config vitest.build.config.ts tests/build/catalog-drift-invariant.test.ts</code>.
+On failure, the operator follows the remediation runbook above.</p>
+<p>The probe is gated by <code>CI_PROD_PROBE=1</code> so local dev and ordinary PR
+runs don't depend on production reachability. Trigger the workflow
+manually via "Run workflow" in the GitHub Actions UI when verifying a
+freshly-applied sync-catalog.</p>
+<h2 id="visual-regression-baseline-capture-one-time-ubuntu-ci">Visual-regression baseline capture (one-time, Ubuntu CI)<a class="headerlink" href="#visual-regression-baseline-capture-one-time-ubuntu-ci" title="Permanent link">&para;</a></h2>
+<p>The P5.4 <code>tests/e2e/visual-regression.spec.ts</code> captures PNG snapshots of
+public pages and diffs against committed baselines. Local Windows and CI
+Ubuntu render fonts differently — committing local Windows PNGs creates
+a baseline that Ubuntu CI fails against on every PR.</p>
+<p><strong>The first baseline must be captured on Ubuntu CI.</strong> P6 Task E3 stages
+the playbook here; execute when ready (after IconBase + Phase B
+component-system migrations land, so the canonical reference set
+already reflects the current SVG output).</p>
+<h3 id="one-time-capture">One-time capture<a class="headerlink" href="#one-time-capture" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Confirm the visual-regression spec is configured for <code>chromium</code>:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nb">cd</span><span class="w"> </span>/u/Git/CentralGauge/site<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;chromium&quot;</span><span class="w"> </span>tests/e2e/visual-regression.spec.ts
+</code></pre></div>
+<ol>
+<li>Add a manual GitHub Actions workflow (<code>.github/workflows/visual-regression-baseline.yml</code>):</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Capture visual-regression baseline (manual)</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">on</span><span class="p">:</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">workflow_dispatch</span><span class="p">:</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="nt">jobs</span><span class="p">:</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">capture</span><span class="p">:</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-node@v4</span>
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> node-version</span><span class="p">:</span><span class="w"> </span><span class="nv">20</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cd site &amp;&amp; npm ci</span>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cd site &amp;&amp; npx playwright install --with-deps chromium</span>
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Capture baseline</span>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cd site &amp;&amp; npx playwright test tests/e2e/visual-regression.spec.ts --update-snapshots</span>
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload artifacts</span>
+<a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v4</span>
+<a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a><span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">visual-regression-baselines</span>
+<a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">site/tests/e2e/visual-regression.spec.ts-snapshots/</span>
+</code></pre></div>
+<ol>
+<li>
+<p>Run the workflow via the GitHub UI ("Run workflow" button).</p>
+</li>
+<li>
+<p>Download the artifact, commit the PNGs to
+   <code>site/tests/e2e/visual-regression.spec.ts-snapshots/</code>, open a PR
+   titled <code>chore(site): visual-regression baseline (Ubuntu CI capture)</code>.</p>
+</li>
+<li>
+<p>Subsequent CI runs compare against the committed baselines. Local
+   development uses <code>--update-snapshots</code> only when an intentional UI
+   change is being baselined — and the new baseline must be re-captured
+   on Ubuntu CI before merging.</p>
+</li>
+</ol>
+<h3 id="deferred-lifecycle-baselines">Deferred lifecycle baselines<a class="headerlink" href="#deferred-lifecycle-baselines" title="Permanent link">&para;</a></h3>
+<p>Plan J6 added placeholder <code>test.skip</code> entries in
+<code>site/tests/e2e/visual-regression.spec.ts</code> for:</p>
+<ul>
+<li><code>/admin/lifecycle/status</code></li>
+<li><code>/admin/lifecycle/review</code></li>
+<li><code>/admin/lifecycle/events</code></li>
+<li><code>/families/&lt;slug&gt;#diff</code> (Concept trajectory section)</li>
+</ul>
+<p>They are <strong>skipped pending two prerequisites</strong>:</p>
+<ol>
+<li><strong>CF Access fixture</strong> for the admin pages — <code>/admin/lifecycle/*</code>
+   is gated by Cloudflare Access (Plan F5). The test rig needs a
+   cookie-injection or test-only auth-bypass before the page can
+   render in CI without a real GitHub OAuth round-trip.</li>
+<li><strong>Seeded lifecycle data</strong> — pending-review rows, lifecycle_events
+   entries, family_diffs rows. The current <code>seed:e2e</code> harness covers
+   the public-facing tables; admin lifecycle data needs an extension.</li>
+</ol>
+<p>When both land:</p>
+<ol>
+<li>Swap <code>test.skip(true, '...')</code> → <code>test('...', ...)</code> per the
+   capture pattern used by the public PAGES loop (with theme +
+   density variants if those surfaces support them; admin pages
+   probably want a single <code>light · comfortable</code> capture only).</li>
+<li>Run the manual GitHub Actions workflow from the runbook above to
+   capture the new baselines on Ubuntu.</li>
+<li>Commit the new PNGs.</li>
+</ol>
+<p>Do NOT attempt to capture these baselines on a Windows dev machine —
+the P5.4 baseline-platform invariant explicitly forbids cross-OS
+captures because of font-rendering drift.</p>
+<h2 id="custom-domain-flip-pre-flight-checklist">Custom-domain flip pre-flight checklist<a class="headerlink" href="#custom-domain-flip-pre-flight-checklist" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>P6 Phase F deliverable. Before executing the SITE_BASE_URL change in
+Phase G, verify ALL of the following. Each item is independently
+verifiable; check them off in the PR description for the Phase G
+commit.</p>
+</blockquote>
+<h3 id="single-source-of-truth-verify-before-flip">Single source of truth — verify before flip<a class="headerlink" href="#single-source-of-truth-verify-before-flip" title="Permanent link">&para;</a></h3>
+<p>The custom-domain flip works only if every surface that emits an
+absolute URL reads from <code>SITE_BASE_URL</code> (via <code>SITE_ROOT</code> in source
+code). One hardcoded <code>centralgauge.sshadows.workers.dev</code> in a non-test
+file will silently mis-link after the flip. Run these greps locally
+before staging the Phase G commit:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># 1. SITE_ROOT (or its build-time twin BASE_URL) is referenced at every</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="c1"># absolute-URL emission site</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>grep<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;SITE_ROOT&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span>site/src/routes/+layout.svelte<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span>site/src/lib/components/layout/StructuredData.svelte
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="c1"># Expected: each file &gt; 0. Canonical (+layout.svelte) and JSON-LD</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="c1"># (StructuredData.svelte) both emit via SITE_ROOT.</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;SITE_BASE_URL&quot;</span><span class="w"> </span>site/scripts/build-sitemap.ts
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a><span class="c1"># Expected: &gt; 0 hits. The sitemap generator runs in a Node-only build</span>
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a><span class="c1"># context (no `$lib` import), so it reads `process.env.SITE_BASE_URL`</span>
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a><span class="c1"># directly and exports its own `BASE_URL` const that mirrors SITE_ROOT</span>
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a><span class="c1"># semantics.</span>
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a><span class="c1"># 2. Only ONE source of the workers.dev default URL string</span>
+<a id="__codelineno-11-16" name="__codelineno-11-16" href="#__codelineno-11-16"></a>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;centralgauge\.sshadows\.workers\.dev&quot;</span><span class="w"> </span>site/src
+<a id="__codelineno-11-17" name="__codelineno-11-17" href="#__codelineno-11-17"></a><span class="c1"># Expected: only site/src/lib/shared/site.ts:18 (the default value</span>
+<a id="__codelineno-11-18" name="__codelineno-11-18" href="#__codelineno-11-18"></a><span class="c1"># fallback). Any other hit in src/ is a hardcode bug — fix before flip.</span>
+<a id="__codelineno-11-19" name="__codelineno-11-19" href="#__codelineno-11-19"></a>
+<a id="__codelineno-11-20" name="__codelineno-11-20" href="#__codelineno-11-20"></a><span class="c1"># 3. wrangler.toml is the single runtime override point</span>
+<a id="__codelineno-11-21" name="__codelineno-11-21" href="#__codelineno-11-21"></a>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;SITE_BASE_URL&quot;</span><span class="w"> </span>site/wrangler.toml
+<a id="__codelineno-11-22" name="__codelineno-11-22" href="#__codelineno-11-22"></a><span class="c1"># Expected: 1 line under [vars]. After the flip this line — and ONLY</span>
+<a id="__codelineno-11-23" name="__codelineno-11-23" href="#__codelineno-11-23"></a><span class="c1"># this line — changes.</span>
+<a id="__codelineno-11-24" name="__codelineno-11-24" href="#__codelineno-11-24"></a>
+<a id="__codelineno-11-25" name="__codelineno-11-25" href="#__codelineno-11-25"></a><span class="c1"># 4. SITEMAP_ROUTES count matches the sitemap reality</span>
+<a id="__codelineno-11-26" name="__codelineno-11-26" href="#__codelineno-11-26"></a>grep<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;^  &#39;/&quot;</span><span class="w"> </span>site/scripts/build-sitemap.ts
+<a id="__codelineno-11-27" name="__codelineno-11-27" href="#__codelineno-11-27"></a><span class="c1"># Expected: 9 (alphabetized routes: /, /about, /compare, /families,</span>
+<a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a><span class="c1"># /limitations, /models, /runs, /search, /tasks).</span>
+</code></pre></div>
+<p>If any expected count is wrong, fix the underlying source-of-truth
+violation before proceeding — do not paper over with the wrangler
+[vars] flip.</p>
+<h3 id="pre-flight-checklist">Pre-flight checklist<a class="headerlink" href="#pre-flight-checklist" title="Permanent link">&para;</a></h3>
+<ul>
+<li>[ ] <strong>DNS prep</strong>: Cloudflare DNS record for the new domain (A or
+      CNAME) points at the Worker. Verify with <code>dig +short &lt;domain&gt;</code>.</li>
+<li>[ ] <strong>Worker custom-domain binding</strong>: Cloudflare dashboard → Workers
+      &amp; Pages → centralgauge → Custom Domains → <code>&lt;domain&gt;</code> is in the
+      list with status <code>Active</code>.</li>
+<li>[ ] <strong>SSL Mode</strong>: Cloudflare → SSL/TLS → Mode → Full (strict).</li>
+<li>
+<p>[ ] <strong>Sitemap regeneration plan</strong>: After flipping <code>SITE_BASE_URL</code>,
+      the next build regenerates <code>static/sitemap.xml</code> (and the
+      adapter copies it to <code>.svelte-kit/cloudflare/sitemap.xml</code>) with
+      the new domain. Verify by running <code>npm run build</code> AFTER the
+      wrangler.toml edit and checking the artifact:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>grep<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;&lt;loc&gt;https://&lt;new-domain&gt;/&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>site/static/sitemap.xml
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># Expected: 9 (matches SITEMAP_ROUTES.length at</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># site/scripts/build-sitemap.ts:37)</span>
+</code></pre></div>
+</li>
+<li>
+<p>[ ] <strong>Canonical URL</strong>: After deploy, verify SSR-emitted canonical:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>https://&lt;new-domain&gt;/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s1">&#39;&lt;link rel=&quot;canonical&quot;&#39;</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="c1"># Expected: &lt;link rel=&quot;canonical&quot; href=&quot;https://&lt;new-domain&gt;/&quot; /&gt;</span>
+</code></pre></div>
+</li>
+<li>
+<p>[ ] <strong>JSON-LD</strong>: After deploy, verify WebSite + Organization JSON-LD
+      schemas reference the new domain (not the old workers.dev):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>curl<span class="w"> </span>-s<span class="w"> </span>https://&lt;new-domain&gt;/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A2<span class="w"> </span><span class="s1">&#39;&quot;@type&quot;:&quot;WebSite&quot;&#39;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span><span class="s2">&quot;url&quot;</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="c1"># Expected: &quot;url&quot;:&quot;https://&lt;new-domain&gt;&quot;</span>
+</code></pre></div>
+</li>
+<li>
+<p>[ ] <strong>robots.txt sitemap pointer</strong>: <code>site/static/robots.txt</code>
+      currently hardcodes the workers.dev sitemap URL. Update its
+      <code>Sitemap:</code> line as part of the Phase G commit, OR convert
+      robots.txt to a SvelteKit endpoint that reads <code>SITE_ROOT</code> at
+      request time. Pick one and complete it before the flip — do not
+      let the sitemap reference go stale.</p>
+</li>
+<li>[ ] <strong>Cloudflare Web Analytics token</strong>: If RUM (P5.4 Task L1) was
+      tied to the old workers.dev domain, update the token's
+      <code>monitored_domains</code> to include the new domain.</li>
+<li>[ ] <strong>Old-domain redirect (optional)</strong>: Decide whether
+      <code>*.workers.dev</code> should 301-redirect to the new domain. If yes,
+      add a Cloudflare Page Rule.</li>
+<li>[ ] <strong>Lighthouse + Playwright</strong>: Re-baseline e2e specs that hardcode
+      <code>localhost:4173</code> (none should — verify) or any external domain.</li>
+<li>[ ] <strong>Search Console resubmission</strong>: After deploy, submit the new
+      sitemap URL to Google Search Console (one-time operator action).</li>
+</ul>
+<h2 id="custom-domain-flip-operator-runbook-phase-g">Custom-domain flip operator runbook (Phase G)<a class="headerlink" href="#custom-domain-flip-operator-runbook-phase-g" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>P6 Phase F deliverable. When ready to flip from
+<code>centralgauge.sshadows.workers.dev</code> to a custom domain, follow the
+sequence below. Phase G is HELD until explicit user trigger.</p>
+</blockquote>
+<h3 id="pre-flip-operator-30-min">Pre-flip (operator, ~30 min)<a class="headerlink" href="#pre-flip-operator-30-min" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Add DNS record (Cloudflare DNS): <code>&lt;domain&gt;</code> → CNAME
+   <code>centralgauge.sshadows.workers.dev</code>, Proxy enabled, TTL Auto.</p>
+</li>
+<li>
+<p>Cloudflare Workers dashboard → centralgauge → Custom Domains →
+   "Add Custom Domain" → <code>&lt;domain&gt;</code>. Wait for SSL provisioning
+   (~5 min).</p>
+</li>
+<li>
+<p>Confirm SSL Mode: Cloudflare → SSL/TLS → Full (strict).</p>
+</li>
+<li>
+<p>Run the pre-flight checklist above. Every box must be checked
+   before staging the wrangler.toml edit.</p>
+</li>
+</ol>
+<h3 id="code-change-developer-5-min">Code change (developer, ~5 min)<a class="headerlink" href="#code-change-developer-5-min" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Edit <code>site/wrangler.toml</code> <code>[vars]</code> block:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="k">[vars]</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="n">SITE_BASE_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://&lt;domain&gt;&quot;</span>
+</code></pre></div>
+<ol>
+<li>
+<p>(If chosen above) Update <code>site/static/robots.txt</code> <code>Sitemap:</code> line
+   to reference the new domain.</p>
+</li>
+<li>
+<p>Run <code>cd site &amp;&amp; npm run build</code> — verify the new sitemap regenerates
+   with <code>&lt;domain&gt;</code> URLs.</p>
+</li>
+<li>
+<p>Commit:</p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>-C<span class="w"> </span>/u/Git/CentralGauge<span class="w"> </span>add<span class="w"> </span>site/wrangler.toml<span class="w"> </span>site/static/robots.txt
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>git<span class="w"> </span>-C<span class="w"> </span>/u/Git/CentralGauge<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;feat(site): custom-domain flip — SITE_BASE_URL → https://&lt;domain&gt;&quot;</span>
+</code></pre></div>
+<h3 id="deploy-verify-developer-10-min">Deploy + verify (developer, ~10 min)<a class="headerlink" href="#deploy-verify-developer-10-min" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Deploy: <code>cd site &amp;&amp; npx wrangler deploy</code>.</p>
+</li>
+<li>
+<p>Run verification script:</p>
+</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nb">cd</span><span class="w"> </span>site<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>bash<span class="w"> </span>scripts/verify-domain-flip.sh<span class="w"> </span>&lt;domain&gt;<span class="w"> </span>centralgauge.sshadows.workers.dev
+</code></pre></div>
+<ol>
+<li>Expected: all PASS, 0 FAIL. The script exits non-zero on any
+   failure with a diagnostic line on stderr.</li>
+</ol>
+<h3 id="post-flip-operator-5-min">Post-flip (operator, ~5 min)<a class="headerlink" href="#post-flip-operator-5-min" title="Permanent link">&para;</a></h3>
+<ol>
+<li>
+<p>Submit new sitemap to Google Search Console:
+   <a href="https://search.google.com/search-console">https://search.google.com/search-console</a>.</p>
+</li>
+<li>
+<p>(Optional) Add Cloudflare Page Rule:
+   <code>centralgauge.sshadows.workers.dev/*</code> → 301 redirect to
+   <code>https://&lt;domain&gt;/$1</code>. Saves SEO juice; alternative is letting both
+   domains serve and relying on canonical rel-tags to dedupe.</p>
+</li>
+<li>
+<p>Update Cloudflare Web Analytics token's <code>monitored_domains</code> to
+   include <code>&lt;domain&gt;</code>.</p>
+</li>
+<li>
+<p>Update internal docs (CONTRIBUTING.md, README.md) to reference the
+   new domain.</p>
+</li>
+</ol>
+<h3 id="rollback-developer-5-min">Rollback (developer, ~5 min)<a class="headerlink" href="#rollback-developer-5-min" title="Permanent link">&para;</a></h3>
+<p>If post-flip verification fails, or RUM/Lighthouse regress within the
+first hour:</p>
+<ol>
+<li>Revert the <code>SITE_BASE_URL</code> line in <code>site/wrangler.toml</code> back to
+   <code>https://centralgauge.sshadows.workers.dev</code>.</li>
+<li>(If changed) Revert <code>site/static/robots.txt</code> <code>Sitemap:</code> line.</li>
+<li><code>cd site &amp;&amp; npx wrangler deploy</code> — old domain is the SSR root
+   again. The custom-domain DNS binding can stay; it just renders the
+   workers.dev canonical until the next forward flip.</li>
+<li>Re-run <code>bash scripts/verify-domain-flip.sh
+   centralgauge.sshadows.workers.dev</code> (with new = old) to confirm
+   parity with pre-flip state.</li>
+<li>Open a follow-up issue documenting the regression before
+   re-attempting the flip.</li>
+</ol>
+<h2 id="centralgauge-lifecycle-status-json-schema-plan-g-ci-consumers"><code>centralgauge lifecycle status --json</code> schema (Plan G CI consumers)<a class="headerlink" href="#centralgauge-lifecycle-status-json-schema-plan-g-ci-consumers" title="Permanent link">&para;</a></h2>
+<p>Output of <code>centralgauge lifecycle status --json</code> is validated against
+<code>StatusJsonOutputSchema</code> from <code>src/lifecycle/status-types.ts</code> before it
+reaches stdout. Output that fails to parse exits with <code>[FAIL]</code> and never
+prints — CI consumers can rely on the shape below being well-formed when
+the command exits 0.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="p">{</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">  </span><span class="nt">&quot;as_of_ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1714000000000</span><span class="p">,</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">  </span><span class="nt">&quot;rows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="w">    </span><span class="nt">&quot;model_slug&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-opus-4-7&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a><span class="w">    </span><span class="nt">&quot;task_set_hash&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;hex hash&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">    </span><span class="nt">&quot;step&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bench&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">    </span><span class="nt">&quot;last_ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1713000000000</span><span class="p">,</span>
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">    </span><span class="nt">&quot;last_event_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">    </span><span class="nt">&quot;last_event_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bench.completed&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">    </span><span class="nt">&quot;last_payload_hash&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;hex&gt;&quot;</span><span class="w"> </span><span class="err">or</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">    </span><span class="nt">&quot;last_envelope_json&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;json string&gt;&quot;</span><span class="w"> </span><span class="err">or</span><span class="w"> </span><span class="kc">null</span>
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">  </span><span class="p">}],</span>
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">  </span><span class="nt">&quot;legacy_rows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">    </span><span class="cm">/* same shape as `rows`. ALWAYS populated when pre-P6 sentinel rows</span>
+<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="cm">       (task_set_hash === &quot;pre-p6-unknown&quot;) exist. The --legacy CLI flag</span>
+<a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="cm">       controls only human-readable display; the JSON output exposes</span>
+<a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="cm">       legacy rows unconditionally so CI consumers need not pass --legacy</span>
+<a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="cm">       to see them. */</span>
+<a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">  </span><span class="nt">&quot;hints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">    </span><span class="nt">&quot;model_slug&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;anthropic/claude-opus-4-7&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">    </span><span class="nt">&quot;severity&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;info&quot;</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="s2">&quot;warn&quot;</span><span class="w"> </span><span class="err">|</span><span class="w"> </span><span class="s2">&quot;error&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">    </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;human-readable summary&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="w">    </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;exact command to execute&gt;&quot;</span>
+<a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a><span class="w">  </span><span class="p">}],</span>
+<a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="w">  </span><span class="nt">&quot;error_rows&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="w">    </span><span class="cm">/* Per-model fetch failures captured during the run. ALWAYS present</span>
+<a id="__codelineno-18-28" name="__codelineno-18-28" href="#__codelineno-18-28"></a><span class="cm">       (defaults to []). See &quot;Partial-failure contract&quot; below. */</span>
+<a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-18-30" name="__codelineno-18-30" href="#__codelineno-18-30"></a><span class="w">      </span><span class="nt">&quot;model_slug&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vendor/broken&quot;</span><span class="p">,</span>
+<a id="__codelineno-18-31" name="__codelineno-18-31" href="#__codelineno-18-31"></a><span class="w">      </span><span class="nt">&quot;error_message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;HTTP 429 Too Many Requests&quot;</span>
+<a id="__codelineno-18-32" name="__codelineno-18-32" href="#__codelineno-18-32"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-18-33" name="__codelineno-18-33" href="#__codelineno-18-33"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-18-34" name="__codelineno-18-34" href="#__codelineno-18-34"></a><span class="p">}</span>
+</code></pre></div>
+<p><code>step</code> is one of <code>"bench"</code>, <code>"debug"</code>, <code>"analyze"</code>, <code>"publish"</code>, <code>"cycle"</code>.</p>
+<h3 id="partial-failure-contract">Partial-failure contract<a class="headerlink" href="#partial-failure-contract" title="Permanent link">&para;</a></h3>
+<p><code>lifecycle status</code> iterates models sequentially and calls the signed
+<code>currentState()</code> endpoint per model. Before this fix, a single transient
+429 / network blip on model #4 of 6 would abort the entire run and the
+operator saw zero rows.</p>
+<p>Now each <code>currentState()</code> call is wrapped in try/catch:</p>
+<ul>
+<li>Successful models contribute to <code>rows</code> (and the matrix renders normally).</li>
+<li>Failed models are captured in <code>error_rows</code> with the original error
+  message for triage.</li>
+<li>The loop continues past failures — <code>rows</code> is never empty just because
+  one model is unreachable.</li>
+<li>Human-readable mode appends an <code>## Errors</code> section below the matrix
+  listing each failure with a paste-ready single-model retry command:
+  <code>centralgauge lifecycle status --model &lt;slug&gt;</code>.</li>
+<li><code>--json</code> mode includes <code>error_rows</code> (array, may be empty) so CI
+  consumers can detect partial-failure runs:</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nv">ERR_COUNT</span><span class="o">=</span><span class="k">$(</span>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.error_rows | length&#39;</span><span class="k">)</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$ERR_COUNT</span><span class="s2">&quot;</span><span class="w"> </span>-gt<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;::warning::status had </span><span class="nv">$ERR_COUNT</span><span class="s2"> per-model failures — see .error_rows[].model_slug for retry list&quot;</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="k">fi</span>
+</code></pre></div>
+<p>Exit code is <code>0</code> even when <code>error_rows</code> is non-empty — the run completed
+and the operator has actionable data. CI consumers that want to gate on
+fetch failures should check <code>.error_rows | length</code> explicitly. Hard
+failures (config missing, no admin key, network down before any model
+call succeeds) still exit non-zero with <code>[FAIL]</code> to stderr.</p>
+<h3 id="scripted-consumption-pattern">Scripted consumption pattern<a class="headerlink" href="#scripted-consumption-pattern" title="Permanent link">&para;</a></h3>
+<p><code>lifecycle status --json</code> is designed to be parseable by operator
+scripts (the previous <code>weekly-cycle.yml</code> workflow consumed it; that
+workflow was removed but the JSON contract is preserved for any future
+automation, including a manual operator wrapper):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Get every recommended next-action command across all models.</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;.hints[].command&#39;</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Surface warnings (operator-driven; no implicit CI gating now).</span>
+<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="nv">WARN_COUNT</span><span class="o">=</span><span class="k">$(</span>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;[.hints[] | select(.severity == &quot;warn&quot; or .severity == &quot;error&quot;)] | length&#39;</span><span class="k">)</span>
+<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="k">if</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$WARN_COUNT</span><span class="s2">&quot;</span><span class="w"> </span>-gt<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="o">]</span><span class="p">;</span><span class="w"> </span><span class="k">then</span>
+<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;lifecycle status has </span><span class="nv">$WARN_COUNT</span><span class="s2"> actionable hints&quot;</span>
+<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="k">fi</span>
+<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a>
+<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="c1"># Detect stale legacy backlog without --legacy.</span>
+<a id="__codelineno-20-11" name="__codelineno-20-11" href="#__codelineno-20-11"></a><span class="nv">LEGACY</span><span class="o">=</span><span class="k">$(</span>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.legacy_rows | length&#39;</span><span class="k">)</span>
+<a id="__codelineno-20-12" name="__codelineno-20-12" href="#__codelineno-20-12"></a><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Pre-P6 backfilled rows still present: </span><span class="nv">$LEGACY</span><span class="s2">&quot;</span>
+</code></pre></div>
+<h3 id="failure-contract-for-json">Failure contract for <code>--json</code><a class="headerlink" href="#failure-contract-for-json" title="Permanent link">&para;</a></h3>
+<p>When <code>lifecycle status --json</code> fails (admin key missing, network down,
+malformed <code>/api/v1/models</code> response, etc.), STDOUT receives a structured
+JSON envelope validated against <code>StatusJsonErrorSchema</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="p">{</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;human-readable message&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="w">  </span><span class="nt">&quot;code&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;CentralGaugeError.code or UNKNOWN_ERROR&gt;&quot;</span><span class="p">,</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="w">  </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;centralgauge lifecycle status [--model &lt;slug&gt;]&quot;</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>Exit code is non-zero. Stderr stays silent in <code>--json</code> mode so consumers
+piping through <code>jq</code> get parseable JSON instead of an empty pipe.</p>
+<p>The contract is therefore one of:</p>
+<ul>
+<li>exit <code>0</code> + valid <code>StatusJsonOutput</code> (no <code>error</code> key) — success</li>
+<li>exit non-zero + valid <code>StatusJsonError</code> (has <code>error</code> key) — failure</li>
+</ul>
+<p>CI consumers can detect failure either way:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nv">OUT</span><span class="o">=</span><span class="k">$(</span>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="k">)</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">{</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="w">  </span><span class="nv">ERR</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OUT</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;.error // &quot;unknown&quot;&#39;</span><span class="k">)</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span><span class="nv">CODE</span><span class="o">=</span><span class="k">$(</span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OUT</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>-r<span class="w"> </span><span class="s1">&#39;.code // &quot;UNKNOWN_ERROR&quot;&#39;</span><span class="k">)</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="w">  </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;::error::lifecycle status failed (code=</span><span class="nv">$CODE</span><span class="s2">): </span><span class="nv">$ERR</span><span class="s2">&quot;</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="w">  </span><span class="nb">exit</span><span class="w"> </span><span class="m">1</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="o">}</span>
+</code></pre></div>
+<p>Without <code>--json</code>, the command preserves the existing <code>[FAIL] ...</code> line
+on stderr and exits non-zero — stdout stays silent so any upstream pipe
+consumer sees an empty stream rather than partial garbage.</p>
+<h3 id="stability-contract">Stability contract<a class="headerlink" href="#stability-contract" title="Permanent link">&para;</a></h3>
+<p>Adding new optional fields is non-breaking. Renaming or removing any
+field listed above breaks Plan G's CI workflow — coordinate with that
+plan's maintainer (and bump <code>as_of_ts</code> ergonomics if needed).</p>
+<h2 id="admin-lifecycle-ui-access-cloudflare-access">Admin lifecycle UI access (Cloudflare Access)<a class="headerlink" href="#admin-lifecycle-ui-access-cloudflare-access" title="Permanent link">&para;</a></h2>
+<p>The <code>/admin/lifecycle/*</code> web paths and the matching
+<code>/api/v1/admin/lifecycle/*</code> endpoints accept two auth transports per Plan F:</p>
+<ul>
+<li><strong>Browser</strong> — Cloudflare Access JWT (GitHub OAuth at the edge,
+  <code>CF-Access-Jwt-Assertion</code> header, <code>actor_id = email</code>).</li>
+<li><strong>CLI</strong> — Ed25519 admin signature on the body
+  (<code>actor_id = key:&lt;key_id&gt;</code>).</li>
+</ul>
+<p>Operators NEVER see the Ed25519 admin key; the key remains a CLI-only
+credential. This is by design — revoking GitHub OAuth via CF Access does
+NOT also revoke the CLI key, and rotating the CLI key does NOT log out
+browser operators. The two identities have separate revocation paths and
+must not be conflated.</p>
+<h3 id="one-time-setup-operator">One-time setup (operator)<a class="headerlink" href="#one-time-setup-operator" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Cloudflare dashboard → <strong>Zero Trust</strong> → <strong>Access</strong> → <strong>Applications</strong>
+   → <strong>Add an application</strong> → <strong>Self-hosted</strong>.</li>
+<li><strong>Application name</strong>: <code>CentralGauge Admin Lifecycle</code>.</li>
+<li><strong>Session duration</strong>: 24 hours.</li>
+<li><strong>Application domain</strong>: <code>centralgauge.sshadows.workers.dev</code>.</li>
+<li><strong>Path</strong>: <code>/admin/lifecycle/*</code>.</li>
+<li>Add a second path entry: <code>/api/v1/admin/lifecycle/*</code> (so the API
+     endpoints are gated too — without this, the browser UI loads but
+     XHR calls return 401).</li>
+<li><strong>Identity providers</strong>: GitHub OAuth (configure under
+   <strong>Settings → Authentication</strong> if not already present).</li>
+<li><strong>Policies</strong>: add a policy <code>Operators</code> with rule
+   <code>Emails → operator@example.com,...</code>. Add additional reviewer emails
+   as needed.</li>
+<li>Save. Note the <strong>Application Audience (AUD) Tag</strong> — copy it for the
+   next step.</li>
+<li>From a shell with <code>wrangler</code> and <code>CLOUDFLARE_API_TOKEN</code> configured:
+   <div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nb">cd</span><span class="w"> </span>site
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>wrangler<span class="w"> </span>secret<span class="w"> </span>put<span class="w"> </span>CF_ACCESS_AUD
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="c1"># paste the AUD tag when prompted</span>
+</code></pre></div></li>
+<li>Verify: <code>curl -i https://centralgauge.sshadows.workers.dev/admin/lifecycle</code>
+   should redirect to a CF Access login page in a fresh incognito window.
+   <code>curl -i .../api/v1/admin/lifecycle/review/queue</code> should return 401
+   without the <code>cf-access-jwt-assertion</code> header.</li>
+</ol>
+<h3 id="wranglertoml-vs-secrets">Wrangler.toml vs secrets<a class="headerlink" href="#wranglertoml-vs-secrets" title="Permanent link">&para;</a></h3>
+<p><code>CF_ACCESS_TEAM_DOMAIN</code> is committed to <code>[vars]</code> in <code>site/wrangler.toml</code>
+(non-secret — the <code>&lt;team&gt;.cloudflareaccess.com</code> hostname is public).
+<strong><code>CF_ACCESS_AUD</code> is a secret</strong>, set via <code>wrangler secret put</code>. Do NOT
+add <code>CF_ACCESS_AUD = ""</code> under <code>[vars]</code> — vars and secrets share the
+same <code>env.*</code> namespace and a baked-in empty var would shadow the secret
+at runtime (resolution order is implementation-defined).</p>
+<p>Verify post-deploy:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>wrangler<span class="w"> </span>secret<span class="w"> </span>list<span class="w">                   </span><span class="c1"># should include CF_ACCESS_AUD</span>
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>wrangler<span class="w"> </span>deploy<span class="w"> </span>--dry-run<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>AUD<span class="w">   </span><span class="c1"># should NOT print the AUD tag</span>
+</code></pre></div>
+<h3 id="revoking-access">Revoking access<a class="headerlink" href="#revoking-access" title="Permanent link">&para;</a></h3>
+<p>Cloudflare dashboard → <strong>Access</strong> → <strong>Applications</strong> → <strong>CentralGauge
+Admin Lifecycle</strong> → <strong>Policies</strong> → remove the email. Active sessions
+invalidate on the next request (CF Access does not maintain
+server-side session state — the JWT is the session, and the JWKs cache
+in the worker is bounded by a 10-minute TTL).</p>
+<h3 id="adding-a-new-reviewer">Adding a new reviewer<a class="headerlink" href="#adding-a-new-reviewer" title="Permanent link">&para;</a></h3>
+<p>Same dashboard path; append the email to the <code>Operators</code> policy. Sessions
+for the new user begin on first authenticated visit.</p>
+<h3 id="rotating-the-aud-tag">Rotating the AUD tag<a class="headerlink" href="#rotating-the-aud-tag" title="Permanent link">&para;</a></h3>
+<p>If the CF Access application is recreated (rare, e.g., to add a new
+identity provider), the AUD tag changes. Update the secret:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>wrangler<span class="w"> </span>secret<span class="w"> </span>put<span class="w"> </span>CF_ACCESS_AUD<span class="w">   </span><span class="c1"># paste new AUD</span>
+</code></pre></div>
+<p>The old tag fails closed at the verifier (<code>cf_access_bad_aud</code>). No
+deploy is required — the verifier reads <code>env.CF_ACCESS_AUD</code> per request.</p>
+<h3 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>401 <code>cf_access_misconfigured</code></strong> — <code>CF_ACCESS_AUD</code> or
+  <code>CF_ACCESS_TEAM_DOMAIN</code> is unset. Verify with <code>wrangler secret list</code>
+  and <code>cat site/wrangler.toml | grep CF_ACCESS</code>.</li>
+<li><strong>401 <code>cf_access_unknown_kid</code></strong> — the JWKs cache is stale (&gt;10 min
+  since fetch) AND CF rotated the signing key. Restart the worker
+  (<code>wrangler deploy --no-build</code> re-deploys the same bundle to a fresh
+  isolate).</li>
+<li><strong>401 <code>cf_access_bad_aud</code></strong> — the JWT was issued for a different
+  CF Access application. Recreate the JWT by signing out and back in,
+  or check that the <code>wrangler secret put CF_ACCESS_AUD</code> value matches
+  the dashboard.</li>
+<li><strong>503 <code>cf_access_jwks_unreachable</code></strong> — CF Access JWKs endpoint is
+  down or the <code>CF_ACCESS_TEAM_DOMAIN</code> is wrong. Verify with
+  <code>curl https://&lt;team&gt;.cloudflareaccess.com/cdn-cgi/access/certs</code>.</li>
+</ul>
+<h2 id="lifecycle-runbooks">Lifecycle runbooks<a class="headerlink" href="#lifecycle-runbooks" title="Permanent link">&para;</a></h2>
+<blockquote>
+<p>Operator procedures for the lifecycle event log + admin surfaces
+introduced by the 2026-04-29 lifecycle plan. Operator + reviewer
+guide: <code>docs/site/lifecycle.md</code>.</p>
+</blockquote>
+<h3 id="how-to-authorize-a-new-operator-for-adminlifecycle">How to authorize a new operator for <code>/admin/lifecycle/*</code><a class="headerlink" href="#how-to-authorize-a-new-operator-for-adminlifecycle" title="Permanent link">&para;</a></h3>
+<p>The CF Access policy details live in this same file under
+"Admin lifecycle UI access (Cloudflare Access)" → "Adding a new
+reviewer" — the one-time setup, secrets, AUD rotation, and
+troubleshooting flows are NOT duplicated here. The minimal grant flow
+for an existing application:</p>
+<ol>
+<li>Cloudflare dashboard → <strong>Zero Trust</strong> → <strong>Access</strong> → <strong>Applications</strong>
+   → <strong>CentralGauge Admin Lifecycle</strong> → <strong>Edit</strong> → <strong>Policies</strong>.</li>
+<li>Open the existing policy <code>Operators</code> → <strong>Configure rules</strong> →
+   <strong>Include</strong> → add the new operator's GitHub OAuth email. Save.</li>
+<li>Confirm with the operator that
+   <code>https://centralgauge.sshadows.workers.dev/admin/lifecycle/status</code>
+   loads the matrix view (after a fresh GitHub OAuth round-trip in an
+   incognito window). No worker redeploy needed; CF Access policy
+   changes propagate at the edge within seconds.</li>
+</ol>
+<p>Removing access: same flow, remove the email. Active CF Access sessions
+invalidate on the next request — CF Access does not maintain
+server-side session state, so revocation is effectively immediate.</p>
+<p>CLI access (Ed25519 admin key) is unaffected by CF Access policy
+changes — the two identities have separate revocation paths. Revoke a
+CLI by rotating the admin key (separate procedure; see "Wrangler.toml
+vs secrets" above).</p>
+<h3 id="how-to-triage-a-stuck-cycle-lock">How to triage a stuck cycle lock<a class="headerlink" href="#how-to-triage-a-stuck-cycle-lock" title="Permanent link">&para;</a></h3>
+<p><strong>Symptom.</strong> <code>centralgauge cycle --llms &lt;model&gt;</code> exits immediately with
+an error like <code>cycle: lost lock race for &lt;model&gt;</code> (the orchestrator
+emits <code>cycle.aborted{reason='lost_race'}</code> and re-raises), but no other
+cycle is actually running. Cause: a previous cycle was SIGKILLed or
+evicted before it could write a terminal event, and the lock is still
+within its 90-minute TTL window.</p>
+<p><strong>Resolution.</strong></p>
+<ol>
+<li>Verify no other process is actually running:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>ps<span class="w"> </span>aux<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s2">&quot;centralgauge.*cycle&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>grep
+</code></pre></div>
+<p>If a process is running, wait for it. Do NOT proceed.</p>
+<ol>
+<li>Confirm the stuck lock by reading the event log via the status
+   endpoint:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--model<span class="w"> </span>&lt;slug&gt;<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="w">  </span>jq<span class="w"> </span><span class="s1">&#39;.rows[] | {step, last_ts, last_event_type, last_envelope_json}&#39;</span>
+</code></pre></div>
+<p>Expect a <code>cycle.started</code> with no matching <code>cycle.completed</code>,
+   <code>cycle.failed</code>, <code>cycle.timed_out</code>, or <code>cycle.aborted</code> event with
+   higher id.</p>
+<ol>
+<li>Release the lock:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;slug&gt;<span class="w"> </span>--force-unlock<span class="w"> </span>--yes
+</code></pre></div>
+<p>This writes
+   <code>cycle.aborted{reason='manual_unlock', actor_id=&lt;machine_id&gt;}</code>. The
+   <code>--yes</code> flag is mandatory — <code>--force-unlock</code> is destructive in the
+   sense that it admits a fresh cycle to start, so the prompt-bypass is
+   guarded.</p>
+<ol>
+<li>Re-run the cycle:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;slug&gt;
+</code></pre></div>
+<p>The orchestrator resumes from the last successful step (<code>bench</code> and
+   <code>debug-capture</code> typically already completed before the crash;
+   <code>analyze</code> re-runs).</p>
+<p>When the 90-minute TTL fires automatically, the orchestrator emits
+<code>cycle.timed_out</code> for the stale <code>cycle.started</code> before attempting to
+acquire its own lock — no operator action is needed for that path.
+<code>--force-unlock</code> is the manual short-circuit when waiting 90 minutes is
+not acceptable.</p>
+<h3 id="how-to-recover-from-a-bad-merge-in-concept-registry">How to recover from a bad merge in concept registry<a class="headerlink" href="#how-to-recover-from-a-bad-merge-in-concept-registry" title="Permanent link">&para;</a></h3>
+<p><strong>Symptom.</strong> Two distinct AL pedagogical concepts were collapsed into a
+single row by the clustering step. The <code>/concepts/&lt;slug&gt;</code> page now lists
+models that hit the wrong concept; the family-diff page may show
+phantom "persisting" entries that are actually a separate issue.</p>
+<p>The <code>concepts</code> table is <strong>append-only</strong> — rows are NEVER <code>DELETE</code>d
+(per the cross-plan invariant 4 in
+<code>docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md</code>). Recovery uses
+a <code>concept.split</code> event written via the <code>lifecycle cluster-review</code>
+CLI's <code>--split</code> flow:</p>
+<ol>
+<li>Identify the bad merge from the event timeline. Pull recent
+   <code>concept.merged</code> events:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--model<span class="w"> </span>&lt;slug&gt;<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="w">  </span>jq<span class="w"> </span><span class="s1">&#39;.rows[] | select(.last_event_type == &quot;concept.merged&quot;)&#39;</span>
+</code></pre></div>
+<p>Note the <code>winner_concept_id</code>, <code>loser_concept_id</code>, and <code>similarity</code>
+   from the payload.</p>
+<ol>
+<li>Run the cluster-review CLI's split flow:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>cluster-review<span class="w"> </span>--split<span class="w"> </span>&lt;winner_concept_id&gt;
+</code></pre></div>
+<p>Interactive prompt: enter slugs for the new daughter concepts;
+   choose which existing <code>shortcomings.concept_id</code> rows point at each
+   daughter. The command writes a <code>concept.split</code> event + creates the
+   new concept rows + updates <code>shortcomings.concept_id</code> joins — all in
+   a single D1 batch (per Plan D6's atomicity test).</p>
+<ol>
+<li>Verify the split landed:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>curl<span class="w"> </span>-s<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a><span class="w">  </span><span class="s2">&quot;https://centralgauge.sshadows.workers.dev/api/v1/concepts/&lt;original-slug&gt;&quot;</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-32-3" name="__codelineno-32-3" href="#__codelineno-32-3"></a><span class="w">  </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span><span class="s1">&#39;.split_into&#39;</span>
+</code></pre></div>
+<p>Lists the daughter concept slugs.</p>
+<ol>
+<li>Cache invalidation: the <code>concept.split</code> event triggers
+   <code>invalidateConcept</code> on the original slug + every alias + every
+   daughter (Plan D4). No manual <code>cache.delete()</code> needed.</li>
+</ol>
+<p><strong>Never <code>DELETE</code> from <code>concepts</code> directly.</strong> Direct deletion breaks the
+foreign-key joins from <code>shortcomings.concept_id</code> and is impossible to
+audit. The append-only invariant is the ONLY safe recovery path.</p>
+<h3 id="how-to-refresh-stale-models-manually">How to refresh stale models manually<a class="headerlink" href="#how-to-refresh-stale-models-manually" title="Permanent link">&para;</a></h3>
+<p>There is no scheduled CI for the lifecycle. The previous
+<code>weekly-cycle.yml</code> was removed — its design called bench on a Linux
+runner where bench can never succeed (BC container is Windows-only).</p>
+<p>To refresh stale models, run on a Windows machine with bccontainerhelper:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="c1"># 1. Find stale models (no recent `analysis.completed`).</span>
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a><span class="c1"># 2. Drive each stale model through the pipeline.</span>
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;vendor&gt;/&lt;model&gt;<span class="w"> </span>--yes
+<a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a>
+<a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a><span class="c1"># 3. After cycling, snapshot the activity for review.</span>
+<a id="__codelineno-33-8" name="__codelineno-33-8" href="#__codelineno-33-8"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>digest<span class="w"> </span>--since<span class="w"> </span>7d<span class="w"> </span>--format<span class="w"> </span>markdown<span class="w"> </span>&gt;<span class="w"> </span>digest.md
+</code></pre></div>
+<p>The previous workflow's value was a weekly Monday-morning prompt. To
+replicate locally, schedule a Windows Task Scheduler job that runs
+the three commands above and emails the digest output, or simply run
+<code>centralgauge lifecycle status</code> whenever you sit down to plan a
+release.</p>
+<h3 id="how-to-apply-plan-e-migration-to-production">How to apply Plan E migration to production<a class="headerlink" href="#how-to-apply-plan-e-migration-to-production" title="Permanent link">&para;</a></h3>
+<p>The Plan E migration (<code>0007_family_diffs.sql</code>) is operator-gated — Plan
+E's implementer only applied it <code>--local</code> and confirmed the schema.
+The full apply + verify + rollback runbook lives in
+<code>docs/superpowers/plans/2026-04-29-lifecycle-E-rollback-runbook.md</code>.
+Headline steps:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="nb">cd</span><span class="w"> </span>site
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a><span class="c1"># 1. Back up D1 first; keep the backup-id for rollback.</span>
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a><span class="nv">CLOUDFLARE_ACCOUNT_ID</span><span class="o">=</span>22c8fbe790464b492d9b178cc0f9255b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a><span class="w">  </span>npx<span class="w"> </span>wrangler<span class="w"> </span>d1<span class="w"> </span>backup<span class="w"> </span>create<span class="w"> </span>centralgauge
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a><span class="c1"># 2. Apply 0007.</span>
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a><span class="nv">CLOUDFLARE_ACCOUNT_ID</span><span class="o">=</span>22c8fbe790464b492d9b178cc0f9255b<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-34-8" name="__codelineno-34-8" href="#__codelineno-34-8"></a><span class="w">  </span>npx<span class="w"> </span>wrangler<span class="w"> </span>d1<span class="w"> </span>execute<span class="w"> </span>centralgauge<span class="w"> </span>--remote<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-34-9" name="__codelineno-34-9" href="#__codelineno-34-9"></a><span class="w">  </span>--file<span class="o">=</span>migrations/0007_family_diffs.sql
+<a id="__codelineno-34-10" name="__codelineno-34-10" href="#__codelineno-34-10"></a>
+<a id="__codelineno-34-11" name="__codelineno-34-11" href="#__codelineno-34-11"></a><span class="c1"># 3. Verify table + indexes + nullable from_gen_event_id; details in</span>
+<a id="__codelineno-34-12" name="__codelineno-34-12" href="#__codelineno-34-12"></a><span class="c1">#    the per-plan rollback runbook.</span>
+</code></pre></div>
+<p>Plan A's <code>0006_lifecycle.sql</code> and Plan B's slug-rename backfill have
+their own runbooks at
+<code>docs/superpowers/plans/2026-04-29-lifecycle-A-rollback-runbook.md</code>
+and <code>2026-04-29-lifecycle-B-rollback-runbook.md</code>. The two migrations
+must be applied in order (0006 before 0007 — 0007's family-diff
+foreign keys reference <code>lifecycle_events</code>).</p>
+<h3 id="how-to-interpret-a-digest">How to interpret a digest<a class="headerlink" href="#how-to-interpret-a-digest" title="Permanent link">&para;</a></h3>
+<p><code>centralgauge lifecycle digest --since 7d --format markdown</code> produces
+a markdown summary of recent activity — new concepts, regressions,
+model state transitions, and accept/reject decisions over the last
+N days. Use it to plan triage:</p>
+<ol>
+<li>Cycle failures listed in the digest. Single-line errors are usually
+   transient (rate limit, container blip); multi-line errors are
+   usually real regressions.</li>
+<li>For each failed model, re-run <code>centralgauge cycle --llms &lt;slug&gt;
+   --yes</code> locally to reproduce.</li>
+<li>Persistent failures: open a tracking issue and triage as a normal
+   bug.</li>
+</ol>
+<p>The digest is descriptive, not prescriptive — the authoritative state
+is the <code>lifecycle_events</code> table queried via <code>centralgauge lifecycle
+status</code>. If the digest and the matrix disagree, trust the matrix.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

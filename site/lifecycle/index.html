@@ -1,0 +1,2843 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/site/lifecycle/">
+      
+      
+        <link rel="prev" href="../operations/">
+      
+      
+        <link rel="next" href="../../postmortems/_template/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Lifecycle - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#lifecycle-operator-reviewer-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Lifecycle
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#state-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-lifecycle-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The lifecycle commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The lifecycle commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge cycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-populate-shortcomings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge populate-shortcomings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-cluster-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle cluster-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-web-review-ui-at-adminlifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The web review UI at /admin/lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cadence-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cadence model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slug-standardization-the-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slug standardization (the rule)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concept-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concept registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-centralgaugeyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration (.centralgauge.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#onboarding-a-new-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Onboarding a new model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#re-analyzing-an-old-model-with-a-new-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Re-analyzing an old model with a new analyzer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#investigating-a-regression" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investigating a regression
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-a-stale-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading a stale digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#state-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-lifecycle-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The lifecycle commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The lifecycle commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge cycle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-populate-shortcomings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge populate-shortcomings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-cluster-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle cluster-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#centralgauge-lifecycle-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        centralgauge lifecycle digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-web-review-ui-at-adminlifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The web review UI at /admin/lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cadence-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cadence model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slug-standardization-the-rule" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slug standardization (the rule)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#concept-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Concept registry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-centralgaugeyml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration (.centralgauge.yml)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#recipes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recipes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Recipes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#onboarding-a-new-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Onboarding a new model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#re-analyzing-an-old-model-with-a-new-analyzer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Re-analyzing an old model with a new analyzer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#investigating-a-regression" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Investigating a regression
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reading-a-stale-digest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading a stale digest
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/site/lifecycle.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="lifecycle-operator-reviewer-guide">Lifecycle — operator + reviewer guide<a class="headerlink" href="#lifecycle-operator-reviewer-guide" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>How to run the bench → debug → analyze → publish pipeline as a single
+orchestrated cycle, how state transitions are recorded, and how to use
+the web review UI. The pipeline is operator-driven (manual) — there
+is no scheduled CI for it; see "Cadence model" below.</p>
+<p><strong>Strategic plan:</strong> <code>docs/superpowers/plans/2026-04-29-model-lifecycle-event-sourcing.md</code>
+<strong>Schema appendix:</strong> same file, end of document.
+<strong>Event types appendix:</strong> same file — the authoritative list of
+every canonical event type and its payload fields.
+<strong>Implementation plan index:</strong> <code>docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md</code></p>
+</blockquote>
+<h2 id="state-model">State model<a class="headerlink" href="#state-model" title="Permanent link">&para;</a></h2>
+<p>Every (model, task_set) pair passes through four states. State is
+<strong>derived by reduction over <code>lifecycle_events</code></strong> — the table is the
+source of truth. There is no <code>state</code> column anywhere in D1; both the CLI
+matrix and the worker view (<code>v_lifecycle_state</code>) compute state from the
+event log.</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Predicate (in plain English)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BENCHED</code></td>
+<td>At least one <code>bench.completed</code> event under the current <code>task_set_hash</code>.</td>
+</tr>
+<tr>
+<td><code>DEBUGGED</code></td>
+<td>Most-recent <code>bench.completed</code> is paired with a <code>debug.captured</code> event whose <code>r2_key</code> resolves.</td>
+</tr>
+<tr>
+<td><code>ANALYZED</code></td>
+<td>At least one <code>analysis.completed</code> event whose <code>payload_hash</code> is not later overridden by an <code>analysis.failed</code> for the same.</td>
+</tr>
+<tr>
+<td><code>PUBLISHED</code></td>
+<td>At least one <code>publish.completed</code> event whose <code>payload_hash</code> matches the most-recent <code>analysis.completed</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>States are NOT exclusive: a model can be <code>BENCHED + ANALYZED</code> without
+<code>PUBLISHED</code> (analyzer wrote rows still in the review queue). The CLI
+status matrix renders this with one column per state.</p>
+<h2 id="the-lifecycle-commands">The lifecycle commands<a class="headerlink" href="#the-lifecycle-commands" title="Permanent link">&para;</a></h2>
+<p>CentralGauge surfaces lifecycle operations as one top-level command
+(<code>cycle</code>) plus a <code>lifecycle</code> subcommand group for the operator-triage
+verbs.</p>
+<h3 id="centralgauge-lifecycle-status"><code>centralgauge lifecycle status</code><a class="headerlink" href="#centralgauge-lifecycle-status" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w">                                        </span><span class="c1"># full matrix</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--model<span class="w"> </span>anthropic/claude-opus-4-7<span class="w">      </span><span class="c1"># one model</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--json<span class="w">                                 </span><span class="c1"># CI-friendly</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--legacy<span class="w">                               </span><span class="c1"># show pre-P6 sentinel rows</span>
+</code></pre></div>
+<p>Prints rows for every (model, task_set) with one column per state plus a
+next-action hint column suggesting the exact command to advance the state.
+The <code>--json</code> output is validated against <code>StatusJsonOutputSchema</code>
+(<code>src/lifecycle/status-types.ts</code>) — CI consumers can rely on the shape.
+Schema reference: <code>docs/site/operations.md</code> →
+"<code>centralgauge lifecycle status --json</code> schema".</p>
+<h3 id="centralgauge-cycle"><code>centralgauge cycle</code><a class="headerlink" href="#centralgauge-cycle" title="Permanent link">&para;</a></h3>
+<p>The orchestrator. Runs bench → debug-capture → analyze → publish under a
+single command, checkpointed against <code>lifecycle_events</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Full pipeline against the current task set</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>anthropic/claude-opus-4-7
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="c1"># Re-analyze only (skip bench + debug-capture)</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span>--from<span class="w"> </span>analyze
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="c1"># Force re-run a specific step even if its last event was *.completed</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span>--force-rerun<span class="w"> </span>analyze
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="c1"># Plan-only (writes nothing; emits no events)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span>--dry-run
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="c1"># Pick the analyzer model (default: lifecycle.analyzer_model in .centralgauge.yml)</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>openai/gpt-5.5<span class="w"> </span>--analyzer-model<span class="w"> </span>anthropic/claude-opus-4-6
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="c1"># Non-interactive — required by --force-unlock; CI uses this everywhere</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span>--yes
+</code></pre></div>
+<p><strong>Resume semantics.</strong> Re-running <code>cycle</code> skips steps whose most-recent
+event is <code>*.completed</code> and whose envelope (tool versions + task_set_hash</p>
+<ul>
+<li>settings_hash + git_sha) has not changed. To force a fresh run, use
+  <code>--force-rerun &lt;step&gt;</code>.</li>
+</ul>
+<p><strong>Concurrency.</strong> Same-(model, task_set) parallel cycles are gated by a
+<code>lock_token</code> written with the <code>cycle.started</code> event. The loser writes
+<code>cycle.aborted{reason='lost_race'}</code> and exits non-zero. TTL is 90
+minutes for the cycle; per-step timeouts are independent.</p>
+<p><strong>Crashed-worker recovery.</strong> If a cycle is killed mid-run and the lock
+has not yet expired, run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;slug&gt;<span class="w"> </span>--force-unlock<span class="w"> </span>--yes
+</code></pre></div>
+<p>This emits <code>cycle.aborted{reason='manual_unlock'}</code> so the next cycle can
+acquire a fresh lock. The operator must confirm no other process is
+running for that (model, task_set) before invoking <code>--force-unlock</code>.
+See <code>docs/site/operations.md</code> →
+"How to triage a stuck cycle lock".</p>
+<h3 id="centralgauge-verify"><code>centralgauge verify</code><a class="headerlink" href="#centralgauge-verify" title="Permanent link">&para;</a></h3>
+<p>Used standalone when the operator wants to re-analyze an existing debug
+bundle without going through the orchestrator (e.g., experimenting with
+a different analyzer model).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>centralgauge<span class="w"> </span>verify<span class="w"> </span>debug/2026-04-28T...<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>--shortcomings-only<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span>--model<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--analyzer-model<span class="w"> </span>anthropic/claude-opus-4-6
+</code></pre></div>
+<p>Plan B made <code>--shortcomings-only</code> the default. The command writes the
+production-vendor-prefixed slug directly into <code>model-shortcomings/*.json</code>;
+there is no slug transformation at populate time.</p>
+<h3 id="centralgauge-populate-shortcomings"><code>centralgauge populate-shortcomings</code><a class="headerlink" href="#centralgauge-populate-shortcomings" title="Permanent link">&para;</a></h3>
+<p>Uploads a previously-generated <code>model-shortcomings/*.json</code> to production.
+The orchestrator's <code>cycle publish</code> step calls the same code path; calling
+it directly is only needed for manual replay.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>centralgauge<span class="w"> </span>populate-shortcomings<span class="w"> </span>--only<span class="w"> </span>anthropic/claude-opus-4-7
+</code></pre></div>
+<p>Plan B retired the <code>VENDOR_PREFIX_MAP</code>. The JSON file's <code>model</code> field IS
+the production slug; the command is pass-through.</p>
+<h3 id="centralgauge-lifecycle-cluster-review"><code>centralgauge lifecycle cluster-review</code><a class="headerlink" href="#centralgauge-lifecycle-cluster-review" title="Permanent link">&para;</a></h3>
+<p>Interactive CLI for the 0.70–0.85 cosine-similarity review band — the
+ambiguous tier between auto-merge and auto-create. Shows side-by-side
+sample descriptions for each pending merge candidate; operator picks
+<code>merge</code>, <code>keep separate</code>, or <code>skip</code>. Decisions are durable; re-running
+picks up where the operator left off.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>cluster-review<span class="w">                  </span><span class="c1"># interactive walk</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>cluster-review<span class="w"> </span>--split<span class="w"> </span>&lt;id&gt;<span class="w">     </span><span class="c1"># split a previous merge</span>
+</code></pre></div>
+<p>The <code>--split</code> flow writes a <code>concept.split</code> event + creates the new
+concept rows + updates <code>shortcomings.concept_id</code> JOINs in a single D1
+batch (per the cross-plan transactionality invariant — see
+<code>docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md</code> invariant 4). The
+<code>concepts</code> table is <strong>append-only</strong>; rows are never DELETEd. See
+<code>docs/site/operations.md</code> →
+"How to recover from a bad merge in concept registry".</p>
+<h3 id="centralgauge-lifecycle-digest"><code>centralgauge lifecycle digest</code><a class="headerlink" href="#centralgauge-lifecycle-digest" title="Permanent link">&para;</a></h3>
+<p>Produces a markdown summary of the last N days of lifecycle activity —
+new concepts, regressions, model state transitions, accept/reject
+decisions. Run on demand when you want a snapshot of recent activity.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>digest<span class="w"> </span>--since<span class="w"> </span>7d<span class="w"> </span>--format<span class="w"> </span>markdown
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>digest<span class="w"> </span>--since<span class="w"> </span>7d<span class="w"> </span>--format<span class="w"> </span>json
+</code></pre></div>
+<h2 id="the-web-review-ui-at-adminlifecycle">The web review UI at <code>/admin/lifecycle</code><a class="headerlink" href="#the-web-review-ui-at-adminlifecycle" title="Permanent link">&para;</a></h2>
+<p><code>https://centralgauge.sshadows.workers.dev/admin/lifecycle</code></p>
+<p><strong>Authentication.</strong> Cloudflare Access with GitHub OAuth (Plan F5). On
+first access, the operator's GitHub account email must be on the CF
+Access policy allowlist; otherwise a 403 page renders at the edge before
+the worker is invoked. Adding a new operator: see
+<code>docs/site/operations.md</code> → "Admin lifecycle UI access (Cloudflare Access)"
+and "How to authorize a new operator for <code>/admin/lifecycle/*</code>".</p>
+<p><strong>Pages.</strong></p>
+<ul>
+<li><strong><code>/admin/lifecycle/status</code></strong> — Same matrix view as the CLI <code>status</code>
+  command, in browser. Click a cell to see the event timeline for that
+  (model, task_set, state).</li>
+<li><strong><code>/admin/lifecycle/review</code></strong> — Pending-review queue. Entries below the
+  confidence threshold (default <code>lifecycle.confidence_threshold = 0.7</code>)
+  appear here. Click a row → side-by-side pane: left shows the raw debug
+  excerpt with line numbers; right shows the LLM rationale plus the
+  proposed <code>correct_pattern</code> / <code>incorrect_pattern</code>. Buttons:
+  <strong>Accept</strong> (writes <code>analysis.accepted</code> event + <code>INSERT</code>s into
+  <code>shortcomings</code>); <strong>Reject</strong> (writes <code>analysis.rejected</code> event with the
+  operator-supplied reason).</li>
+<li><strong><code>/admin/lifecycle/events</code></strong> — Full event timeline. Filterable by
+  model, task_set, event type, time range. Useful for incident
+  forensics ("what changed between the good run and the regressed run?").</li>
+</ul>
+<p>All three pages call the admin endpoints with the CF Access cookie
+attached automatically by the browser; there is no client-side key
+handling. The same admin endpoints accept Ed25519-signed CLI traffic
+(used by <code>lifecycle digest</code>, <code>lifecycle status</code>, and any operator
+script). The worker middleware tries the Ed25519 signature first
+(authoritative <code>key:&lt;n&gt;</code> identity), falls back to CF Access JWT for
+browser flows, and fails closed if neither validates. Service-token
+CF Access requests (CLI/CI edge-bypass) carry both — the JWT is just
+edge-bypass and the body signature is the actual auth.</p>
+<h2 id="cadence-model">Cadence model<a class="headerlink" href="#cadence-model" title="Permanent link">&para;</a></h2>
+<p>The lifecycle pipeline is <strong>operator-driven</strong>, not scheduled:</p>
+<ul>
+<li><strong>Bench</strong> requires a Business Central container, which is Windows-only
+  (<code>bccontainerhelper</code>). It cannot run on Linux CI.</li>
+<li><strong>Debug-capture</strong> writes to a local <code>debug/</code> directory created by
+  bench, then uploads a tarball to R2. Tied to bench's substrate.</li>
+<li><strong>Analyze</strong> currently reads the local <code>debug/</code> directory; it can
+  technically run anywhere given the R2 bundle, but the wiring to pull
+  bundles from R2 to a non-bench machine doesn't exist yet.</li>
+<li><strong>Publish</strong> is admin-scope D1 + R2 work; runs anywhere.</li>
+</ul>
+<p>There is no scheduled CI workflow for the lifecycle. A previous
+<code>weekly-cycle.yml</code> was removed (commit history) — its design ran on
+Linux but called bench, which always failed; the workflow was theater
+behind a <code>continue-on-error: true</code> swallow. If a future "catch-up
+analyze on Linux" workflow is added, it would: query
+<code>lifecycle_events</code> for <code>(model, task_set)</code> pairs with <code>bench.completed</code>
+but no <code>analysis.completed</code>, pull the matching debug bundle from R2,
+run <code>verify --shortcomings-only</code>, and publish — all admin-scope D1 +
+R2 work, fully Linux-runnable.</p>
+<p>For now, run the pipeline manually:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Visibility — current state matrix.</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Weekly-style digest of recent activity.</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>digest<span class="w"> </span>--since<span class="w"> </span>7d<span class="w"> </span>--format<span class="w"> </span>markdown
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Drive a specific model through the pipeline.</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;vendor&gt;/&lt;model&gt;
+</code></pre></div>
+<h2 id="slug-standardization-the-rule">Slug standardization (the rule)<a class="headerlink" href="#slug-standardization-the-rule" title="Permanent link">&para;</a></h2>
+<p>Every model's slug, in every surface, is <strong>vendor-prefixed</strong>:</p>
+<ul>
+<li><code>anthropic/claude-opus-4-7</code></li>
+<li><code>openai/gpt-5.5</code></li>
+<li><code>openrouter/deepseek/deepseek-v4-pro</code></li>
+</ul>
+<p>The legacy <code>VENDOR_PREFIX_MAP</code> and the underscore-separated filenames
+(<code>deepseek_deepseek-v3.2.json</code>) were retired in Plan B. New JSON files
+written by <code>verify</code> use the production slug as the <code>model</code> field; the
+filesystem-safe filename replaces <code>/</code> with <code>_</code> for readability only.</p>
+<p><strong>Adding a new vendor: no code change.</strong> The slug <code>&lt;vendor&gt;/&lt;model&gt;</code> is
+written by <code>verify</code> directly; the catalog row in
+<code>site/catalog/models.yml</code> defines the canonical name;
+<code>sync-catalog --apply</code> reconciles to D1. There is no mapping table to
+update.</p>
+<h2 id="concept-registry">Concept registry<a class="headerlink" href="#concept-registry" title="Permanent link">&para;</a></h2>
+<p>Plan D introduced canonical concepts. The analyzer proposes a concept
+slug per shortcoming entry; the system clusters against existing
+concepts using a three-tier threshold:</p>
+<table>
+<thead>
+<tr>
+<th>Cosine similarity</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≥ 0.85 OR slug-equal</td>
+<td>Auto-merge into existing concept (writes <code>concept.aliased</code>).</td>
+</tr>
+<tr>
+<td>0.70–0.85</td>
+<td>Mandatory review queue (<code>lifecycle cluster-review</code>; operator decides).</td>
+</tr>
+<tr>
+<td>&lt; 0.70</td>
+<td>Auto-create new concept (writes <code>concept.created</code>).</td>
+</tr>
+</tbody>
+</table>
+<p>Concepts are <strong>append-only</strong> — they are never DELETEd. A merge sets
+<code>superseded_by</code> on the loser concept; a split writes a <code>concept.split</code>
+event + creates new concept rows. Recovery from a bad merge: see the
+operations runbook.</p>
+<h2 id="configuration-centralgaugeyml">Configuration (<code>.centralgauge.yml</code>)<a class="headerlink" href="#configuration-centralgaugeyml" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lifecycle.confidence_threshold</code></td>
+<td><code>0.7</code></td>
+<td>Entries below this are routed to the review queue instead of auto-publishing.</td>
+</tr>
+<tr>
+<td><code>lifecycle.cross_llm_sample_rate</code></td>
+<td><code>0.2</code></td>
+<td>Fraction of analyzer entries re-checked by a second LLM. Range 0.0–1.0.</td>
+</tr>
+<tr>
+<td><code>lifecycle.analyzer_model</code></td>
+<td><code>anthropic/claude-opus-4-6</code></td>
+<td>Default analyzer model (override per-cycle via <code>--analyzer-model</code>). Defined by Plan F's lifecycle config schema.</td>
+</tr>
+</tbody>
+</table>
+<p>Pricing: at 20% cross-LLM sample rate, the second-pass adds about $3 to a
+typical 150-entry release. Cranking to 1.0 raises this to ~$15.</p>
+<h2 id="recipes">Recipes<a class="headerlink" href="#recipes" title="Permanent link">&para;</a></h2>
+<h3 id="onboarding-a-new-model">Onboarding a new model<a class="headerlink" href="#onboarding-a-new-model" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># 1. Add to the catalog (existing flow):</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>vim<span class="w"> </span>site/catalog/models.yml<span class="w">      </span><span class="c1"># add the new model row</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>centralgauge<span class="w"> </span>sync-catalog<span class="w"> </span>--apply
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="c1"># 2. Run the orchestrator (this is the new flow):</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span>--llms<span class="w"> </span>&lt;vendor&gt;/&lt;model&gt;
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="c1"># 3. If anything was routed to the review queue, triage at:</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>open<span class="w"> </span>https://centralgauge.sshadows.workers.dev/admin/lifecycle/review
+</code></pre></div>
+<h3 id="re-analyzing-an-old-model-with-a-new-analyzer">Re-analyzing an old model with a new analyzer<a class="headerlink" href="#re-analyzing-an-old-model-with-a-new-analyzer" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>centralgauge<span class="w"> </span>cycle<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">  </span>--llms<span class="w"> </span>anthropic/claude-opus-4-6<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span>--from<span class="w"> </span>analyze<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span>--analyzer-model<span class="w"> </span>anthropic/claude-opus-4-7<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span>--force-rerun<span class="w"> </span>analyze
+</code></pre></div>
+<p>Re-analysis requires the original debug bundle in R2. Plan C uploads
+every <code>debug.captured</code> event's tarball; retention is indefinite. If the
+bundle is missing, the cycle aborts with a clear error.</p>
+<h3 id="investigating-a-regression">Investigating a regression<a class="headerlink" href="#investigating-a-regression" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># 1. Find the most-recent good state from the event timeline:</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>open<span class="w"> </span>https://centralgauge.sshadows.workers.dev/admin/lifecycle/events
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># 2. Compare envelopes (tool versions, git_sha) between the last good</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="c1">#    and first bad event by querying the admin endpoint directly:</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>centralgauge<span class="w"> </span>lifecycle<span class="w"> </span>status<span class="w"> </span>--model<span class="w"> </span>&lt;slug&gt;<span class="w"> </span>--json<span class="w"> </span><span class="p">|</span><span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">  </span>jq<span class="w"> </span><span class="s1">&#39;.rows[] | {step, last_ts, last_event_type, last_envelope_json}&#39;</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="c1"># 3. If the envelopes match (deterministic regression), open an issue</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="c1">#    with the two event ids attached.</span>
+</code></pre></div>
+<h3 id="reading-a-stale-digest">Reading a stale digest<a class="headerlink" href="#reading-a-stale-digest" title="Permanent link">&para;</a></h3>
+<p>Run <code>centralgauge lifecycle digest --since 7d --format markdown</code> for a
+snapshot of the last week's lifecycle events — new concepts,
+regressions, accept/reject decisions, model state transitions.
+Triaging stale models:</p>
+<ol>
+<li><code>centralgauge lifecycle status</code> — find rows where the most-recent
+   <code>analysis.completed</code> is older than your acceptable window.</li>
+<li>For each, run <code>centralgauge cycle --llms &lt;slug&gt;</code> locally on a
+   Windows machine with a BC container.</li>
+<li>Most transient errors (rate limits, container blips) self-resolve
+   on retry; persistent failures indicate a real regression and
+   warrant investigation per "Investigating a regression" above.</li>
+</ol>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Strategic plan:</strong> <code>docs/superpowers/plans/2026-04-29-model-lifecycle-event-sourcing.md</code></li>
+<li><strong>Canonical event-types reference</strong> — the authoritative list of every
+  <code>bench.*</code>, <code>analysis.*</code>, <code>publish.*</code>, <code>concept.*</code>, <code>cycle.*</code> event
+  type plus its payload fields: same file → "Event types appendix" near
+  the end. When in doubt about whether an event type is real, check
+  there first — invented event types (e.g. <code>bench.dry_run</code>,
+  <code>analyze.skipped</code>) will NOT appear in this list and must not be
+  introduced.</li>
+<li><strong>Schema appendix</strong> (<code>lifecycle_events</code>, <code>concepts</code>, <code>concept_aliases</code>,
+  <code>pending_review</code> definitions): same file, end.</li>
+<li><strong>Implementation plan index:</strong> <code>docs/superpowers/plans/2026-04-29-lifecycle-INDEX.md</code></li>
+<li><strong>Per-phase implementation plans:</strong>
+  <code>docs/superpowers/plans/2026-04-29-lifecycle-{A,B,C,D-data,D-prompt,E,F,G,H,J}-*.md</code></li>
+<li><strong>Operations runbook:</strong> <code>docs/site/operations.md</code></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
