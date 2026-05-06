@@ -9,6 +9,7 @@ import {
 } from "../../../../../../../../src/lifecycle/diff";
 import type { FamilyDiff } from "$lib/shared/api-types";
 import { FAMILY_DIFF_CACHE_NAME } from "$lib/server/family-diff-cache";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 /**
  * GET /api/v1/families/<slug>/diff?from=<event_id>&to=<event_id>&task_set=<hash>
@@ -75,8 +76,11 @@ export const GET: RequestHandler = async (
       }
     }
 
-    // Cache lookup — use the actual Request as key. Hit short-circuits the
-    // SQL path and matches the trigger's eviction key shape exactly.
+    // Cache lookup — use a canonical versioned Request as key. Appending
+    // _cv retires old-version cache entries on deploy without a global
+    // cache purge. The key must match the URL shape used by
+    // `buildFamilyDiffCacheKeys` (which drives trigger-side invalidation)
+    // so eviction actually hits the entries stored here.
     //
     // The cached entry was stored with `cache-control: public, max-age=N`
     // (workerd's Cache API rejects `private`/`no-store`/`no-cache` on
@@ -86,7 +90,10 @@ export const GET: RequestHandler = async (
     // `caches.default` (which is URL-keyed and bypasses our app-level
     // named-cache eviction on subsequent reads).
     const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
-    const cached = await cache.match(request);
+    const cacheUrl = new URL(request.url);
+    cacheUrl.searchParams.set("_cv", CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    const cached = await cache.match(cacheKey);
     if (cached) return relabelForClient(cached);
 
     // Resolve task_set: explicit param > current.
@@ -147,7 +154,7 @@ export const GET: RequestHandler = async (
       // Shorter TTL — empty-family state changes the moment the first
       // analysis.completed event lands; the trigger will evict on that
       // event (cache key shape is derived from the same parameters).
-      return await respondCached(cache, request, shell, 60);
+      return await respondCached(cache, request, cacheKey, shell, 60);
     }
 
     let fromEventId: number | null;
@@ -199,7 +206,7 @@ export const GET: RequestHandler = async (
     );
     if (row) {
       const result = JSON.parse(row.payload_json) as FamilyDiff;
-      return await respondCached(cache, request, result, 300);
+      return await respondCached(cache, request, cacheKey, result, 300);
     }
 
     // Fallback: trigger may not have run yet (slow waitUntil OR backfill of
@@ -212,7 +219,7 @@ export const GET: RequestHandler = async (
       from_event_ts: fromEventTs,
       to_gen_event_id: toEventId,
     });
-    return await respondCached(cache, request, result satisfies DiffResult, 60);
+    return await respondCached(cache, request, cacheKey, result satisfies DiffResult, 60);
   } catch (err) {
     return errorResponse(err);
   }
@@ -236,6 +243,7 @@ export const GET: RequestHandler = async (
 async function respondCached(
   cache: Cache,
   request: Request,
+  cacheKey: Request,
   body: unknown,
   maxAgeSeconds: number,
 ): Promise<Response> {
@@ -277,8 +285,9 @@ async function respondCached(
     },
   });
   // Inline put (NOT ctx.waitUntil) so the next request — and tests — observe
-  // the cached entry deterministically.
-  await cache.put(request, storedResponse);
+  // the cached entry deterministically. Use cacheKey (versioned URL) not
+  // request so eviction via buildFamilyDiffCacheKeys hits the same entry.
+  await cache.put(cacheKey, storedResponse);
   return clientResponse;
 }
 

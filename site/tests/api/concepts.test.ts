@@ -3,8 +3,10 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetDb } from "../utils/reset-db";
 import {
   CONCEPT_CACHE_NAME,
+  CONCEPT_LIST_CANONICAL_NS,
   invalidateConcept,
 } from "../../src/lib/server/concept-cache";
+import { CACHE_VERSION } from "../../src/lib/server/cache-version";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -26,21 +28,34 @@ beforeEach(async () => {
        VALUES (3, 'old-pitfall', 'Old', 'misc', 'd3', 100, 1000)`,
     ),
   ]);
-  // The list handler now canonicalises cache keys (strips junk query params,
-  // keeps only `?recent=<clamped-N>`). The previous `?_cb=<unique>` busting
-  // strategy no longer works — those params are stripped before cache.match.
-  // Explicitly clear every canonical cache slot the suite touches between
-  // tests; otherwise the second test in a suite hits the first's stale entry.
+  // The list handler canonicalises cache keys: strips junk params and
+  // appends `_cv=<version>`. The previous `?_cb=<unique>` busting strategy
+  // no longer works — those params are stripped before cache.match. Wipe
+  // every canonical slot (both unsuffixed legacy keys and current _cv keys)
+  // so cross-test pollution cannot affect assertions.
   const cache = await caches.open(CONCEPT_CACHE_NAME);
-  for (const n of [1, 2, 5, 10, 20, 50, 100, 200, 9999]) {
+  // Clear all canonical recent=N slots under the current _cv key and any
+  // legacy unsuffixed keys that may exist from an older build.
+  for (const n of [...CONCEPT_LIST_CANONICAL_NS, 2, 9999] as number[]) {
     await cache.delete(new Request(`https://x/api/v1/concepts?recent=${n}`));
+    await cache.delete(
+      new Request(`https://x/api/v1/concepts?recent=${n}&_cv=${CACHE_VERSION}`),
+    );
   }
   await cache.delete(new Request("https://x/api/v1/concepts"));
-  await cache.delete(
-    new Request("https://x/api/v1/concepts/flowfield-calcfields"),
-  );
-  await cache.delete(new Request("https://x/api/v1/concepts/flowfield-calc"));
-  await cache.delete(new Request("https://x/api/v1/concepts/does-not-exist"));
+  // Per-slug entries: both unsuffixed (legacy) and versioned.
+  for (const slug of [
+    "flowfield-calcfields",
+    "flowfield-calc",
+    "does-not-exist",
+  ]) {
+    await cache.delete(
+      new Request(`https://x/api/v1/concepts/${slug}`),
+    );
+    await cache.delete(
+      new Request(`https://x/api/v1/concepts/${slug}?_cv=${CACHE_VERSION}`),
+    );
+  }
 });
 
 describe("GET /api/v1/concepts", () => {
@@ -195,20 +210,21 @@ describe("GET /api/v1/concepts/[slug]", () => {
 describe("cache invalidation integration", () => {
   it("invalidateConcept clears the per-slug cached response", async () => {
     // Warm the cache via a real request (handler's inline cache.put commits
-    // before returning).
+    // before returning). Handler stores under the versioned key (url?_cv=v2).
     const url = "https://x/api/v1/concepts/flowfield-calcfields";
+    const versionedUrl = `${url}?_cv=${CACHE_VERSION}`;
     const first = await SELF.fetch(url);
     expect(first.status).toBe(200);
     await first.arrayBuffer();
 
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    const present = await cache.match(new Request(url));
-    expect(present).toBeTruthy();
+    const present = await cache.match(new Request(versionedUrl));
+    expect(present, "entry should be stored under versioned key").toBeTruthy();
 
     await invalidateConcept("flowfield-calcfields", [], "https://x");
 
-    const after = await cache.match(new Request(url));
-    expect(after).toBeUndefined();
+    const after = await cache.match(new Request(versionedUrl));
+    expect(after, "versioned key should be cleared after invalidation").toBeUndefined();
   });
 
   it("invalidateConcept clears the list cache for arbitrary N (not just 20)", async () => {
@@ -221,27 +237,35 @@ describe("cache invalidation integration", () => {
       await r.arrayBuffer();
     }
 
+    // The list handler stores under the versioned canonical key
+    // ?recent=N&_cv=<version>. Verify those entries exist before invalidation.
     const cache = await caches.open(CONCEPT_CACHE_NAME);
     for (const n of ns) {
       const present = await cache.match(
-        new Request(`https://x/api/v1/concepts?recent=${n}`),
+        new Request(
+          `https://x/api/v1/concepts?recent=${n}&_cv=${CACHE_VERSION}`,
+        ),
       );
-      expect(present).toBeTruthy();
+      expect(present, `?recent=${n}&_cv=${CACHE_VERSION} should be present before invalidation`).toBeTruthy();
     }
 
     await invalidateConcept("flowfield-calcfields", [], "https://x");
 
+    // invalidateConcept must delete the versioned keys, not the unsuffixed ones.
     for (const n of ns) {
       const after = await cache.match(
-        new Request(`https://x/api/v1/concepts?recent=${n}`),
+        new Request(
+          `https://x/api/v1/concepts?recent=${n}&_cv=${CACHE_VERSION}`,
+        ),
       );
-      expect(after, `?recent=${n} should be invalidated`).toBeUndefined();
+      expect(after, `?recent=${n}&_cv=${CACHE_VERSION} should be invalidated`).toBeUndefined();
     }
   });
 
   it("list endpoint canonicalises cache key — junk query params hit the same entry", async () => {
     // Cache amplification mitigation: ?recent=20 and ?recent=20&junk=foo
-    // must share one cache entry (canonical key strips unrecognised params).
+    // must share one cache entry (canonical key strips unrecognised params
+    // and appends _cv=<version>).
     const cache = await caches.open(CONCEPT_CACHE_NAME);
 
     // Warm with the canonical URL.
@@ -251,11 +275,13 @@ describe("cache invalidation integration", () => {
     expect(canonical.status).toBe(200);
     await canonical.arrayBuffer();
 
-    // The canonical entry must exist after warm.
+    // The handler stores under the versioned canonical key, not the raw URL.
     const canonicalHit = await cache.match(
-      new Request("https://x/api/v1/concepts?recent=20"),
+      new Request(
+        `https://x/api/v1/concepts?recent=20&_cv=${CACHE_VERSION}`,
+      ),
     );
-    expect(canonicalHit).toBeTruthy();
+    expect(canonicalHit, "versioned canonical key should be populated").toBeTruthy();
 
     // Issue a junk-param request — handler must canonicalise and return the
     // *same* cached entry rather than create a new one.
@@ -272,5 +298,17 @@ describe("cache invalidation integration", () => {
     );
     expect(junkEntry, "junk-param URL must not create a separate cache entry")
       .toBeUndefined();
+
+    // Only ONE versioned canonical slot should exist (both the direct request
+    // and the junk-param request map to the same key).
+    const versionedHitAfterJunk = await cache.match(
+      new Request(
+        `https://x/api/v1/concepts?recent=20&_cv=${CACHE_VERSION}`,
+      ),
+    );
+    expect(
+      versionedHitAfterJunk,
+      "versioned canonical key should still exist after junk-param request",
+    ).toBeTruthy();
   });
 });

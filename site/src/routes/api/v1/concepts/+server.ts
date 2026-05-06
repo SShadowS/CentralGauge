@@ -20,6 +20,7 @@ import type { RequestHandler } from "./$types";
 import { getAll } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { CONCEPT_CACHE_NAME } from "$lib/server/concept-cache";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 const CACHE_TTL_S = 300;
 const DEFAULT_LIMIT = 20;
@@ -51,10 +52,11 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     );
 
     // Canonical cache key: drop all query params except the clamped
-    // `recent=N`. Two incoming requests with the same effective limit but
-    // different junk params (utm_source, _cb, etc.) MUST share one slot.
+    // `recent=N` and the cache version suffix. Two incoming requests with
+    // the same effective limit but different junk params (utm_source, _cb,
+    // etc.) MUST share one slot.
     const canonicalUrl = new URL(url.href);
-    canonicalUrl.search = `?recent=${limit}`;
+    canonicalUrl.search = `?recent=${limit}&_cv=${CACHE_VERSION}`;
     const cacheKey = new Request(canonicalUrl.href);
 
     const cache = await caches.open(CONCEPT_CACHE_NAME);

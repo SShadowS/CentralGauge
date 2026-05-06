@@ -7,6 +7,7 @@ import type {
   TaskSetSummary,
   TaskSetsResponse,
 } from "$lib/shared/api-types";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 const TASK_SETS_CACHE_TTL_SECONDS = 60;
 
@@ -18,7 +19,9 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   }
   try {
     const cache = await platform.caches.open("cg-task-sets");
-    const cacheKey = new Request(new URL(url.toString()).toString(), {
+    const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl.toString(), {
       method: "GET",
     });
 

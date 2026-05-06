@@ -24,10 +24,11 @@
   const innerW = $derived(W - PADDING.left - PADDING.right);
   const innerH = $derived(H - PADDING.top - PADDING.bottom);
 
-  // avg_score is 0..100 (production data, e.g. 68.13). The earlier
-  // version overlaid avg_cost_usd as a right-axis dot but that overlapped
-  // the on-bar score label whenever the two values landed at similar y.
-  // Cost lives in the table column; the chart is score-only.
+  // pass_at_n is 0..1 (strict pass rate). Multiply by 100 to get a 0..100
+  // percentage for chart positioning. The earlier version used avg_score
+  // (a per-attempt average) which has been replaced by the stricter
+  // pass_at_n metric. Cost lives in the table column; the chart is
+  // pass-rate-only.
   const maxScore = 100;
 
   // Sparse-data UX: clamp barWidth to a minimum visual size so a 4-row
@@ -43,7 +44,7 @@
   <svg
     viewBox="0 0 {W} {H}"
     role="img"
-    aria-label="Score chart, top {displayed.length} models"
+    aria-label="Pass rate chart, top {displayed.length} models"
   >
     <!-- gridlines (drawn first so bars + labels paint over) -->
     {#each [25, 50, 75] as v (v)}
@@ -70,7 +71,15 @@
       stroke="var(--border-strong)"
     />
 
-    <!-- y-axis labels (score) -->
+    <!-- y-axis title and labels (pass rate %) -->
+    <text
+      x={14}
+      y={PADDING.top + innerH / 2}
+      text-anchor="middle"
+      font-size="10"
+      fill="var(--text-muted)"
+      transform="rotate(-90 14 {PADDING.top + innerH / 2})"
+    >Pass rate (%)</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">0</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.75 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">25</text>
     <text x={PADDING.left - 6} y={PADDING.top + innerH * 0.5 + 3} text-anchor="end" font-size="10" fill="var(--text-muted)">50</text>
@@ -79,10 +88,10 @@
 
     {#each displayed as row, i (row.model.slug)}
       {@const cx = PADDING.left + xStep * (i + 0.5)}
-      {@const barH = (row.avg_score / maxScore) * innerH}
+      {@const barH = ((row.pass_at_n * 100) / maxScore) * innerH}
       {@const barTop = PADDING.top + innerH - barH}
 
-      <!-- score bar -->
+      <!-- pass-rate bar -->
       <rect
         x={cx - barWidth / 2}
         y={barTop}
@@ -91,11 +100,11 @@
         fill="var(--accent)"
         rx="2"
       >
-        <title>{row.model.display_name}: score {row.avg_score.toFixed(2)}</title>
+        <title>{row.model.display_name}: pass rate {(row.pass_at_n * 100).toFixed(2)}%</title>
       </rect>
 
-      <!-- score label: inside bar top when there's room, above otherwise.
-           No cost dot to collide with — the chart is score-only. -->
+      <!-- pass-rate label: inside bar top when there's room, above otherwise.
+           No cost dot to collide with — the chart is pass-rate-only. -->
       {#if barH >= 24}
         <text
           x={cx}
@@ -107,7 +116,7 @@
           fill="#ffffff"
           style="pointer-events: none"
         >
-          {row.avg_score.toFixed(1)}
+          {(row.pass_at_n * 100).toFixed(1)}
         </text>
       {:else}
         <text
@@ -120,7 +129,7 @@
           fill="var(--text)"
           style="pointer-events: none"
         >
-          {row.avg_score.toFixed(1)}
+          {(row.pass_at_n * 100).toFixed(1)}
         </text>
       {/if}
 

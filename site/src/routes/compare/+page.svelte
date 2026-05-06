@@ -36,7 +36,19 @@
     if (e.key === 'Enter') { e.preventDefault(); addSlug(); }
   }
 
-  // Stat rows derived from compare.tasks aggregations.
+  // Stat rows derived from compare model aggregates and task scores.
+  const passRow = $derived.by(() => {
+    if (!data.compare) return [];
+    return data.compare.models.map((m) => {
+      const v = m.pass_at_n;
+      return {
+        slug: m.slug,
+        display_name: m.display_name,
+        raw: v,
+        formatted: v !== null ? `${(v * 100).toFixed(1)}%` : '—',
+      };
+    });
+  });
   const scoreRow = $derived.by(() => {
     if (!data.compare) return [];
     return data.compare.models.map((m) => {
@@ -91,6 +103,7 @@
 {:else}
   <section class="stats">
     <h2>At a glance</h2>
+    <CompareStatRow label="Pass@N" values={passRow} direction="higher" />
     <CompareStatRow label="Avg score" values={scoreRow} direction="higher" />
     <CompareStatRow label="Tasks attempted" values={tasksRow} direction="higher" />
   </section>

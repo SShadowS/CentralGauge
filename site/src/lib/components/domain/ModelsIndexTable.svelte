@@ -25,7 +25,7 @@
       <tr>
         <th scope="col">Model</th>
         <th scope="col">API ID</th>
-        <th scope="col">Score</th>
+        <th scope="col" title="Average score across all runs and task sets (cross-set, for catalog discoverability)">Score (all-time)</th>
         <th scope="col">Runs</th>
         <th scope="col">Last run</th>
       </tr>

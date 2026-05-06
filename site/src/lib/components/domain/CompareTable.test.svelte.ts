@@ -4,8 +4,24 @@ import CompareTable from "./CompareTable.svelte";
 import type { CompareModel, CompareTaskRow } from "$shared/api-types";
 
 const models: CompareModel[] = [
-  { id: 1, slug: "sonnet-4-7", display_name: "Sonnet 4.7" },
-  { id: 2, slug: "gpt-5", display_name: "GPT-5" },
+  {
+    id: 1,
+    slug: "sonnet-4-7",
+    display_name: "Sonnet 4.7",
+    pass_at_n: 0.5,
+    pass_at_1: 0.5,
+    denominator: 2,
+    pass_at_n_per_attempted: 0.5,
+  },
+  {
+    id: 2,
+    slug: "gpt-5",
+    display_name: "GPT-5",
+    pass_at_n: 0.75,
+    pass_at_1: 0.5,
+    denominator: 2,
+    pass_at_n_per_attempted: 0.75,
+  },
 ];
 const tasks: CompareTaskRow[] = [
   {
@@ -31,6 +47,16 @@ describe("CompareTable", () => {
     expect(container.querySelectorAll("thead th").length).toBe(
       models.length + 1,
     );
+  });
+
+  it("renders pass_at_n as headline metric in each model column header", () => {
+    const { container } = render(CompareTable, { models, tasks });
+    // Each model header should contain a pass-rate ScoreCell (50.0 and 75.0)
+    const passRateSpans = container.querySelectorAll("thead .pass-rate");
+    expect(passRateSpans.length).toBe(models.length);
+    // ScoreCell renders pass_at_n * 100 (0.5 → "50.0", 0.75 → "75.0")
+    expect(container.textContent).toContain("50.0");
+    expect(container.textContent).toContain("75.0");
   });
 
   it("renders one row per task", () => {

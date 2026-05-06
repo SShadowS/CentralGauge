@@ -19,6 +19,7 @@ import { createSignedPayload } from "../fixtures/keys";
 import { registerMachineKey } from "../fixtures/ingest-helpers";
 import { resetDb } from "../utils/reset-db";
 import { CONCEPT_CACHE_NAME } from "../../src/lib/server/concept-cache";
+import { CACHE_VERSION } from "../../src/lib/server/cache-version";
 
 beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
@@ -55,11 +56,13 @@ describe("admin concept-mutation endpoints thread cacheOrigin", () => {
     await seedConcept(1, "origin-merge-winner");
 
     // Warm the cache via a real request — the GET /api/v1/concepts/<slug>
-    // handler writes inline into the named cache before returning.
+    // handler writes inline into the named cache before returning. Handler
+    // stores under the versioned key (url?_cv=<version>).
     const winnerUrl = "https://x/api/v1/concepts/origin-merge-winner";
+    const winnerVersionedUrl = `${winnerUrl}?_cv=${CACHE_VERSION}`;
     await (await SELF.fetch(winnerUrl)).arrayBuffer();
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    expect(await cache.match(new Request(winnerUrl))).toBeTruthy();
+    expect(await cache.match(new Request(winnerVersionedUrl))).toBeTruthy();
 
     // Sentinel-keyed slot must NOT be the one populated. Confirms the
     // GET handler used the request origin, so a sentinel-keyed delete
@@ -103,7 +106,7 @@ describe("admin concept-mutation endpoints thread cacheOrigin", () => {
     // The request-origin slot must be gone. If cacheOrigin were not
     // threaded, only the sentinel-keyed slot would have been deleted
     // (which never existed), and the prod slot would still be live.
-    expect(await cache.match(new Request(winnerUrl))).toBeUndefined();
+    expect(await cache.match(new Request(winnerVersionedUrl))).toBeUndefined();
   });
 
   it("create endpoint drops new-slug cache slot at request origin (NOT sentinel)", async () => {
@@ -116,9 +119,11 @@ describe("admin concept-mutation endpoints thread cacheOrigin", () => {
     const createSlug = "origin-create-fresh";
     await seedConcept(99, createSlug);
     const slugUrl = `https://x/api/v1/concepts/${createSlug}`;
+    const slugVersionedUrl = `${slugUrl}?_cv=${CACHE_VERSION}`;
     await (await SELF.fetch(slugUrl)).arrayBuffer();
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    expect(await cache.match(new Request(slugUrl))).toBeTruthy();
+    // Handler stores under the versioned key.
+    expect(await cache.match(new Request(slugVersionedUrl))).toBeTruthy();
     // Drop the placeholder so create's INSERT (UNIQUE on slug) succeeds.
     await env.DB.prepare(`DELETE FROM concepts WHERE id = 99`).run();
 
@@ -159,6 +164,6 @@ describe("admin concept-mutation endpoints thread cacheOrigin", () => {
 
     // The pre-warmed slot at the request origin must be gone — proving
     // createConceptTx received cacheOrigin = "https://x", not the sentinel.
-    expect(await cache.match(new Request(slugUrl))).toBeUndefined();
+    expect(await cache.match(new Request(slugVersionedUrl))).toBeUndefined();
   });
 });

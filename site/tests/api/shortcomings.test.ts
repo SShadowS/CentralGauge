@@ -7,10 +7,12 @@ describe("GET /api/v1/shortcomings", () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
 
-  // The endpoint uses a named Cache API entry keyed by request URL.
-  // Cache state survives between tests in the same worker, so we vary the
-  // request (a harmless `?_cb=<n>` cache-buster) per test rather than
-  // trying to flush the named cache from outside the worker isolate.
+  // The endpoint now appends `_cv=<version>` to the cache key (preserving
+  // other params). The `?_cb=<n>` per-test cache-buster still works to keep
+  // each test's cache slot distinct — the handler appends `_cv` to whatever
+  // URL params are present, so `?_cb=1&_cv=v2` and `?_cb=2&_cv=v2` are
+  // separate slots. This avoids cross-test cache pollution without needing
+  // out-of-worker cache flushes (which test context cannot do reliably).
   it("returns 200 with aggregated shape", async () => {
     await resetDb();
     await seedShortcomingsAcrossModels();

@@ -7,6 +7,8 @@ import {
 } from '$lib/server/leaderboard';
 import { ApiError, errorResponse } from '$lib/server/errors';
 import { ServerTimer } from '$lib/server/server-timing';
+import { isValidTaskSetHash } from '$lib/shared/task-set-hash';
+import { CACHE_VERSION } from '$lib/server/cache-version';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -32,6 +34,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // are still produced by `cachedJson` for the *outgoing* response.
     const cache = await platform!.caches.open('cg-leaderboard');
     const cacheUrl = new URL(url.toString());
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
     const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
 
     let payload: LeaderboardResponse | null = null;
@@ -79,17 +82,20 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
 function parseQuery(url: URL): LeaderboardQuery {
   const set = url.searchParams.get('set') ?? 'current';
-  if (set !== 'current' && set !== 'all' && !/^[0-9a-f]{64}$/.test(set)) {
+  if (set === 'all') {
     throw new ApiError(
       400,
-      'invalid_set',
-      'set must be current, all, or a 64-char hex task_set hash',
+      'invalid_set_for_metric',
+      'set=all is not supported for the strict pass_at_n metric. Use set=current or a specific 64-char task_set hash.',
     );
+  }
+  if (set !== 'current' && !isValidTaskSetHash(set)) {
+    throw new ApiError(400, 'invalid_set', 'set must be current or a 64-char hex task_set hash');
   }
 
   const tier = url.searchParams.get('tier') ?? 'all';
-  if (tier !== 'all' && tier !== 'verified' && tier !== 'claimed') {
-    throw new ApiError(400, 'invalid_tier', 'tier must be verified, claimed, or all');
+  if (tier !== 'all' && tier !== 'verified' && tier !== 'claimed' && tier !== 'trusted') {
+    throw new ApiError(400, 'invalid_tier', 'tier must be verified, claimed, trusted, or all');
   }
 
   const difficulty = url.searchParams.get('difficulty');
@@ -106,18 +112,29 @@ function parseQuery(url: URL): LeaderboardQuery {
   // P7 Phase B accepts the field; SQL filter wires up in Phase C (categories).
   const category = url.searchParams.get('category')?.trim() || null;
 
-  // P7 Phase B5 — sort key. The page may pass sort fields the SQL ORDER BY
-  // doesn't recognize (e.g. `model:desc`, `tasks_passed:desc`, used only by
-  // the LeaderboardTable header buttons for client-side affordance, not for
-  // server semantics). Server only acts on the values it understands;
-  // unknown sorts fall through to the default `avg_score` ORDER BY (no 400).
-  const sortField = url.searchParams.get('sort')?.split(':')[0] ?? 'avg_score';
-  const knownSorts = ['pass_at_n', 'pass_at_1', 'cost_per_pass_usd', 'latency_p95_ms'] as const;
+  // A.6 — sort key + direction. Format: `?sort=field:dir` (e.g. `pass_at_n:asc`).
+  // The page may pass sort fields the SQL ORDER BY doesn't recognize
+  // (e.g. `model:desc`, `tasks_passed:desc`, used only by the LeaderboardTable
+  // header buttons for client-side affordance, not for server semantics).
+  // Server only acts on whitelisted values; unknown sorts fall through to the
+  // default `pass_at_n` ORDER BY (no 400). Default sort flipped from `avg_score`
+  // to `pass_at_n` per PR1 spec.
+  const sortRaw = url.searchParams.get('sort') ?? 'pass_at_n:desc';
+  const [sortFieldRaw, sortDirRaw = 'desc'] = sortRaw.split(':');
+  const knownSorts = [
+    'pass_at_n',
+    'pass_at_1',
+    'avg_score',
+    'cost_per_pass_usd',
+    'latency_p95_ms',
+    'avg_cost_usd',
+    'pass_at_n_per_attempted',
+  ] as const;
   type KnownSort = (typeof knownSorts)[number];
-  const sortRaw: 'avg_score' | KnownSort =
-    (knownSorts as readonly string[]).includes(sortField)
-      ? (sortField as KnownSort)
-      : 'avg_score';
+  const sort: KnownSort = (knownSorts as readonly string[]).includes(sortFieldRaw)
+    ? (sortFieldRaw as KnownSort)
+    : 'pass_at_n';
+  const direction: 'asc' | 'desc' = sortDirRaw === 'asc' ? 'asc' : 'desc';
 
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw ? parseInt(limitRaw, 10) : 50;
@@ -127,12 +144,13 @@ function parseQuery(url: URL): LeaderboardQuery {
 
   return {
     set,
-    tier: tier as 'verified' | 'claimed' | 'all',
+    tier: tier as 'verified' | 'claimed' | 'trusted' | 'all',
     difficulty: (difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
     family,
     since,
     category,
-    sort: sortRaw,
+    sort,
+    direction,
     limit,
     cursor: null,
   };

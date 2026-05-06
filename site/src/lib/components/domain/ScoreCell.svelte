@@ -1,17 +1,34 @@
 <script lang="ts">
-  import { formatScore } from '$lib/client/format';
-  interface Props { score: number; }
-  let { score }: Props = $props();
-  // avg_score arrives in 0-100 scale (e.g. 68.13). Clamp to that range and
-  // band against percentage thresholds. The fill width IS the percentage.
-  const pct = $derived(Math.max(0, Math.min(100, score)));
+  interface Props {
+    score: number | null;
+    kind?: 'pass_rate' | 'avg_attempt';
+  }
+  let { score, kind = 'avg_attempt' }: Props = $props();
+
+  // Normalise score to the 0..100 scale used for display, bar fill, and banding.
+  // avg_attempt: input is already 0..100 (e.g. 68.13).
+  // pass_rate:   input is 0..1 (e.g. 0.732); multiply by 100 for display.
+  const normalized = $derived.by(() => {
+    if (score === null) return null;
+    if (kind === 'pass_rate') {
+      return Math.max(0, Math.min(1, score)) * 100;
+    }
+    return Math.max(0, Math.min(100, score));
+  });
+
+  const formatted = $derived.by(() => {
+    if (normalized === null) return '—';
+    return normalized.toFixed(1);
+  });
+
+  const pct = $derived(normalized ?? 0);
   const band = $derived<'high' | 'mid' | 'low'>(
-    score >= 60 ? 'high' : score >= 30 ? 'mid' : 'low',
+    (normalized ?? 0) >= 60 ? 'high' : (normalized ?? 0) >= 30 ? 'mid' : 'low',
   );
 </script>
 
 <div class="cell">
-  <span class="num text-mono">{formatScore(score)}</span>
+  <span class="num text-mono">{formatted}</span>
   <span class="bar" aria-hidden="true">
     <span class="fill" data-band={band} style:width="{pct}%"></span>
   </span>

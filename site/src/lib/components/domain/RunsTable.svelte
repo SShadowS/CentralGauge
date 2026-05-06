@@ -16,6 +16,7 @@
         <th scope="col">Started</th>
         <th scope="col">Model</th>
         <th scope="col">Tasks</th>
+        <!-- TODO(D.7): switch to per-run pass_at_n once RunsListItem emits it -->
         <th scope="col">Score</th>
         <th scope="col">Cost</th>
         <th scope="col">Duration</th>

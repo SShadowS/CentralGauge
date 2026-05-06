@@ -68,32 +68,57 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     //    supplies all per-task counts, so the legacy per-attempt SELECT below
     //    is no longer needed.
     const timer = new ServerTimer();
+
+    const currentSetRow = await env.DB
+      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+      .first<{ hash: string }>();
+    const taskSetHash = currentSetRow?.hash ?? null;
+
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [model.id],
+      taskSetHash,
       includeLatencyP50: true,
       includePassHatAtN: true,
       timer,
     });
     const agg = aggMap.get(model.id) ?? null;
 
-    // 3. History — last N runs with per-run avg score + summed cost. We group
-    //    by run_id over `v_results_with_cost` so cost lines up with the
-    //    leaderboard formula (token counts × pricing_version rates).
-    const historyRows = await getAll<RunRow>(
-      env.DB,
-      `SELECT runs.id AS run_id,
-              runs.started_at AS ts,
-              AVG(v.score) AS score,
-              SUM(v.cost_usd) AS cost_usd,
-              runs.tier AS tier
-       FROM runs
-       LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
-       WHERE runs.model_id = ?
-       GROUP BY runs.id
-       ORDER BY runs.started_at DESC
-       LIMIT ?`,
-      [model.id, HISTORY_LIMIT],
-    );
+    // 3. History — last N runs with per-run avg score + summed cost, scoped to
+    //    current task set. We group by run_id over `v_results_with_cost` so
+    //    cost lines up with the leaderboard formula (token counts × rates).
+    //    taskSetHash may be null (no current set); in that case we fall back
+    //    to all runs (cross-set) for graceful degradation.
+    const historyRows = taskSetHash
+      ? await getAll<RunRow>(
+          env.DB,
+          `SELECT runs.id AS run_id,
+                  runs.started_at AS ts,
+                  AVG(v.score) AS score,
+                  SUM(v.cost_usd) AS cost_usd,
+                  runs.tier AS tier
+           FROM runs
+           LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+           WHERE runs.model_id = ? AND runs.task_set_hash = ?
+           GROUP BY runs.id
+           ORDER BY runs.started_at DESC
+           LIMIT ?`,
+          [model.id, taskSetHash, HISTORY_LIMIT],
+        )
+      : await getAll<RunRow>(
+          env.DB,
+          `SELECT runs.id AS run_id,
+                  runs.started_at AS ts,
+                  AVG(v.score) AS score,
+                  SUM(v.cost_usd) AS cost_usd,
+                  runs.tier AS tier
+           FROM runs
+           LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+           WHERE runs.model_id = ?
+           GROUP BY runs.id
+           ORDER BY runs.started_at DESC
+           LIMIT ?`,
+          [model.id, HISTORY_LIMIT],
+        );
     const history: ModelHistoryPoint[] = historyRows.map(toHistoryPoint);
 
     // 4. Recent runs — same shape as history, but capped at RECENT_RUNS_LIMIT.
@@ -105,20 +130,32 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       .slice(0, RECENT_RUNS_LIMIT)
       .map(toHistoryPoint);
 
-    // 5. Failure modes — fetch compile_errors_json from this model's results
-    //    (parsing in TS rather than via D1 JSON1 keeps message extraction
-    //    straightforward and avoids brittle SQL string-glue). Aggregate by
-    //    error code, sorted by count desc, top FAILURE_MODES_LIMIT.
-    const failureRows = await getAll<CompileErrorRow>(
-      env.DB,
-      `SELECT r.compile_errors_json
-       FROM runs JOIN results r ON r.run_id = runs.id
-       WHERE runs.model_id = ?
-         AND r.compile_errors_json IS NOT NULL
-         AND r.compile_errors_json != '[]'
-         AND r.compile_errors_json != ''`,
-      [model.id],
-    );
+    // 5. Failure modes — fetch compile_errors_json from this model's results,
+    //    scoped to current task set (matching aggregates scope). Parsing in TS
+    //    rather than via D1 JSON1 keeps message extraction straightforward.
+    //    Aggregate by error code, sorted by count desc, top FAILURE_MODES_LIMIT.
+    const failureRows = taskSetHash
+      ? await getAll<CompileErrorRow>(
+          env.DB,
+          `SELECT r.compile_errors_json
+           FROM runs JOIN results r ON r.run_id = runs.id
+           WHERE runs.model_id = ?
+             AND runs.task_set_hash = ?
+             AND r.compile_errors_json IS NOT NULL
+             AND r.compile_errors_json != '[]'
+             AND r.compile_errors_json != ''`,
+          [model.id, taskSetHash],
+        )
+      : await getAll<CompileErrorRow>(
+          env.DB,
+          `SELECT r.compile_errors_json
+           FROM runs JOIN results r ON r.run_id = runs.id
+           WHERE runs.model_id = ?
+             AND r.compile_errors_json IS NOT NULL
+             AND r.compile_errors_json != '[]'
+             AND r.compile_errors_json != ''`,
+          [model.id],
+        );
     const failureModes = aggregateFailureModes(
       failureRows,
       FAILURE_MODES_LIMIT,
@@ -137,10 +174,22 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         [model.family_id, model.generation - 1],
       );
       if (prior) {
-        const priorAgg = await computeModelAggregates(env.DB, {
+        // First try current-set scoped aggregates for the predecessor. If the
+        // predecessor has not been re-benched on the current task set (e.g. it's
+        // an older model that only has runs on a prior set), fall back to
+        // cross-set so the delta tile still renders on the detail page.
+        let priorAgg = await computeModelAggregates(env.DB, {
           modelIds: [prior.id],
+          taskSetHash,
         });
-        const a = priorAgg.get(prior.id);
+        let a = priorAgg.get(prior.id);
+        if (!a || a.run_count === 0) {
+          // Predecessor has no current-set runs — fall back to cross-set.
+          priorAgg = await computeModelAggregates(env.DB, {
+            modelIds: [prior.id],
+          });
+          a = priorAgg.get(prior.id);
+        }
         if (a && a.run_count > 0) {
           predecessor = {
             slug: prior.slug,
@@ -175,6 +224,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const settingsSuffix = agg?.settings_suffix ?? "";
 
     const body: ModelDetail = {
+      // task_set_hash bounds aggregates, history, recent_runs, failure_modes.
+      task_set_hash: taskSetHash,
       model: {
         slug: model.slug,
         display_name: model.display_name,

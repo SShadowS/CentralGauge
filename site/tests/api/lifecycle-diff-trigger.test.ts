@@ -4,6 +4,7 @@ import { createSignedPayload } from "../fixtures/keys";
 import { registerMachineKey } from "../fixtures/ingest-helpers";
 import { resetDb } from "../utils/reset-db";
 import { FAMILY_DIFF_CACHE_NAME } from "../../src/lib/server/family-diff-cache";
+import { CACHE_VERSION } from "../../src/lib/server/cache-version";
 import { maybeTriggerFamilyDiff } from "../../src/lib/server/lifecycle-diff-trigger";
 
 beforeAll(async () => {
@@ -368,8 +369,11 @@ describe("lifecycle diff trigger on analysis.completed", () => {
     expect(body1.status).toBe("baseline_missing");
     expect(body1.to_gen_event_id).toBe(ev1.id);
 
+    // The handler appends _cv=<version> to the cache key so old entries
+    // retire on deploy. Check the versioned key, not the bare URL.
     const cache = await caches.open(FAMILY_DIFF_CACHE_NAME);
-    const warmHit = await cache.match(new Request(url));
+    const versionedUrl = `${url}?_cv=${CACHE_VERSION}`;
+    const warmHit = await cache.match(new Request(versionedUrl));
     expect(
       warmHit,
       "cache MUST have an entry after the GET — handler should inline-put before returning",
@@ -387,7 +391,7 @@ describe("lifecycle diff trigger on analysis.completed", () => {
       ts: t1 + 1000,
     });
 
-    const postEvictMiss = await cache.match(new Request(url));
+    const postEvictMiss = await cache.match(new Request(versionedUrl));
     expect(
       postEvictMiss,
       "trigger MUST evict the cache slot the GET handler wrote — pre-fix this" +

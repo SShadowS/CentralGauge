@@ -7,20 +7,25 @@
  */
 
 /**
- * The set filter accepts three forms:
- * - `'current'` — only runs against the task_set with `is_current = 1`
- * - `'all'` — every task_set, no filter
- * - 64-char lowercase hex — runs against that specific task_set hash
+ * The set filter accepts the following forms, but validation is
+ * per-endpoint:
  *
- * Validation happens server-side in the route handler before reaching the
- * leaderboard/matrix query builders. Anything that isn't `current`/`all`
- * and doesn't match `/^[0-9a-f]{64}$/` is treated as `current`.
+ * - `'current'` — only runs against the task_set with `is_current = 1`.
+ *   Accepted by all endpoints.
+ * - 64-char lowercase hex — runs against that specific task_set hash.
+ *   Accepted by all endpoints.
+ * - `'all'` — accepted by `/api/v1/matrix` and `/matrix` as "every
+ *   task_set, no filter." Rejected by `/api/v1/leaderboard` with HTTP
+ *   400 `invalid_set_for_metric` because cross-set aggregation is
+ *   incompatible with the strict pass_at_n metric (since commit 14e7494).
+ *
+ * Any other value returns HTTP 400 from all endpoints.
  */
-export type SetFilter = 'current' | 'all' | string;
+export type SetFilter = 'current' | string;
 
 export interface LeaderboardQuery {
   set: SetFilter;
-  tier: 'verified' | 'claimed' | 'all';
+  tier: 'verified' | 'claimed' | 'trusted' | 'all';
   difficulty: 'easy' | 'medium' | 'hard' | null;
   family: string | null;
   since: string | null;
@@ -31,13 +36,24 @@ export interface LeaderboardQuery {
    */
   category: string | null;
   /**
-   * P7 Mini-phase B sort key. `avg_score` (default, server-side ORDER BY),
-   * `pass_at_n` and `pass_at_1` (TS-side post-query sort because the
-   * correlated subquery alias is not referenceable in SQLite ORDER BY).
-   * `cost_per_pass_usd` and `latency_p95_ms` (TS-side ascending sorts;
-   * lower is better, nulls last).
+   * A.6 sort key. All whitelist fields are sorted in SQL before LIMIT
+   * (except `latency_p95_ms` which uses a TS post-sort with wide fetch because
+   * SQLite lacks PERCENTILE_CONT). Default is `pass_at_n` (flipped from
+   * `avg_score` in PR1).
    */
-  sort: 'avg_score' | 'pass_at_n' | 'pass_at_1' | 'cost_per_pass_usd' | 'latency_p95_ms';
+  sort:
+    | 'pass_at_n'
+    | 'pass_at_1'
+    | 'avg_score'
+    | 'cost_per_pass_usd'
+    | 'latency_p95_ms'
+    | 'avg_cost_usd'
+    | 'pass_at_n_per_attempted';
+  /**
+   * A.6 sort direction. Parsed from the `sort` query param as `field:dir`
+   * (e.g. `pass_at_n:asc`). Defaults to `desc` when omitted.
+   */
+  direction: 'asc' | 'desc';
   limit: number;
   cursor: { score: number; id: number } | null;
 }
@@ -87,12 +103,26 @@ export interface LeaderboardRow {
    * pass count.
    */
   tasks_passed_attempt_2_only: number;
-  /**
-   * P7 Mini-phase A. Run-aggregate probability:
-   * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
-   * tasks_attempted_distinct. 0 when no attempts.
-   */
+  /** Strict-per-set pass rate: (p1 + p2_only) / denominator. 0..1. */
   pass_at_n: number;
+  /**
+   * Strict-per-set first-try rate: p1 / denominator. 0..1. Tiebreaker for ranking.
+   * Optional during PR1 until A.4 lands server-side emission; tighten to required
+   * in a cleanup commit at end of PR1.
+   */
+  pass_at_1?: number;
+  /**
+   * Strict-per-set denominator: count of tasks in active scope
+   * (set ∩ category ∩ difficulty). Used as denominator for pass_at_n.
+   * From PR1 onward. Optional during PR1 until A.4 lands server-side emission.
+   */
+  denominator?: number;
+  /**
+   * @deprecated Per-attempted denominator (`tasks_passed / tasks_attempted_distinct`).
+   * Kept for one release as a migration alias for consumers using the old
+   * pass rate. Removed in PR2. Optional during PR1 until A.4 lands server-side emission.
+   */
+  pass_at_n_per_attempted?: number;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
@@ -130,6 +160,15 @@ export interface FailureMode {
 }
 
 export interface ModelDetail {
+  /**
+   * The task-set hash that bounds `aggregates`, `history`, `recent_runs`, and
+   * `failure_modes`. All four sections are scoped to this hash (current set).
+   * `null` when no task set is marked `is_current = 1` in the database.
+   *
+   * `predecessor` is intentionally cross-set when the predecessor model has
+   * no runs on the current set, so the delta tile can still render.
+   */
+  task_set_hash: string | null;
   model: {
     slug: string;
     display_name: string;
@@ -405,6 +444,17 @@ export interface FamiliesIndexItem {
   model_count: number;
   latest_avg_score: number | null;
   latest_model_slug: string | null;
+  /** Strict pass rate: (p1 + p2_only) / denominator for the latest model. null when no runs. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator for the latest model. null when no runs. */
+  pass_at_1?: number | null;
+  /** Denominator (task_count of the current task set) for the latest model's pass_at_n. null when no runs. */
+  denominator?: number | null;
+  /**
+   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct for the latest model.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted?: number | null;
 }
 
 export interface FamiliesIndexResponse {
@@ -415,6 +465,13 @@ export interface FamiliesIndexResponse {
 // Family detail (trajectory) — GET /api/v1/families/:slug
 // =============================================================================
 
+/**
+ * All numeric fields (avg_score, run_count, last_run_at, avg_cost_usd,
+ * pass_at_n, pass_at_1, pass_at_n_per_attempted, tasks_passed_*,
+ * tasks_attempted_distinct) are scoped to the model's `task_set_hash`
+ * (the dominant task set hash). A trajectory point's numbers therefore
+ * come from one consistent source — no cross-set bleed.
+ */
 export interface FamilyTrajectoryItem {
   model: {
     slug: string;
@@ -422,10 +479,30 @@ export interface FamilyTrajectoryItem {
     api_model_id: string;
     generation: number | null;
   };
-  avg_score: number | null;       // null for models with zero runs
+  avg_score: number | null;       // null for models with zero runs in dominant set
   run_count: number;
   last_run_at: string | null;
   avg_cost_usd: number | null;
+  /** Strict pass rate: (p1 + p2_only) / denominator. null when no runs. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator. null when no runs. */
+  pass_at_1?: number | null;
+  /**
+   * Denominator (task_count of the task set the model's runs belong to).
+   * null when no runs.
+   */
+  denominator?: number | null;
+  /**
+   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted?: number | null;
+  /**
+   * The task-set hash whose task_count was used as the denominator for this
+   * trajectory point. Null when the model has no runs.
+   * Used by FamilyTrajectoryChart to render set-boundary badges.
+   */
+  task_set_hash?: string | null;
 }
 
 export interface FamilyDetail {
@@ -546,6 +623,17 @@ export interface CompareModel {
   id: number;
   slug: string;
   display_name: string;
+  /** Strict pass rate: (p1 + p2_only) / denominator. 0..1. null when no runs in current set. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator. 0..1. null when no runs in current set. */
+  pass_at_1: number | null;
+  /** Denominator (task_count of the current task set). null when no current set. */
+  denominator: number | null;
+  /**
+   * @deprecated Per-attempted alias: (p1 + p2_only) / tasks_attempted_distinct.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted: number | null;
 }
 
 export interface CompareTaskRow {
@@ -699,7 +787,10 @@ export interface MatrixModel {
 }
 
 export interface MatrixFilters {
-  /** 'current', 'all', or a 64-char hex task_set hash. See SetFilter. */
+  /**
+   * `'current'`, a 64-char hex task_set hash, or `'all'` (every task_set,
+   * no filter). See SetFilter for per-endpoint validation rules.
+   */
   set: SetFilter;
   category: string | null;
   difficulty: 'easy' | 'medium' | 'hard' | null;

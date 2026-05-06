@@ -6,7 +6,7 @@
   import ConceptTrajectorySection from '$lib/components/domain/ConceptTrajectorySection.svelte';
   import ModelLink from '$lib/components/domain/ModelLink.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
-  import { formatScore, formatCost, formatRelativeTime } from '$lib/client/format';
+  import { formatCost, formatRelativeTime } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
 
   let { data } = $props();
@@ -81,7 +81,7 @@
       <tr>
         <th scope="col">Model</th>
         <th scope="col">Generation</th>
-        <th scope="col">Avg score</th>
+        <th scope="col">Pass@N</th>
         <th scope="col">Avg cost</th>
         <th scope="col">Runs</th>
         <th scope="col">Last run</th>
@@ -95,7 +95,7 @@
           </th>
           <td class="text-mono">{t.model.generation ?? '—'}</td>
           <td class="text-mono">
-            {#if t.avg_score !== null}{formatScore(t.avg_score)}{:else}<span class="text-faint">—</span>{/if}
+            {#if t.pass_at_n !== null}{(t.pass_at_n * 100).toFixed(1)}%{:else}<span class="text-faint">—</span>{/if}
           </td>
           <td class="text-mono">
             {#if t.avg_cost_usd !== null}{formatCost(t.avg_cost_usd)}{:else}<span class="text-faint">—</span>{/if}

@@ -2,6 +2,7 @@ import type { RequestHandler } from "./$types";
 import { getAll } from "$lib/server/db";
 import { errorResponse } from "$lib/server/errors";
 import { computeSeverity } from "$lib/server/severity";
+import { CACHE_VERSION } from "$lib/server/cache-version";
 
 interface RawRow {
   al_concept: string;
@@ -26,7 +27,13 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     // back to the next request without invoking this handler, silently
     // bypassing any future ETag/304 negotiation.
     const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(request);
+    // Canonical key: append _cv so old-version entries retire on deploy
+    // without a global cache purge. Other query params are preserved so
+    // test-side cache busting (e.g. ?_cb=N) still produces unique keys.
+    const cacheUrl = new URL(request.url);
+    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
     const rows = await getAll<RawRow>(
@@ -108,7 +115,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     });
     // Inline put — NOT ctx.waitUntil — so the next request (and tests)
     // observe the entry deterministically. See CLAUDE.md "Workers KV" note.
-    await cache.put(request, response.clone());
+    await cache.put(cacheKey, response.clone());
     return response;
   } catch (err) {
     return errorResponse(err);

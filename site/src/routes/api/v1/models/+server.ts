@@ -27,6 +27,11 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     );
 
     const allModelIds = rows.map((r) => r.id);
+
+    // avg_score_all_runs is intentionally cross-set (no taskSetHash filter).
+    // The /models index is used for catalog discoverability — we want users to
+    // find models that have runs on any task set, not just the current one.
+    // See api-types.ts:402-408 for the documented contract.
     const aggMap = allModelIds.length === 0
       ? new Map<
         number,

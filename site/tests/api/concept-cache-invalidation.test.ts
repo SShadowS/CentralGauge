@@ -27,6 +27,7 @@ import {
   CONCEPT_CACHE_NAME,
   invalidateConcept,
 } from "../../src/lib/server/concept-cache";
+import { CACHE_VERSION } from "../../src/lib/server/cache-version";
 import { resetDb } from "../utils/reset-db";
 
 beforeAll(async () => {
@@ -44,18 +45,19 @@ describe("D6.4: concept-cache invalidates on every concept.* event", () => {
     ).run();
 
     // Warm the cache via a real request (handler's inline cache.put commits
-    // before returning).
+    // before returning). Handler stores under the versioned key (url?_cv=v2).
     const url = "https://x/api/v1/concepts/d64-direct";
+    const versionedUrl = `${url}?_cv=${CACHE_VERSION}`;
     const first = await SELF.fetch(url);
     expect(first.status).toBe(200);
     await first.arrayBuffer();
 
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    expect(await cache.match(new Request(url))).toBeTruthy();
+    expect(await cache.match(new Request(versionedUrl))).toBeTruthy();
 
     await invalidateConcept("d64-direct", [], "https://x");
 
-    expect(await cache.match(new Request(url))).toBeUndefined();
+    expect(await cache.match(new Request(versionedUrl))).toBeUndefined();
   });
 
   it("mergeConceptTx threads cacheOrigin through and drops both winner + alias slots (indirect)", async () => {
@@ -70,11 +72,14 @@ describe("D6.4: concept-cache invalidates on every concept.* event", () => {
 
     const winnerUrl = "https://x/api/v1/concepts/d64-indirect";
     const aliasUrl = "https://x/api/v1/concepts/d64-indirect-alias";
+    const winnerVersionedUrl = `${winnerUrl}?_cv=${CACHE_VERSION}`;
+    const aliasVersionedUrl = `${aliasUrl}?_cv=${CACHE_VERSION}`;
     await (await SELF.fetch(winnerUrl)).arrayBuffer();
     await (await SELF.fetch(aliasUrl)).arrayBuffer();
     const cache = await caches.open(CONCEPT_CACHE_NAME);
-    expect(await cache.match(new Request(winnerUrl))).toBeTruthy();
-    expect(await cache.match(new Request(aliasUrl))).toBeTruthy();
+    // Handler now stores under the versioned key (url?_cv=<version>).
+    expect(await cache.match(new Request(winnerVersionedUrl))).toBeTruthy();
+    expect(await cache.match(new Request(aliasVersionedUrl))).toBeTruthy();
 
     // mergeConceptTx with cacheOrigin should drop both slots.
     await mergeConceptTx(env.DB, {
@@ -91,7 +96,7 @@ describe("D6.4: concept-cache invalidates on every concept.* event", () => {
       cacheOrigin: "https://x",
     });
 
-    expect(await cache.match(new Request(winnerUrl))).toBeUndefined();
-    expect(await cache.match(new Request(aliasUrl))).toBeUndefined();
+    expect(await cache.match(new Request(winnerVersionedUrl))).toBeUndefined();
+    expect(await cache.match(new Request(aliasVersionedUrl))).toBeUndefined();
   });
 });

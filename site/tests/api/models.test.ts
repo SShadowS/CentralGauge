@@ -138,6 +138,9 @@ describe("GET /api/v1/models/:slug", () => {
     expect(body.model.family_slug).toBe("claude");
     expect(body.model.api_model_id).toBe("claude-sonnet-4-7");
     expect(typeof body.model.added_at).toBe("string");
+    // task_set_hash tells consumers which set bounds aggregates/history/runs.
+    const bodyFull = body as unknown as { task_set_hash: string | null };
+    expect(bodyFull.task_set_hash).toBe("ts");
     expect(body.aggregates.run_count).toBe(1);
     expect(body.aggregates.avg_score).toBeCloseTo(0.5, 5);
     expect(typeof body.aggregates.latency_p95_ms).toBe("number");
@@ -477,6 +480,164 @@ describe("GET /api/v1/models — list aggregates", () => {
         expect(typeof row.last_run_at).toBe("string");
       }
     }
+  });
+});
+
+// =============================================================================
+// Scoping contract tests — Fix D (B.4 corrective revision)
+// =============================================================================
+
+describe("GET /api/v1/models — index cross-set contract", () => {
+  it("avg_score_all_runs aggregates across ALL task sets (catalog discoverability)", async () => {
+    // Seed: model M-X has runs only on task_set 'old' (is_current=0).
+    // The current set 'ts' remains current. M-X has no runs on 'ts'.
+    // Expect: index lists M-X with run_count > 0 and avg_score_all_runs != null.
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('old','2025-01-01T00:00:00Z',2,0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (99,'openai','openai','OpenAI')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (99,99,'gpt-old-model','gpt-old-model','GPT Old Model',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',99,3,15,'2025-01-01')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_old','old',99,'s','rig','2025-06-01T00:00:00Z','2025-06-01T01:00:00Z','completed','claimed','v1','sig','2025-06-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('r_old','easy/z',1,1,0.8,1,2,2)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/models?_cb=crossset");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: Array<{
+        slug: string;
+        run_count: number;
+        avg_score_all_runs: number | null;
+      }>;
+    };
+    const item = body.data.find((r) => r.slug === "gpt-old-model");
+    expect(item).toBeDefined();
+    // Model has a run on a non-current set — must still appear with data.
+    expect(item!.run_count).toBeGreaterThan(0);
+    expect(item!.avg_score_all_runs).not.toBeNull();
+    expect(typeof item!.avg_score_all_runs).toBe("number");
+  });
+});
+
+describe("GET /api/v1/models/:slug — current-set scoping contract", () => {
+  it("all aggregate fields scope to current task set (not prior sets)", async () => {
+    // Seed: model M-Y has 1 run on current set 'ts' and 2 runs on prior set 'old'.
+    // Expect: aggregates.run_count = 1, history.length = 1, recent_runs.length = 1.
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('old2','2025-01-01T00:00:00Z',2,0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (88,'gemini','google','Gemini')`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (88,88,'gemini-scoped','gemini-scoped','Gemini Scoped',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',88,1,5,'2025-01-01')`,
+    ).run();
+    // Two runs on the prior set
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rp1','old2',88,'s','rig','2025-06-01T00:00:00Z','2025-06-01T01:00:00Z','completed','claimed','v1','sig','2025-06-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rp2','old2',88,'s','rig','2025-07-01T00:00:00Z','2025-07-01T01:00:00Z','completed','claimed','v1','sig','2025-07-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    // One run on current set
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('rc1','ts',88,'s','rig','2026-04-05T00:00:00Z','2026-04-05T01:00:00Z','completed','claimed','v1','sig','2026-04-05T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('rp1','easy/a',1,1,0.5,1,2,1),('rp2','easy/a',1,1,0.6,1,2,1),('rc1','easy/a',1,1,0.9,1,2,2)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/models/gemini-scoped?_cb=scope");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      task_set_hash: string | null;
+      aggregates: { run_count: number };
+      history: unknown[];
+      recent_runs: unknown[];
+    };
+    // Response should be scoped to current set (hash='ts') only.
+    expect(body.task_set_hash).toBe("ts");
+    expect(body.aggregates.run_count).toBe(1);
+    expect(body.history).toHaveLength(1);
+    expect(body.recent_runs).toHaveLength(1);
+  });
+
+  it("predecessor card renders even if predecessor was last benched on prior set", async () => {
+    // Seed: predecessor model with no runs on current set 'ts'.
+    // Main model M-Z has run on current set.
+    // Expect: predecessor card present with cross-set data.
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('old3','2025-01-01T00:00:00Z',2,0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (77,1,'sonnet-3.5','claude-sonnet-3-5','Sonnet 3.5',35)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (78,1,'sonnet-3.6','claude-sonnet-3-6','Sonnet 3.6',36)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',77,3,15,'2025-01-01'),('v1',78,3,15,'2025-01-01')`,
+    ).run();
+    // Predecessor (gen 35) only has a run on the prior set, NOT on 'ts'
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_pred_old','old3',77,'s','rig','2025-05-01T00:00:00Z','2025-05-01T01:00:00Z','completed','claimed','v1','sig','2025-05-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('r_pred_old','easy/a',1,1,0.55,1,2,1)`,
+    ).run();
+    // Current model (gen 36) has a run on current set 'ts'
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_curr_new','ts',78,'s','rig','2026-04-06T00:00:00Z','2026-04-06T01:00:00Z','completed','claimed','v1','sig','2026-04-06T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed) VALUES ('r_curr_new','easy/a',1,1,0.75,1,2,2)`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/models/sonnet-3.6?_cb=predcrossset");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      predecessor?: {
+        slug: string;
+        display_name: string;
+        avg_score: number;
+        avg_cost_usd: number;
+      };
+    };
+    // Predecessor card must be present even though predecessor has no current-set runs.
+    expect(body.predecessor).toBeDefined();
+    expect(body.predecessor!.slug).toBe("sonnet-3.5");
+    expect(body.predecessor!.avg_score).toBeGreaterThan(0);
   });
 });
 

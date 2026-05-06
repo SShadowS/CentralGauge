@@ -140,6 +140,7 @@ describe("LeaderboardRow — contract completeness", () => {
 
     // REQUIRED: every key in this array must match LeaderboardRow
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
+    // A.4: added denominator, pass_at_1, pass_at_n_per_attempted (always emitted).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -151,6 +152,9 @@ describe("LeaderboardRow — contract completeness", () => {
       "tasks_passed_attempt_1",
       "tasks_passed_attempt_2_only",
       "pass_at_n",
+      "pass_at_1",
+      "denominator",
+      "pass_at_n_per_attempted",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",
@@ -215,14 +219,11 @@ describe("GET /api/v1/leaderboard", () => {
     expect(firstSlug).toBe("opus-4.7");
   });
 
-  it("set=all includes old task sets", async () => {
+  it("set=all returns 400 (not supported for strict pass_at_n metric)", async () => {
     const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all");
-    const body = await res.json() as { data: Array<Record<string, unknown>> };
-    const sonnet = body.data.find((r) =>
-      r.model && (r.model as Record<string, unknown>)["slug"] === "sonnet-4.7"
-    );
-    // With ts-old included, sonnet picks up r4 too → 3 runs
-    expect(sonnet!.run_count).toBe(3);
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
   });
 
   it("set=<64-char-hex-hash> filters to that specific task set", async () => {
@@ -312,8 +313,9 @@ describe("GET /api/v1/leaderboard", () => {
     await res.arrayBuffer();
 
     // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
-    // a synthetic GET request URL — reproduce both here to verify the write.
-    const cacheKey = new Request(url, { method: "GET" });
+    // a synthetic GET request URL with _cv=v2 appended (A.7 cache versioning).
+    const cacheKeyUrl = `${url}&_cv=v2`;
+    const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(cacheKey);
     expect(cached).toBeDefined();
@@ -326,6 +328,29 @@ describe("GET /api/v1/leaderboard", () => {
     expect(res.status).toBe(400);
   });
 
+  it("cache key includes _cv=v2 suffix (PR1 cache versioning, A.7)", async () => {
+    // Use a fresh URL so we are guaranteed a cache miss → the handler writes
+    // a new entry. After the write we reconstruct the same _cv-bearing URL
+    // and assert the entry exists under it.
+    const url = "https://x/api/v1/leaderboard?test=cache-version";
+    const res = await SELF.fetch(url);
+    expect(res.status).toBe(200);
+    // Drain so the inline cache.put commits before we inspect.
+    await res.arrayBuffer();
+
+    // The handler appends _cv=v2 to the synthetic cache key before storing.
+    // Reconstruct the exact URL the handler used and verify the entry exists.
+    const expectedKeyUrl = `${url}&_cv=v2`;
+    const cache = await caches.open("cg-leaderboard");
+    const cached = await cache.match(new Request(expectedKeyUrl, { method: "GET" }));
+    expect(cached, "cache entry must be stored under _cv=v2 key").toBeDefined();
+
+    // Sanity: the entry is NOT stored under the bare URL (without _cv).
+    const bareKey = new Request(url, { method: "GET" });
+    const cachedBare = await cache.match(bareKey);
+    expect(cachedBare, "entry must NOT be stored under bare URL").toBeUndefined();
+  });
+
   // ===========================================================================
   // P7 Mini-phase B — Pass@1 / Pass@2 visualization SQL fixtures (B1)
   // ===========================================================================
@@ -334,6 +359,10 @@ describe("GET /api/v1/leaderboard", () => {
     // sonnet-4.7 (model_id=1) on r1 only — but we need attempt-2 rows too.
     // The default seed lacks attempt=2 rows; insert a bespoke fixture under
     // a fresh model so it doesn't pollute existing assertions.
+    //
+    // A.4: Fixture A adds t3 + t4 to ts-current (already has easy/a + hard/b = 2
+    // tasks). Update task_count to 4 so the strict denominator is correct.
+    // Expected: p1=2, p2_only=1, denominator=4 → pass_at_n = 3/4 = 0.75.
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (10,1,'fixA','fix-a','Fixture A')`,
@@ -343,6 +372,10 @@ describe("GET /api/v1/leaderboard", () => {
       ),
       env.DB.prepare(
         `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts-current','t3','ch3','easy','{}'),('ts-current','t4','ch4','easy','{}')`,
+      ),
+      // Update task_count to 4 (easy/a, hard/b, t3, t4) for strict denominator.
+      env.DB.prepare(
+        `UPDATE task_sets SET task_count = 4 WHERE hash = 'ts-current'`,
       ),
       env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
@@ -438,7 +471,10 @@ describe("GET /api/v1/leaderboard", () => {
     expect(fixB!.tasks_attempted_distinct, "Fixture B: 1 distinct task").toBe(
       1,
     );
-    expect(fixB!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = (p1+p2only) / denominator = 1 / task_count(2) = 0.5.
+    // The per-attempted value (1/1=1) is now in pass_at_n_per_attempted.
+    expect(Math.abs((fixB!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixB!.denominator).toBe(2);
     expect(
       (fixB!.tasks_passed_attempt_1 as number) +
         (fixB!.tasks_passed_attempt_2_only as number),
@@ -487,7 +523,9 @@ describe("GET /api/v1/leaderboard", () => {
       "Fixture C: Run-2 retry succeeded",
     ).toBe(1);
     expect(fixC!.tasks_attempted_distinct).toBe(1);
-    expect(fixC!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = 1 / task_count(2) = 0.5.
+    expect(Math.abs((fixC!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixC!.denominator).toBe(2);
     expect(
       (fixC!.tasks_passed_attempt_1 as number) +
         (fixC!.tasks_passed_attempt_2_only as number),
@@ -542,31 +580,22 @@ describe("GET /api/v1/leaderboard", () => {
       "Fixture D: Run-CUR attempt-2 should classify (taskSetClauseSubA2NotExists missing if 0)",
     ).toBe(1);
     expect(fixD!.tasks_attempted_distinct).toBe(1);
-    expect(fixD!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = 1 / task_count(2) = 0.5.
+    expect(Math.abs((fixD!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixD!.denominator).toBe(2);
     expect(
       (fixD!.tasks_passed_attempt_1 as number) +
         (fixD!.tasks_passed_attempt_2_only as number),
     ).toBeLessThanOrEqual(fixD!.tasks_attempted_distinct as number);
 
-    // set=all should aggregate both runs; OLD attempt-1 success now classifies T1.
+    // set=all is rejected (PR1: invalid_set_for_metric). Cross-set aggregation
+    // is not supported under strict pass_at_n semantics.
     const resAll = await SELF.fetch(
       "https://x/api/v1/leaderboard?set=all&test=fixD-all",
     );
-    const bodyAll = await resAll.json() as {
-      data: Array<Record<string, unknown>>;
-    };
-    const fixDAll = bodyAll.data.find((r) =>
-      (r.model as Record<string, unknown>).slug === "fixD"
-    );
-    expect(fixDAll).toBeDefined();
-    expect(
-      fixDAll!.tasks_passed_attempt_1,
-      "Fixture D set=all: OLD first-try classifies T1",
-    ).toBe(1);
-    expect(
-      fixDAll!.tasks_passed_attempt_2_only,
-      "Fixture D set=all: NOT double-counted",
-    ).toBe(0);
+    expect(resAll.status).toBe(400);
+    const bodyAllErr = await resAll.json() as { code?: string };
+    expect(bodyAllErr.code).toBe("invalid_set_for_metric");
   });
 
   it("emits settings_suffix when all runs share one settings_hash", async () => {
@@ -600,15 +629,15 @@ describe("GET /api/v1/leaderboard", () => {
   // I-1 complete-fix — cost_per_pass_usd + latency_p95_ms sort
   // ===========================================================================
 
-  it('?sort=cost_per_pass_usd orders rows ascending by cost per passed task (I-1)', async () => {
+  it('?sort=cost_per_pass_usd:asc orders rows ascending by cost per passed task (I-1)', async () => {
     // seed cost_snapshots:
     //   sonnet (model_id=1): input=3.0, output=15.0 $/M
     //   opus   (model_id=2): input=15.0, output=75.0 $/M
-    // r1+r2 (sonnet, current): tokens_in=1000+900+1000=... actually per result row
     // The exact numerical cost_per_pass_usd values are complex; what matters is
     // that opus (10x more expensive) ends up AFTER sonnet when sorted ascending.
     // Verify: rows are sorted ascending (each row cost_per_pass_usd ≤ next).
-    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd&_cb=cpp');
+    // Note: A.6 default direction is 'desc'; use ':asc' suffix for ascending order.
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=cost_per_pass_usd:asc&_cb=cpp');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThanOrEqual(2);
@@ -622,7 +651,7 @@ describe("GET /api/v1/leaderboard", () => {
       expect(costs[i]).toBeLessThanOrEqual(costs[i + 1]);
     }
 
-    // Sonnet is cheaper (lower $/M) so should appear first.
+    // Sonnet is cheaper (lower $/M) so should appear first when ascending.
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
     expect(firstSlug).toBe('sonnet-4.7');
   });
@@ -647,18 +676,78 @@ describe("GET /api/v1/leaderboard", () => {
     }
   });
 
-  it('?sort=invalid falls back to default avg_score sort (I-1)', async () => {
-    // An unrecognised sort value must not 400 — it silently falls back to avg_score.
+  it('?sort=invalid falls back to default pass_at_n sort (A.6)', async () => {
+    // An unrecognised sort value must not 400 — it silently falls back to pass_at_n
+    // (default flipped from avg_score to pass_at_n in A.6).
     const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
-    // Default seed: opus has avg_score=1.0, sonnet=0.75 → opus first.
+    // Default seed: both sonnet and opus have pass_at_n=1.0 (both pass 2/2 tasks).
+    // Tiebreaker is m.id DESC → opus (id=2) sorts before sonnet (id=1).
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
     expect(firstSlug).toBe('opus-4.7');
     // filters.sort should reflect the normalised fallback value.
     expect((body as Record<string, unknown>).filters).toBeDefined();
     const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('avg_score');
+    expect(filters.sort).toBe('pass_at_n');
+  });
+
+  // ===========================================================================
+  // Bug 4: default sort is pass_at_n:desc (A.6 default-flip lock-in)
+  //
+  // Seeds two models where pass_at_n order DIFFERS from avg_score order so the
+  // two sort fields produce distinct rankings. The no-sort-param response must
+  // match pass_at_n:desc, not avg_score:desc.
+  // ===========================================================================
+
+  it('no sort param: default is pass_at_n:desc not avg_score:desc (Bug 4)', async () => {
+    // Add a third model (M-X, id=20) with HIGH avg_score but LOW pass_at_n,
+    // to force a divergence between pass_at_n and avg_score orderings.
+    //   sonnet (id=1): r1+r2 combined → pass_at_n = 2/2 = 1.0, avg_score ~0.75
+    //   opus   (id=2): r3      → pass_at_n = 2/2 = 1.0, avg_score = 1.0
+    //   M-X   (id=20): single attempt-1 pass with score=1.0 but denominator=2
+    //                  → pass_at_n = 1/2 = 0.5, avg_score = 1.0
+    //
+    // avg_score desc:  opus(1.0) ~ M-X(1.0) > sonnet(0.75) [tie between opus+MX]
+    // pass_at_n desc:  sonnet(1.0) ~ opus(1.0) > M-X(0.5)
+    //
+    // If default is pass_at_n:desc → M-X must be LAST.
+    // If default were avg_score:desc → M-X would be in the top 2 (tied with opus).
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (20,1,'m-x','m-x-api','Model X')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v2026-04',20,3.0,15.0,'2026-04-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('r-mx','ts-current',20,'s1','rig','2026-04-22T00:00:00Z','2026-04-22T01:00:00Z','completed','claimed','v2026-04','sig','2026-04-22T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('r-mx','easy/a',1,1,1.0,1,1,1,1000,500)`,
+      ),
+    ]);
+
+    // No sort param → must use default (pass_at_n:desc).
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?_cb=default-sort');
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    // filters.sort must reflect the default pass_at_n value.
+    const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
+    expect(filters.sort).toBe('pass_at_n');
+
+    // M-X has pass_at_n=0.5 (1 of 2 tasks passed) → must sort AFTER sonnet/opus
+    // which each have pass_at_n=1.0. Under avg_score:desc, M-X would tie opus at 1.0.
+    const slugs = body.data.map((r) => (r.model as Record<string, unknown>).slug);
+    const mxPos = slugs.indexOf('m-x');
+    expect(mxPos).toBeGreaterThan(-1);
+    // sonnet and opus both have pass_at_n=1.0 and must precede M-X.
+    const sonnetPos = slugs.indexOf('sonnet-4.7');
+    const opusPos = slugs.indexOf('opus-4.7');
+    expect(sonnetPos).toBeLessThan(mxPos);
+    expect(opusPos).toBeLessThan(mxPos);
   });
 
   // ===========================================================================
@@ -729,5 +818,34 @@ describe("GET /api/v1/leaderboard", () => {
     expect(sonnet).toBeDefined();
     const m = sonnet!.model as Record<string, unknown>;
     expect(m.settings_suffix, "mixed settings → suffix omitted").toBe("");
+  });
+
+  // ---------------------------------------------------------------------------
+  // PR1 — set=all rejection body shape
+  // ---------------------------------------------------------------------------
+  it("set=all returns informative error body (error field is non-empty string)", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=all&extra=param");
+    expect(res.status).toBe(400);
+    const body = await res.json() as { code?: string; error?: string };
+    expect(body.code).toBe("invalid_set_for_metric");
+    expect(typeof body.error).toBe("string");
+    expect((body.error as string).length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // PR1 — tier=trusted filter (Task A.2)
+  // ---------------------------------------------------------------------------
+  describe("GET /api/v1/leaderboard — tier filter (PR1)", () => {
+    it("accepts tier=trusted and returns 200", async () => {
+      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=trusted&_cb=trusted");
+      expect(res.status).toBe(200);
+    });
+
+    it("rejects unknown tier with 400 and invalid_tier code", async () => {
+      const res = await SELF.fetch("https://x/api/v1/leaderboard?tier=bogus&_cb=bogus-tier");
+      expect(res.status).toBe(400);
+      const body = await res.json() as { code?: string };
+      expect(body.code).toBe("invalid_tier");
+    });
   });
 });

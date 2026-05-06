@@ -25,18 +25,23 @@
   type Segs = { p1: number; p2: number; score: number };
 
   function segs(r: LeaderboardRow): Segs {
-    const t = r.tasks_attempted_distinct || 0;
-    if (t === 0) return { p1: 0, p2: 0, score: 0 };
-    const p1 = (r.tasks_passed_attempt_1 / t) * 100;
-    const p2 = (r.tasks_passed_attempt_2_only / t) * 100;
+    const d = r.denominator || 0;
+    if (d === 0) return { p1: 0, p2: 0, score: 0 };
+    const p1 = (r.tasks_passed_attempt_1 / d) * 100;
+    const p2 = (r.tasks_passed_attempt_2_only / d) * 100;
     return { p1, p2, score: p1 + p2 };
   }
 
   const top = $derived(
     rows
       .map((r) => ({ row: r, s: segs(r) }))
-      .filter(({ row }) => row.tasks_attempted_distinct > 0)
-      .sort((a, b) => b.s.score - a.s.score),
+      .filter(({ row }) => (row.denominator ?? 0) > 0)
+      .sort(
+        (a, b) =>
+          b.s.score - a.s.score ||
+          (b.row.pass_at_1 ?? 0) - (a.row.pass_at_1 ?? 0) ||
+          a.row.model.slug.localeCompare(b.row.model.slug),
+      ),
   );
 
   const modelCount = $derived(rows.length);
@@ -71,6 +76,9 @@
           <span class="bar-name">
             <a class="bar-model" href="/models/{row.model.slug}">{row.model.display_name}</a>
             {#if row.family_slug}<span class="bar-provider">{row.family_slug}</span>{/if}
+            {#if row.denominator !== undefined && row.tasks_attempted_distinct < row.denominator}
+              <span class="bar-coverage">{row.tasks_attempted_distinct}/{row.denominator} attempted</span>
+            {/if}
           </span>
           <span
             class="bar-track"
@@ -192,6 +200,7 @@
   }
   .bar-model:hover { color: var(--accent); text-decoration: underline; }
   .bar-provider { font-size: var(--text-xs); color: var(--text-faint); }
+  .bar-coverage { font-size: var(--text-xs); color: var(--text-faint); font-style: italic; }
 
   .bar-track {
     display: flex;
