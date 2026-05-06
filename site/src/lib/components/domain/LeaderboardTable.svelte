@@ -45,6 +45,7 @@
         <th
           scope="col"
           data-test="pass-at-n-header"
+          data-cheat="score-col"
           aria-sort={ariaSort('pass_at_n')}
           title="Tasks solved / tasks in scope, with up to 2 attempts."
         >
@@ -68,16 +69,16 @@
           </button>
           <MetricInfo id="avg_score" />
         </th>
-        <th scope="col" aria-sort={ariaSort('pass_at_1')} title={METRICS.pass_at_n?.short}>
+        <th scope="col" data-cheat="pass-col" aria-sort={ariaSort('pass_at_1')} title={METRICS.pass_at_n?.short}>
           <button class="hbtn" onclick={() => clickSort('pass_at_1')}>Pass{#if sortField === 'pass_at_1' || sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="pass_at_n" />
         </th>
-        <th scope="col" class="th-ci" title={METRICS.pass_rate_ci?.short}>CI <MetricInfo id="pass_rate_ci" /></th>
-        <th scope="col" aria-sort={ariaSort('avg_cost_usd')} title={METRICS.avg_cost_usd?.short}>
+        <th scope="col" class="th-ci" data-cheat="ci-col" title={METRICS.pass_rate_ci?.short}>CI <MetricInfo id="pass_rate_ci" /></th>
+        <th scope="col" data-cheat="cost-col" aria-sort={ariaSort('avg_cost_usd')} title={METRICS.avg_cost_usd?.short}>
           <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost{#if sortField === 'avg_cost_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="avg_cost_usd" />
         </th>
-        <th scope="col" aria-sort={ariaSort('cost_per_pass_usd')} title={METRICS.cost_per_pass_usd?.short}>
+        <th scope="col" data-cheat="cost-per-pass-col" aria-sort={ariaSort('cost_per_pass_usd')} title={METRICS.cost_per_pass_usd?.short}>
           <button class="hbtn" onclick={() => clickSort('cost_per_pass_usd')}>$/Pass{#if sortField === 'cost_per_pass_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="cost_per_pass_usd" />
         </th>
@@ -90,7 +91,7 @@
       </tr>
     </thead>
     <tbody aria-live="polite" aria-atomic="false">
-      {#each rows as row (row.model.slug)}
+      {#each rows as row, i (row.model.slug)}
         {@const denom = row.denominator ?? row.tasks_attempted_distinct}
         <tr>
           <td class="rank text-mono">{row.rank}</td>
@@ -104,7 +105,15 @@
           </th>
           <td class="score text-mono">{(row.pass_at_n * 100).toFixed(1)}</td>
           <td class="th-avg-attempt text-mono">{row.avg_score.toFixed(2)}</td>
-          <td class="attempts-cell">
+          <td
+            class="attempts-cell"
+            data-cheat={i === 0 ? 'worked-example-pass' : undefined}
+            data-cheat-passed={i === 0 ? row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only : undefined}
+            data-cheat-total={i === 0 ? denom : undefined}
+            data-cheat-p1={i === 0 ? row.tasks_passed_attempt_1 : undefined}
+            data-cheat-p2only={i === 0 ? row.tasks_passed_attempt_2_only : undefined}
+            data-cheat-display-name={i === 0 ? row.model.display_name : undefined}
+          >
             <AttemptStackedBar
               attempt1={row.tasks_passed_attempt_1}
               attempt2Only={row.tasks_passed_attempt_2_only}
