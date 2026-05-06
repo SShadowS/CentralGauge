@@ -131,3 +131,4 @@ site/tests/e2e/__screenshots__/
 # WIP plans/specs from 2026-05-03 (kept untracked; commit individually when ready).
 docs/superpowers/plans/2026-05-03-*.md
 docs/superpowers/specs/2026-05-03-*.md
+.superpowers/
