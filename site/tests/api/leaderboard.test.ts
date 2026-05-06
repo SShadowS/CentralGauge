@@ -140,6 +140,7 @@ describe("LeaderboardRow — contract completeness", () => {
 
     // REQUIRED: every key in this array must match LeaderboardRow
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
+    // A.4: added denominator, pass_at_1, pass_at_n_per_attempted (always emitted).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -151,6 +152,9 @@ describe("LeaderboardRow — contract completeness", () => {
       "tasks_passed_attempt_1",
       "tasks_passed_attempt_2_only",
       "pass_at_n",
+      "pass_at_1",
+      "denominator",
+      "pass_at_n_per_attempted",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",
@@ -331,6 +335,10 @@ describe("GET /api/v1/leaderboard", () => {
     // sonnet-4.7 (model_id=1) on r1 only — but we need attempt-2 rows too.
     // The default seed lacks attempt=2 rows; insert a bespoke fixture under
     // a fresh model so it doesn't pollute existing assertions.
+    //
+    // A.4: Fixture A adds t3 + t4 to ts-current (already has easy/a + hard/b = 2
+    // tasks). Update task_count to 4 so the strict denominator is correct.
+    // Expected: p1=2, p2_only=1, denominator=4 → pass_at_n = 3/4 = 0.75.
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (10,1,'fixA','fix-a','Fixture A')`,
@@ -340,6 +348,10 @@ describe("GET /api/v1/leaderboard", () => {
       ),
       env.DB.prepare(
         `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json) VALUES ('ts-current','t3','ch3','easy','{}'),('ts-current','t4','ch4','easy','{}')`,
+      ),
+      // Update task_count to 4 (easy/a, hard/b, t3, t4) for strict denominator.
+      env.DB.prepare(
+        `UPDATE task_sets SET task_count = 4 WHERE hash = 'ts-current'`,
       ),
       env.DB.prepare(
         `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
@@ -435,7 +447,10 @@ describe("GET /api/v1/leaderboard", () => {
     expect(fixB!.tasks_attempted_distinct, "Fixture B: 1 distinct task").toBe(
       1,
     );
-    expect(fixB!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = (p1+p2only) / denominator = 1 / task_count(2) = 0.5.
+    // The per-attempted value (1/1=1) is now in pass_at_n_per_attempted.
+    expect(Math.abs((fixB!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixB!.denominator).toBe(2);
     expect(
       (fixB!.tasks_passed_attempt_1 as number) +
         (fixB!.tasks_passed_attempt_2_only as number),
@@ -484,7 +499,9 @@ describe("GET /api/v1/leaderboard", () => {
       "Fixture C: Run-2 retry succeeded",
     ).toBe(1);
     expect(fixC!.tasks_attempted_distinct).toBe(1);
-    expect(fixC!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = 1 / task_count(2) = 0.5.
+    expect(Math.abs((fixC!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixC!.denominator).toBe(2);
     expect(
       (fixC!.tasks_passed_attempt_1 as number) +
         (fixC!.tasks_passed_attempt_2_only as number),
@@ -539,7 +556,9 @@ describe("GET /api/v1/leaderboard", () => {
       "Fixture D: Run-CUR attempt-2 should classify (taskSetClauseSubA2NotExists missing if 0)",
     ).toBe(1);
     expect(fixD!.tasks_attempted_distinct).toBe(1);
-    expect(fixD!.pass_at_n).toBe(1);
+    // A.4: strict pass_at_n = 1 / task_count(2) = 0.5.
+    expect(Math.abs((fixD!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
+    expect(fixD!.denominator).toBe(2);
     expect(
       (fixD!.tasks_passed_attempt_1 as number) +
         (fixD!.tasks_passed_attempt_2_only as number),

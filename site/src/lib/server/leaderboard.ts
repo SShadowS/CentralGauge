@@ -10,6 +10,7 @@ import {
   type SettingsProfileLike,
 } from "./settings-suffix";
 import type { ServerTimer } from "./server-timing";
+import { computeDenominator } from "./denominator";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -18,6 +19,46 @@ export async function computeLeaderboard(
   q: LeaderboardQuery,
   timer?: ServerTimer,
 ): Promise<LeaderboardRow[]> {
+  // ---------------------------------------------------------------------------
+  // Resolve the task_set_hash for denominator computation.
+  // Must happen BEFORE the main aggregate query so we can early-exit when
+  // no current set exists (prevents an empty leaderboard from masking errors).
+  // ---------------------------------------------------------------------------
+  let resolvedHash: string | null = null;
+  if (q.set === "current") {
+    const row = await db
+      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+      .first<{ hash: string }>();
+    resolvedHash = row?.hash ?? null;
+    if (!resolvedHash) {
+      // No current task set — nothing to display.
+      return [];
+    }
+  } else if (/^[0-9a-f]{64}$/.test(q.set)) {
+    resolvedHash = q.set;
+  }
+  // Note: set='all' is rejected by the route before computeLeaderboard is called.
+
+  // Compute the strict denominator: count of tasks in active scope.
+  // Task-scope filters (category, difficulty) change the denominator.
+  // Run-scope filters (tier, since, family) do NOT change the denominator.
+  const denominator = resolvedHash
+    ? await computeDenominator(
+        db,
+        {
+          taskSetHash: resolvedHash,
+          category: q.category,
+          difficulty: q.difficulty,
+        },
+        timer,
+      )
+    : 0;
+
+  // Empty scope — no tasks match the filter combination. Return early.
+  if (resolvedHash && denominator === 0) {
+    return [];
+  }
+
   const wheres: string[] = [];
   const params: (string | number)[] = [];
 
@@ -209,8 +250,19 @@ export async function computeLeaderboard(
     const passedA1 = Number(r.tasks_passed_attempt_1 ?? 0);
     const passedA2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
     const attemptedDistinct = Number(r.tasks_attempted_distinct ?? 0);
-    const passAtN =
-      attemptedDistinct > 0 ? (passedA1 + passedA2Only) / attemptedDistinct : 0;
+
+    // Strict pass rates: denominator = task_count of the active scope.
+    // For A.4, the numerators (p1, p2_only) are NOT yet scope-filtered by
+    // category/difficulty — that lands in A.5. Whole-set tests pass now.
+    const passAtNStrict =
+      denominator > 0 ? (passedA1 + passedA2Only) / denominator : 0;
+    const passAt1Strict = denominator > 0 ? passedA1 / denominator : 0;
+
+    // Legacy per-attempted formula (deprecated alias, removed in PR2).
+    const passAtNPerAttempted =
+      attemptedDistinct > 0
+        ? (passedA1 + passedA2Only) / attemptedDistinct
+        : 0;
 
     const profile = r.settings_hash_unique
       ? (profileByHash.get(r.settings_hash_unique) ?? null)
@@ -232,7 +284,10 @@ export async function computeLeaderboard(
       tasks_attempted_distinct: attemptedDistinct,
       tasks_passed_attempt_1: passedA1,
       tasks_passed_attempt_2_only: passedA2Only,
-      pass_at_n: Math.round(passAtN * 1e6) / 1e6,
+      pass_at_n: Math.round(passAtNStrict * 1e6) / 1e6,
+      pass_at_1: Math.round(passAt1Strict * 1e6) / 1e6,
+      denominator,
+      pass_at_n_per_attempted: Math.round(passAtNPerAttempted * 1e6) / 1e6,
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,
@@ -261,12 +316,10 @@ export async function computeLeaderboard(
       row.rank = idx + 1;
     });
   } else if (q.sort === "pass_at_1") {
-    const ratio = (r: LeaderboardRow): number =>
-      r.tasks_attempted_distinct > 0
-        ? r.tasks_passed_attempt_1 / r.tasks_attempted_distinct
-        : 0;
     mapped.sort(
-      (a, b) => ratio(b) - ratio(a) || a.model.slug.localeCompare(b.model.slug),
+      (a, b) =>
+        (b.pass_at_1 ?? 0) - (a.pass_at_1 ?? 0) ||
+        a.model.slug.localeCompare(b.model.slug),
     );
     mapped.forEach((row, idx) => {
       row.rank = idx + 1;
