@@ -21,7 +21,6 @@ const items: FamilyTrajectoryItem[] = [
     pass_at_n: 0.72,
     pass_at_1: 0.6,
     denominator: 50,
-    pass_at_n_per_attempted: 0.75,
     task_set_hash: HASH_A,
   },
   {
@@ -38,7 +37,6 @@ const items: FamilyTrajectoryItem[] = [
     pass_at_n: 0.78,
     pass_at_1: 0.65,
     denominator: 50,
-    pass_at_n_per_attempted: 0.80,
     task_set_hash: HASH_A,
   },
   {
@@ -55,7 +53,6 @@ const items: FamilyTrajectoryItem[] = [
     pass_at_n: 0.84,
     pass_at_1: 0.72,
     denominator: 50,
-    pass_at_n_per_attempted: 0.86,
     task_set_hash: HASH_A,
   },
 ];

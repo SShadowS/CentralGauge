@@ -140,7 +140,7 @@ describe("LeaderboardRow — contract completeness", () => {
 
     // REQUIRED: every key in this array must match LeaderboardRow
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
-    // A.4: added denominator, pass_at_1, pass_at_n_per_attempted (always emitted).
+    // PR2.1: removed pass_at_n_per_attempted (deprecated alias).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -154,7 +154,6 @@ describe("LeaderboardRow — contract completeness", () => {
       "pass_at_n",
       "pass_at_1",
       "denominator",
-      "pass_at_n_per_attempted",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",
@@ -313,8 +312,8 @@ describe("GET /api/v1/leaderboard", () => {
     await res.arrayBuffer();
 
     // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
-    // a synthetic GET request URL with _cv=v2 appended (A.7 cache versioning).
-    const cacheKeyUrl = `${url}&_cv=v2`;
+    // a synthetic GET request URL with _cv=v3 appended (PR2.1 cache version bump).
+    const cacheKeyUrl = `${url}&_cv=v3`;
     const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(cacheKey);
@@ -328,7 +327,7 @@ describe("GET /api/v1/leaderboard", () => {
     expect(res.status).toBe(400);
   });
 
-  it("cache key includes _cv=v2 suffix (PR1 cache versioning, A.7)", async () => {
+  it("cache key includes _cv=v3 suffix (PR2.1 cache version bump)", async () => {
     // Use a fresh URL so we are guaranteed a cache miss → the handler writes
     // a new entry. After the write we reconstruct the same _cv-bearing URL
     // and assert the entry exists under it.
@@ -338,12 +337,12 @@ describe("GET /api/v1/leaderboard", () => {
     // Drain so the inline cache.put commits before we inspect.
     await res.arrayBuffer();
 
-    // The handler appends _cv=v2 to the synthetic cache key before storing.
+    // The handler appends _cv=v3 to the synthetic cache key before storing.
     // Reconstruct the exact URL the handler used and verify the entry exists.
-    const expectedKeyUrl = `${url}&_cv=v2`;
+    const expectedKeyUrl = `${url}&_cv=v3`;
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(new Request(expectedKeyUrl, { method: "GET" }));
-    expect(cached, "cache entry must be stored under _cv=v2 key").toBeDefined();
+    expect(cached, "cache entry must be stored under _cv=v3 key").toBeDefined();
 
     // Sanity: the entry is NOT stored under the bare URL (without _cv).
     const bareKey = new Request(url, { method: "GET" });
@@ -472,7 +471,6 @@ describe("GET /api/v1/leaderboard", () => {
       1,
     );
     // A.4: strict pass_at_n = (p1+p2only) / denominator = 1 / task_count(2) = 0.5.
-    // The per-attempted value (1/1=1) is now in pass_at_n_per_attempted.
     expect(Math.abs((fixB!.pass_at_n as number) - 0.5)).toBeLessThan(1e-6);
     expect(fixB!.denominator).toBe(2);
     expect(

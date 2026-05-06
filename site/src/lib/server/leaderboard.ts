@@ -215,12 +215,11 @@ export async function computeLeaderboard(
   //                            expressions + denominator for /N)
   //   6. sqlLimit          (LIMIT clause)
   //
-  // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd /
-  // pass_at_n_per_attempted are correlated subqueries that reference m.id from
-  // the outer GROUP BY. They duplicate the same scope-IN params used in the
-  // SELECT list (those params appear at positions 1-3 above). SQLite textually
-  // evaluates ORDER BY after GROUP BY, so the ORDER BY ?s come AFTER the
-  // WHERE ?s in bind order.
+  // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd are
+  // correlated subqueries that reference m.id from the outer GROUP BY. They
+  // duplicate the same scope-IN params used in the SELECT list (those params
+  // appear at positions 1-3 above). SQLite textually evaluates ORDER BY after
+  // GROUP BY, so the ORDER BY ?s come AFTER the WHERE ?s in bind order.
   // ---------------------------------------------------------------------------
 
   const LATENCY_WIDE_FETCH = 200;
@@ -318,18 +317,6 @@ export async function computeLeaderboard(
         // causes a bind-order bug when category/difficulty filters are active.
         return {
           clause: `ORDER BY (SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
-          extraParams: [
-            ...scopeInA1.params,
-            ...scopeInA2NotExists.params,
-            ...scopeInA2.params,
-          ],
-          sqlLimit: q.limit,
-        };
-
-      case "pass_at_n_per_attempted":
-        // Legacy per-attempted: (p1 + p2_only) / tasks_attempted_distinct.
-        return {
-          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
           extraParams: [
             ...scopeInA1.params,
             ...scopeInA2NotExists.params,
@@ -520,12 +507,6 @@ export async function computeLeaderboard(
       denominator > 0 ? (passedA1 + passedA2Only) / denominator : 0;
     const passAt1Strict = denominator > 0 ? passedA1 / denominator : 0;
 
-    // Legacy per-attempted formula (deprecated alias, removed in PR2).
-    const passAtNPerAttempted =
-      attemptedDistinct > 0
-        ? (passedA1 + passedA2Only) / attemptedDistinct
-        : 0;
-
     const profile = r.settings_hash_unique
       ? (profileByHash.get(r.settings_hash_unique) ?? null)
       : null;
@@ -549,7 +530,6 @@ export async function computeLeaderboard(
       pass_at_n: Math.round(passAtNStrict * 1e6) / 1e6,
       pass_at_1: Math.round(passAt1Strict * 1e6) / 1e6,
       denominator,
-      pass_at_n_per_attempted: Math.round(passAtNPerAttempted * 1e6) / 1e6,
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,

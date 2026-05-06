@@ -47,8 +47,7 @@ export interface LeaderboardQuery {
     | 'avg_score'
     | 'cost_per_pass_usd'
     | 'latency_p95_ms'
-    | 'avg_cost_usd'
-    | 'pass_at_n_per_attempted';
+    | 'avg_cost_usd';
   /**
    * A.6 sort direction. Parsed from the `sort` query param as `field:dir`
    * (e.g. `pass_at_n:asc`). Defaults to `desc` when omitted.
@@ -117,12 +116,6 @@ export interface LeaderboardRow {
    * From PR1 onward. Optional during PR1 until A.4 lands server-side emission.
    */
   denominator?: number;
-  /**
-   * @deprecated Per-attempted denominator (`tasks_passed / tasks_attempted_distinct`).
-   * Kept for one release as a migration alias for consumers using the old
-   * pass rate. Removed in PR2. Optional during PR1 until A.4 lands server-side emission.
-   */
-  pass_at_n_per_attempted?: number;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;
@@ -450,11 +443,6 @@ export interface FamiliesIndexItem {
   pass_at_1?: number | null;
   /** Denominator (task_count of the current task set) for the latest model's pass_at_n. null when no runs. */
   denominator?: number | null;
-  /**
-   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct for the latest model.
-   * Migration alias; remove in PR2.
-   */
-  pass_at_n_per_attempted?: number | null;
 }
 
 export interface FamiliesIndexResponse {
@@ -467,7 +455,7 @@ export interface FamiliesIndexResponse {
 
 /**
  * All numeric fields (avg_score, run_count, last_run_at, avg_cost_usd,
- * pass_at_n, pass_at_1, pass_at_n_per_attempted, tasks_passed_*,
+ * pass_at_n, pass_at_1, tasks_passed_*,
  * tasks_attempted_distinct) are scoped to the model's `task_set_hash`
  * (the dominant task set hash). A trajectory point's numbers therefore
  * come from one consistent source — no cross-set bleed.
@@ -492,11 +480,6 @@ export interface FamilyTrajectoryItem {
    * null when no runs.
    */
   denominator?: number | null;
-  /**
-   * @deprecated Per-attempted alias: pass / tasks_attempted_distinct.
-   * Migration alias; remove in PR2.
-   */
-  pass_at_n_per_attempted?: number | null;
   /**
    * The task-set hash whose task_count was used as the denominator for this
    * trajectory point. Null when the model has no runs.
@@ -629,11 +612,6 @@ export interface CompareModel {
   pass_at_1: number | null;
   /** Denominator (task_count of the current task set). null when no current set. */
   denominator: number | null;
-  /**
-   * @deprecated Per-attempted alias: (p1 + p2_only) / tasks_attempted_distinct.
-   * Migration alias; remove in PR2.
-   */
-  pass_at_n_per_attempted: number | null;
 }
 
 export interface CompareTaskRow {

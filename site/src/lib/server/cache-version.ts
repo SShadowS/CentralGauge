@@ -7,4 +7,4 @@
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v2';
+export const CACHE_VERSION = 'v3';

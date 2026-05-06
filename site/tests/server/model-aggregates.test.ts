@@ -607,11 +607,10 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
 // Seed: task_set 'aaaa' has task_count=10 (from seedB1).
 // M-A attempted 4 tasks (e1,e2,e3,h1), passed 3 (e1,e2,e3).
 //
-// Strict:       pass_at_n = 3 / 10 = 0.30
-// Per-attempted: pass_at_n = 3 / 4  = 0.75 (WRONG — old formula)
+// Strict: pass_at_n = 3 / 10 = 0.30
 //
 // The test asserts 0.30, which only passes with the strict denominator.
-// pass_at_n_per_attempted must equal 0.75 so both fields are tested.
+// PR2.1: pass_at_n_per_attempted deprecated alias removed.
 // ---------------------------------------------------------------------------
 
 describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
@@ -634,16 +633,16 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
     // Strict: 3 passed / 10 tasks in set = 0.30
     expect(agg.pass_at_n).toBeCloseTo(0.3, 6);
 
-    // Per-attempted: 3 passed / 4 attempted = 0.75 (kept in separate field)
-    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.75, 6);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect((agg as any).pass_at_n_per_attempted).toBeUndefined();
 
-    // Strict must differ from per-attempted when coverage < 100%
-    expect(agg.pass_at_n).not.toBeCloseTo(agg.pass_at_n_per_attempted, 4);
+    // tasks_attempted_distinct correctly reported as 4
+    expect(agg.tasks_attempted_distinct).toBe(4);
   });
 
-  it("full-coverage model: pass_at_n === pass_at_n_per_attempted when attempted == task_count", async () => {
+  it("full-coverage model: pass_at_n == (passed) / task_count when attempted == task_count", async () => {
     // Add results so M-A attempts all 10 tasks (e1-e5 all pass, h1-h5 all fail).
-    // attempted_distinct = 10 = task_count → strict and per-attempted converge.
+    // attempted_distinct = 10 = task_count → strict denominator == per-attempted.
     await env.DB.batch([
       env.DB.prepare(
         `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
@@ -675,14 +674,15 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
       taskSetHash: "aaaa",
     });
     const agg = aggMap.get(MA_MODEL_ID)!;
-    // 5 passed / 10 attempted / 10 task_count → both fields = 0.5
+    // 5 passed / 10 task_count = 0.5
     expect(agg.pass_at_n).toBeCloseTo(0.5, 6);
-    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.5, 6);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect((agg as any).pass_at_n_per_attempted).toBeUndefined();
   });
 
   it("legacy taskSetCurrent path: pass_at_n falls back to per-attempted denominator", async () => {
     // When taskSetHash is not provided, strictDenominator is null,
-    // so pass_at_n falls back to the per-attempted formula (= pass_at_n_per_attempted).
+    // so pass_at_n falls back to the per-attempted formula.
     const aggMap = await computeModelAggregates(env.DB, {
       modelIds: [MA_MODEL_ID],
       taskSetCurrent: true,
@@ -691,6 +691,7 @@ describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
     expect(agg).toBeDefined();
     // Legacy path: 3 passed / 4 attempted = 0.75
     expect(agg.pass_at_n).toBeCloseTo(0.75, 6);
-    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.75, 6);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect((agg as any).pass_at_n_per_attempted).toBeUndefined();
   });
 });

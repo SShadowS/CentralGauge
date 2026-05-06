@@ -14,7 +14,6 @@ const items: FamiliesIndexItem[] = [
     pass_at_n: 0.82,
     pass_at_1: 0.7,
     denominator: 50,
-    pass_at_n_per_attempted: 0.85,
   },
   {
     slug: "gpt",
@@ -26,7 +25,6 @@ const items: FamiliesIndexItem[] = [
     pass_at_n: 0.71,
     pass_at_1: 0.6,
     denominator: 50,
-    pass_at_n_per_attempted: 0.74,
   },
 ];
 

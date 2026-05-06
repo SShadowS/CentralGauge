@@ -86,7 +86,6 @@ describe("GET /api/v1/families", () => {
         pass_at_n: number | null;
         pass_at_1: number | null;
         denominator: number | null;
-        pass_at_n_per_attempted: number | null;
       }>;
     };
 
@@ -97,8 +96,8 @@ describe("GET /api/v1/families", () => {
     expect(claude.denominator).toBe(1);
     expect(claude.pass_at_n).toBeCloseTo(1.0, 5);
     expect(claude.pass_at_1).toBeCloseTo(1.0, 5);
-    // pass_at_n_per_attempted = 1/1 = 1.0
-    expect(claude.pass_at_n_per_attempted).toBeCloseTo(1.0, 5);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect((claude as any).pass_at_n_per_attempted).toBeUndefined();
 
     // gpt latest = gpt-4o: 1 run, 1 task passed attempt-1 → p1=1, p2_only=0
     const gpt = body.data.find((f) => f.slug === "gpt")!;
@@ -169,7 +168,6 @@ describe("GET /api/v1/families/:slug", () => {
         pass_at_n: number | null;
         pass_at_1: number | null;
         denominator: number | null;
-        pass_at_n_per_attempted: number | null;
       }>;
     };
 
@@ -180,7 +178,8 @@ describe("GET /api/v1/families/:slug", () => {
       expect(item.denominator).toBe(1);
       expect(item.pass_at_n).toBeCloseTo(1.0, 5);
       expect(item.pass_at_1).toBeCloseTo(1.0, 5);
-      expect(item.pass_at_n_per_attempted).toBeCloseTo(1.0, 5);
+      // pass_at_n_per_attempted removed in PR2.1
+      expect((item as any).pass_at_n_per_attempted).toBeUndefined();
     }
   });
 

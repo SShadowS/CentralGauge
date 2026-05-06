@@ -116,8 +116,6 @@ export const GET: RequestHandler = async ({ request, platform }) => {
           hasRuns && denominator > 0 ? (p1 + p2Only) / denominator : null;
         const passAt1Strict =
           hasRuns && denominator > 0 ? p1 / denominator : null;
-        const passAtNPerAttempted =
-          hasRuns && attempted > 0 ? (p1 + p2Only) / attempted : null;
 
         return {
           slug: r.slug,
@@ -136,10 +134,6 @@ export const GET: RequestHandler = async ({ request, platform }) => {
               ? null
               : Math.round(passAt1Strict * 1e6) / 1e6,
           denominator: hasRuns ? denominator : null,
-          pass_at_n_per_attempted:
-            passAtNPerAttempted === null
-              ? null
-              : Math.round(passAtNPerAttempted * 1e6) / 1e6,
         };
       }),
     });

@@ -102,7 +102,7 @@ describe("GET /api/v1/compare", () => {
     if (gptScore !== undefined) expect(gptScore).toBeNull();
   });
 
-  it("emits pass_at_n, pass_at_1, denominator, and pass_at_n_per_attempted per model", async () => {
+  it("emits pass_at_n, pass_at_1, and denominator per model", async () => {
     // seed: task_set has 2 tasks (easy/a, hard/b).
     // sonnet-4.7 passed easy/a on attempt 1 (r1), failed hard/b.
     // gpt-4o passed hard/b on attempt 1 (r2), failed easy/a.
@@ -131,9 +131,9 @@ describe("GET /api/v1/compare", () => {
     expect(sonnet.denominator).toBe(2);
     expect(gpt.denominator).toBe(2);
 
-    // pass_at_n_per_attempted: both attempted 2 tasks; 1 pass each => 0.5
-    expect(sonnet.pass_at_n_per_attempted).toBe(0.5);
-    expect(gpt.pass_at_n_per_attempted).toBe(0.5);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect(sonnet.pass_at_n_per_attempted).toBeUndefined();
+    expect(gpt.pass_at_n_per_attempted).toBeUndefined();
   });
 
   it("CR-5: cross-set runs do not inflate pass_at_n beyond 1.0", async () => {
@@ -215,6 +215,7 @@ describe("GET /api/v1/compare", () => {
     expect(gemini.pass_at_n).toBeNull();
     expect(gemini.pass_at_1).toBeNull();
     expect(gemini.denominator).toBeNull();
-    expect(gemini.pass_at_n_per_attempted).toBeNull();
+    // pass_at_n_per_attempted removed in PR2.1
+    expect(gemini.pass_at_n_per_attempted).toBeUndefined();
   });
 });

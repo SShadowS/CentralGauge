@@ -57,14 +57,6 @@ export const METRICS: Record<string, MetricDef> = {
     when: 'Measures reliability under repetition. High pass^n means the model is unlikely to regress on a re-run, important for CI and production use.',
   },
 
-  pass_at_n_per_attempted: {
-    id: 'pass_at_n_per_attempted',
-    label: 'Per-attempted pass rate',
-    short: 'Deprecated. Pre-PR1 metric using tasks_attempted as denominator.',
-    formula: 'tasks_passed / tasks_attempted_distinct (excludes unattempted tasks from denominator)',
-    when: 'Deprecated. Pre-PR1 metric. Replaced by pass_at_n which uses the strict per-set denominator. Removed next release.',
-  },
-
   avg_score: {
     id: 'avg_score',
     label: 'Avg attempt score',

@@ -79,13 +79,6 @@ export interface Aggregate {
    */
   pass_at_n: number;
   /**
-   * Per-attempted pass rate (deprecated): (tasks_passed_attempt_1 +
-   * tasks_passed_attempt_2_only) / tasks_attempted_distinct. Retained for
-   * backward compat; prefer pass_at_n which uses the strict per-set
-   * denominator. 0 when no attempts.
-   */
-  pass_at_n_per_attempted: number;
-  /**
    * Concise settings string e.g. ` (50K, t0.1)` (P7 Mini-phase B). Empty
    * string when settings_hash differs across the row's runs (multi-settings
    * ambiguity → suffix omitted).
@@ -533,6 +526,7 @@ export async function computeModelAggregates(
     const passAtN = strictDenominator !== null && strictDenominator > 0
       ? tasksPassedDistinct / strictDenominator
       : passAtNPerAttempted;
+    // Note: passAtNPerAttempted is kept for the passAtN fallback computation only.
     const profile = row.settings_hash_unique
       ? profileByHash.get(row.settings_hash_unique) ?? null
       : null;
@@ -580,7 +574,6 @@ export async function computeModelAggregates(
       tasks_passed_attempt_1: passedA1,
       tasks_passed_attempt_2_only: passedA2Only,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
-      pass_at_n_per_attempted: Math.round(passAtNPerAttempted * 1e6) / 1e6,
       settings_suffix: settingsSuffix,
       temperature,
       thinking_budget: thinkingBudget,

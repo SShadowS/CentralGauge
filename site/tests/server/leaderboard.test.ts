@@ -4,8 +4,8 @@
  * Tests the scope-aware denominator logic introduced in A.4:
  *   - Whole-set scope: denominator from task_sets.task_count
  *   - pass_at_n = (p1 + p2_only) / denominator (strict)
- *   - pass_at_n_per_attempted = (p1 + p2_only) / tasks_attempted_distinct (legacy)
  *   - denominator field present on every row
+ *   (pass_at_n_per_attempted deprecated alias removed in PR2.1)
  *
  * Filtered scope (category/difficulty) denominator uses COUNT(*) FROM tasks —
  * tested here for the denominator helper only. Full filtered-numerator
@@ -247,7 +247,7 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     expect(ma.pass_at_n).toBeCloseTo(3 / 10, 6);
   });
 
-  it("emits pass_at_n_per_attempted = (p1 + p2_only) / tasks_attempted_distinct", async () => {
+  it("pass_at_n_per_attempted is not emitted (removed in PR2.1)", async () => {
     // 3 passed first try, 1 failed → attempted_distinct = 4
     await insertRun("r1");
     await insertResult("r1", "t1", 1, 1);
@@ -257,8 +257,8 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
 
     const rows = await computeLeaderboard(env.DB, baseQuery);
     const ma = rows.find((r) => r.model.slug === "M-A")!;
-    // pass_at_n_per_attempted = (3 + 0) / 4 = 0.75
-    expect(ma.pass_at_n_per_attempted).toBeCloseTo(3 / 4, 6);
+    // pass_at_n_per_attempted was the deprecated alias; it is gone in PR2.1.
+    expect((ma as any).pass_at_n_per_attempted).toBeUndefined();
   });
 
   it("emits pass_at_1 = p1 / denominator", async () => {
@@ -322,7 +322,7 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("pass_at_n and pass_at_n_per_attempted diverge when denominator > tasks_attempted_distinct", async () => {
+  it("pass_at_n is strict (denominator > tasks_attempted_distinct when unattempted tasks exist)", async () => {
     // Model only attempted 2 of 10 tasks and passed both
     await insertRun("r1");
     await insertResult("r1", "t1", 1, 1);
@@ -331,12 +331,13 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     const rows = await computeLeaderboard(env.DB, baseQuery);
     const ma = rows.find((r) => r.model.slug === "M-A")!;
 
-    // Strict: 2/10 = 0.2
+    // Strict: 2/10 = 0.2 (unattempted tasks count as failures)
     expect(ma.pass_at_n).toBeCloseTo(2 / 10, 6);
-    // Per-attempted: 2/2 = 1.0
-    expect(ma.pass_at_n_per_attempted).toBeCloseTo(1.0, 6);
-    // The two metrics diverge
-    expect(ma.pass_at_n).toBeLessThan(ma.pass_at_n_per_attempted!);
+    // pass_at_n_per_attempted removed in PR2.1
+    expect((ma as any).pass_at_n_per_attempted).toBeUndefined();
+    // tasks_attempted_distinct = 2 but denominator = 10
+    expect(ma.tasks_attempted_distinct).toBe(2);
+    expect(ma.denominator).toBe(10);
   });
 
   it("throws ApiError on invalid set value (not 'current' and not 64-char hex)", async () => {
@@ -764,7 +765,6 @@ describe("SQL ORDER BY before LIMIT (A.6)", () => {
     ["avg_score", "desc"],
     ["cost_per_pass_usd", "desc"],
     ["avg_cost_usd", "desc"],
-    ["pass_at_n_per_attempted", "desc"],
   ] as const)(
     "sort=%s:%s with limit < total models returns correct top-N",
     async (sort, direction) => {

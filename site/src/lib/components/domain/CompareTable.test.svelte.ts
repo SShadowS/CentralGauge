@@ -11,7 +11,6 @@ const models: CompareModel[] = [
     pass_at_n: 0.5,
     pass_at_1: 0.5,
     denominator: 2,
-    pass_at_n_per_attempted: 0.5,
   },
   {
     id: 2,
@@ -20,7 +19,6 @@ const models: CompareModel[] = [
     pass_at_n: 0.75,
     pass_at_1: 0.5,
     denominator: 2,
-    pass_at_n_per_attempted: 0.75,
   },
 ];
 const tasks: CompareTaskRow[] = [

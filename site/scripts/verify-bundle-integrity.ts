@@ -51,10 +51,9 @@ const REQUIRED_FIELDS: readonly string[] = [
   // LeaderboardRow extras (beyond ModelDetail.aggregates overlap above)
   "last_run_at",
   "family_slug",
-  // A.4 new fields: strict denominator + deprecated alias + pass@1
+  // A.4 new fields: strict denominator + pass@1
   "denominator",
   "pass_at_1",
-  "pass_at_n_per_attempted",
 ];
 
 function walkAndConcat(dir: string): string {

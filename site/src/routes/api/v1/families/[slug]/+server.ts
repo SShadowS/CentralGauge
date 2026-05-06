@@ -174,8 +174,6 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         const passAtNStrict =
           hasRuns && denom > 0 ? (p1 + p2Only) / denom : null;
         const passAt1Strict = hasRuns && denom > 0 ? p1 / denom : null;
-        const passAtNPerAttempted =
-          hasRuns && attempted > 0 ? (p1 + p2Only) / attempted : null;
 
         return {
           model: {
@@ -197,10 +195,6 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
               ? null
               : Math.round(passAt1Strict * 1e6) / 1e6,
           denominator: hasRuns ? (denom > 0 ? denom : null) : null,
-          pass_at_n_per_attempted:
-            passAtNPerAttempted === null
-              ? null
-              : Math.round(passAtNPerAttempted * 1e6) / 1e6,
           task_set_hash: t.dominant_task_set_hash ?? null,
         };
       }),

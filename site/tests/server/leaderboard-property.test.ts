@@ -1,18 +1,19 @@
 /**
- * Property test: pass_at_n_strict ≤ pass_at_n_per_attempted within a single scope.
+ * Property tests for computeLeaderboard pass_at_n invariants.
  *
- * Invariant proof:
- *   - Numerator is identical for both metrics: (p1 + p2_only)
- *   - Strict denominator = scope task count  (from task_sets or tasks table)
- *   - Per-attempted denominator = tasks_attempted_distinct (subset of scope)
- *   - Therefore: strict denominator ≥ per-attempted denominator
- *   - Therefore: pass_at_n_strict ≤ pass_at_n_per_attempted
+ * PR2.1 note: The original test file asserted pass_at_n_strict ≤
+ * pass_at_n_per_attempted. That invariant is no longer testable because
+ * pass_at_n_per_attempted was removed as a deprecated alias in PR2.1.
  *
- * The invariant only holds within a single scope (same set, category,
- * difficulty filters). Cross-scope comparisons are not well-defined.
+ * This file now asserts the remaining observable invariants:
+ *   - pass_at_n is in [0, 1]  (numerator ≤ denominator by construction)
+ *   - denominator == totalTasks
+ *   - tasks_attempted_distinct == attempted
+ *   - tasks_passed_attempt_1 == p1
+ *   - tasks_passed_attempt_2_only == p2Only
+ *   - pass_at_n == (p1 + p2Only) / totalTasks
  *
- * fast-check is not available in this project; 20 hand-rolled configurations
- * cover the parameter space (option b).
+ * 20 hand-rolled configurations cover the parameter space.
  */
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { applyD1Migrations, env } from "cloudflare:test";
@@ -116,8 +117,6 @@ async function insertTask(taskId: string): Promise<void> {
 //   attempted    : how many distinct tasks the model touches (≤ totalTasks)
 //   p1           : tasks passed on attempt 1      (≤ attempted)
 //   p2Only       : tasks failed a1, passed a2     (≤ attempted - p1)
-//
-// The invariant must hold for every combination.
 // ---------------------------------------------------------------------------
 
 interface Config {
@@ -173,7 +172,7 @@ const CONFIGS: Config[] = [
 // Property tests
 // ---------------------------------------------------------------------------
 
-describe("property: pass_at_n_strict ≤ pass_at_n_per_attempted within scope", () => {
+describe("property: pass_at_n invariants (PR2.1 — strict denominator only)", () => {
   beforeAll(async () => {
     await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
   });
@@ -186,9 +185,7 @@ describe("property: pass_at_n_strict ≤ pass_at_n_per_attempted within scope", 
       await seedScaffold(cfg.totalTasks);
       await insertRun("r-prop");
 
-      // Seed tasks into the tasks table so the denominator helper can count
-      // them when a scope filter is applied. We seed cfg.totalTasks tasks
-      // covering task IDs t1..t<totalTasks>.
+      // Seed tasks into the tasks table so the denominator helper can count them.
       for (let i = 1; i <= cfg.totalTasks; i++) {
         await insertTask(`t${i}`);
       }
@@ -228,9 +225,7 @@ describe("property: pass_at_n_strict ≤ pass_at_n_per_attempted within scope", 
 
       if (cfg.attempted === 0) {
         // Model that attempted nothing should not appear in the leaderboard.
-        // Either no rows returned or no row for M-PROP.
         const mProp = rows.find((r) => r.model.slug === "M-PROP");
-        // If it appears it must still satisfy the invariant vacuously.
         if (mProp) {
           expect(mProp.tasks_attempted_distinct).toBe(0);
         }
@@ -241,35 +236,27 @@ describe("property: pass_at_n_strict ≤ pass_at_n_per_attempted within scope", 
       expect(mProp, `M-PROP row must be present for config: ${cfg.label}`).toBeDefined();
 
       const strict = mProp!.pass_at_n;
-      const perAttempted = mProp!.pass_at_n_per_attempted;
+      const expectedNumerator = cfg.p1 + cfg.p2Only;
 
-      // The invariant: strict ≤ per-attempted (allow floating-point epsilon).
-      // Annotated with `cfg.label` via wrapper-style assertion message: vitest's
-      // toBeLessThanOrEqual takes only one arg, so encode the label by failing
-      // with an explicit message before the comparison if it would fail.
-      const cap = (perAttempted ?? strict) + 1e-9;
-      if (strict > cap) {
-        throw new Error(
-          `pass_at_n_strict (${strict}) must be ≤ pass_at_n_per_attempted (${perAttempted}) for config: ${cfg.label}`,
-        );
-      }
-      expect(strict).toBeLessThanOrEqual(cap);
+      // Invariant 1: pass_at_n is in [0, 1] (numerator ≤ denominator).
+      expect(strict, `pass_at_n must be ≥ 0 for config: ${cfg.label}`).toBeGreaterThanOrEqual(0);
+      expect(strict, `pass_at_n must be ≤ 1 for config: ${cfg.label}`).toBeLessThanOrEqual(1 + 1e-9);
 
-      // Sanity: strict denominator is totalTasks; per-attempted is tasks_attempted_distinct.
+      // Invariant 2: denominator == totalTasks.
       expect(mProp!.denominator).toBe(cfg.totalTasks);
+
+      // Invariant 3: tasks_attempted_distinct == attempted.
       expect(mProp!.tasks_attempted_distinct).toBe(cfg.attempted);
 
-      // Verify numerator consistency: numerator = p1 + p2Only.
-      const expectedNumerator = cfg.p1 + cfg.p2Only;
+      // Invariant 4: pass_at_n_per_attempted removed in PR2.1.
+      expect((mProp as any).pass_at_n_per_attempted).toBeUndefined();
+
+      // Invariant 5: numerator components match expectations.
       expect(mProp!.tasks_passed_attempt_1).toBe(cfg.p1);
       expect(mProp!.tasks_passed_attempt_2_only).toBe(cfg.p2Only);
 
-      // Verify the computed values match expectations.
-      // D1 stores ratios with ~6 decimal places of precision.
+      // Invariant 6: pass_at_n == (p1 + p2Only) / totalTasks.
       expect(strict).toBeCloseTo(expectedNumerator / cfg.totalTasks, 6);
-      if (cfg.attempted > 0) {
-        expect(perAttempted).toBeCloseTo(expectedNumerator / cfg.attempted, 6);
-      }
     });
   }
 });

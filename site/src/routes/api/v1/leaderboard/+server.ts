@@ -128,7 +128,6 @@ function parseQuery(url: URL): LeaderboardQuery {
     'cost_per_pass_usd',
     'latency_p95_ms',
     'avg_cost_usd',
-    'pass_at_n_per_attempted',
   ] as const;
   type KnownSort = (typeof knownSorts)[number];
   const sort: KnownSort = (knownSorts as readonly string[]).includes(sortFieldRaw)
