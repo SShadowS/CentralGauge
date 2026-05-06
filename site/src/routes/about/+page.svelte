@@ -38,40 +38,34 @@
     <h2>Scoring metrics</h2>
 
     <p>
-      CentralGauge surfaces two distinct metrics. They measure different things and may diverge for the same model.
+      CentralGauge surfaces three metrics. They measure different things and may diverge for the same model.
     </p>
 
-    <h3>avg_score (per-attempt)</h3>
+    <h3>Pass rate (<code>pass_at_n</code>)</h3>
     <p>
-      The leaderboard's <strong>Score</strong> column averages over <em>every attempt row</em> in <code>results</code> (each task contributes 2 rows: attempt 1 and attempt 2). This captures partial credit: a task scoring 0.5 on attempt 1 and 1.0 on attempt 2 contributes 0.75 to avg_score.
+      The fraction of tasks in scope the model eventually solves, with up to 2 attempts.
+      <strong>Strict denominator:</strong> tasks the model did not attempt count as failures.
     </p>
-
-    <h3>pass_at_n (per-task, "best across runs")</h3>
     <p>
-      The Pass@N metric is the fraction of <em>distinct tasks</em> the model eventually solved (in any attempt, in any run). With multi-run data, the rule is "best across runs per task":
+      <strong>Worked example.</strong> Task set has 50 tasks. Model attempted 4 tasks and passed all 4 — pass rate = 4/50 = 8%. Not 4/4 = 100%. The strict per-set denominator punishes incomplete coverage so a partial-bench run cannot look better than a thorough one.
     </p>
-    <ul>
-      <li><strong>Pass@1</strong>: distinct tasks where SOME run had attempt-1 succeed.</li>
-      <li><strong>Pass@2-only</strong>: distinct tasks where SOME run had attempt-2 succeed AND no run had attempt-1 succeed.</li>
-      <li><strong>Pass@N</strong> = (Pass@1 + Pass@2-only) / tasks_attempted_distinct.</li>
-    </ul>
-    <p>
-      Concrete example: a model runs T1 twice. Run 1 succeeds on attempt 1; Run 2 succeeds only on attempt 2. T1 counts toward Pass@1 (the model demonstrated first-try capability somewhere), NOT Pass@2-only. The invariant <code>Pass@1 + Pass@2-only &le; tasks_attempted_distinct</code> always holds, with no double-counting across runs.
-    </p>
-
-    <h3>tasks_attempted vs tasks_attempted_distinct</h3>
-    <p>
-      The API exposes both: <code>tasks_attempted</code> (per-attempt; <code>COUNT(*)</code> over rows in <code>results</code>) and <code>tasks_attempted_distinct</code> (per-task; <code>COUNT(DISTINCT task_id)</code>). Pass@N's denominator is <code>tasks_attempted_distinct</code>; <code>tasks_attempted</code> is preserved for back-compatibility with consumers built before the per-task split. The numbers differ: for a model with 4 tasks attempted twice each, <code>tasks_attempted</code> is 8, <code>tasks_attempted_distinct</code> is 4.
-    </p>
-
-    <h3>Why both?</h3>
-    <p>
-      <code>avg_score</code> rewards models that get close on tricky tasks. <code>pass_at_n</code> rewards models that just finish.
-      The leaderboard sort toggle (<code>?sort=avg_score</code>, <code>?sort=pass_at_n</code>, <code>?sort=pass_at_1</code>) lets you rank by whichever matters for your use case.
-    </p>
-
     <p>
       The Pass@1 / Pass@2 stacked bar on each leaderboard row visualizes the per-task breakdown: green for first-try success, amber for retry-recovery, red for unsolved.
+    </p>
+
+    <h3>First-try pass rate (<code>pass_at_1</code>)</h3>
+    <p>
+      Same strict denominator; numerator counts only attempt-1 successes. Used as the leaderboard's tiebreaker when two models share the same <code>pass_at_n</code>.
+    </p>
+
+    <h3>Avg attempt score (<code>avg_score</code>)</h3>
+    <p>
+      Mean of <code>results.score</code> across every attempt (each task contributes up to 2 rows). Lower than <code>pass_at_n</code> because failed attempts pull the mean down. Useful as a drill-down to see partial credit, but never the default rank.
+    </p>
+
+    <h3>Set selection</h3>
+    <p>
+      Filters <code>set=current</code> and a specific 64-char hash are honored. <code>set=all</code> is rejected (HTTP 400) — strict pass rate is undefined across multiple sets with different denominators.
     </p>
   </section>
 
