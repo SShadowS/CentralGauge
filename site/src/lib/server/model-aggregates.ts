@@ -103,9 +103,16 @@ export interface Aggregate {
 
 export interface ComputeOpts {
   modelIds?: number[];
+  /** Specific task_set hash. When set, scopes aggregate to this hash. */
+  taskSetHash?: string | null;
+  /** @deprecated Use taskSetHash. Kept for migration. */
   taskSetCurrent?: boolean;
+  /** Scope aggregate to tasks in this category slug. */
+  category?: string | null;
+  /** Scope aggregate to tasks with this difficulty. */
+  difficulty?: 'easy' | 'medium' | 'hard' | null;
   tier?: string;
-  since?: string;
+  since?: string | null;
   /**
    * When true, also computes `latency_p50_ms` and `latency_p95_ms` for each
    * model. Off by default because it adds a second query; the leaderboard
@@ -124,6 +131,42 @@ export interface ComputeOpts {
    * uninstrumented with zero overhead.
    */
   timer?: ServerTimer;
+}
+
+/**
+ * Builds a correlated scope-IN clause that restricts a result alias to tasks
+ * matching the active category and/or difficulty filter. Returns empty clause
+ * and empty params when no task-scope filter is active.
+ *
+ * Bind order within the returned params:
+ *   1. difficulty (if active)
+ *   2. category slug (if active)
+ *
+ * This matches the bind order in leaderboard.ts `buildScopeInClause`.
+ *
+ * @param rAlias   - alias for the `results` table (e.g. 'r1')
+ * @param ruAlias  - alias for the `runs` table (e.g. 'ru1')
+ * @param opts     - ComputeOpts with optional category/difficulty
+ */
+function buildScopeInClause(
+  rAlias: string,
+  ruAlias: string,
+  opts: ComputeOpts,
+): { clause: string; params: Array<string | number> } {
+  if (!opts.category && !opts.difficulty) return { clause: '', params: [] };
+  const tc = opts.category
+    ? `JOIN task_categories tc_sub ON tc_sub.id = t_sub.category_id`
+    : '';
+  const tcWhere = opts.category ? `AND tc_sub.slug = ?` : '';
+  const diffWhere = opts.difficulty ? `AND t_sub.difficulty = ?` : '';
+  const clause = `AND ${rAlias}.task_id IN (
+    SELECT t_sub.task_id FROM tasks t_sub ${tc}
+    WHERE t_sub.task_set_hash = ${ruAlias}.task_set_hash ${diffWhere} ${tcWhere}
+  )`;
+  const bindParams: Array<string | number> = [];
+  if (opts.difficulty) bindParams.push(opts.difficulty);
+  if (opts.category) bindParams.push(opts.category);
+  return { clause, params: bindParams };
 }
 
 export async function computeModelAggregates(
@@ -145,7 +188,13 @@ export async function computeModelAggregates(
     where.push(`runs.model_id IN (${ph})`);
     params.push(...opts.modelIds);
   }
-  if (opts.taskSetCurrent) {
+  if (opts.taskSetHash) {
+    where.push(`runs.task_set_hash = ?`);
+    params.push(opts.taskSetHash);
+    taskSetClauseSubA1 = `AND ru1.task_set_hash = ?`;
+    taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
+    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = ?`;
+  } else if (opts.taskSetCurrent) {
     where.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
@@ -161,7 +210,71 @@ export async function computeModelAggregates(
     params.push(opts.since);
   }
 
+  // Build scope-IN clauses for the three correlated subquery slots.
+  // These appear in the SELECT list (before FROM/WHERE), so their bind params
+  // must be positioned before the main where params in allSqlParams.
+  const scopeInA1 = buildScopeInClause('r1', 'ru1', opts);
+  const scopeInA2 = buildScopeInClause('r2', 'ru2', opts);
+  const scopeInA2NotExists = buildScopeInClause('r1b', 'ru1b', opts);
+
+  // Difficulty filter: JOIN tasks to restrict which result rows contribute.
+  // The JOIN clause contains a `?` that appears BETWEEN the SELECT subqueries
+  // and the WHERE clause in the SQL text. It must be bound after the scope-IN
+  // subquery params but before the WHERE params.
+  const difficultyJoin = opts.difficulty
+    ? `JOIN tasks t_diff ON t_diff.task_id = r.task_id AND t_diff.task_set_hash = runs.task_set_hash AND t_diff.difficulty = ?`
+    : '';
+  // difficultyParam is tracked separately — NOT pushed to params[] — so it can
+  // be spliced into the correct textual position in allSqlParams below.
+  const difficultyParam: Array<string | number> = opts.difficulty ? [opts.difficulty] : [];
+
+  // Category filter: JOIN tasks→task_categories scoped to the run's task_set_hash.
+  // Uses alias `t_cat` to avoid colliding with `t_diff`. The category slug
+  // goes into the WHERE clause (not the JOIN ON), so it belongs in params[].
+  const categoryJoin = opts.category
+    ? `JOIN tasks t_cat ON t_cat.task_id = r.task_id AND t_cat.task_set_hash = runs.task_set_hash
+       JOIN task_categories tc ON tc.id = t_cat.category_id`
+    : '';
+  if (opts.category) {
+    where.push(`tc.slug = ?`);
+    params.push(opts.category);
+  }
+
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+  // -----------------------------------------------------------------------
+  // Bind order MUST match textual `?` position in the SQL string.
+  //
+  // The SQL template (after the opening SELECT) has `?` slots in this order:
+  //
+  //   [SELECT list]
+  //   1. taskSetClauseSubA1 ?  — hash mode only (ru1.task_set_hash = ?)
+  //   2. scopeInA1 ?s          — difficulty?, category? inside A1 subquery
+  //   3. taskSetClauseSubA2NotExists ?  — hash mode only
+  //   4. scopeInA2NotExists ?s — difficulty?, category? inside NOT EXISTS
+  //   5. taskSetClauseSubA2 ?  — hash mode only
+  //   6. scopeInA2 ?s          — difficulty?, category? inside A2 subquery
+  //
+  //   [FROM / JOINs]
+  //   7. difficultyJoin ?      — t_diff.difficulty = ? (JOIN ON condition)
+  //
+  //   [WHERE]
+  //   8+. params[]             — modelIds, taskSetHash (outer), tier, since, category
+  //
+  // NOTE: when taskSetCurrent is used the subquery slots use a subselect (no ?).
+  // -----------------------------------------------------------------------
+  const allParamsSub1: Array<string | number> = [
+    ...(opts.taskSetHash ? [opts.taskSetHash] : []),
+    ...scopeInA1.params,
+  ];
+  const allParamsNotExists: Array<string | number> = [
+    ...(opts.taskSetHash ? [opts.taskSetHash] : []),
+    ...scopeInA2NotExists.params,
+  ];
+  const allParamsSub2: Array<string | number> = [
+    ...(opts.taskSetHash ? [opts.taskSetHash] : []),
+    ...scopeInA2.params,
+  ];
 
   const sql = `
     SELECT runs.model_id                                                AS model_id,
@@ -186,6 +299,7 @@ export async function computeModelAggregates(
             FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
             WHERE ru1.model_id = runs.model_id AND r1.attempt = 1 AND r1.passed = 1
               ${taskSetClauseSubA1}
+              ${scopeInA1.clause}
            ) AS tasks_passed_attempt_1,
            (SELECT COUNT(DISTINCT r2.task_id)
             FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
@@ -195,17 +309,29 @@ export async function computeModelAggregates(
                 WHERE ru1b.model_id = runs.model_id AND r1b.task_id = r2.task_id
                   AND r1b.attempt = 1 AND r1b.passed = 1
                   ${taskSetClauseSubA2NotExists}
+                  ${scopeInA2NotExists.clause}
               )
               ${taskSetClauseSubA2}
+              ${scopeInA2.clause}
            ) AS tasks_passed_attempt_2_only
     FROM runs
     LEFT JOIN results r ON r.run_id = runs.id
     LEFT JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
+    ${difficultyJoin}
+    ${categoryJoin}
     ${whereSql}
     GROUP BY runs.model_id
   `;
 
-  const stmt = db.prepare(sql).bind(...params);
+  const allSqlParams = [
+    ...allParamsSub1,
+    ...allParamsNotExists,
+    ...allParamsSub2,
+    ...difficultyParam,  // JOIN ON condition (before WHERE)
+    ...params,           // WHERE clause params: modelIds, taskSetHash, tier, since, category
+  ];
+
+  const stmt = db.prepare(sql).bind(...allSqlParams);
   const rs = await (opts.timer
     ? opts.timer.measure('aggregates_main', () => stmt.all<{
         model_id: number;
@@ -285,17 +411,58 @@ export async function computeModelAggregates(
   // Phase G: per-model consistency / settings consistency / token averages.
   // These need access to per-run rows (for tokens) and per-(task, run) rows
   // (for consistency). We compute in TS to keep semantics auditable.
+  //
+  // When category/difficulty filters are active the secondary queries that JOIN
+  // results (`computeTokensAvgPerRun`, `computeConsistencyPct`,
+  // `computeLatencyPercentilesByModel`, `computePassHatAtN`) must include the
+  // same JOINs so `tc.slug` and `t_diff.difficulty` columns are resolvable.
+  //
+  // `computeSettingsConsistency` does NOT join results/tasks and cannot apply
+  // task-level (category/difficulty) filters. It only uses run-level WHERE
+  // conditions (model_id, task_set_hash, tier, since) — so we build a separate
+  // stripped WHERE/params for it that omits category/difficulty.
+  //
+  // Bind order for result-joining secondary helpers (extraJoins before WHERE):
+  //   1. difficultyParam — JOIN ON condition `?` (before WHERE)
+  //   2. params[] — WHERE: modelIds, taskSetHash, tier, since, category
+  const resultJoinsStr = [difficultyJoin, categoryJoin].filter(Boolean).join('\n');
+  // params for helpers that join results (have the full JOIN + WHERE):
+  const secondaryParams: Array<string | number> = [...difficultyParam, ...params];
+  // params for computeSettingsConsistency (no results join, no task-level filter):
+  // rebuild WHERE and params from run-level conditions only.
+  const whereForSettings: string[] = [];
+  const paramsForSettings: Array<string | number> = [];
+  if (opts.modelIds && opts.modelIds.length > 0) {
+    const ph = opts.modelIds.map(() => '?').join(',');
+    whereForSettings.push(`runs.model_id IN (${ph})`);
+    paramsForSettings.push(...opts.modelIds);
+  }
+  if (opts.taskSetHash) {
+    whereForSettings.push(`runs.task_set_hash = ?`);
+    paramsForSettings.push(opts.taskSetHash);
+  } else if (opts.taskSetCurrent) {
+    whereForSettings.push(`runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`);
+  }
+  if (opts.tier) {
+    whereForSettings.push(`runs.tier = ?`);
+    paramsForSettings.push(opts.tier);
+  }
+  if (opts.since) {
+    whereForSettings.push(`runs.started_at >= ?`);
+    paramsForSettings.push(opts.since);
+  }
+
   const modelIdsInResult = (rs.results ?? []).map((r) => r.model_id);
   const { timer } = opts;
   const tokensByModel = await (timer
-    ? timer.measure('tokens', () => computeTokensAvgPerRun(db, where, params))
-    : computeTokensAvgPerRun(db, where, params));
+    ? timer.measure('tokens', () => computeTokensAvgPerRun(db, where, secondaryParams, resultJoinsStr))
+    : computeTokensAvgPerRun(db, where, secondaryParams, resultJoinsStr));
   const consistencyByModel = await (timer
-    ? timer.measure('consistency', () => computeConsistencyPct(db, where, params))
-    : computeConsistencyPct(db, where, params));
+    ? timer.measure('consistency', () => computeConsistencyPct(db, where, secondaryParams, resultJoinsStr))
+    : computeConsistencyPct(db, where, secondaryParams, resultJoinsStr));
   const settingsConsistencyByModel = await (timer
-    ? timer.measure('settings', () => computeSettingsConsistency(db, where, params, modelIdsInResult))
-    : computeSettingsConsistency(db, where, params, modelIdsInResult));
+    ? timer.measure('settings', () => computeSettingsConsistency(db, whereForSettings, paramsForSettings, modelIdsInResult))
+    : computeSettingsConsistency(db, whereForSettings, paramsForSettings, modelIdsInResult));
 
   // Optionally fetch per-result durations and compute percentiles in TS. We do
   // this in a second query (rather than a SQL window function) so the math
@@ -304,8 +471,8 @@ export async function computeModelAggregates(
   let latencyPercentilesByModel: Map<number, { p50: number; p95: number }> | null = null;
   if (opts.includeLatencyP50) {
     latencyPercentilesByModel = await (timer
-      ? timer.measure('latency_pct', () => computeLatencyPercentilesByModel(db, where, params))
-      : computeLatencyPercentilesByModel(db, where, params));
+      ? timer.measure('latency_pct', () => computeLatencyPercentilesByModel(db, where, secondaryParams, resultJoinsStr))
+      : computeLatencyPercentilesByModel(db, where, secondaryParams, resultJoinsStr));
   }
 
   // Optionally compute pass^n (strict all-runs-pass fraction). Off by default
@@ -314,8 +481,8 @@ export async function computeModelAggregates(
   let passHatByModel: Map<number, number> | null = null;
   if (opts.includePassHatAtN) {
     passHatByModel = await (timer
-      ? timer.measure('pass_hat', () => computePassHatAtN(db, where, params))
-      : computePassHatAtN(db, where, params));
+      ? timer.measure('pass_hat', () => computePassHatAtN(db, where, secondaryParams, resultJoinsStr))
+      : computePassHatAtN(db, where, secondaryParams, resultJoinsStr));
   }
 
   const out = new Map<number, Aggregate>();
@@ -414,6 +581,7 @@ async function computeTokensAvgPerRun(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
+  extraJoins = '',
 ): Promise<Map<number, number>> {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
@@ -422,6 +590,7 @@ async function computeTokensAvgPerRun(
            COALESCE(SUM(r.tokens_in), 0) + COALESCE(SUM(r.tokens_out), 0) AS run_tokens
     FROM runs
     LEFT JOIN results r ON r.run_id = runs.id
+    ${extraJoins}
     ${whereSql}
     GROUP BY runs.model_id, runs.id
   `;
@@ -460,6 +629,7 @@ async function computeConsistencyPct(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
+  extraJoins = '',
 ): Promise<Map<number, number>> {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
@@ -470,6 +640,7 @@ async function computeConsistencyPct(
            r.passed      AS passed
     FROM runs
     JOIN results r ON r.run_id = runs.id
+    ${extraJoins}
     ${whereSql}
   `;
   const rs = await db.prepare(sql).bind(...params).all<{
@@ -531,6 +702,7 @@ async function computeSettingsConsistency(
   where: string[],
   params: Array<string | number>,
   modelIds: number[],
+  extraJoins = '',
 ): Promise<Map<number, { temperature: number | null; thinking_budget: string | null }>> {
   const out = new Map<number, { temperature: number | null; thinking_budget: string | null }>();
   if (modelIds.length === 0) return out;
@@ -541,6 +713,7 @@ async function computeSettingsConsistency(
                     sp.extra_json  AS extra_json
     FROM runs
     JOIN settings_profiles sp ON sp.hash = runs.settings_hash
+    ${extraJoins}
     ${whereSql}
   `;
   const rs = await db.prepare(sql).bind(...params).all<{
@@ -590,6 +763,7 @@ export async function computeLatencyPercentilesByModel(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
+  extraJoins = '',
 ): Promise<Map<number, { p50: number; p95: number }>> {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
@@ -597,6 +771,7 @@ export async function computeLatencyPercentilesByModel(
            (COALESCE(r.llm_duration_ms,0) + COALESCE(r.compile_duration_ms,0) + COALESCE(r.test_duration_ms,0)) AS dur_ms
     FROM runs
     JOIN results r ON r.run_id = runs.id
+    ${extraJoins}
     ${whereSql}
   `;
 
@@ -680,6 +855,7 @@ export async function computePassHatAtN(
   db: D1Database,
   where: string[],
   params: Array<string | number>,
+  extraJoins = '',
 ): Promise<Map<number, number>> {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   const sql = `
@@ -690,6 +866,7 @@ export async function computePassHatAtN(
              MAX(r.passed)  AS run_task_passed
       FROM runs
       JOIN results r ON r.run_id = runs.id
+      ${extraJoins}
       ${whereSql}
       GROUP BY runs.model_id, runs.id, r.task_id
     ),
