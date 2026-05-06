@@ -63,12 +63,19 @@ const SWR_HEADER = "public, max-age=60, stale-while-revalidate=86400";
 export type OgKind = "index" | "model" | "run" | "family";
 
 export type OgPayload =
-  | { kind: "index"; modelCount: number; runCount: number; lastRunAt: string }
+  | {
+    kind: "index";
+    modelCount: number;
+    runCount: number;
+    lastRunAt: string;
+    /** pass_at_n strict of the leading model on the current task set; 0 when unavailable. */
+    topPassAtN: number;
+  }
   | {
     kind: "model";
     displayName: string;
     familySlug: string;
-    avgScore: number;
+    passAtN: number;
     runCount: number;
   }
   | {
@@ -85,6 +92,8 @@ export type OgPayload =
     vendor: string;
     modelCount: number;
     topModelDisplay: string;
+    /** pass_at_n strict for the best model in the family; 0 when unavailable. */
+    topPassAtN: number;
   };
 
 export interface OgRenderOpts {
@@ -237,6 +246,13 @@ function renderIndexCard(p: Extract<OgPayload, { kind: "index" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
+        span({ color: COLORS.muted, fontSize: 18 }, "Leading pass rate"),
+        span(
+          { fontWeight: 600, fontSize: 48 },
+          (p.topPassAtN * 100).toFixed(1) + "%",
+        ),
+      ]),
+      div({ display: "flex", flexDirection: "column" }, [
         span({ color: COLORS.muted, fontSize: 18 }, "Models tracked"),
         span({ fontWeight: 600, fontSize: 36 }, String(p.modelCount)),
       ]),
@@ -264,10 +280,10 @@ function renderModelCard(p: Extract<OgPayload, { kind: "model" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Avg score"),
+        span({ color: COLORS.muted, fontSize: 18 }, "Pass rate"),
         span(
           { fontWeight: 600, fontSize: 48 },
-          (p.avgScore * 100).toFixed(1) + "%",
+          (p.passAtN * 100).toFixed(1) + "%",
         ),
       ]),
       div({ display: "flex", flexDirection: "column" }, [
@@ -330,11 +346,14 @@ function renderFamilyCard(p: Extract<OgPayload, { kind: "family" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Models"),
-        span({ fontWeight: 600, fontSize: 48 }, String(p.modelCount)),
+        span({ color: COLORS.muted, fontSize: 18 }, "Best pass rate"),
+        span(
+          { fontWeight: 600, fontSize: 48 },
+          (p.topPassAtN * 100).toFixed(1) + "%",
+        ),
       ]),
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Top"),
+        span({ color: COLORS.muted, fontSize: 18 }, "Top model"),
         span({ fontWeight: 600, fontSize: 36 }, p.topModelDisplay),
       ]),
     ]),

@@ -50,7 +50,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       kind: "model",
       displayName: m.display_name,
       familySlug: m.family_slug,
-      avgScore: agg?.avg_score ?? 0,
+      passAtN: agg?.pass_at_n ?? 0,
       runCount: agg?.run_count ?? 0,
     },
   });

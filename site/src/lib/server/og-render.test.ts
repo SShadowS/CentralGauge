@@ -75,6 +75,7 @@ describe("renderOgPng", () => {
         modelCount: 12,
         runCount: 87,
         lastRunAt: "2026-04-29T12:00:00Z",
+        topPassAtN: 0.82,
       },
       taskSetHash: "ts1",
     });
@@ -93,7 +94,7 @@ describe("renderOgPng", () => {
       kind: "model" as const,
       displayName: "Sonnet 4.7",
       familySlug: "claude",
-      avgScore: 0.81,
+      passAtN: 0.81,
       runCount: 12,
     };
     const first = await renderOgPng({
@@ -126,7 +127,7 @@ describe("renderOgPng", () => {
         kind: "model",
         displayName: "A",
         familySlug: "claude",
-        avgScore: 0,
+        passAtN: 0,
         runCount: 0,
       },
       taskSetHash: "ts1",
@@ -139,7 +140,7 @@ describe("renderOgPng", () => {
         kind: "model",
         displayName: "B",
         familySlug: "gpt",
-        avgScore: 0,
+        passAtN: 0,
         runCount: 0,
       },
       taskSetHash: "ts1",
@@ -161,7 +162,7 @@ describe("renderOgPng", () => {
         kind: "model",
         displayName: "Old Name",
         familySlug: "claude",
-        avgScore: 0.5,
+        passAtN: 0.5,
         runCount: 1,
       },
       taskSetHash: "ts1",
@@ -174,7 +175,7 @@ describe("renderOgPng", () => {
         kind: "model",
         displayName: "New Name",
         familySlug: "claude",
-        avgScore: 0.5,
+        passAtN: 0.5,
         runCount: 1,
       },
       taskSetHash: "ts1",
@@ -191,6 +192,7 @@ describe("renderOgPng", () => {
         modelCount: 0,
         runCount: 0,
         lastRunAt: "2026-04-29T00:00:00Z",
+        topPassAtN: 0,
       },
     });
     expect(out.cacheControl).toBe(
