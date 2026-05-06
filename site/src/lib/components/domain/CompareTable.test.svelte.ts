@@ -49,6 +49,16 @@ describe("CompareTable", () => {
     );
   });
 
+  it("renders pass_at_n as headline metric in each model column header", () => {
+    const { container } = render(CompareTable, { models, tasks });
+    // Each model header should contain a pass-rate ScoreCell (50.0 and 75.0)
+    const passRateSpans = container.querySelectorAll("thead .pass-rate");
+    expect(passRateSpans.length).toBe(models.length);
+    // ScoreCell renders pass_at_n * 100 (0.5 → "50.0", 0.75 → "75.0")
+    expect(container.textContent).toContain("50.0");
+    expect(container.textContent).toContain("75.0");
+  });
+
   it("renders one row per task", () => {
     const { container } = render(CompareTable, { models, tasks });
     expect(container.querySelectorAll("tbody tr").length).toBe(tasks.length);

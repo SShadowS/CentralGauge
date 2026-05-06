@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CompareModel, CompareTaskRow } from '$shared/api-types';
   import { formatScore } from '$lib/client/format';
+  import ScoreCell from './ScoreCell.svelte';
 
   interface Props { models: CompareModel[]; tasks: CompareTaskRow[]; }
   let { models, tasks }: Props = $props();
@@ -33,7 +34,16 @@
       <tr>
         <th scope="col">Task</th>
         {#each models as m (m.slug)}
-          <th scope="col"><a href="/models/{m.slug}">{m.display_name}</a></th>
+          <th scope="col" class="model-head">
+            <a href="/models/{m.slug}">{m.display_name}</a>
+            <span class="pass-rate">
+              {#if m.pass_at_n !== null}
+                <ScoreCell score={m.pass_at_n} kind="pass_rate" />
+              {:else}
+                <span class="text-faint">No data</span>
+              {/if}
+            </span>
+          </th>
         {/each}
       </tr>
     </thead>
@@ -76,6 +86,8 @@
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
   tr.divergent { background: var(--accent-soft); }
+  .model-head { vertical-align: top; }
+  .pass-rate { display: block; margin-top: var(--space-1); }
   .cell {
     display: inline-block;
     padding: var(--space-1) var(--space-3);
