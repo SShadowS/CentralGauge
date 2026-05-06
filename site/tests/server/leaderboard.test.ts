@@ -15,6 +15,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { computeLeaderboard } from "../../src/lib/server/leaderboard";
 import { computeDenominator } from "../../src/lib/server/denominator";
+import { ApiError } from "../../src/lib/server/errors";
 import { resetDb } from "../utils/reset-db";
 import type { LeaderboardQuery } from "../../src/lib/shared/api-types";
 
@@ -335,6 +336,12 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     expect(ma.pass_at_n_per_attempted).toBeCloseTo(1.0, 6);
     // The two metrics diverge
     expect(ma.pass_at_n).toBeLessThan(ma.pass_at_n_per_attempted!);
+  });
+
+  it("throws ApiError on invalid set value (not 'current' and not 64-char hex)", async () => {
+    await expect(
+      computeLeaderboard(env.DB, { ...baseQuery, set: "bogus" }),
+    ).rejects.toThrow(ApiError);
   });
 
   it("set=<specific-64-char-hex-hash> resolves denominator from that hash", async () => {

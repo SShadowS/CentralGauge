@@ -17,6 +17,23 @@ export interface DenominatorScope {
   taskSetHash: string;
   category?: string | null;
   difficulty?: "easy" | "medium" | "hard" | null;
+  /**
+   * Optional short-circuit: when the caller already fetched task_count in an
+   * earlier query (e.g. the set=current unfiltered path in leaderboard.ts),
+   * pass it here to skip the second DB round trip. Ignored when
+   * category or difficulty filters are active (those require a COUNT(*) join).
+   */
+  precomputedTaskCount?: number;
+}
+
+/** Tiny helper that runs `stmt.first<T>()` under the timer when available. */
+async function timedFirst<T>(
+  stmt: D1PreparedStatement,
+  timer: ServerTimer | undefined,
+  label: string,
+): Promise<T | null> {
+  if (timer) return timer.measure(label, () => stmt.first<T>());
+  return stmt.first<T>();
 }
 
 export async function computeDenominator(
@@ -27,14 +44,18 @@ export async function computeDenominator(
   const noTaskFilter = !scope.category && !scope.difficulty;
 
   if (noTaskFilter) {
+    // Short-circuit when the caller already fetched task_count.
+    if (scope.precomputedTaskCount !== undefined) {
+      return scope.precomputedTaskCount;
+    }
     const stmt = db
       .prepare(`SELECT task_count FROM task_sets WHERE hash = ?`)
       .bind(scope.taskSetHash);
-    const result = timer
-      ? await timer.measure("denominator_query", () =>
-          stmt.first<{ task_count: number }>(),
-        )
-      : await stmt.first<{ task_count: number }>();
+    const result = await timedFirst<{ task_count: number }>(
+      stmt,
+      timer,
+      "denominator_query",
+    );
     return Number(result?.task_count ?? 0);
   }
 
@@ -55,10 +76,6 @@ export async function computeDenominator(
 
   const sql = `SELECT COUNT(*) AS n FROM tasks t ${categoryJoin} WHERE ${wheres.join(" AND ")}`;
   const stmt = db.prepare(sql).bind(...params);
-  const result = timer
-    ? await timer.measure("denominator_query", () =>
-        stmt.first<{ n: number }>(),
-      )
-    : await stmt.first<{ n: number }>();
+  const result = await timedFirst<{ n: number }>(stmt, timer, "denominator_query");
   return Number(result?.n ?? 0);
 }

@@ -11,6 +11,8 @@ import {
 } from "./settings-suffix";
 import type { ServerTimer } from "./server-timing";
 import { computeDenominator } from "./denominator";
+import { ApiError } from "./errors";
+import { isValidTaskSetHash } from "../shared/task-set-hash";
 
 export type { LeaderboardQuery, LeaderboardResponse, LeaderboardRow };
 
@@ -25,19 +27,55 @@ export async function computeLeaderboard(
   // no current set exists (prevents an empty leaderboard from masking errors).
   // ---------------------------------------------------------------------------
   let resolvedHash: string | null = null;
+  // Cached task_count from the set=current lookup (unfiltered path only).
+  // When set, computeDenominator short-circuits and returns this value directly.
+  let precomputedTaskCount: number | undefined;
+
   if (q.set === "current") {
-    const row = await db
-      .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
-      .first<{ hash: string }>();
-    resolvedHash = row?.hash ?? null;
-    if (!resolvedHash) {
-      // No current task set — nothing to display.
-      return [];
+    const noTaskFilter = !q.category && !q.difficulty;
+    if (noTaskFilter) {
+      // Merge hash + task_count into one query to avoid a second round trip
+      // in computeDenominator (which would SELECT task_count by hash again).
+      const row = await (timer
+        ? timer.measure("task_set_resolve", () =>
+            db
+              .prepare(
+                `SELECT hash, task_count FROM task_sets WHERE is_current = 1 LIMIT 1`,
+              )
+              .first<{ hash: string; task_count: number }>(),
+          )
+        : db
+            .prepare(
+              `SELECT hash, task_count FROM task_sets WHERE is_current = 1 LIMIT 1`,
+            )
+            .first<{ hash: string; task_count: number }>());
+      resolvedHash = row?.hash ?? null;
+      if (!resolvedHash) {
+        // No current task set — nothing to display.
+        return [];
+      }
+      precomputedTaskCount = row?.task_count ?? 0;
+    } else {
+      const row = await db
+        .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+        .first<{ hash: string }>();
+      resolvedHash = row?.hash ?? null;
+      if (!resolvedHash) {
+        return [];
+      }
     }
-  } else if (/^[0-9a-f]{64}$/.test(q.set)) {
+  } else {
+    // Explicit hash or invalid value — validate before proceeding.
+    // Note: set='all' is rejected by the route before computeLeaderboard is called.
+    if (!isValidTaskSetHash(q.set)) {
+      throw new ApiError(
+        400,
+        "invalid_set",
+        "set must be current or a 64-char hex task_set hash",
+      );
+    }
     resolvedHash = q.set;
   }
-  // Note: set='all' is rejected by the route before computeLeaderboard is called.
 
   // Compute the strict denominator: count of tasks in active scope.
   // Task-scope filters (category, difficulty) change the denominator.
@@ -49,6 +87,7 @@ export async function computeLeaderboard(
           taskSetHash: resolvedHash,
           category: q.category,
           difficulty: q.difficulty,
+          precomputedTaskCount,
         },
         timer,
       )
@@ -77,7 +116,7 @@ export async function computeLeaderboard(
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
-  } else if (q.set !== "all" && /^[0-9a-f]{64}$/.test(q.set)) {
+  } else if (q.set !== "all" && isValidTaskSetHash(q.set)) {
     // Specific task_set hash — every WHERE and correlated subquery slot
     // must scope to it so cross-hash data does not bleed into per-task
     // best-attempt aggregations (CR-5 invariant).

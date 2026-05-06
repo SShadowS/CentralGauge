@@ -7,6 +7,7 @@ import {
 } from '$lib/server/leaderboard';
 import { ApiError, errorResponse } from '$lib/server/errors';
 import { ServerTimer } from '$lib/server/server-timing';
+import { isValidTaskSetHash } from '$lib/shared/task-set-hash';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -86,7 +87,7 @@ function parseQuery(url: URL): LeaderboardQuery {
       'set=all is not supported for the strict pass_at_n metric. Use set=current or a specific 64-char task_set hash.',
     );
   }
-  if (set !== 'current' && !/^[0-9a-f]{64}$/.test(set)) {
+  if (set !== 'current' && !isValidTaskSetHash(set)) {
     throw new ApiError(400, 'invalid_set', 'set must be current or a 64-char hex task_set hash');
   }
 
