@@ -9,8 +9,9 @@
   import Radio from '$lib/components/ui/Radio.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
-  import CheatButton from '$lib/cheat/CheatButton.svelte';
-  import { landingAnnotations } from '$lib/cheat/annotations/landing';
+  // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
+  // import CheatButton from '$lib/cheat/CheatButton.svelte';
+  // import { landingAnnotations } from '$lib/cheat/annotations/landing';
 
   let { data } = $props();
 
@@ -133,7 +134,7 @@
   </div>
 </div>
 
-<CheatButton annotations={landingAnnotations} />
+<!-- <CheatButton annotations={landingAnnotations} /> -->
 
 <style>
   .live-line { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }

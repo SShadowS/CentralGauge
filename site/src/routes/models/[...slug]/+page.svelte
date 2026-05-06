@@ -16,8 +16,9 @@
   import Button from '$lib/components/ui/Button.svelte';
   import { formatScore, formatCost, formatDuration } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
-  import CheatButton from '$lib/cheat/CheatButton.svelte';
-  import { modelDetailAnnotations } from '$lib/cheat/annotations/model-detail';
+  // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
+  // import CheatButton from '$lib/cheat/CheatButton.svelte';
+  // import { modelDetailAnnotations } from '$lib/cheat/annotations/model-detail';
   import type { RunsListItem } from '$shared/api-types';
 
   let { data } = $props();
@@ -230,7 +231,7 @@
   <TableOfContents items={tocItems} />
 </div>
 
-<CheatButton annotations={modelDetailAnnotations} />
+<!-- <CheatButton annotations={modelDetailAnnotations} /> -->
 
 <style>
   .page-header { padding: var(--space-6) 0; }
