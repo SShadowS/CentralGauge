@@ -4,8 +4,24 @@ import CompareTable from "./CompareTable.svelte";
 import type { CompareModel, CompareTaskRow } from "$shared/api-types";
 
 const models: CompareModel[] = [
-  { id: 1, slug: "sonnet-4-7", display_name: "Sonnet 4.7" },
-  { id: 2, slug: "gpt-5", display_name: "GPT-5" },
+  {
+    id: 1,
+    slug: "sonnet-4-7",
+    display_name: "Sonnet 4.7",
+    pass_at_n: 0.5,
+    pass_at_1: 0.5,
+    denominator: 2,
+    pass_at_n_per_attempted: 0.5,
+  },
+  {
+    id: 2,
+    slug: "gpt-5",
+    display_name: "GPT-5",
+    pass_at_n: 0.75,
+    pass_at_1: 0.5,
+    denominator: 2,
+    pass_at_n_per_attempted: 0.75,
+  },
 ];
 const tasks: CompareTaskRow[] = [
   {

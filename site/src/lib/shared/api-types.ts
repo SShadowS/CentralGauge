@@ -610,6 +610,17 @@ export interface CompareModel {
   id: number;
   slug: string;
   display_name: string;
+  /** Strict pass rate: (p1 + p2_only) / denominator. 0..1. null when no runs in current set. */
+  pass_at_n: number | null;
+  /** Strict first-try rate: p1 / denominator. 0..1. null when no runs in current set. */
+  pass_at_1: number | null;
+  /** Denominator (task_count of the current task set). null when no current set. */
+  denominator: number | null;
+  /**
+   * @deprecated Per-attempted alias: (p1 + p2_only) / tasks_attempted_distinct.
+   * Migration alias; remove in PR2.
+   */
+  pass_at_n_per_attempted: number | null;
 }
 
 export interface CompareTaskRow {

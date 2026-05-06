@@ -101,4 +101,87 @@ describe("GET /api/v1/compare", () => {
     const gptScore = onlySonnet!.scores["gpt-4o"];
     if (gptScore !== undefined) expect(gptScore).toBeNull();
   });
+
+  it("emits pass_at_n, pass_at_1, denominator, and pass_at_n_per_attempted per model", async () => {
+    // seed: task_set has 2 tasks (easy/a, hard/b).
+    // sonnet-4.7 passed easy/a on attempt 1 (r1), failed hard/b.
+    // gpt-4o passed hard/b on attempt 1 (r2), failed easy/a.
+    // Both have 1 pass out of 2 tasks in current set: pass_at_n = 0.5.
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=sonnet-4.7,gpt-4o",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+
+    const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
+    const gpt = body.models.find((m: any) => m.slug === "gpt-4o");
+
+    expect(sonnet).toBeDefined();
+    expect(gpt).toBeDefined();
+
+    // Both models should have pass_at_n = 1/2 = 0.5
+    expect(sonnet.pass_at_n).toBe(0.5);
+    expect(gpt.pass_at_n).toBe(0.5);
+
+    // pass_at_1: sonnet passed 1 on attempt 1; gpt passed 1 on attempt 1
+    expect(sonnet.pass_at_1).toBe(0.5);
+    expect(gpt.pass_at_1).toBe(0.5);
+
+    // denominator = task_count of current set = 2
+    expect(sonnet.denominator).toBe(2);
+    expect(gpt.denominator).toBe(2);
+
+    // pass_at_n_per_attempted: both attempted 2 tasks; 1 pass each => 0.5
+    expect(sonnet.pass_at_n_per_attempted).toBe(0.5);
+    expect(gpt.pass_at_n_per_attempted).toBe(0.5);
+  });
+
+  it("CR-5: cross-set runs do not inflate pass_at_n beyond 1.0", async () => {
+    // Scenario: task_set 'ts' is current (task_count=4), but also a stale 'old'
+    // set. sonnet-4.7 has runs in BOTH sets. Without CR-5, the numerator would
+    // count results from the stale set as well, potentially pushing pass_at_n > 1.
+    // With CR-5, only the current hash's results are counted.
+
+    // Extend current task set to 4 tasks.
+    await env.DB.prepare(
+      `UPDATE task_sets SET task_count = 4 WHERE hash = 'ts'`,
+    ).run();
+
+    // Add a stale task set (not current).
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('old','2025-01-01T00:00:00Z',2,0)`,
+    ).run();
+
+    // Add a run for sonnet-4.7 in the STALE task set.
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r_old','old',1,'s','r','2025-06-01T00:00:00Z','2025-06-01T01:00:00Z','completed','claimed','v1','s','2025-06-01T00:00:00Z',1,X'7B7D')`,
+    ).run();
+
+    // Results in the stale set: sonnet-4.7 passes 2 MORE tasks on attempt 1.
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success)
+       VALUES ('r_old','easy/c',1,1,1.0,1),('r_old','easy/d',1,1,1.0,1)`,
+    ).run();
+
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=sonnet-4.7,gpt-4o",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+
+    const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
+    expect(sonnet).toBeDefined();
+
+    // CR-5 invariant: pass_at_n must never exceed 1.0.
+    // Without the hash filter, numerator = 3 (easy/a from current + easy/c, easy/d from stale)
+    // and denominator = 4, giving 3/4 = 0.75. But even if it were 4 cross-set passes
+    // vs denominator 4, it would still be <= 1.0 — the important check is that stale
+    // set results are NOT counted.
+    // With the hash filter: only easy/a passes in 'ts' => p1=1, denominator=4 => 0.25.
+    expect(sonnet.pass_at_n).toBeLessThanOrEqual(1.0);
+    // Strict check: only current-set results counted, so exactly 1 pass / 4 tasks.
+    expect(sonnet.pass_at_n).toBe(0.25);
+    expect(sonnet.denominator).toBe(4);
+  });
 });
