@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import LeaderboardTable from './LeaderboardTable.svelte';
 import type { LeaderboardRow } from '$shared/api-types';
 
-const rows: LeaderboardRow[] = [
+const sampleRows: LeaderboardRow[] = [
   {
     rank: 1,
     model: {
@@ -56,9 +56,12 @@ const rows: LeaderboardRow[] = [
   },
 ];
 
+// Alias for backwards compat within this file
+const rows = sampleRows;
+
 describe('LeaderboardTable', () => {
   it('renders one row per model', () => {
-    render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
+    render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
     expect(screen.getByText('Sonnet 4.7')).toBeDefined();
     expect(screen.getByText('Opus 4.7')).toBeDefined();
   });
@@ -68,49 +71,146 @@ describe('LeaderboardTable', () => {
     render(LeaderboardTable, {
       rows,
       sort,
-      onsort: (next: string) => { sort = next; },
+      onsort: (next: string) => {
+        sort = next;
+      },
     });
-    const scoreBtn = screen.getByRole('button', { name: /score/i });
-    await fireEvent.click(scoreBtn);
+    // "Avg attempt" header sorts by avg_score
+    const avgBtn = screen.getByRole('button', { name: /avg attempt/i });
+    await fireEvent.click(avgBtn);
     expect(sort).toBe('avg_score:asc');
   });
 
-  it('uses tabular-nums on score cell', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
-    const score = container.querySelector('td.score');
-    expect(score?.textContent).toContain('0.84');
+  it('Score column shows pass_at_n * 100 with 1 decimal', () => {
+    const { container } = render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
+    const scoreCells = container.querySelectorAll('td.score');
+    // Sonnet: 0.916667 * 100 = 91.6667 → "91.7"
+    expect(scoreCells[0]?.textContent?.trim()).toBe('91.7');
+    // Opus: 0.666667 * 100 = 66.6667 → "66.7"
+    expect(scoreCells[1]?.textContent?.trim()).toBe('66.7');
   });
 
   it('renders AttemptStackedBar in each row', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
+    const { container } = render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
     const bars = container.querySelectorAll('.attempts-cell .bar');
     expect(bars.length).toBe(2);
   });
 
-  it('renders pass ratio next to bar (a1 + a2only / distinct)', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
+  it('renders pass ratio using denominator when present', () => {
+    const rowsWithDenominator: LeaderboardRow[] = [
+      {
+        ...sampleRows[0],
+        denominator: 30,
+      },
+      {
+        ...sampleRows[1],
+        denominator: 30,
+      },
+    ];
+    const { container } = render(LeaderboardTable, {
+      rows: rowsWithDenominator,
+      sort: 'pass_at_n:desc',
+    });
+    const ratios = container.querySelectorAll('.attempts-cell .ratio');
+    // Sonnet: (20+2)/30 = 22/30
+    expect(ratios[0]?.textContent?.trim()).toBe('22/30');
+    // Opus: (15+1)/30 = 16/30
+    expect(ratios[1]?.textContent?.trim()).toBe('16/30');
+  });
+
+  it('renders pass ratio falling back to tasks_attempted_distinct when denominator absent', () => {
+    const { container } = render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
     const ratios = container.querySelectorAll('.attempts-cell .ratio');
     expect(ratios[0]?.textContent?.trim()).toBe('22/24');
     expect(ratios[1]?.textContent?.trim()).toBe('16/24');
   });
 
   it('renders SettingsBadge only when suffix is non-empty', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'avg_score:desc' });
+    const { container } = render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
     const badges = container.querySelectorAll('.settings-badge');
     // Sonnet (suffix ' (50K, t0)') → 1 badge; Opus ('') → 0
     expect(badges.length).toBe(1);
     expect(badges[0]?.textContent).toBe(' (50K, t0)');
   });
 
-  it('Pass header click emits pass_at_n sort', async () => {
-    let sort = 'avg_score:desc';
+  it('Pass header click emits pass_at_1 sort', async () => {
+    let sort = 'pass_at_n:desc';
     render(LeaderboardTable, {
       rows,
       sort,
-      onsort: (next: string) => { sort = next; },
+      onsort: (next: string) => {
+        sort = next;
+      },
     });
     const passBtn = screen.getByRole('button', { name: /^Pass/i });
     await fireEvent.click(passBtn);
-    expect(sort).toBe('pass_at_n:desc');
+    expect(sort).toBe('pass_at_1:desc');
+  });
+
+  // D.2 tests — default sort + column alignment
+
+  it('defaults to pass_at_n:desc: pass-at-n-header has aria-sort descending', async () => {
+    const { container } = render(LeaderboardTable, {
+      rows: sampleRows,
+      sort: 'pass_at_n:desc',
+    });
+    const passHeader = container.querySelector('[data-test="pass-at-n-header"]');
+    expect(passHeader?.getAttribute('aria-sort')).toBe('descending');
+  });
+
+  it('renders Score column from pass_at_n strict (1 decimal)', async () => {
+    const rowsFixture: LeaderboardRow[] = [
+      {
+        ...sampleRows[0],
+        pass_at_n: 0.732,
+      },
+    ];
+    const { container } = render(LeaderboardTable, { rows: rowsFixture, sort: 'pass_at_n:desc' });
+    expect(container.textContent).toContain('73.2');
+  });
+
+  it('demoted Avg attempt column header is present in DOM', async () => {
+    const { container } = render(LeaderboardTable, {
+      rows: sampleRows,
+      sort: 'pass_at_n:desc',
+    });
+    const headers = Array.from(container.querySelectorAll('th'));
+    const avgHeader = headers.find((th) => th.textContent?.includes('Avg attempt'));
+    expect(avgHeader).toBeDefined();
+    expect(avgHeader?.classList.contains('th-avg-attempt')).toBe(true);
+  });
+
+  it('Avg attempt cells show avg_score formatted to 2 decimals', async () => {
+    const { container } = render(LeaderboardTable, {
+      rows: sampleRows,
+      sort: 'pass_at_n:desc',
+    });
+    const avgCells = container.querySelectorAll('td.th-avg-attempt');
+    expect(avgCells[0]?.textContent?.trim()).toBe('0.84');
+    expect(avgCells[1]?.textContent?.trim()).toBe('0.72');
+  });
+
+  it('Model header is non-sortable (no click button)', async () => {
+    const { container } = render(LeaderboardTable, {
+      rows: sampleRows,
+      sort: 'pass_at_n:desc',
+    });
+    const modelHeader = Array.from(container.querySelectorAll('th')).find((th) =>
+      th.textContent?.trim() === 'Model',
+    );
+    expect(modelHeader).toBeDefined();
+    expect(modelHeader?.querySelector('button')).toBeNull();
+  });
+
+  it('Last seen header is non-sortable (no click button)', async () => {
+    const { container } = render(LeaderboardTable, {
+      rows: sampleRows,
+      sort: 'pass_at_n:desc',
+    });
+    const lastSeenHeader = Array.from(container.querySelectorAll('th')).find((th) =>
+      th.textContent?.trim() === 'Last seen',
+    );
+    expect(lastSeenHeader).toBeDefined();
+    expect(lastSeenHeader?.querySelector('button')).toBeNull();
   });
 });

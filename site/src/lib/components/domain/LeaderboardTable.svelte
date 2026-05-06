@@ -2,7 +2,6 @@
   import type { LeaderboardRow } from '$shared/api-types';
   import { formatRelativeTime } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
-  import ScoreCell from './ScoreCell.svelte';
   import CostCell from './CostCell.svelte';
   import AttemptStackedBar from './AttemptStackedBar.svelte';
   import SettingsBadge from './SettingsBadge.svelte';
@@ -37,15 +36,40 @@
     <thead>
       <tr>
         <th scope="col" class="rank">#</th>
-        <th scope="col" aria-sort={ariaSort('model')}>
-          <button class="hbtn" onclick={() => clickSort('model')}>Model {#if sortField === 'model'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <!-- Model: non-sortable — server does not honour a `model` sort key -->
+        <th scope="col">Model</th>
+        <!--
+          Score: displays pass_at_n * 100 (strict-scope pass rate, %).
+          Tooltip: tasks solved / tasks in scope, with up to 2 attempts.
+        -->
+        <th
+          scope="col"
+          data-test="pass-at-n-header"
+          aria-sort={ariaSort('pass_at_n')}
+          title="Tasks solved / tasks in scope, with up to 2 attempts."
+        >
+          <button class="hbtn" onclick={() => clickSort('pass_at_n')}>
+            Score{#if sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
+          </button>
+          <MetricInfo id="pass_at_n" />
         </th>
-        <th scope="col" aria-sort={ariaSort('avg_score')} title={METRICS.avg_score?.short}>
-          <button class="hbtn" onclick={() => clickSort('avg_score')}>Score{#if sortField === 'avg_score'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <!--
+          Avg attempt: demoted column — hidden in compact density, visible in comfortable.
+          Shows avg_score (per-attempt mean). Sortable by avg_score.
+        -->
+        <th
+          scope="col"
+          class="th-avg-attempt"
+          aria-sort={ariaSort('avg_score')}
+          title={METRICS.avg_score?.short}
+        >
+          <button class="hbtn" onclick={() => clickSort('avg_score')}>
+            Avg attempt{#if sortField === 'avg_score'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
+          </button>
           <MetricInfo id="avg_score" />
         </th>
-        <th scope="col" aria-sort={ariaSort('pass_at_n')} title={METRICS.pass_at_n?.short}>
-          <button class="hbtn" onclick={() => clickSort('pass_at_n')}>Pass{#if sortField === 'pass_at_n' || sortField === 'pass_at_1'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <th scope="col" aria-sort={ariaSort('pass_at_1')} title={METRICS.pass_at_n?.short}>
+          <button class="hbtn" onclick={() => clickSort('pass_at_1')}>Pass{#if sortField === 'pass_at_1' || sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="pass_at_n" />
         </th>
         <th scope="col" class="th-ci" title={METRICS.pass_rate_ci?.short}>CI <MetricInfo id="pass_rate_ci" /></th>
@@ -61,13 +85,13 @@
           <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>p95{#if sortField === 'latency_p95_ms'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="latency_p95_ms" />
         </th>
-        <th scope="col" aria-sort={ariaSort('last_run_at')}>
-          <button class="hbtn" onclick={() => clickSort('last_run_at')}>Last seen {#if sortField === 'last_run_at'}{#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
-        </th>
+        <!-- Last seen: non-sortable — server does not honour a `last_run_at` sort key -->
+        <th scope="col">Last seen</th>
       </tr>
     </thead>
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row (row.model.slug)}
+        {@const denom = row.denominator ?? row.tasks_attempted_distinct}
         <tr>
           <td class="rank text-mono">{row.rank}</td>
           <th scope="row">
@@ -78,7 +102,8 @@
               family_slug={row.family_slug}
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
-          <td class="score"><ScoreCell score={row.avg_score} /></td>
+          <td class="score text-mono">{(row.pass_at_n * 100).toFixed(1)}</td>
+          <td class="th-avg-attempt text-mono">{row.avg_score.toFixed(2)}</td>
           <td class="attempts-cell">
             <AttemptStackedBar
               attempt1={row.tasks_passed_attempt_1}
@@ -86,7 +111,7 @@
               attempted={row.tasks_attempted_distinct}
             />
             <span class="ratio text-mono">
-              {row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only}/{row.tasks_attempted_distinct}
+              {row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only}/{denom}
             </span>
           </td>
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2 * 100).toFixed(1)}%</td>
@@ -155,5 +180,9 @@
     align-items: center;
     gap: var(--space-2);
     font-weight: var(--weight-semi);
+  }
+  /* Avg attempt column: hidden in compact density, visible in comfortable (default) */
+  :global([data-density="compact"]) .th-avg-attempt {
+    display: none;
   }
 </style>
