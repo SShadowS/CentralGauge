@@ -15,6 +15,8 @@
   let { annotations, onClose }: Props = $props();
 
   let layouts = $state<Layout[]>([]);
+  // C1: holds the substituted body/bodyPrefix for each annotation id.
+  let resolvedBodies = $state<Record<string, { body: string; bodyPrefix?: string }>>({});
   let layerEl: HTMLDivElement | undefined = $state();
   let closeButton: HTMLButtonElement | undefined = $state();
 
@@ -66,6 +68,14 @@
     rafHandle = requestAnimationFrame(() => {
       rafHandle = null;
       const targets = resolveTargets(annotations);
+
+      // C1: populate resolvedBodies from the substituted targets.
+      const bodies: Record<string, { body: string; bodyPrefix?: string }> = {};
+      for (const t of targets) {
+        bodies[t.id] = { body: t.body, bodyPrefix: t.bodyPrefix };
+      }
+      resolvedBodies = bodies;
+
       const sizes: Record<string, Size> = {};
       for (const t of targets) {
         const el = calloutEls.get(t.id);
@@ -101,6 +111,15 @@
 
     // Render callouts as invisible (in DOM for measurement) then schedule.
     const targetsInitial = resolveTargets(annotations);
+
+    // C1: seed resolvedBodies from the initial resolve so the first render
+    // shows substituted text rather than raw {placeholder} templates.
+    const bodiesInitial: Record<string, { body: string; bodyPrefix?: string }> = {};
+    for (const t of targetsInitial) {
+      bodiesInitial[t.id] = { body: t.body, bodyPrefix: t.bodyPrefix };
+    }
+    resolvedBodies = bodiesInitial;
+
     layouts = targetsInitial.map((t) => ({
       id: t.id,
       visible: false,
@@ -226,36 +245,42 @@
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions: layer is role=region; keyboard events are managed manually per spec (Esc/Tab handled on document). -->
 <!-- svelte-ignore a11y_no_static_element_interactions: layer div is not interactive itself; pointer-events:none prevents click interception. -->
+<!-- I2: id="cheat-overlay" added so aria-controls on the FAB resolves correctly. -->
 <div
+  id="cheat-overlay"
   class="cheat-layer"
   bind:this={layerEl}
   role="region"
   aria-label="Cheat overlay"
 >
   <!-- Arrow paths sit behind callouts; pointer-events:none prevents blocking page. -->
+  <!-- I3: paths stay mounted across visibility flips; opacity/d control visibility
+       rather than {#if} so in:draw does not replay on scroll re-entry. -->
   <svg class="cheat-arrows" aria-hidden="true">
     {#each layouts as layout (layout.id)}
-      {#if layout.arrow}
-        {@const drawMs = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250}
-        <path
-          d={layout.arrow.d}
-          fill="none"
-          stroke="var(--cheat-arrow)"
-          stroke-width="1.75"
-          stroke-dasharray="3 3"
-          in:draw={{ duration: drawMs }}
-        />
-      {/if}
+      {@const drawMs = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 250}
+      <path
+        d={layout.arrow?.d ?? 'M 0,0'}
+        fill="none"
+        stroke="var(--cheat-arrow)"
+        stroke-width="1.75"
+        stroke-dasharray="3 3"
+        style:opacity={layout.visible && layout.arrow ? 1 : 0}
+        in:draw={{ duration: drawMs }}
+      />
     {/each}
   </svg>
 
   {#each annotations as annotation (annotation.id)}
     {@const layout = findLayout(annotation.id)}
     {#if layout}
+      <!-- C1: use substituted text from resolvedBodies; fall back to raw annotation
+           on first-render race before scheduleLayout populates resolvedBodies. -->
+      {@const resolved = resolvedBodies[annotation.id]}
       <CheatCallout
         {layout}
-        body={annotation.body}
-        bodyPrefix={annotation.bodyPrefix}
+        body={resolved?.body ?? annotation.body}
+        bodyPrefix={resolved?.bodyPrefix ?? annotation.bodyPrefix}
         register={(node) => registerCallout(node, annotation.id)}
       />
     {/if}
