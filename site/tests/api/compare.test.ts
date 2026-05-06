@@ -184,4 +184,37 @@ describe("GET /api/v1/compare", () => {
     expect(sonnet.pass_at_n).toBe(0.25);
     expect(sonnet.denominator).toBe(4);
   });
+
+  it("C2: emits null (not 0) for pass_at_n when model has no current-set runs", async () => {
+    // Add a third model that has no runs at all in the current task set.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (3,'gemini','g','Gemini')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name) VALUES (3,3,'gemini-pro','gemini-pro','Gemini Pro')`,
+      ),
+    ]);
+    // gemini-pro has no runs at all. Compare sonnet (has runs) vs gemini (no runs).
+    const res = await SELF.fetch(
+      "https://x/api/v1/compare?models=sonnet-4.7,gemini-pro",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { models: Array<any>; tasks: Array<any> };
+
+    const sonnet = body.models.find((m: any) => m.slug === "sonnet-4.7");
+    const gemini = body.models.find((m: any) => m.slug === "gemini-pro");
+
+    expect(sonnet).toBeDefined();
+    expect(gemini).toBeDefined();
+
+    // sonnet has runs → non-null pass_at_n
+    expect(sonnet.pass_at_n).not.toBeNull();
+
+    // gemini has no runs in the current task set → all metrics null
+    expect(gemini.pass_at_n).toBeNull();
+    expect(gemini.pass_at_1).toBeNull();
+    expect(gemini.denominator).toBeNull();
+    expect(gemini.pass_at_n_per_attempted).toBeNull();
+  });
 });

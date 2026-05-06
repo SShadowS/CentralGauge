@@ -44,7 +44,7 @@ export const METRICS: Record<string, MetricDef> = {
     id: 'pass_rate_ci',
     label: 'Pass Rate 95% CI',
     short: '95% Wilson confidence interval on the pass rate.',
-    formula: 'Wilson score interval: center ± half-width, where n = tasks_attempted_distinct.',
+    formula: 'Wilson score interval: center ± half-width, where n = strict denominator (task_set_size or category/difficulty-scoped count when taskSetHash is provided; falls back to tasks_attempted_distinct for legacy callers).',
     when: 'Use to judge whether a lead over another model is statistically meaningful. Wide CIs indicate too few tasks to draw firm conclusions.',
     link: { href: 'https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval', text: 'Wilson score interval (Wikipedia)' },
   },

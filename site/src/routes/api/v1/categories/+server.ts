@@ -34,6 +34,13 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // task_count=0 / avg_pass_rate=null. Restricted to is_current=1
       // task set so the leaderboard's "current" view aligns.
       //
+      // avg_pass_rate uses the strict per-set formula (same denominator as
+      // pass_at_n on the leaderboard) so index and detail show the same value.
+      // Formula: for each model with current-set runs, compute
+      //   (tasks_passed_in_category) / (tasks_in_category)
+      // then average across models. Equivalent to:
+      //   SUM(per-model passes in category) / (model_count * category_task_count)
+      //
       // Production-shape note: when `tasks_in_catalog = 0` (CC-1; current
       // production), the LEFT JOIN yields `task_count = 0` for every
       // category (or 0 rows if the categories table is also empty).
@@ -46,17 +53,87 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       }>(
         env.DB,
         `
+        WITH cur AS (SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1),
+        cat_tasks AS (
+          SELECT t.task_id, t.category_id
+          FROM tasks t
+          WHERE t.task_set_hash = (SELECT hash FROM cur)
+        ),
+        models_with_runs AS (
+          SELECT DISTINCT model_id
+          FROM runs
+          WHERE task_set_hash = (SELECT hash FROM cur)
+        ),
+        -- p1: best-across-runs per (model, task): attempt=1 passed
+        p1 AS (
+          SELECT ru.model_id, r.task_id
+          FROM results r
+          JOIN runs ru ON ru.id = r.run_id
+          WHERE ru.task_set_hash = (SELECT hash FROM cur)
+            AND r.attempt = 1 AND r.passed = 1
+          GROUP BY ru.model_id, r.task_id
+        ),
+        -- p2_only: attempt=2 passed and attempt=1 did NOT pass (for this model+task)
+        p2_only AS (
+          SELECT ru.model_id, r.task_id
+          FROM results r
+          JOIN runs ru ON ru.id = r.run_id
+          WHERE ru.task_set_hash = (SELECT hash FROM cur)
+            AND r.attempt = 2 AND r.passed = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM results r1b
+              JOIN runs ru1b ON ru1b.id = r1b.run_id
+              WHERE ru1b.model_id = ru.model_id
+                AND r1b.task_id = r.task_id
+                AND r1b.attempt = 1 AND r1b.passed = 1
+                AND ru1b.task_set_hash = (SELECT hash FROM cur)
+            )
+          GROUP BY ru.model_id, r.task_id
+        ),
+        -- All passes per (model, task) with category annotation
+        passes_in_cat AS (
+          SELECT ct.category_id, p.model_id
+          FROM (
+            SELECT model_id, task_id FROM p1
+            UNION
+            SELECT model_id, task_id FROM p2_only
+          ) p
+          JOIN cat_tasks ct ON ct.task_id = p.task_id
+        ),
+        -- Per (category, model): count of passed tasks
+        model_cat_passes AS (
+          SELECT category_id, model_id, COUNT(*) AS passes
+          FROM passes_in_cat
+          GROUP BY category_id, model_id
+        ),
+        -- Task count per category
+        cat_task_count AS (
+          SELECT category_id, COUNT(*) AS n
+          FROM cat_tasks
+          GROUP BY category_id
+        ),
+        -- Strict avg_pass_rate per category:
+        -- SUM(model passes) / (model_count * category_task_count)
+        cat_avg AS (
+          SELECT
+            ctc.category_id,
+            CAST(SUM(COALESCE(mcp.passes, 0)) AS REAL)
+              / NULLIF(CAST(COUNT(DISTINCT mwr.model_id) AS REAL) * ctc.n, 0)
+              AS avg_pass_rate
+          FROM cat_task_count ctc
+          CROSS JOIN models_with_runs mwr
+          LEFT JOIN model_cat_passes mcp
+            ON mcp.category_id = ctc.category_id AND mcp.model_id = mwr.model_id
+          GROUP BY ctc.category_id, ctc.n
+        )
         SELECT
           tc.slug AS slug,
           tc.name AS name,
-          COUNT(DISTINCT t.task_id) AS task_count,
-          AVG(r.passed) AS avg_pass_rate
+          COUNT(DISTINCT ct.task_id) AS task_count,
+          ca.avg_pass_rate AS avg_pass_rate
         FROM task_categories tc
-        LEFT JOIN tasks t
-          ON t.category_id = tc.id
-          AND t.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)
-        LEFT JOIN results r ON r.task_id = t.task_id
-        LEFT JOIN runs ON runs.id = r.run_id AND runs.task_set_hash = t.task_set_hash
+        LEFT JOIN cat_tasks ct ON ct.category_id = tc.id
+        LEFT JOIN cat_avg ca ON ca.category_id = tc.id
         GROUP BY tc.id
         ORDER BY task_count DESC, tc.slug ASC
         `,

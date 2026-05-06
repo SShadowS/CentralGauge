@@ -465,6 +465,13 @@ export interface FamiliesIndexResponse {
 // Family detail (trajectory) — GET /api/v1/families/:slug
 // =============================================================================
 
+/**
+ * All numeric fields (avg_score, run_count, last_run_at, avg_cost_usd,
+ * pass_at_n, pass_at_1, pass_at_n_per_attempted, tasks_passed_*,
+ * tasks_attempted_distinct) are scoped to the model's `task_set_hash`
+ * (the dominant task set hash). A trajectory point's numbers therefore
+ * come from one consistent source — no cross-set bleed.
+ */
 export interface FamilyTrajectoryItem {
   model: {
     slug: string;
@@ -472,7 +479,7 @@ export interface FamilyTrajectoryItem {
     api_model_id: string;
     generation: number | null;
   };
-  avg_score: number | null;       // null for models with zero runs
+  avg_score: number | null;       // null for models with zero runs in dominant set
   run_count: number;
   last_run_at: string | null;
   avg_cost_usd: number | null;

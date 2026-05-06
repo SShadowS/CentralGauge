@@ -600,3 +600,97 @@ describe("pass_rate_ci uses strict scope-aware denominator (B.2)", () => {
     expect(agg.pass_rate_ci.upper).toBeGreaterThan(0.85);
   });
 });
+
+// ---------------------------------------------------------------------------
+// C1: pass_at_n uses strict denominator (task_count) not per-attempted
+//
+// Seed: task_set 'aaaa' has task_count=10 (from seedB1).
+// M-A attempted 4 tasks (e1,e2,e3,h1), passed 3 (e1,e2,e3).
+//
+// Strict:       pass_at_n = 3 / 10 = 0.30
+// Per-attempted: pass_at_n = 3 / 4  = 0.75 (WRONG — old formula)
+//
+// The test asserts 0.30, which only passes with the strict denominator.
+// pass_at_n_per_attempted must equal 0.75 so both fields are tested.
+// ---------------------------------------------------------------------------
+
+describe("pass_at_n uses strict denominator, not per-attempted (C1)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await seedB1();
+  });
+
+  it("partial-coverage model: pass_at_n = passed/task_count not passed/attempted", async () => {
+    // seedB1: task_count=10, M-A passed 3 tasks, attempted 4.
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetHash: "aaaa",
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+
+    // Strict: 3 passed / 10 tasks in set = 0.30
+    expect(agg.pass_at_n).toBeCloseTo(0.3, 6);
+
+    // Per-attempted: 3 passed / 4 attempted = 0.75 (kept in separate field)
+    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.75, 6);
+
+    // Strict must differ from per-attempted when coverage < 100%
+    expect(agg.pass_at_n).not.toBeCloseTo(agg.pass_at_n_per_attempted, 4);
+  });
+
+  it("full-coverage model: pass_at_n === pass_at_n_per_attempted when attempted == task_count", async () => {
+    // Add results so M-A attempts all 10 tasks (e1-e5 all pass, h1-h5 all fail).
+    // attempted_distinct = 10 = task_count → strict and per-attempted converge.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','e4',1,1,1.0,1,1,1,100,50)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','e5',1,1,1.0,1,1,1,100,50)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','h2',1,0,0.0,0,1,0,100,50)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','h3',1,0,0.0,0,1,0,100,50)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','h4',1,0,0.0,0,1,0,100,50)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('rb1','h5',1,0,0.0,0,1,0,100,50)`,
+      ),
+    ]);
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetHash: "aaaa",
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    // 5 passed / 10 attempted / 10 task_count → both fields = 0.5
+    expect(agg.pass_at_n).toBeCloseTo(0.5, 6);
+    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.5, 6);
+  });
+
+  it("legacy taskSetCurrent path: pass_at_n falls back to per-attempted denominator", async () => {
+    // When taskSetHash is not provided, strictDenominator is null,
+    // so pass_at_n falls back to the per-attempted formula (= pass_at_n_per_attempted).
+    const aggMap = await computeModelAggregates(env.DB, {
+      modelIds: [MA_MODEL_ID],
+      taskSetCurrent: true,
+    });
+    const agg = aggMap.get(MA_MODEL_ID)!;
+    expect(agg).toBeDefined();
+    // Legacy path: 3 passed / 4 attempted = 0.75
+    expect(agg.pass_at_n).toBeCloseTo(0.75, 6);
+    expect(agg.pass_at_n_per_attempted).toBeCloseTo(0.75, 6);
+  });
+});

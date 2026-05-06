@@ -95,12 +95,24 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
           )
         GROUP BY ru2.model_id
       )
+      -- All aggregates scoped to dominant_hash so a trajectory point's numbers
+      -- come from one consistent source (pass numerators, run_count, avg_score,
+      -- avg_cost_usd, last_run_at). Using CASE WHEN avoids changing the JOIN
+      -- structure while achieving the same filtering effect.
       SELECT m.slug, m.display_name, m.api_model_id, m.generation,
-             AVG(r.score) AS avg_score,
-             COUNT(DISTINCT runs.id) AS run_count,
-             MAX(runs.started_at) AS last_run_at,
-             SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
-               / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
+             AVG(CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.score END)
+               AS avg_score,
+             COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN runs.id END)
+               AS run_count,
+             MAX(CASE WHEN runs.task_set_hash = ds.dominant_hash THEN runs.started_at END)
+               AS last_run_at,
+             SUM(
+               CASE WHEN runs.task_set_hash = ds.dominant_hash
+                    THEN (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
+               END
+             )
+               / NULLIF(COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.task_id END), 0)
+               AS avg_cost_usd,
              p1.tasks_passed_attempt_1,
              p2.tasks_passed_attempt_2_only,
              -- CR-5: tasks_attempted_distinct scoped to dominant hash only.

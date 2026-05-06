@@ -71,10 +71,20 @@ export interface Aggregate {
    */
   tasks_passed_attempt_2_only: number;
   /**
-   * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
-   * tasks_attempted_distinct; 0 when no attempts.
+   * Strict pass rate: (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) /
+   * strictDenominator when taskSetHash is provided (task_set_size or
+   * category/difficulty-scoped count), or / tasks_attempted_distinct as a
+   * legacy fallback when taskSetHash is absent. 0 when no attempts or
+   * denominator is zero.
    */
   pass_at_n: number;
+  /**
+   * Per-attempted pass rate (deprecated): (tasks_passed_attempt_1 +
+   * tasks_passed_attempt_2_only) / tasks_attempted_distinct. Retained for
+   * backward compat; prefer pass_at_n which uses the strict per-set
+   * denominator. 0 when no attempts.
+   */
+  pass_at_n_per_attempted: number;
   /**
    * Concise settings string e.g. ` (50K, t0.1)` (P7 Mini-phase B). Empty
    * string when settings_hash differs across the row's runs (multi-settings
@@ -515,9 +525,14 @@ export async function computeModelAggregates(
     const passedA2Only = Number(row.tasks_passed_attempt_2_only ?? 0);
     const attemptedDistinct = Number(row.tasks_attempted_distinct ?? 0);
     const tasksPassedDistinct = passedA1 + passedA2Only;
-    const passAtN = attemptedDistinct > 0
+    const passAtNPerAttempted = attemptedDistinct > 0
       ? tasksPassedDistinct / attemptedDistinct
       : 0;
+    // Strict: use scope-aware denominator when taskSetHash was provided;
+    // fall back to per-attempted for legacy callers that omit taskSetHash.
+    const passAtN = strictDenominator !== null && strictDenominator > 0
+      ? tasksPassedDistinct / strictDenominator
+      : passAtNPerAttempted;
     const profile = row.settings_hash_unique
       ? profileByHash.get(row.settings_hash_unique) ?? null
       : null;
@@ -565,6 +580,7 @@ export async function computeModelAggregates(
       tasks_passed_attempt_1: passedA1,
       tasks_passed_attempt_2_only: passedA2Only,
       pass_at_n: Math.round(passAtN * 1e6) / 1e6,
+      pass_at_n_per_attempted: Math.round(passAtNPerAttempted * 1e6) / 1e6,
       settings_suffix: settingsSuffix,
       temperature,
       thinking_budget: thinkingBudget,

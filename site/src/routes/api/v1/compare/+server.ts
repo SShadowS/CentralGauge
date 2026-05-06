@@ -198,14 +198,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
     const enrichedModels = models.map((m) => {
       const pass = passMap.get(m.id);
-      const hasRuns = pass !== undefined;
-      const p1 = hasRuns ? Number(pass.tasks_passed_attempt_1 ?? 0) : 0;
-      const p2Only = hasRuns
-        ? Number(pass.tasks_passed_attempt_2_only ?? 0)
-        : 0;
-      const attempted = hasRuns
-        ? Number(pass.tasks_attempted_distinct ?? 0)
-        : 0;
+      // COALESCE in the SQL always returns a row per model, so `pass` is always
+      // defined. Detect "no current-set runs" via all-zero numerators + attempted.
+      const p1 = Number(pass?.tasks_passed_attempt_1 ?? 0);
+      const p2Only = Number(pass?.tasks_passed_attempt_2_only ?? 0);
+      const attempted = Number(pass?.tasks_attempted_distinct ?? 0);
+      // A model with no runs in the current task set returns all-zero from the
+      // COALESCE; treat it as no-runs (null metrics) rather than 0%.
+      const hasRuns = attempted > 0 || p1 > 0 || p2Only > 0;
 
       const passAtNStrict =
         hasRuns && denominator > 0 ? (p1 + p2Only) / denominator : null;
