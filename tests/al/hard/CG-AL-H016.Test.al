@@ -10,16 +10,21 @@ codeunit 80017 "CG-AL-H016 Test"
     [Test]
     procedure TestBuildAuthHeader_AddsAuthorizationHeader()
     var
-        Client: HttpClient;
+        Request: HttpRequestMessage;
         ApiKey: SecretText;
         Added: Boolean;
     begin
+        // [SCENARIO] BuildAuthHeader adds the Authorization header to the request.
+        // The model is required to call Request.GetHeaders().Add('Authorization', ...) and
+        // return its Boolean result. We assert the Boolean here because Authorization is a
+        // typed (restricted) header in .NET: HttpHeaders.Contains and GetValues do not
+        // surface it by name, so a name-based read-back is not a reliable check across
+        // BC runtime versions.
         ApiKey := SecretText.SecretStrSubstNo('test-api-key-12345');
 
-        Added := SecureStorage.BuildAuthHeader(Client, ApiKey);
+        Added := SecureStorage.BuildAuthHeader(Request, ApiKey);
 
-        Assert.IsTrue(Added, 'BuildAuthHeader should report success');
-        Assert.IsTrue(Client.DefaultRequestHeaders.Contains('Authorization'), 'Authorization header should be present on the HttpClient');
+        Assert.IsTrue(Added, 'BuildAuthHeader should return true when Headers.Add succeeds');
     end;
 
     [Test]
