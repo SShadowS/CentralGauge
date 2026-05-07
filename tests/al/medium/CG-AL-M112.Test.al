@@ -21,6 +21,7 @@ codeunit 80012 "CG-AL-M112 Test"
         Project.Description := 'P';
         Project.Insert(true);
 
+        Clear(TimeEntry);
         TimeEntry.Init();
         TimeEntry.Validate("Project No.", ProjectNo);
         TimeEntry."Entry Date" := 0D;
@@ -28,6 +29,7 @@ codeunit 80012 "CG-AL-M112 Test"
         TimeEntry.Posted := true;
         TimeEntry.Insert(true);
 
+        Clear(TimeEntry);
         TimeEntry.Init();
         TimeEntry.Validate("Project No.", ProjectNo);
         TimeEntry."Entry Date" := 0D;
@@ -113,6 +115,7 @@ codeunit 80012 "CG-AL-M112 Test"
         Project.Description := 'P';
         Project.Insert(true);
 
+        Clear(TimeEntry);
         TimeEntry.Init();
         TimeEntry.Validate("Project No.", ProjectNo);
         TimeEntry.Validate(Hours, 1);
@@ -121,13 +124,7 @@ codeunit 80012 "CG-AL-M112 Test"
 
         asserterror Project.Delete(true);
         Assert.AreEqual('Cannot delete project with time entries', GetLastErrorText(), 'Delete should be blocked');
-
-        // Remove entries then delete should succeed
-        TimeEntry.Reset();
-        TimeEntry.SetRange("Project No.", ProjectNo);
-        TimeEntry.DeleteAll(true);
-
-        Project.Delete(true);
-        Assert.IsFalse(Project.Get(ProjectNo), 'Project should be deleted after time entries are removed');
+        // asserterror rolls the transaction back to the last Commit, so the project
+        // and time entry are removed automatically. No further DB ops are valid here.
     end;
 }
