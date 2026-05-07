@@ -129,23 +129,21 @@ codeunit 80013 "CG-AL-M003 Test"
         SalesContract: Record "Sales Contract";
     begin
         // [SCENARIO] Active contracts cannot be deleted
-        // [GIVEN] An active contract
+        // [GIVEN] A contract activated after Insert (OnInsert defaults Status to Draft)
         SalesContract.Init();
         SalesContract."Customer No." := CreateCustomer();
         SalesContract."Start Date" := WorkDate();
         SalesContract."End Date" := CalcDate('<+1Y>', WorkDate());
-        SalesContract.Status := SalesContract.Status::Active;
         SalesContract.Insert(true);
 
+        SalesContract.Status := SalesContract.Status::Active;
+        SalesContract.Modify();
+
         // [WHEN] We try to delete
-        // [THEN] Error is raised
+        // [THEN] Error is raised. asserterror rolls back to the last Commit so the
+        // contract row is removed automatically; no further cleanup is needed.
         asserterror SalesContract.Delete(true);
         Assert.ExpectedError('Cannot delete active contract');
-
-        // Cleanup - set to closed first
-        SalesContract.Status := SalesContract.Status::Closed;
-        SalesContract.Modify();
-        SalesContract.Delete();
     end;
 
     [Test]
