@@ -10,7 +10,7 @@ codeunit 80015 "CG-AL-M005 Test"
         ExternalPaymentService: Codeunit "External Payment Service";
 
     [Test]
-    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
+    [HandlerFunctions('MockPaymentServiceHandler')]
     procedure TestSendPaymentRequestReturnsBoolean()
     var
         ResponseJson: JsonObject;
@@ -198,7 +198,6 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookPaymentCompleted()
     var
         WebhookPayload: JsonObject;
@@ -218,7 +217,6 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookPaymentFailed()
     var
         WebhookPayload: JsonObject;
@@ -281,7 +279,6 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockMessageHandler')]
     procedure TestLogPaymentTransactionExecutes()
     var
         TransactionId: Text[50];
@@ -302,7 +299,6 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockMessageHandler')]
     procedure TestLogPaymentTransactionDifferentStatuses()
     var
         TransactionId: Text[50];
@@ -375,7 +371,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
+    [HandlerFunctions('MockPaymentServiceHandler')]
     procedure TestSendPaymentRequestWithVariousCurrencies()
     var
         ResponseJson: JsonObject;
@@ -397,40 +393,41 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithZeroAmount()
     var
         ResponseJson: JsonObject;
         Result: Boolean;
+        CallSucceeded: Boolean;
     begin
-        // [SCENARIO] SendPaymentRequest handles zero amount
-        // [GIVEN] A payment request with zero amount
-        // [WHEN] We send the request
-        Result := ExternalPaymentService.SendPaymentRequest('ORD-ZERO', 0.00, 'USD', ResponseJson);
+        // [SCENARIO] SendPaymentRequest must reject Amount = 0 - either return false
+        // OR raise the error 'Payment amount must be greater than zero'.
+        CallSucceeded := TrySendPaymentRequest('ORD-ZERO', 0.00, 'USD', ResponseJson, Result);
 
-        // [THEN] Request is processed (implementation may return false for invalid amount)
-        // The key test is that no unhandled error occurs
-        Assert.IsTrue(true or not Result, 'Zero amount request handled without crash');
+        if CallSucceeded then
+            Assert.IsFalse(Result, 'Zero amount must not be reported as a successful payment')
+        else
+            Assert.ExpectedError('Payment amount must be greater than zero');
     end;
 
     [Test]
-    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithNegativeAmount()
     var
         ResponseJson: JsonObject;
         Result: Boolean;
+        CallSucceeded: Boolean;
     begin
-        // [SCENARIO] SendPaymentRequest handles negative amount (refund scenario)
-        // [GIVEN] A payment request with negative amount
-        // [WHEN] We send the request
-        Result := ExternalPaymentService.SendPaymentRequest('ORD-REFUND', -50.00, 'USD', ResponseJson);
+        // [SCENARIO] SendPaymentRequest must reject Amount < 0 - either return false
+        // OR raise the error 'Payment amount must be greater than zero'.
+        CallSucceeded := TrySendPaymentRequest('ORD-REFUND', -50.00, 'USD', ResponseJson, Result);
 
-        // [THEN] Request is processed without unhandled error
-        Assert.IsTrue(true or not Result, 'Negative amount request handled without crash');
+        if CallSucceeded then
+            Assert.IsFalse(Result, 'Negative amount must not be reported as a successful payment')
+        else
+            Assert.ExpectedError('Payment amount must be greater than zero');
     end;
 
     [Test]
-    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
+    [HandlerFunctions('MockPaymentServiceHandler')]
     procedure TestSendPaymentRequestWithLargeAmount()
     var
         ResponseJson: JsonObject;
@@ -446,7 +443,6 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
-    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookRefundEvent()
     var
         WebhookPayload: JsonObject;
@@ -479,10 +475,10 @@ codeunit 80015 "CG-AL-M005 Test"
         Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookData);
     end;
 
-    [MessageHandler]
-    procedure MockMessageHandler(Message: Text[1024])
+    [TryFunction]
+    local procedure TrySendPaymentRequest(OrderNo: Text; Amount: Decimal; Currency: Text; var ResponseJson: JsonObject; var Result: Boolean)
     begin
-        // Accept any Message() call from the implementation
+        Result := ExternalPaymentService.SendPaymentRequest(OrderNo, Amount, Currency, ResponseJson);
     end;
 
     [HttpClientHandler]

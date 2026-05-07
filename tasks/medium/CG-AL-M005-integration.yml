@@ -9,6 +9,8 @@ description: >-
   - SendPaymentRequest(OrderId: Text; Amount: Decimal; Currency: Text; var ResponseJson: JsonObject): Boolean
     Send payment to external service. Parameters: OrderId (order identifier), Amount (payment amount),
     Currency (currency code), ResponseJson (VAR parameter to receive response). Returns true on success.
+    Invalid amounts (Amount <= 0) must be rejected: either return false without making the HTTP call,
+    OR raise the error 'Payment amount must be greater than zero' (exact text).
 
   - ValidatePaymentResponse(Response: JsonObject): Boolean
     Validate API response structure. Check for required fields (status, transactionId, amount).
