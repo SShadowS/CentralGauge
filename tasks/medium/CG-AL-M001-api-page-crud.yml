@@ -3,20 +3,29 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create a comprehensive API page called "Product API" with ID 70100 that provides full CRUD operations for the existing "Product" table (ID 69001) which already has fields No., Description, Unit Price, Stock Quantity, Category Id.
-  The API should:
-  - Support GET, POST, PATCH, DELETE operations
-  - Include proper error handling and validation
-  - Have fields: id (SystemId), productCode, description, unitPrice, stockQuantity, categoryId
-  - Include proper OData annotations and API versioning (v1.0)
-  - Add business logic validation (price must be positive, stock must be non-negative)
-  - Include proper captions, publisher info (mycompany), and API group (products)
+  Create a comprehensive API page that exposes the existing "Product" table (ID 69001),
+  plus a tableextension that adds business-rule validation to that table.
 
-  Use proper API page conventions with DelayedInsert, ODataKeyFields, and appropriate triggers.
-  Include OnInsert/OnModify triggers for validation and audit logging.
+  1. Create a tableextension named "Product Validation" (ID 70101) that extends "Product"
+     and adds OnValidate triggers:
+     - On field "Unit Price": if "Unit Price" < 0, raise the error
+       'Price must be positive' (exact text).
+     - On field "Stock Quantity": if "Stock Quantity" < 0, raise the error
+       'Stock must be non-negative' (exact text).
+
+  2. Create an API page called "Product API" with ID 70100 that provides full CRUD
+     operations on the Product table. The API should:
+     - Support GET, POST, PATCH, DELETE operations.
+     - Have fields: id (SystemId), productCode, description, unitPrice, stockQuantity, categoryId.
+     - Include proper OData annotations and API versioning (v1.0).
+     - Include proper captions, publisher info (mycompany), and API group (products).
+     - Use proper API page conventions with DelayedInsert, ODataKeyFields, and appropriate triggers.
+
+  Validation logic must live on the table (via the tableextension), so any caller -
+  the API page, ordinary AL code, or a future page extension - sees the same rules.
 metadata:
   category: user-interface
-  tags: [api-page, fields, table, json]
+  tags: [api-page, tableextension, fields, validation]
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M001.Test.al
