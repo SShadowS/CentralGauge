@@ -31,7 +31,7 @@ description: >-
   4. Create a Project Management codeunit (ID 70005) with procedures:
      - CreateProject(Name: Text[100]; StartDate: Date): Code[20] - creates a new project and returns the generated Project Code
      - ActivateProject(ProjectCode: Code[20]) - changes project status to Active
-     - CompleteProject(ProjectCode: Code[20]) - finalizes project, but raises error "Cannot complete project with open tasks" if any tasks have Status::Open
+     - CompleteProject(ProjectCode: Code[20]) - finalizes project, but raises error "Cannot complete project with open tasks" if any tasks have Status::Open or Status::"In Progress" (only Status::Completed tasks are allowed)
 
   5. Implement cascade delete: When a Project is deleted with Delete(true), all related Project Tasks should also be deleted.
 

@@ -475,13 +475,10 @@ codeunit 80020 "CG-AL-M010 Test"
         ProjectTask.Insert(true);
 
         // [WHEN] We try to complete
-        // [THEN] Error is raised
+        // [THEN] Error is raised. asserterror rolls back to the last Commit so the
+        // project and task rows are removed automatically; no further cleanup needed.
         asserterror ProjectManagement.CompleteProject(Project."Project Code");
         Assert.ExpectedError('Cannot complete project with open tasks');
-
-        // Cleanup
-        ProjectTask.Delete();
-        Project.Delete();
     end;
 
     [Test]
@@ -505,12 +502,10 @@ codeunit 80020 "CG-AL-M010 Test"
         ProjectTask.Insert(true);
 
         // [WHEN] We try to complete
-        // [THEN] Error is raised (open tasks includes in-progress)
+        // [THEN] Error is raised (open tasks includes in-progress). asserterror rolls
+        // back to the last Commit so the project and task rows are removed automatically.
         asserterror ProjectManagement.CompleteProject(Project."Project Code");
-
-        // Cleanup
-        ProjectTask.Delete();
-        Project.Delete();
+        Assert.ExpectedError('Cannot complete project with open tasks');
     end;
 
     [Test]
