@@ -186,11 +186,11 @@ export async function runPublishStep(
   // Chunk before signing+POSTing. The worker endpoint hits Cloudflare's
   // per-invocation subrequest cap (50 on Workers Bundled, 1000 on Unbound)
   // because each shortcoming triggers concept-resolver queries + an upsert
-  // + per-occurrence batch inserts. Empirically a single batch of 9-10
-  // entries trips the limit on Bundled. Cap each POST at 5 entries; the
+  // + per-occurrence batch inserts. Empirically chunks of 3-5 still trip the
+  // cap when concept-resolver fans out. Cap each POST at 1 entry; the
   // endpoint is idempotent (`INSERT ... ON CONFLICT DO UPDATE`) so multiple
   // chunks for the same model are safe.
-  const CHUNK_SIZE = 5;
+  const CHUNK_SIZE = 1;
   let totalUpserted = 0;
   let totalOccurrences = 0;
   for (let i = 0; i < payload.shortcomings.length; i += CHUNK_SIZE) {
