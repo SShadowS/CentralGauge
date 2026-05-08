@@ -1,0 +1,66 @@
+id: CG-AL-H033
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL setup table and a card page that exposes conditional layout
+  sections. Selecting a value in a Storage Type field must show or hide entire
+  groups of related fields.
+
+  1. Table 70033 "CG H033 Storage Setup":
+     - field(1; "Primary Key"; Code[10])
+     - field(10; "Storage Type"; Option) with OptionMembers
+       Database,"File System","Azure Blob","Amazon S3",SFTP and OptionCaption
+       'Database,File System,Azure Blob,Amazon S3,SFTP'
+     - field(20; "File Archive Path"; Text[250])
+     - field(21; "File Retention Days"; Integer)
+     - field(30; "Azure Account"; Text[100])
+     - field(31; "Azure Container"; Text[100])
+     - field(32; "Azure Endpoint URL"; Text[250])
+     - field(40; "S3 Bucket"; Text[100])
+     - field(41; "S3 Region"; Text[50])
+     - field(42; "S3 Access Key Id"; Text[100])
+     - field(50; "SFTP Host"; Text[250])
+     - field(51; "SFTP Port"; Integer)
+     - field(52; "SFTP Username"; Text[100])
+     - Primary key on "Primary Key"
+
+  2. Page 70033 "CG H033 Storage Setup":
+     - PageType = Card
+     - SourceTable = "CG H033 Storage Setup"
+     - ApplicationArea = All
+     - UsageCategory = Administration
+     - Caption = 'CG H033 Storage Setup'
+     - Layout area(Content) with five sections:
+
+       a. A section captioned 'General' containing the Storage Type field.
+
+       b. A section captioned 'File System Settings' visible only when
+          Storage Type equals "File System". It contains the File Archive Path
+          and File Retention Days fields.
+
+       c. A section captioned 'Azure Blob Settings' visible only when
+          Storage Type equals "Azure Blob". It contains the Azure Account,
+          Azure Container and Azure Endpoint URL fields.
+
+       d. A section captioned 'Amazon S3 Settings' visible only when
+          Storage Type equals "Amazon S3". It contains the S3 Bucket,
+          S3 Region and S3 Access Key Id fields.
+
+       e. A section captioned 'SFTP Settings' visible only when Storage Type
+          equals SFTP. It contains the SFTP Host, SFTP Port and SFTP Username
+          fields.
+
+     - When Storage Type is Database, none of the four conditional sections'
+       fields are visible.
+metadata:
+  category: user-interface
+  tags: [page, table, dynamic-visibility, group, setup, conditional-layout]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H033.Test.al
+  testCodeunitId: 80033
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
