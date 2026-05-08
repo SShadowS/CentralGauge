@@ -748,7 +748,7 @@ export class CompileQueue implements CompileWorkQueue {
         for await (const entry of Deno.readDir(testDir)) {
           if (
             entry.isFile && entry.name.endsWith(".al") &&
-            entry.name.startsWith(taskId)
+            entry.name.startsWith(`${taskId}.`)
           ) {
             const srcPath = join(testDir, entry.name);
             await Deno.copyFile(srcPath, join(tempDir, entry.name));
