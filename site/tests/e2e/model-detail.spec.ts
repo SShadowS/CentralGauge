@@ -5,12 +5,9 @@ test.describe("/models/:slug", () => {
   test("renders header + stat tiles + history chart", async ({ page }) => {
     await page.goto(`/models/${FIXTURE.model.sonnet}`);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    // `Score` appears 7+ times on the page (StatTile label, MetricInfo
-    // popover content, table header, descriptive prose). Target the
-    // StatTile label specifically; "History" is a tab so use the role.
-    // Label includes a MetricInfo helper after the text, so anchor only
-    // at the start (textContent is "Score" + popover's <details> content).
-    await expect(page.locator(".tile .label", { hasText: /^Score/ }))
+    // Headline tile label is "Pass@N" since bf801f2 (was "Score"). Label
+    // includes a MetricInfo popover, so anchor at the start.
+    await expect(page.locator(".tile .label", { hasText: /^Pass@N/ }))
       .toBeVisible();
     // History is an <h2> on this page (not a tab — the page doesn't use Tabs).
     await expect(page.getByRole("heading", { name: /^History$/ }))

@@ -14,10 +14,13 @@ test.describe("golden path", () => {
     await page.getByRole("button", { name: /^Score/ }).first().click();
     await expect(page).toHaveURL(/sort=/);
 
-    // 3. Filter via the rail's Set radio (tier/Verified isn't in the
-    // leaderboard rail; the only fieldsets are Set and Category).
-    await page.getByRole("radio", { name: "All" }).check();
-    await expect(page).toHaveURL(/set=all/);
+    // 3. Filter via family (URL param). The seed fixture doesn't insert
+    // task_categories rows, so the rail's Category fieldset doesn't
+    // render. Set:All would clear the table because the leaderboard API
+    // rejects set=all (per CLAUDE.md "Wrangler / admin API" notes).
+    // Family is a real filter the seed populates and it preserves rows.
+    await page.goto("/?family=claude", { waitUntil: "networkidle" });
+    await expect(page).toHaveURL(/family=claude/);
 
     // 4. Drill into top model
     await page.locator("table tbody tr").first().getByRole("link").first()

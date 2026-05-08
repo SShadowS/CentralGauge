@@ -14,12 +14,14 @@ test.describe("/", () => {
   });
 
   test("sort by Score reverses order on second click", async ({ page }) => {
-    await page.goto("/");
+    // networkidle: sort handlers are wired during Svelte hydration, which
+    // races the click under parallel load (3/5 flake observed without it).
+    await page.goto("/", { waitUntil: "networkidle" });
     const scoreHeader = page.getByRole("button", { name: /score/i });
     await scoreHeader.click();
-    await expect(page).toHaveURL(/sort=avg_score%3Aasc/);
+    await expect(page).toHaveURL(/sort=pass_at_n%3Aasc/);
     await scoreHeader.click();
-    await expect(page).toHaveURL(/sort=avg_score%3Adesc/);
+    await expect(page).toHaveURL(/sort=pass_at_n%3Adesc/);
   });
 
   test("filter chip removal updates URL", async ({ page }) => {

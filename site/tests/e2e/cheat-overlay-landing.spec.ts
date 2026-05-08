@@ -2,7 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
-test.describe("CHEAT overlay (landing, desktop)", () => {
+// CheatButton mounts are commented out in src/routes/+page.svelte (84c3a6e
+// "chore(cheat): hide CheatButton mounts (temporary; revert to re-enable)").
+// Skip until the FAB is remounted on the landing page.
+test.describe.skip("CHEAT overlay (landing, desktop)", () => {
   test("FAB is visible and toggles aria-pressed", async ({ page }) => {
     await page.goto("/", { waitUntil: "networkidle" });
     const fab = page.locator(".cheat-fab");
