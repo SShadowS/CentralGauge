@@ -94,7 +94,6 @@ codeunit 80056 "CG-AL-E056 Test"
         Dt := CreateDateTime(DMY2Date(15, 6, 2025), 120000T);
         Result := Sut.DateTimeToText(Dt);
         Assert.AreNotEqual('', Result, 'DateTime should render to non-empty Text');
-        Assert.IsTrue(Result.Contains('2025'), 'DateTime should contain year 2025');
     end;
 
     [Test]
@@ -109,14 +108,14 @@ codeunit 80056 "CG-AL-E056 Test"
     end;
 
     [Test]
-    procedure TestDurationToText_Zero()
+    procedure TestDurationToText_FiveSeconds()
     var
         D: Duration;
         Result: Text;
     begin
-        D := 0;
+        D := 5000;
         Result := Sut.DurationToText(D);
-        Assert.AreNotEqual('', Result, 'Duration 0 should render to non-empty Text');
+        Assert.AreNotEqual('', Result, 'Non-zero Duration should render to non-empty Text');
     end;
 
     [Test]

@@ -12,23 +12,27 @@ codeunit 80027 "CG-AL-M027 Test"
     var
         JObj: JsonObject;
         BigVal: BigInteger;
+        ExpectedZero: BigInteger;
     begin
         Evaluate(BigVal, '1234567890123');
         JObj.Add('big', BigVal);
 
         Assert.AreEqual(BigVal, Sut.ObjectGetBigInteger(JObj, 'big'), 'Present key returns BigInteger value');
-        Assert.AreEqual(0, Sut.ObjectGetBigInteger(JObj, 'missing'), 'Missing key returns 0');
+        Assert.AreEqual(ExpectedZero, Sut.ObjectGetBigInteger(JObj, 'missing'), 'Missing key returns 0');
     end;
 
     [Test]
     procedure TestObjectGetByte()
     var
         JObj: JsonObject;
+        ExpectedValue: Byte;
+        ExpectedZero: Byte;
     begin
-        JObj.Add('b', 200);
+        ExpectedValue := 200;
+        JObj.Add('b', ExpectedValue);
 
-        Assert.AreEqual(200, Sut.ObjectGetByte(JObj, 'b'), 'Present key returns Byte value');
-        Assert.AreEqual(0, Sut.ObjectGetByte(JObj, 'missing'), 'Missing key returns 0');
+        Assert.AreEqual(ExpectedValue, Sut.ObjectGetByte(JObj, 'b'), 'Present key returns Byte value');
+        Assert.AreEqual(ExpectedZero, Sut.ObjectGetByte(JObj, 'missing'), 'Missing key returns 0');
     end;
 
     [Test]
@@ -99,12 +103,13 @@ codeunit 80027 "CG-AL-M027 Test"
     var
         JObj: JsonObject;
         DurVal: Duration;
+        ExpectedZero: Duration;
     begin
         DurVal := 60000;
         JObj.Add('dur', DurVal);
 
         Assert.AreEqual(DurVal, Sut.ObjectGetDuration(JObj, 'dur'), 'Present key returns Duration value (one minute)');
-        Assert.AreEqual(0, Sut.ObjectGetDuration(JObj, 'missing'), 'Missing key returns 0');
+        Assert.AreEqual(ExpectedZero, Sut.ObjectGetDuration(JObj, 'missing'), 'Missing key returns 0');
     end;
 
     [Test]
@@ -141,10 +146,12 @@ codeunit 80027 "CG-AL-M027 Test"
     procedure TestArrayGetByte()
     var
         JArr: JsonArray;
+        ExpectedValue: Byte;
     begin
-        JArr.Add(100);
+        ExpectedValue := 100;
+        JArr.Add(ExpectedValue);
 
-        Assert.AreEqual(100, Sut.ArrayGetByte(JArr, 0), 'Index 0 returns Byte value');
+        Assert.AreEqual(ExpectedValue, Sut.ArrayGetByte(JArr, 0), 'Index 0 returns Byte value');
     end;
 
     [Test]

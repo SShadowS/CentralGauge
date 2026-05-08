@@ -19,22 +19,22 @@ codeunit 80033 "CG-AL-M033 Test"
     [Test]
     procedure TestReportFormatEnumHasFiveDocumentedValues()
     var
-        ExcelOrd: Integer;
-        HtmlOrd: Integer;
-        PdfOrd: Integer;
-        WordOrd: Integer;
-        XmlOrd: Integer;
+        ExcelStr: Text;
+        HtmlStr: Text;
+        PdfStr: Text;
+        WordStr: Text;
+        XmlStr: Text;
     begin
-        ExcelOrd := ReportFormat::Excel.AsInteger();
-        HtmlOrd := ReportFormat::Html.AsInteger();
-        PdfOrd := ReportFormat::Pdf.AsInteger();
-        WordOrd := ReportFormat::Word.AsInteger();
-        XmlOrd := ReportFormat::Xml.AsInteger();
+        ExcelStr := Format(ReportFormat::Excel);
+        HtmlStr := Format(ReportFormat::Html);
+        PdfStr := Format(ReportFormat::Pdf);
+        WordStr := Format(ReportFormat::Word);
+        XmlStr := Format(ReportFormat::Xml);
 
-        Assert.AreNotEqual(ExcelOrd, HtmlOrd, 'Excel and Html should be distinct ReportFormat values');
-        Assert.AreNotEqual(HtmlOrd, PdfOrd, 'Html and Pdf should be distinct ReportFormat values');
-        Assert.AreNotEqual(PdfOrd, WordOrd, 'Pdf and Word should be distinct ReportFormat values');
-        Assert.AreNotEqual(WordOrd, XmlOrd, 'Word and Xml should be distinct ReportFormat values');
-        Assert.AreNotEqual(ExcelOrd, XmlOrd, 'Excel and Xml should be distinct ReportFormat values');
+        Assert.AreNotEqual(ExcelStr, HtmlStr, 'Excel and Html should be distinct ReportFormat values');
+        Assert.AreNotEqual(HtmlStr, PdfStr, 'Html and Pdf should be distinct ReportFormat values');
+        Assert.AreNotEqual(PdfStr, WordStr, 'Pdf and Word should be distinct ReportFormat values');
+        Assert.AreNotEqual(WordStr, XmlStr, 'Word and Xml should be distinct ReportFormat values');
+        Assert.AreNotEqual(ExcelStr, XmlStr, 'Excel and Xml should be distinct ReportFormat values');
     end;
 }
