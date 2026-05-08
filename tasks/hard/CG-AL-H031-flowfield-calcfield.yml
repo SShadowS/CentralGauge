@@ -1,0 +1,69 @@
+id: CG-AL-H031
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG H031 FlowField Calc" with ID 70231 that
+  inspects and triggers FlowField calculations through FieldRef. The
+  codeunit must operate against any table the caller passes in. Two
+  prerequisite tables exist for testing: "CG H031 Ledger" (ID 69310) with
+  fields "Entry No." (Integer, primary key, field 1), "Group Code"
+  (Code[10], field 2) and Amount (Decimal, field 10); and "CG H031 Group"
+  (ID 69311) with fields Code (Code[10], primary key, field 1),
+  "Total Amount" (Decimal FlowField summing CG H031 Ledger.Amount where
+  "Group Code" = "Code", field 10) and "Date Filter" (Date FlowFilter,
+  field 20).
+
+  1. Procedure "GetFieldClassText" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Text. Open a RecordRef on TableNo,
+     fetch the FieldRef for FieldNo and return Format(FieldRef.Class).
+     Return empty text if the field does not exist on the table. Always
+     close the RecordRef.
+
+  2. Procedure "IsFlowField" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Boolean. Return true if and only if
+     the field exists on TableNo and its FieldClass is FlowField. Return
+     false otherwise. Always close the RecordRef.
+
+  3. Procedure "CalcIfFlowField" that takes var RecordRef parameter RecRef
+     and Integer parameter FieldNo, returns Boolean. If the field exists
+     and its FieldClass is FlowField, call CalcField on the FieldRef and
+     return true. Otherwise do nothing and return false. Do not close
+     RecRef inside this procedure.
+
+  4. Procedure "GetCalculatedDecimal" that takes var RecordRef parameter
+     RecRef and Integer parameter FieldNo, returns Decimal. Call
+     CalcIfFlowField for the field, then return the FieldRef value as a
+     Decimal. If the field does not exist or its value is not numeric,
+     return 0.
+
+  5. Procedure "IsFlowFilter" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Boolean. Return true only when the
+     field's FieldClass is FlowFilter. Return false otherwise (including
+     missing fields and FlowFields). Always close the RecordRef.
+
+  6. Procedure "GetClassOrdinal" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Integer. Return 0 for Normal,
+     1 for FlowField and 2 for FlowFilter. Return -1 if the field does not
+     exist. Always close the RecordRef.
+
+  7. Procedure "SumFieldByFilter" that takes Integer parameter TableNo,
+     Integer parameter FilterFieldNo, Variant parameter FilterValue and
+     Integer parameter SumFieldNo, returns Decimal. Open a RecordRef on
+     TableNo, retrieve a FieldRef for FilterFieldNo and apply an equality
+     filter using FilterValue. Then take a FieldRef for SumFieldNo, call
+     CalcSums on the RecordRef for that FieldRef and return the FieldRef
+     value as a Decimal. Always close the RecordRef.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, flowfield, calcfield, fieldclass]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H031.Test.al
+  testCodeunitId: 80231
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

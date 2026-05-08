@@ -1,0 +1,52 @@
+id: CG-AL-H030
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG H030 PK Serializer" with ID 70230 that
+  serializes and deserializes a record's primary key using KeyRef and
+  FieldRef. The existing table "CG H030 Composite" (ID 69300) is available
+  for testing and has a three-field clustered primary key composed of
+  "Region Code" (Code[10], field 1), "Customer No." (Code[20], field 2)
+  and "Line No." (Integer, field 10).
+
+  1. Procedure "CountKeyFields" that takes Integer parameter TableNo,
+     returns Integer. Open a RecordRef on TableNo, get its primary key via
+     KeyIndex(1) and return the FieldCount of that key. Return 0 if the
+     table cannot be opened. Always close the RecordRef.
+
+  2. Procedure "SerializePrimaryKey" that takes var RecordRef parameter
+     RecRef, returns Text. For every field of the primary key (KeyIndex(1)),
+     in order from FieldIndex 1 to FieldCount, append a locale-invariant
+     XML-safe text representation of the FieldRef value, joined by a single
+     pipe character ('|'). Do not include a trailing pipe.
+
+  3. Procedure "GetByPrimaryKey" that takes Integer parameter TableNo, Text
+     parameter KeyText and var RecordRef parameter ResultRecRef. Returns
+     Boolean. Open ResultRecRef on TableNo. Split KeyText by '|' to get the
+     individual key field values. For each primary-key field (in
+     FieldIndex 1..FieldCount order), Evaluate the corresponding piece of
+     KeyText into the FieldRef value. Then call ResultRecRef.Find('=') and
+     return its result. The caller is responsible for closing ResultRecRef.
+     Return false if the number of pieces does not match the primary-key
+     field count.
+
+  4. Procedure "GetNthKeyFieldName" that takes Integer parameter TableNo,
+     Integer parameter KeyIdx and Integer parameter FieldIdx, returns Text.
+     Open RecordRef on TableNo. Get KeyIndex(KeyIdx).FieldIndex(FieldIdx)
+     and return the FieldRef's Name. Return empty text if KeyIdx exceeds
+     KeyCount or FieldIdx exceeds the key's FieldCount. Always close the
+     RecordRef.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, keyref, primary-key, composite-key]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H030.Test.al
+  testCodeunitId: 80230
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

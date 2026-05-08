@@ -1,0 +1,16 @@
+{
+  "id": "a1b2c3d4-0028-0000-0000-000000000028",
+  "name": "CG-AL-H028 Prereq",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "platform": "28.0.0.0",
+  "application": "28.0.0.0",
+  "idRanges": [
+    {
+      "from": 69280,
+      "to": 69289
+    }
+  ],
+  "runtime": "17.0",
+  "features": ["NoImplicitWith"]
+}

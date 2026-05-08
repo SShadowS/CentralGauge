@@ -1,0 +1,49 @@
+id: CG-AL-H028
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG H028 FieldRef Filter" with ID 70228 that uses
+  FieldRef value extraction to drive runtime filters. The existing table
+  "CG H028 Sample" (ID 69280) is available for testing and contains the fields
+  Code (Code[20], primary key, field 1), "Sale Date" (Date, field 10),
+  Amount (Decimal, field 20) and Region (Code[10], field 30).
+
+  1. Procedure "CountWhereFieldEquals" that takes Integer parameter TableNo,
+     Integer parameter FieldNo and Variant parameter FilterValue, returns
+     Integer. Open a RecordRef on TableNo, retrieve the FieldRef for FieldNo,
+     apply an equality filter using FilterValue, return the resulting record
+     count, then close the RecordRef.
+
+  2. Procedure "GetFilterSafeText" that takes var RecordRef parameter RecRef
+     and Integer parameter FieldNo, returns Text. Return a locale-invariant
+     text representation of the FieldRef value at FieldNo that is safe to use
+     directly inside an XML document (so dates and decimals must not vary
+     with the user's regional settings). Return empty text if the field does
+     not exist on RecRef.
+
+  3. Procedure "CountByDateRange" that takes Integer parameter TableNo,
+     Integer parameter FieldNo, Date parameter FromDate and Date parameter
+     ToDate, returns Integer. Open a RecordRef on TableNo, retrieve the
+     FieldRef for FieldNo, apply an inclusive range filter from FromDate to
+     ToDate, return the resulting record count, then close the RecordRef.
+
+  4. Procedure "CopyFieldFilter" that takes var RecordRef parameter
+     SourceRecRef, Integer parameter SourceFieldNo, var RecordRef parameter
+     TargetRecRef and Integer parameter TargetFieldNo. Read the value of
+     SourceRecRef's field SourceFieldNo through a FieldRef and apply it as
+     an equality filter on TargetRecRef's field TargetFieldNo through a
+     FieldRef. The procedure does not return a value.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, filter, format, xml]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H028.Test.al
+  testCodeunitId: 80228
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

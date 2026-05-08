@@ -1,0 +1,65 @@
+id: CG-AL-H032
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG H032 Relation Walker" with ID 70232 that walks
+  the system Field record to discover fields whose RelationTableNo points
+  at a given table. No prerequisite app objects are required; the codeunit
+  must operate against any pair of tables the caller passes in.
+
+  1. Procedure "CountRelationFields" that takes Integer parameter
+     SourceTableNo and Integer parameter RelatedTableNo, returns Integer.
+     Filter the system Field record where TableNo equals SourceTableNo and
+     RelationTableNo equals RelatedTableNo. Return the resulting count.
+
+  2. Procedure "GetNthRelationField" that takes Integer parameter
+     SourceTableNo, Integer parameter RelatedTableNo and Integer parameter
+     N, returns Integer. Walk the same filtered Field set in ascending
+     field-number order and return the field number of the Nth match (N is
+     1-based). Return 0 if N is less than 1 or exceeds the number of
+     matches.
+
+  3. Procedure "GetAllRelationFieldNumbers" that takes Integer parameter
+     SourceTableNo and Integer parameter RelatedTableNo, returns
+     List of [Integer]. Return a list of every field number on
+     SourceTableNo whose RelationTableNo equals RelatedTableNo, in
+     ascending field-number order.
+
+  4. Procedure "FirstRelationFieldName" that takes Integer parameter
+     SourceTableNo and Integer parameter RelatedTableNo, returns Text.
+     Return the FieldName of the first matching Field record. Return empty
+     text when no matches exist.
+
+  5. Procedure "GetNormalRelationFields" that takes Integer parameter
+     SourceTableNo and Integer parameter RelatedTableNo, returns
+     List of [Integer]. Return field numbers in ascending order, but
+     include only fields whose FieldClass is Normal. Exclude fields whose
+     FieldClass is FlowField or FlowFilter even if they otherwise match.
+
+  6. Procedure "ExcludeObsoleteCount" that takes Integer parameter
+     SourceTableNo and Integer parameter RelatedTableNo, returns Integer.
+     Return the number of fields on SourceTableNo with RelationTableNo
+     equal to RelatedTableNo, but exclude fields whose ObsoleteState is
+     anything other than No (so any Pending or Removed fields must not
+     be counted).
+
+  7. Procedure "ListSourceTablesPointingTo" that takes Integer parameter
+     TargetTableNo, returns List of [Integer]. Return the distinct
+     TableNo values of every Field record whose RelationTableNo equals
+     TargetTableNo. The list must be ascending and contain no duplicates,
+     even when a single source table has many fields pointing at the
+     target.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [field-metadata, relation, recordref, table-relation]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H032.Test.al
+  testCodeunitId: 80232
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

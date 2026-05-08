@@ -1,0 +1,67 @@
+id: CG-AL-H029
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG H029 Binary Detector" with ID 70229 that
+  classifies fields by their binary nature using FieldRef.Type. The existing
+  table "CG H029 Asset" (ID 69290) is available for testing and contains the
+  fields Code (Code[20], primary key, field 1), Title (Text[100], field 10),
+  Image (Blob, field 20), Photo (Media, field 30) and Gallery (MediaSet,
+  field 40).
+
+  1. Procedure "IsBinaryField" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Boolean. Open a RecordRef on TableNo
+     and return true if the field at FieldNo has FieldType Blob, Media or
+     MediaSet. Return false in any other case, including when the field does
+     not exist. Always close the RecordRef.
+
+  2. Procedure "IsBlobField" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Boolean. Return true only when the
+     field's FieldType is Blob. Return false otherwise (including missing
+     fields). Always close the RecordRef.
+
+  3. Procedure "GetFieldTypeAsText" that takes Integer parameter TableNo and
+     Integer parameter FieldNo, returns Text. Return Format(FieldRef.Type)
+     for the field. Return empty text if the field does not exist. Always
+     close the RecordRef.
+
+  4. Procedure "CountBinaryFields" that takes Integer parameter TableNo,
+     returns Integer. Open a RecordRef on TableNo and iterate every field in
+     the table by FieldIndex from 1 to FieldCount. Count the fields whose
+     FieldType is Blob, Media or MediaSet. Return the count and close the
+     RecordRef.
+
+  5. Procedure "WriteBlobText" that takes var RecordRef parameter RecRef,
+     Integer parameter FieldNo and Text parameter Content. Returns Boolean.
+     If the field's FieldType is not Blob, return false. Otherwise write
+     Content to the Blob field through the FieldRef and persist the change
+     on RecRef. Return true. The caller is responsible for any prior Insert
+     of the record.
+
+  6. Procedure "ReadBlobText" that takes var RecordRef parameter RecRef and
+     Integer parameter FieldNo, returns Text. If the field's FieldType is
+     not Blob, return empty text. Otherwise return the textual contents of
+     the Blob field through the FieldRef. The procedure must perform any
+     load step required so that the Blob value is actually available for
+     reading after a fresh Get on the record.
+
+  7. Procedure "BlobHasContent" that takes var RecordRef parameter RecRef
+     and Integer parameter FieldNo, returns Boolean. If the field is not a
+     Blob, return false. Otherwise return true when the Blob currently
+     stores at least one byte and false when it is empty. The procedure
+     must perform any load step required so that the answer is correct
+     after a fresh Get on the record.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [recordref, fieldref, blob, media, fieldtype]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H029.Test.al
+  testCodeunitId: 80229
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
