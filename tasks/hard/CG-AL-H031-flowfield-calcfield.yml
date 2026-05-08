@@ -5,14 +5,21 @@ max_attempts: 2
 description: >-
   Create a codeunit named "CG H031 FlowField Calc" with ID 70231 that
   inspects and triggers FlowField calculations through FieldRef. The
-  codeunit must operate against any table the caller passes in. Two
-  prerequisite tables exist for testing: "CG H031 Ledger" (ID 69310) with
-  fields "Entry No." (Integer, primary key, field 1), "Group Code"
-  (Code[10], field 2) and Amount (Decimal, field 10); and "CG H031 Group"
-  (ID 69311) with fields Code (Code[10], primary key, field 1),
-  "Total Amount" (Decimal FlowField summing CG H031 Ledger.Amount where
-  "Group Code" = "Code", field 10) and "Date Filter" (Date FlowFilter,
-  field 20).
+  codeunit must operate against any table the caller passes in.
+
+  Two prerequisite tables already exist in a separate prerequisite app and
+  must NOT be redefined or recreated by your code. Do not declare these
+  tables. Do not place any of your generated objects in the ID range
+  69000-69999. Your codeunit lives in the ID range 70000-79999.
+
+  The two prerequisite tables are:
+  - "CG H031 Ledger" (ID 69310) with fields "Entry No." (Integer, primary
+    key, field 1), "Group Code" (Code[10], field 2) and Amount (Decimal,
+    field 10).
+  - "CG H031 Group" (ID 69311) with fields Code (Code[10], primary key,
+    field 1), "Total Amount" (Decimal FlowField summing CG H031
+    Ledger.Amount where "Group Code" = "Code", field 10) and
+    "Date Filter" (Date FlowFilter, field 20).
 
   1. Procedure "GetFieldClassText" that takes Integer parameter TableNo and
      Integer parameter FieldNo, returns Text. Open a RecordRef on TableNo,
@@ -50,10 +57,11 @@ description: >-
   7. Procedure "SumFieldByFilter" that takes Integer parameter TableNo,
      Integer parameter FilterFieldNo, Variant parameter FilterValue and
      Integer parameter SumFieldNo, returns Decimal. Open a RecordRef on
-     TableNo, retrieve a FieldRef for FilterFieldNo and apply an equality
-     filter using FilterValue. Then take a FieldRef for SumFieldNo, call
-     CalcSums on the RecordRef for that FieldRef and return the FieldRef
-     value as a Decimal. Always close the RecordRef.
+     TableNo. Retrieve a FieldRef for FilterFieldNo and apply an equality
+     filter using FilterValue. Then iterate the resulting record set and
+     accumulate the SumFieldNo FieldRef value as a Decimal across every
+     matching row. Return the total. Return 0 when no rows match. Always
+     close the RecordRef.
 
   Include Access = Public on the codeunit.
 metadata:
