@@ -110,6 +110,66 @@ async function postAdminTaskSet(
   }
 }
 
+interface DeleteResponse {
+  hash: string;
+  deleted: {
+    task_sets: number;
+    runs: number;
+    results: number;
+    ingest_events: number;
+    lifecycle_events: number;
+    family_diffs: number;
+    tasks: number;
+    run_verifications: number;
+  };
+  blobs: {
+    deleted: number;
+    failed: number;
+    candidates: number;
+  };
+}
+
+async function deleteAdminTaskSet(
+  options: BaseOptions,
+  hash: string,
+): Promise<DeleteResponse> {
+  const cwd = Deno.cwd();
+  const config = await loadAdminConfig(cwd, flagsFrom(options));
+  const adminPriv = await readPrivateKey(config.adminKeyPath);
+
+  const adminPayload: Record<string, unknown> = { hash };
+  const sig = await signPayload(adminPayload, adminPriv, config.adminKeyId);
+
+  const resp = await fetch(
+    `${config.url}/api/v1/admin/catalog/task-sets/${hash}`,
+    {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        signature: sig,
+        payload: adminPayload,
+      }),
+    },
+  );
+  if (!resp.ok) {
+    throw new Error(
+      `admin task-sets DELETE ${resp.status}: ${await resp.text()}`,
+    );
+  }
+  return await resp.json() as DeleteResponse;
+}
+
+async function promptYes(question: string): Promise<boolean> {
+  await Deno.stdout.write(new TextEncoder().encode(`${question} `));
+  const buf = new Uint8Array(64);
+  const n = await Deno.stdin.read(buf);
+  if (n === null) return false;
+  const answer = new TextDecoder().decode(buf.subarray(0, n)).trim()
+    .toLowerCase();
+  return answer === "y" || answer === "yes";
+}
+
 async function handleList(options: BaseOptions): Promise<void> {
   const sets = await fetchTaskSets(options);
   if (sets.length === 0) {
@@ -200,6 +260,80 @@ export function registerTaskSetCommand(cli: Command): void {
           `[OK] flipped is_current to ${
             shortenHash(hash)
           } (prior current is now hidden from leaderboard)`,
+        ),
+      );
+    });
+
+  parent
+    .command(
+      "delete <hash:string>",
+      "Permanently delete a task_set + all runs/results/blobs (refuses is_current=1)",
+    )
+    .option("--url <url:string>", "Override ingest URL")
+    .option("--key-path <path:string>", "Override ingest key path")
+    .option("--key-id <id:number>", "Override ingest key id")
+    .option("--machine-id <id:string>", "Override machine id")
+    .option("--admin-key-path <path:string>", "Admin key path")
+    .option("--admin-key-id <id:number>", "Admin key id")
+    .option("--yes", "Skip the interactive y/N prompt")
+    .action(async (opts, hash: string) => {
+      assertHash(hash);
+      const all = await fetchTaskSets(opts as BaseOptions);
+      const existing = all.find((s) => s.hash === hash);
+      if (!existing) {
+        console.error(
+          colors.red(
+            `[FAIL] unknown task_set hash '${shortenHash(hash)}'`,
+          ),
+        );
+        Deno.exit(1);
+      }
+      if (existing.is_current) {
+        console.error(
+          colors.red(
+            `[FAIL] ${
+              shortenHash(hash)
+            } is the current task_set; flip with 'task-set set-current' first`,
+          ),
+        );
+        Deno.exit(1);
+      }
+
+      const name = existing.display_name ?? "(unnamed)";
+      console.log(
+        colors.yellow(
+          `About to permanently delete ${
+            shortenHash(hash)
+          } "${name}": ${existing.run_count} run${
+            existing.run_count === 1 ? "" : "s"
+          }, ${existing.task_count} task${
+            existing.task_count === 1 ? "" : "s"
+          } + all related results and orphan R2 blobs.`,
+        ),
+      );
+
+      const force = (opts as BaseOptions & { yes?: boolean }).yes === true;
+      if (!force) {
+        const ok = await promptYes("Type 'y' to confirm:");
+        if (!ok) {
+          console.log(colors.gray("[skip] aborted"));
+          return;
+        }
+      }
+
+      const result = await deleteAdminTaskSet(opts as BaseOptions, hash);
+      const d = result.deleted;
+      console.log(
+        colors.green(
+          `[OK] deleted ${shortenHash(hash)} — ` +
+            `${d.runs} runs, ${d.results} results, ` +
+            `${d.ingest_events} ingest_events, ${d.run_verifications} verifications, ` +
+            `${d.lifecycle_events} lifecycle_events, ${d.family_diffs} family_diffs, ` +
+            `${d.tasks} tasks; ` +
+            `R2 blobs: ${result.blobs.deleted}/${result.blobs.candidates} deleted` +
+            (result.blobs.failed > 0
+              ? colors.yellow(` (${result.blobs.failed} failed)`)
+              : ""),
         ),
       );
     });
