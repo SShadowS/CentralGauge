@@ -1,0 +1,23 @@
+id: CG-AL-M029
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL pagecustomization named "CG Hidden Field Editable" that customizes the existing "CG Cust Prereq Page" (ID 69051) page from the prereq app. The base page currently shows only the "No." and "Visible Field" fields.
+
+  In the layout area of the customization, add the prereq table's "Hidden Field" (Text[50]) as a new field control inside the Content area. The newly added customization field must be marked editable so end users can change its value through the page customization, taking advantage of the runtime-16.0 (BC 2025 Wave 2) capability that allows fields added through pagecustomization to be editable rather than read-only.
+
+  Use the customization field control identifier "MyHiddenField" and set its source expression to Rec."Hidden Field". Use any layout positioning action that places the new field at the start of the Content area.
+
+  Include a proper Caption on the pagecustomization.
+metadata:
+  category: user-interface
+  tags: [pagecustomization, editable, customization, v16]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M029.Test.al
+  testCodeunitId: 80029
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

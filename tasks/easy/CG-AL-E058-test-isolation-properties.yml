@@ -1,0 +1,31 @@
+id: CG-AL-E058
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Test Isolation Demo" with ID 70058 that demonstrates the runtime-16.0 (BC 2025 Wave 2) test-codeunit properties TestType and RequiredTestIsolation.
+
+  Configure the codeunit as a test codeunit by setting Subtype to Test and TestPermissions to Disabled.
+
+  Set the TestType property to the enum value that indicates the codeunit holds integration tests (not unit tests).
+
+  Set the RequiredTestIsolation property to the enum value that requires the executing TestRunner to provide function-level isolation between tests.
+
+  Procedures:
+
+  1. Public procedure "SmokeCheck" that takes no parameters and returns Boolean. The procedure body returns true.
+
+  2. [Test] procedure "DemoTestPasses" that takes no parameters and has an empty body (no assertions are required; it simply documents that the codeunit hosts a runnable test).
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: testing
+  tags: [codeunit, test, testtype, requiredtestisolation, v16]
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E058.Test.al
+  testCodeunitId: 80058
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

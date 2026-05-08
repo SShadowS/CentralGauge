@@ -1,0 +1,25 @@
+id: CG-AL-M041
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL tableextension named "CG FF Header Ext" with ID 70041 that extends the existing "CG FF Header" table (ID 69080) by adding a single FlowField that aggregates child line amounts.
+
+  Add this field to the table extension:
+
+  - field(70041; "Total Amount"; Decimal)
+    - FieldClass = FlowField
+    - CalcFormula = sum of the Amount field on the existing "CG FF Line" table (ID 69081), filtered where the Line's "Header No." equals the parent Header's "No.".
+    - Editable = false
+    - Caption = 'Total Amount'
+metadata:
+  category: data-modeling
+  tags: [tableextension, flowfield, calcformula, al0896]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M041.Test.al
+  testCodeunitId: 80041
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,35 @@
+id: CG-AL-E057
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL table named "CG V16 Property Demo" with ID 70057 that exercises three field-level properties added in runtime 16.0 (BC 2025 Wave 2): MaskType, ExtendedDataType, and AllowInCustomizations.
+
+  Include proper captions and DataClassification on the table.
+
+  Fields:
+
+  1. field(1; "No."; Code[20]) - primary key.
+
+  2. field(10; "Sensitive Token"; Text[100]) - sets MaskType to the enum value that instructs the web client to hide the field's value by default with a user-controlled visibility toggle.
+
+  3. field(20; Attachment; Media) - sets ExtendedDataType to the enum value that renders the media as a portrait-oriented document in FactBoxes (such as a PDF preview).
+
+  4. field(30; "Cust Locked"; Integer) - sets AllowInCustomizations to the enum value that completely excludes the field from the in-client page designer.
+
+  5. field(31; "Cust ReadOnly"; Integer) - sets AllowInCustomizations to the enum value that exposes the field in page customizations but only as read-only.
+
+  6. field(32; "Cust Editable"; Integer) - sets AllowInCustomizations to the enum value that exposes the field in page customizations and allows it to be made editable.
+
+  Set the primary key to "No.".
+metadata:
+  category: data-modeling
+  tags: [table, fields, masktype, extendeddatatype, allowincustomizations, v16]
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E057.Test.al
+  testCodeunitId: 80057
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

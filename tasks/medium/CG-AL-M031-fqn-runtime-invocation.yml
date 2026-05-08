@@ -1,0 +1,37 @@
+id: CG-AL-M031
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create five AL objects under the namespace "CGFqnDemo" that demonstrate the runtime-17.0 (BC 2026 Wave 1) Text-FQN overloads on Codeunit.Run, Page.Run, Page.RunModal, Report.Run, Report.RunModal, Report.Execute, and RecordRef.Open. Each AL file must declare `namespace CGFqnDemo;` at the top.
+
+  1. Codeunit 70036 "CGFqnWorker" - has an empty OnRun trigger so Codeunit.Run targeting it succeeds without side effects.
+
+  2. Table 70037 "CGFqnArchive" - DataClassification = CustomerContent. Fields: field(1; "No."; Code[20]) primary key, field(10; Description; Text[100]). Set "No." as the primary key.
+
+  3. Page 70038 "CGFqnCustomerView" - PageType = Card, SourceTable = Customer (use the Microsoft.Sales.Customer namespace), ApplicationArea = All, UsageCategory = None. Add a Content area with a single Group containing the Customer "No." and Name fields.
+
+  4. Report 70039 "CGFqnSalesList" - UsageCategory = None, ApplicationArea = All. The dataset has a single dataitem on the Customer table (no columns required).
+
+  5. Codeunit 70040 "CGFqnRunner" with Access = Public, exposing four procedures:
+
+     a. Procedure "RunWorkerByFqn" returning Boolean. Calls Codeunit.Run on the CGFqnWorker codeunit using the namespace-qualified name passed as a Text argument and returns the Boolean result.
+
+     b. Procedure "OpenArchiveTableByFqn" returning Integer. Declares a RecordRef variable, calls RecordRef.Open with the namespace-qualified name of the CGFqnArchive table passed as a Text argument, and returns RecRef.Number.
+
+     c. Procedure "InvokePageOverloadsForCompile" with no return value. Inside an `if false then` block, invokes both Page.Run and Page.RunModal on CGFqnCustomerView using the namespace-qualified name as a Text argument. The unreachable block validates the FQN-string overloads at compile time without driving interactive UI at runtime.
+
+     d. Procedure "InvokeReportOverloadsForCompile" with no return value. Inside an `if false then` block, invokes Report.Run, Report.RunModal, and Report.Execute on CGFqnSalesList using the namespace-qualified name as a Text argument. The unreachable block validates the FQN-string overloads at compile time.
+
+  Use proper Caption properties on each object.
+metadata:
+  category: business-logic
+  tags: [namespace, fqn, codeunit, page, report, recordref, v17]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M031.Test.al
+  testCodeunitId: 80031
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

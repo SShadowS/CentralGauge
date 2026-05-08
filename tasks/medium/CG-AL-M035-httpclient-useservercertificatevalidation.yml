@@ -1,0 +1,29 @@
+id: CG-AL-M035
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG HttpClient Cert Demo" with ID 70035 that uses the runtime-15.0 (BC 2025 Wave 1) HttpClient.UseServerCertificateValidation method to toggle server certificate validation on a per-request HttpClient instance.
+
+  The codeunit exposes one Public procedure named "SetAndCapture" that takes a Boolean parameter named NewValue and returns Boolean.
+
+  Procedure body:
+
+  1. Declare a local HttpClient variable named Client.
+
+  2. Call Client.UseServerCertificateValidation(NewValue) and capture the return value into a local Boolean variable.
+
+  3. Return the captured Boolean value.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [httpclient, useservercertificatevalidation, v15]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M035.Test.al
+  testCodeunitId: 80035
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

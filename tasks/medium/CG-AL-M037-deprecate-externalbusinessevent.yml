@@ -1,0 +1,33 @@
+id: CG-AL-M037
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create two AL objects that demonstrate the runtime-15.2 (BC 2025 Wave 1) support for deprecating ExternalBusinessEvent procedures.
+
+  1. Enum 70038 "CG Demo Event Category" with Extensible = false and the following values:
+
+     - 0 Uncategorized (Caption 'Uncategorized')
+     - 1 Sales (Caption 'Sales')
+
+  2. Codeunit 70037 "CG ExtBizEvent Demo" with Access = Public and two procedures decorated with the ExternalBusinessEvent attribute:
+
+     a. Procedure "CGSalesEventV1" with an empty body. Decorate it with two attributes:
+
+        - ExternalBusinessEvent attribute with these positional parameters in order: EventName 'cgSalesEvent', DisplayName '[OBSOLETE] CG Sales Event', Description 'Original sales event', Category set to the Sales value of the CG Demo Event Category enum, Version '1.0'.
+        - Obsolete attribute with reason 'Replaced by v2.0' and tag '27.0'.
+
+     b. Procedure "CGSalesEventV2" with an empty body. Decorate it with one attribute:
+
+        - ExternalBusinessEvent attribute with EventName 'cgSalesEvent', DisplayName 'CG Sales Event', Description 'Renamed event in v2', Category set to the Sales value of the same enum, Version '2.0'.
+metadata:
+  category: business-logic
+  tags: [externalbusinessevent, obsolete, deprecation, codeunit, enum, v15]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M037.Test.al
+  testCodeunitId: 80037
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

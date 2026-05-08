@@ -1,0 +1,23 @@
+id: CG-AL-M028
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create two AL objects that demonstrate the runtime-16.0 (BC 2025 Wave 2) Summary system part on Card pages.
+
+  1. Page 70028 "CG Customer Summary Demo" - PageType = Card, SourceTable = Customer, ApplicationArea = All, UsageCategory = None, editable. Add a Content area with a single Group named General containing the Customer "No." and Name fields. Then add a FactBoxes area that declares the runtime-16.0 Summary system part using the standard summary system part identifier, with Visible set to false.
+
+  2. PageExtension 70029 "CG Customer Card Summary Hide" - extends the standard "Customer Card" page. In the layout area, modify the runtime-16.0 Summary system part on the base page so that its Visible property is set to false.
+
+  Include proper captions on both objects.
+metadata:
+  category: user-interface
+  tags: [page, pageextension, systempart, summary, v16]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M028.Test.al
+  testCodeunitId: 80028
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,40 @@
+id: CG-AL-M033
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL report named "CG Report Render Demo" with ID 70033 that demonstrates two runtime-15.0 (BC 2025 Wave 1) report features: the OnPreRendering trigger and the CurrReport.TargetFormat() method.
+
+  Report-level properties:
+
+  - Caption = 'CG Report Render Demo'
+  - UsageCategory = None
+  - ApplicationArea = All
+
+  Dataset: a single dataitem on the Customer table (no columns are required). Use the Microsoft.Sales.Customer namespace if needed.
+
+  Implement an OnPreRendering trigger that takes a single var JsonObject parameter named RenderingPayload. Inside the trigger body:
+
+  1. Declare a ReportFormat variable named Fmt and a Text variable named FmtText.
+
+  2. Assign Fmt := CurrReport.TargetFormat().
+
+  3. Use a case statement over Fmt that handles all five documented ReportFormat enum values, mapping each to its lowercase string name:
+     - Excel -> 'excel'
+     - Html  -> 'html'
+     - Pdf   -> 'pdf'
+     - Word  -> 'word'
+     - Xml   -> 'xml'
+
+  4. Call RenderingPayload.Add('targetFormat', FmtText) to write the lowercase string into the rendering payload.
+metadata:
+  category: business-logic
+  tags: [report, onprerendering, targetformat, reportformat, v15]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M033.Test.al
+  testCodeunitId: 80033
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

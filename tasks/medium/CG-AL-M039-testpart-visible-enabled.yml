@@ -1,0 +1,41 @@
+id: CG-AL-M039
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create two AL pages that demonstrate the runtime-16.0 (BC 2025 Wave 2) TestPart.Visible() and TestPart.Enabled() instance methods.
+
+  1. Page 70039 "CG TestPart Card" - Card page with the following properties:
+
+     - Caption = 'CG TestPart Card'
+     - PageType = Card
+     - SourceTable = Customer (use the Microsoft.Sales.Customer namespace)
+     - ApplicationArea = All
+     - UsageCategory = None
+
+     Layout:
+
+     - area(Content) with a Group named General containing the Customer "No." and Name fields.
+     - area(FactBoxes) containing a single part named "ChildPart" that references the "CG TestPart List" page (defined below). The part must have SubPageLink set so "No." links to the parent's "No." field. Set Visible = true and Enabled = true on the part.
+
+  2. Page 70040 "CG TestPart List" - ListPart with the following properties:
+
+     - Caption = 'CG TestPart List'
+     - PageType = ListPart
+     - SourceTable = Customer
+     - ApplicationArea = All
+
+     Layout:
+
+     - area(Content) with a Repeater containing the Customer "No." and Name fields.
+metadata:
+  category: user-interface
+  tags: [page, listpart, testpart, visible, enabled, v16]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M039.Test.al
+  testCodeunitId: 80039
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

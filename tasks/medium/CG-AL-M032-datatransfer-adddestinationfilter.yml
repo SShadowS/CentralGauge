@@ -1,0 +1,37 @@
+id: CG-AL-M032
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG DT Filter Demo" with ID 70032 having Subtype = Install. Inside the OnInstallAppPerCompany trigger, use the runtime-17.0 (BC 2026 Wave 1) DataTransfer.AddDestinationFilter method to perform a filtered bulk transfer between two existing tables seeded by the prereq app.
+
+  The OnInstallAppPerCompany trigger uses the DataTransfer data type to copy the "Legacy Value" field from the existing "CG DT Source" table (ID 69060) into the "New Value" field of the existing "CG DT Destination" table (ID 69061), but only for destination rows where "New Value" is currently blank.
+
+  Both tables share the primary key "No." (Code[20]); join the two tables on that field.
+
+  Trigger body steps:
+
+  1. Declare a DataTransfer variable.
+
+  2. Use SetTables to specify "CG DT Source" as source and "CG DT Destination" as destination.
+
+  3. Use AddJoin to join source "No." with destination "No.".
+
+  4. Use AddFieldValue to map source "Legacy Value" to destination "New Value".
+
+  5. Use AddDestinationFilter to constrain the transfer to destination rows where "New Value" equals the empty string. Pass the destination "New Value" field number, a filter expression that uses %1 as the placeholder, and the empty string value.
+
+  6. Call CopyFields to execute the transfer.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: advanced-patterns
+  tags: [datatransfer, adddestinationfilter, codeunit, install, v17, upgrade]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M032.Test.al
+  testCodeunitId: 80032
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

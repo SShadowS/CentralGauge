@@ -1,0 +1,39 @@
+id: CG-AL-E056
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Simple ToText" with ID 70056 for converting simple types to text.
+
+  1. Procedure "BigIntegerToText" that takes BigInteger parameter Value and returns Text representation.
+
+  2. Procedure "ByteToText" that takes Byte parameter Value and returns Text representation.
+
+  3. Procedure "GuidToText" that takes Guid parameter Value and returns Text representation.
+
+  4. Procedure "VersionToText" that takes Version parameter Value and returns Text representation.
+
+  5. Procedure "DateTimeToText" that takes DateTime parameter Value and returns Text representation in the locale default form.
+
+  6. Procedure "DurationToText" that takes Duration parameter Value and returns Text representation in the locale default form.
+
+  7. Procedure "TimeToText" that takes Time parameter Value and returns Text representation in the locale default form.
+
+  8. Procedure "DateTimeToInvariantText" that takes DateTime parameter Value and returns Text in the culture-invariant XML form.
+
+  9. Procedure "DurationToInvariantText" that takes Duration parameter Value and returns Text in the culture-invariant XML form.
+
+  10. Procedure "TimeToInvariantText" that takes Time parameter Value and returns Text in the culture-invariant XML form.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [codeunit, procedure, totext]
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E056.Test.al
+  testCodeunitId: 80056
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,37 @@
+id: CG-AL-M034
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG SACF Demo" with ID 70034 that uses the runtime-15.0 (BC 2025 Wave 1) RecordRef.SetAutoCalcFields method to make a FlowField populate automatically when a record is read through a RecordRef.
+
+  The codeunit exposes one Public procedure named "GetParentTotalViaRef" that takes a Code[20] parameter named ParentNo and returns Decimal.
+
+  Procedure body:
+
+  1. Declare a RecordRef variable named RecRef and a FieldRef variable named TotalRef.
+
+  2. Open RecRef on the existing "CG SACF Parent" table (ID 69070).
+
+  3. Call RecRef.SetAutoCalcFields passing the field number of the "Total Amount" FlowField on the Parent table.
+
+  4. Use RecRef.Field on the primary key field (No.) to set the lookup filter to ParentNo (use SetRange-style filter with the FieldRef Value to find the record).
+
+  5. Call RecRef.FindFirst (or Get equivalent on the RecordRef).
+
+  6. Use RecRef.Field on the "Total Amount" field to obtain a FieldRef and read its Value into a Decimal local variable.
+
+  7. Return the Decimal value.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: data-modeling
+  tags: [recordref, setautocalcfields, flowfield, fieldref, v15]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M034.Test.al
+  testCodeunitId: 80034
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

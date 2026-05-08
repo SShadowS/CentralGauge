@@ -1,0 +1,57 @@
+id: CG-AL-M027
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG JSON Typed Getters" with ID 70027 that exposes typed getter procedures over JsonObject and JsonArray.
+
+  All JsonObject procedures take a JsonObject and a Text key. When the key is missing, they must return the type's zero value rather than raise an error. JsonArray procedures take a JsonArray and an Integer index (0-based).
+
+  1. Procedure "ObjectGetBigInteger" that takes JsonObject parameter JObj and Text parameter Key. Returns BigInteger.
+
+  2. Procedure "ObjectGetByte" that takes JsonObject parameter JObj and Text parameter Key. Returns Byte.
+
+  3. Procedure "ObjectGetChar" that takes JsonObject parameter JObj and Text parameter Key. Returns Char.
+
+  4. Procedure "ObjectGetOption" that takes JsonObject parameter JObj and Text parameter Key. Returns Integer (option ordinal).
+
+  5. Procedure "ObjectGetDateTime" that takes JsonObject parameter JObj and Text parameter Key. Returns DateTime.
+
+  6. Procedure "ObjectGetDate" that takes JsonObject parameter JObj and Text parameter Key. Returns Date.
+
+  7. Procedure "ObjectGetTime" that takes JsonObject parameter JObj and Text parameter Key. Returns Time.
+
+  8. Procedure "ObjectGetDuration" that takes JsonObject parameter JObj and Text parameter Key. Returns Duration.
+
+  9. Procedure "ObjectGetObject" that takes JsonObject parameter JObj and Text parameter Key. Returns JsonObject. When the key is missing, return an empty JsonObject.
+
+  10. Procedure "ArrayGetBigInteger" that takes JsonArray parameter JArr and Integer parameter Idx. Returns BigInteger.
+
+  11. Procedure "ArrayGetByte" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Byte.
+
+  12. Procedure "ArrayGetChar" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Char.
+
+  13. Procedure "ArrayGetOption" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Integer (option ordinal).
+
+  14. Procedure "ArrayGetDateTime" that takes JsonArray parameter JArr and Integer parameter Idx. Returns DateTime.
+
+  15. Procedure "ArrayGetDate" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Date.
+
+  16. Procedure "ArrayGetTime" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Time.
+
+  17. Procedure "ArrayGetDuration" that takes JsonArray parameter JArr and Integer parameter Idx. Returns Duration.
+
+  18. Procedure "ArrayGetObject" that takes JsonArray parameter JArr and Integer parameter Idx. Returns JsonObject.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: data-exchange
+  tags: [codeunit, procedure, json, typed-getters]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M027.Test.al
+  testCodeunitId: 80027
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

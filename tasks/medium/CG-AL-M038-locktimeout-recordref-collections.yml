@@ -1,0 +1,33 @@
+id: CG-AL-M038
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG V16 Misc Demo" with ID 70038 that demonstrates two runtime-16.0 (BC 2025 Wave 2) additions: the Database.LockTimeoutDuration static method and collections that hold RecordRef instances.
+
+  The codeunit exposes two Public procedures:
+
+  1. Procedure "GetLockTimeoutPrevious" that takes an Integer parameter named NewValue and returns Integer. Inside the body, call Database.LockTimeoutDuration with the NewValue argument and return its Integer result.
+
+  2. Procedure "CountRecordRefList" with no parameters that returns Integer. Inside the body:
+
+     a. Declare a List variable named Refs whose element type is RecordRef.
+
+     b. Declare two RecordRef variables; open one against the Customer table and the other against the Item table using the integer Database table-id constants.
+
+     c. Add both RecordRef instances to the list.
+
+     d. Return the list's Count.
+
+  Include Access = Public on the codeunit.
+metadata:
+  category: business-logic
+  tags: [database, locktimeoutduration, list, recordref, generics, v16]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M038.Test.al
+  testCodeunitId: 80038
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

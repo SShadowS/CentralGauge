@@ -1,0 +1,27 @@
+id: CG-AL-M040
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL table named "CG Task Demo" with ID 70040 that demonstrates the runtime-16.1 (BC 2025 Wave 2) addition of the ExtendedDataType enum value used to render BigInteger task references.
+
+  Include proper Caption and DataClassification on the table.
+
+  Fields:
+
+  1. field(1; "No."; Code[20]) - primary key.
+
+  2. field(10; "Task Reference"; BigInteger) - sets ExtendedDataType to the runtime-16.1 enum value that allows the client to render the BigInteger value as a task reference.
+
+  Set the primary key to "No.".
+metadata:
+  category: data-modeling
+  tags: [table, biginteger, extendeddatatype, task, v16]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M040.Test.al
+  testCodeunitId: 80040
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
