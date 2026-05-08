@@ -1,0 +1,38 @@
+id: CG-AL-M043
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a parent table named "CG M043 Document Group" with ID 70200 that owns the
+  existing child table "CG M043 Document Line" (ID 69200). The child table has a
+  composite primary key ("Group Code", "Line Code") plus a "Description" field
+  and a "Sort Order" Integer field; "Group Code" on the child references the
+  parent's "Code".
+
+  The parent table must have:
+
+  - Field 1 "Code" of type Code[20] as the primary key, NotBlank = true.
+  - Field 2 "Description" of type Text[100].
+  - DataClassification = CustomerContent.
+  - A primary key on "Code" (clustered).
+  - An OnRename trigger that updates every "CG M043 Document Line" whose
+    "Group Code" matched the previous primary key of the parent so that those
+    children point at the new primary key. The "Line Code" of each child must
+    be preserved exactly (only the "Group Code" component of the child PK
+    changes). The "Sort Order" and "Description" of each child must be
+    preserved unchanged. Children that belong to other parent codes must not
+    be touched.
+
+  Access on the table is left at default. No tableextension, no codeunit, no
+  page is required.
+metadata:
+  category: advanced-patterns
+  tags: [xrec, table, rename, trigger]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M043.Test.al
+  testCodeunitId: 80042
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

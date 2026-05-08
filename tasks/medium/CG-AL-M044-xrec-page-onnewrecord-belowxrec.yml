@@ -1,0 +1,53 @@
+id: CG-AL-M044
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a list page over the existing "CG M044 Item" table (ID 69091) that
+  auto-assigns the Code[20] "Priority" field on new records, plus a small
+  codeunit that exposes the priority-derivation rule for direct unit testing.
+
+  Create two objects:
+
+  1. Codeunit "CG M044 Priority Calc" (ID 70091), Access = Public.
+
+     Public procedure:
+
+       procedure NextPriority(IsEmptyView: Boolean; BelowxRec: Boolean;
+                              xRecPriority: Code[20];
+                              LastInGroupPriority: Code[20]) Result: Code[20]
+
+     Behavior:
+     - If IsEmptyView is true, return the literal '1'.
+     - Otherwise, if BelowxRec is true, return IncStr(xRecPriority).
+     - Otherwise, return IncStr(LastInGroupPriority).
+
+  2. Page "CG M044 Item List" (ID 70092), PageType = List, SourceTable = "CG M044 Item".
+
+     Page must:
+     - Show the fields "Entry No.", "Group Code", "Priority", "Description"
+       as editable list fields under a repeater control.
+     - Sort by ("Group Code", "Priority") via the page property
+       SourceTableView = sorting("Group Code", "Priority").
+     - Implement OnNewRecord(BelowxRec: Boolean) to assign Rec."Priority" via
+       the rule below, using a local "CG M044 Priority Calc" codeunit variable:
+
+         a. If Rec.IsEmpty() under the current filter set, assign the
+            result of NextPriority(true, BelowxRec, '', '').
+         b. Else if BelowxRec is true, assign the result of
+            NextPriority(false, true, xRec."Priority", '').
+         c. Else, copy Rec into a local variable, run FindLast() under the
+            same Group Code filter, and assign the result of
+            NextPriority(false, false, '', LocalRec."Priority"). If no
+            sibling is found, treat the LastInGroupPriority as ''.
+metadata:
+  category: advanced-patterns
+  tags: [xrec, page, trigger, onnewrecord, belowxrec]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M044.Test.al
+  testCodeunitId: 80102
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,73 @@
+id: CG-AL-H027
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Wire up a change-detection side-effect for an extension field on the
+  standard Customer table.
+
+  Two objects already exist in the prerequisite app and you must NOT
+  redefine them:
+
+  1. A tableextension on table Customer that adds the field
+     "CG H027 Watched" (Code[20], DataClassification = CustomerContent).
+  2. A SingleInstance codeunit "CG H027 Change Counter" with three
+     public procedures:
+       - procedure Reset()
+       - procedure Increment()
+       - procedure GetCount(): Integer
+
+  Your job is to deliver a codeunit named "CG H027 Watcher" with ID 70260
+  that observes modifications to Customer records and calls
+  "CG H027 Change Counter".Increment() exactly once per modification in
+  which the value of "CG H027 Watched" actually transitions from one
+  value to a different value.
+
+  Required behaviour, expressed only in terms of Customer modifications
+  performed by callers:
+
+  - When a caller modifies a Customer such that the persisted value of
+    "CG H027 Watched" changes (the value stored in the database before
+    the modification differs from the value being written), the counter
+    must be incremented by exactly 1 for that modification.
+
+  - When a caller modifies a Customer without changing "CG H027 Watched"
+    (for example, only the standard "Address" field is updated), the
+    counter must NOT be incremented for that modification, even though
+    the modification did happen.
+
+  - When a caller modifies a Customer and assigns "CG H027 Watched" to
+    the same value it already had in the database (a write that does
+    not change the persisted value), the counter must NOT be
+    incremented for that modification.
+
+  - When two consecutive modifications each change "CG H027 Watched" to
+    a new distinct value (for example, "" -> "ALPHA" then
+    "ALPHA" -> "BETA"), the counter must be incremented exactly twice
+    in total across the two modifications.
+
+  Constraints:
+
+  - Do NOT redefine table Customer, do NOT add another tableextension
+    that adds "CG H027 Watched", and do NOT redefine
+    "CG H027 Change Counter".
+  - The change-detection logic must work for any caller that modifies
+    a Customer record through the standard record API; you must not
+    require callers to do anything beyond a normal modify.
+  - The increment must happen on actual change only - inserts and
+    deletes must not call Increment(), and modifications that leave
+    "CG H027 Watched" untouched must not call Increment().
+
+  The codeunit must compile against BC 28 with platform 28.0.0.0 and
+  application 28.0.0.0.
+metadata:
+  category: advanced-patterns
+  tags: [xrec, tableextension, eventsubscriber, codeunit]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H027.Test.al
+  testCodeunitId: 80103
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

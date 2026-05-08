@@ -29,7 +29,23 @@ out of first-party material.
 | HARD_XREC | 10 |
 | UNCLEAR | 14 |
 
-## HARD candidates (verifiable, ready to spec)
+## Final outcome (after smoke bench against claude-opus-4-6 + gpt-5.5)
+
+| Authored as | Final ID | Tier | Bench result |
+|-------------|----------|------|--------------|
+| H1 | M042 | medium | both pass att.1 (demoted) |
+| H2 | M043 | medium | both pass att.1 (demoted) |
+| H3 | M044 | medium | both pass att.1 (demoted) |
+| H4 | — | dropped | test design contradicted TestPage auto-Modify; redesign deferred |
+| H5 | — | deferred | cross-company in single container too fiddly |
+| H6 | H027 | **HARD** | claude pass att.1, gpt fail att.2 — the only properly hard task |
+| H7 | M045 | medium | both pass att.1 (demoted) |
+
+Bench infra bug found and fixed in passing: `src/parallel/compile-queue.ts:751`
+used `entry.name.startsWith(taskId)` which mis-matched `CG-AL-H2` against
+`CG-AL-H205.*`. Now requires `${taskId}.` separator.
+
+## Initial HARD candidates (pre-bench, kept for history)
 
 | ID | Status | Owner | Source | Pattern | Test sketch |
 |----|--------|-------|--------|---------|-------------|

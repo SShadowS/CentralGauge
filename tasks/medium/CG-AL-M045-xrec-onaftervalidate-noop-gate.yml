@@ -1,0 +1,62 @@
+id: CG-AL-M045
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG M045 Watched Subscriber" with ID 70270 that
+  subscribes to a field-validate event on the existing table
+  "CG M045 Watched Record" (ID 69270) and increments a counter when the
+  watched field's value actually changes.
+
+  The codeunit must:
+
+  1. Be a single subscriber codeunit (no other objects).
+
+  2. Subscribe to OnAfterValidateEvent of table "CG M045 Watched Record"
+     for the field "Watched Code". The subscriber procedure must be
+     local and must run on the published event (no manual binding).
+
+  3. The subscriber must call Increment() on the existing codeunit
+     "CG M045 Fire Counter" (ID 69271, SingleInstance) once, and only
+     once, per call to Validate("Watched Code", ...) where the value
+     stored in "Watched Code" actually differs from the value stored in
+     "Watched Code" before the Validate call. If a caller invokes
+     Validate("Watched Code", ...) with a value equal to the value
+     already stored in "Watched Code" on the same record, Increment()
+     must NOT be called for that Validate.
+
+  4. The subscriber must not call Increment() for validations of any
+     other field on the same table. It must not subscribe to any other
+     event. It must not perform any database modifications, and must
+     not call Modify, Delete, or Insert.
+
+  Behavioural contract that must hold for the resulting code:
+
+  - Insert a record with "Watched Code" = 'A'. Then call
+     Validate("Watched Code", 'B') once. The fire counter must read 1
+     after that single Validate.
+
+  - From the same in-memory record (now with "Watched Code" = 'B'),
+     call Validate("Watched Code", 'B') a second time. The fire counter
+     must still read 1 (must not advance to 2).
+
+  - From the same in-memory record, call Validate("Watched Code", 'C').
+     The fire counter must read 2.
+
+  - Validating a different field on the same record (for example
+     "Description") must not change the fire counter at all.
+
+  The codeunit must compile against BC 28 with platform 28.0.0.0 and
+  application 28.0.0.0, with the prereq app providing
+  "CG M045 Watched Record" and "CG M045 Fire Counter".
+metadata:
+  category: advanced-patterns
+  tags: [xrec, eventsubscriber, codeunit, onvalidate]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M045.Test.al
+  testCodeunitId: 80107
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

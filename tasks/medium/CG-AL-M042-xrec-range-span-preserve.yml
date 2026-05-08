@@ -1,0 +1,48 @@
+id: CG-AL-M042
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a table named "CG M042 Object Range" with ID 70150 that models a
+  contiguous numeric range using two fields, where editing the lower bound
+  shifts the upper bound to preserve the original width of the range.
+
+  Fields:
+
+  1. field(1; "Code"; Code[20]) - primary key, NotBlank.
+  2. field(10; "Range Min"; Integer) - lower bound.
+  3. field(20; "Range Max"; Integer) - upper bound.
+
+  Behavior:
+
+  - OnValidate of "Range Min" must keep the width of the range constant.
+    After "Range Min" is validated to a new value, "Range Max" must be
+    set so that ("Range Max" - "Range Min") equals the width that the
+    record had before this validation started. The shift must work for
+    both increases and decreases of "Range Min", and must work whether
+    "Range Min" moves up or down by 1, by a small delta, or by tens of
+    thousands.
+
+  - OnValidate of "Range Max" must accept the new value as-is. It must
+    NOT change "Range Min".
+
+  Add a public procedure on the table:
+
+    procedure GetRangeWidth(): Integer
+
+  GetRangeWidth must return ("Range Max" - "Range Min") for the current
+  record values. Negative widths are allowed and must be returned as-is.
+
+  The table must compile against BC 28 with platform 28.0.0.0 and
+  application 28.0.0.0.
+metadata:
+  category: advanced-patterns
+  tags: [table, trigger, xrec, onvalidate]
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M042.Test.al
+  testCodeunitId: 80100
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
