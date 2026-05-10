@@ -49,6 +49,11 @@
       };
     });
   });
+  // Per-task mean across the selected comparison set. Differs from the
+  // leaderboard's `avg_score` (which is a per-attempt mean across every
+  // result row) because Compare averages each task's best/last score once,
+  // not each attempt. The label below ("Avg score per compared task") spells
+  // this out so users don't expect the same number as the leaderboard tile.
   const scoreRow = $derived.by(() => {
     if (!data.compare) return [];
     return data.compare.models.map((m) => {
@@ -104,7 +109,7 @@
   <section class="stats">
     <h2>At a glance</h2>
     <CompareStatRow label="Pass@N" values={passRow} direction="higher" />
-    <CompareStatRow label="Avg score" values={scoreRow} direction="higher" />
+    <CompareStatRow label="Avg score per compared task" values={scoreRow} direction="higher" />
     <CompareStatRow label="Tasks attempted" values={tasksRow} direction="higher" />
   </section>
 
