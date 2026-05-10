@@ -54,10 +54,19 @@ describe("CategoryCard", () => {
     expect(container.textContent).toContain("63%");
   });
 
-  it("renders empty-state copy when avg_pass_rate is null", () => {
+  it("shows the catalog-gap copy when task_count is zero", () => {
     const { container } = render(CategoryCardHarness, {
       item: makeItem({ avg_pass_rate: null, task_count: 0 }),
     });
+    expect(container.textContent).toContain("Tasks not yet categorised");
+    expect(container.textContent).not.toContain("No runs yet");
+  });
+
+  it("shows the no-runs copy when tasks exist but no runs cover them", () => {
+    const { container } = render(CategoryCardHarness, {
+      item: makeItem({ avg_pass_rate: null, task_count: 4 }),
+    });
     expect(container.textContent).toContain("No runs yet");
+    expect(container.textContent).not.toContain("Tasks not yet categorised");
   });
 });

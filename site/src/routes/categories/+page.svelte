@@ -5,6 +5,14 @@
   import { formatRelativeTime } from '$lib/client/format';
 
   let { data } = $props();
+
+  // True when every category has task_count === 0 (CC-1 catalog state):
+  // categories are defined but no tasks are linked. Surface a single hint
+  // above the grid instead of repeating the same per-card message N times.
+  const allUnpopulated = $derived(
+    data.categories.data.length > 0 &&
+      data.categories.data.every((c) => c.task_count === 0),
+  );
 </script>
 
 <svelte:head>
@@ -32,6 +40,15 @@
     {/snippet}
   </EmptyState>
 {:else}
+  {#if allUnpopulated}
+    <aside class="hint" role="note">
+      <p>
+        Categories are defined but the current task set has no tasks linked to them yet.
+        Operator: run <code class="text-mono">centralgauge sync-catalog --apply</code> to backfill the links, or see the
+        <a href="https://github.com/SShadowS/CentralGauge/blob/master/docs/site/operations.md#tasks-empty-diagnosis-cc-1">operator runbook</a>.
+      </p>
+    </aside>
+  {/if}
   <div class="grid">
     {#each data.categories.data as item (item.slug)}
       <CategoryCard {item} />
@@ -49,5 +66,21 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--space-5);
     margin-top: var(--space-5);
+  }
+  .hint {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-2);
+    padding: var(--space-3) var(--space-5);
+    margin-top: var(--space-4);
+    font-size: var(--text-sm);
+  }
+  .hint p { margin: 0; line-height: var(--leading-base); }
+  .hint code {
+    font-family: var(--font-mono);
+    background: var(--code-bg);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-1);
   }
 </style>

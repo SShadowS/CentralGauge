@@ -707,9 +707,10 @@ export interface PaletteIndex {
 // =============================================================================
 //
 // Aggregates per task_categories row across `tasks` joined with `results`.
-// When `tasks_in_catalog = 0` (current production until operator runs
-// `centralgauge sync-catalog --apply`), the endpoint returns an empty
-// data array. Consumers MUST render an empty-state.
+// When the task catalog has not been synced yet, category rows may still be
+// returned with `task_count = 0` and `avg_pass_rate = null` for every category;
+// consumers should render a catalog-sync hint for that state. `data` is empty
+// only when no rows exist in `task_categories`.
 
 export interface CategoriesIndexItem {
   slug: string;

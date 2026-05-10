@@ -18,7 +18,9 @@
     <span class="counts">{item.task_count} {item.task_count === 1 ? 'task' : 'tasks'}</span>
   </header>
   <div class="body">
-    {#if passRateLabel === null}
+    {#if item.task_count === 0}
+      <p class="empty text-muted">Tasks not yet categorised in the catalog.</p>
+    {:else if passRateLabel === null}
       <p class="empty text-muted">No runs yet for this category.</p>
     {:else}
       <p class="metric">
