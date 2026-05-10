@@ -149,7 +149,7 @@
         />
       </div>
       <StatTile
-        label="pass^n (strict)"
+        label="All-runs pass rate"
         value="{(m.aggregates.pass_hat_at_n * 100).toFixed(1)}%"
         infoId="pass_hat_at_n"
       />

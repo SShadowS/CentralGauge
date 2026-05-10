@@ -56,7 +56,7 @@
           <th scope="row"><code>rate</code></th>
           <td>Fraction in <code>[0, 1]</code></td>
           <td><code>78.1%</code> (×100 + percent)</td>
-          <td>Pass rate, First-try pass rate, pass^n</td>
+          <td>Pass rate, First-try pass rate, All-runs pass rate</td>
         </tr>
         <tr>
           <th scope="row"><code>pct</code></th>

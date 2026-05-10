@@ -89,10 +89,10 @@ export const METRICS: Record<string, MetricDef> = {
 
   pass_hat_at_n: {
     id: 'pass_hat_at_n',
-    label: 'pass^n (strict)',
-    short: 'Fraction of tasks the model solved in every single run (strict consistency).',
+    label: 'All-runs pass rate',
+    short: 'Fraction of tasks the model solved in every single run (strict consistency, also written pass^n).',
     formula: 'tasks where ALL runs produced a passing result / tasks_attempted_distinct',
-    when: 'Measures reliability under repetition. High pass^n means the model is unlikely to regress on a re-run, important for CI and production use.',
+    when: 'Measures reliability under repetition. High value means the model is unlikely to regress on a re-run, important for CI and production use. Formal name in the literature: pass^n.',
     unit: 'rate',
   },
 
