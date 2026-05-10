@@ -186,7 +186,7 @@
         <dd>{formatVaries(m.settings.temperature)}</dd>
         <dt>Thinking budget</dt>
         <dd>{formatVaries(m.settings.thinking_budget)}</dd>
-        <dt>Avg tokens / run</dt>
+        <dt>Avg tokens / run <span class="text-faint">(input + output)</span></dt>
         <dd>{formatTokens(m.settings.tokens_avg_per_run)}</dd>
         <dt>Consistency</dt>
         <dd>{formatConsistency(m.settings.consistency_pct)}</dd>
