@@ -75,8 +75,8 @@ describe('LeaderboardTable', () => {
         sort = next;
       },
     });
-    // "Avg attempt" header sorts by avg_score
-    const avgBtn = screen.getByRole('button', { name: /avg attempt/i });
+    // "Avg score" header sorts by avg_score (renamed from "Avg attempt")
+    const avgBtn = screen.getByRole('button', { name: /avg score/i });
     await fireEvent.click(avgBtn);
     expect(sort).toBe('avg_score:asc');
   });
@@ -169,18 +169,18 @@ describe('LeaderboardTable', () => {
     expect(container.textContent).toContain('73.2');
   });
 
-  it('demoted Avg attempt column header is present in DOM', async () => {
+  it('demoted Avg score column header is present in DOM', async () => {
     const { container } = render(LeaderboardTable, {
       rows: sampleRows,
       sort: 'pass_at_n:desc',
     });
     const headers = Array.from(container.querySelectorAll('th'));
-    const avgHeader = headers.find((th) => th.textContent?.includes('Avg attempt'));
+    const avgHeader = headers.find((th) => th.textContent?.includes('Avg score'));
     expect(avgHeader).toBeDefined();
     expect(avgHeader?.classList.contains('th-avg-attempt')).toBe(true);
   });
 
-  it('Avg attempt cells render avg_score on the X.X / 100 score scale', async () => {
+  it('Avg score cells render avg_score on the X.X / 100 score scale', async () => {
     const { container } = render(LeaderboardTable, {
       rows: sampleRows,
       sort: 'pass_at_n:desc',

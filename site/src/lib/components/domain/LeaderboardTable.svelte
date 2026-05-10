@@ -66,7 +66,7 @@
           title={METRICS.avg_score?.short}
         >
           <button class="hbtn" onclick={() => clickSort('avg_score')}>
-            Avg attempt{#if sortField === 'avg_score'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
+            Avg score{#if sortField === 'avg_score'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
           </button>
           <MetricInfo id="avg_score" />
         </th>
@@ -74,17 +74,17 @@
           <button class="hbtn" onclick={() => clickSort('pass_at_1')}>Pass{#if sortField === 'pass_at_1' || sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="pass_at_n" />
         </th>
-        <th scope="col" class="th-ci" data-cheat="ci-col" title={METRICS.pass_rate_ci?.short}>CI <MetricInfo id="pass_rate_ci" /></th>
+        <th scope="col" class="th-ci" data-cheat="ci-col" title={METRICS.pass_rate_ci?.short}>Confidence ± <MetricInfo id="pass_rate_ci" /></th>
         <th scope="col" data-cheat="cost-col" aria-sort={ariaSort('avg_cost_usd')} title={METRICS.avg_cost_usd?.short}>
-          <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost{#if sortField === 'avg_cost_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+          <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost / task{#if sortField === 'avg_cost_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="avg_cost_usd" />
         </th>
         <th scope="col" data-cheat="cost-per-pass-col" aria-sort={ariaSort('cost_per_pass_usd')} title={METRICS.cost_per_pass_usd?.short}>
-          <button class="hbtn" onclick={() => clickSort('cost_per_pass_usd')}>$/Pass{#if sortField === 'cost_per_pass_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+          <button class="hbtn" onclick={() => clickSort('cost_per_pass_usd')}>Cost / pass{#if sortField === 'cost_per_pass_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="cost_per_pass_usd" />
         </th>
         <th scope="col" aria-sort={ariaSort('latency_p95_ms')} title={METRICS.latency_p95_ms?.short}>
-          <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>p95{#if sortField === 'latency_p95_ms'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+          <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>Latency p95{#if sortField === 'latency_p95_ms'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="latency_p95_ms" />
         </th>
         <!-- Last seen: non-sortable — server does not honour a `last_run_at` sort key -->
