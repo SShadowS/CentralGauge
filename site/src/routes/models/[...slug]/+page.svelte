@@ -220,7 +220,7 @@
     <section id="methodology">
       <h2>Methodology</h2>
       <p class="text-muted">
-        Scores are computed per task, averaged across attempts. See <a href="/about#scoring">the about page</a> for details.
+        Pass rate counts unattempted tasks as failures (strict denominator). Avg score is the mean of every attempt the model produced — failed first tries that triggered a retry contribute one observation each, pulling the mean down. See <a href="/about#scoring">the about page</a> for the full breakdown and <a href="/about#units">unit conventions</a>.
       </p>
     </section>
   </main>

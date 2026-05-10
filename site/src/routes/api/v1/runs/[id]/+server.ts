@@ -173,10 +173,21 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       totalDurationMs += durationMs;
       if (r.cost_usd !== null) totalCostUsd += +r.cost_usd;
 
+      // Defensive: D1 returns numeric columns as numbers in practice, but other
+      // files in this repo type score aggregates as `number | string | null`
+      // and we want to fail loud rather than silently NaN-poison the mean.
+      const score = Number(r.score);
+      if (!Number.isFinite(score)) {
+        throw new ApiError(
+          500,
+          "result_corrupt",
+          `score corrupt for result ${r.id}`,
+        );
+      }
       const attempt: AttemptOut = {
         attempt: r.attempt,
         passed: r.passed === 1,
-        score: r.score,
+        score,
         compile_success: r.compile_success === 1,
         compile_errors: compileErrors,
         tests_total: r.tests_total,
@@ -206,19 +217,28 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
       attempts: [...t.attempts].sort((a, b) => a.attempt - b.attempt),
     }));
 
-    // Totals: avg_score and tasks_passed are based on the LAST attempt per task.
+    // Totals semantics:
+    //   - tasks_attempted = distinct task count in the run.
+    //   - tasks_passed    = distinct tasks where the LAST attempt passed (this
+    //                       is "the model's final answer" for the run).
+    //   - avg_score       = MEAN of every attempt's score across all results
+    //                       rows in this run. Uses the same per-result-row
+    //                       weighting as leaderboard / model history / runs
+    //                       list; endpoint values can still differ because
+    //                       their scopes differ (one run vs. many).
     const tasksAttempted = groupedResults.length;
-    let lastAttemptScoreSum = 0;
     let tasksPassed = 0;
+    let attemptCount = 0;
+    let attemptScoreSum = 0;
     for (const t of groupedResults) {
+      for (const a of t.attempts) {
+        attemptCount += 1;
+        attemptScoreSum += a.score;
+      }
       const last = t.attempts.at(-1);
-      if (!last) continue;
-      lastAttemptScoreSum += last.score;
-      if (last.passed) tasksPassed += 1;
+      if (last?.passed) tasksPassed += 1;
     }
-    const avgScore = tasksAttempted > 0
-      ? lastAttemptScoreSum / tasksAttempted
-      : 0;
+    const avgScore = attemptCount > 0 ? attemptScoreSum / attemptCount : 0;
 
     // Reproduction bundle metadata via R2 head() — try/catch so a missing/erroring blob just omits the field.
     let reproductionBundle: { sha256: string; size_bytes: number } | undefined;

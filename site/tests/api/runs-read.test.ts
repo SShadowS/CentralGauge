@@ -349,6 +349,38 @@ describe("GET /api/v1/runs/:id", () => {
     expect(res.status).toBe(404);
   });
 
+  it("computes totals.avg_score as the per-attempt mean to match leaderboard semantics", async () => {
+    // Seed a second attempt with a different score so per-attempt mean (0.75)
+    // diverges from last-attempt-only (1.0). Lock down the unified semantic.
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,
+                          tokens_in,tokens_out,llm_duration_ms,compile_duration_ms,test_duration_ms,
+                          transcript_r2_key,code_r2_key,compile_errors_json,tests_total,tests_passed)
+       VALUES('r1','easy/a',2,1,1.0,1,1000,500,100,200,300,
+              'blobs/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+              'blobs/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+              '[]',5,5)`,
+    ).run();
+    // Now overwrite the original attempt 1 to score 0.5 (was 1.0).
+    await env.DB.prepare(
+      `UPDATE results SET score = 0.5, passed = 0 WHERE run_id = 'r1' AND task_id = 'easy/a' AND attempt = 1`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/runs/r1?_cb=avgscore", {
+      headers: { "cache-control": "no-cache" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      totals: { avg_score: number; tasks_passed: number; tasks_attempted: number };
+    };
+    // Per-attempt mean: (0.5 + 1.0) / 2 = 0.75. NOT last-attempt 1.0.
+    expect(body.totals.avg_score).toBeCloseTo(0.75, 6);
+    expect(body.totals.avg_score).not.toBeCloseTo(1.0, 6);
+    // tasks_passed still uses LAST-attempt semantics: a2 passed -> 1 task passed.
+    expect(body.totals.tasks_passed).toBe(1);
+    expect(body.totals.tasks_attempted).toBe(1);
+  });
+
   it("emits completed_at as null (not empty string) for incomplete runs", async () => {
     // P6 C1: null preservation across the wire. Set the completed_at column
     // to NULL to simulate a still-running ingest (rare path).

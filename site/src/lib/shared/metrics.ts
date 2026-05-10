@@ -87,11 +87,16 @@ export const METRICS: Record<string, MetricDef> = {
     unit: 'rate',
   },
 
-  // Contract: results.score is expected to be normalized to 0-100 at ingest.
-  // The schema does not enforce this with a CHECK constraint. Legacy 0-1 rows,
-  // if any exist, must be migrated or excluded before this contract holds.
-  // Verified live: every model on /api/v1/leaderboard?set=current returns
-  // avg_score in the 26-71 range, consistent with 0-100 storage.
+  // Contract: results.score is normalized to 0-100 at ingest (live data
+  // verified to range 26-71). The schema does not enforce this with a CHECK
+  // constraint; legacy 0-1 rows would mix with 0-100 rows and corrupt the mean.
+  //
+  // Weighting: per-attempt mean. Every result row contributes one observation,
+  // so a task that needed two attempts contributes both attempts' scores.
+  // Failed first attempts that triggered a retry pull the mean down — that is
+  // the unified semantic across leaderboard, model history, runs list, and
+  // run detail. Do not infer this weighting for `tasks_passed`; that field
+  // intentionally remains last-attempt-per-task ("final answer") semantics.
   avg_score: {
     id: 'avg_score',
     label: 'Avg attempt score',
