@@ -180,14 +180,16 @@ describe('LeaderboardTable', () => {
     expect(avgHeader?.classList.contains('th-avg-attempt')).toBe(true);
   });
 
-  it('Avg attempt cells show avg_score formatted to 2 decimals', async () => {
+  it('Avg attempt cells render avg_score on the X.X / 100 score scale', async () => {
     const { container } = render(LeaderboardTable, {
       rows: sampleRows,
       sort: 'pass_at_n:desc',
     });
     const avgCells = container.querySelectorAll('td.th-avg-attempt');
-    expect(avgCells[0]?.textContent?.trim()).toBe('0.84');
-    expect(avgCells[1]?.textContent?.trim()).toBe('0.72');
+    // Fixture uses 0-1 scale historically; the formatter still prefixes
+    // "/ 100" so users cannot confuse the value with a percent.
+    expect(avgCells[0]?.textContent?.trim()).toBe('0.8 / 100');
+    expect(avgCells[1]?.textContent?.trim()).toBe('0.7 / 100');
   });
 
   it('Model header is non-sortable (no click button)', async () => {

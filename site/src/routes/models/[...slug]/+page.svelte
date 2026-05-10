@@ -140,7 +140,12 @@
           label="Avg score"
           value={formatScore(m.aggregates.avg_score)}
           infoId="avg_score"
-          delta={m.predecessor ? { value: (m.aggregates.avg_score - m.predecessor.avg_score).toFixed(2), positive: m.aggregates.avg_score >= m.predecessor.avg_score } : undefined}
+          delta={m.predecessor
+            ? {
+                value: `${m.aggregates.avg_score >= m.predecessor.avg_score ? '+' : ''}${(m.aggregates.avg_score - m.predecessor.avg_score).toFixed(1)} pts`,
+                positive: m.aggregates.avg_score >= m.predecessor.avg_score,
+              }
+            : undefined}
         />
       </div>
       <StatTile

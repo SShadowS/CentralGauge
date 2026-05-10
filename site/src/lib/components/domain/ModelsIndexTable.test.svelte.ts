@@ -55,7 +55,7 @@ describe("ModelsIndexTable", () => {
 
   it("renders score for models with runs", () => {
     render(ModelsIndexTable, { rows });
-    expect(screen.getByText("0.84")).toBeDefined();
-    expect(screen.getByText("0.71")).toBeDefined();
+    expect(screen.getByText("0.8 / 100")).toBeDefined();
+    expect(screen.getByText("0.7 / 100")).toBeDefined();
   });
 });

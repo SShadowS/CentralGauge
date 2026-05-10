@@ -313,6 +313,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     ];
 
     for (const r of payload.results) {
+      // Boundary validation: score is contractually 0-100. Reject invalid
+      // values at ingest so the registry's "0-100" claim isn't silently
+      // corrupted by a misbehaving client. Legacy 0-1 fixtures still pass.
+      if (
+        typeof r.score !== "number" ||
+        !Number.isFinite(r.score) ||
+        r.score < 0 ||
+        r.score > 100
+      ) {
+        throw new ApiError(
+          400,
+          "invalid_score",
+          `score must be a finite 0-100 value (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
       statements.push(
         db.prepare(`
           INSERT INTO results(

@@ -11,10 +11,20 @@ import {
 
 describe("format", () => {
   describe("formatScore", () => {
-    it("formats a 0-1 score as 2-decimal", () => {
-      expect(formatScore(0.84)).toBe("0.84");
-      expect(formatScore(1)).toBe("1.00");
-      expect(formatScore(0)).toBe("0.00");
+    it("renders a 0-100 score as 'X.X / 100'", () => {
+      // Live score values are 0-100 (e.g. 70.95 = "71.0 / 100").
+      expect(formatScore(70.95)).toBe("71.0 / 100");
+      expect(formatScore(100)).toBe("100.0 / 100");
+      expect(formatScore(0)).toBe("0.0 / 100");
+      // Lower-magnitude inputs (legacy 0-1 fixtures) still format consistently
+      // — the suffix prevents confusion with a percent.
+      expect(formatScore(0.84)).toBe("0.8 / 100");
+    });
+
+    it("returns an em dash for null/undefined/non-finite", () => {
+      expect(formatScore(null)).toBe("—");
+      expect(formatScore(undefined)).toBe("—");
+      expect(formatScore(NaN)).toBe("—");
     });
   });
 

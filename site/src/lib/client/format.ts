@@ -6,8 +6,15 @@
 
 import type { MetricUnit } from "$lib/shared/metrics";
 
-export function formatScore(score: number): string {
-  return score.toFixed(2);
+/**
+ * Format an avg-score value (0-100 point scale; see /about#units).
+ * Renders as `XX.X / 100` so the value cannot be mistaken for a percent.
+ *
+ * Equivalent to `formatMetric(score, 'score')`. Preserved as a named export
+ * because many components import it directly.
+ */
+export function formatScore(score: number | null | undefined): string {
+  return formatMetric(score, 'score');
 }
 
 // formatCost returns "<$0.001" only for usd strictly less than 0.001.

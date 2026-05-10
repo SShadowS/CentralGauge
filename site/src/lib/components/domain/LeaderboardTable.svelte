@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatRelativeTime } from '$lib/client/format';
+  import { formatRelativeTime, formatScore } from '$lib/client/format';
   import ModelLink from './ModelLink.svelte';
   import CostCell from './CostCell.svelte';
   import AttemptStackedBar from './AttemptStackedBar.svelte';
@@ -105,7 +105,7 @@
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
           <td class="score text-mono">{(row.pass_at_n * 100).toFixed(1)}</td>
-          <td class="th-avg-attempt text-mono">{row.avg_score.toFixed(2)}</td>
+          <td class="th-avg-attempt text-mono">{formatScore(row.avg_score)}</td>
           <td
             class="attempts-cell"
             data-cheat={i === 0 ? 'worked-example-pass' : undefined}
