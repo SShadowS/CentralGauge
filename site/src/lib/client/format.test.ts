@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatCost,
   formatDuration,
+  formatMetric,
   formatRelativeTime,
   formatScore,
   formatTaskRatio,
@@ -89,6 +90,43 @@ describe("format", () => {
     it("formats N/M", () => {
       expect(formatTaskRatio(24, 24)).toBe("24/24");
       expect(formatTaskRatio(0, 24)).toBe("0/24");
+    });
+  });
+
+  describe("formatMetric", () => {
+    it("renders a 0-1 rate as a percent", () => {
+      expect(formatMetric(0.781, "rate")).toBe("78.1%");
+      expect(formatMetric(1, "rate")).toBe("100.0%");
+      expect(formatMetric(0, "rate")).toBe("0.0%");
+    });
+
+    it("renders a 0-100 percent without further scaling", () => {
+      expect(formatMetric(73.4, "pct")).toBe("73.4%");
+      expect(formatMetric(0, "pct")).toBe("0.0%");
+    });
+
+    it("renders a score on the X.X / 100 form so it cannot be confused with a percent", () => {
+      expect(formatMetric(70.95, "score")).toBe("71.0 / 100");
+      expect(formatMetric(0, "score")).toBe("0.0 / 100");
+    });
+
+    it("renders usd via formatCost", () => {
+      expect(formatMetric(0.12, "usd")).toBe("$0.12");
+    });
+
+    it("renders count with locale grouping", () => {
+      expect(formatMetric(12345, "count")).toBe("12,345");
+    });
+
+    it("renders duration_ms via formatDuration", () => {
+      expect(formatMetric(1500, "duration_ms")).toBe("1.5s");
+    });
+
+    it("renders an em dash for null/undefined/non-finite", () => {
+      expect(formatMetric(null, "rate")).toBe("—");
+      expect(formatMetric(undefined, "score")).toBe("—");
+      expect(formatMetric(NaN, "usd")).toBe("—");
+      expect(formatMetric(Infinity, "rate")).toBe("—");
     });
   });
 

@@ -58,3 +58,41 @@ export function formatRelativeTime(
 export function formatTaskRatio(passed: number, total: number): string {
   return `${passed}/${total}`;
 }
+
+/**
+ * Canonical formatter for a metric value paired with its unit. The unit
+ * contract is defined in `lib/shared/metrics.ts`; this function maps each
+ * unit to its display form so a single registry change can never silently
+ * disagree with what the UI prints.
+ *
+ * Pass `null` to render an em dash (no data). Pass any finite number for
+ * value; non-finite numbers also render as an em dash.
+ */
+export function formatMetric(
+  value: number | null | undefined,
+  unit:
+    | 'rate'
+    | 'pct'
+    | 'score'
+    | 'usd'
+    | 'count'
+    | 'duration_ms',
+): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—';
+  }
+  switch (unit) {
+    case 'rate':
+      return `${(value * 100).toFixed(1)}%`;
+    case 'pct':
+      return `${value.toFixed(1)}%`;
+    case 'score':
+      return `${value.toFixed(1)} / 100`;
+    case 'usd':
+      return formatCost(value);
+    case 'count':
+      return value.toLocaleString('en-US');
+    case 'duration_ms':
+      return formatDuration(value);
+  }
+}

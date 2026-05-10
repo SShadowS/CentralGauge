@@ -20,6 +20,7 @@
     <h2 class="toc-h">Contents</h2>
     <ul>
       <li><a href="#status">Status</a></li>
+      <li><a href="#units">Units & conventions</a></li>
       <li><a href="#scoring">Scoring metrics</a></li>
       <li><a href="#metrics">Metrics glossary</a></li>
       <li><a href="#transparency">Transparency</a></li>
@@ -31,6 +32,70 @@
     <p class="text-muted">
       The site is in beta (P5). Detailed methodology, scoring formulas, tier definitions,
       and transparency documentation will land before public launch.
+    </p>
+  </section>
+
+  <section id="units">
+    <h2>Units &amp; conventions</h2>
+    <p>
+      Every metric on this site falls into one of six unit categories. The glossary entry for each metric
+      tells you which category it belongs to; the table below tells you how to read the displayed value.
+    </p>
+
+    <table class="units">
+      <thead>
+        <tr>
+          <th scope="col">Unit</th>
+          <th scope="col">Stored as</th>
+          <th scope="col">Shown as</th>
+          <th scope="col">Examples</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th scope="row"><code>rate</code></th>
+          <td>Fraction in <code>[0, 1]</code></td>
+          <td><code>78.1%</code> (×100 + percent)</td>
+          <td>Pass rate, First-try pass rate, pass^n</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>pct</code></th>
+          <td>Already on a 0–100 scale</td>
+          <td><code>73.4%</code> (no scaling)</td>
+          <td>Consistency</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>score</code></th>
+          <td>Points in <code>[0, 100]</code> (partial credit allowed)</td>
+          <td><code>71.0 / 100</code></td>
+          <td>Avg attempt score</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>usd</code></th>
+          <td>US dollars</td>
+          <td><code>$0.12</code></td>
+          <td>Cost / run, $/Pass</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>count</code></th>
+          <td>Integer</td>
+          <td><code>12,345</code> (locale grouping)</td>
+          <td>Tasks attempted, Runs</td>
+        </tr>
+        <tr>
+          <th scope="row"><code>duration_ms</code></th>
+          <td>Milliseconds</td>
+          <td><code>1.5s</code> / <code>2m 48s</code></td>
+          <td>Latency p50, Latency p95</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="text-muted">
+      <strong>Rates vs. scores.</strong> A rate is a fraction (0–1) of tasks the model solved; we show it as a
+      percent. A score is a per-attempt grade out of 100 that can include partial credit (for example, an
+      attempt that compiled but failed half the tests). We render scores as <code>X.X / 100</code> so they cannot be
+      confused with a percent.
     </p>
   </section>
 
@@ -85,7 +150,10 @@
     <dl class="metrics-list">
       {#each metricList as m}
         <div class="metric-entry" id="metric-{m.id}">
-          <dt class="metric-label">{m.label}</dt>
+          <dt class="metric-label">
+            {m.label}
+            <a class="unit-chip" href="#units" title="See Units & conventions for how this is displayed">{m.unit}</a>
+          </dt>
           <dd class="metric-body">
             <p class="metric-short">{m.short}</p>
             <p class="metric-formula-row"><span class="formula-key">Formula:</span> <code>{m.formula}</code></p>
@@ -236,4 +304,39 @@
   }
   .metric-link a { color: var(--accent); text-decoration: none; }
   .metric-link a:hover { text-decoration: underline; }
+
+  /* Units & conventions table */
+  .units {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-2);
+    overflow: hidden;
+    font-size: var(--text-sm);
+  }
+  .units thead { background: var(--surface); }
+  .units th, .units td {
+    text-align: left;
+    padding: var(--space-2) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .units tbody tr:last-child th,
+  .units tbody tr:last-child td { border-bottom: 0; }
+  .units th[scope='row'] { font-weight: var(--weight-medium); }
+
+  .unit-chip {
+    display: inline-block;
+    margin-left: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-regular);
+    color: var(--text-muted);
+    background: var(--code-bg);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-1);
+    text-decoration: none;
+    vertical-align: middle;
+  }
+  .unit-chip:hover { color: var(--accent); }
 </style>

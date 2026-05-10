@@ -46,11 +46,45 @@ describe('METRICS registry', () => {
 
   it('MetricDef type is satisfied by every entry', () => {
     // TypeScript ensures this at compile time; this test guards runtime shape.
-    const requiredKeys: Array<keyof MetricDef> = ['id', 'label', 'short', 'formula', 'when'];
+    const requiredKeys: Array<keyof MetricDef> = ['id', 'label', 'short', 'formula', 'when', 'unit'];
     for (const [id, def] of Object.entries(METRICS)) {
       for (const key of requiredKeys) {
         expect(key in def, `${id} missing key ${key}`).toBe(true);
       }
+    }
+  });
+
+  it('every metric declares a known unit', () => {
+    const valid = new Set([
+      'rate',
+      'pct',
+      'score',
+      'usd',
+      'count',
+      'duration_ms',
+    ]);
+    for (const [id, def] of Object.entries(METRICS)) {
+      expect(
+        valid.has(def.unit),
+        `${id} has invalid unit '${def.unit}'`,
+      ).toBe(true);
+    }
+  });
+
+  it('rate-typed metrics describe a 0-1 fraction in their formula', () => {
+    // Catches the historical avg_score vs pass_at_n confusion: rates must
+    // describe themselves as fractions, scores as point scales.
+    const rateIds = Object.values(METRICS)
+      .filter((m) => m.unit === 'rate')
+      .map((m) => m.id);
+    for (const id of rateIds) {
+      const def = METRICS[id];
+      const text = `${def.short} ${def.formula}`.toLowerCase();
+      // Must NOT claim the value is on a 0-100 or "× 100" scale internally.
+      expect(
+        text.includes('× 100') || text.includes('* 100'),
+        `${id} is unit=rate but its text describes scaling by 100 (rate values are stored 0-1)`,
+      ).toBe(false);
     }
   });
 });
