@@ -4,6 +4,8 @@
  * deliberate, the audience is global-technical, en-US conventions only.
  */
 
+import type { MetricUnit } from "$lib/shared/metrics";
+
 export function formatScore(score: number): string {
   return score.toFixed(2);
 }
@@ -67,16 +69,18 @@ export function formatTaskRatio(passed: number, total: number): string {
  *
  * Pass `null` to render an em dash (no data). Pass any finite number for
  * value; non-finite numbers also render as an em dash.
+ *
+ * The `unit` parameter imports `MetricUnit` from the registry so adding a
+ * new unit there forces a type-error here until a matching case is added.
+ * The `assertNever` default is the runtime backstop.
  */
+function assertNever(value: never): never {
+  throw new Error(`Unhandled metric unit: ${String(value)}`);
+}
+
 export function formatMetric(
   value: number | null | undefined,
-  unit:
-    | 'rate'
-    | 'pct'
-    | 'score'
-    | 'usd'
-    | 'count'
-    | 'duration_ms',
+  unit: MetricUnit,
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return '—';
@@ -94,5 +98,7 @@ export function formatMetric(
       return value.toLocaleString('en-US');
     case 'duration_ms':
       return formatDuration(value);
+    default:
+      return assertNever(unit);
   }
 }

@@ -71,19 +71,22 @@ describe('METRICS registry', () => {
     }
   });
 
-  it('rate-typed metrics describe a 0-1 fraction in their formula', () => {
-    // Catches the historical avg_score vs pass_at_n confusion: rates must
-    // describe themselves as fractions, scores as point scales.
+  it('rate-typed metrics do not describe themselves as percent-scaled storage', () => {
+    // Negative guard. Rate metrics are stored as fractions in [0, 1]; the
+    // registry text should describe them that way and let `formatMetric` do
+    // the × 100 conversion at display time. If a future formula legitimately
+    // mentions display-side scaling, this test will need updating — that is
+    // intentional friction so the contract stays explicit.
+    const percentScaled = /(?:[×*]\s*100|\b0\s*[–-]\s*100\b)/;
     const rateIds = Object.values(METRICS)
       .filter((m) => m.unit === 'rate')
       .map((m) => m.id);
     for (const id of rateIds) {
       const def = METRICS[id];
-      const text = `${def.short} ${def.formula}`.toLowerCase();
-      // Must NOT claim the value is on a 0-100 or "× 100" scale internally.
+      const text = `${def.short} ${def.formula}`;
       expect(
-        text.includes('× 100') || text.includes('* 100'),
-        `${id} is unit=rate but its text describes scaling by 100 (rate values are stored 0-1)`,
+        percentScaled.test(text),
+        `${id} is unit=rate but its text describes percent-scale storage`,
       ).toBe(false);
     }
   });

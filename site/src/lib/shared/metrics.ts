@@ -87,6 +87,11 @@ export const METRICS: Record<string, MetricDef> = {
     unit: 'rate',
   },
 
+  // Contract: results.score is expected to be normalized to 0-100 at ingest.
+  // The schema does not enforce this with a CHECK constraint. Legacy 0-1 rows,
+  // if any exist, must be migrated or excluded before this contract holds.
+  // Verified live: every model on /api/v1/leaderboard?set=current returns
+  // avg_score in the 26-71 range, consistent with 0-100 storage.
   avg_score: {
     id: 'avg_score',
     label: 'Avg attempt score',
@@ -96,6 +101,11 @@ export const METRICS: Record<string, MetricDef> = {
     unit: 'score',
   },
 
+  // KNOWN MISMATCH (resolved by task #3): the leaderboard SQL at
+  // `lib/server/leaderboard.ts` divides by COUNT(DISTINCT task_id) — this is
+  // cost per *task*, not per run. The label and formula below describe the
+  // intended contract; task #3 will either rename the metric to "Cost / task"
+  // or change the SQL to true per-run cost.
   avg_cost_usd: {
     id: 'avg_cost_usd',
     label: 'Cost / run',

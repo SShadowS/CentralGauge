@@ -152,7 +152,7 @@
         <div class="metric-entry" id="metric-{m.id}">
           <dt class="metric-label">
             {m.label}
-            <a class="unit-chip" href="#units" title="See Units & conventions for how this is displayed">{m.unit}</a>
+            <a class="unit-chip" href="#units" aria-label="{m.unit} unit; see Units & conventions for display rules" title="See Units & conventions for how this is displayed">{m.unit}</a>
           </dt>
           <dd class="metric-body">
             <p class="metric-short">{m.short}</p>
@@ -232,6 +232,9 @@
   }
   section h2 { margin: 0; scroll-margin-top: var(--space-7); }
   section h3 { margin: var(--space-3) 0 0 0; }
+  /* Anchor jumps target the section element itself. Without this, jumping to
+     #units lands the heading too high once the sticky nav is accounted for. */
+  section[id] { scroll-margin-top: var(--space-7); }
 
   /* Metrics glossary — Tier 4 */
   .metrics-toc {
