@@ -101,16 +101,17 @@ export const METRICS: Record<string, MetricDef> = {
     unit: 'score',
   },
 
-  // KNOWN MISMATCH (resolved by task #3): the leaderboard SQL at
-  // `lib/server/leaderboard.ts` divides by COUNT(DISTINCT task_id) — this is
-  // cost per *task*, not per run. The label and formula below describe the
-  // intended contract; task #3 will either rename the metric to "Cost / task"
-  // or change the SQL to true per-run cost.
+  // The API field name is `avg_cost_usd` for back-compat. The value is total
+  // result cost in scope / COUNT(DISTINCT task_id). Splitting one benchmark
+  // across multiple runs stays comparable by task coverage; repeated re-runs
+  // of the same tasks still add cost because they represent additional spend.
+  // The registry label is the user-facing source of truth; a future task may
+  // rename the SQL field once a migration window is acceptable.
   avg_cost_usd: {
     id: 'avg_cost_usd',
-    label: 'Cost / run',
-    short: 'Average total LLM cost per benchmark run in USD.',
-    formula: 'SUM(cost_usd) / run_count across all runs for this model.',
+    label: 'Avg cost / task',
+    short: 'Average LLM cost per distinct benchmark task in USD.',
+    formula: 'SUM(cost_usd) / COUNT(DISTINCT task_id) across all the model\'s results in scope.',
     when: 'Use to compare operating cost across models with similar pass rates. Does not account for quality. Combine with $/Pass for a cost-efficiency view.',
     unit: 'usd',
   },

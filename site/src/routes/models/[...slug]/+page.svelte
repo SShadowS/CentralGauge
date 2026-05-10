@@ -128,9 +128,11 @@
       </div>
       <AttemptBreakdownTile aggregates={m.aggregates} />
       <div data-cheat="cost-tile">
-        <StatTile label="Cost / run" value={formatCost(m.aggregates.avg_cost_usd)}
+        <StatTile label="Avg cost / task" value={formatCost(m.aggregates.avg_cost_usd)}
           infoId="avg_cost_usd"
-          delta={m.predecessor ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd } : undefined} />
+          delta={m.predecessor && m.predecessor.avg_cost_usd > 0
+            ? { value: ((m.predecessor.avg_cost_usd - m.aggregates.avg_cost_usd) / m.predecessor.avg_cost_usd * 100).toFixed(0) + '%', positive: m.aggregates.avg_cost_usd <= m.predecessor.avg_cost_usd }
+            : undefined} />
       </div>
       <StatTile label="Latency p50" value={formatDuration(m.aggregates.latency_p50_ms)} infoId="latency_p50_ms" />
       <div data-cheat="avg-tile">

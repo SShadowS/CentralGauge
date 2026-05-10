@@ -82,7 +82,7 @@
         <th scope="col">Model</th>
         <th scope="col">Generation</th>
         <th scope="col">Pass@N</th>
-        <th scope="col">Avg cost</th>
+        <th scope="col">Avg cost / task</th>
         <th scope="col">Runs</th>
         <th scope="col">Last run</th>
       </tr>

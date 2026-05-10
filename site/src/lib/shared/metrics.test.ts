@@ -71,6 +71,18 @@ describe('METRICS registry', () => {
     }
   });
 
+  it('documents avg_cost_usd as per-task cost, not per-run', () => {
+    // Pins the relabel applied in task #3. The underlying SQL in
+    // leaderboard.ts and model-aggregates.ts divides by COUNT(DISTINCT task_id);
+    // the registry must agree so all UI tooltips inherit the correct semantic.
+    expect(METRICS.avg_cost_usd).toMatchObject({
+      label: 'Avg cost / task',
+      unit: 'usd',
+    });
+    expect(METRICS.avg_cost_usd.short).toContain('per distinct benchmark task');
+    expect(METRICS.avg_cost_usd.formula).toContain('COUNT(DISTINCT task_id)');
+  });
+
   it('rate-typed metrics do not describe themselves as percent-scaled storage', () => {
     // Negative guard. Rate metrics are stored as fractions in [0, 1]; the
     // registry text should describe them that way and let `formatMetric` do
