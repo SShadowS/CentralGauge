@@ -1,0 +1,24 @@
+id: CG-AL-H040
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H040 Tag Provider" (ID 70400) with Access = Public.
+
+  Once this app is installed in a tenant, calling `Codeunit "Upgrade Tag".GetPerCompanyUpgradeTags(out List of [Code[250]])` from any other code must produce a list that contains the literal `'CG-H040-FEATURE-X-20260101'`. Calling the per-database counterpart `Codeunit "Upgrade Tag".GetPerDatabaseUpgradeTags(out List of [Code[250]])` must NOT contain that literal.
+
+  Achieve this by hooking into the standard registration channel that the platform exposes for new per-company upgrade tags. The codeunit body consists of: (1) the registration procedure (with whatever attribute and signature that registration channel requires) and (2) at most one local helper procedure that returns the tag literal. Nothing else.
+
+  Forbidden: calling SetUpgradeTag, calling HasUpgradeTag, defining any trigger, inserting into any table directly.
+
+metadata:
+  category: advanced-patterns
+  tags: [upgrade-tag, event-subscriber]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H040.Test.al
+  testCodeunitId: 80255
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

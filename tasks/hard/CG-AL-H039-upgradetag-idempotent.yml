@@ -1,0 +1,30 @@
+id: CG-AL-H039
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H039 Init" (ID 70390) with Access = Public.
+
+  Existing prereq table "CG H039 Setting" (ID 69390) - fields: "Code" Code[20] PK field 1; "Value" Text[50] field 10.
+
+  Define one public procedure:
+
+    procedure SeedDefaults()
+
+  SeedDefaults is intended to be invoked from one-time setup code after every release of this app. The very first invocation against a freshly-installed tenant inserts exactly two rows: ('GREETING','Hello') and ('LANG','EN'). Every subsequent invocation against the same tenant must be a complete no-op - no Inserts attempted, no Modifies, no Deletes, and no errors raised.
+
+  The idempotency must be tracked using the same persistent, tenant-scoped bookkeeping that the BC platform itself uses to remember which release-time work has already executed in a tenant - the bookkeeping that is exposed through `Codeunit "Upgrade Tag"`'s read API. The literal that identifies this particular piece of work in that bookkeeping is `'CG-H039-SEED-DEFAULTS-20260101'`.
+
+  Forbidden idempotency strategies: probing the "CG H039 Setting" table itself with Get/IsEmpty/Count/FindFirst, checking ModuleInfo.DataVersion, comparing version numbers, IsolatedStorage, custom marker tables.
+
+metadata:
+  category: advanced-patterns
+  tags: [upgrade-tag, idempotent]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H039.Test.al
+  testCodeunitId: 80254
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

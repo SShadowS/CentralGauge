@@ -1,0 +1,26 @@
+id: CG-AL-H037
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create AL codeunit "CG H037 Migrate" (ID 70370) with Subtype = Install.
+
+  Existing prereq table "CG H037 Doc" (ID 69370) - fields: "Code" Code[20] PK field 1; "Status" Code[10] field 10; "Migrated" Boolean field 20. The prereq's install seeds five rows: ('R1','RELEASED'), ('R2','RELEASED'), ('O1','OPEN'), ('O2','OPEN'), ('P1','PENDING'). All five start with Migrated = false.
+
+  In OnInstallAppPerCompany, set Migrated = true on every "CG H037 Doc" row whose Status = 'RELEASED'. Other rows must be left unchanged.
+
+  Use the platform DataTransfer data type. Call SetTables to bind source and destination tables, AddSourceFilter to restrict source rows to those where Status = 'RELEASED', AddConstantValue to declare the destination field "Migrated" and the constant value `true` to write into it, and then call the DataTransfer method that performs the set-based FIELD UPDATE in place on existing rows - NOT the DataTransfer method that COPIES ROWS from source into destination (that sibling method inserts and is wrong here, because the rows already exist).
+
+  Forbidden mechanisms: FindSet/FindFirst/FindLast/Find with any subsequent loop or Modify, Next() in any form, individual Modify() or Modify(true) per record, ModifyAll, direct SQL.
+
+metadata:
+  category: advanced-patterns
+  tags: [datatransfer, install, set-based-update]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H037.Test.al
+  testCodeunitId: 80252
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,28 @@
+id: CG-AL-H042
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H042 Consent Gate" (ID 70420) with Access = Public.
+
+  Define one public procedure:
+
+    procedure CanSendCustomerData(NoticeId: Code[50]): Boolean
+
+  CanSendCustomerData returns true if and only if the BC Privacy Notice framework currently records the tenant's consent for the privacy notice identified by NoticeId as 'Agreed'. Every other state - Not Set, Disagreed, or "notice not yet registered" - must return false.
+
+  The consent check must be performed by calling the read-side method on the System Application Codeunit "Privacy Notice" that returns the current approval state for a given notice id as the enum "Privacy Notice Approval State". Comparison against `Enum::"Privacy Notice Approval State"::Agreed` is the only acceptable way to map the enum value to the Boolean return.
+
+  Forbidden: direct access to the underlying Privacy Notice approval table, caching, IsolatedStorage, hardcoded boolean fields, calls to Confirm or any UI-prompting variant of the consent check.
+
+metadata:
+  category: error-handling
+  tags: [privacy-notice, consent, security]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H042.Test.al
+  testCodeunitId: 80257
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

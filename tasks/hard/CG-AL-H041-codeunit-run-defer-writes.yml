@@ -1,0 +1,36 @@
+id: CG-AL-H041
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Two codeunits.
+
+  "CG H041 Worker" (ID 70410), Access = Public, SubType = Normal.
+    OnRun receives Rec: Record "CG H041 Item". Body:
+      - If Rec.Marker = 'OK': Rec.Status := 'DONE'; Rec.Modify(true).
+      - Otherwise: raise Error('Worker rejected %1', Rec.Code).
+
+  "CG H041 Batch" (ID 70411), Access = Public.
+    Public procedure RunBatch(var Codes: List of [Code[20]]) Outcomes: List of [Code[10]].
+
+  RunBatch processes Codes in input order. For each Code: it retrieves the matching "CG H041 Item" by primary key, exercises "CG H041 Worker" against the row such that on worker success its Modify persists and on worker error its Modify is reverted, and appends 'OK' to Outcomes when the worker completed successfully or 'FAIL' when it errored. After every input has been processed, RunBatch inserts exactly one new row in "CG H041 Run Log" with field "Outcomes" set to the items of Outcomes joined by '|' (e.g. 'OK|FAIL|OK'). RunBatch returns Outcomes.
+
+  RunBatch must not call Commit(). RunBatch must not declare [TryFunction]. RunBatch must not raise.
+
+  Tests run RunBatch with three or more Codes. The implementation must remain correct for that case.
+
+  Existing prereq tables:
+    "CG H041 Item" (ID 69410) - fields: "Code" Code[20] PK field 1; "Status" Code[10] field 10; "Marker" Code[10] field 20.
+    "CG H041 Run Log" (ID 69411) - fields: "Entry No." Integer AutoIncrement PK field 1; "Outcomes" Text[250] field 10.
+
+metadata:
+  category: advanced-patterns
+  tags: [transaction, batch]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H041.Test.al
+  testCodeunitId: 80256
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,32 @@
+id: CG-AL-H034
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H034 Engine" (ID 70340) with Access = Public.
+
+  Existing prereq table "CG H034 Item" (ID 69340) - fields: "Code" Code[20] PK field 1; "Status" Boolean field 10; "Marker" Code[10] field 20.
+
+  Two procedures, exactly:
+
+  Public procedure ProcessItem(var Item: Record "CG H034 Item"). Body in order:
+    1. Item.Status := true; Item.Modify().
+    2. Raise the integration event OnBeforeFinalize passing Item by var.
+    3. If Item.Marker = 'FAIL' then Error('Process failed for %1', Item.Code).
+    4. Commit().
+
+  Local IntegrationEvent publisher OnBeforeFinalize(var Item: Record "CG H034 Item"). Declare `[IntegrationEvent(true, false)]`. Body empty.
+
+  ProcessItem is part of a public extensibility surface; downstream code subscribes to OnBeforeFinalize. Author the codeunit so the failure-path Error in step 3 reverts the step-1 Modify cleanly under realistic third-party subscriber behaviour. The success path must persist Item.Status = true via the explicit Commit at step 4.
+
+metadata:
+  category: error-handling
+  tags: [integration-event, transaction]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H034.Test.al
+  testCodeunitId: 80235
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,37 @@
+id: CG-AL-H038
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Two codeunits.
+
+  "CG H038 Worker" (ID 70380), Access = Public, SubType = Normal.
+    OnRun receives Rec: Record "CG H038 Job". Body:
+      - Rec.Status := 'PROCESSING'; Rec.Modify(true).
+      - If Rec.Marker = 'BAD' raise Error('Worker rejected job %1', Rec.Code).
+      - Otherwise Rec.Status := 'DONE'; Rec.Modify(true).
+
+  "CG H038 Coordinator" (ID 70381), Access = Public.
+    Public procedure ProcessJob(JobCode: Code[20]) Succeeded: Boolean.
+
+  ProcessJob retrieves the matching "CG H038 Job" row by primary-key Code, then exercises "CG H038 Worker" against it. After ProcessJob returns:
+    - If the worker completed its OnRun without raising, every database write the worker performed is persisted.
+    - If the worker raised Error, every database write the worker performed - including the Status:='PROCESSING' Modify it did before the Error - has been reverted (Status reads back as it was before ProcessJob was called).
+    - Succeeded reflects which path occurred (true on completion, false on rollback).
+    - ProcessJob itself never raises.
+
+  ProcessJob must not call Commit(). ProcessJob must not declare [TryFunction]. ProcessJob must not catch the worker's Error via asserterror. ProcessJob must not implement the rollback logic by hand (no manual save/restore of fields).
+
+  Existing prereq table "CG H038 Job" (ID 69380) - fields: "Code" Code[20] PK field 1; "Status" Code[10] field 10; "Marker" Code[10] field 20.
+
+metadata:
+  category: error-handling
+  tags: [transaction, rollback]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H038.Test.al
+  testCodeunitId: 80253
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
