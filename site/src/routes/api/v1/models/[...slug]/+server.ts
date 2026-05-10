@@ -27,6 +27,11 @@ interface RunRow {
   score: number | string | null;
   cost_usd: number | string | null;
   tier: string;
+  status: string;
+  completed_at: string | null;
+  tasks_attempted: number | null;
+  tasks_passed: number | null;
+  duration_ms: number | null;
 }
 
 interface CompileErrorRow {
@@ -88,16 +93,38 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     //    cost lines up with the leaderboard formula (token counts × rates).
     //    taskSetHash may be null (no current set); in that case we fall back
     //    to all runs (cross-set) for graceful degradation.
+    // Per-run aggregates mirror the /api/v1/runs list endpoint so the same row
+    // shows the same numbers no matter which page renders it:
+    //   tasks_attempted = COUNT(DISTINCT task_id)
+    //   tasks_passed    = COUNT(DISTINCT task_id WHERE any attempt passed)
+    //   duration_ms     = SUM of llm + compile + test durations across all
+    //                     attempts in the run
+    // `tasks_passed` uses "any attempt passed" semantics, matching `/api/v1/runs`.
+    // This converges with the run-detail "last attempt passed" definition only
+    // because the 2-attempt protocol guarantees attempt 2 is emitted iff
+    // attempt 1 failed; if that protocol ever expands, both queries must be
+    // updated together to use last-attempt-per-task semantics.
+    const HISTORY_SELECT = `
+      SELECT runs.id AS run_id,
+             runs.started_at AS ts,
+             AVG(v.score) AS score,
+             SUM(v.cost_usd) AS cost_usd,
+             runs.tier AS tier,
+             runs.status AS status,
+             runs.completed_at AS completed_at,
+             COUNT(DISTINCT v.task_id) AS tasks_attempted,
+             COUNT(DISTINCT CASE WHEN v.passed = 1 THEN v.task_id END) AS tasks_passed,
+             SUM(COALESCE(v.llm_duration_ms, 0)
+               + COALESCE(v.compile_duration_ms, 0)
+               + COALESCE(v.test_duration_ms, 0)) AS duration_ms
+      FROM runs
+      LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+    `;
+
     const historyRows = taskSetHash
       ? await getAll<RunRow>(
           env.DB,
-          `SELECT runs.id AS run_id,
-                  runs.started_at AS ts,
-                  AVG(v.score) AS score,
-                  SUM(v.cost_usd) AS cost_usd,
-                  runs.tier AS tier
-           FROM runs
-           LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+          `${HISTORY_SELECT}
            WHERE runs.model_id = ? AND runs.task_set_hash = ?
            GROUP BY runs.id
            ORDER BY runs.started_at DESC
@@ -106,13 +133,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         )
       : await getAll<RunRow>(
           env.DB,
-          `SELECT runs.id AS run_id,
-                  runs.started_at AS ts,
-                  AVG(v.score) AS score,
-                  SUM(v.cost_usd) AS cost_usd,
-                  runs.tier AS tier
-           FROM runs
-           LEFT JOIN v_results_with_cost v ON v.run_id = runs.id
+          `${HISTORY_SELECT}
            WHERE runs.model_id = ?
            GROUP BY runs.id
            ORDER BY runs.started_at DESC
@@ -279,6 +300,13 @@ function toHistoryPoint(row: RunRow): ModelHistoryPoint {
   // chart's two-tone color encoding.
   const tier: "verified" | "claimed" =
     row.tier === "verified" || row.tier === "trusted" ? "verified" : "claimed";
+  // Constrain status to the four documented values; legacy/unknown values
+  // fall through to 'completed' so badges still render rather than crash.
+  const status: ModelHistoryPoint["status"] =
+    row.status === "pending" || row.status === "running" ||
+        row.status === "completed" || row.status === "failed"
+      ? row.status
+      : "completed";
   return {
     run_id: row.run_id,
     ts: row.ts,
@@ -287,6 +315,11 @@ function toHistoryPoint(row: RunRow): ModelHistoryPoint {
       ? 0
       : Number(Number(row.cost_usd).toFixed(6)),
     tier,
+    status,
+    completed_at: row.completed_at,
+    tasks_attempted: row.tasks_attempted ?? 0,
+    tasks_passed: row.tasks_passed ?? 0,
+    duration_ms: row.duration_ms ?? 0,
   };
 }
 

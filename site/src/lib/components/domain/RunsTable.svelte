@@ -6,6 +6,12 @@
 
   interface Props { rows: RunsListItem[]; }
   let { rows }: Props = $props();
+
+  // 12-char prefix matches the run-detail page header for visual continuity.
+  const RUN_ID_PREFIX = 12;
+  const runHref = (id: string) => `/runs/${encodeURIComponent(id)}`;
+  const shortRunId = (id: string) =>
+    id.length > RUN_ID_PREFIX ? `${id.slice(0, RUN_ID_PREFIX)}…` : id;
 </script>
 
 <div class="wrap">
@@ -14,9 +20,9 @@
     <thead>
       <tr>
         <th scope="col">Started</th>
+        <th scope="col">Run</th>
         <th scope="col">Model</th>
         <th scope="col">Tasks</th>
-        <!-- TODO(D.7): switch to per-run pass_at_n once RunsListItem emits it -->
         <th scope="col">Score</th>
         <th scope="col">Cost</th>
         <th scope="col">Duration</th>
@@ -27,8 +33,11 @@
       {#each rows as row (row.id)}
         <tr>
           <th scope="row" class="text-muted">
-            <a href="/runs/{row.id}">{formatRelativeTime(row.started_at)}</a>
+            <a href={runHref(row.id)}>{formatRelativeTime(row.started_at)}</a>
           </th>
+          <td class="text-mono">
+            <a class="run-link" href={runHref(row.id)} title={row.id} aria-label="Run {row.id}">{shortRunId(row.id)}</a>
+          </td>
           <td>
             <ModelLink
               slug={row.model.slug}
@@ -67,4 +76,9 @@
   tbody tr:last-child th { border-bottom: 0; }
   tbody tr:hover { background: var(--surface); }
   th[scope='row'] a { color: inherit; }
+  .run-link {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .run-link:hover { text-decoration: underline; }
 </style>

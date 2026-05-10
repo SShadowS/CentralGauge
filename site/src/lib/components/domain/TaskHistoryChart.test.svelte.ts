@@ -9,6 +9,11 @@ const passPoint: ModelHistoryPoint = {
   score: 0.5,
   cost_usd: 0.01,
   tier: "claimed",
+  status: "completed",
+  completed_at: null,
+  tasks_attempted: 0,
+  tasks_passed: 0,
+  duration_ms: 0,
 };
 
 const failPoint: ModelHistoryPoint = {
@@ -17,6 +22,11 @@ const failPoint: ModelHistoryPoint = {
   score: 0,
   cost_usd: 0.02,
   tier: "claimed",
+  status: "completed",
+  completed_at: null,
+  tasks_attempted: 0,
+  tasks_passed: 0,
+  duration_ms: 0,
 };
 
 describe("TaskHistoryChart", () => {

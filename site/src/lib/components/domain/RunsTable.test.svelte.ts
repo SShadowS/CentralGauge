@@ -30,4 +30,28 @@ describe("RunsTable", () => {
     expect(screen.getByText("24/24")).toBeDefined();
     expect(screen.getByText("$0.12")).toBeDefined();
   });
+
+  it("links the run id to the run detail page", () => {
+    const { container } = render(RunsTable, { rows });
+    const link = container.querySelector('a.run-link') as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute('href')).toBe('/runs/r1');
+    expect(link!.textContent).toContain('r1');
+    expect(link!.getAttribute('title')).toBe('r1');
+  });
+
+  it("truncates long run ids to a 12-char prefix and URL-encodes the href", () => {
+    const longRows = [
+      {
+        ...rows[0],
+        id: "abc/def$1234567890abcdef",
+      },
+    ];
+    const { container } = render(RunsTable, { rows: longRows });
+    const link = container.querySelector('a.run-link') as HTMLAnchorElement;
+    expect(link.textContent?.trim()).toBe("abc/def$1234…");
+    expect(link.getAttribute('href')).toBe(
+      `/runs/${encodeURIComponent("abc/def$1234567890abcdef")}`,
+    );
+  });
 });

@@ -60,20 +60,14 @@
       id: r.run_id,
       model: { slug: m.model.slug, display_name: m.model.display_name, family_slug: m.model.family_slug },
       tier: r.tier,
-      status: 'completed' as const,
-      tasks_attempted: m.aggregates.tasks_attempted,
-      tasks_passed: m.aggregates.tasks_passed,
+      status: r.status,
+      tasks_attempted: r.tasks_attempted,
+      tasks_passed: r.tasks_passed,
       avg_score: r.score,
       cost_usd: r.cost_usd,
-      // Placeholder: ModelHistoryPoint (the shape returned by /api/v1/models/:slug
-      // for recent_runs) doesn't carry per-run duration. Adding it would require
-      // aggregating COALESCE(llm_duration_ms,0)+COALESCE(compile_duration_ms,0)
-      // +COALESCE(test_duration_ms,0) from the results table per run, plus
-      // extending ModelHistoryPoint with duration_ms?. Out of scope for P5.2 polish;
-      // tracked for a future endpoint pass.
-      duration_ms: 0,
+      duration_ms: r.duration_ms,
       started_at: r.ts,
-      completed_at: r.ts,
+      ...(r.completed_at ? { completed_at: r.completed_at } : {}),
     })),
   );
 

@@ -10,6 +10,11 @@ const points: ModelHistoryPoint[] = [
     score: 0.5,
     cost_usd: 0.01,
     tier: "claimed",
+    status: "completed",
+    completed_at: null,
+    tasks_attempted: 0,
+    tasks_passed: 0,
+    duration_ms: 0,
   },
   {
     run_id: "b",
@@ -17,6 +22,11 @@ const points: ModelHistoryPoint[] = [
     score: 0.7,
     cost_usd: 0.05,
     tier: "claimed",
+    status: "completed",
+    completed_at: null,
+    tasks_attempted: 0,
+    tasks_passed: 0,
+    duration_ms: 0,
   },
 ];
 

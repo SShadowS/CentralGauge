@@ -143,6 +143,14 @@ export interface ModelHistoryPoint {
   score: number;
   cost_usd: number;
   tier: 'verified' | 'claimed';
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  completed_at: string | null;
+  /** Per-run distinct task count attempted. Matches RunsListItem semantics. */
+  tasks_attempted: number;
+  /** Per-run distinct task count where any attempt passed. */
+  tasks_passed: number;
+  /** Per-run total: sum of llm + compile + test durations (ms). */
+  duration_ms: number;
 }
 
 export interface FailureMode {
@@ -156,7 +164,9 @@ export interface ModelDetail {
   /**
    * The task-set hash that bounds `aggregates`, `history`, `recent_runs`, and
    * `failure_modes`. All four sections are scoped to this hash (current set).
-   * `null` when no task set is marked `is_current = 1` in the database.
+   * When `null` (no row with `is_current = 1` in `task_sets`), those sections
+   * fall back to cross-set data (every run for the model regardless of set)
+   * so the page still renders something useful.
    *
    * `predecessor` is intentionally cross-set when the predecessor model has
    * no runs on the current set, so the delta tile can still render.

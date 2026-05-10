@@ -113,6 +113,11 @@ describe("GET /api/v1/models/:slug", () => {
         score: number;
         cost_usd: number;
         tier: string;
+        status: string;
+        completed_at: string | null;
+        tasks_attempted: number;
+        tasks_passed: number;
+        duration_ms: number;
       }>;
       failure_modes: Array<{
         code: string;
@@ -126,6 +131,11 @@ describe("GET /api/v1/models/:slug", () => {
         score: number;
         cost_usd: number;
         tier: string;
+        status: string;
+        completed_at: string | null;
+        tasks_attempted: number;
+        tasks_passed: number;
+        duration_ms: number;
       }>;
       predecessor?: {
         slug: string;
@@ -158,12 +168,80 @@ describe("GET /api/v1/models/:slug", () => {
     expect(body.recent_runs[0].run_id).toBe("r1");
     expect(typeof body.recent_runs[0].ts).toBe("string");
     expect(typeof body.recent_runs[0].score).toBe("number");
+    // Per-run task counts and duration are populated from the run's results,
+    // not from the model-level aggregate. Fixture: r1 has two distinct tasks
+    // (easy/a passed, hard/b failed) so 1/2.
+    expect(body.recent_runs[0].tasks_attempted).toBe(2);
+    expect(body.recent_runs[0].tasks_passed).toBe(1);
+    expect(typeof body.recent_runs[0].duration_ms).toBe("number");
+    expect(body.recent_runs[0].status).toBe("completed");
+    expect(body.recent_runs[0].completed_at).toBe("2026-04-01T01:00:00Z");
     expect(body.history).toHaveLength(1);
     expect(body.history[0].run_id).toBe("r1");
     expect(body.history[0].score).toBeCloseTo(0.5, 5);
+    expect(body.history[0].tasks_attempted).toBe(2);
+    expect(body.history[0].tasks_passed).toBe(1);
+    expect(body.history[0].status).toBe("completed");
     // No compile errors seeded in this fixture → empty failure_modes.
     expect(body.failure_modes).toEqual([]);
   });
+
+  it(
+    "emits per-run task counts + duration that match /api/v1/runs for the same run",
+    async () => {
+      // Seed non-zero durations so a regression that defaults duration_ms to 0
+      // would be caught by this contract test.
+      await env.DB.prepare(
+        `UPDATE results SET llm_duration_ms = 1000,
+                          compile_duration_ms = 200,
+                          test_duration_ms = 50
+         WHERE run_id = 'r1' AND task_id = 'easy/a'`,
+      ).run();
+      await env.DB.prepare(
+        `UPDATE results SET llm_duration_ms = 800,
+                          compile_duration_ms = 300,
+                          test_duration_ms = 0
+         WHERE run_id = 'r1' AND task_id = 'hard/b'`,
+      ).run();
+
+      const modelRes = await SELF.fetch(
+        "https://x/api/v1/models/sonnet-4.7?_cb=parity",
+      );
+      expect(modelRes.status).toBe(200);
+      const modelBody = (await modelRes.json()) as {
+        recent_runs: Array<{
+          run_id: string;
+          tasks_attempted: number;
+          tasks_passed: number;
+          duration_ms: number;
+        }>;
+      };
+
+      const runsRes = await SELF.fetch(
+        "https://x/api/v1/runs?model=sonnet-4.7&task_set=ts&limit=1",
+      );
+      expect(runsRes.status).toBe(200);
+      const runsBody = (await runsRes.json()) as {
+        data: Array<{
+          id: string;
+          tasks_attempted: number;
+          tasks_passed: number;
+          duration_ms: number;
+        }>;
+      };
+
+      expect(runsBody.data).toHaveLength(1);
+      expect(modelBody.recent_runs).toHaveLength(1);
+      const fromModel = modelBody.recent_runs[0];
+      const fromRuns = runsBody.data[0];
+      expect(fromModel.run_id).toBe(fromRuns.id);
+      expect(fromModel.tasks_attempted).toBe(fromRuns.tasks_attempted);
+      expect(fromModel.tasks_passed).toBe(fromRuns.tasks_passed);
+      expect(fromModel.duration_ms).toBe(fromRuns.duration_ms);
+      // Sanity: durations are non-zero so we know the assertion has teeth.
+      expect(fromModel.duration_ms).toBeGreaterThan(0);
+    },
+  );
 
   // Phase G: settings transparency block on /api/v1/models/:slug.
   it("emits the settings block (Phase G) with consistent values across a single-run model", async () => {
