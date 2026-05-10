@@ -86,8 +86,9 @@ export interface LeaderboardRow {
    */
   tasks_passed: number;
   /**
-   * P7 Mini-phase A. Per-task count: COUNT(DISTINCT task_id) across all
-   * the model's runs. Use this denominator for pass@N.
+   * Per-task coverage count: COUNT(DISTINCT task_id) across all the model's
+   * runs in scope. Not the strict pass_at_n denominator (which is the active
+   * task set's task_count); this field is exposed only as coverage metadata.
    */
   tasks_attempted_distinct: number;
   /**
@@ -200,8 +201,10 @@ export interface ModelDetail {
      */
     tasks_passed: number;
     /**
-     * P7 Mini-phase A. Per-task count: COUNT(DISTINCT task_id) across
-     * all the model's runs. Pass@N denominator.
+     * Per-task coverage count: COUNT(DISTINCT task_id) across the model's
+     * runs in the current task set. Strict pass_at_n normally divides by the
+     * task set's `task_count`; this field is only the divisor in the legacy
+     * fallback (no-current-set) path.
      */
     tasks_attempted_distinct: number;
     /**
@@ -216,9 +219,13 @@ export interface ModelDetail {
      */
     tasks_passed_attempt_2_only: number;
     /**
-     * P7 Mini-phase A. (tasks_passed_attempt_1 +
-     * tasks_passed_attempt_2_only) / tasks_attempted_distinct; 0 when
-     * no attempts.
+     * Strict pass rate, identical to the leaderboard's `pass_at_n`:
+     * (tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / strict_denominator,
+     * where the denominator is the task_set's `task_count` (or the
+     * category/difficulty-scoped subset count when those filters are active).
+     * When `task_set_hash` is null (no current set), falls back to per-attempted
+     * for graceful degradation. The active denominator is also exposed via
+     * `tasks_attempted_distinct`.
      */
     pass_at_n: number;
     avg_cost_usd: number;

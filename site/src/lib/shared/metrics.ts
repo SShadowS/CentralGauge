@@ -156,7 +156,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Tasks attempted',
     short: 'Count of distinct tasks the model has attempted at least once.',
     formula: 'COUNT(DISTINCT task_id) over the results table for this model.',
-    when: 'Denominator for pass_at_n and consistency. A model with fewer tasks attempted has a narrower coverage sample.',
+    when: 'Coverage indicator. Strict pass_at_n still counts unattempted tasks as failures; use this to see how much of the active task set the model covered.',
     unit: 'count',
   },
 

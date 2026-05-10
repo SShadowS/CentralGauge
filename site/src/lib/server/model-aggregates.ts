@@ -518,15 +518,16 @@ export async function computeModelAggregates(
     const passedA2Only = Number(row.tasks_passed_attempt_2_only ?? 0);
     const attemptedDistinct = Number(row.tasks_attempted_distinct ?? 0);
     const tasksPassedDistinct = passedA1 + passedA2Only;
-    const passAtNPerAttempted = attemptedDistinct > 0
-      ? tasksPassedDistinct / attemptedDistinct
+    // Strict pass rate denominator. The fallback to attemptedDistinct triggers
+    // ONLY when the caller did not provide taskSetHash (legacy/no-current-set
+    // path). A strict denominator that comes back as 0 keeps using strict so
+    // an empty-scope filter doesn't silently inflate the rate.
+    const passAtNDenominator = strictDenominator === null
+      ? attemptedDistinct
+      : strictDenominator;
+    const passAtN = passAtNDenominator > 0
+      ? tasksPassedDistinct / passAtNDenominator
       : 0;
-    // Strict: use scope-aware denominator when taskSetHash was provided;
-    // fall back to per-attempted for legacy callers that omit taskSetHash.
-    const passAtN = strictDenominator !== null && strictDenominator > 0
-      ? tasksPassedDistinct / strictDenominator
-      : passAtNPerAttempted;
-    // Note: passAtNPerAttempted is kept for the passAtN fallback computation only.
     const profile = row.settings_hash_unique
       ? profileByHash.get(row.settings_hash_unique) ?? null
       : null;
@@ -565,7 +566,7 @@ export async function computeModelAggregates(
       last_run_at: row.last_run_at,
       latency_p50_ms: latencyPercentiles ? Math.round(latencyPercentiles.p50) : null,
       latency_p95_ms: latencyPercentiles ? Math.round(latencyPercentiles.p95) : null,
-      pass_rate_ci: wilsonInterval(tasksPassedDistinct, strictDenominator ?? attemptedDistinct),
+      pass_rate_ci: wilsonInterval(tasksPassedDistinct, passAtNDenominator),
       pass_hat_at_n: passHatByModel?.get(row.model_id) ?? 0,
       cost_per_pass_usd: costPerPassUsd,
       tasks_attempted: Number(row.tasks_attempted ?? 0),

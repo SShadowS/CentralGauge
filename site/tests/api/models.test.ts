@@ -243,6 +243,45 @@ describe("GET /api/v1/models/:slug", () => {
     },
   );
 
+  it(
+    "emits a pass_at_n that matches /api/v1/leaderboard for the same model on the current set",
+    async () => {
+      // Bump task_count to 3 so strict denominator (= 3) diverges from
+      // tasks_attempted_distinct (= 2). With 1 task passing the strict rate is
+      // 1/3 and the legacy per-attempted rate is 1/2; the parity assertion
+      // below catches a regression that flipped either endpoint to per-attempted.
+      await env.DB.prepare(
+        `UPDATE task_sets SET task_count = 3 WHERE hash = 'ts'`,
+      ).run();
+
+      const lbRes = await SELF.fetch(
+        "https://x/api/v1/leaderboard?set=current&_cb=passatn-strict",
+      );
+      expect(lbRes.status).toBe(200);
+      const lbBody = (await lbRes.json()) as {
+        data: Array<{ model: { slug: string }; pass_at_n: number }>;
+      };
+      const lbRow = lbBody.data.find((r) => r.model.slug === "sonnet-4.7");
+      expect(lbRow, "sonnet-4.7 should be on the leaderboard").toBeDefined();
+
+      const modelRes = await SELF.fetch(
+        "https://x/api/v1/models/sonnet-4.7?_cb=passatn-strict",
+      );
+      expect(modelRes.status).toBe(200);
+      const modelBody = (await modelRes.json()) as {
+        aggregates: { pass_at_n: number };
+      };
+
+      // Both surfaces must use the strict denominator (task_count = 3).
+      expect(lbRow!.pass_at_n).toBeCloseTo(1 / 3, 6);
+      expect(modelBody.aggregates.pass_at_n).toBeCloseTo(1 / 3, 6);
+      expect(modelBody.aggregates.pass_at_n).toBeCloseTo(lbRow!.pass_at_n, 6);
+      // Sanity: the assertion would fail if either endpoint used 1/2 (legacy
+      // per-attempted) or 1/N for any other N. This is the discriminating teeth.
+      expect(modelBody.aggregates.pass_at_n).not.toBeCloseTo(1 / 2, 6);
+    },
+  );
+
   // Phase G: settings transparency block on /api/v1/models/:slug.
   it("emits the settings block (Phase G) with consistent values across a single-run model", async () => {
     const res = await SELF.fetch(
