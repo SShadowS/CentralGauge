@@ -74,7 +74,7 @@
           <th scope="row"><code>usd</code></th>
           <td>US dollars</td>
           <td><code>$0.12</code></td>
-          <td>Avg cost / task, $/Pass</td>
+          <td>Avg cost / task, Cost / pass</td>
         </tr>
         <tr>
           <th scope="row"><code>count</code></th>
