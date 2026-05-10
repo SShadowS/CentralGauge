@@ -135,10 +135,10 @@
 
 <section class="stats">
   <StatTile
-    label="Pass Rate"
+    label="Run success rate"
     value="{r.totals.tasks_attempted > 0 ? ((r.totals.tasks_passed / r.totals.tasks_attempted) * 100).toFixed(1) : '—'}%"
-    note="{formatTaskRatio(r.totals.tasks_passed, r.totals.tasks_attempted)} tasks"
-    infoId="pass_at_n"
+    note="{formatTaskRatio(r.totals.tasks_passed, r.totals.tasks_attempted)} of {r.totals.tasks_attempted} tasks attempted in this run"
+    infoId="run_success_rate"
   />
   <StatTile label="Avg score" value={formatScore(r.totals.avg_score)} infoId="avg_score" />
   <StatTile label="Cost" value={formatCost(r.totals.cost_usd)} />

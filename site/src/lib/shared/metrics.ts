@@ -78,6 +78,15 @@ export const METRICS: Record<string, MetricDef> = {
     link: { href: 'https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval', text: 'Wilson score interval (Wikipedia)' },
   },
 
+  run_success_rate: {
+    id: 'run_success_rate',
+    label: 'Run success rate',
+    short: 'Tasks the run solved on its last attempt / tasks attempted in this run.',
+    formula: 'COUNT(distinct tasks where last attempt passed) / COUNT(distinct tasks attempted in this run)',
+    when: 'Per-run metric for the model\'s "final answer" on each task. Differs from leaderboard pass_at_n: this denominator is the run\'s own attempted-task count, not the task set size, so partial runs are not penalised for unattempted tasks.',
+    unit: 'rate',
+  },
+
   pass_hat_at_n: {
     id: 'pass_hat_at_n',
     label: 'pass^n (strict)',
