@@ -1,0 +1,30 @@
+id: CG-AL-H043
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H043 Url Guard" (ID 70430) with Access = Public.
+
+  Single procedure: `SameHost(ServiceUrl: Text; BaseUrl: Text): Boolean`.
+
+  Body must:
+    - Declare one local variable of type `Codeunit "Uri"` (from the BC System Application; the System.Utilities namespace).
+    - Call exactly one method on that codeunit instance, named `AreURIsHaveSameHost`, passing ServiceUrl and BaseUrl as the two Text arguments.
+    - Return the Boolean result of that call.
+
+  Forbidden mechanisms:
+    - Calling any other Uri-codeunit method (no Init, no GetHost, no GetScheme, no GetPort, no GetAbsolutePath, no IsBaseUri, no IsValidURIPattern, no SetUri).
+    - Splitting or parsing either URL with StrPos / StrLen / CopyStr / SelectStr / Split / Replace.
+    - DotNet types or any non-System-Application helper.
+
+metadata:
+  category: security
+  tags: [ssrf, uri, system-application, host-validation]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H043.Test.al
+  testCodeunitId: 80258
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

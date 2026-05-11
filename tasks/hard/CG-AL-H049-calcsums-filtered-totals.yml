@@ -1,0 +1,36 @@
+id: CG-AL-H049
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Implement a codeunit named "CG H049 Sales Total" (id 70490) that exposes:
+
+    procedure TotalForDoc(DocumentNo: Code[20]) Total: Decimal
+
+  The procedure must return the sum of the field "Amount" across every row of
+  the existing table "CG H049 Sale Line" (id 69490) whose field "Doc No." equals
+  DocumentNo. If no rows match, return 0.
+
+  Constraints:
+  - You MUST use the platform's set-based aggregate against the filtered range.
+    Iterating rows in AL is forbidden:
+    no FindSet, no FindFirst, no FindLast, no repeat..until, no while loops over
+    the table, no foreach over the table, no manual Decimal accumulator, no
+    Next(), no Count + per-row reads.
+  - Do NOT add a FlowField/SumIndexField to the existing table; the prereq table
+    is fixed and you must compute the sum at call time.
+  - The procedure must work for a primary-key range with thousands of matching
+    rows without iterating in AL.
+  - Do not add UI or pages.
+
+metadata:
+  category: performance
+  tags: [calcsums, sift, aggregate, no-iteration]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H049.Test.al
+  testCodeunitId: 80264
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

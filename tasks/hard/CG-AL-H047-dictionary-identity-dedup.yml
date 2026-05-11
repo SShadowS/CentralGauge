@@ -1,0 +1,33 @@
+id: CG-AL-H047
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H047 Distinct Customers" (ID 70470) with Access = Public.
+
+  Existing prereq table "CG H047 Order Line" (ID 69470) - fields: "Line No." Integer PK field 1; "Customer No." Code[20] field 10. The prereq seeds six rows on install: (1,'C001'), (2,'C002'), (3,'C001'), (4,'C003'), (5,'C002'), (6,'C001').
+
+  One procedure: `DistinctCount(var OrderLine: Record "CG H047 Order Line"): Integer`.
+
+  Iterate the OrderLine record set with FindSet/Next. Track which "Customer No." values have already been seen using an in-memory key-set whose membership lookup is constant-time on the key. Add each unseen "Customer No." to the set; ignore subsequent duplicates. After the loop, return the size of the set.
+
+  The set MUST be the AL platform generic data type whose primary purpose is identity-keyed lookup with O(1) ContainsKey and O(1) Add. Use Code[20] as the key type and Boolean (or any small placeholder type) as the value type.
+
+  Forbidden mechanisms:
+    - Temporary `Record` variables used as a deduplication buffer (use the platform generic, not a temp table).
+    - List of [Code[20]] / Array of Code[20] (linear-time Contains, not the right tool).
+    - SortedDictionary / SortedList variants (those impose ordering cost; the task asks for identity hashing).
+    - Manual nested loops checking earlier rows for duplicates.
+    - Counting via DISTINCT SQL or RecordRef.
+
+metadata:
+  category: performance
+  tags: [dictionary, identity-lookup, generics]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H047.Test.al
+  testCodeunitId: 80262
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

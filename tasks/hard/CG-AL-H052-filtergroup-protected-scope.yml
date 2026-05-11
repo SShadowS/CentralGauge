@@ -1,0 +1,46 @@
+id: CG-AL-H052
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H052 Tenant Scope" (ID 70520) with Access = Public.
+
+  Existing prereq table "CG H052 Account" (ID 69520). Fields:
+    - "Code"      Code[20] (PK)
+    - "Tenant Id" Code[20]
+    - "Status"    Code[10]
+
+  One procedure:
+
+      ApplyTenantScope(var Acct: Record "CG H052 Account"; TenantId: Code[20])
+
+  Behaviour:
+    - Apply a SetRange on "Tenant Id" equal to TenantId to Acct, placing the filter in a
+      protected filter slot so that subsequent caller-applied SetRange/SetFilter calls on
+      "Tenant Id" in the default (caller-visible) filter slot do NOT replace the tenant
+      restriction. They must AND with it.
+    - Before returning, switch the record variable back to the default (caller-visible)
+      filter slot, so the caller's later SetRange/SetFilter calls behave normally.
+
+  Concretely: after `ApplyTenantScope(Acct, 'T1')` has returned, a caller that runs
+  `Acct.SetRange("Tenant Id", 'T2'); Acct.Count;` MUST observe zero rows (T1 AND T2 = empty),
+  not the count of rows with Tenant Id = T2.
+
+  Forbidden mechanisms:
+    - Implementing this by COPYING records into a temporary table, RecordRef, query object,
+      or DataTransfer.
+    - Calling Reset, Init, ClearMarks, or Copy on Acct.
+    - Using global / single-instance state to remember the tenant outside the record variable.
+    - Writing to the database.
+
+metadata:
+  category: filtering
+  tags: [filter-group, protected-scope, record-filter]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H052.Test.al
+  testCodeunitId: 80267
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

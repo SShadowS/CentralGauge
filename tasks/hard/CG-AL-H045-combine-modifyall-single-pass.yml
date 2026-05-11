@@ -1,0 +1,33 @@
+id: CG-AL-H045
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H045 Tolerance" (ID 70450) with Access = Public.
+
+  Existing prereq table "CG H045 Entry" (ID 69450) - fields: "Entry No." Integer PK field 1; "Doc No." Code[20] field 10; "Tolerance" Decimal field 20; "Accepted Flag" Boolean field 30. The prereq seeds five rows on install: (1,'D1',0,false), (2,'D1',0,false), (3,'D1',0,false), (4,'D2',5,true), (5,'D2',5,true).
+
+  One procedure: `ApplyTolerance(DocumentNo: Code[20]; ToleranceAmount: Decimal)`.
+
+  After the call, every "CG H045 Entry" row whose "Doc No." = DocumentNo must have BOTH "Tolerance" = ToleranceAmount AND "Accepted Flag" = false. Rows whose "Doc No." differs must be unchanged. Row count must not change.
+
+  The body must perform exactly one filtered pass over the table: filter "Doc No." = DocumentNo once, locate the matching set with a SINGLE FindSet call asking for modification, walk the set with Next() in one repeat-loop, assign both fields per row, and persist with Modify on each row WITHOUT firing OnModify.
+
+  Forbidden mechanisms:
+    - Calling ModifyAll in any form (one-field, two-field, with or without RunTrigger).
+    - Calling FindSet, FindFirst, FindLast, or Find more than once on the record variable inside this procedure.
+    - Calling Modify with the trigger boolean set to true.
+    - Issuing two separate filtered scans (the "filter then ModifyAll FieldA, then ModifyAll FieldB" anti-pattern this task targets).
+    - SetRange on the same field more than once; using RecordRef + FieldRef; Commit; SQL.
+
+metadata:
+  category: performance
+  tags: [modifyall, findset, multi-field-update]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H045.Test.al
+  testCodeunitId: 80260
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,43 @@
+id: CG-AL-H050
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H050 Validator" (ID 70500) with Access = Public.
+
+  Existing prereq table "CG H050 Email" (ID 69500). Fields:
+    - "Entry No." Integer (PK)
+    - "Address"   Text[80]
+
+  One procedure: `ValidateAll(var Email: Record "CG H050 Email") InvalidCount: Integer`.
+
+  Behaviour:
+    - Iterate every row of Email (use its current filter).
+    - For each row whose "Address" does NOT contain the character '@', raise an Error
+      using the AL built-in `Error(...)` with the message `StrSubstNo('Invalid: %1', Email."Address")`.
+    - The Error call MUST NOT terminate the loop - iteration must continue past every
+      Error and visit every remaining row.
+    - After the loop, the procedure must return the integer count of rows that triggered an error.
+    - The procedure MUST NOT propagate any of the raised errors to its caller; calling
+      ValidateAll from a normal (non-collecting) procedure must return cleanly with only the
+      integer result.
+
+  Forbidden mechanisms:
+    - Using a TryFunction (`[TryFunction]`) wrapper or a try-pattern codeunit around the row check
+      to swallow errors.
+    - Avoiding Error() and just counting (`if invalid then InvalidCount += 1`) - the spec
+      requires a real Error call per invalid row.
+    - Catching errors with asserterror inside ValidateAll.
+    - Returning early before the loop completes.
+
+metadata:
+  category: error-handling
+  tags: [collectible-errors, error-behavior, batch-validation]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H050.Test.al
+  testCodeunitId: 80265
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

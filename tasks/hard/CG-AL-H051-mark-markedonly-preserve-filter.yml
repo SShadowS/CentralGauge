@@ -1,0 +1,50 @@
+id: CG-AL-H051
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG H051 Tagger" (ID 70510) with Access = Public.
+
+  Existing prereq table "CG H051 Sample" (ID 69510). Fields:
+    - "Code"  Code[20] (PK)
+    - "Group" Code[10]
+
+  One procedure:
+
+      CountTagged(var Sample: Record "CG H051 Sample"; Codes: List of [Code[20]]) Result: Integer
+
+  Behaviour:
+    - For each value in Codes, locate the matching Sample row by primary key (use Record.Get).
+      If the row exists, tag it on the in-memory record variable. Skip codes that do not exist.
+      Tagging MUST be done using the AL Record method that records a per-instance in-memory mark
+      against the current row (NOT a field write, NOT a temporary buffer).
+    - After tagging, restrict iteration to ONLY the tagged rows using the AL Record method that
+      activates "marked-only" iteration on that record variable.
+    - Return Count of those rows under the now-active "marked-only" view.
+
+  Critical invariants:
+    - The caller's filter set on Sample (e.g. SetRange / SetFilter applied BEFORE the call) MUST
+      still be in effect after CountTagged returns. Do NOT call Reset / ClearMarks / Init / Copy
+      / CopyFilters / FilterGroup on Sample.
+    - The result Count must respect the caller's existing filters: if the caller had filtered
+      to Group = 'G1' and you tag rows A (G1), C (G2), E (G2), the result is 1 (only A
+      satisfies both the caller's filter AND the mark).
+
+  Forbidden mechanisms:
+    - Using a temporary record buffer to track which rows are "tagged".
+    - Using a List of [Code[20]] / Dictionary to track tagging in AL code.
+    - Calling FilterGroup, Reset, Init, ClearMarks, Copy, or CopyFilters on Sample.
+    - Counting via a manual loop with `+= 1` (you must let the platform count under the
+      marked-only view).
+
+metadata:
+  category: filtering
+  tags: [record-mark, marked-only, filter-preservation]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H051.Test.al
+  testCodeunitId: 80266
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
