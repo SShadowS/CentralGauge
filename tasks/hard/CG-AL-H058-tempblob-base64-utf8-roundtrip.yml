@@ -1,0 +1,52 @@
+id: CG-AL-H058
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a Base64 codec that round-trips Unicode text through Business Central's
+  blob/stream APIs.
+
+  Create codeunit "CG H058 Codec" (ID 70580), Access = Public, with two
+  procedures:
+
+      procedure EncodeBase64(Plain: Text) B64: Text
+      procedure DecodeBase64(B64: Text) Plain: Text
+
+  EncodeBase64 must:
+    - Use a local variable of type Codeunit "Temp Blob".
+    - Write Plain to the Temp Blob via an OutStream.
+    - Read the same bytes back through an InStream.
+    - Convert those bytes to a Base64 Text via Codeunit "Base64 Convert".
+    - Return the resulting Base64 string.
+
+  DecodeBase64 must reverse the process: take a Base64 Text, write the decoded
+  bytes into a Temp Blob via an OutStream provided to Codeunit "Base64 Convert",
+  read them back via an InStream as Text, return the original Plain.
+
+  Critical: the encoding on every OutStream/InStream you create against the
+  Temp Blob in BOTH procedures must be the same and must be one that
+  losslessly round-trips arbitrary Unicode (including code points outside the
+  Latin-1 range). The tests pass Unicode inputs like 'café' and '日本語'; the
+  output must equal the input character for character.
+
+  Forbidden mechanisms:
+    - Calling `Codeunit "Base64 Convert".ToBase64(Plain: Text)` with the Text
+      overload directly (you MUST go through OutStream + InStream).
+    - Calling `Codeunit "Base64 Convert".FromBase64(B64: Text): Text` with the
+      Text overload directly (same reason).
+    - DotNet types.
+    - Concatenating, escaping, or pre-processing Plain before writing it to
+      the OutStream.
+    - Storing the value in IsolatedStorage / a table.
+
+metadata:
+  category: serialization
+  tags: [base64, tempblob, instream-outstream, textencoding, unicode]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H058.Test.al
+  testCodeunitId: 80273
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
