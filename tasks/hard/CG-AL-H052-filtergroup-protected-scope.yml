@@ -15,27 +15,37 @@ description: >-
       ApplyTenantScope(var Acct: Record "CG H052 Account"; TenantId: Code[20])
 
   Behaviour:
-    - Apply a SetRange on "Tenant Id" equal to TenantId to Acct, placing the filter in a
-      protected filter slot so that subsequent caller-applied SetRange/SetFilter calls on
-      "Tenant Id" in the default (caller-visible) filter slot do NOT replace the tenant
-      restriction. They must AND with it.
+    - Apply a SetRange on "Tenant Id" equal to TenantId to Acct, placing the filter in
+      the protected (security/system) filter slot so that subsequent caller-applied
+      SetRange/SetFilter calls on "Tenant Id" in the default (caller-visible) filter
+      slot do NOT replace it, but AND with it.
+    - The caller may already have other filters in that SAME protected slot (set on
+      OTHER fields, e.g. "Status"). Those existing protected filters MUST survive your
+      call - your procedure must only add the tenant restriction alongside them, not
+      clear or replace them.
     - Before returning, switch the record variable back to the default (caller-visible)
       filter slot, so the caller's later SetRange/SetFilter calls behave normally.
 
-  Concretely: after `ApplyTenantScope(Acct, 'T1')` has returned, a caller that runs
-  `Acct.SetRange("Tenant Id", 'T2'); Acct.Count;` MUST observe zero rows (T1 AND T2 = empty),
-  not the count of rows with Tenant Id = T2.
+  Concrete invariants the test will check:
+    - After `ApplyTenantScope(Acct, 'T1')`: `Acct.SetRange("Tenant Id", 'T2'); Acct.Count`
+      MUST observe zero rows (T1 AND T2 = empty), NOT the count of rows with Tenant Id = T2.
+    - If the caller had pre-applied a protected-slot filter (Status = 'Active') BEFORE
+      calling ApplyTenantScope(Acct, 'T1'), the post-call set must still respect BOTH
+      Status = 'Active' AND Tenant Id = 'T1'. Losing the caller's pre-existing protected
+      filter is a failure.
 
   Forbidden mechanisms:
-    - Implementing this by COPYING records into a temporary table, RecordRef, query object,
-      or DataTransfer.
-    - Calling Reset, Init, ClearMarks, or Copy on Acct.
-    - Using global / single-instance state to remember the tenant outside the record variable.
+    - Calling Reset, Init, ClearMarks, Copy, or CopyFilters on Acct anywhere in the
+      procedure (these wipe the caller's pre-existing protected-slot filters).
+    - Implementing this by copying records into a temporary table, RecordRef, query
+      object, or DataTransfer.
+    - Using global / single-instance state to remember the tenant outside the record
+      variable.
     - Writing to the database.
 
 metadata:
   category: filtering
-  tags: [filter-group, protected-scope, record-filter]
+  tags: [filter-group, protected-scope, record-filter, intersect]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H052.Test.al
