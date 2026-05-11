@@ -1,0 +1,56 @@
+id: CG-AL-H057
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a List page that computes a derived display value from each row using
+  the page's OnAfterGetRecord trigger, WITHOUT writing back to the database.
+
+  Existing prereq table "CG H057 Sample" (ID 69570). Fields:
+    - "Code"         Code[20] (PK)
+    - "Description"  Text[100]
+    - "Touch Count"  Integer (InitValue = 0)
+  The table has an OnModify trigger that auto-increments "Touch Count"
+  whenever any external Modify is committed. This makes accidental writes
+  visible to the test.
+
+  Create page "CG H057 List" (ID 70570) with:
+    - PageType = List
+    - SourceTable = "CG H057 Sample"
+    - SourceTableTemporary = false (the page reads the real table)
+    - A repeater showing fields "Code" and "Description" and a third column
+      named "Status Tag" whose source is a PAGE-LOCAL Text variable (NOT a
+      table field). The Status Tag column must be ApplicationArea = All.
+
+  Page logic (OnAfterGetRecord trigger):
+    - Compute the page-local "Status Tag" variable from Rec."Description"
+      using these rules, evaluated in order:
+        - If StrLen(Rec.Description) < 20 then Status Tag := 'SHORT'
+        - Else if StrLen(Rec.Description) < 60 then Status Tag := 'MEDIUM'
+        - Else                                   Status Tag := 'LONG'
+    - Assign Status Tag once per row read - no other side effects.
+
+  Forbidden mechanisms (CRITICAL):
+    - Calling Rec.Modify, Rec.Modify(true), Rec.Modify(false), Rec.Validate,
+      Rec.Insert, Rec.Delete, or any other database write inside the page or
+      from any trigger on the page. The OnModify trigger on "CG H057 Sample"
+      bumps "Touch Count" if it fires; the tests pass only when "Touch Count"
+      remains 0 for every seeded row after the page has been opened and
+      iterated.
+    - Storing Status Tag in a new table field, a tableextension, or
+      IsolatedStorage. The value is page-local Text only.
+    - Using a SingleInstance helper codeunit to carry Status Tag.
+    - Subscribing to a global event that mutates "CG H057 Sample" when the
+      page is opened.
+
+metadata:
+  category: pages
+  tags: [page, onaftergetrecord, no-write, page-local-var, readonly-trigger]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H057.Test.al
+  testCodeunitId: 80272
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
