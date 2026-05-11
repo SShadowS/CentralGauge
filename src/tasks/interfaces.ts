@@ -3,6 +3,7 @@
  * This is the authoritative source for task-related types
  */
 
+import { z } from "zod";
 import type { LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
@@ -10,6 +11,53 @@ import type {
   CLIPromptOverrides,
   PromptInjectionConfig,
 } from "../prompts/mod.ts";
+
+const TaskManifestExpectedSchema = z.object({
+  compile: z.boolean(),
+  testApp: z.string().optional(),
+  testCodeunitId: z.number().int().positive().optional(),
+  mustContain: z.array(z.string()).optional(),
+  mustNotContain: z.array(z.string()).optional(),
+});
+
+const TaskManifestMetadataSchema = z.object({
+  difficulty: z.enum(["easy", "medium", "hard"]).optional(),
+  category: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  estimatedTokens: z.number().int().nonnegative().optional(),
+  target: z.enum(["Cloud", "OnPrem"]).optional(),
+}).passthrough();
+
+export const TaskManifestSchema = z.object({
+  id: z.string().regex(
+    /^CG-AL-[EMHX][0-9]+$/,
+    "id must match CG-AL-[EMHX]NNN (e.g. CG-AL-H048)",
+  ),
+  description: z.string().min(10),
+  prompt_template: z.string().min(1),
+  fix_template: z.string().min(1),
+  max_attempts: z.number().int().positive(),
+  expected: TaskManifestExpectedSchema,
+  metrics: z.array(z.string()),
+  metadata: TaskManifestMetadataSchema.optional(),
+  prompts: z.unknown().optional(),
+}).passthrough();
+
+export function parseTaskManifest(
+  raw: unknown,
+  manifestPath: string,
+): TaskManifest {
+  const result = TaskManifestSchema.safeParse(raw);
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((i) => `  ${i.path.join(".") || "(root)"}: ${i.message}`)
+      .join("\n");
+    throw new Error(
+      `Invalid task manifest at ${manifestPath}:\n${issues}`,
+    );
+  }
+  return result.data as TaskManifest;
+}
 
 /**
  * Task types supported by the system
