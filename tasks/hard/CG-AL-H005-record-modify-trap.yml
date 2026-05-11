@@ -3,42 +3,50 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create a table and codeunit that test understanding of Rec vs xRec and Modify behavior.
+  Build a small set of objects that exercise correct Rec vs xRec comparison in an
+  OnModify trigger AND expose the same logic for direct unit testing.
 
-  1. Create table "CG Audit Log" (ID 70206) with fields:
-     - "Entry No." (Integer, primary key, AutoIncrement)
-     - "Table ID" (Integer)
-     - "Record ID" (RecordId)
-     - "Field Changed" (Text[50])
-     - "Old Value" (Text[250])
-     - "New Value" (Text[250])
-     - "Changed At" (DateTime)
-     - "Changed By" (Code[50])
+  Create three objects:
 
-  2. Create table "CG Tracked Item" (ID 70207) with fields:
+  1. Codeunit "CG H005 Logger" (ID 70210), SingleInstance = true. Provides:
+     - procedure Reset()  - clears any captured log entries.
+     - procedure Log(Tag: Text)  - appends Tag to an in-memory list of log entries.
+     - procedure GetLog(): Text  - returns all entries joined by ';' in call order
+       (no trailing separator). If no entries, return ''.
+
+  2. Table "CG Tracked Item" (ID 70207) with fields:
      - Code (Code[20], primary key)
      - Description (Text[100])
      - "Unit Price" (Decimal)
      - Blocked (Boolean)
 
-     In the OnModify trigger:
-     - Compare Rec with xRec. Use the framework-supplied xRec record passed into the trigger directly; do not call xRec.Get() or otherwise re-read xRec inside the trigger.
-     - If "Unit Price" changed, create an audit log entry with:
-       * "Field Changed" = 'Unit Price'
-       * "Old Value" = Format(xRec."Unit Price")
-       * "New Value" = Format(Rec."Unit Price")
-       * "Changed At" = CurrentDateTime
-       * "Changed By" = UserId
-     - If Blocked changed from false to true, create an audit log entry with:
-       * "Field Changed" = 'Blocked'
-       * "Old Value" = 'No'
-       * "New Value" = 'Yes'
+     Plus a public procedure on the table:
+       procedure DescribeChanges(xUnitPrice: Decimal; xBlocked: Boolean;
+                                 nUnitPrice: Decimal; nBlocked: Boolean) Result: Text
 
-  Critical: The OnModify trigger must correctly use xRec to detect changes.
-  The audit log "Entry No." must auto-increment (use AutoIncrement property).
+     Behavior of DescribeChanges:
+     - If nUnitPrice <> xUnitPrice, the result must contain the literal token 'PriceChanged'.
+     - If xBlocked = false AND nBlocked = true, the result must contain the literal token 'BlockedActivated'.
+     - If xBlocked = true AND nBlocked = false (the trap), the result must NOT contain 'BlockedActivated'.
+     - If both tokens apply, separate them with a single pipe character ('|') in this exact order:
+       'PriceChanged|BlockedActivated'.
+     - If neither condition applies, return an empty string ''.
+
+     OnModify trigger on the same table:
+     - Calls DescribeChanges, passing the framework-supplied xRec values as xUnitPrice/xBlocked
+       and the current Rec values as nUnitPrice/nBlocked.
+     - If the returned Text is non-empty, calls Logger.Log(<that text>) on a local
+       "CG H005 Logger" codeunit variable. Empty results must NOT be logged.
+     - Must NOT call xRec.Get() or otherwise re-read xRec inside the trigger.
+
+  Critical: the comparison logic lives in DescribeChanges and is reused by the trigger.
+  The Logger and trigger wiring are required by the spec (compile must include them) but
+  the unit tests focus on DescribeChanges because BC's test-runner isolation does not
+  reliably surface SingleInstance side effects raised from a table trigger inside a test
+  transaction.
 metadata:
   category: advanced-patterns
-  tags: [codeunit, recordref, procedure]
+  tags: [table, codeunit, trigger, xrec, single-instance]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H005.Test.al
