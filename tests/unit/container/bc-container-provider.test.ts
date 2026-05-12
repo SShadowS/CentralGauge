@@ -1020,7 +1020,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "BcContainerProvider - runTests returns failure when publish fails",
+  name: "BcContainerProvider - runTests throws ContainerError on PUBLISH_FAILED",
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
@@ -1036,23 +1036,34 @@ Deno.test({
         "mock app content",
       );
 
-      // Mock: publish fails
+      // Mock: publish fails — this is an infra failure, not a model failure,
+      // so Phase A surfaces it as a ContainerError that the orchestrator
+      // classifies + records in container health, not a silent success:false.
       mock.mockPowerShell([], "PUBLISH_FAILED:Unable to sync database");
 
       const provider = new BcContainerProvider();
 
-      const result = await provider.runTests("TestContainer", {
-        path: tempDir,
-        appJson: {
-          name: "TestApp",
-          publisher: "TestPublisher",
-          version: "1.0.0.0",
-        },
-        sourceFiles: [],
-        testFiles: [],
-      });
+      const { ContainerError } = await import("../../../src/errors.ts");
 
-      assertEquals(result.success, false);
+      let thrown: unknown;
+      try {
+        await provider.runTests("TestContainer", {
+          path: tempDir,
+          appJson: {
+            name: "TestApp",
+            publisher: "TestPublisher",
+            version: "1.0.0.0",
+          },
+          sourceFiles: [],
+          testFiles: [],
+        });
+      } catch (e) {
+        thrown = e;
+      }
+      assertEquals(thrown instanceof ContainerError, true);
+      const err = thrown as InstanceType<typeof ContainerError>;
+      assertEquals(err.containerName, "TestContainer");
+      assertEquals(err.operation, "test");
     } finally {
       mock.restore();
       await Deno.remove(tempDir, { recursive: true });

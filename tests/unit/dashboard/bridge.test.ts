@@ -417,4 +417,115 @@ Deno.test("DashboardEventBridge", async (t) => {
     const afterCount = events.filter((e) => e.type === "pool-snapshot").length;
     assertEquals(beforeCount, afterCount);
   });
+
+  await t.step(
+    "bridge enriches error cell + feeds health monitor",
+    () => {
+      const cfg = createConfig({
+        models: ["claude-opus-4-6"],
+        taskIds: ["CG-AL-H024"],
+        totalRuns: 1,
+        attempts: 1,
+        containerName: "Cronus281",
+      });
+      const state = new DashboardStateManager(cfg);
+      const broadcasts: SSEEvent[] = [];
+      const bridge = new DashboardEventBridge(state, (e) => {
+        broadcasts.push(e);
+      });
+      bridge.setRun(1);
+      broadcasts.length = 0; // clear setup broadcasts
+
+      bridge.handleEvent({
+        type: "error",
+        taskId: "CG-AL-H024",
+        model: "claude-opus-4-6",
+        error: new Error("Boom"),
+        containerName: "Cronus281",
+        operation: "test",
+        rawTail: "TEST_ERROR: SYSLIB0014",
+        fingerprint: "test:abc",
+        signatureId: "syslib0014",
+      });
+
+      const cellUpdate = broadcasts.find((e) => e.type === "cell-update");
+      assertExists(cellUpdate);
+      if (cellUpdate.type === "cell-update") {
+        assertEquals(cellUpdate.cell.containerName, "Cronus281");
+        assertEquals(cellUpdate.cell.signatureId, "syslib0014");
+        assertEquals(
+          cellUpdate.cell.signatureLabel,
+          "PsTestTool .NET incompat (SYSLIB0014)",
+        );
+        assertEquals(cellUpdate.cell.errorMessageTail, "TEST_ERROR: SYSLIB0014");
+      }
+
+      const healthBroadcast = broadcasts.find(
+        (e) => e.type === "container-health",
+      );
+      assertExists(healthBroadcast);
+      if (healthBroadcast.type === "container-health") {
+        assertEquals(healthBroadcast.state.containers.length, 1);
+        assertEquals(
+          healthBroadcast.state.containers[0]!.errorCount,
+          1,
+        );
+      }
+    },
+  );
+
+  await t.step(
+    "result event records pass outcome in health monitor",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "result",
+        result: createMockResult(),
+      });
+
+      const healthBroadcast = events.find((e) => e.type === "container-health");
+      assertExists(healthBroadcast);
+      if (healthBroadcast.type === "container-health") {
+        assertEquals(healthBroadcast.state.containers.length, 1);
+        assertEquals(healthBroadcast.state.containers[0]!.passCount, 1);
+      }
+    },
+  );
+
+  await t.step(
+    "result event with infra-synthesized failure is NOT re-recorded in health monitor",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      const infraResult = createMockResult({
+        success: false,
+        finalScore: 0,
+        attempts: [{
+          attemptNumber: 1,
+          startTime: new Date(),
+          endTime: new Date(),
+          prompt: "test",
+          llmResponse: createMockLLMResponse(),
+          extractedCode: "test code",
+          codeLanguage: "al" as const,
+          success: false,
+          score: 0,
+          failureReasons: ["Infra error: container crash"],
+          tokensUsed: 150,
+          cost: 0,
+          duration: 1000,
+        }],
+      });
+      bridge.handleEvent({ type: "result", result: infraResult });
+
+      // No container-health broadcast because the infra path is excluded
+      const healthBroadcast = events.find((e) => e.type === "container-health");
+      assertEquals(healthBroadcast, undefined);
+    },
+  );
 });

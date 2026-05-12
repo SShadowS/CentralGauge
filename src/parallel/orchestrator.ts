@@ -33,6 +33,13 @@ import { ContainerProviderRegistry } from "../container/registry.ts";
 import { TaskTransformer } from "../tasks/transformer.ts";
 import type { ContainerProvider } from "../container/interface.ts";
 import type { ModelVariant } from "../llm/variant-types.ts";
+import {
+  classifyInfraError,
+  isInfraError,
+  synthesizeInfraFailureResult,
+} from "../health/mod.ts";
+import type { SynthContext } from "../health/terminal-record.ts";
+import { ContainerError } from "../errors.ts";
 
 /**
  * Event listener type
@@ -319,7 +326,7 @@ export class ParallelBenchmarkOrchestrator {
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
 
-        // Check for critical errors that should abort the entire run
+        // Critical errors abort the entire benchmark.
         if (CriticalError.isCriticalError(error)) {
           criticalError = err;
           this.emit({
@@ -328,18 +335,68 @@ export class ParallelBenchmarkOrchestrator {
             model: variant.variantId,
             error: err,
           });
-          return; // Don't add to failures, will abort after
+          return;
         }
 
         failures.set(variant.variantId, err);
         this.errors.push(`${manifest.id}/${variant.variantId}: ${err.message}`);
+
+        // Classify and enrich the error event so the dashboard can show the
+        // raw tail + the signature label + a fix hint.
+        const cls = classifyInfraError(err);
+        const containerName = err instanceof ContainerError
+          ? err.containerName
+          : undefined;
+        const operation = err instanceof ContainerError
+          ? err.operation
+          : undefined;
+        const rawTail = err instanceof ContainerError
+          ? err.rawOutput
+          : undefined;
+        const artifactPath = err instanceof ContainerError
+          ? err.rawOutputArtifactPath
+          : undefined;
 
         this.emit({
           type: "error",
           taskId: manifest.id,
           model: variant.variantId,
           error: err,
+          ...(containerName !== undefined ? { containerName } : {}),
+          ...(operation !== undefined ? { operation } : {}),
+          ...(rawTail !== undefined ? { rawTail } : {}),
+          ...(artifactPath !== undefined ? { artifactPath } : {}),
+          fingerprint: cls.fingerprint,
+          ...(cls.signature?.id !== undefined
+            ? { signatureId: cls.signature.id }
+            : {}),
         });
+
+        // For infra failures, synthesize a durable TaskExecutionResult so the
+        // attempt is captured by the aggregator and the JSON output. Without
+        // this, ERR cells are silently dropped from `.results[]`, leaving
+        // aggregate stats biased and per-task analysis blind.
+        if (isInfraError(err)) {
+          try {
+            const context = await this.buildContext(manifest, variant, options);
+            const synth = synthesizeInfraFailureResult({
+              manifestId: manifest.id,
+              context: context as unknown as SynthContext,
+              error: err,
+              classification: cls,
+              startTime: new Date(),
+            });
+            modelResults.set(variant.variantId, synth);
+            this.emit({ type: "result", result: synth });
+          } catch (synthErr) {
+            // If we can't build a context/result, fall through to the legacy
+            // "failures" map. Log but don't re-throw — the original error is
+            // already recorded there.
+            console.error(
+              `[orchestrator] failed to synthesize infra failure result for ${manifest.id}/${variant.variantId}: ${synthErr}`,
+            );
+          }
+        }
       }
     });
 

@@ -510,7 +510,7 @@ export async function executeParallelBenchmark(
         );
         resultFilePaths.push(resultsFile);
 
-        // Save score file
+        // Save score file (with container-health snapshot when dashboard ran)
         const scoreFile = `${options.outputDir}/scores-${timestamp}.txt`;
         await saveScoresFile(
           scoreFile,
@@ -519,6 +519,7 @@ export async function executeParallelBenchmark(
           variants,
           options.attempts,
           finalResults.length,
+          dashboard?.getHealthSnapshot(),
         );
 
         // Print summary

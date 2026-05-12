@@ -1,0 +1,6 @@
+.\alc.exe /project:...
+Compilation started for project 'CentralGauge_CG-AL-H024_1' containing '2' files
+C:\Users\SShadowS\AppData\Local\Temp\cg_compile_xxx\CG-AL-H024.al:25: error AL0118: The name 'FieldRefz' does not exist in the current context
+C:\Users\SShadowS\AppData\Local\Temp\cg_compile_xxx\CG-AL-H024.al:30: error AL0132: Variable 'i' must be defined first
+Compilation ended at '17:14:33.206'.
+COMPILE_ERROR

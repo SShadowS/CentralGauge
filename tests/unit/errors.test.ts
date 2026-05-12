@@ -1,6 +1,10 @@
 import { assert, assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
-import { CatalogSeedError, PwshSessionError } from "../../src/errors.ts";
+import {
+  CatalogSeedError,
+  ContainerError,
+  PwshSessionError,
+} from "../../src/errors.ts";
 
 describe("CatalogSeedError", () => {
   it("captures slug + reason in context", () => {
@@ -60,4 +64,28 @@ describe("PwshSessionError", () => {
       assertEquals(e.context, undefined);
     }
   });
+});
+
+Deno.test("ContainerError carries rawOutput, exitCode, artifactPath", () => {
+  const err = new ContainerError(
+    "Test publish failed",
+    "Cronus281",
+    "test",
+    {
+      rawOutput: "TEST_ERROR: SYSLIB0014",
+      exitCode: 1,
+      rawOutputArtifactPath: "/h/Temp3/test-output/test-123.txt",
+    },
+  );
+  assertEquals(err.containerName, "Cronus281");
+  assertEquals(err.operation, "test");
+  assertEquals(err.rawOutput, "TEST_ERROR: SYSLIB0014");
+  assertEquals(err.exitCode, 1);
+  assertEquals(err.rawOutputArtifactPath, "/h/Temp3/test-output/test-123.txt");
+});
+
+Deno.test("ContainerError rawOutput is optional", () => {
+  const err = new ContainerError("X", "Cronus28", "compile");
+  assertEquals(err.rawOutput, undefined);
+  assertEquals(err.exitCode, undefined);
 });
