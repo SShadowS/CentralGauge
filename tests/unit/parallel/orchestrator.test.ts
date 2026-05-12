@@ -2292,3 +2292,85 @@ describe("runParallel() with mocked dependencies", () => {
     });
   });
 });
+
+// =============================================================================
+// Infra-error catch block: enriched event + synthesized result (Task 15)
+// =============================================================================
+
+import { ContainerError } from "../../../src/errors.ts";
+
+describe("orchestrator catch block: infra error handling", () => {
+  it(
+    "should emit enriched error event and synthesize durable result when compile throws ContainerError",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      const collector = new EventCollector();
+
+      // LLM succeeds — we want to reach the compile phase
+      mockLLMPool.setDefaultResult({ success: true });
+
+      // Compile queue throws a ContainerError (infra failure)
+      const infraError = new ContainerError(
+        "PSSession disconnected during compile",
+        "Cronus281",
+        "compile",
+        { rawOutput: "Run-TestsInBcContainer failed\n...tail", exitCode: 1 },
+      );
+
+      const throwingQueue = new MockCompileQueue();
+      throwingQueue.setDefaultResult({ throwError: infraError });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+        llmPool: mockLLMPool as unknown as LLMWorkPool,
+        containerProviderFactory: () => mockContainerProvider,
+        compileQueueFactory: () => throwingQueue as unknown as CompileQueue,
+      });
+
+      orchestrator.on(collector.listener);
+
+      await orchestrator.runParallel(
+        [createMockManifest({ id: "infra-test-001" })],
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      // --- error event assertions ---
+      const errorEvents = collector.getByType("error");
+      assertEquals(errorEvents.length >= 1, true, "At least one error event");
+      const ev = errorEvents[0];
+      assertExists(ev, "error event exists");
+      assertExists(ev.fingerprint, "error event must carry fingerprint");
+      assertEquals(
+        ev.containerName,
+        "Cronus281",
+        "containerName propagated from ContainerError",
+      );
+      assertEquals(
+        ev.operation,
+        "compile",
+        "operation propagated from ContainerError",
+      );
+
+      // --- synthesized result event assertions ---
+      const resultEvents = collector.getByType("result");
+      assertEquals(
+        resultEvents.length >= 1,
+        true,
+        "synthesized result event emitted",
+      );
+      const firstResultEvent = resultEvents[0];
+      assertExists(firstResultEvent, "result event exists");
+      const synthResult = firstResultEvent.result;
+      assertEquals(synthResult.success, false, "synthesized result is failure");
+      const firstAttempt = synthResult.attempts[0];
+      assertExists(firstAttempt, "synthesized result has at least one attempt");
+      const firstReason = firstAttempt.failureReasons[0];
+      assertExists(firstReason, "failure reason exists");
+      assert(
+        firstReason.startsWith("Infra error:"),
+        `failureReasons[0] should start with "Infra error:" but got: ${firstReason}`,
+      );
+    },
+  );
+});
