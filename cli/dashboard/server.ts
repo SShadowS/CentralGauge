@@ -44,6 +44,14 @@ export class DashboardServer {
   }
 
   /**
+   * Return the latest container-health snapshot. Used by the bench results
+   * writer to append a `# Container Health` block to the scores file.
+   */
+  getHealthSnapshot(): import("../../src/health/types.ts").ContainerHealthState {
+    return this.stateManager.getHealthSnapshot();
+  }
+
+  /**
    * Start the dashboard server on an auto-selected port.
    */
   static async start(config: DashboardConfig): Promise<DashboardServer> {

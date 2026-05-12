@@ -274,4 +274,59 @@ Deno.test("buildScoreLines", async (t) => {
 
     assertStringIncludes(content, "total_cost: $1.2346");
   });
+
+  await t.step("appends # Container Health block when snapshot provided", () => {
+    const input: ScoreLineInput = {
+      stats: createMockAggregateStats({
+        infraInvalidated: 297,
+        validAttempts: 1124,
+      }),
+      taskCount: 110,
+      modelNames: ["sonnet"],
+      attempts: 2,
+      resultCount: 1421,
+      timestamp: new Date("2025-01-06T12:00:00Z"),
+      containerHealth: {
+        eventId: 42,
+        containers: [
+          {
+            containerName: "Cronus28",
+            recent: [],
+            passCount: 200,
+            failCount: 10,
+            errorCount: 0,
+          },
+          {
+            containerName: "Cronus281",
+            recent: [],
+            passCount: 2,
+            failCount: 1,
+            errorCount: 297,
+            alert: {
+              kind: "persistent_container_failure",
+              containerName: "Cronus281",
+              fingerprint: "test:abc",
+              signatureId: "syslib0014",
+              signatureLabel: "PsTestTool .NET incompat (SYSLIB0014)",
+              count: 297,
+              raisedAt: Date.now(),
+            },
+          },
+        ],
+        alerts: [],
+      },
+    };
+
+    const lines = buildScoreLines(input);
+    const content = lines.join("\n");
+
+    assertStringIncludes(content, "# Container Health");
+    assertStringIncludes(content, "Cronus28: pass=200 fail=10 err=0");
+    assertStringIncludes(
+      content,
+      "Cronus281: pass=2 fail=1 err=297   [!] PsTestTool .NET incompat (SYSLIB0014) (persistent_container_failure)",
+    );
+    assertStringIncludes(content, "infra_invalidated: 297/1421");
+    assertStringIncludes(content, "valid_attempts=1124");
+  });
 });
