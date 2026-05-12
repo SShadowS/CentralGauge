@@ -1,0 +1,5 @@
+[CG-PIN] buildTestScript bccontainerhelper@6.1.11
+Publishing CentralGauge_CG-AL-H024_1_1.0.0.0.app
+Container Free Physical Memory: 0.5Gb
+Disk C: Free 119Gb from 127Gb
+Out of memory error during publish.

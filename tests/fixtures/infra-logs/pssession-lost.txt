@@ -1,0 +1,9 @@
+[CG-PIN] buildTestScript bccontainerhelper@6.1.11 usePwshForBc24=True sentinel=2026-04-25-B
+Get-NavServerInstance : The term 'Get-NavServerInstance' is not recognized as the name of a cmdlet, function, script file, or operable program.
+At line:1 char:1
++ Get-NavServerInstance | Select-Object ServerInstance
++ ~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-NavServerInstance:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+TEST_ERROR: Get-NavServerInstance not found
+TEST_END
