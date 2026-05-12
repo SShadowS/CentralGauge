@@ -12,6 +12,11 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 - Don't hardcode model IDs in code. Use the catalog (`site/catalog/models.yml`) or
   `deno task start models -p <provider> --live` to discover current names.
   Verify availability with `deno task start models <slug> --check` before running benchmarks.
+- Container infra failures (SYSLIB0014, OOM, publish timeout, PSSession loss, container offline)
+  auto-classify via `src/health/`. The bench dashboard shows a sticky red banner naming the
+  signature + fix hint when a container hits the persistent-failure threshold (3-of-window same
+  fingerprint). Phase A only — no auto-quarantine yet. After a fix, no `doctor containers`
+  command exists; just restart the bench. Scores file gets a `# Container Health` block per run.
 
 ## Technology Stack
 
