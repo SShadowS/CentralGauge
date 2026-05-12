@@ -821,8 +821,17 @@ function subscribeToEvents(
       case "result": {
         const variantId = event.result.context.variantId ||
           event.result.context.llmModel;
+        // Synthesized infra-failure results carry "Infra error:" as the first
+        // failure reason. Tag them as "infra" so operators don't blame the
+        // model for a container/test-harness fault.
+        const isInfra =
+          (event.result.attempts[0]?.failureReasons?.[0] ?? "").startsWith(
+            "Infra error:",
+          );
         const status = event.result.success
           ? colors.green("pass")
+          : isInfra
+          ? colors.yellow("infra")
           : colors.red("fail");
         // Extract test counts from the last attempt's testResult
         const lastAttempt =
@@ -909,11 +918,24 @@ function subscribeToEvents(
           }
         }
         break;
-      case "error":
-        log.fail(
-          `${event.model ? `(${event.model}) ` : ""}${event.error.message}`,
-        );
+      case "error": {
+        // Enriched error events carry container/fingerprint when the failure
+        // is infrastructure rather than a genuine model/orchestrator fault.
+        // Surface that distinction so the bench log doesn't read like the
+        // model crashed when it was the container.
+        const isInfra = event.containerName !== undefined ||
+          event.fingerprint !== undefined;
+        const modelTag = event.model ? `(${event.model}) ` : "";
+        const ctxTag = isInfra && event.containerName
+          ? `[INFRA ${event.containerName}] `
+          : isInfra
+          ? "[INFRA] "
+          : "";
+        const msg = `${modelTag}${ctxTag}${event.error.message}`;
+        if (isInfra) log.warn(msg);
+        else log.fail(msg);
         break;
+      }
     }
   });
 }

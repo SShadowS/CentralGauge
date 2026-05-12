@@ -84,8 +84,17 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
     case "result": {
       const variantId = event.result.context.variantId ||
         event.result.context.llmModel;
+      // Synthesized infra-failure results carry "Infra error:" as the first
+      // failure reason. Show them as [INFRA] so operators don't blame the
+      // model for a container/test-harness fault.
+      const isInfra =
+        (event.result.attempts[0]?.failureReasons?.[0] ?? "").startsWith(
+          "Infra error:",
+        );
       const status = event.result.success
         ? crayon.green("pass")
+        : isInfra
+        ? crayon.yellow("infra")
         : crayon.red("fail");
       const lastAttempt =
         event.result.attempts[event.result.attempts.length - 1];
@@ -107,10 +116,19 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
       } (${bestScore.toFixed(1)})`;
     }
 
-    case "error":
-      return `${event.model ? crayon.magenta(`[${event.model}]`) + " " : ""}${
-        crayon.red("[FAIL]")
-      } ${event.error.message}`;
+    case "error": {
+      // Enriched error events carry container/fingerprint/signature context
+      // when the failure is infrastructure (vs a real exception). Tag those
+      // as [INFRA] so operators distinguish container faults from genuine
+      // model/orchestrator failures.
+      const isInfra = event.containerName !== undefined ||
+        event.fingerprint !== undefined;
+      const tag = isInfra ? crayon.yellow("[INFRA]") : crayon.red("[FAIL]");
+      const ctx = isInfra && event.containerName
+        ? ` (${event.containerName})`
+        : "";
+      return `${event.model ? crayon.magenta(`[${event.model}]`) + " " : ""}${tag}${ctx} ${event.error.message}`;
+    }
 
     // Skip noisy events - these are either too frequent or handled via progress
     case "llm_chunk":
