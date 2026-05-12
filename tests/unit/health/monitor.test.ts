@@ -141,3 +141,57 @@ Deno.test("cold start: 1 error never trips", () => {
   });
   assertEquals(mon.getState().alerts.length, 0);
 });
+
+Deno.test("ramp-up: 2-of-6 same fp does NOT trip global outage when expectedContainers is set", () => {
+  // Regression for the live-bench bug: monitor was firing global_outage with
+  // ratio 2/2 (containers seen so far) when 4 more containers were still in
+  // LLM/compile phases. With expectedContainers=6 the ratio becomes 2/6=33%
+  // which is below the 50% threshold, so per-container alerts fire instead.
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainers: 6,
+  });
+  for (const c of ["Cronus28", "Cronus281"]) {
+    for (let i = 0; i < 3; i++) {
+      mon.record({
+        containerName: c,
+        result: "infra_error",
+        fingerprint: "test:syslib0014",
+        timestamp: 1000 + i,
+      });
+    }
+  }
+  const state = mon.getState();
+  const kinds = state.alerts.map((a) => a.kind);
+  assertEquals(kinds.includes("global_outage"), false);
+  // Each container should get its own persistent alert
+  assertEquals(
+    state.alerts.filter((a) => a.kind === "persistent_container_failure")
+      .length,
+    2,
+  );
+});
+
+Deno.test("globalOutageMinContainers default 3 prevents 2-container global", () => {
+  // Even without expectedContainers, 2 containers all hitting the same fp
+  // shouldn't trigger global by default — 2 is too easy to hit coincidentally.
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  for (const c of ["Cronus28", "Cronus281"]) {
+    for (let i = 0; i < 3; i++) {
+      mon.record({
+        containerName: c,
+        result: "infra_error",
+        fingerprint: "test:syslib0014",
+        timestamp: 1000 + i,
+      });
+    }
+  }
+  const state = mon.getState();
+  const kinds = state.alerts.map((a) => a.kind);
+  assertEquals(kinds.includes("global_outage"), false);
+  assertEquals(
+    state.alerts.filter((a) => a.kind === "persistent_container_failure")
+      .length,
+    2,
+  );
+});

@@ -50,13 +50,19 @@ export class DashboardStateManager {
   };
 
   /** Container health reducer. Window of 20 outcomes per container. */
-  private healthMonitor = new ContainerHealthMonitor({ windowSize: 20 });
+  private healthMonitor: ContainerHealthMonitor;
 
   constructor(config: DashboardConfig) {
     this.config = config;
     this.taskIds = [...config.taskIds];
     this.models = [...config.models];
     this.totalRuns = config.totalRuns;
+    this.healthMonitor = new ContainerHealthMonitor({
+      windowSize: 20,
+      ...(config.containerNames && config.containerNames.length > 0
+        ? { expectedContainers: config.containerNames.length }
+        : {}),
+    });
   }
 
   /**

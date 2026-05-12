@@ -271,6 +271,9 @@ export async function executeParallelBenchmark(
         attempts: options.attempts,
         temperature: options.temperature || 0.1,
         containerName: primaryContainerName,
+        ...(containerNames && containerNames.length > 0
+          ? { containerNames }
+          : {}),
       });
       log.info(`[Dashboard] Live at ${dashboard.url}`);
       openBrowser(dashboard.url);

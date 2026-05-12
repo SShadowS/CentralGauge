@@ -14,6 +14,19 @@ interface MonitorOptions {
   persistentThreshold?: number;
   /** Fraction of active containers with same fingerprint that triggers global outage (default: 0.5) */
   globalOutageRatio?: number;
+  /**
+   * Total number of containers the bench was configured with. Used as the
+   * denominator for the global-outage ratio so the monitor doesn't falsely
+   * classify "2 of 2 containers we've seen so far" as global when the other
+   * 4 containers are still in LLM/compile phases.
+   */
+  expectedContainers?: number;
+  /**
+   * Minimum absolute container count that must exhibit the same fingerprint
+   * before a global-outage alert can fire (default: 3). Two coincident
+   * failures shouldn't be enough to quarantine the fleet.
+   */
+  globalOutageMinContainers?: number;
 }
 
 /**
@@ -28,6 +41,8 @@ export class ContainerHealthMonitor {
   private readonly windowSize: number;
   private readonly persistentThreshold: number;
   private readonly globalOutageRatio: number;
+  private readonly expectedContainers: number | undefined;
+  private readonly globalOutageMinContainers: number;
   private readonly containers = new Map<string, ContainerHealth>();
   /** Per-container × fingerprint count over last window */
   private fpHistory = new Map<string, Array<{ fp?: string; t: number }>>();
@@ -39,6 +54,8 @@ export class ContainerHealthMonitor {
     this.windowSize = opts.windowSize;
     this.persistentThreshold = opts.persistentThreshold ?? 3;
     this.globalOutageRatio = opts.globalOutageRatio ?? 0.5;
+    this.expectedContainers = opts.expectedContainers;
+    this.globalOutageMinContainers = opts.globalOutageMinContainers ?? 3;
   }
 
   record(o: ContainerOutcome): void {
@@ -90,19 +107,25 @@ export class ContainerHealthMonitor {
 
     // Check for global outage first — it suppresses per-container alerts for
     // the same fingerprint to avoid alert storms.
-    const activeContainers = Array.from(this.fpHistory.keys());
-    const containersWithThisFp = activeContainers.filter((c) => {
+    //
+    // Denominator: if the caller supplied `expectedContainers` (the bench's
+    // --containers flag count), use it. Otherwise fall back to the number of
+    // containers we've seen — but that's only correct after the bench has
+    // warmed up. The expected-count path avoids the bug where 2-of-2 seen
+    // containers looks like 100% global while 4 more containers are still
+    // in LLM/compile phases.
+    const seenContainers = Array.from(this.fpHistory.keys());
+    const containersWithThisFp = seenContainers.filter((c) => {
       const hist = this.fpHistory.get(c);
       return hist !== undefined && hist.some((h) => h.fp === fingerprint);
     });
-
-    const ratio = activeContainers.length > 0
-      ? containersWithThisFp.length / activeContainers.length
+    const denominator = this.expectedContainers ?? seenContainers.length;
+    const ratio = denominator > 0
+      ? containersWithThisFp.length / denominator
       : 0;
 
     if (
-      activeContainers.length >= 2 &&
-      containersWithThisFp.length >= 2 &&
+      containersWithThisFp.length >= this.globalOutageMinContainers &&
       ratio >= this.globalOutageRatio
     ) {
       const key = `global:${fingerprint}`;

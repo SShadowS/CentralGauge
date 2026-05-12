@@ -111,6 +111,12 @@ export interface DashboardConfig {
   attempts: number;
   temperature: number;
   containerName: string;
+  /**
+   * Full list of containers the bench was started with. Used by the health
+   * monitor as the denominator for the global-outage ratio so partial-warmup
+   * doesn't trigger false-positive global alerts.
+   */
+  containerNames?: string[];
 }
 
 /**
