@@ -547,6 +547,18 @@ export type ParallelExecutionEvent =
     taskId?: string | undefined;
     model?: string | undefined;
     error: Error;
+    /** Container that owned the failed operation, when known */
+    containerName?: string | undefined;
+    /** Specific operation that failed (compile/publish/test/...) */
+    operation?: string | undefined;
+    /** Tail of raw output for UI display */
+    rawTail?: string | undefined;
+    /** Path to full output artifact on disk */
+    artifactPath?: string | undefined;
+    /** Fingerprint id from classifier */
+    fingerprint?: string | undefined;
+    /** Named signature id, if matched */
+    signatureId?: string | undefined;
   };
 
 /**
