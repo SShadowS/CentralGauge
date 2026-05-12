@@ -18,7 +18,10 @@ export function fingerprintInfraError(
   input: FingerprintInput,
 ): InfraFingerprint {
   const op = input.operation;
-  const text = (input.rawOutput || input.errorMessage || "").trim();
+  const text = [input.rawOutput, input.errorMessage]
+    .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+    .join("\n")
+    .trim();
 
   if (!text) return `${op}:empty`;
 
@@ -59,8 +62,19 @@ function normalize(line: string): string {
       /\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g,
       "<UUID>",
     )
+    .replace(/\b[0-9a-f]{8}_(?=[A-Za-z])/gi, "<APPHASH>_") // app hash prefixes
     .replace(/\\Cronus\d+/g, "\\<CONTAINER>") // container-specific paths
-    .replace(/\b\d+(\.\d+)?Gb\b/g, "<MEM>Gb") // memory sizes
+    .replace(/\bCronus\d+\b/gi, "<CONTAINER>") // bare container names
+    .replace(/\b(pid|process id)\s*[:=]?\s*\d+\b/gi, "$1 <PID>")
+    .replace(/\bline\s+\d+\b/gi, "line <N>")
+    .replace(/\bchar\s*:\s*\d+\b/gi, "char:<N>")
+    .replace(/:\d+\s+char:\d+/gi, ":<LINE> char:<N>")
+    .replace(
+      /\b\d+(?:\.\d+)?\s*(?:ms|milliseconds|seconds|secs|sec)\b/gi,
+      "<DURATION>",
+    )
+    .replace(/\b\d+(?:\.\d+)?\s*(?:gb|gib|mb|mib)\b/gi, "<MEM>")
+    .replace(/\b(?:localhost|127\.0\.0\.1):\d+\b/gi, "<LOCALHOST>:<PORT>")
     .replace(/\s+/g, " ")
     .toLowerCase();
 }

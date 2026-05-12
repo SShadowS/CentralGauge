@@ -1,8 +1,20 @@
 const PATTERNS: { pattern: RegExp; replacement: string }[] = [
-  { pattern: /password=\S+/gi, replacement: "password=[REDACTED]" },
-  { pattern: /Bearer\s+[A-Za-z0-9._-]+/g, replacement: "Bearer [REDACTED]" },
-  { pattern: /token=\S+/gi, replacement: "token=[REDACTED]" },
-  { pattern: /api[_-]?key[=:]\s*\S+/gi, replacement: "api_key=[REDACTED]" },
+  {
+    pattern: /\bpassword(\s*[=:]\s*)[^\s&;]+/gi,
+    replacement: "password$1[REDACTED]",
+  },
+  {
+    pattern: /Bearer\s+[^\s,;]+/gi,
+    replacement: "Bearer [REDACTED]",
+  },
+  {
+    pattern: /\btoken(\s*[=:]\s*)[^\s&;]+/gi,
+    replacement: "token$1[REDACTED]",
+  },
+  {
+    pattern: /\bapi[_-]?key(\s*[=:]\s*)[^\s&;]+/gi,
+    replacement: "api_key$1[REDACTED]",
+  },
   {
     pattern: /\b[A-Za-z]:\\[^\s]*\.flf\b/g,
     replacement: "[REDACTED_LICENSE_FILE]",

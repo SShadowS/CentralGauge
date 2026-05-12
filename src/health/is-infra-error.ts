@@ -8,9 +8,17 @@ import {
 const INFRA_MESSAGE_HINTS = [
   /\b(timeout|timed\s+out)\b/i,
   /econnreset/i,
+  /econnrefused/i,
+  /etimedout/i,
   /enotfound/i,
+  /socket hang up/i,
+  /connection\s+(?:reset|refused|closed)/i,
   /container.*not running/i,
-  /publish.*failed/i,
+  /PSSession.*(?:disconnected|broken|closed)/i,
+  /Get-NavServerInstance.*(?:not recognized|not found)/i,
+  /CommandNotFoundException.*Get-NavServerInstance/i,
+  /Run-TestsInBcContainer.*failed/i,
+  /Publish-BcContainerApp.*(?:timed out|PSSession|container.*not running)/i,
   /test_error/i,
 ];
 

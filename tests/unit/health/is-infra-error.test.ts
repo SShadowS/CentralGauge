@@ -46,3 +46,18 @@ Deno.test("Plain Error with single-word 'timeout' is infra", () => {
   assertEquals(isInfraError(new Error("Read timeout after 30s")), true);
   assertEquals(isInfraError(new Error("kill timeout")), true);
 });
+
+Deno.test("Plain Error 'Publish failed' without infra context is NOT infra", () => {
+  // After narrowing publish pattern, a bare "publish failed" message
+  // (which could be an AL compile error wrapped wrong) should not auto-flag.
+  assertEquals(isInfraError(new Error("Publish failed: missing field")), false);
+});
+
+Deno.test("Plain Error with Publish-BcContainerApp + timed out IS infra", () => {
+  assertEquals(
+    isInfraError(
+      new Error("Publish-BcContainerApp : The operation has timed out."),
+    ),
+    true,
+  );
+});

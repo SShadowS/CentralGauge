@@ -16,7 +16,10 @@ export function classifyInfraError(err: unknown): ClassifyResult {
       rawOutput,
       errorMessage: err.message,
     });
-    const signature = matchSignature(rawOutput || err.message);
+    const combined = [rawOutput, err.message]
+      .filter((s) => s.trim().length > 0)
+      .join("\n");
+    const signature = matchSignature(combined);
     return signature ? { fingerprint, signature } : { fingerprint };
   }
   const message = err instanceof Error ? err.message : String(err);

@@ -44,3 +44,11 @@ Deno.test("redactSensitive masks api_key with separator variants", () => {
   assertEquals(out2.includes("sk-prod-yyy"), false);
   assertEquals(out3.includes("sk-prod-zzz"), false);
 });
+
+Deno.test("redactSensitive does not swallow URL query after credential", () => {
+  const input = "url?password=secret&user=admin&q=hello";
+  const out = redactSensitive(input);
+  assertEquals(out.includes("secret"), false);
+  assertEquals(out.includes("user=admin"), true); // not swallowed
+  assertEquals(out.includes("q=hello"), true);
+});

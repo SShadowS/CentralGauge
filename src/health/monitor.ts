@@ -20,20 +20,17 @@ interface MonitorOptions {
  * Pure reducer over container outcome events. No I/O, no async, no clock
  * dependency (caller supplies timestamps). Trivial to unit-test.
  *
- * Note: getState() returns shallow copies of ContainerHealth objects — the
- * `recent` array inside each entry is shared with internal state. Callers
- * must treat it as read-only.
+ * getState() returns deep copies of ContainerHealth objects including their
+ * `recent` arrays, so callers may freely mutate the returned state without
+ * affecting internal monitor state.
  */
 export class ContainerHealthMonitor {
   private readonly windowSize: number;
   private readonly persistentThreshold: number;
   private readonly globalOutageRatio: number;
   private readonly containers = new Map<string, ContainerHealth>();
-  /** Per-container fingerprint history within the rolling window */
-  private readonly fpHistory = new Map<
-    string,
-    Array<{ fp: string; t: number }>
-  >();
+  /** Per-container × fingerprint count over last window */
+  private fpHistory = new Map<string, Array<{ fp?: string; t: number }>>();
   /** Alert keys we have already raised (idempotent) */
   private readonly raisedAlerts = new Set<string>();
   private eventId = 0;
@@ -69,13 +66,19 @@ export class ContainerHealthMonitor {
 
     this.containers.set(o.containerName, ch);
 
-    // Only infra_error outcomes with a fingerprint feed the alert logic
-    if (o.result === "infra_error" && o.fingerprint) {
-      const hist = this.fpHistory.get(o.containerName) ?? [];
-      hist.push({ fp: o.fingerprint, t: o.timestamp });
-      while (hist.length > this.windowSize) hist.shift();
-      this.fpHistory.set(o.containerName, hist);
+    // Roll fingerprint history on EVERY outcome — entries without a fp
+    // (passes, plain fails) still consume window slots so old infra errors
+    // age out after enough passes.
+    const hist = this.fpHistory.get(o.containerName) ?? [];
+    const histEntry: { fp?: string; t: number } =
+      o.result === "infra_error" && o.fingerprint
+        ? { fp: o.fingerprint, t: o.timestamp }
+        : { t: o.timestamp };
+    hist.push(histEntry);
+    while (hist.length > this.windowSize) hist.shift();
+    this.fpHistory.set(o.containerName, hist);
 
+    if (o.result === "infra_error" && o.fingerprint) {
       this.maybeRaiseAlerts(o);
     }
   }
@@ -139,6 +142,13 @@ export class ContainerHealthMonitor {
       return;
     }
 
+    // Sticky: once a fingerprint becomes a global outage in this run, no
+    // per-container alert can fire for it later, even if the rolling window
+    // drops below the global ratio.
+    if (this.raisedAlerts.has(`global:${o.fingerprint}`)) {
+      return;
+    }
+
     // Per-container persistent failure threshold
     const hist = this.fpHistory.get(o.containerName) ?? [];
     const sameFpCount = hist.filter((h) => h.fp === fingerprint).length;
@@ -167,9 +177,17 @@ export class ContainerHealthMonitor {
   }
 
   getState(): ContainerHealthState {
-    const containers = Array.from(this.containers.values()).map((c) => ({
-      ...c,
-    }));
+    const containers = Array.from(this.containers.values()).map((c) => {
+      const copy: ContainerHealth = {
+        containerName: c.containerName,
+        recent: [...c.recent], // deep copy — callers may mutate freely
+        passCount: c.passCount,
+        failCount: c.failCount,
+        errorCount: c.errorCount,
+      };
+      if (c.alert) copy.alert = { ...c.alert }; // deep copy alert
+      return copy;
+    });
     const alerts: HealthAlert[] = containers
       .map((c) => c.alert)
       .filter((a): a is HealthAlert => a !== undefined);
