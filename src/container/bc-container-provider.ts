@@ -1106,6 +1106,32 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.runScriptThroughSession(containerName, script);
     const duration = Date.now() - startTime;
 
+    // Infra-failure markers in the test harness output (NOT model AL failures).
+    // These indicate the container/PsTestTool/BC service itself failed before
+    // tests could be evaluated — throw a ContainerError so the orchestrator
+    // catch path classifies + records + bans the model from being unfairly
+    // penalized. Order matters: SYSLIB0014 / PSSession / publish must be
+    // caught even when a TEST_ERROR marker is also present.
+    const INFRA_TEST_MARKERS = [
+      /SYSLIB0014/,
+      /ServicePointManager.*obsolete/i,
+      /Get-NavServerInstance.*not recognized/i,
+      /CommandNotFoundException.*Get-NavServerInstance/i,
+      /Publish-BcContainerApp.*timed out/i,
+      /PUBLISH_FAILED/,
+      /TEST_ERROR/,
+      /Run-TestsInBcContainer.*failed/i,
+      /container .* not running/i,
+    ];
+    if (INFRA_TEST_MARKERS.some((re) => re.test(result.output))) {
+      throw this.buildPwshError({
+        containerName,
+        operation: "test",
+        message: "BC test harness failed (infra)",
+        output: result.output,
+      });
+    }
+
     // Log sub-timings from PowerShell markers
     logSubTimings(result.output, contextLog);
 

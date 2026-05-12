@@ -207,6 +207,15 @@ export class DashboardEventBridge {
     const variantId = result.context.variantId || result.context.llmModel;
     const key = cellKey(result.taskId, variantId, this.currentRun);
 
+    // Synthesized infra-failure results are paired with a prior `error` event
+    // that already set the cell to "error" (with full infra context). Do NOT
+    // overwrite that state to "fail" — and don't double-count the outcome in
+    // the health monitor (the error event already recorded it).
+    const synthFirstReason = result.attempts[0]?.failureReasons?.[0] ?? "";
+    if (synthFirstReason.startsWith("Infra error:")) {
+      return;
+    }
+
     // Extract test info from last attempt
     const lastAttempt = result.attempts[result.attempts.length - 1];
     const testResult = lastAttempt?.testResult;
