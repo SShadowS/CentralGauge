@@ -6,7 +6,9 @@
 import type { ParallelExecutionEvent } from "../../src/parallel/types.ts";
 import type { PoolSnapshot } from "../../src/parallel/observability.ts";
 import type { SSEEvent } from "./types.ts";
+import type { MatrixCell } from "./types.ts";
 import { cellKey, DashboardStateManager } from "./state.ts";
+import { INFRA_SIGNATURES } from "../../src/health/mod.ts";
 
 /** Tick interval for the pool-snapshot emitter (ms). */
 const POOL_SNAPSHOT_INTERVAL_MS = 1000;
@@ -120,7 +122,17 @@ export class DashboardEventBridge {
 
       case "error":
         if (event.taskId && event.model) {
-          this.onError(event.taskId, event.model);
+          this.onError({
+            taskId: event.taskId,
+            model: event.model,
+            containerName: event.containerName,
+            operation: event.operation,
+            rawTail: event.rawTail,
+            artifactPath: event.artifactPath,
+            fingerprint: event.fingerprint,
+            signatureId: event.signatureId,
+            error: event.error,
+          });
         }
         break;
 
@@ -222,6 +234,27 @@ export class DashboardEventBridge {
       this.broadcast({ type: "cell-update", ...cellUpdate });
     }
 
+    // Feed the health monitor with the container outcome. This gives the
+    // global-outage detector a healthy baseline so it can distinguish "one
+    // container is broken" from "everything is broken".
+    const containerName = result.context.containerName;
+    if (containerName) {
+      // Infra-synthesized results are NOT recorded here — they already arrive
+      // via the error event handler above.
+      const firstReason = result.attempts[0]?.failureReasons?.[0] ?? "";
+      if (!firstReason.startsWith("Infra error:")) {
+        this.state.recordContainerOutcome({
+          containerName,
+          result: result.success ? "pass" : "fail",
+          timestamp: Date.now(),
+        });
+        this.broadcast({
+          type: "container-health",
+          state: this.state.getHealthSnapshot(),
+        });
+      }
+    }
+
     // Add cost point
     if (cost > 0) {
       this.cumulativeCost += cost;
@@ -265,13 +298,73 @@ export class DashboardEventBridge {
     this.broadcast({ type: "progress", progress: dashProgress });
   }
 
-  private onError(taskId: string, model: string): void {
-    const key = cellKey(taskId, model, this.currentRun);
-    const result = this.state.updateCell(key, { state: "error" });
-    if (result) {
-      this.broadcast({ type: "cell-update", ...result });
-      this.broadcastProgress();
+  private onError(event: {
+    taskId: string;
+    model: string;
+    containerName?: string | undefined;
+    operation?: string | undefined;
+    rawTail?: string | undefined;
+    artifactPath?: string | undefined;
+    fingerprint?: string | undefined;
+    signatureId?: string | undefined;
+    error: Error;
+  }): void {
+    const key = cellKey(event.taskId, event.model, this.currentRun);
+
+    // Look up the signature label from the library so the UI doesn't need to.
+    let signatureLabel: string | undefined;
+    if (event.signatureId) {
+      const sig = INFRA_SIGNATURES.find((s) => s.id === event.signatureId);
+      signatureLabel = sig?.label;
     }
+
+    // Build the update with exactOptionalPropertyTypes-safe spreads.
+    const patch: Partial<MatrixCell> = {
+      state: "error",
+      ...(event.containerName !== undefined
+        ? { containerName: event.containerName }
+        : {}),
+      ...(event.operation !== undefined ? { operation: event.operation } : {}),
+      ...(event.fingerprint !== undefined
+        ? { fingerprint: event.fingerprint }
+        : {}),
+      ...(event.signatureId !== undefined
+        ? { signatureId: event.signatureId }
+        : {}),
+      ...(signatureLabel !== undefined ? { signatureLabel } : {}),
+      ...(event.rawTail !== undefined
+        ? { errorMessageTail: event.rawTail }
+        : {}),
+      ...(event.artifactPath !== undefined
+        ? { artifactPath: event.artifactPath }
+        : {}),
+    };
+
+    const update = this.state.updateCell(key, patch);
+    if (update) {
+      this.broadcast({ type: "cell-update", ...update });
+    }
+
+    // Feed the health monitor if we know which container produced this error.
+    if (event.containerName) {
+      this.state.recordContainerOutcome({
+        containerName: event.containerName,
+        result: "infra_error",
+        ...(event.fingerprint !== undefined
+          ? { fingerprint: event.fingerprint }
+          : {}),
+        ...(event.signatureId !== undefined
+          ? { signatureId: event.signatureId }
+          : {}),
+        timestamp: Date.now(),
+      });
+      this.broadcast({
+        type: "container-health",
+        state: this.state.getHealthSnapshot(),
+      });
+    }
+
+    this.broadcastProgress();
   }
 
   private broadcastProgress(): void {
