@@ -21,6 +21,11 @@ import type {
 } from "./types.ts";
 import { ensureDir } from "@std/fs";
 import { Logger } from "../logger/mod.ts";
+import {
+  captureRawTail,
+  redactSensitive,
+  writeArtifact,
+} from "../health/mod.ts";
 
 const log = Logger.create("container:bc");
 import { ContainerError } from "../errors.ts";
@@ -134,6 +139,9 @@ export class BcContainerProvider implements ContainerProvider {
   private readonly compilePoolPerContainer: number;
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
 
+  // Optional directory for raw PS output artifacts (populated by setArtifactDir).
+  private artifactDir?: string;
+
   constructor(options: BcContainerProviderOptions = {}) {
     this.persistentEnabled = options.persistentPwsh ??
       (Deno.env.get("CENTRALGAUGE_PWSH_PERSISTENT") !== "0");
@@ -152,6 +160,16 @@ export class BcContainerProvider implements ContainerProvider {
    */
   setCompilerCacheEnabled(enabled: boolean): void {
     this._compilerCacheEnabled = enabled;
+  }
+
+  /**
+   * Set the directory where raw PowerShell output artifacts are written on
+   * failure. When set, wrapPwshFailure writes the full redacted output to a
+   * file and stores the path in ContainerError.rawOutputArtifactPath.
+   * When unset (default), the artifact step is skipped.
+   */
+  setArtifactDir(dir: string): void {
+    this.artifactDir = dir;
   }
 
   /**
@@ -359,6 +377,106 @@ export class BcContainerProvider implements ContainerProvider {
     };
   }
 
+  /**
+   * Build a ContainerError carrying the tail of redacted output and (when an
+   * artifact dir is configured) the path to the full output written to disk.
+   *
+   * This is the canonical failure wrapper for any PS-invocation site in this
+   * provider: every "failed" path should funnel through here so the
+   * orchestrator receives identical structure regardless of the underlying
+   * call site.
+   *
+   * When `artifactDir` is unset (default), the helper is synchronous in
+   * practice — no IO is performed.  When `artifactDir` is set via
+   * `setArtifactDir()`, `writeArtifact` is awaited before the error is
+   * constructed, so callers must still `await` the result.
+   */
+  /**
+   * Async variant: like buildPwshError but also writes the full redacted
+   * output to an artifact file when artifactDir is configured, stamping
+   * rawOutputArtifactPath on the returned error.
+   *
+   * Reserved for use by the orchestrator and CLI wiring tasks — call sites
+   * inside this class use the sync buildPwshError directly to avoid an extra
+   * micro-task tick per failure.
+   */
+  protected async wrapPwshFailure(opts: {
+    containerName: string;
+    operation:
+      | "setup"
+      | "start"
+      | "stop"
+      | "compile"
+      | "publish"
+      | "test"
+      | "health";
+    message: string;
+    output: string;
+    exitCode?: number;
+    artifactKey?: string;
+  }): Promise<ContainerError> {
+    const redacted = redactSensitive(opts.output);
+    const tail = captureRawTail(redacted, 4096);
+    let artifactPath: string | undefined;
+    if (this.artifactDir) {
+      artifactPath = await writeArtifact(
+        this.artifactDir,
+        opts.artifactKey ??
+          `${opts.operation}-${opts.containerName}-${Date.now()}`,
+        redacted,
+      );
+    }
+    return new ContainerError(
+      opts.message,
+      opts.containerName,
+      opts.operation,
+      {
+        rawOutput: tail,
+        ...(artifactPath !== undefined
+          ? { rawOutputArtifactPath: artifactPath }
+          : {}),
+        ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}),
+      },
+    );
+  }
+
+  /**
+   * Synchronous fast path used by the 10 throw sites when artifact writing is
+   * not configured. Produces a ContainerError with the redacted output tail
+   * and exit code but without an artifactPath.
+   *
+   * Kept separate from wrapPwshFailure to avoid an extra micro-task tick at
+   * every throw site (async wrapPwshFailure would add a tick even when the
+   * body is entirely synchronous, which upsets Deno's cross-test resource
+   * leak detector for tests that clean up in a `finally` block).
+   */
+  private buildPwshError(opts: {
+    containerName: string;
+    operation:
+      | "setup"
+      | "start"
+      | "stop"
+      | "compile"
+      | "publish"
+      | "test"
+      | "health";
+    message: string;
+    output: string;
+    exitCode?: number;
+  }): ContainerError {
+    const redacted = redactSensitive(opts.output);
+    const tail = captureRawTail(redacted, 4096);
+    return new ContainerError(
+      opts.message,
+      opts.containerName,
+      opts.operation,
+      {
+        rawOutput: tail,
+        ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}),
+      },
+    );
+  }
+
   async setup(config: ContainerConfig): Promise<void> {
     log.info(`Setting up container: ${config.name}`);
 
@@ -385,11 +503,13 @@ export class BcContainerProvider implements ContainerProvider {
       `);
 
       if (installResult.exitCode !== 0) {
-        throw new ContainerError(
-          `Failed to install bccontainerhelper: ${installResult.output}`,
-          config.name,
-          "setup",
-        );
+        throw this.buildPwshError({
+          containerName: config.name,
+          operation: "setup",
+          message: "Failed to install bccontainerhelper",
+          output: installResult.output,
+          exitCode: installResult.exitCode,
+        });
       }
     }
 
@@ -424,11 +544,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(setupScript);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to create BC container: ${result.output}`,
-        config.name,
-        "setup",
-      );
+      throw this.buildPwshError({
+        containerName: config.name,
+        operation: "setup",
+        message: "Failed to create BC container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
 
     log.info(`Container ${config.name} setup complete`);
@@ -446,11 +568,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to start container: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "start",
-      );
+        operation: "start",
+        message: "Failed to start container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
 
     log.info(`Container ${containerName} started`);
@@ -468,11 +592,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to stop container: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "stop",
-      );
+        operation: "stop",
+        message: "Failed to stop container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
 
     log.info(`Container ${containerName} stopped`);
@@ -490,11 +616,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to remove container: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "stop",
-      );
+        operation: "stop",
+        message: "Failed to remove container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
 
     log.info(`Container ${containerName} removed`);
@@ -538,11 +666,12 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (isContainerNotFound(result.output)) {
-      throw new ContainerError(
-        `Container ${containerName} not found`,
+      throw this.buildPwshError({
         containerName,
-        "health",
-      );
+        operation: "health",
+        message: `Container ${containerName} not found`,
+        output: result.output,
+      });
     }
 
     const statusData = parseStatusOutput(result.output);
@@ -625,11 +754,12 @@ export class BcContainerProvider implements ContainerProvider {
 
     const compilerFolder = extractCompilerFolder(result.output);
     if (!compilerFolder) {
-      throw new ContainerError(
-        `Failed to create compiler folder: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "compile",
-      );
+        operation: "compile",
+        message: "Failed to create compiler folder",
+        output: result.output,
+      });
     }
 
     this.compilerFolderCache.set(containerName, compilerFolder);
@@ -861,12 +991,12 @@ export class BcContainerProvider implements ContainerProvider {
     }
 
     if (!result.output.includes("PUBLISH_SUCCESS")) {
-      throw new ContainerError(
-        `Publish failed: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "setup",
-        { appPath },
-      );
+        operation: "publish",
+        message: "Publish failed",
+        output: result.output,
+      });
     }
 
     log.info("App published successfully");
@@ -1126,12 +1256,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to copy to container: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "compile",
-        { localPath, containerPath },
-      );
+        operation: "compile",
+        message: "Failed to copy to container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
   }
 
@@ -1149,12 +1280,13 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new ContainerError(
-        `Failed to copy from container: ${result.output}`,
+      throw this.buildPwshError({
         containerName,
-        "compile",
-        { localPath, containerPath },
-      );
+        operation: "compile",
+        message: "Failed to copy from container",
+        output: result.output,
+        exitCode: result.exitCode,
+      });
     }
   }
 
