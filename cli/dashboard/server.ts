@@ -149,6 +149,17 @@ export class DashboardServer {
           },
         );
 
+      case "/api/health-snapshot":
+        return new Response(
+          JSON.stringify(this.stateManager.getHealthSnapshot()),
+          {
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-cache",
+            },
+          },
+        );
+
       case "/events":
         return this.handleSSE();
 
@@ -189,6 +200,10 @@ export class DashboardServer {
         };
 
         send({ type: "full-state", state: stateManager.getFullState() });
+        send({
+          type: "health-snapshot",
+          state: stateManager.getHealthSnapshot(),
+        });
         const latestPool = bridge.getLatestPoolSnapshot();
         if (latestPool) {
           send({ type: "pool-snapshot", snapshot: latestPool });
