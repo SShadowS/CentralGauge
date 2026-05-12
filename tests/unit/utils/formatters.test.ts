@@ -104,6 +104,8 @@ function createMockFormatterInput(
     totalCompileErrors: 2,
     totalTestFailures: 1,
     totalMalformed: 0,
+    infraInvalidated: 0,
+    validAttempts: 20,
     secondsPerTask: 30,
     promptTokens: 15000,
     completionTokens: 5000,

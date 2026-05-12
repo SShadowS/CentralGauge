@@ -58,6 +58,8 @@ function createMockAggregateStats(
     totalCompileErrors: 1,
     totalTestFailures: 1,
     totalMalformed: 0,
+    infraInvalidated: 0,
+    validAttempts: 7,
     secondsPerTask: 17.1,
     promptTokens: 30000,
     completionTokens: 20000,

@@ -315,6 +315,17 @@ export interface AggregateStats {
   /** Total malformed responses (invalid AL code) */
   totalMalformed: number;
 
+  /**
+   * Total infra-invalidated attempts (container/test-harness failures that
+   * prevented a fair evaluation). These are durable in `.results[]` but are
+   * EXCLUDED from the compile/test failure buckets and from the validAttempts
+   * denominator so per-model rates aren't biased by container flakiness.
+   */
+  infraInvalidated: number;
+
+  /** Total attempts minus infraInvalidated — the denominator for honest pass rate */
+  validAttempts: number;
+
   /** Average seconds per task */
   secondsPerTask: number;
 
