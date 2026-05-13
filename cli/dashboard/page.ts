@@ -20,6 +20,7 @@ ${DASHBOARD_CSS}
 </head>
 <body>
 <div id="infra-banner"></div>
+<div id="infra-retry-toasts" class="infra-retry-toasts"></div>
 <div id="container-health" class="container-health-grid"></div>
 
 <div class="dashboard">
@@ -503,6 +504,73 @@ body.dark .health-card.failed { border-color: #ef4444; }
 body.dark .health-card.healthy { border-color: #22c55e; }
 body.dark .health-card .counts { color: #9ca3af; }
 
+/* Inline infra-retry badge on matrix cells */
+.cell .retry-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: #f59e0b;
+  color: #1f2937;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 0 3px;
+  border-radius: 0 3px 0 3px;
+  line-height: 1.2;
+  pointer-events: none;
+  animation: pulse 1.5s infinite;
+}
+body.dark .cell .retry-badge { background: #fbbf24; color: #111827; }
+
+/* Toast stack — top-right, non-blocking */
+.infra-retry-toasts {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  pointer-events: none;
+}
+.infra-retry-toasts .toast {
+  background: #b91c1c;
+  color: #fff;
+  border-radius: 6px;
+  padding: 10px 36px 10px 12px;
+  font-size: 0.8rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  position: relative;
+  pointer-events: auto;
+  border-left: 4px solid #7f1d1d;
+}
+.infra-retry-toasts .toast .toast-title {
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 2px;
+}
+.infra-retry-toasts .toast .toast-detail {
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 0.7rem;
+  opacity: 0.9;
+  word-break: break-word;
+}
+.infra-retry-toasts .toast .toast-close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 6px;
+}
+.infra-retry-toasts .toast .toast-close:hover { opacity: 0.7; }
+body.dark .infra-retry-toasts .toast { background: #7f1d1d; border-left-color: #450a0a; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .dashboard { padding: 0.75rem; }
@@ -613,11 +681,128 @@ const DASHBOARD_JS = `
         renderContainerHealth(event.state);
         break;
 
+      case 'inline-infra-retry':
+        handleInfraRetry(event);
+        break;
+
       case 'benchmark-complete':
         state.isRunning = false;
         renderComplete();
         break;
     }
+  }
+
+  // ==================== Inline Infra Retry ====================
+
+  // Per-cell badge state, keyed by taskId|variantId|run.
+  // Stores the original container name observed at "started" so that
+  // subsequent succeeded/failed events can update the tooltip with
+  // "original -> retry" once known.
+  const retryState = Object.create(null);
+
+  function retryCellKey(taskId, variantId) {
+    return taskId + '|' + variantId + '|' + (state ? state.currentRun : 1);
+  }
+
+  function findCellEl(taskId, variantId) {
+    const key = retryCellKey(taskId, variantId);
+    return document.getElementById('cell-' + key);
+  }
+
+  function setRetryBadge(cellEl, retryNumber, tooltip) {
+    if (!cellEl) return;
+    let badge = cellEl.querySelector('.retry-badge');
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'retry-badge';
+      cellEl.appendChild(badge);
+    }
+    badge.textContent = '↻' + retryNumber;
+    if (tooltip) badge.title = tooltip;
+  }
+
+  function clearRetryBadge(cellEl) {
+    if (!cellEl) return;
+    const badge = cellEl.querySelector('.retry-badge');
+    if (badge) badge.remove();
+  }
+
+  function handleInfraRetry(event) {
+    const key = retryCellKey(event.taskId, event.variantId);
+    const cellEl = findCellEl(event.taskId, event.variantId);
+
+    if (event.phase === 'started') {
+      const original = event.originalContainerName || '?';
+      retryState[key] = {
+        retryNumber: event.retryNumber,
+        original: original,
+      };
+      const tooltip = 'Infra retry #' + event.retryNumber +
+        ': ' + original + ' → ?';
+      setRetryBadge(cellEl, event.retryNumber, tooltip);
+      return;
+    }
+
+    if (event.phase === 'succeeded' || event.phase === 'failed') {
+      const prior = retryState[key] || {};
+      const retryNumber = event.retryNumber !== undefined
+        ? event.retryNumber
+        : (prior.retryNumber || 1);
+      const original = prior.original || '?';
+      const retry = event.retryContainerName || '?';
+      const tooltip = 'Infra retry #' + retryNumber +
+        ': ' + original + ' → ' + retry +
+        (event.phase === 'failed' && event.outcome
+          ? ' (' + event.outcome + ')'
+          : '');
+      // Show the final tooltip briefly, then clear the badge — the row's
+      // regular state machine (cell-update) carries the terminal outcome.
+      setRetryBadge(cellEl, retryNumber, tooltip);
+      delete retryState[key];
+      setTimeout(function() {
+        const el = findCellEl(event.taskId, event.variantId);
+        clearRetryBadge(el);
+      }, 1500);
+      return;
+    }
+
+    if (event.phase === 'exhausted') {
+      // Clear any visible badge and emit a red toast.
+      delete retryState[key];
+      clearRetryBadge(cellEl);
+      pushToast(event);
+    }
+  }
+
+  function pushToast(event) {
+    const stack = document.getElementById('infra-retry-toasts');
+    if (!stack) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    const label = event.signatureLabel || event.fingerprint || 'infra';
+    const detailParts = [
+      event.taskId + '/' + event.variantId,
+      'reason=' + (event.reason || 'unknown'),
+    ];
+    if (event.retryNumber !== undefined) {
+      detailParts.push('retries=' + event.retryNumber);
+    }
+    if (event.originalContainerName) {
+      detailParts.push('container=' + event.originalContainerName);
+    }
+    toast.innerHTML =
+      '<button class="toast-close" aria-label="Dismiss">&times;</button>' +
+      '<div class="toast-title">Infra retries exhausted: ' + esc(label) + '</div>' +
+      '<div class="toast-detail">' + esc(detailParts.join(' · ')) + '</div>';
+    const close = toast.querySelector('.toast-close');
+    close.addEventListener('click', function() {
+      toast.remove();
+    });
+    stack.appendChild(toast);
+    // Auto-dismiss after 12s — toasts are advisory, not modal.
+    setTimeout(function() {
+      if (toast.parentNode) toast.remove();
+    }, 12000);
   }
 
   // ==================== Pool / Containers ====================

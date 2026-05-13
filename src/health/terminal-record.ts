@@ -2,6 +2,8 @@
 
 import type {
   ExecutionAttempt,
+  InfraRetryExhaustionReason,
+  InfraRetryRecord,
   TaskExecutionContext,
   TaskExecutionResult,
 } from "../tasks/interfaces.ts";
@@ -26,6 +28,20 @@ interface SynthInput {
   error: unknown;
   classification: ClassifyResult;
   startTime: Date;
+  /**
+   * Trail of inline infra retries leading up to the terminal failure. Empty
+   * for short-circuit exhaustion paths (single-container, global-outage,
+   * unknown-failed-container) where no retry actually ran.
+   */
+  infraRetries?: InfraRetryRecord[];
+  /**
+   * `true` when the inline retry helper decided the budget was exhausted
+   * (regardless of whether retries actually ran). Drives the synthesized
+   * attempt's `infraRetryExhausted` flag for downstream reporting.
+   */
+  infraRetryExhausted?: boolean;
+  /** Reason the retry budget was exhausted, when known. */
+  infraRetryExhaustionReason?: InfraRetryExhaustionReason;
 }
 
 /**
@@ -83,6 +99,19 @@ export function synthesizeInfraFailureResult(
     cost: 0,
     duration: endTime.getTime() - input.startTime.getTime(),
   };
+  // Attach inline-retry metadata so downstream consumers (JSON, dashboard)
+  // can show the full retry trail + exhaustion reason without re-parsing the
+  // prose `failureReasons[]` block (which remains unchanged for backward
+  // compatibility with Phase A's downstream parsers).
+  if (input.infraRetries && input.infraRetries.length > 0) {
+    attempt.infraRetries = input.infraRetries;
+  }
+  if (input.infraRetryExhausted) {
+    attempt.infraRetryExhausted = true;
+  }
+  if (input.infraRetryExhaustionReason !== undefined) {
+    attempt.infraRetryExhaustionReason = input.infraRetryExhaustionReason;
+  }
 
   return {
     taskId: input.manifestId,

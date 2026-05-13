@@ -5,6 +5,7 @@
 
 import * as colors from "@std/fmt/colors";
 import type {
+  InfraRetryExhaustionReason,
   TaskExecutionResult,
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
@@ -104,6 +105,94 @@ export interface ScoreLineInput {
    * spot infra-flaked containers without opening the dashboard.
    */
   containerHealth?: import("../../../src/health/types.ts").ContainerHealthState;
+  /**
+   * Optional full result set. When provided AND at least one attempt carries
+   * inline infra-retry metadata (trail or exhaustion flag), appends a
+   * `# Infra Retries` block — recovered vs exhausted counts, exhaustion-reason
+   * sub-totals, and per-route trail. Omitted entirely when nothing is flagged
+   * to keep the score file clean for normal runs.
+   */
+  results?: TaskExecutionResult[];
+}
+
+/**
+ * Aggregated infra-retry counters built from a result set. Returned by
+ * {@link buildRetryRow} so we can keep the walk-attempts loop separate from
+ * the formatting logic in `buildScoreLines`.
+ */
+interface RetryRow {
+  flagged: number;
+  recovered: number;
+  exhausted: number;
+  /** Sub-totals keyed by exhaustion reason. */
+  reasons: Partial<Record<InfraRetryExhaustionReason, number>>;
+  /** Pre-formatted `by_route:` lines, one per flagged attempt. */
+  routes: string[];
+}
+
+/**
+ * Walk every attempt in `results` and aggregate inline infra-retry metadata
+ * into a {@link RetryRow}. Returns `null` when no attempt carries either a
+ * retry trail or an exhaustion flag — the caller uses this to skip emitting
+ * the `# Infra Retries` block entirely on clean runs.
+ *
+ * An attempt is "flagged" when EITHER:
+ * - `infraRetries` has 1+ entries (a retry actually executed), OR
+ * - `infraRetryExhausted === true` (zero-retry exhaustion path: no eligible
+ *   containers, global outage, or unknown failed container).
+ *
+ * The trailing record is mined for the `by_route:` row. When the attempt is
+ * exhausted-with-trail, the target is rendered as `(no eligible container)`
+ * per the operator-facing summary spec, because the retry that did run still
+ * infra-failed — naming a specific target would be misleading. Zero-retry
+ * exhaustions emit a dedicated `(zero-retry exhaustion: <reason>)` line
+ * since they have no trail to mine.
+ */
+function buildRetryRow(results: TaskExecutionResult[]): RetryRow | null {
+  const row: RetryRow = {
+    flagged: 0,
+    recovered: 0,
+    exhausted: 0,
+    reasons: {},
+    routes: [],
+  };
+  for (const r of results) {
+    for (const a of r.attempts) {
+      const hasTrail = (a.infraRetries?.length ?? 0) > 0;
+      const isExhausted = a.infraRetryExhausted === true;
+      if (!hasTrail && !isExhausted) continue;
+
+      row.flagged++;
+      if (isExhausted) {
+        row.exhausted++;
+        const reason: InfraRetryExhaustionReason =
+          a.infraRetryExhaustionReason ?? "budget_exhausted";
+        row.reasons[reason] = (row.reasons[reason] ?? 0) + 1;
+      } else {
+        row.recovered++;
+      }
+
+      const trail = a.infraRetries;
+      const last = trail && trail.length > 0
+        ? trail[trail.length - 1]
+        : undefined;
+      if (last) {
+        const target = isExhausted
+          ? "(no eligible container)"
+          : last.retryContainerName;
+        row.routes.push(
+          `${last.originalContainerName} → ${target}: ${
+            isExhausted ? "exhausted" : "recovered"
+          } (${last.durationMs}ms)`,
+        );
+      } else if (isExhausted) {
+        const reason: InfraRetryExhaustionReason =
+          a.infraRetryExhaustionReason ?? "budget_exhausted";
+        row.routes.push(`(zero-retry exhaustion: ${reason})`);
+      }
+    }
+  }
+  return row.flagged === 0 ? null : row;
 }
 
 /**
@@ -173,7 +262,9 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     lines.push(`# Container Health`);
     for (const c of input.containerHealth.containers) {
       const flag = c.alert
-        ? `   [!] ${c.alert.signatureLabel ?? c.alert.fingerprint} (${c.alert.kind})`
+        ? `   [!] ${
+          c.alert.signatureLabel ?? c.alert.fingerprint
+        } (${c.alert.kind})`
         : "";
       lines.push(
         `${c.containerName}: pass=${c.passCount} fail=${c.failCount} err=${c.errorCount}${flag}`,
@@ -187,11 +278,49 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     }
   }
 
+  // # Infra Retries block — operator-facing summary of inline infra-retry
+  // activity. Placed adjacent to # Container Health so reviewers can compare
+  // pool-level signal (sticky alerts) against per-attempt retry routing in
+  // one scan. Emitted only when buildRetryRow finds at least one flagged
+  // attempt, so normal runs stay clean.
+  if (input.results && input.results.length > 0) {
+    const row = buildRetryRow(input.results);
+    if (row) {
+      lines.push(``);
+      lines.push(`# Infra Retries`);
+      lines.push(`flagged: ${row.flagged}`);
+      lines.push(`recovered: ${row.recovered}`);
+      lines.push(`exhausted: ${row.exhausted}`);
+      // Sub-counts indented under `exhausted:` per spec. Iterate in declared
+      // enum order so the block is stable across runs with the same shape.
+      const reasonOrder: InfraRetryExhaustionReason[] = [
+        "budget_exhausted",
+        "no_eligible_containers",
+        "global_outage",
+        "unknown_failed_container",
+      ];
+      for (const reason of reasonOrder) {
+        const count = row.reasons[reason];
+        if (count !== undefined && count > 0) {
+          lines.push(`  ${reason}: ${count}`);
+        }
+      }
+      lines.push(`by_route:`);
+      for (const route of row.routes) {
+        lines.push(`  ${route}`);
+      }
+    }
+  }
+
   return lines;
 }
 
 /**
- * Save score file in human-readable format
+ * Save score file in human-readable format.
+ *
+ * `results` is optional for backward compatibility, but production callers
+ * should pass it so the `# Infra Retries` block can be emitted when inline
+ * retries fired. Omitting it just suppresses that block.
  */
 export async function saveScoresFile(
   scoreFile: string,
@@ -201,6 +330,7 @@ export async function saveScoresFile(
   attempts: number,
   resultCount: number,
   containerHealth?: import("../../../src/health/types.ts").ContainerHealthState,
+  results?: TaskExecutionResult[],
 ): Promise<void> {
   const scoreLines = buildScoreLines({
     stats,
@@ -209,6 +339,7 @@ export async function saveScoresFile(
     attempts,
     resultCount,
     ...(containerHealth !== undefined ? { containerHealth } : {}),
+    ...(results !== undefined ? { results } : {}),
   });
   await Deno.writeTextFile(scoreFile, scoreLines.join("\n"));
 }

@@ -3,7 +3,7 @@
  * @module tests/unit/cli/commands/bench/results-writer.test
  */
 
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
   buildScoreLines,
   type ScoreLineInput,
@@ -12,6 +12,12 @@ import type {
   AggregateStats,
   ModelStats,
 } from "../../../../../src/parallel/types.ts";
+import type {
+  ExecutionAttempt,
+  InfraRetryRecord,
+  TaskExecutionResult,
+} from "../../../../../src/tasks/interfaces.ts";
+import { createMockExecutionAttempt } from "../../../../utils/test-helpers.ts";
 
 /**
  * Create a minimal ModelStats object for testing
@@ -275,58 +281,323 @@ Deno.test("buildScoreLines", async (t) => {
     assertStringIncludes(content, "total_cost: $1.2346");
   });
 
-  await t.step("appends # Container Health block when snapshot provided", () => {
-    const input: ScoreLineInput = {
-      stats: createMockAggregateStats({
-        infraInvalidated: 297,
-        validAttempts: 1124,
-      }),
-      taskCount: 110,
-      modelNames: ["sonnet"],
-      attempts: 2,
-      resultCount: 1421,
-      timestamp: new Date("2025-01-06T12:00:00Z"),
-      containerHealth: {
-        eventId: 42,
-        containers: [
-          {
-            containerName: "Cronus28",
-            recent: [],
-            passCount: 200,
-            failCount: 10,
-            errorCount: 0,
-          },
-          {
-            containerName: "Cronus281",
-            recent: [],
-            passCount: 2,
-            failCount: 1,
-            errorCount: 297,
-            alert: {
-              kind: "persistent_container_failure",
-              containerName: "Cronus281",
-              fingerprint: "test:abc",
-              signatureId: "syslib0014",
-              signatureLabel: "PsTestTool .NET incompat (SYSLIB0014)",
-              count: 297,
-              raisedAt: Date.now(),
+  await t.step(
+    "appends # Container Health block when snapshot provided",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats({
+          infraInvalidated: 297,
+          validAttempts: 1124,
+        }),
+        taskCount: 110,
+        modelNames: ["sonnet"],
+        attempts: 2,
+        resultCount: 1421,
+        timestamp: new Date("2025-01-06T12:00:00Z"),
+        containerHealth: {
+          eventId: 42,
+          containers: [
+            {
+              containerName: "Cronus28",
+              recent: [],
+              passCount: 200,
+              failCount: 10,
+              errorCount: 0,
             },
-          },
-        ],
-        alerts: [],
-      },
-    };
+            {
+              containerName: "Cronus281",
+              recent: [],
+              passCount: 2,
+              failCount: 1,
+              errorCount: 297,
+              alert: {
+                kind: "persistent_container_failure",
+                containerName: "Cronus281",
+                fingerprint: "test:abc",
+                signatureId: "syslib0014",
+                signatureLabel: "PsTestTool .NET incompat (SYSLIB0014)",
+                count: 297,
+                raisedAt: Date.now(),
+              },
+            },
+          ],
+          alerts: [],
+        },
+      };
 
-    const lines = buildScoreLines(input);
-    const content = lines.join("\n");
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
 
-    assertStringIncludes(content, "# Container Health");
-    assertStringIncludes(content, "Cronus28: pass=200 fail=10 err=0");
-    assertStringIncludes(
-      content,
-      "Cronus281: pass=2 fail=1 err=297   [!] PsTestTool .NET incompat (SYSLIB0014) (persistent_container_failure)",
-    );
-    assertStringIncludes(content, "infra_invalidated: 297/1421");
-    assertStringIncludes(content, "valid_attempts=1124");
-  });
+      assertStringIncludes(content, "# Container Health");
+      assertStringIncludes(content, "Cronus28: pass=200 fail=10 err=0");
+      assertStringIncludes(
+        content,
+        "Cronus281: pass=2 fail=1 err=297   [!] PsTestTool .NET incompat (SYSLIB0014) (persistent_container_failure)",
+      );
+      assertStringIncludes(content, "infra_invalidated: 297/1421");
+      assertStringIncludes(content, "valid_attempts=1124");
+    },
+  );
+
+  await t.step(
+    "emits # Infra Retries block including zero-retry exhaustions",
+    () => {
+      // Build a result containing four attempts covering all reporting cases:
+      //   1. Recovered (1 retry, outcome succeeded).
+      //   2. Exhausted with trail (1 retry, outcome infra_again,
+      //      budget_exhausted reason).
+      //   3. Zero-retry exhaustion (no trail, no_eligible_containers reason).
+      //   4. Normal pass (no retry metadata at all).
+      const recoveredRetry: InfraRetryRecord = {
+        retryNumber: 1,
+        originalContainerName: "Cronus28",
+        retryContainerName: "Cronus281",
+        fingerprint: "fp:recovered",
+        signatureLabel: "PSSession lost",
+        durationMs: 123,
+        outcome: "succeeded",
+      };
+      const exhaustedRetry: InfraRetryRecord = {
+        retryNumber: 1,
+        originalContainerName: "Cronus281",
+        retryContainerName: "Cronus282",
+        fingerprint: "fp:exhausted",
+        signatureLabel: "Publish timeout",
+        durationMs: 456,
+        outcome: "infra_again",
+      };
+
+      const recoveredAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: true,
+        infraRetries: [recoveredRetry],
+      });
+      const exhaustedAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: false,
+        failureReasons: ["Infra error: still flaky"],
+        infraRetries: [exhaustedRetry],
+        infraRetryExhausted: true,
+        infraRetryExhaustionReason: "budget_exhausted",
+      });
+      const zeroRetryAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: false,
+        failureReasons: ["Infra error: nowhere to go"],
+        infraRetryExhausted: true,
+        infraRetryExhaustionReason: "no_eligible_containers",
+      });
+      const normalAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: true,
+      });
+
+      const results: TaskExecutionResult[] = [
+        {
+          taskId: "CG-AL-T01",
+          executionId: "exec-1",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [recoveredAttempt],
+          success: true,
+          finalScore: 100,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 1,
+          successRate: 1,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+        {
+          taskId: "CG-AL-T02",
+          executionId: "exec-2",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [exhaustedAttempt],
+          success: false,
+          finalScore: 0,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 0,
+          successRate: 0,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+        {
+          taskId: "CG-AL-T03",
+          executionId: "exec-3",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [zeroRetryAttempt],
+          success: false,
+          finalScore: 0,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 0,
+          successRate: 0,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+        {
+          taskId: "CG-AL-T04",
+          executionId: "exec-4",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [normalAttempt],
+          success: true,
+          finalScore: 100,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 1,
+          successRate: 1,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+      ];
+
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 4,
+        modelNames: ["sonnet"],
+        attempts: 2,
+        resultCount: 4,
+        timestamp: new Date("2026-05-14T12:00:00Z"),
+        results,
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+
+      // Header + aggregate counters
+      assertStringIncludes(content, "# Infra Retries");
+      assertStringIncludes(content, "flagged: 3");
+      assertStringIncludes(content, "recovered: 1");
+      assertStringIncludes(content, "exhausted: 2");
+
+      // Exhaustion-reason sub-counts (indented under exhausted:)
+      assertStringIncludes(content, "budget_exhausted: 1");
+      assertStringIncludes(content, "no_eligible_containers: 1");
+
+      // by_route header + per-retry rows
+      assertStringIncludes(content, "by_route:");
+      assertStringIncludes(
+        content,
+        "Cronus28 → Cronus281: recovered (123ms)",
+      );
+      assertStringIncludes(
+        content,
+        "Cronus281 → (no eligible container): exhausted (456ms)",
+      );
+      // Zero-retry exhaustion gets its own dedicated row
+      assertStringIncludes(
+        content,
+        "(zero-retry exhaustion: no_eligible_containers)",
+      );
+    },
+  );
+
+  await t.step(
+    "omits # Infra Retries block when no attempts flagged",
+    () => {
+      const normalAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: true,
+      });
+
+      const results: TaskExecutionResult[] = [
+        {
+          taskId: "CG-AL-T01",
+          executionId: "exec-1",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [normalAttempt],
+          success: true,
+          finalScore: 100,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 1,
+          successRate: 1,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+      ];
+
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-05-14T12:00:00Z"),
+        results,
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+
+      // Clean score file for normal runs.
+      assert(!content.includes("# Infra Retries"));
+    },
+  );
+
+  await t.step(
+    "results.json round-trip preserves infra-retry attempt fields",
+    () => {
+      const retry: InfraRetryRecord = {
+        retryNumber: 1,
+        originalContainerName: "Cronus28",
+        retryContainerName: "Cronus281",
+        fingerprint: "fp:json",
+        signatureLabel: "PSSession lost",
+        durationMs: 999,
+        outcome: "infra_again",
+      };
+      const attempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: false,
+        failureReasons: ["Infra error: pinned"],
+        infraRetries: [retry],
+        infraRetryExhausted: true,
+        infraRetryExhaustionReason: "budget_exhausted",
+      });
+      const result: TaskExecutionResult = {
+        taskId: "CG-AL-T01",
+        executionId: "exec-json",
+        context: {} as TaskExecutionResult["context"],
+        attempts: [attempt],
+        success: false,
+        finalScore: 0,
+        totalTokensUsed: 0,
+        totalCost: 0,
+        totalDuration: 0,
+        passedAttemptNumber: 0,
+        successRate: 0,
+        executedAt: new Date("2026-05-14T12:00:00Z"),
+        executedBy: "centralgauge",
+        environment: {},
+      };
+
+      // saveResultsJson serializes via JSON.stringify(results, ...). Pin that
+      // the three new ExecutionAttempt fields survive the round-trip rather
+      // than being silently dropped by an inadvertent type change later.
+      const parsed = JSON.parse(JSON.stringify(result)) as TaskExecutionResult;
+      const parsedAttempt = parsed.attempts[0]!;
+      assertEquals(parsedAttempt.infraRetryExhausted, true);
+      assertEquals(
+        parsedAttempt.infraRetryExhaustionReason,
+        "budget_exhausted",
+      );
+      assertEquals(parsedAttempt.infraRetries?.length, 1);
+      assertEquals(
+        parsedAttempt.infraRetries?.[0]?.retryContainerName,
+        "Cronus281",
+      );
+      assertEquals(parsedAttempt.infraRetries?.[0]?.outcome, "infra_again");
+    },
+  );
 });

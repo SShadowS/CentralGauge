@@ -17,6 +17,21 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   signature + fix hint when a container hits the persistent-failure threshold (3-of-window same
   fingerprint). Phase A only — no auto-quarantine yet. After a fix, no `doctor containers`
   command exists; just restart the bench. Scores file gets a `# Container Health` block per run.
+- Container infra failures (SYSLIB0014, OOM, publish timeout, PSSession loss, container offline)
+  are AUTOMATICALLY retried inline on a different healthy container during the same model
+  attempt. Budget: `bench.infraRetriesPerAttempt` in `.centralgauge.yml` (default 1). Disable
+  with `CENTRALGAUGE_BENCH_INFRA_RETRY=0`.
+  - Model's `attemptLimit` (default 2) is NOT consumed by infra retries.
+  - Original failing container is excluded from the retry route.
+  - `ContainerHealthMonitor` ACTIVE alerts widen the exclusion automatically.
+  - Single-container deployments short-circuit with a startup warning.
+  - When retries exhaust: existing `synthesizeInfraFailureResult` path fires;
+    `attempts[0].infraRetries[]` carries the trail and
+    `attempts[0].infraRetryExhaustionReason` records WHY (`budget_exhausted` /
+    `no_eligible_containers` / `global_outage` / `unknown_failed_container`).
+  - Score file `# Infra Retries` block summarizes per-run stats including
+    zero-retry exhaustions. Dashboard shows ↻N badges live.
+  - Operator smoke procedure: see `docs/inline-infra-retry-smoke.md`.
 
 ## Technology Stack
 

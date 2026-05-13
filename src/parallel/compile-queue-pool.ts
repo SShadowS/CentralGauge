@@ -10,12 +10,32 @@ import type {
   QueueStats,
 } from "./types.ts";
 import type { ContainerProvider } from "../container/interface.ts";
+import { NoEligibleContainersError } from "./errors.ts";
 import {
   CircularBuffer,
   imbalanceScore,
   type PoolSnapshot,
   type RoutingDecision,
 } from "./observability.ts";
+
+/**
+ * Per-call routing options. Activated by the inline infra-retry helper —
+ * callers can exclude specific containers at routing time, and learn which
+ * container the pool ultimately picked via `onRouted`.
+ *
+ * - `excludeContainers`: container names that must NOT be considered for this
+ *   routing decision. If exclusion covers the entire eligible set (single
+ *   queue's own container, or every queue in a pool), the call throws
+ *   `NoEligibleContainersError` BEFORE doing any work.
+ * - `onRouted`: fired synchronously as soon as the routing decision is made
+ *   and BEFORE the underlying work starts. The pool fires this exactly once
+ *   per enqueue and intentionally does NOT propagate it to the sub-queue, so
+ *   the callback never double-invokes.
+ */
+export interface CompileEnqueueOptions {
+  excludeContainers?: string[];
+  onRouted?: (containerName: string) => void;
+}
 
 /** Last N routing decisions retained for the pool snapshot. */
 const ROUTING_LOG_CAPACITY = 20;
@@ -29,7 +49,10 @@ const ROUTING_LOG_CAPACITY = 20;
  * --json-events) don't need to special-case run topology.
  */
 export interface CompileWorkQueue {
-  enqueue(item: CompileWorkItem): Promise<CompileWorkResult>;
+  enqueue(
+    item: CompileWorkItem,
+    options?: CompileEnqueueOptions,
+  ): Promise<CompileWorkResult>;
   drain(): Promise<void>;
   readonly length: number;
   readonly isProcessing: boolean;
@@ -81,29 +104,63 @@ export class CompileQueuePool implements CompileWorkQueue {
    *   `length`-routing keeps picking the first queue even while its
    *   testMutex is busy and other containers sit idle. Including
    *   in-flight items captures the real load.
+   *
+   * `excludeContainers`: filter queues out at routing time (used by the
+   *   inline infra-retry helper to avoid the container that just failed).
+   *   When the filter empties the eligible set, throw `NoEligibleContainersError`
+   *   BEFORE recording a routing decision — the call did not route.
+   *
+   * `onRouted`: fired synchronously the instant the routing decision is made
+   *   (after eligibility check, before delegating to the sub-queue). The
+   *   callback is consumed here and intentionally NOT forwarded to the sub-
+   *   queue, so the single-queue's own `onRouted` plumbing does not fire a
+   *   second time for the same enqueue.
+   *
+   * Rotor advance: rotor walks across the ELIGIBLE subset, not the full pool.
+   *   This guarantees fair fan-out even when the same exclusion repeats — if
+   *   we advanced over the full pool we could keep landing the rotor on the
+   *   excluded container and forcing repeated rescan.
    */
-  enqueue(item: CompileWorkItem): Promise<CompileWorkResult> {
-    const n = this.queues.length;
-    let target = this.queues[this.routingRotor % n]!;
-    let bestLoad = target.load;
+  async enqueue(
+    item: CompileWorkItem,
+    options?: CompileEnqueueOptions,
+  ): Promise<CompileWorkResult> {
+    const exclude = new Set(options?.excludeContainers ?? []);
+    const eligible = this.queues.filter((q) => !exclude.has(q.containerName));
 
-    // Scan starting from rotor + 1 so ties go to a different queue
-    // each time enqueue is called.
-    for (let i = 1; i < n; i++) {
-      const idx = (this.routingRotor + i) % n;
-      const q = this.queues[idx]!;
+    if (eligible.length === 0) {
+      // No work happened — do not write a routing-log entry.
+      throw new NoEligibleContainersError(
+        options?.excludeContainers ?? [],
+        this.queues.map((q) => q.containerName),
+      );
+    }
+
+    // Pick the least-loaded eligible queue, starting the scan at the rotor
+    // position WITHIN the eligible subset. This keeps consecutive
+    // identical-exclusion calls fanning out across the eligible queues.
+    const e = eligible.length;
+    const startIdx = this.routingRotor % e;
+    let target = eligible[startIdx]!;
+    let bestLoad = target.load;
+    for (let i = 1; i < e; i++) {
+      const idx = (startIdx + i) % e;
+      const q = eligible[idx]!;
       if (q.load < bestLoad) {
         target = q;
         bestLoad = q.load;
       }
     }
 
-    // Advance the rotor regardless of who won so successive routing
-    // decisions don't share the same starting point.
-    this.routingRotor = (this.routingRotor + 1) % n;
+    // Advance the rotor across the eligible subset so the next call starts
+    // its scan at a different eligible queue.
+    this.routingRotor = (startIdx + 1) % e;
 
     // Record the routing decision before enqueue so the snapshot reflects
     // depths AT decision time, not after the new item lands.
+    // `poolDepthsAtRouting`/`poolLoadsAtRouting` cover the FULL pool, not
+    // just the eligible subset — operators need to see what the entire fleet
+    // looked like at decision time, including excluded containers.
     const poolDepthsAtRouting: Record<string, number> = {};
     const poolLoadsAtRouting: Record<string, number> = {};
     for (const q of this.queues) {
@@ -121,7 +178,21 @@ export class CompileQueuePool implements CompileWorkQueue {
       routedAt: Date.now(),
     });
 
-    return target.enqueue(item);
+    // Fire onRouted BEFORE delegating. Do NOT forward `onRouted` to the
+    // sub-queue — otherwise the callback fires twice (once from the pool,
+    // once from the single-queue's own plumbing).
+    //
+    // `enqueue` is `async`, so a synchronous throw inside `onRouted` is
+    // automatically converted to a promise rejection. Callers using
+    // `.then().catch()` or `await ... catch` both observe the same
+    // rejected promise — see Task 3's `withInfraRetry`.
+    options?.onRouted?.(target.containerName);
+
+    const subOptions: CompileEnqueueOptions | undefined =
+      options?.excludeContainers !== undefined
+        ? { excludeContainers: options.excludeContainers }
+        : undefined;
+    return await target.enqueue(item, subOptions);
   }
 
   async drain(): Promise<void> {

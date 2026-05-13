@@ -13,6 +13,7 @@ import {
   QueueFullError,
   QueueTimeoutError,
 } from "../../../src/parallel/compile-queue.ts";
+import { NoEligibleContainersError } from "../../../src/parallel/errors.ts";
 import {
   createMockContainerProvider,
   MockContainerProvider,
@@ -118,6 +119,26 @@ describe({
       assertEquals(result.workItemId, workItem.id);
       assertEquals(result.compilationResult.success, true);
       assertEquals(typeof result.duration, "number");
+    });
+
+    it("should reject with NoEligibleContainersError when its container is excluded", async () => {
+      const queue = new CompileQueue(mockProvider, "Cronus28");
+      await assertRejects(
+        () =>
+          queue.enqueue(createMockCompileWorkItem(), {
+            excludeContainers: ["Cronus28"],
+          }),
+        NoEligibleContainersError,
+      );
+    });
+
+    it("should fire onRouted with its containerName before work begins", async () => {
+      const queue = new CompileQueue(mockProvider, "Cronus28");
+      let routed: string | undefined;
+      await queue.enqueue(createMockCompileWorkItem(), {
+        onRouted: (c) => (routed = c),
+      });
+      assertEquals(routed, "Cronus28");
     });
 
     it("should reject on compilation failure", async () => {
