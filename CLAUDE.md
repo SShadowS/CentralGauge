@@ -12,6 +12,11 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 - Don't hardcode model IDs in code. Use the catalog (`site/catalog/models.yml`) or
   `deno task start models -p <provider> --live` to discover current names.
   Verify availability with `deno task start models <slug> --check` before running benchmarks.
+- Container infra failures (SYSLIB0014, OOM, publish timeout, PSSession loss, container offline)
+  auto-classify via `src/health/`. The bench dashboard shows a sticky red banner naming the
+  signature + fix hint when a container hits the persistent-failure threshold (3-of-window same
+  fingerprint). Phase A only — no auto-quarantine yet. After a fix, no `doctor containers`
+  command exists; just restart the bench. Scores file gets a `# Container Health` block per run.
 
 ## Technology Stack
 
@@ -29,7 +34,7 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## Local BC Container
 
-- Available containers: `Cronus28`, `Cronus281`, `Cronus282`, `Cronus283`
+- Available containers: `Cronus28`, `Cronus281`, `Cronus282`, `Cronus283`, `Cronus284`, `Cronus285`
   (use `--containers Cronus28,Cronus281` for parallel compile/test)
 - Credentials: `sshadows` / `1234`
 - Health check URL: `http://Cronus28/BC/?tenant=default` (check if login page loads to verify container is up)
@@ -361,6 +366,13 @@ regression, watch the next run for downstream surprises.
 
 Do NOT run `deno fmt` on `site/` files — it converts quote style which
 conflicts with site's own prettier config.
+
+## Benchmark Tasks
+
+- Never submit real bench runs; always use dry-run mode first and confirm before live submission.
+- Keep task difficulty high — do not soften tests to make models pass. If a task is too easy, redesign rather than weaken.
+- Validate `prompt_template` and YAML schemas on load (Zod) — silent YAML load failures have repeatedly caused wasted bench runs.
+- After authoring tasks, run `sync-catalog --apply` before benching to avoid catalog drift.
 
 ## Writing Task Specifications (YAML)
 

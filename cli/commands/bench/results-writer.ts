@@ -98,6 +98,12 @@ export interface ScoreLineInput {
   attempts: number;
   resultCount: number;
   timestamp?: Date;
+  /**
+   * Optional container-health snapshot from the dashboard state. When present,
+   * appends a `# Container Health` block to the scores file. Lets reviewers
+   * spot infra-flaked containers without opening the dashboard.
+   */
+  containerHealth?: import("../../../src/health/types.ts").ContainerHealthState;
 }
 
 /**
@@ -162,6 +168,25 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     );
   }
 
+  if (input.containerHealth && input.containerHealth.containers.length > 0) {
+    lines.push(``);
+    lines.push(`# Container Health`);
+    for (const c of input.containerHealth.containers) {
+      const flag = c.alert
+        ? `   [!] ${c.alert.signatureLabel ?? c.alert.fingerprint} (${c.alert.kind})`
+        : "";
+      lines.push(
+        `${c.containerName}: pass=${c.passCount} fail=${c.failCount} err=${c.errorCount}${flag}`,
+      );
+    }
+    if (stats.infraInvalidated > 0) {
+      lines.push(
+        `infra_invalidated: ${stats.infraInvalidated}/${input.resultCount}` +
+          ` (valid_attempts=${stats.validAttempts})`,
+      );
+    }
+  }
+
   return lines;
 }
 
@@ -175,6 +200,7 @@ export async function saveScoresFile(
   variants: ModelVariant[],
   attempts: number,
   resultCount: number,
+  containerHealth?: import("../../../src/health/types.ts").ContainerHealthState,
 ): Promise<void> {
   const scoreLines = buildScoreLines({
     stats,
@@ -182,6 +208,7 @@ export async function saveScoresFile(
     modelNames: variants.map((v) => v.model),
     attempts,
     resultCount,
+    ...(containerHealth !== undefined ? { containerHealth } : {}),
   });
   await Deno.writeTextFile(scoreFile, scoreLines.join("\n"));
 }

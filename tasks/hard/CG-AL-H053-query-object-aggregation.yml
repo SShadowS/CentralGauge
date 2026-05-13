@@ -1,0 +1,47 @@
+id: CG-AL-H053
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a Query-object-based aggregator over an existing table.
+
+  Existing prereq table "CG H053 Sale" (ID 69530) - fields:
+    - "Entry No."    Integer (PK)
+    - "Customer No." Code[20]
+    - "Amount"       Decimal
+
+  Create:
+
+  1. Query object "CG H053 Cust Total Q" (ID 70530) that:
+     - Reads from "CG H053 Sale" as DataItem named `SaleLine`.
+     - Has a column `Customer_No` bound to "Customer No.".
+     - Has a column `Total_Amount` bound to "Amount" with `Method = Sum`.
+     - Has Customer_No as a group/key column so totals roll up per customer.
+
+  2. Codeunit "CG H053 Stats" (ID 70531) with one procedure:
+
+         procedure TotalForCustomer(CustNo: Code[20]) Total: Decimal
+
+     The procedure body must:
+     - Declare a local variable of the Query type "CG H053 Cust Total Q".
+     - Apply a SetRange/SetFilter on the Customer_No column to restrict to CustNo.
+     - Open + Read the query and return the matching row's Total_Amount.
+     - Return 0 when no row matches.
+
+  Forbidden mechanisms:
+    - Using the Record API to iterate or aggregate "CG H053 Sale" inside TotalForCustomer
+      (no Record "CG H053 Sale" variable, no FindSet, no FindFirst, no CalcSums).
+    - Using a temporary buffer or RecordRef.
+    - Returning a hardcoded constant; the value must come from the Query result.
+
+metadata:
+  category: performance
+  tags: [query-object, aggregation, sift, set-based]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H053.Test.al
+  testCodeunitId: 80268
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

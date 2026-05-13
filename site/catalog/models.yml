@@ -100,3 +100,13 @@
   display_name: 'Qwen: Qwen3.6 35B A3B'
   generation: 3
   released_at: '2026-04-27'
+- slug: anthropic/claude-haiku-4-5
+  api_model_id: claude-haiku-4-5
+  family: claude
+  display_name: Claude Haiku 4 5
+  generation: 4
+- slug: gemini/gemini-3.1-pro-preview
+  api_model_id: gemini-3.1-pro-preview
+  family: gemini
+  display_name: Gemini 3.1 Pro Preview
+  generation: 3

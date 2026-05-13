@@ -29,6 +29,17 @@ export interface MatrixCell {
   cost?: number;
   testsPassed?: number;
   testsTotal?: number;
+
+  // Infra-failure context — populated when state === "error" and the
+  // orchestrator emitted an enriched error event. Lets the UI render the
+  // signature label, container name, and a clickable artifact path.
+  containerName?: string;
+  operation?: string;
+  fingerprint?: string;
+  signatureId?: string;
+  signatureLabel?: string;
+  errorMessageTail?: string;
+  artifactPath?: string;
 }
 
 /**
@@ -100,6 +111,12 @@ export interface DashboardConfig {
   attempts: number;
   temperature: number;
   containerName: string;
+  /**
+   * Full list of containers the bench was started with. Used by the health
+   * monitor as the denominator for the global-outage ratio so partial-warmup
+   * doesn't trigger false-positive global alerts.
+   */
+  containerNames?: string[];
 }
 
 /**
@@ -114,5 +131,13 @@ export type SSEEvent =
   | {
     type: "pool-snapshot";
     snapshot: import("../../src/parallel/observability.ts").PoolSnapshot;
+  }
+  | {
+    type: "container-health";
+    state: import("../../src/health/types.ts").ContainerHealthState;
+  }
+  | {
+    type: "health-snapshot";
+    state: import("../../src/health/types.ts").ContainerHealthState;
   }
   | { type: "benchmark-complete" };

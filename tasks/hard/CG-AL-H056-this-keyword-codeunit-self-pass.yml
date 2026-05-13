@@ -1,0 +1,56 @@
+id: CG-AL-H056
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a codeunit that passes a reference to itself into a helper procedure
+  on another instance, exercising AL's self-reference keyword.
+
+  Create codeunit "CG H056 Counter" (ID 70560), Access = Public. The codeunit
+  has one private Integer global named "Count" (initialised implicitly to 0)
+  and exposes four procedures:
+
+      procedure Bump()
+      procedure GetCount(): Integer
+      procedure AbsorbFrom(var Source: Codeunit "CG H056 Counter")
+      procedure HandoffTo(var Target: Codeunit "CG H056 Counter")
+
+  Semantics:
+    - Bump()              : increments this instance's Count by 1.
+    - GetCount(): Integer : returns this instance's Count.
+    - AbsorbFrom(Source)  : sets this instance's Count to Source.GetCount().
+                            (Source is the other codeunit; Source.GetCount()
+                            reads ITS state, this instance's Count gets
+                            overwritten.)
+    - HandoffTo(Target)   : MUST consist of exactly one statement that calls
+                            `Target.AbsorbFrom(...)`, passing THIS instance
+                            (the codeunit currently executing HandoffTo) as
+                            the argument. The argument must be the AL
+                            self-reference keyword - the keyword that resolves
+                            to the current codeunit instance and is the only
+                            way to pass the current codeunit to a procedure
+                            that accepts `var Codeunit "CG H056 Counter"`.
+
+  Forbidden mechanisms:
+    - `SingleInstance = true` on the codeunit (this would short-circuit the
+      test by making every var of this type share state automatically).
+    - Storing the current codeunit in a global/static variable as a workaround
+      for not knowing the self-reference keyword.
+    - Calling Bump or GetCount inside HandoffTo for any purpose other than
+      what the one-statement constraint allows (HandoffTo body is exactly one
+      statement and that statement is the AbsorbFrom call).
+    - Inlining the count copy inside HandoffTo (e.g. `Target.SetCount(Count)`
+      instead of `Target.AbsorbFrom(<self-reference>)`).
+    - DotNet types.
+
+metadata:
+  category: codeunit-mechanics
+  tags: [this-keyword, codeunit-self-reference, instance-passing, AA0248]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H056.Test.al
+  testCodeunitId: 80271
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

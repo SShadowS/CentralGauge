@@ -11,6 +11,11 @@ import type {
   DashboardState,
   MatrixCell,
 } from "./types.ts";
+import { ContainerHealthMonitor } from "../../src/health/mod.ts";
+import type {
+  ContainerHealthState,
+  ContainerOutcome,
+} from "../../src/health/types.ts";
 
 /**
  * Build a cell map key from taskId, model, and run number
@@ -44,11 +49,37 @@ export class DashboardStateManager {
     pendingInQueue: 0,
   };
 
+  /** Container health reducer. Window of 20 outcomes per container. */
+  private healthMonitor: ContainerHealthMonitor;
+
   constructor(config: DashboardConfig) {
     this.config = config;
     this.taskIds = [...config.taskIds];
     this.models = [...config.models];
     this.totalRuns = config.totalRuns;
+    this.healthMonitor = new ContainerHealthMonitor({
+      windowSize: 20,
+      ...(config.containerNames && config.containerNames.length > 0
+        ? { expectedContainers: config.containerNames.length }
+        : {}),
+    });
+  }
+
+  /**
+   * Record a container outcome (pass/fail/infra_error) and update the
+   * rolling health snapshot. Bridge calls this on every result + every
+   * enriched error event.
+   */
+  recordContainerOutcome(o: ContainerOutcome): void {
+    this.healthMonitor.record(o);
+  }
+
+  /**
+   * Return the current container-health snapshot (with monotonic eventId
+   * for SSE replay).
+   */
+  getHealthSnapshot(): ContainerHealthState {
+    return this.healthMonitor.getState();
   }
 
   /**

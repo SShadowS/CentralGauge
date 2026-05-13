@@ -1,0 +1,24 @@
+[CG-PIN] buildTestScript bccontainerhelper@6.1.11 usePwshForBc24=False sentinel=2026-04-25-B
+CLEANUP:Removing CentralGauge_CG-AL-H022_2 by CentralGauge
+Uninstalling CentralGauge_CG-AL-H022_2 from tenant default
+App successfully unpublished
+PUBLISH_START:1778515615905
+Publishing C:\ProgramData\BcContainerHelper\Extensions\Cronus281\93d465b5-c70a-4c15-92c4-5edc4bcbc95e\57c636bb_CentralGauge_CentralGauge_CG-AL-H024_1_1.0.0.0.app
+WARNING: This license is not compatible with this version of Business Central.
+Synchronizing CentralGauge_CG-AL-H024_1 on tenant default
+Installing CentralGauge_CG-AL-H024_1 on tenant default
+App 57c636bb_CentralGauge_CentralGauge_CG-AL-H024_1_1.0.0.0.app successfully published
+PUBLISH_END:1778515621668
+TEST_START:1778515621668
+Connecting to http://localhost:80/BC/cs?tenant=default
+at Disable-SslVerification, C:\ProgramData\BcContainerHelper\Extensions\Cronus281\PsTestTool\PsTestFunctions.ps1: line 1370
+at <ScriptBlock>, C:\ProgramData\BcContainerHelper\84b12b40-3d1f-4c0f-96c7-3c090ebd2733.ps1: line 98
+(7,40): error SYSLIB0014: 'ServicePointManager' is obsolete: 'WebRequest, HttpWebRequest, ServicePoint, and WebClient are obsolete. Use HttpClient instead. Settings on ServicePointManager no longer affect SslStream or HttpClient.' (https://aka.ms/dotnet-warnings/SYSLIB0014)
+        public static void Disable() { System.Net.ServicePointManager.ServerCertificateValidationCallback = DisabledServerCertificateValidationCallback; }
+                                       ^
+
+Container Free Physical Memory: 1.0Gb
+Disk C: Free 119Gb from 127Gb
+
+TEST_ERROR:(7,40): error SYSLIB0014: 'ServicePointManager' is obsolete
+TEST_END:1778515642325

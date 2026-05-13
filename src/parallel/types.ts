@@ -317,6 +317,17 @@ export interface AggregateStats {
   /** Total malformed responses (invalid AL code) */
   totalMalformed: number;
 
+  /**
+   * Total infra-invalidated attempts (container/test-harness failures that
+   * prevented a fair evaluation). These are durable in `.results[]` but are
+   * EXCLUDED from the compile/test failure buckets and from the validAttempts
+   * denominator so per-model rates aren't biased by container flakiness.
+   */
+  infraInvalidated: number;
+
+  /** Total attempts minus infraInvalidated — the denominator for honest pass rate */
+  validAttempts: number;
+
   /** Average seconds per task */
   secondsPerTask: number;
 
@@ -549,6 +560,18 @@ export type ParallelExecutionEvent =
     taskId?: string | undefined;
     model?: string | undefined;
     error: Error;
+    /** Container that owned the failed operation, when known */
+    containerName?: string | undefined;
+    /** Specific operation that failed (compile/publish/test/...) */
+    operation?: string | undefined;
+    /** Tail of raw output for UI display */
+    rawTail?: string | undefined;
+    /** Path to full output artifact on disk */
+    artifactPath?: string | undefined;
+    /** Fingerprint id from classifier */
+    fingerprint?: string | undefined;
+    /** Named signature id, if matched */
+    signatureId?: string | undefined;
   }
   | {
     type: "infra_retry_started";

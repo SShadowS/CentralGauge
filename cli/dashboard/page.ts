@@ -19,6 +19,9 @@ ${DASHBOARD_CSS}
 </style>
 </head>
 <body>
+<div id="infra-banner"></div>
+<div id="container-health" class="container-health-grid"></div>
+
 <div class="dashboard">
   <!-- Header -->
   <header class="dash-header">
@@ -440,6 +443,66 @@ body.dark .routing-log .entry { border-bottom-color: #374151; }
 body.dark .routing-log .entry .target { color: #60a5fa; }
 body.dark .container-card .sparkline polyline { stroke: #60a5fa; }
 
+/* Infra failure banner */
+#infra-banner {
+  display: none;
+}
+#infra-banner.active {
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #b91c1c;
+  color: #fff;
+  padding: 10px 16px;
+  font-weight: 600;
+  border-bottom: 2px solid #7f1d1d;
+}
+#infra-banner .fix-hint {
+  display: block;
+  font-weight: normal;
+  font-family: ui-monospace, "Cascadia Code", Menlo, monospace;
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.9;
+}
+
+/* Container health card grid */
+.container-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+  padding: 8px;
+}
+.health-card {
+  background: #f9fafb;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  border: 2px solid #e5e7eb;
+}
+.health-card.suspect { border-color: #f59e0b; }
+.health-card.failed { border-color: #dc2626; }
+.health-card.healthy { border-color: #16a34a; }
+.health-card .name { font-weight: 600; margin-bottom: 4px; }
+.health-card .counts { color: #6b7280; }
+.health-sparkline { display: flex; gap: 2px; margin-top: 4px; }
+.health-sparkline span {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  border-radius: 1px;
+}
+.health-sparkline .pass { background: #22c55e; }
+.health-sparkline .fail { background: #f97316; }
+.health-sparkline .infra_error { background: #dc2626; }
+
+body.dark .health-card { background: #1f2937; border-color: #374151; }
+body.dark .health-card.suspect { border-color: #d97706; }
+body.dark .health-card.failed { border-color: #ef4444; }
+body.dark .health-card.healthy { border-color: #22c55e; }
+body.dark .health-card .counts { color: #9ca3af; }
+
 /* Responsive */
 @media (max-width: 768px) {
   .dashboard { padding: 0.75rem; }
@@ -477,6 +540,12 @@ const DASHBOARD_JS = `
       renderAll();
     } catch (e) {
       console.error('Failed to fetch initial state:', e);
+    }
+    try {
+      const snap = await fetch('/api/health-snapshot').then(function(r) { return r.json(); });
+      renderContainerHealth(snap);
+    } catch (e) {
+      // Initial snapshot fetch is best-effort; SSE will populate later
     }
   }
 
@@ -537,6 +606,11 @@ const DASHBOARD_JS = `
 
       case 'pool-snapshot':
         renderPoolSnapshot(event.snapshot);
+        break;
+
+      case 'container-health':
+      case 'health-snapshot':
+        renderContainerHealth(event.state);
         break;
 
       case 'benchmark-complete':
@@ -657,6 +731,46 @@ const DASHBOARD_JS = `
           escapeHtml(loads) + '</span>' +
           '</div>';
       }).join('');
+    }
+  }
+
+  // ==================== Container Health ====================
+
+  function renderContainerHealth(healthState) {
+    if (!healthState) return;
+
+    // Banner: show first active alert (most severe).
+    const banner = document.getElementById('infra-banner');
+    if (healthState.alerts && healthState.alerts.length > 0) {
+      const a = healthState.alerts[0];
+      banner.className = 'active';
+      const label = a.signatureLabel || a.fingerprint;
+      const hint = a.fixHint ? '<span class="fix-hint">' + esc(a.fixHint) + '</span>' : '';
+      banner.innerHTML = '<span>⚠ ' + esc(a.containerName) + ' — ' + esc(label) +
+        ' (' + a.count + ' errors)</span>' + hint;
+    } else {
+      banner.className = '';
+      banner.innerHTML = '';
+    }
+
+    // Per-container cards
+    const grid = document.getElementById('container-health');
+    grid.innerHTML = '';
+    for (const c of healthState.containers) {
+      const status = c.alert ? 'failed'
+        : c.errorCount > 0 ? 'suspect'
+        : 'healthy';
+      const card = document.createElement('div');
+      card.className = 'health-card ' + status;
+      const spark = c.recent.map(function(r) {
+        return '<span class="' + r + '"></span>';
+      }).join('');
+      card.innerHTML =
+        '<div class="name">' + esc(c.containerName) + '</div>' +
+        '<div class="counts">pass=' + c.passCount + ' fail=' + c.failCount +
+        ' err=' + c.errorCount + '</div>' +
+        '<div class="health-sparkline">' + spark + '</div>';
+      grid.appendChild(card);
     }
   }
 

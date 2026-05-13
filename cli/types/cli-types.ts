@@ -35,6 +35,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   containers?: string[];
   /** Disable persistent compiler cache (re-downloads artifacts each run) */
   noCompilerCache?: boolean;
+  /** Cliffy `--no-dashboard` inverse: true (default) starts dashboard, false skips it for scripted use */
+  dashboard?: boolean;
 }
 
 /**

@@ -61,6 +61,10 @@ export class LLMProviderError extends CentralGaugeError {
  * Error from container operations
  */
 export class ContainerError extends CentralGaugeError {
+  public readonly rawOutput: string | undefined;
+  public readonly rawOutputArtifactPath: string | undefined;
+  public readonly exitCode: number | undefined;
+
   constructor(
     message: string,
     public readonly containerName: string,
@@ -69,12 +73,21 @@ export class ContainerError extends CentralGaugeError {
       | "start"
       | "stop"
       | "compile"
+      | "publish"
       | "test"
       | "health",
-    context?: Record<string, unknown>,
+    context?: {
+      rawOutput?: string;
+      rawOutputArtifactPath?: string;
+      exitCode?: number;
+      [key: string]: unknown;
+    },
   ) {
     super(message, "CONTAINER_ERROR", { containerName, operation, ...context });
     this.name = "ContainerError";
+    this.rawOutput = context?.rawOutput;
+    this.rawOutputArtifactPath = context?.rawOutputArtifactPath;
+    this.exitCode = context?.exitCode;
   }
 }
 

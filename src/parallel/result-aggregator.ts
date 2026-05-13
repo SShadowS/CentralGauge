@@ -309,6 +309,8 @@ export class ResultAggregator {
     totalCompileErrors: number;
     totalTestFailures: number;
     totalMalformed: number;
+    infraInvalidated: number;
+    validAttempts: number;
     promptTokens: number;
     completionTokens: number;
     totalLLMDuration: number;
@@ -317,6 +319,7 @@ export class ResultAggregator {
   } {
     let passNum1 = 0, passNum2 = 0;
     let totalCompileErrors = 0, totalTestFailures = 0, totalMalformed = 0;
+    let infraInvalidated = 0;
     let promptTokens = 0, completionTokens = 0;
     let totalLLMDuration = 0, totalCompileDuration = 0, totalTestDuration = 0;
 
@@ -334,6 +337,7 @@ export class ResultAggregator {
           onMalformed: () => totalMalformed++,
           onTestFailure: () => totalTestFailures++,
           onCompileError: () => totalCompileErrors++,
+          onInfraInvalidated: () => infraInvalidated++,
         });
       }
 
@@ -357,6 +361,8 @@ export class ResultAggregator {
       totalCompileErrors,
       totalTestFailures,
       totalMalformed,
+      infraInvalidated,
+      validAttempts: this.results.length - infraInvalidated,
       promptTokens,
       completionTokens,
       totalLLMDuration,
@@ -371,10 +377,20 @@ export class ResultAggregator {
       onMalformed: () => void;
       onTestFailure: () => void;
       onCompileError: () => void;
+      onInfraInvalidated: () => void;
     },
   ): void {
     const lastAttempt = result.attempts[result.attempts.length - 1];
     if (!lastAttempt) return;
+
+    const firstReason = lastAttempt.failureReasons[0] ?? "";
+    // Infra-synthesized results are tagged with "Infra error:" prefix by
+    // synthesizeInfraFailureResult — they must NOT count as compile/test
+    // failures because the (model, task) attempt never got a fair shake.
+    if (firstReason.startsWith("Infra error:")) {
+      callbacks.onInfraInvalidated();
+      return;
+    }
 
     const failureReasons = lastAttempt.failureReasons.join(" ");
     if (this.isMalformedResponse(lastAttempt)) {
@@ -406,6 +422,8 @@ export class ResultAggregator {
       totalCompileErrors: detailedStats.totalCompileErrors,
       totalTestFailures: detailedStats.totalTestFailures,
       totalMalformed: detailedStats.totalMalformed,
+      infraInvalidated: detailedStats.infraInvalidated,
+      validAttempts: detailedStats.validAttempts,
       secondsPerTask: taskCount > 0
         ? (basicTotals.totalDuration / 1000) / taskCount
         : 0,

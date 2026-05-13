@@ -1,0 +1,4 @@
+[CG-PIN] buildTestScript bccontainerhelper@6.1.11
+PUBLISH_START:1778515615905
+Publishing C:\ProgramData\BcContainerHelper\Extensions\Cronus282\...
+Publish-BcContainerApp : The operation has timed out.

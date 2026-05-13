@@ -259,27 +259,36 @@ export async function executeParallelBenchmark(
       containerProvider.name,
     );
 
-    // Start live dashboard
-    try {
-      const { DashboardServer: DashServer, openBrowser } = await import(
-        "../../dashboard/mod.ts"
+    // Start live dashboard (skipped when --no-dashboard is passed for scripted use)
+    if (options.dashboard === false) {
+      log.info(
+        "[Dashboard] Disabled (--no-dashboard); process will exit when run completes.",
       );
-      dashboard = await DashServer.start({
-        models: variants.map((v) => v.variantId),
-        taskIds: taskManifests.map((t) => t.id),
-        totalRuns,
-        attempts: options.attempts,
-        temperature: options.temperature || 0.1,
-        containerName: primaryContainerName,
-      });
-      log.info(`[Dashboard] Live at ${dashboard.url}`);
-      openBrowser(dashboard.url);
-    } catch (e) {
-      log.warn(
-        `[Dashboard] Failed to start: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
+    } else {
+      try {
+        const { DashboardServer: DashServer, openBrowser } = await import(
+          "../../dashboard/mod.ts"
+        );
+        dashboard = await DashServer.start({
+          models: variants.map((v) => v.variantId),
+          taskIds: taskManifests.map((t) => t.id),
+          totalRuns,
+          attempts: options.attempts,
+          temperature: options.temperature || 0.1,
+          containerName: primaryContainerName,
+          ...(containerNames && containerNames.length > 0
+            ? { containerNames }
+            : {}),
+        });
+        log.info(`[Dashboard] Live at ${dashboard.url}`);
+        openBrowser(dashboard.url);
+      } catch (e) {
+        log.warn(
+          `[Dashboard] Failed to start: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
     }
 
     for (let runIndex = 1; runIndex <= totalRuns; runIndex++) {
@@ -510,7 +519,7 @@ export async function executeParallelBenchmark(
         );
         resultFilePaths.push(resultsFile);
 
-        // Save score file
+        // Save score file (with container-health snapshot when dashboard ran)
         const scoreFile = `${options.outputDir}/scores-${timestamp}.txt`;
         await saveScoresFile(
           scoreFile,
@@ -519,6 +528,7 @@ export async function executeParallelBenchmark(
           variants,
           options.attempts,
           finalResults.length,
+          dashboard?.getHealthSnapshot(),
         );
 
         // Print summary
@@ -817,8 +827,17 @@ function subscribeToEvents(
       case "result": {
         const variantId = event.result.context.variantId ||
           event.result.context.llmModel;
+        // Synthesized infra-failure results carry "Infra error:" as the first
+        // failure reason. Tag them as "infra" so operators don't blame the
+        // model for a container/test-harness fault.
+        const isInfra = (event.result.attempts[0]?.failureReasons?.[0] ?? "")
+          .startsWith(
+            "Infra error:",
+          );
         const status = event.result.success
           ? colors.green("pass")
+          : isInfra
+          ? colors.yellow("infra")
           : colors.red("fail");
         // Extract test counts from the last attempt's testResult
         const lastAttempt =
@@ -905,11 +924,24 @@ function subscribeToEvents(
           }
         }
         break;
-      case "error":
-        log.fail(
-          `${event.model ? `(${event.model}) ` : ""}${event.error.message}`,
-        );
+      case "error": {
+        // Enriched error events carry container/fingerprint when the failure
+        // is infrastructure rather than a genuine model/orchestrator fault.
+        // Surface that distinction so the bench log doesn't read like the
+        // model crashed when it was the container.
+        const isInfra = event.containerName !== undefined ||
+          event.fingerprint !== undefined;
+        const modelTag = event.model ? `(${event.model}) ` : "";
+        const ctxTag = isInfra && event.containerName
+          ? `[INFRA ${event.containerName}] `
+          : isInfra
+          ? "[INFRA] "
+          : "";
+        const msg = `${modelTag}${ctxTag}${event.error.message}`;
+        if (isInfra) log.warn(msg);
+        else log.fail(msg);
         break;
+      }
     }
   });
 }

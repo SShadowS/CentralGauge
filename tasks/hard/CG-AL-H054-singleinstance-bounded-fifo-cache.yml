@@ -1,0 +1,48 @@
+id: CG-AL-H054
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Build a session-scoped, capacity-bounded FIFO cache.
+
+  Create codeunit "CG H054 Cache" (ID 70540) with `SingleInstance = true` and
+  Access = Public. The codeunit exposes:
+
+      procedure Add(Key: Code[20]; Value: Integer)
+      procedure Get(Key: Code[20]; var Value: Integer): Boolean
+      procedure Count(): Integer
+      procedure Clear()
+
+  Semantics:
+    - The cache holds AT MOST 5 entries at any time.
+    - Add stores Key -> Value. If Key was already present, replace its Value but
+      DO NOT change insertion order (no eviction in this case).
+    - If Key is new and the cache is already at 5 entries, EVICT the OLDEST
+      entry (the entry inserted earliest) before storing the new pair.
+    - Get returns true and writes the stored Value to the var parameter when Key
+      is present (and was NOT evicted). Otherwise returns false and leaves Value
+      untouched.
+    - Count returns the current entry count (0..5).
+    - Clear empties the cache.
+
+  Forbidden mechanisms:
+    - Using Record / TableExtension to persist entries.
+    - Hardcoding the capacity check at a different number (the spec is 5).
+    - Storing entries in a way that loses insertion order (e.g. SortedDictionary
+      that re-sorts on every Add) - the eviction MUST drop the entry whose Add
+      call was earliest in time, not the smallest Key.
+    - Using DotNet types.
+    - Pre-truncating: discarding the new entry instead of the oldest when the
+      cache is full.
+
+metadata:
+  category: caching
+  tags: [singleinstance, bounded-cache, fifo-eviction, session-scope]
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H054.Test.al
+  testCodeunitId: 80269
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -61,7 +61,14 @@ export interface AdminConfig {
 }
 
 export type IngestOutcome =
-  | { kind: "success"; runId: string; bytesUploaded: number }
+  | {
+    kind: "success";
+    runId: string;
+    /** Bytes actually uploaded to R2 (excludes content-addressed dedup hits). */
+    bytesUploaded: number;
+    /** Total bytes of unique blobs this run references. `bytesUploaded == 0 && referencedBytes > 0` ⇒ full dedup against pre-existing R2 objects. */
+    referencedBytes: number;
+  }
   | {
     kind: "retryable-failure";
     attempts: number;
