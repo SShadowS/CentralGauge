@@ -547,6 +547,7 @@ export async function executeParallelBenchmark(
           options.attempts,
           finalResults.length,
           dashboard?.getHealthSnapshot(),
+          finalResults,
         );
 
         // Print summary
