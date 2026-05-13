@@ -24,7 +24,10 @@ import {
   TEST_TOOLKIT_DEPENDENCIES,
 } from "../constants.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
-import type { CompileWorkQueue, EnqueueOptions } from "./compile-queue-pool.ts";
+import type {
+  CompileEnqueueOptions,
+  CompileWorkQueue,
+} from "./compile-queue-pool.ts";
 import { NoEligibleContainersError } from "./errors.ts";
 import {
   type ActiveItem,
@@ -267,7 +270,7 @@ export class CompileQueue implements CompileWorkQueue {
    */
   enqueue(
     item: CompileWorkItem,
-    options?: EnqueueOptions,
+    options?: CompileEnqueueOptions,
   ): Promise<CompileWorkResult> {
     // Exclusion check FIRST — a single-container queue is "eligible" iff its
     // own container name is not in the excluded list. If excluded, fail fast
@@ -282,7 +285,16 @@ export class CompileQueue implements CompileWorkQueue {
     // Notify the caller of the routing decision BEFORE any work begins.
     // For a single-container queue the "decision" is trivial (always this
     // container), but the contract is symmetric with `CompileQueuePool`.
-    options?.onRouted?.(this.containerName);
+    //
+    // Convert a synchronous throw from `onRouted` into a promise rejection
+    // so callers using `.then().catch()` see the error on the chain rather
+    // than as a sync throw out of `enqueue`. Task 3's `withInfraRetry`
+    // relies on this so its retry-record stamping callback can fail safely.
+    try {
+      options?.onRouted?.(this.containerName);
+    } catch (e) {
+      return Promise.reject(e instanceof Error ? e : new Error(String(e)));
+    }
 
     // Check total capacity (pending + in-flight items)
     const totalItems = this.queue.length + this.activeItems;

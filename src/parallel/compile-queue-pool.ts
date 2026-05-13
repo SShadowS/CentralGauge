@@ -32,7 +32,7 @@ import {
  *   per enqueue and intentionally does NOT propagate it to the sub-queue, so
  *   the callback never double-invokes.
  */
-export interface EnqueueOptions {
+export interface CompileEnqueueOptions {
   excludeContainers?: string[];
   onRouted?: (containerName: string) => void;
 }
@@ -51,7 +51,7 @@ const ROUTING_LOG_CAPACITY = 20;
 export interface CompileWorkQueue {
   enqueue(
     item: CompileWorkItem,
-    options?: EnqueueOptions,
+    options?: CompileEnqueueOptions,
   ): Promise<CompileWorkResult>;
   drain(): Promise<void>;
   readonly length: number;
@@ -121,20 +121,18 @@ export class CompileQueuePool implements CompileWorkQueue {
    *   we advanced over the full pool we could keep landing the rotor on the
    *   excluded container and forcing repeated rescan.
    */
-  enqueue(
+  async enqueue(
     item: CompileWorkItem,
-    options?: EnqueueOptions,
+    options?: CompileEnqueueOptions,
   ): Promise<CompileWorkResult> {
     const exclude = new Set(options?.excludeContainers ?? []);
     const eligible = this.queues.filter((q) => !exclude.has(q.containerName));
 
     if (eligible.length === 0) {
       // No work happened — do not write a routing-log entry.
-      return Promise.reject(
-        new NoEligibleContainersError(
-          options?.excludeContainers ?? [],
-          this.queues.map((q) => q.containerName),
-        ),
+      throw new NoEligibleContainersError(
+        options?.excludeContainers ?? [],
+        this.queues.map((q) => q.containerName),
       );
     }
 
@@ -183,13 +181,18 @@ export class CompileQueuePool implements CompileWorkQueue {
     // Fire onRouted BEFORE delegating. Do NOT forward `onRouted` to the
     // sub-queue — otherwise the callback fires twice (once from the pool,
     // once from the single-queue's own plumbing).
+    //
+    // `enqueue` is `async`, so a synchronous throw inside `onRouted` is
+    // automatically converted to a promise rejection. Callers using
+    // `.then().catch()` or `await ... catch` both observe the same
+    // rejected promise — see Task 3's `withInfraRetry`.
     options?.onRouted?.(target.containerName);
 
-    const subOptions: EnqueueOptions | undefined =
+    const subOptions: CompileEnqueueOptions | undefined =
       options?.excludeContainers !== undefined
         ? { excludeContainers: options.excludeContainers }
         : undefined;
-    return target.enqueue(item, subOptions);
+    return await target.enqueue(item, subOptions);
   }
 
   async drain(): Promise<void> {

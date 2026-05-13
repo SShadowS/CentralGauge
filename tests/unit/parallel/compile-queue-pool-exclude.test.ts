@@ -98,6 +98,35 @@ describe({
     const result = await queue.enqueue(createMockCompileWorkItem());
     assertEquals(result.compilationResult.success, true);
   });
+
+  // Defensive: empty exclude list must behave identically to no option.
+  // Regression guard for callers that pass `excludeContainers: []` to mean
+  // "no exclusions yet" (e.g. first attempt of `withInfraRetry`).
+  it("excludeContainers: [] does not throw and behaves like no option", async () => {
+    const queue = new CompileQueue(mockProvider, "Cronus28");
+    const result = await queue.enqueue(createMockCompileWorkItem(), {
+      excludeContainers: [],
+    });
+    assertEquals(result.compilationResult.success, true);
+  });
+
+  // Defensive: a synchronous throw inside `onRouted` must reject the
+  // returned promise rather than escape `enqueue` as a sync throw.
+  // Task 3's `withInfraRetry` relies on `.catch()` seeing the error.
+  it("onRouted throwing rejects the promise (does not throw sync)", async () => {
+    const queue = new CompileQueue(mockProvider, "Cronus28");
+    const err = new Error("onRouted boom");
+    await assertRejects(
+      () =>
+        queue.enqueue(createMockCompileWorkItem(), {
+          onRouted: () => {
+            throw err;
+          },
+        }),
+      Error,
+      "onRouted boom",
+    );
+  });
 });
 
 describe({
@@ -246,5 +275,56 @@ describe({
     const pool = new CompileQueuePool(mockProvider, ["c1", "c2"]);
     const result = await pool.enqueue(createMockCompileWorkItem());
     assert(result.compilationResult);
+  });
+
+  // Defensive: empty exclude list must behave identically to no option.
+  // `withInfraRetry` passes `excludeContainers: []` on its first attempt
+  // before any infra failures have been observed.
+  it("excludeContainers: [] behaves identically to no option", async () => {
+    const pool = new CompileQueuePool(mockProvider, ["Cronus28", "Cronus281"]);
+    let routed: string | undefined;
+    const result = await pool.enqueue(createMockCompileWorkItem(), {
+      excludeContainers: [],
+      onRouted: (c) => (routed = c),
+    });
+    assert(result.compilationResult);
+    assert(
+      routed === "Cronus28" || routed === "Cronus281",
+      `routed should be a pool member, got ${routed}`,
+    );
+  });
+
+  // Defensive: a name not in the pool must be silently ignored, not error.
+  // Avoids the failure mode where the helper accidentally stamps a typo'd
+  // or stale container name and disables the entire pool.
+  it("excludeContainers with unknown name is silently ignored", async () => {
+    const pool = new CompileQueuePool(mockProvider, ["Cronus28", "Cronus281"]);
+    let routed: string | undefined;
+    await pool.enqueue(createMockCompileWorkItem(), {
+      excludeContainers: ["Cronus99"],
+      onRouted: (c) => (routed = c),
+    });
+    assert(
+      routed === "Cronus28" || routed === "Cronus281",
+      `routed should be a pool member, got ${routed}`,
+    );
+  });
+
+  // Defensive: a synchronous throw inside `onRouted` must reject the
+  // returned promise rather than escape `enqueue` as a sync throw.
+  // `enqueue` is `async`, so throws are auto-converted to rejections.
+  it("onRouted throwing rejects the promise (does not throw sync)", async () => {
+    const pool = new CompileQueuePool(mockProvider, ["Cronus28"]);
+    const err = new Error("onRouted boom");
+    await assertRejects(
+      () =>
+        pool.enqueue(createMockCompileWorkItem(), {
+          onRouted: () => {
+            throw err;
+          },
+        }),
+      Error,
+      "onRouted boom",
+    );
   });
 });
