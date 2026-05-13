@@ -48,6 +48,12 @@ export {
 export { CompileQueuePool } from "./compile-queue-pool.ts";
 export type { CompileWorkQueue } from "./compile-queue-pool.ts";
 
+// Inline infra retry errors
+export {
+  InfraRetriesExhaustedError,
+  NoEligibleContainersError,
+} from "./errors.ts";
+
 // LLM work pool
 export { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
 

@@ -5,7 +5,11 @@
  */
 
 // Types
-export type { BenchmarkPreset, CentralGaugeConfig } from "./config.ts";
+export type {
+  BenchConfig,
+  BenchmarkPreset,
+  CentralGaugeConfig,
+} from "./config.ts";
 
-// Manager
-export { ConfigManager } from "./config.ts";
+// Manager + helpers
+export { BENCH_DEFAULTS, ConfigManager, mergeBenchDefaults } from "./config.ts";

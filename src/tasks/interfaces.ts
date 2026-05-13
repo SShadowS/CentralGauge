@@ -243,10 +243,21 @@ export interface ExecutionAttempt {
    */
   infraRetries?: InfraRetryRecord[] | undefined;
   /**
-   * `true` when at least one infra retry ran AND the attempt still failed
-   * because the retry budget was exhausted (see `infraRetryExhaustionReason`).
-   * Lets reporting distinguish "model failure on first container" from
-   * "model failure after N infra-retry attempts".
+   * `true` when an infra failure was detected AND the inline retry path did
+   * NOT recover the attempt — regardless of whether retries actually executed.
+   *
+   * - `infraRetryExhaustionReason === "budget_exhausted"`: 1+ retries ran but
+   *   all also infra-failed; trail in {@link infraRetries}.
+   * - `infraRetryExhaustionReason === "no_eligible_containers"`: zero retries
+   *   ran because no different healthy container was available (single-
+   *   container deployment, or every other container alerted).
+   *   {@link infraRetries} may be empty.
+   * - `infraRetryExhaustionReason === "global_outage"`: zero retries ran
+   *   because ContainerHealthMonitor was reporting a fleet-wide outage.
+   * - `infraRetryExhaustionReason === "unknown_failed_container"`: zero
+   *   retries ran because the infra error didn't carry a container name and
+   *   the routing layer didn't reveal one, so the "retry on a different
+   *   container" invariant couldn't be enforced.
    */
   infraRetryExhausted?: boolean | undefined;
   /**

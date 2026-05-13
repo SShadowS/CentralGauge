@@ -47,10 +47,11 @@ export class InfraRetriesExhaustedError extends CentralGaugeError {
     public readonly retries: InfraRetryRecord[],
     public readonly reason: InfraRetryExhaustionReason,
   ) {
-    super(cause.message, "INFRA_RETRIES_EXHAUSTED", {
-      retries: retries.length,
-      reason,
-    });
+    super(
+      cause.message || `infra retries exhausted (${reason})`,
+      "INFRA_RETRIES_EXHAUSTED",
+      { retries: retries.length, reason },
+    );
     this.name = "InfraRetriesExhaustedError";
   }
 }
