@@ -8,7 +8,7 @@ import { DEFAULT_MAX_TOKENS } from "../../../src/constants.ts";
 import { EnvLoader } from "../../../src/utils/env-loader.ts";
 import { SplashScreen } from "../../../src/utils/splash-screen.ts";
 import { DebugLogger } from "../../../src/utils/debug-logger.ts";
-import { ConfigManager } from "../../../src/config/config.ts";
+import { BENCH_DEFAULTS, ConfigManager } from "../../../src/config/config.ts";
 import { ModelPresetRegistry } from "../../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
@@ -252,11 +252,29 @@ export async function executeParallelBenchmark(
     log.info(`Task Concurrency: ${concurrency.taskConcurrency}${taskHint}`);
     log.info(`Max Concurrency: ${concurrency.maxConcurrency}${maxHint}`);
 
+    // Resolve the inline infra-retry budget from the loaded config. The
+    // loader has already run `resolveBenchConfig`, so YAML + env overrides
+    // are applied; `appConfig.bench` is still typed as optional, so fall
+    // back to `BENCH_DEFAULTS` for total type safety.
+    const infraRetriesPerAttempt = appConfig.bench?.infraRetriesPerAttempt ??
+      BENCH_DEFAULTS.infraRetriesPerAttempt;
+
+    // Single-container + positive retry budget is the only configuration
+    // where the inline helper has no fallback target. Surface this ONCE per
+    // CLI invocation (here, top of the function) rather than per run inside
+    // the `for runIndex` loop below.
+    const effectiveContainerNames = containerNames ?? [primaryContainerName];
+    warnSingleContainerInfraRetry(
+      effectiveContainerNames,
+      infraRetriesPerAttempt,
+    );
+
     // Build parallel options (shared across runs)
     const parallelOptions = buildParallelOptions(
       options,
       primaryContainerName,
       containerProvider.name,
+      infraRetriesPerAttempt,
     );
 
     // Start live dashboard (skipped when --no-dashboard is passed for scripted use)
@@ -947,12 +965,19 @@ function subscribeToEvents(
 }
 
 /**
- * Build parallel benchmark options
+ * Build parallel benchmark options.
+ *
+ * `infraRetriesPerAttempt` defaults to `BENCH_DEFAULTS.infraRetriesPerAttempt`
+ * when the caller doesn't supply a value. Production callers thread the
+ * resolved value from `ConfigManager.loadConfig()` (post `resolveBenchConfig`,
+ * so env override + validation has already been applied); tests can omit it
+ * and pick up the same default the loader would.
  */
 export function buildParallelOptions(
   options: ExtendedBenchmarkOptions,
   containerName: string,
   containerProviderName: string,
+  infraRetriesPerAttempt: number = BENCH_DEFAULTS.infraRetriesPerAttempt,
 ): import("../../../src/parallel/mod.ts").ParallelBenchmarkOptions {
   const parallelOptions:
     import("../../../src/parallel/mod.ts").ParallelBenchmarkOptions = {
@@ -964,11 +989,46 @@ export function buildParallelOptions(
       outputDir: options.outputDir,
       debugMode: options.debug || false,
       stream: options.stream ?? false,
+      infraRetriesPerAttempt,
     };
   if (options.promptOverrides) {
     parallelOptions.promptOverrides = options.promptOverrides;
   }
   return parallelOptions;
+}
+
+/**
+ * Emit a startup warning when a single-container deployment is configured
+ * alongside a positive inline infra-retry budget. The inline retry helper
+ * can only re-route to a DIFFERENT healthy container, so with only one
+ * container in the pool every retry short-circuits with
+ * `exhaustionReason: "no_eligible_containers"`. Operators silence this by
+ * either adding more containers (`--containers Cronus28,Cronus281,...`) or
+ * setting `bench.infraRetriesPerAttempt: 0` to disable inline retry entirely.
+ *
+ * Fires at most once per `executeParallelBenchmark` invocation (top of the
+ * function, NOT per run inside the `for runIndex` loop).
+ *
+ * Exported so unit tests can inject a `warnFn` capture and assert the
+ * message contract without spinning up the whole executor.
+ *
+ * @returns `true` when the warning fired, `false` otherwise. Useful for
+ *          tests that want to assert the gating logic in addition to the
+ *          message payload.
+ */
+export function warnSingleContainerInfraRetry(
+  containerNames: string[],
+  infraRetriesPerAttempt: number,
+  warnFn: (msg: string) => void = log.warn,
+): boolean {
+  if (containerNames.length === 1 && infraRetriesPerAttempt > 0) {
+    warnFn(
+      `[InfraRetry] Single container configured — inline retry has no fallback. ` +
+        `Add more containers via --containers or set bench.infraRetriesPerAttempt: 0 to silence this.`,
+    );
+    return true;
+  }
+  return false;
 }
 
 /**
