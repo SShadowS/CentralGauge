@@ -259,30 +259,36 @@ export async function executeParallelBenchmark(
       containerProvider.name,
     );
 
-    // Start live dashboard
-    try {
-      const { DashboardServer: DashServer, openBrowser } = await import(
-        "../../dashboard/mod.ts"
+    // Start live dashboard (skipped when --no-dashboard is passed for scripted use)
+    if (options.dashboard === false) {
+      log.info(
+        "[Dashboard] Disabled (--no-dashboard); process will exit when run completes.",
       );
-      dashboard = await DashServer.start({
-        models: variants.map((v) => v.variantId),
-        taskIds: taskManifests.map((t) => t.id),
-        totalRuns,
-        attempts: options.attempts,
-        temperature: options.temperature || 0.1,
-        containerName: primaryContainerName,
-        ...(containerNames && containerNames.length > 0
-          ? { containerNames }
-          : {}),
-      });
-      log.info(`[Dashboard] Live at ${dashboard.url}`);
-      openBrowser(dashboard.url);
-    } catch (e) {
-      log.warn(
-        `[Dashboard] Failed to start: ${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
+    } else {
+      try {
+        const { DashboardServer: DashServer, openBrowser } = await import(
+          "../../dashboard/mod.ts"
+        );
+        dashboard = await DashServer.start({
+          models: variants.map((v) => v.variantId),
+          taskIds: taskManifests.map((t) => t.id),
+          totalRuns,
+          attempts: options.attempts,
+          temperature: options.temperature || 0.1,
+          containerName: primaryContainerName,
+          ...(containerNames && containerNames.length > 0
+            ? { containerNames }
+            : {}),
+        });
+        log.info(`[Dashboard] Live at ${dashboard.url}`);
+        openBrowser(dashboard.url);
+      } catch (e) {
+        log.warn(
+          `[Dashboard] Failed to start: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
     }
 
     for (let runIndex = 1; runIndex <= totalRuns; runIndex++) {
@@ -824,8 +830,8 @@ function subscribeToEvents(
         // Synthesized infra-failure results carry "Infra error:" as the first
         // failure reason. Tag them as "infra" so operators don't blame the
         // model for a container/test-harness fault.
-        const isInfra =
-          (event.result.attempts[0]?.failureReasons?.[0] ?? "").startsWith(
+        const isInfra = (event.result.attempts[0]?.failureReasons?.[0] ?? "")
+          .startsWith(
             "Infra error:",
           );
         const status = event.result.success

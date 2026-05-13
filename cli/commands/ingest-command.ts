@@ -156,9 +156,25 @@ async function handleIngest(
         Deno.exit(1);
       } else {
         okCount++;
+        const uploaded = outcome.bytesUploaded;
+        const referenced = outcome.referencedBytes;
+        let blobsNote: string;
+        if (referenced === 0) {
+          blobsNote = "no blobs referenced";
+        } else if (uploaded === 0) {
+          blobsNote = `0 / ${referenced} bytes uploaded (100% dedup hit)`;
+        } else if (uploaded === referenced) {
+          blobsNote = `${uploaded} bytes uploaded (all new)`;
+        } else {
+          const pctDedup = Math.round(
+            ((referenced - uploaded) / referenced) * 100,
+          );
+          blobsNote =
+            `${uploaded} / ${referenced} bytes uploaded (${pctDedup}% dedup hit)`;
+        }
         console.log(
           colors.green(
-            `[OK] ${variant.variantId} → run ${outcome.runId} (${outcome.bytesUploaded} bytes)`,
+            `[OK] ${variant.variantId} → run ${outcome.runId} (${blobsNote})`,
           ),
         );
       }

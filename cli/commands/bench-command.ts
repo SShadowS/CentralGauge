@@ -191,6 +191,10 @@ export function registerBenchCommand(cli: Command): void {
       "Skip ingestion to the scoreboard API after the run completes",
     )
     .option(
+      "--no-dashboard",
+      "Skip the live dashboard HTTP server; exit cleanly when the run finishes (for scripted/non-interactive use)",
+    )
+    .option(
       "-y, --yes",
       "Non-interactive; auto-accept API-fetched pricing during ingest",
       { default: false },
@@ -424,6 +428,7 @@ export function registerBenchCommand(cli: Command): void {
         noNotify: !options.notify,
         runs,
         noCompilerCache: !options.compilerCache,
+        dashboard: options.dashboard,
       };
       if (options.maxConcurrency !== undefined) {
         benchOptions.maxConcurrency = typeof options.maxConcurrency === "number"
@@ -818,9 +823,25 @@ async function ingestBenchResults(
         throw new Error(`ingest rejected: ${outcome.code}`);
       } else {
         succeeded++;
+        const uploaded = outcome.bytesUploaded;
+        const referenced = outcome.referencedBytes;
+        let blobsNote: string;
+        if (referenced === 0) {
+          blobsNote = "no blobs";
+        } else if (uploaded === 0) {
+          blobsNote = `0 / ${referenced} bytes uploaded (100% dedup hit)`;
+        } else if (uploaded === referenced) {
+          blobsNote = `${uploaded} bytes uploaded (all new)`;
+        } else {
+          const pctDedup = Math.round(
+            ((referenced - uploaded) / referenced) * 100,
+          );
+          blobsNote =
+            `${uploaded} / ${referenced} bytes uploaded (${pctDedup}% dedup hit)`;
+        }
         console.log(
           colors.green(
-            `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${outcome.bytesUploaded} bytes)`,
+            `[OK] Ingested run ${outcome.runId} (${variant.variantId}, ${blobsNote})`,
           ),
         );
       }

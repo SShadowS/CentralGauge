@@ -54,7 +54,12 @@ export async function ingestRun(
   opts: IngestOptions,
 ): Promise<IngestOutcome> {
   if (opts.noIngest) {
-    return { kind: "success", runId: br.runId, bytesUploaded: 0 };
+    return {
+      kind: "success",
+      runId: br.runId,
+      bytesUploaded: 0,
+      referencedBytes: 0,
+    };
   }
 
   const config = await loadIngestConfig(opts.cwd, opts.flags);
@@ -159,6 +164,10 @@ export async function ingestRun(
     .filter((x): x is { sha256: string; body: Uint8Array } => x.body != null);
   await uploadMissing(config.url, toUpload, privKey, config.keyId);
   const bytesUploaded = toUpload.reduce((n, b) => n + b.body.length, 0);
+  // Total unique blob bytes this run references — used by the CLI to distinguish
+  // "0 bytes uploaded due to full dedup" from "this run had no blobs at all".
+  let referencedBytes = 0;
+  for (const body of blobTable.values()) referencedBytes += body.length;
 
   const finalBody = await buildSigned(br.runId, payload, privKey, config.keyId);
   const runResp = await postWithRetry(
@@ -186,7 +195,12 @@ export async function ingestRun(
         replayCommand: `centralgauge ingest <path>`,
       };
     }
-    return { kind: "success", runId: br.runId, bytesUploaded };
+    return {
+      kind: "success",
+      runId: br.runId,
+      bytesUploaded,
+      referencedBytes,
+    };
   }
   if (runResp.status >= 500) {
     return {
