@@ -69,6 +69,18 @@ export interface ParallelBenchmarkOptions {
 
   /** Enable streaming mode for real-time progress */
   stream?: boolean;
+
+  /**
+   * Maximum number of inline infra retries per model attempt. When a compile
+   * or test work item fails with an infra-classified error, the work item is
+   * retried on a different healthy container up to this many times before the
+   * attempt is reported as failed. Independent of `attemptLimit`; the LLM
+   * retry budget is not consumed by infra retries.
+   *
+   * Optional to avoid fixture churn — callers that don't set it should
+   * resolve a default of 1 at the use-site (see Task 1 plan).
+   */
+  infraRetriesPerAttempt?: number;
 }
 
 /**

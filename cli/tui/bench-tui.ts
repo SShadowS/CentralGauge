@@ -118,6 +118,12 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
     case "compile_started":
     case "llm_started":
     case "progress":
+    // Infra-retry events surface via the dedicated retry banner / score
+    // metadata rather than the run log. Suppress here to avoid noise.
+    case "infra_retry_started":
+    case "infra_retry_succeeded":
+    case "infra_retry_failed":
+    case "infra_retry_exhausted":
       return null;
   }
 }

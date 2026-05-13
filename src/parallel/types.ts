@@ -7,6 +7,8 @@ import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import type {
   ExecutionAttempt,
+  InfraRetryExhaustionReason,
+  InfraRetryOutcome,
   TaskExecutionContext,
   TaskExecutionResult,
   TaskManifest,
@@ -547,6 +549,45 @@ export type ParallelExecutionEvent =
     taskId?: string | undefined;
     model?: string | undefined;
     error: Error;
+  }
+  | {
+    type: "infra_retry_started";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    originalContainerName: string;
+    fingerprint: string;
+    signatureLabel?: string;
+  }
+  | {
+    type: "infra_retry_succeeded";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    durationMs: number;
+  }
+  | {
+    type: "infra_retry_failed";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    outcome: Exclude<InfraRetryOutcome, "succeeded">;
+    durationMs: number;
+  }
+  | {
+    type: "infra_retry_exhausted";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    totalRetries: number;
+    finalContainerName: string;
+    fingerprint?: string;
+    reason: InfraRetryExhaustionReason;
   };
 
 /**

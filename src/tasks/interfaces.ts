@@ -144,6 +144,63 @@ export interface TaskExecutionContext {
 }
 
 /**
+ * Outcome of a single inline infra retry on an alternate container.
+ *
+ * - "succeeded" — retry compile/test ran cleanly on the alternate container.
+ * - "infra_again" — retry failed with another infra-classified error.
+ * - "non_infra_failure" — retry produced a real (model-attributable) failure.
+ */
+export type InfraRetryOutcome =
+  | "succeeded"
+  | "infra_again"
+  | "non_infra_failure";
+
+/**
+ * Reason an attempt's infra-retry budget was exhausted without success.
+ *
+ * - "budget_exhausted" — retries reached `infraRetriesPerAttempt` and the last
+ *   one still classified as infra.
+ * - "no_eligible_containers" — every configured container is excluded (e.g. all
+ *   have hit the persistent-failure threshold or were already tried for this
+ *   attempt).
+ * - "global_outage" — health monitor reports a global-outage state for the
+ *   entire pool.
+ * - "unknown_failed_container" — the failing container could not be identified
+ *   (e.g. work item completed without a container assignment), so we cannot
+ *   safely retry elsewhere.
+ */
+export type InfraRetryExhaustionReason =
+  | "budget_exhausted"
+  | "no_eligible_containers"
+  | "global_outage"
+  | "unknown_failed_container";
+
+/**
+ * Record of a single inline infra retry within one model attempt.
+ *
+ * Records are appended to `ExecutionAttempt.infraRetries` after a retry
+ * completes (either succeeded or produced another failure). `retryContainerName`
+ * is populated via the `onRouted` callback from the dispatcher; a finalized
+ * record never carries a placeholder value like `"(pending)"`.
+ */
+export interface InfraRetryRecord {
+  /** 1-based retry index within a single model attempt. */
+  retryNumber: number;
+  /** Container that produced the original infra failure for this attempt. */
+  originalContainerName: string;
+  /** Alternate container the retry was dispatched to. */
+  retryContainerName: string;
+  /** Health-system fingerprint that classified the original failure as infra. */
+  fingerprint: string;
+  /** Optional human-readable signature label (e.g. "PSSession lost"). */
+  signatureLabel?: string;
+  /** Wall-clock duration of the retry compile + test phase in ms. */
+  durationMs: number;
+  /** Final outcome of this retry. */
+  outcome: InfraRetryOutcome;
+}
+
+/**
  * Result of a single attempt
  */
 export interface ExecutionAttempt {
@@ -178,6 +235,25 @@ export interface ExecutionAttempt {
   compileDuration?: number | undefined;
   /** Duration of test execution in ms (only if tests ran) */
   testDuration?: number | undefined;
+
+  /**
+   * Inline infra-retries performed within this single model attempt.
+   * Absent (or empty) when no infra-retry was triggered. Each record describes
+   * one retry on an alternate container — see `InfraRetryRecord`.
+   */
+  infraRetries?: InfraRetryRecord[] | undefined;
+  /**
+   * `true` when at least one infra retry ran AND the attempt still failed
+   * because the retry budget was exhausted (see `infraRetryExhaustionReason`).
+   * Lets reporting distinguish "model failure on first container" from
+   * "model failure after N infra-retry attempts".
+   */
+  infraRetryExhausted?: boolean | undefined;
+  /**
+   * Why the retry budget was considered exhausted. Only meaningful when
+   * `infraRetryExhausted === true`.
+   */
+  infraRetryExhaustionReason?: InfraRetryExhaustionReason | undefined;
 }
 
 /**

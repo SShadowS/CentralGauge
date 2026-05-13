@@ -5,6 +5,7 @@
 
 import { exists } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
+import { ConfigurationError } from "../errors.ts";
 import type { PromptInjectionConfig } from "../prompts/mod.ts";
 import {
   DEFAULT_API_TIMEOUT_MS,
@@ -96,6 +97,14 @@ export interface CentralGaugeConfig {
     templateDir?: string;
   };
 
+  /**
+   * Bench command behavioral knobs (separate from `benchmark` execution
+   * settings). Owned by the bench CLI surface; today this holds the
+   * automatic inline infra-retry budget. See plan
+   * `docs/superpowers/plans/2026-05-13-automatic-infra-retry.md`.
+   */
+  bench?: BenchConfig;
+
   // Container settings
   container?: {
     provider?: string;
@@ -164,6 +173,71 @@ export interface CentralGaugeConfig {
    * location with no duplicated defaults.
    */
   lifecycle?: LifecycleConfig;
+}
+
+/**
+ * Bench-command configuration (automatic inline infra retry).
+ *
+ * Owned by the bench CLI surface — distinct from `benchmark:` which holds
+ * execution settings (attempts, outputDir, templateDir). All fields optional;
+ * `loadConfig` validates + applies defaults via `mergeBenchDefaults`.
+ */
+export interface BenchConfig {
+  /**
+   * Maximum number of inline infra retries per model attempt. When a compile
+   * or test work item fails with an infra-classified error, the work item is
+   * retried on a different healthy container up to this many times before the
+   * attempt is reported as failed.
+   *
+   * Default: 1. Set to 0 to disable inline infra retry entirely. Must be a
+   * non-negative integer; load fails loudly otherwise.
+   *
+   * Env override: `CENTRALGAUGE_BENCH_INFRA_RETRY=0` forces 0 regardless of
+   * YAML. Any other env value (including "3") is ignored — the env hook is
+   * an off-switch only, mirroring `CENTRALGAUGE_BENCH_PRECHECK`.
+   */
+  infraRetriesPerAttempt?: number;
+}
+
+/**
+ * Defaults for `BenchConfig`. Single source of truth — see
+ * `mergeBenchDefaults` for the resolved fully-required shape.
+ */
+export const BENCH_DEFAULTS: Required<BenchConfig> = {
+  infraRetriesPerAttempt: 1,
+};
+
+/**
+ * Validate + merge defaults for the bench config section. Returns a fully
+ * resolved `Required<BenchConfig>` so call sites can rely on every field
+ * being present without fallback boilerplate.
+ *
+ * Throws `ConfigurationError` on invalid values (non-integer, negative).
+ */
+export function mergeBenchDefaults(
+  config: BenchConfig | undefined,
+): Required<BenchConfig> {
+  const c = config ?? {};
+  const raw = c.infraRetriesPerAttempt ??
+    BENCH_DEFAULTS.infraRetriesPerAttempt;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) {
+    throw new ConfigurationError(
+      `bench.infraRetriesPerAttempt must be a finite number, got ${
+        JSON.stringify(c.infraRetriesPerAttempt)
+      }`,
+    );
+  }
+  if (!Number.isInteger(raw)) {
+    throw new ConfigurationError(
+      `bench.infraRetriesPerAttempt must be an integer, got ${raw}`,
+    );
+  }
+  if (raw < 0) {
+    throw new ConfigurationError(
+      `bench.infraRetriesPerAttempt must be >= 0, got ${raw}`,
+    );
+  }
+  return { infraRetriesPerAttempt: raw };
 }
 
 /**
@@ -312,9 +386,35 @@ export class ConfigManager {
       config = this.mergeConfigs(config, cliOverrides);
     }
 
+    // Validate + normalize the bench section. Happens after all merging so
+    // YAML/env/CLI can each contribute. Note: ConfigurationError propagates
+    // (unlike YAML parse errors above, which we intentionally swallow).
+    config.bench = this.resolveBenchConfig(config.bench);
+
     this.config = config;
     this.configLoaded = true;
     return config;
+  }
+
+  /**
+   * Resolve final `bench` config — apply env override, validate, fill defaults.
+   *
+   * Order:
+   * 1. Start from the merged YAML/CLI value (already in `config.bench`).
+   * 2. If `CENTRALGAUGE_BENCH_INFRA_RETRY` is the literal string `"0"`,
+   *    force `infraRetriesPerAttempt: 0`. Other env values are ignored —
+   *    the env hook is an off-switch only, matching `CENTRALGAUGE_BENCH_PRECHECK`.
+   * 3. Run `mergeBenchDefaults` to validate types/range and fill the default.
+   */
+  private static resolveBenchConfig(
+    bench: BenchConfig | undefined,
+  ): Required<BenchConfig> {
+    let merged: BenchConfig = bench ?? {};
+    const envRaw = Deno.env.get("CENTRALGAUGE_BENCH_INFRA_RETRY");
+    if (envRaw === "0") {
+      merged = { ...merged, infraRetriesPerAttempt: 0 };
+    }
+    return mergeBenchDefaults(merged);
   }
 
   /**
@@ -641,6 +741,9 @@ export class ConfigManager {
     }
     if (override.benchmark) {
       result.benchmark = { ...result.benchmark, ...override.benchmark };
+    }
+    if (override.bench) {
+      result.bench = { ...result.bench, ...override.bench };
     }
     if (override.container) {
       // Save base credentials before shallow spread overwrites them
