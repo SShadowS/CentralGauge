@@ -372,8 +372,13 @@ export class ParallelBenchmarkOrchestrator {
           err = err.cause;
         }
 
-        // Critical errors abort the entire benchmark.
-        if (CriticalError.isCriticalError(error)) {
+        // Critical errors abort the entire benchmark. Check the UNWRAPPED
+        // cause (`err`) so a critical error tunneled inside an
+        // `InfraRetriesExhaustedError` would still be detected. This is
+        // defensive — today's retry state machine never wraps Critical, but
+        // operating on the pre-unwrap variable would silently regress that
+        // invariant if it ever changes.
+        if (CriticalError.isCriticalError(err)) {
           criticalError = err;
           this.emit({
             type: "error",
