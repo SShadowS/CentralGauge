@@ -136,6 +136,22 @@ export class DashboardEventBridge {
         }
         break;
 
+      case "infra_retry_started":
+        this.onInfraRetryStarted(event);
+        break;
+
+      case "infra_retry_succeeded":
+        this.onInfraRetrySucceeded(event);
+        break;
+
+      case "infra_retry_failed":
+        this.onInfraRetryFailed(event);
+        break;
+
+      case "infra_retry_exhausted":
+        this.onInfraRetryExhausted(event);
+        break;
+
       // Ignore noisy/non-state-changing events
       case "task_started":
       case "llm_chunk":
@@ -378,5 +394,107 @@ export class DashboardEventBridge {
 
   private broadcastProgress(): void {
     this.broadcast({ type: "progress", progress: this.state.getProgress() });
+  }
+
+  /**
+   * Translate `infra_retry_started` into an `inline-infra-retry` SSE event
+   * with phase=started. `retryContainerName` is intentionally absent — at
+   * this point we only know which container failed, not which one will
+   * service the retry.
+   */
+  private onInfraRetryStarted(
+    event: Extract<
+      ParallelExecutionEvent,
+      { type: "infra_retry_started" }
+    >,
+  ): void {
+    this.broadcast({
+      type: "inline-infra-retry",
+      phase: "started",
+      taskId: event.taskId,
+      variantId: event.variantId,
+      attemptNumber: event.attemptNumber,
+      retryNumber: event.retryNumber,
+      originalContainerName: event.originalContainerName,
+      fingerprint: event.fingerprint,
+      ...(event.signatureLabel !== undefined
+        ? { signatureLabel: event.signatureLabel }
+        : {}),
+    });
+  }
+
+  /**
+   * Translate `infra_retry_succeeded` into an `inline-infra-retry` SSE event
+   * with phase=succeeded. The retry produced a non-infra outcome (pass or
+   * real fail) on a different container.
+   */
+  private onInfraRetrySucceeded(
+    event: Extract<
+      ParallelExecutionEvent,
+      { type: "infra_retry_succeeded" }
+    >,
+  ): void {
+    this.broadcast({
+      type: "inline-infra-retry",
+      phase: "succeeded",
+      taskId: event.taskId,
+      variantId: event.variantId,
+      attemptNumber: event.attemptNumber,
+      retryNumber: event.retryNumber,
+      retryContainerName: event.retryContainerName,
+      durationMs: event.durationMs,
+    });
+  }
+
+  /**
+   * Translate `infra_retry_failed` into an `inline-infra-retry` SSE event
+   * with phase=failed. Carries the retry's `outcome` so the UI can
+   * distinguish "infra again" from "non-infra failure".
+   */
+  private onInfraRetryFailed(
+    event: Extract<
+      ParallelExecutionEvent,
+      { type: "infra_retry_failed" }
+    >,
+  ): void {
+    this.broadcast({
+      type: "inline-infra-retry",
+      phase: "failed",
+      taskId: event.taskId,
+      variantId: event.variantId,
+      attemptNumber: event.attemptNumber,
+      retryNumber: event.retryNumber,
+      retryContainerName: event.retryContainerName,
+      outcome: event.outcome,
+      durationMs: event.durationMs,
+    });
+  }
+
+  /**
+   * Translate `infra_retry_exhausted` into an `inline-infra-retry` SSE
+   * event with phase=exhausted. May fire WITHOUT a prior `started` event
+   * (single-container short-circuit), so `retryNumber` is optional and we
+   * surface `totalRetries` (0 for the short-circuit path) as `retryNumber`
+   * only when nonzero — otherwise we omit it entirely.
+   */
+  private onInfraRetryExhausted(
+    event: Extract<
+      ParallelExecutionEvent,
+      { type: "infra_retry_exhausted" }
+    >,
+  ): void {
+    this.broadcast({
+      type: "inline-infra-retry",
+      phase: "exhausted",
+      taskId: event.taskId,
+      variantId: event.variantId,
+      attemptNumber: event.attemptNumber,
+      ...(event.totalRetries > 0 ? { retryNumber: event.totalRetries } : {}),
+      originalContainerName: event.finalContainerName,
+      ...(event.fingerprint !== undefined
+        ? { fingerprint: event.fingerprint }
+        : {}),
+      reason: event.reason,
+    });
   }
 }

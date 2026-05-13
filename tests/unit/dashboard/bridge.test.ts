@@ -457,7 +457,10 @@ Deno.test("DashboardEventBridge", async (t) => {
           cellUpdate.cell.signatureLabel,
           "PsTestTool .NET incompat (SYSLIB0014)",
         );
-        assertEquals(cellUpdate.cell.errorMessageTail, "TEST_ERROR: SYSLIB0014");
+        assertEquals(
+          cellUpdate.cell.errorMessageTail,
+          "TEST_ERROR: SYSLIB0014",
+        );
       }
 
       const healthBroadcast = broadcasts.find(
@@ -491,6 +494,189 @@ Deno.test("DashboardEventBridge", async (t) => {
       if (healthBroadcast.type === "container-health") {
         assertEquals(healthBroadcast.state.containers.length, 1);
         assertEquals(healthBroadcast.state.containers[0]!.passCount, 1);
+      }
+    },
+  );
+
+  await t.step(
+    "infra_retry_started emits inline-infra-retry SSE with phase=started, no retryContainerName",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "infra_retry_started",
+        taskId: "CG-AL-H024",
+        variantId: "claude-opus-4-6",
+        attemptNumber: 1,
+        retryNumber: 1,
+        originalContainerName: "Cronus281",
+        fingerprint: "compile:abc123",
+        signatureLabel: "PsTestTool .NET incompat (SYSLIB0014)",
+      });
+
+      const sse = events.find((e) => e.type === "inline-infra-retry");
+      assertExists(sse);
+      assertEquals(
+        events.filter((e) => e.type === "inline-infra-retry").length,
+        1,
+      );
+      if (sse.type === "inline-infra-retry") {
+        assertEquals(sse.phase, "started");
+        assertEquals(sse.taskId, "CG-AL-H024");
+        assertEquals(sse.variantId, "claude-opus-4-6");
+        assertEquals(sse.attemptNumber, 1);
+        assertEquals(sse.retryNumber, 1);
+        assertEquals(sse.originalContainerName, "Cronus281");
+        assertEquals(sse.fingerprint, "compile:abc123");
+        assertEquals(
+          sse.signatureLabel,
+          "PsTestTool .NET incompat (SYSLIB0014)",
+        );
+        // Critical: retryContainerName must NOT be populated during started
+        assertEquals(sse.retryContainerName, undefined);
+        assertEquals(sse.durationMs, undefined);
+        assertEquals(sse.reason, undefined);
+        assertEquals(sse.outcome, undefined);
+      }
+    },
+  );
+
+  await t.step(
+    "infra_retry_succeeded emits SSE with phase=succeeded and retryContainerName populated",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "infra_retry_succeeded",
+        taskId: "CG-AL-H024",
+        variantId: "claude-opus-4-6",
+        attemptNumber: 1,
+        retryNumber: 1,
+        retryContainerName: "Cronus282",
+        durationMs: 12345,
+      });
+
+      const sse = events.find((e) => e.type === "inline-infra-retry");
+      assertExists(sse);
+      assertEquals(
+        events.filter((e) => e.type === "inline-infra-retry").length,
+        1,
+      );
+      if (sse.type === "inline-infra-retry") {
+        assertEquals(sse.phase, "succeeded");
+        assertEquals(sse.taskId, "CG-AL-H024");
+        assertEquals(sse.variantId, "claude-opus-4-6");
+        assertEquals(sse.attemptNumber, 1);
+        assertEquals(sse.retryNumber, 1);
+        assertEquals(sse.retryContainerName, "Cronus282");
+        assertEquals(sse.durationMs, 12345);
+        // The bridge only carries fields from the orchestrator event;
+        // signatureLabel / fingerprint are not on the succeeded event.
+        assertEquals(sse.fingerprint, undefined);
+        assertEquals(sse.signatureLabel, undefined);
+      }
+    },
+  );
+
+  await t.step(
+    "infra_retry_failed emits SSE with phase=failed and outcome populated",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "infra_retry_failed",
+        taskId: "CG-AL-H024",
+        variantId: "claude-opus-4-6",
+        attemptNumber: 1,
+        retryNumber: 1,
+        retryContainerName: "Cronus282",
+        outcome: "infra_again",
+        durationMs: 9000,
+      });
+
+      const sse = events.find((e) => e.type === "inline-infra-retry");
+      assertExists(sse);
+      if (sse.type === "inline-infra-retry") {
+        assertEquals(sse.phase, "failed");
+        assertEquals(sse.outcome, "infra_again");
+        assertEquals(sse.retryContainerName, "Cronus282");
+        assertEquals(sse.durationMs, 9000);
+      }
+    },
+  );
+
+  await t.step(
+    "infra_retry_exhausted with zero prior started events still emits exhausted SSE",
+    () => {
+      // Single-container short-circuit case: the orchestrator emits
+      // `infra_retry_exhausted` directly with totalRetries=0 because there
+      // were no eligible alternative containers to retry on. The bridge
+      // MUST emit a phase=exhausted SSE without assuming a prior started.
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "infra_retry_exhausted",
+        taskId: "CG-AL-H024",
+        variantId: "claude-opus-4-6",
+        attemptNumber: 1,
+        totalRetries: 0,
+        finalContainerName: "Cronus281",
+        fingerprint: "test:abc",
+        reason: "no_eligible_containers",
+      });
+
+      const exhaustedSSE = events.filter(
+        (e) => e.type === "inline-infra-retry",
+      );
+      assertEquals(exhaustedSSE.length, 1);
+      const sse = exhaustedSSE[0]!;
+      if (sse.type === "inline-infra-retry") {
+        assertEquals(sse.phase, "exhausted");
+        assertEquals(sse.taskId, "CG-AL-H024");
+        assertEquals(sse.variantId, "claude-opus-4-6");
+        assertEquals(sse.attemptNumber, 1);
+        // totalRetries=0 ⇒ retryNumber omitted (no retry to point at)
+        assertEquals(sse.retryNumber, undefined);
+        assertEquals(sse.originalContainerName, "Cronus281");
+        assertEquals(sse.fingerprint, "test:abc");
+        assertEquals(sse.reason, "no_eligible_containers");
+      }
+    },
+  );
+
+  await t.step(
+    "infra_retry_exhausted with nonzero totalRetries carries retryNumber",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({
+        type: "infra_retry_exhausted",
+        taskId: "CG-AL-H024",
+        variantId: "claude-opus-4-6",
+        attemptNumber: 1,
+        totalRetries: 2,
+        finalContainerName: "Cronus283",
+        fingerprint: "test:abc",
+        reason: "budget_exhausted",
+      });
+
+      const sse = events.find((e) => e.type === "inline-infra-retry");
+      assertExists(sse);
+      if (sse.type === "inline-infra-retry") {
+        assertEquals(sse.phase, "exhausted");
+        assertEquals(sse.retryNumber, 2);
+        assertEquals(sse.reason, "budget_exhausted");
+        assertEquals(sse.originalContainerName, "Cronus283");
       }
     },
   );
