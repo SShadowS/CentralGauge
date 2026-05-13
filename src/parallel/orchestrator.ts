@@ -7,6 +7,7 @@ import type {
   BenchmarkProgress,
   CompileQueueFactory,
   CompileWorkItem,
+  CompileWorkQueueFactory,
   ContainerProviderFactory,
   ExecutionAttempt,
   LLMWorkResult,
@@ -40,6 +41,13 @@ import {
 } from "../health/mod.ts";
 import type { SynthContext } from "../health/terminal-record.ts";
 import { ContainerError } from "../errors.ts";
+import { withInfraRetry } from "./infra-retry.ts";
+import { InfraRetriesExhaustedError } from "./errors.ts";
+import type {
+  InfraRetryExhaustionReason,
+  InfraRetryRecord,
+} from "../tasks/interfaces.ts";
+import type { CompileWorkResult } from "./types.ts";
 
 /**
  * Event listener type
@@ -105,6 +113,7 @@ export class ParallelBenchmarkOrchestrator {
   // Dependency injection factories
   private containerProviderFactory: ContainerProviderFactory;
   private compileQueueFactory: CompileQueueFactory;
+  private compileWorkQueueFactory: CompileWorkQueueFactory | undefined;
 
   // Progress tracking
   private startTime: Date | null = null;
@@ -135,6 +144,7 @@ export class ParallelBenchmarkOrchestrator {
     this.compileQueueFactory = deps?.compileQueueFactory ??
       ((provider, containerName, options) =>
         new CompileQueue(provider, containerName, options));
+    this.compileWorkQueueFactory = deps?.compileWorkQueueFactory;
   }
 
   /**
@@ -221,7 +231,19 @@ export class ParallelBenchmarkOrchestrator {
       timeout: this.config.compileQueueTimeout,
     };
     const containerNames = this.config.containerNames;
-    if (containerNames && containerNames.length > 1) {
+    if (this.compileWorkQueueFactory) {
+      // Test/override path: a unified factory handles single AND multi
+      // topology, so injected queues can simulate `excludeContainers`/
+      // `onRouted` semantics without going through the real `CompileQueuePool`.
+      const names = containerNames && containerNames.length > 0
+        ? containerNames
+        : [options.containerName];
+      this.compileQueue = this.compileWorkQueueFactory(
+        this.containerProvider,
+        names,
+        queueOptions,
+      );
+    } else if (containerNames && containerNames.length > 1) {
       this.compileQueue = new CompileQueuePool(
         this.containerProvider,
         containerNames,
@@ -336,7 +358,19 @@ export class ParallelBenchmarkOrchestrator {
 
         this.emit({ type: "result", result });
       } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
+        let err = error instanceof Error ? error : new Error(String(error));
+
+        // Unwrap `InfraRetriesExhaustedError` so downstream classification +
+        // dashboard plumbing sees the LAST REAL infra error (PSSession lost,
+        // SYSLIB0014, etc.) — not the operational wrapper. The wrapper still
+        // carries the retry trail + exhaustion reason for the synthesizer.
+        let trailingRetries: InfraRetryRecord[] = [];
+        let exhaustionReason: InfraRetryExhaustionReason | undefined;
+        if (err instanceof InfraRetriesExhaustedError) {
+          trailingRetries = err.retries;
+          exhaustionReason = err.reason;
+          err = err.cause;
+        }
 
         // Critical errors abort the entire benchmark.
         if (CriticalError.isCriticalError(error)) {
@@ -387,7 +421,10 @@ export class ParallelBenchmarkOrchestrator {
         // For infra failures, synthesize a durable TaskExecutionResult so the
         // attempt is captured by the aggregator and the JSON output. Without
         // this, ERR cells are silently dropped from `.results[]`, leaving
-        // aggregate stats biased and per-task analysis blind.
+        // aggregate stats biased and per-task analysis blind. When the failure
+        // came via an exhausted inline retry, also forward the retry trail +
+        // exhaustion reason so the synthesized attempt carries the full
+        // diagnostic context.
         if (isInfraError(err)) {
           try {
             const context = await this.buildContext(manifest, variant, options);
@@ -397,6 +434,15 @@ export class ParallelBenchmarkOrchestrator {
               error: err,
               classification: cls,
               startTime: new Date(),
+              ...(trailingRetries.length > 0
+                ? { infraRetries: trailingRetries }
+                : {}),
+              ...(exhaustionReason !== undefined
+                ? {
+                  infraRetryExhausted: true,
+                  infraRetryExhaustionReason: exhaustionReason,
+                }
+                : {}),
             });
             modelResults.set(variant.variantId, synth);
             this.emit({ type: "result", result: synth });
@@ -493,7 +539,10 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Execute compilation for an LLM result
+   * Outcome of `executeCompilation`. Carries the compile result PLUS the
+   * trail of inline infra retries the helper performed before reaching it.
+   * `retries` is empty when the original attempt succeeded without retry;
+   * non-empty when one or more retries ran and the LAST one succeeded.
    */
   private async executeCompilation(
     manifest: TaskManifest,
@@ -503,7 +552,11 @@ export class ParallelBenchmarkOrchestrator {
     attemptNumber: number,
     llmResult: LLMWorkResult,
     workItemId: string,
-  ): Promise<import("./types.ts").CompileWorkResult> {
+    options: ParallelBenchmarkOptions,
+  ): Promise<{
+    compileResult: CompileWorkResult;
+    infraRetries: InfraRetryRecord[];
+  }> {
     const compileItem: CompileWorkItem = {
       id: `compile_${executionId}_${attemptNumber}`,
       llmWorkItemId: workItemId,
@@ -514,6 +567,11 @@ export class ParallelBenchmarkOrchestrator {
       createdAt: new Date(),
     };
 
+    // Build the work item ONCE; emit `compile_queued` ONCE per attempt. The
+    // retry helper invokes the operation 1..(1+maxRetries) times, but the
+    // "queued" event represents the orchestrator's intent to compile — not
+    // the dispatcher's per-attempt routing. `compile_started` lives INSIDE
+    // the callback so it fires per attempt.
     this.emit({
       type: "compile_queued",
       taskId: manifest.id,
@@ -521,13 +579,35 @@ export class ParallelBenchmarkOrchestrator {
       queuePosition: this.compileQueue?.length ?? 0,
     });
 
-    this.emit({
-      type: "compile_started",
-      taskId: manifest.id,
-      model: variant.variantId,
-    });
+    const maxRetries = options.infraRetriesPerAttempt ?? 1;
+    const configuredContainers = this.config.containerNames &&
+        this.config.containerNames.length > 0
+      ? this.config.containerNames
+      : [options.containerName];
 
-    const compileResult = await this.compileQueue!.enqueue(compileItem);
+    const { result: compileResult, retries } = await withInfraRetry(
+      ({ excludeContainers, onRouted }) => {
+        this.emit({
+          type: "compile_started",
+          taskId: manifest.id,
+          model: variant.variantId,
+        });
+        return this.compileQueue!.enqueue(compileItem, {
+          excludeContainers,
+          onRouted,
+        });
+      },
+      {
+        maxRetries,
+        configuredContainers,
+        emit: this.emit.bind(this),
+        context: {
+          taskId: manifest.id,
+          variantId: variant.variantId,
+          attemptNumber,
+        },
+      },
+    );
 
     this.emit({
       type: "compile_completed",
@@ -536,7 +616,7 @@ export class ParallelBenchmarkOrchestrator {
       success: compileResult.compilationResult.success,
     });
 
-    return compileResult;
+    return { compileResult, infraRetries: retries };
   }
 
   /**
@@ -577,7 +657,13 @@ export class ParallelBenchmarkOrchestrator {
 
       const workItemId =
         `${manifest.id}_${variant.model}_${attemptNumber}_${Date.now()}`;
-      const compileResult = await this.executeCompilation(
+      // `executeCompilation` wraps the compile/test work item in the inline
+      // infra-retry helper. The returned `infraRetries` trail is attached to
+      // the attempt so JSON/dashboard consumers can show the retry history.
+      // On terminal exhaustion the helper throws `InfraRetriesExhaustedError`
+      // which we re-throw — `processTask`'s catch synthesizes the infra
+      // failure result using the wrapper's `cause`, `retries`, `reason`.
+      const { compileResult, infraRetries } = await this.executeCompilation(
         manifest,
         variant,
         context,
@@ -585,6 +671,7 @@ export class ParallelBenchmarkOrchestrator {
         attemptNumber,
         llmResult,
         workItemId,
+        options,
       );
 
       const attempt = this.createAttempt(
@@ -593,6 +680,9 @@ export class ParallelBenchmarkOrchestrator {
         compileResult,
         context,
       );
+      if (infraRetries.length > 0) {
+        attempt.infraRetries = infraRetries;
+      }
       attempts.push(attempt);
 
       if (attempt.success) {
