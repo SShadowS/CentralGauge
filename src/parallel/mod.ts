@@ -46,7 +46,7 @@ export {
   QueueTimeoutError,
 } from "./compile-queue.ts";
 export { CompileQueuePool } from "./compile-queue-pool.ts";
-export type { CompileWorkQueue } from "./compile-queue-pool.ts";
+export type { CompileWorkQueue, EnqueueOptions } from "./compile-queue-pool.ts";
 
 // Inline infra retry errors
 export {

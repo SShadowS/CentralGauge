@@ -24,7 +24,8 @@ import {
   TEST_TOOLKIT_DEPENDENCIES,
 } from "../constants.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
-import type { CompileWorkQueue } from "./compile-queue-pool.ts";
+import type { CompileWorkQueue, EnqueueOptions } from "./compile-queue-pool.ts";
+import { NoEligibleContainersError } from "./errors.ts";
 import {
   type ActiveItem,
   CircularBuffer,
@@ -252,9 +253,37 @@ export class CompileQueue implements CompileWorkQueue {
   }
 
   /**
-   * Enqueue a compile job and return promise that resolves when complete
+   * Enqueue a compile job and return promise that resolves when complete.
+   *
+   * `options.excludeContainers`: if this queue's `containerName` is in the
+   *   list, reject IMMEDIATELY with `NoEligibleContainersError`. No work
+   *   queued; no callback fired. This is used by the inline infra-retry
+   *   helper when the only configured container is the one that just failed.
+   *
+   * `options.onRouted`: called synchronously RIGHT after the exclusion check
+   *   passes, BEFORE the item is added to the queue. This guarantees the
+   *   caller learns which container was picked before any compile work
+   *   begins, even if dispatch is delayed by a busy semaphore.
    */
-  enqueue(item: CompileWorkItem): Promise<CompileWorkResult> {
+  enqueue(
+    item: CompileWorkItem,
+    options?: EnqueueOptions,
+  ): Promise<CompileWorkResult> {
+    // Exclusion check FIRST — a single-container queue is "eligible" iff its
+    // own container name is not in the excluded list. If excluded, fail fast
+    // without consuming queue capacity or firing onRouted.
+    const excluded = options?.excludeContainers;
+    if (excluded && excluded.includes(this.containerName)) {
+      return Promise.reject(
+        new NoEligibleContainersError(excluded, [this.containerName]),
+      );
+    }
+
+    // Notify the caller of the routing decision BEFORE any work begins.
+    // For a single-container queue the "decision" is trivial (always this
+    // container), but the contract is symmetric with `CompileQueuePool`.
+    options?.onRouted?.(this.containerName);
+
     // Check total capacity (pending + in-flight items)
     const totalItems = this.queue.length + this.activeItems;
     if (totalItems >= this.maxQueueSize) {
