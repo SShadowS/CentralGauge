@@ -57,6 +57,14 @@ export {
   NoEligibleContainersError,
 } from "./errors.ts";
 
+// Inline infra retry helper
+export { withInfraRetry } from "./infra-retry.ts";
+export type {
+  RetryOperation,
+  WithInfraRetryOptions,
+  WithInfraRetryResult,
+} from "./infra-retry.ts";
+
 // LLM work pool
 export { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
 

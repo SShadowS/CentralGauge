@@ -54,11 +54,15 @@ import type { ParallelExecutionEvent } from "./types.ts";
 
 /**
  * Operation wrapped by the retry state machine. Called once per attempt
- * (original + retries). The implementation MUST call `onRouted` with the
- * actual routed container name BEFORE doing any work, so the trail can
- * record real container names rather than placeholders. `excludeContainers`
- * is the running set of containers that must not be considered for this
- * call's routing decision.
+ * (original + retries). The implementation MUST call `onRouted` EXACTLY ONCE
+ * with the actual routed container name BEFORE doing any work, so the trail
+ * can record real container names rather than placeholders. Multiple
+ * `onRouted` calls per operation invocation are silently last-writer-wins;
+ * the contract is one-call-per-invocation. `excludeContainers` is the
+ * running set of containers that must not be considered for this call's
+ * routing decision. Implementations MUST surface all errors via promise
+ * rejection — synchronous throws from `onRouted` callbacks must be caller-
+ * converted (existing `CompileQueue` and `CompileQueuePool` already do this).
  */
 export type RetryOperation<T> = (params: {
   excludeContainers: string[];
