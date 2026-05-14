@@ -64,6 +64,7 @@ function createMockTaskResult(
         max_attempts: 2,
         expected: { compile: true },
         metrics: [],
+        domains: ["codeunits"],
       },
       taskType: "code_generation",
       llmProvider: "mock",

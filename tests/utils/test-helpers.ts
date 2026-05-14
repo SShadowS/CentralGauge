@@ -277,6 +277,7 @@ export function createMockTaskManifest(
       testApp: "",
     },
     metrics: ["compile_success"],
+    domains: ["codeunits"],
     ...overrides,
   };
 }

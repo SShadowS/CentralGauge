@@ -69,6 +69,7 @@ describe("TaskTransformer", () => {
           testApp: "TestApp",
         },
         metrics: ["compile_success", "token_usage"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -134,6 +135,7 @@ describe("TaskTransformer", () => {
           max_attempts: 1,
           expected: { compile: true, testApp: "" },
           metrics: [],
+          domains: ["codeunits"],
         };
 
         const request: TaskExecutionRequest = { taskManifest: manifest };
@@ -157,6 +159,7 @@ describe("TaskTransformer", () => {
         max_attempts: 1,
         expected: { compile: true },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = { taskManifest: manifest };
@@ -183,6 +186,7 @@ describe("TaskTransformer", () => {
         max_attempts: 3,
         expected: { compile: false, testApp: "" },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       // Request with minimal overrides
@@ -207,6 +211,7 @@ describe("TaskTransformer", () => {
         max_attempts: 2,
         expected: { compile: true, testApp: "TestApp" },
         metrics: ["performance", "security"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = { taskManifest: manifest };
@@ -233,6 +238,7 @@ describe("TaskTransformer", () => {
         max_attempts: 2,
         expected: { compile: true },
         metrics: ["compile_success"],
+        domains: ["codeunits"],
       };
 
       const result = await TaskTransformer.validateManifest(manifest);
@@ -250,6 +256,7 @@ describe("TaskTransformer", () => {
         max_attempts: 0,
         expected: { compile: true },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const result = await TaskTransformer.validateManifest(manifest);
@@ -271,6 +278,7 @@ describe("TaskTransformer", () => {
         max_attempts: 10,
         expected: { compile: false, testApp: "" },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const result = await TaskTransformer.validateManifest(manifest);

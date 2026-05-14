@@ -115,6 +115,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           testApp: "",
         },
         metrics: ["compile_success", "token_usage"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -155,6 +156,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           testApp: "TestApp",
         },
         metrics: ["compile_success", "test_success"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -187,6 +189,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           compile: true,
         },
         metrics: ["attempts", "compile_success"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -233,6 +236,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           compile: true,
         },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -269,6 +273,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           compile: true,
         },
         metrics: ["pattern_match"],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
@@ -312,6 +317,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
           compile: true,
         },
         metrics: ["file_output"],
+        domains: ["codeunits"],
       };
 
       const outputDir = join(tempDir, "custom-output");

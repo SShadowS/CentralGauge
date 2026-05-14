@@ -37,6 +37,7 @@ describe("Task Interfaces", () => {
         max_attempts: 2,
         expected: { compile: true, testApp: "" },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const context: TaskExecutionContext = {
@@ -148,6 +149,7 @@ describe("Task Interfaces", () => {
         max_attempts: 2,
         expected: { compile: true, testApp: "" },
         metrics: [],
+        domains: ["codeunits"],
       };
 
       const request: TaskExecutionRequest = {
