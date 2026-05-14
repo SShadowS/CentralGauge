@@ -86,7 +86,16 @@ export async function projectUsesTestPage(
       return true;
     }
 
-    const tree = parser.parse(source);
+    let tree: ReturnType<Parser["parse"]>;
+    try {
+      tree = parser.parse(source);
+    } catch (e) {
+      log.warn("AL parse threw; assuming TestPage (safe default)", {
+        file,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return true;
+    }
     if (!tree) {
       log.warn("AL parse produced no tree; assuming TestPage (safe default)", {
         file,
@@ -102,6 +111,12 @@ export async function projectUsesTestPage(
           return true;
         }
       }
+    } catch (e) {
+      log.warn("AL capture query threw; assuming TestPage (safe default)", {
+        file,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return true;
     } finally {
       tree.delete();
     }
