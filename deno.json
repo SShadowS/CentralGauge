@@ -55,6 +55,7 @@
     "tui/components": "https://deno.land/x/tui@2.1.11/src/components/mod.ts",
     "crayon": "https://deno.land/x/crayon@3.3.3/mod.ts",
     "resvg-wasm": "https://deno.land/x/resvg_wasm@0.2.0/mod.ts",
+    "web-tree-sitter": "npm:web-tree-sitter@0.26.8",
     "zod": "npm:zod@^4.4.2"
   },
   "lint": {
