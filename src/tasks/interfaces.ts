@@ -4,6 +4,7 @@
  */
 
 import { z } from "zod";
+import { type Domain, DomainSchema } from "./domains.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
@@ -39,6 +40,8 @@ export const TaskManifestSchema = z.object({
   max_attempts: z.number().int().positive(),
   expected: TaskManifestExpectedSchema,
   metrics: z.array(z.string()),
+  domains: z.array(DomainSchema).min(1, "domains must list at least one domain")
+    .optional(),
   metadata: TaskManifestMetadataSchema.optional(),
   prompts: z.unknown().optional(),
 }).passthrough();
@@ -104,6 +107,9 @@ export interface TaskManifest {
 
   /** Metrics to collect for this task */
   metrics: string[];
+
+  /** AL/BC domains this task exercises (controlled vocabulary). */
+  domains?: Domain[] | undefined;
 
   /** Optional task metadata */
   metadata?: {

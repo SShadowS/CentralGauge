@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertRejects, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
 import { loadTaskManifest } from "../../../src/tasks/loader.ts";
 
@@ -35,6 +35,44 @@ metrics:
     await withTempManifest(yaml, async (p) => {
       const m = await loadTaskManifest(p);
       if (m.id !== "CG-AL-H999") throw new Error("id mismatch");
+    });
+  });
+
+  it("accepts a manifest with valid domains", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: A valid manifest with domains.
+domains: [tables, flowfields]
+expected:
+  compile: true
+metrics:
+  - compile_pass
+`;
+    await withTempManifest(yaml, async (p) => {
+      const m = await loadTaskManifest(p);
+      assertEquals(m.domains, ["tables", "flowfields"]);
+    });
+  });
+
+  it("rejects a manifest with an unknown domain value", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Unknown domain value should fail.
+domains: [tables, not-a-domain]
+expected:
+  compile: true
+metrics:
+  - compile_pass
+`;
+    await withTempManifest(yaml, async (p) => {
+      const err = await assertRejects(() => loadTaskManifest(p), Error);
+      assertStringIncludes(err.message, "domains");
     });
   });
 
