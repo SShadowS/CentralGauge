@@ -47,6 +47,9 @@ import {
   parseTestResults,
 } from "./bc-output-parsers.ts";
 import { buildCompileScript, buildTestScript } from "./bc-script-builders.ts";
+import { runTestsViaSoap } from "./soap-test-client.ts";
+import type { SoapTestRunnerConfig } from "./soap-test-client.ts";
+import { projectUsesTestPage } from "./test-routing.ts";
 
 /**
  * Parse timing markers from PowerShell output and log sub-timings.
@@ -1143,6 +1146,26 @@ export class BcContainerProvider implements ContainerProvider {
     await this.executePowerShell(script);
   }
 
+  /**
+   * Whether the SOAP harness path is enabled. Disabled by setting
+   * `CENTRALGAUGE_SOAP_TEST_RUNNER=0` (escape hatch — falls back to the
+   * legacy client-session path for every test).
+   */
+  private soapTestRunnerEnabled(): boolean {
+    return Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER") !== "0";
+  }
+
+  /** Build the harness SOAP config for a container from env + credentials. */
+  private soapConfigFor(containerName: string): SoapTestRunnerConfig {
+    return {
+      host: containerName,
+      port: Number(Deno.env.get("CENTRALGAUGE_BC_SOAP_PORT") ?? "7047"),
+      company: Deno.env.get("CENTRALGAUGE_BC_COMPANY") ?? "My Company",
+      tenant: Deno.env.get("CENTRALGAUGE_BC_TENANT") ?? "default",
+      credentials: this.getCredentials(containerName),
+    };
+  }
+
   async runTests(
     containerName: string,
     project: ALProject,
@@ -1173,6 +1196,45 @@ export class BcContainerProvider implements ContainerProvider {
     // Extract extensionId from app.json for test filtering
     const appJson = project.appJson as { id?: string };
     const extensionId = appJson.id || "";
+
+    // --- Hybrid routing -----------------------------------------------------
+    // Non-TestPage codeunits run ~38x faster through the headless SOAP harness.
+    // TestPage codeunits must use the legacy client-session path below — a
+    // web-service session cannot open a TestPage.
+    if (
+      this.soapTestRunnerEnabled() &&
+      testCodeunitId &&
+      project.testFiles?.length > 0 &&
+      !(await projectUsesTestPage(project))
+    ) {
+      try {
+        // The harness only RUNS tests; the app must be published first.
+        await this.publishApp(containerName, actualAppFilePath);
+        const soapResult = await runTestsViaSoap(
+          this.soapConfigFor(containerName),
+          testCodeunitId,
+          extensionId,
+        );
+        this.logTestResult(
+          soapResult.success,
+          soapResult.passedTests,
+          soapResult.totalTests,
+          contextLog,
+        );
+        contextLog.debug("Ran tests via SOAP harness", {
+          durationMs: soapResult.duration,
+        });
+        return soapResult;
+      } catch (e) {
+        // Any harness problem (deploy missing, fault, network) falls back to
+        // the legacy path so the bench never loses a test run to the new path.
+        contextLog.warn(
+          "SOAP harness path failed; falling back to client-session path",
+          { error: e instanceof Error ? e.message : String(e) },
+        );
+      }
+    }
+    // --- Legacy client-session path (unchanged below) ----------------------
 
     // Copy main app to shared folder accessible by container
     const appFileName = actualAppFilePath.split(/[/\\]/).pop()!;
