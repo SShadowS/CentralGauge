@@ -12,6 +12,7 @@ import type {
 import type { ParallelExecutionEvent } from "../../../src/parallel/types.ts";
 import type { LLMResponse } from "../../../src/llm/types.ts";
 import type {
+  ExecutionAttempt,
   TaskExecutionContext,
   TaskExecutionResult,
 } from "../../../src/tasks/interfaces.ts";
@@ -77,6 +78,7 @@ function createMockResult(
       llmResponse: createMockLLMResponse(),
       extractedCode: "test code",
       codeLanguage: "al" as const,
+      containerName: "Cronus28",
       success: true,
       score: 100,
       failureReasons: [],
@@ -94,6 +96,132 @@ function createMockResult(
     context: createMockContext(),
     ...overrides,
   } as TaskExecutionResult;
+}
+
+// ---------------------------------------------------------------------------
+// Factory helpers for per-attempt recording tests
+// ---------------------------------------------------------------------------
+
+interface AttemptSpec {
+  containerName?: string | undefined;
+  success: boolean;
+  withCompile: boolean;
+}
+
+interface MultiAttemptResultSpec {
+  taskId: string;
+  attempts: AttemptSpec[];
+  finalSuccess: boolean;
+}
+
+function makeBridgeHarness(opts: { containerNames: string[] }) {
+  const cfg: DashboardConfig = {
+    models: ["model-a"],
+    taskIds: ["T1"],
+    totalRuns: 1,
+    attempts: opts.containerNames.length + 1,
+    temperature: 0.1,
+    containerName: opts.containerNames[0] ?? "Cronus28",
+  };
+  const state = new DashboardStateManager(cfg);
+  const recorded: Array<{
+    containerName: string;
+    result: "pass" | "fail" | "infra_error";
+  }> = [];
+  const origRecord = state.recordContainerOutcome.bind(state);
+  state.recordContainerOutcome = (outcome) => {
+    recorded.push({
+      containerName: outcome.containerName,
+      result: outcome.result,
+    });
+    origRecord(outcome);
+  };
+  const broadcasts: SSEEvent[] = [];
+  const bridge = new DashboardEventBridge(state, (e) => broadcasts.push(e));
+  bridge.setRun(1);
+  broadcasts.length = 0;
+  return { bridge, state, recorded, broadcasts };
+}
+
+function makeAttempt(spec: AttemptSpec): ExecutionAttempt {
+  const compilationResult = spec.withCompile
+    ? {
+      success: spec.success,
+      errors: [],
+      warnings: [],
+      output: "",
+      duration: 100,
+    }
+    : undefined;
+  const base: Omit<ExecutionAttempt, "containerName"> = {
+    attemptNumber: 1,
+    startTime: new Date(),
+    endTime: new Date(),
+    prompt: "test",
+    llmResponse: createMockLLMResponse(),
+    extractedCode: "test code",
+    codeLanguage: "al" as const,
+    compilationResult,
+    success: spec.success,
+    score: spec.success ? 100 : 0,
+    failureReasons: spec.success ? [] : ["Compile failed"],
+    tokensUsed: 100,
+    cost: 0.01,
+    duration: 500,
+  };
+  if (spec.containerName !== undefined) {
+    return { ...base, containerName: spec.containerName };
+  }
+  return base as ExecutionAttempt;
+}
+
+function makeMultiAttemptResult(
+  spec: MultiAttemptResultSpec,
+): TaskExecutionResult {
+  return {
+    taskId: spec.taskId,
+    llmModel: "model-a",
+    provider: "mock",
+    success: spec.finalSuccess,
+    finalScore: spec.finalSuccess ? 100 : 0,
+    passedAttemptNumber: spec.finalSuccess ? spec.attempts.length : 0,
+    attempts: spec.attempts.map((a, i) => ({
+      ...makeAttempt(a),
+      attemptNumber: i + 1,
+    })),
+    context: createMockContext(),
+  } as unknown as TaskExecutionResult;
+}
+
+function makeSynthInfraResult(opts: {
+  taskId: string;
+  containerName: string;
+}): TaskExecutionResult {
+  return {
+    taskId: opts.taskId,
+    llmModel: "model-a",
+    provider: "mock",
+    success: false,
+    finalScore: 0,
+    passedAttemptNumber: 0,
+    attempts: [{
+      attemptNumber: 1,
+      startTime: new Date(),
+      endTime: new Date(),
+      prompt: "test",
+      llmResponse: createMockLLMResponse(),
+      extractedCode: "",
+      codeLanguage: "al" as const,
+      containerName: opts.containerName,
+      success: false,
+      score: 0,
+      failureReasons: ["Infra error: container crashed"],
+      tokensUsed: 0,
+      cost: 0,
+      duration: 0,
+    }],
+    context: createMockContext(),
+  } as unknown as TaskExecutionResult;
 }
 
 function setupBridge(config?: DashboardConfig) {
@@ -457,7 +585,10 @@ Deno.test("DashboardEventBridge", async (t) => {
           cellUpdate.cell.signatureLabel,
           "PsTestTool .NET incompat (SYSLIB0014)",
         );
-        assertEquals(cellUpdate.cell.errorMessageTail, "TEST_ERROR: SYSLIB0014");
+        assertEquals(
+          cellUpdate.cell.errorMessageTail,
+          "TEST_ERROR: SYSLIB0014",
+        );
       }
 
       const healthBroadcast = broadcasts.find(
@@ -528,4 +659,54 @@ Deno.test("DashboardEventBridge", async (t) => {
       assertEquals(healthBroadcast, undefined);
     },
   );
+});
+
+Deno.test("bridge records one outcome per attempt with attempt.containerName", () => {
+  const { bridge, recorded } = makeBridgeHarness({
+    containerNames: ["Cronus28", "Cronus281"],
+  });
+  bridge.handleEvent({
+    type: "result",
+    result: makeMultiAttemptResult({
+      taskId: "T1",
+      attempts: [
+        { containerName: "Cronus28", success: false, withCompile: true },
+        { containerName: "Cronus281", success: true, withCompile: true },
+      ],
+      finalSuccess: true,
+    }),
+  });
+  assertEquals(recorded.length, 2);
+  assertEquals(recorded[0]?.containerName, "Cronus28");
+  assertEquals(recorded[0]?.result, "fail");
+  assertEquals(recorded[1]?.containerName, "Cronus281");
+  assertEquals(recorded[1]?.result, "pass");
+});
+
+Deno.test("bridge skips LLM-only failure attempts (no container fallback)", () => {
+  const { bridge, recorded } = makeBridgeHarness({
+    containerNames: ["Cronus28"],
+  });
+  bridge.handleEvent({
+    type: "result",
+    result: makeMultiAttemptResult({
+      taskId: "T1",
+      attempts: [
+        { containerName: undefined, success: false, withCompile: false },
+      ],
+      finalSuccess: false,
+    }),
+  });
+  assertEquals(recorded.length, 0);
+});
+
+Deno.test("bridge still skips synthesized infra-failure results", () => {
+  const { bridge, recorded } = makeBridgeHarness({
+    containerNames: ["Cronus28"],
+  });
+  bridge.handleEvent({
+    type: "result",
+    result: makeSynthInfraResult({ taskId: "T1", containerName: "Cronus28" }),
+  });
+  assertEquals(recorded.length, 0);
 });

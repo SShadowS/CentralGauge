@@ -9,6 +9,10 @@ import type { SSEEvent } from "./types.ts";
 import type { MatrixCell } from "./types.ts";
 import { cellKey, DashboardStateManager } from "./state.ts";
 import { INFRA_SIGNATURES } from "../../src/health/mod.ts";
+import {
+  didContainerWork,
+  getActualAttemptContainerName,
+} from "../../src/tasks/attribution.ts";
 
 /** Tick interval for the pool-snapshot emitter (ms). */
 const POOL_SNAPSHOT_INTERVAL_MS = 1000;
@@ -243,20 +247,32 @@ export class DashboardEventBridge {
       this.broadcast({ type: "cell-update", ...cellUpdate });
     }
 
-    // Feed the health monitor with the container outcome. This gives the
-    // global-outage detector a healthy baseline so it can distinguish "one
-    // container is broken" from "everything is broken".
-    const containerName = result.context.containerName;
-    if (containerName) {
-      // Infra-synthesized results are NOT recorded here — they already arrive
-      // via the error event handler above.
-      const firstReason = result.attempts[0]?.failureReasons?.[0] ?? "";
-      if (!firstReason.startsWith("Infra error:")) {
+    // Record one health outcome per attempt that reached container-backed
+    // work. Synthesized infra results (first failureReason starts with
+    // "Infra error:") still skip this path -- they arrive via the error
+    // event handler which already records the failing container.
+    const firstReason = result.attempts[0]?.failureReasons?.[0] ?? "";
+    if (!firstReason.startsWith("Infra error:")) {
+      let broadcasted = false;
+      for (const attempt of result.attempts) {
+        if (!didContainerWork(attempt)) continue;
+        const containerName = getActualAttemptContainerName(attempt);
+        if (!containerName) continue;
+        const compileFailed = attempt.compilationResult !== undefined &&
+          attempt.compilationResult.success === false;
+        const testFailed = attempt.testResult !== undefined &&
+          attempt.testResult.success === false;
+        const outcome: "pass" | "fail" = (compileFailed || testFailed)
+          ? "fail"
+          : "pass";
         this.state.recordContainerOutcome({
           containerName,
-          result: result.success ? "pass" : "fail",
+          result: outcome,
           timestamp: Date.now(),
         });
+        broadcasted = true;
+      }
+      if (broadcasted) {
         this.broadcast({
           type: "container-health",
           state: this.state.getHealthSnapshot(),
