@@ -46,6 +46,10 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 - We use Git Bash for shell commands, but use full Windows paths (e.g., `U:\Git\CentralGauge\src\file.ts`) in tool calls (Read, Edit, Write, Glob, Grep).
 - `jq` is available for debugging and inspecting JSON files.
+- Worktrees branch from `origin/master`, which often lags local `master`
+  (local commits aren't always pushed). A fresh worktree may miss recent
+  local work — `git merge master` inside the worktree if a needed feature
+  is absent.
 
 ## Local BC Container
 
@@ -503,12 +507,14 @@ Either implement the test properly or remove it. Commented test code suggests in
 
 ## After Each Change
 
-Run the following commands after making changes:
+Run the following after making changes. Scope `fmt`/`check` to the files you
+touched — the repo has CRLF/LF drift on Windows, so `deno fmt` over a whole
+directory rewrites dozens of unrelated files.
 
 ```bash
-deno check
-deno lint
-deno fmt
+deno check <changed-files>
+deno lint <changed-dirs>
+deno fmt <changed-files>
 ```
 
 ## Documentation Maintenance
