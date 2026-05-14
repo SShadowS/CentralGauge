@@ -33,6 +33,7 @@ description: >-
      Return a dictionary mapping field names to their formatted values.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, codeunit, procedure]

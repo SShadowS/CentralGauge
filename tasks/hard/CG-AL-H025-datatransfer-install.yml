@@ -16,6 +16,7 @@ description: >-
   DataTransfer.SetTables to specify source and destination, AddFieldValue to map
   each of the five fields from source to destination, and CopyRows to perform
   the bulk insert.
+domains: [install-upgrade, codeunits]
 metadata:
   category: advanced-patterns
   tags: [datatransfer, install, codeunit, bulk-operations]

@@ -27,6 +27,7 @@ description: >-
      - Returns 0 if A = B
      - Returns 1 if A > B (higher priority)
      - Must compare using ordinal values, not enum names
+domains: [enums, codeunits]
 metadata:
   category: data-modeling
   tags: [table, enum, fields, triggers]

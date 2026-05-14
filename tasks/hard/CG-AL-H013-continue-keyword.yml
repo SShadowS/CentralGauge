@@ -18,6 +18,7 @@ description: >-
      above the threshold. Use a for loop with continue to skip values at or below threshold.
      Return empty string if no values above threshold.
 
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, validation]

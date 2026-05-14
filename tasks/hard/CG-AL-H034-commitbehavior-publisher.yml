@@ -19,6 +19,7 @@ description: >-
 
   ProcessItem is part of a public extensibility surface; downstream code subscribes to OnBeforeFinalize. Author the codeunit so the failure-path Error in step 3 reverts the step-1 Modify cleanly under realistic third-party subscriber behaviour. The success path must persist Item.Status = true via the explicit Commit at step 4.
 
+domains: [events, codeunits]
 metadata:
   category: error-handling
   tags: [integration-event, transaction]

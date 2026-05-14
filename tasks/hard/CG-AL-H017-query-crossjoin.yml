@@ -15,6 +15,7 @@ description: >-
   5. Has a third dataitem "Dimension Set Entry" with SqlJoinType = LeftOuterJoin
   6. Include a column MatchCount with Method = Count
 
+domains: [queries]
 metadata:
   category: advanced-patterns
   tags: [query, fields, calculations]

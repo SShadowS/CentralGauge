@@ -15,6 +15,7 @@ description: >-
 
   The query should export columns for Document_No, Sell_to_Customer_No, Line_Amount_Sum, and Line_Count.
 
+domains: [queries]
 metadata:
   category: advanced-patterns
   tags: [query, fields, calculations]

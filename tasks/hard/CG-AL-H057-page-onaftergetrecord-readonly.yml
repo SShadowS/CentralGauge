@@ -43,6 +43,7 @@ description: >-
     - Subscribing to a global event that mutates "CG H057 Sample" when the
       page is opened.
 
+domains: [pages]
 metadata:
   category: pages
   tags: [page, onaftergetrecord, no-write, page-local-var, readonly-trigger]

@@ -39,6 +39,7 @@ description: >-
      RecordRef.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, keyref, primary-key, composite-key]

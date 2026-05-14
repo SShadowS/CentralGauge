@@ -53,6 +53,7 @@ description: >-
 
      - When Storage Type is Database, none of the four conditional sections'
        fields are visible.
+domains: [pages, tables]
 metadata:
   category: user-interface
   tags: [page, table, dynamic-visibility, group, setup, conditional-layout]

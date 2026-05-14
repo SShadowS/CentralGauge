@@ -47,6 +47,7 @@ description: >-
      Always close the RecordRef when done.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, codeunit, procedure]

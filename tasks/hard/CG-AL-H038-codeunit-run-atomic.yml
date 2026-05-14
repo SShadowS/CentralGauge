@@ -24,6 +24,7 @@ description: >-
 
   Existing prereq table "CG H038 Job" (ID 69380) - fields: "Code" Code[20] PK field 1; "Status" Code[10] field 10; "Marker" Code[10] field 20.
 
+domains: [codeunits]
 metadata:
   category: error-handling
   tags: [transaction, rollback]

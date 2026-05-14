@@ -31,6 +31,7 @@ description: >-
   [IntegrationEvent(true, false)]
   local procedure OnBeforeValidateOrder(OrderNo: Code[20]; Amount: Decimal; var IsValid: Boolean; var Handled: Boolean)
 
+domains: [events, codeunits]
 metadata:
   category: interfaces-events
   tags: [event-publisher, event-subscriber, codeunit]

@@ -20,9 +20,11 @@ description: >-
   Tests run RunBatch with three or more Codes. The implementation must remain correct for that case.
 
   Existing prereq tables:
+
     "CG H041 Item" (ID 69410) - fields: "Code" Code[20] PK field 1; "Status" Code[10] field 10; "Marker" Code[10] field 20.
     "CG H041 Run Log" (ID 69411) - fields: "Entry No." Integer AutoIncrement PK field 1; "Outcomes" Text[250] field 10.
 
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [transaction, batch]

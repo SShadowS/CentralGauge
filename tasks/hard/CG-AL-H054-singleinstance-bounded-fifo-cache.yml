@@ -35,6 +35,7 @@ description: >-
     - Pre-truncating: discarding the new entry instead of the oldest when the
       cache is full.
 
+domains: [codeunits]
 metadata:
   category: caching
   tags: [singleinstance, bounded-cache, fifo-eviction, session-scope]

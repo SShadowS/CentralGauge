@@ -34,6 +34,7 @@ description: >-
     - Using a temporary buffer or RecordRef.
     - Returning a hardcoded constant; the value must come from the Query result.
 
+domains: [queries, codeunits]
 metadata:
   category: performance
   tags: [query-object, aggregation, sift, set-based]

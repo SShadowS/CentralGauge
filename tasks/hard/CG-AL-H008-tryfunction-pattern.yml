@@ -36,6 +36,7 @@ description: >-
      - Uses TryDivide for both attempts
 
   Critical: The [TryFunction] attribute must be on the correct procedures and used correctly.
+domains: [codeunits]
 metadata:
   category: error-handling
   tags: [tryfunction, codeunit, procedure]

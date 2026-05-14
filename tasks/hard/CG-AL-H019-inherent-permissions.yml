@@ -24,6 +24,7 @@ description: >-
   4. local procedure InternalHelper(): Text
      - Returns 'Helper Result'
 
+domains: [permissions, codeunits]
 metadata:
   category: error-handling
   tags: [permissions, codeunit, procedure]

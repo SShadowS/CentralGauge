@@ -42,6 +42,7 @@ description: >-
         Clears both the list and dictionary of channels.
 
   All codeunits should have Access = Public.
+domains: [interfaces, codeunits]
 metadata:
   category: interfaces-events
   tags: [interface, collections, codeunit]

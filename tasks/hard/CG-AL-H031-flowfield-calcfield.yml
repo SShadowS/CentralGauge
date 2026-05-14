@@ -64,6 +64,7 @@ description: >-
      close the RecordRef.
 
   Include Access = Public on the codeunit.
+domains: [flowfields, codeunits]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, flowfield, calcfield, fieldclass]

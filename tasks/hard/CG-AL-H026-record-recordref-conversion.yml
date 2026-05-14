@@ -27,6 +27,7 @@ description: >-
      and return the result. All field values should be preserved.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [record, recordref, codeunit, procedure, type-conversion]

@@ -22,6 +22,7 @@ description: >-
   6. Build(): Text - returns formatted representation containing URL, method, headers, body, timeout
   7. Create(): Codeunit "CG Request Builder" - returns a new cleared instance
 
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, fluent-api, procedure]

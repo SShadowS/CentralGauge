@@ -15,6 +15,7 @@ description: >-
 
   Forbidden: direct access to the underlying Privacy Notice approval table, caching, IsolatedStorage, hardcoded boolean fields, calls to Confirm or any UI-prompting variant of the consent check.
 
+domains: [permissions, codeunits]
 metadata:
   category: error-handling
   tags: [privacy-notice, consent, security]

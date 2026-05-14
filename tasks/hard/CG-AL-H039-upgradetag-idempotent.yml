@@ -17,6 +17,7 @@ description: >-
 
   Forbidden idempotency strategies: probing the "CG H039 Setting" table itself with Get/IsEmpty/Count/FindFirst, checking ModuleInfo.DataVersion, comparing version numbers, IsolatedStorage, custom marker tables.
 
+domains: [install-upgrade, codeunits]
 metadata:
   category: advanced-patterns
   tags: [upgrade-tag, idempotent]

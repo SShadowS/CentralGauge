@@ -11,6 +11,7 @@ description: >-
 
   Forbidden: calling SetUpgradeTag, calling HasUpgradeTag, defining any trigger, inserting into any table directly.
 
+domains: [install-upgrade, events]
 metadata:
   category: advanced-patterns
   tags: [upgrade-tag, event-subscriber]

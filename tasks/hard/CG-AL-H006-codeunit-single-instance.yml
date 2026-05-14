@@ -39,6 +39,7 @@ description: >-
 
   Critical: The SingleInstance property must be set correctly for state to persist.
   The Initialize() procedure must be idempotent.
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, singleinstance, procedure]

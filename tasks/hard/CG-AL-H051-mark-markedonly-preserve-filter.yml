@@ -37,6 +37,7 @@ description: >-
     - Counting via a manual loop with `+= 1` (you must let the platform count under the
       marked-only view).
 
+domains: [codeunits]
 metadata:
   category: filtering
   tags: [record-mark, marked-only, filter-preservation]

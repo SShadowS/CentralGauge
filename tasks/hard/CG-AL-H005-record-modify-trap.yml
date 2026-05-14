@@ -44,6 +44,7 @@ description: >-
   the unit tests focus on DescribeChanges because BC's test-runner isolation does not
   reliably surface SingleInstance side effects raised from a table trigger inside a test
   transaction.
+domains: [tables, codeunits]
 metadata:
   category: advanced-patterns
   tags: [table, codeunit, trigger, xrec, single-instance]

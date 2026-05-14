@@ -21,6 +21,7 @@ description: >-
        Call the gateway's Authorize method.
        If true, return: 'Authorized by [GatewayName]'.
        If false, return: 'Declined by [GatewayName]'.
+domains: [interfaces, codeunits]
 metadata:
   category: interfaces-events
   tags: [interface, http, json, codeunit]

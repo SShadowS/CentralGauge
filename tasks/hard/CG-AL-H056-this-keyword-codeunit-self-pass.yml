@@ -43,6 +43,7 @@ description: >-
       instead of `Target.AbsorbFrom(<self-reference>)`).
     - DotNet types.
 
+domains: [codeunits]
 metadata:
   category: codeunit-mechanics
   tags: [this-keyword, codeunit-self-reference, instance-passing, AA0248]

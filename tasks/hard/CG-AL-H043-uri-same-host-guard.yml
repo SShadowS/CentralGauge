@@ -17,6 +17,7 @@ description: >-
     - Splitting or parsing either URL with StrPos / StrLen / CopyStr / SelectStr / Split / Replace.
     - DotNet types or any non-System-Application helper.
 
+domains: [integration, codeunits]
 metadata:
   category: security
   tags: [ssrf, uri, system-application, host-validation]

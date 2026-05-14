@@ -43,6 +43,7 @@ description: >-
       variable.
     - Writing to the database.
 
+domains: [codeunits]
 metadata:
   category: filtering
   tags: [filter-group, protected-scope, record-filter, intersect]

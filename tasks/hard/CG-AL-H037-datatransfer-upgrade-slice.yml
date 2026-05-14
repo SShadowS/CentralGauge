@@ -13,6 +13,7 @@ description: >-
 
   Forbidden mechanisms: FindSet/FindFirst/FindLast/Find with any subsequent loop or Modify, Next() in any form, individual Modify() or Modify(true) per record, ModifyAll, direct SQL.
 
+domains: [install-upgrade, codeunits]
 metadata:
   category: advanced-patterns
   tags: [datatransfer, install, set-based-update]

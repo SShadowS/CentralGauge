@@ -39,6 +39,7 @@ description: >-
       the OutStream.
     - Storing the value in IsolatedStorage / a table.
 
+domains: [codeunits]
 metadata:
   category: serialization
   tags: [base64, tempblob, instream-outstream, textencoding, unicode]

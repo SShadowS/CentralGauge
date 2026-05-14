@@ -27,6 +27,7 @@ description: >-
   7. procedure GetKeys(Dict: Dictionary of [Code[20], Decimal]): List of [Code[20]]
      - Returns list of all keys from the dictionary
 
+domains: [codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, collections, procedure]

@@ -23,6 +23,7 @@ description: >-
   OnAfterCalculateLineAmount(var Result: Decimal; UnitPrice: Decimal; Quantity: Decimal; DiscountPercent: Decimal; RoundingPrecision: Decimal)
 
   The event must be raised for every call to CalculateLineAmount where no error is thrown.
+domains: [events, codeunits]
 metadata:
   category: interfaces-events
   tags: [interface, event-subscriber, codeunit, procedure]

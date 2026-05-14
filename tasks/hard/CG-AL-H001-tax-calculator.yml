@@ -37,6 +37,7 @@ description: >-
 
   All results must be rounded to 2 decimal places.
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, calculations, numeric-precision]
