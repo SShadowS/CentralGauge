@@ -127,12 +127,16 @@ function makeBridgeHarness(opts: { containerNames: string[] }) {
   const recorded: Array<{
     containerName: string;
     result: "pass" | "fail" | "infra_error";
+    fingerprint?: string;
   }> = [];
   const origRecord = state.recordContainerOutcome.bind(state);
   state.recordContainerOutcome = (outcome) => {
     recorded.push({
       containerName: outcome.containerName,
       result: outcome.result,
+      ...(outcome.fingerprint !== undefined
+        ? { fingerprint: outcome.fingerprint }
+        : {}),
     });
     origRecord(outcome);
   };
@@ -892,4 +896,53 @@ Deno.test("bridge still skips synthesized infra-failure results", () => {
     result: makeSynthInfraResult({ taskId: "T1", containerName: "Cronus28" }),
   });
   assertEquals(recorded.length, 0);
+});
+
+Deno.test("bridge records infra_error against originalContainerName on infra_retry_started", () => {
+  const { bridge, recorded } = makeBridgeHarness({
+    containerNames: ["Cronus28", "Cronus281"],
+  });
+  bridge.handleEvent({
+    type: "infra_retry_started",
+    taskId: "T1",
+    variantId: "v",
+    attemptNumber: 1,
+    retryNumber: 1,
+    originalContainerName: "Cronus28",
+    fingerprint: "test:abc",
+    signatureLabel: "PSSession lost",
+  });
+  assertEquals(recorded.length, 1);
+  assertEquals(recorded[0]?.containerName, "Cronus28");
+  assertEquals(recorded[0]?.result, "infra_error");
+  assertEquals(recorded[0]?.fingerprint, "test:abc");
+});
+
+Deno.test("infra retry chain: original A infra, retry B succeeds -> A: infra, B: pass", () => {
+  const { bridge, recorded } = makeBridgeHarness({
+    containerNames: ["Cronus28", "Cronus281"],
+  });
+  bridge.handleEvent({
+    type: "infra_retry_started",
+    taskId: "T1",
+    variantId: "v",
+    attemptNumber: 1,
+    retryNumber: 1,
+    originalContainerName: "Cronus28",
+    fingerprint: "test:abc",
+  });
+  bridge.handleEvent({
+    type: "result",
+    result: makeMultiAttemptResult({
+      taskId: "T1",
+      attempts: [
+        { containerName: "Cronus281", success: true, withCompile: true },
+      ],
+      finalSuccess: true,
+    }),
+  });
+  assertEquals(recorded.map((r) => [r.containerName, r.result]), [
+    ["Cronus28", "infra_error"],
+    ["Cronus281", "pass"],
+  ]);
 });

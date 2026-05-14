@@ -170,6 +170,7 @@ export class MultiContainerMockCompileQueue implements CompileWorkQueue {
     const testDuration = runTests ? 50 : 0;
     const result: CompileWorkResult = {
       workItemId: item.id,
+      containerName: target,
       compilationResult: {
         success: true,
         errors: [],

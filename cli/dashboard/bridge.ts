@@ -418,6 +418,20 @@ export class DashboardEventBridge {
       { type: "infra_retry_started" }
     >,
   ): void {
+    this.state.recordContainerOutcome({
+      containerName: event.originalContainerName,
+      result: "infra_error",
+      fingerprint: event.fingerprint,
+      timestamp: Date.now(),
+    });
+    // signatureLabel is intentionally not passed: ContainerOutcome carries
+    // signatureId (a normalized id, e.g. "syslib0014"), not the human
+    // label. The monitor's alert path resolves both id and label from the
+    // signature catalog using fingerprint.
+    this.broadcast({
+      type: "container-health",
+      state: this.state.getHealthSnapshot(),
+    });
     this.broadcast({
       type: "inline-infra-retry",
       phase: "started",
