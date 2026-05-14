@@ -66,6 +66,8 @@ export function buildRunTestsEnvelope(
   extensionId: string,
   testCodeunitId: number,
 ): string {
+  // `extensionId` is a GUID (or empty) and `testCodeunitId` an integer, so no
+  // XML escaping is needed; the harness ignores extensionId when testCodeunitId > 0.
   return `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ` +
     `xmlns:t="${SOAP_NS}"><soap:Body><t:RunTests>` +
     `<t:extensionId>${extensionId}</t:extensionId>` +
@@ -97,7 +99,8 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
     );
   }
 
-  const json = JSON.parse(xmlUnescape(rv[1]!)) as HarnessJson;
+  const decoded = xmlUnescape(rv[1]!);
+  const json = JSON.parse(decoded) as HarnessJson;
   if (json.error) {
     throw new Error(`harness error: ${json.error}`);
   }
@@ -105,6 +108,9 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
   const results: TestCaseResult[] = [];
   for (const cu of json.codeunits ?? []) {
     for (const m of cu.testResults ?? []) {
+      // result codes: 1=Failure, 2=Success, 3=Skipped. Skipped maps to
+      // passed:false here for the per-method detail; the totals above count
+      // it under `skipped`, not `failedTests`.
       const result: TestCaseResult = {
         name: m.method,
         passed: m.result === RESULT_SUCCESS,
@@ -120,19 +126,25 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
     }
   }
 
+  // Counts come from the harness summary (AL `CalcTestResults`, authoritative).
+  // `results` carries per-method detail; its length always equals the sum
+  // because the harness emits one entry per test function line.
   const passedTests = json.passed ?? 0;
   const failedTests = json.failed ?? 0;
   const skipped = json.skipped ?? 0;
-  const totalTests = results.length || (passedTests + failedTests + skipped);
+  const totalTests = passedTests + failedTests + skipped;
 
   return {
+    // `passedTests > 0` guards against a codeunit where nothing actually ran
+    // (empty / all-skipped) being reported as a pass — matches the legacy
+    // parser's `totalTests > 0` requirement in bc-output-parsers.ts.
     success: failedTests === 0 && passedTests > 0,
     totalTests,
     passedTests,
     failedTests,
     duration: json.durationMs ?? 0,
     results,
-    output: rv[1]!,
+    output: decoded,
   };
 }
 
@@ -176,7 +188,18 @@ export async function runTestsViaSoap(
     );
   }
 
-  const text = await response.text();
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (e) {
+    throw new ContainerError(
+      `harness SOAP response read failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+      config.host,
+      "test",
+    );
+  }
   // BC returns HTTP 500 for AL errors but still wraps a SOAP fault in the body;
   // parseRunTestsResponse turns that into a thrown Error with the fault string.
   if (response.status !== 200 && !text.includes("<faultstring")) {

@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import {
+  buildHarnessUrl,
   buildRunTestsEnvelope,
   parseRunTestsResponse,
 } from "../../../src/container/soap-test-client.ts";
@@ -10,6 +11,20 @@ Deno.test("buildRunTestsEnvelope embeds codeunit id and namespace", () => {
   assertStringIncludes(
     xml,
     'xmlns:t="urn:microsoft-dynamics-schemas/codeunit/CGTestRunner"',
+  );
+});
+
+Deno.test("buildHarnessUrl encodes company and tenant", () => {
+  const url = buildHarnessUrl({
+    host: "Cronus28",
+    port: 7047,
+    company: "My Company",
+    tenant: "default",
+    credentials: { username: "u", password: "p" },
+  });
+  assertEquals(
+    url,
+    "http://Cronus28:7047/BC/ws/My%20Company/Codeunit/CGTestRunner?tenant=default",
   );
 });
 
