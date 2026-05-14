@@ -20,6 +20,7 @@ import type {
   TestResult,
 } from "./types.ts";
 import { ensureDir } from "@std/fs";
+import { fromFileUrl } from "@std/path";
 import { Logger } from "../logger/mod.ts";
 import {
   captureRawTail,
@@ -127,6 +128,8 @@ export class BcContainerProvider implements ContainerProvider {
   // container so the SOAP test path is available).
   private static readonly HARNESS_APP_DIR = "infra/cg-test-harness";
   private static readonly HARNESS_APP_NAME = "CG Test Harness";
+  // Bump HARNESS_APP_VERSION (and infra/cg-test-harness/app.json) to force
+  // redeployment after changing the harness source.
   private static readonly HARNESS_APP_VERSION = "1.0.0.0";
 
   // Per-container session slots. Each slot owns its own lock + session ref +
@@ -809,28 +812,41 @@ export class BcContainerProvider implements ContainerProvider {
         }
 
         const compilerFolder = await this.getOrCreateCompilerFolder(name);
-        const projectDir = BcContainerProvider.HARNESS_APP_DIR;
-        const outputDir = `${projectDir}/output`;
+        // Resolve the harness source dir against this module's location so it
+        // works regardless of the process cwd (other paths in this provider
+        // are likewise absolute). This file lives at src/container/, so
+        // ../../ reaches the repo root.
+        const projectDir = fromFileUrl(
+          new URL(
+            `../../${BcContainerProvider.HARNESS_APP_DIR}`,
+            import.meta.url,
+          ),
+        );
+        const outputDir = `${projectDir}\\output`;
         await Deno.mkdir(outputDir, { recursive: true });
 
         const escapedCompiler = compilerFolder.replace(/\\/g, "\\\\");
+        const escapedProject = projectDir.replace(/\\/g, "\\\\");
+        const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
           Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
           $bcContainerHelperConfig.usePwshForBc24 = $false
-          Get-ChildItem "${outputDir}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
+          Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
-            -appProjectFolder "${projectDir}" -appOutputFolder "${outputDir}" -ErrorAction Stop
+            -appProjectFolder "${escapedProject}" -appOutputFolder "${escapedOutput}" -ErrorAction Stop
           Publish-BcContainerApp -containerName "${name}" -appFile $app \`
             -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
           Write-Output "HARNESS_PUBLISHED:$app"
         `);
         if (!result.output.includes("HARNESS_PUBLISHED:")) {
-          throw this.buildPwshError({
-            containerName: name,
-            operation: "setup",
-            message: "Failed to compile/publish CG Test Harness",
-            output: result.output,
-          });
+          // The surrounding catch logs this non-fatally; include the output
+          // tail in the message so compile/publish failures are visible
+          // without --debug.
+          throw new Error(
+            `Failed to compile/publish CG Test Harness on ${name}:\n${
+              result.output.slice(-2000)
+            }`,
+          );
         }
         log.info(`Test harness published on ${name}`);
       } catch (e) {
