@@ -2377,3 +2377,62 @@ describe("orchestrator catch block: infra error handling", () => {
     },
   );
 });
+
+// =============================================================================
+// ExecutionAttempt.containerName stamping
+// =============================================================================
+
+describe("stamps attempt.containerName", () => {
+  it("should record the container name from CompileWorkResult on ExecutionAttempt", async () => {
+    const targetContainer = "Cronus283";
+
+    const mockLLMPool = new MockLLMWorkPool();
+    mockLLMPool.setDefaultResult({ success: true });
+
+    const mockCompileQueue = new MockCompileQueue(targetContainer);
+    mockCompileQueue.setDefaultResult({
+      compilationSuccess: true,
+    });
+
+    const mockContainerProvider = createMockContainerProvider();
+
+    const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+      llmPool: mockLLMPool as unknown as LLMWorkPool,
+      containerProviderFactory: () => mockContainerProvider,
+      compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+    });
+
+    const manifest = createMockManifest({ id: "test-container-attr" });
+    const variants: ModelVariant[] = [
+      {
+        originalSpec: "mock/mock-gpt-4",
+        baseModel: "mock-gpt-4",
+        provider: "mock",
+        model: "mock-gpt-4",
+        variantId: "mock/mock-gpt-4",
+        hasVariant: false,
+        config: {},
+      },
+    ];
+    const options = {
+      containerProvider: "mock",
+      containerName: targetContainer,
+      attemptLimit: 1,
+      temperature: 0.1,
+      maxTokens: 4000,
+      outputDir: "/tmp/test-output",
+      debugMode: false,
+    };
+
+    const result = await orchestrator.runParallel([manifest], variants, options);
+
+    assertExists(result.results[0], "result exists");
+    const attempt = result.results[0]!.attempts[0];
+    assertExists(attempt, "attempt exists");
+    assertEquals(
+      attempt.containerName,
+      targetContainer,
+      "attempt.containerName should match the container from CompileWorkResult",
+    );
+  });
+});

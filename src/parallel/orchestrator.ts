@@ -761,6 +761,7 @@ export class ParallelBenchmarkOrchestrator {
 
     const attempt: ExecutionAttempt = {
       attemptNumber,
+      containerName: compileResult.containerName,
       startTime,
       endTime,
       prompt: context.instructions,

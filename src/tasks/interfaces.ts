@@ -207,6 +207,16 @@ export interface ExecutionAttempt {
 
   // Compilation/test results
   compilationResult?: CompilationResult | undefined;
+  /**
+   * Container that performed, or was selected to perform, this attempt's
+   * container-backed work. Set from `CompileWorkResult.containerName` for
+   * normal attempts and from `ContainerError.containerName` for synthesized
+   * infra-failure attempts. Undefined when no container-backed phase was
+   * reached (LLM-only failure) or the failed container is unknown. For
+   * retries, this is the container of the final (retry) execution; the
+   * per-retry trail lives in `infraRetries[].retryContainerName`.
+   */
+  containerName?: string;
   testResult?: TestResult | undefined;
 
   // Evaluation
