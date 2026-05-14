@@ -8,7 +8,7 @@
  *
  * Adding a value here is a schema change: once any task file uses the new
  * value the task-set hash changes and a re-bench is required. Batch
- * vocabulary changes deliberately — do not dribble.
+ * vocabulary changes deliberately; do not dribble.
  */
 
 import { z } from "zod";
