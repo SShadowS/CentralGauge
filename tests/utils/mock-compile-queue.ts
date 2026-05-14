@@ -72,11 +72,16 @@ export class MockCompileQueue {
   private calls: CompileQueueMethodCall[] = [];
   private _length = 0;
   private _isProcessing = false;
+  readonly containerName: string;
 
   // Default result configuration
   private defaultResultConfig: MockCompileResultConfig = {
     compilationSuccess: true,
   };
+
+  constructor(containerName = "mock-container") {
+    this.containerName = containerName;
+  }
 
   // Per-task result overrides (task ID extracted from work item context)
   private taskOverrides = new Map<string, MockCompileResultConfig>();
@@ -247,6 +252,7 @@ export class MockCompileQueue {
 
     const result: CompileWorkResult = {
       workItemId: item.id,
+      containerName: this.containerName,
       compilationResult,
       duration: compilationResult.duration,
       compileDuration: compilationResult.duration,
@@ -340,6 +346,7 @@ export function createMockCompileWorkResult(
   const compileDuration = compilationResult.duration;
   const result: CompileWorkResult = {
     workItemId: overrides?.workItemId ?? `mock-compile-${Date.now()}`,
+    containerName: overrides?.containerName ?? "Cronus28",
     compilationResult,
     duration: overrides?.duration ?? 1000,
     compileDuration: overrides?.compileDuration ?? compileDuration,

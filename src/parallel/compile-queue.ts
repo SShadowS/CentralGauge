@@ -619,6 +619,7 @@ export class CompileQueue implements CompileWorkQueue {
     // Store compiledPrereqs on the result for the test phase
     const result: CompileWorkResult & { _compiledPrereqs?: PrereqApp[] } = {
       workItemId: item.id,
+      containerName: this.containerName,
       compilationResult,
       duration: Date.now() - startTime,
       compileDuration,

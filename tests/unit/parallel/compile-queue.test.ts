@@ -764,3 +764,18 @@ describe("QueueTimeoutError", () => {
     assertEquals(error.waitTimeMs, 5000);
   });
 });
+
+Deno.test({
+  name: "CompileQueue stamps containerName on result",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const provider = createMockContainerProvider();
+    provider.setCompilationConfig({ success: true });
+    const queue = new CompileQueue(provider, "Cronus282", { maxQueueSize: 4 });
+    const result = await queue.enqueue(
+      createMockCompileWorkItem({ id: "wi-1" }),
+    );
+    assertEquals(result.containerName, "Cronus282");
+  },
+});

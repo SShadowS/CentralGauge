@@ -198,6 +198,9 @@ export interface CompileWorkResult {
   /** Reference to compile work item ID */
   workItemId: string;
 
+  /** Container that actually executed compile + test for this work item. */
+  containerName: string;
+
   /** Compilation result */
   compilationResult: CompilationResult;
 

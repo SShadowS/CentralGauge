@@ -2010,6 +2010,7 @@ describe("runParallel() with mocked dependencies", () => {
         if (compileCallCount === 1) {
           return {
             workItemId: item.id,
+            containerName: "Cronus28",
             compilationResult: {
               success: false,
               errors: [
