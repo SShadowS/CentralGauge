@@ -28,6 +28,7 @@ description: >-
      Layout:
 
      - area(Content) with a Repeater containing the Customer "No." and Name fields.
+domains: [pages, testability]
 metadata:
   category: user-interface
   tags: [page, listpart, testpart, visible, enabled, v16]

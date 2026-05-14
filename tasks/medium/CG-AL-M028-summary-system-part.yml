@@ -10,6 +10,7 @@ description: >-
   2. PageExtension 70029 "CG Customer Card Summary Hide" - extends the standard "Customer Card" page. In the layout area, modify the runtime-16.0 Summary system part on the base page so that its Visible property is set to false.
 
   Include proper captions on both objects.
+domains: [pages]
 metadata:
   category: user-interface
   tags: [page, pageextension, systempart, summary, v16]

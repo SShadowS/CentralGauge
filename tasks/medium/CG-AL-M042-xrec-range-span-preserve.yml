@@ -35,6 +35,7 @@ description: >-
 
   The table must compile against BC 28 with platform 28.0.0.0 and
   application 28.0.0.0.
+domains: [tables]
 metadata:
   category: advanced-patterns
   tags: [table, trigger, xrec, onvalidate]

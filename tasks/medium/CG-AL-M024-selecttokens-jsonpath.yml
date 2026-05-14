@@ -26,6 +26,7 @@ description: >-
      Extract all amount values from the nested orders array and return their sum.
 
   Include Access = Public on the codeunit.
+domains: [integration, codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, json, procedure]

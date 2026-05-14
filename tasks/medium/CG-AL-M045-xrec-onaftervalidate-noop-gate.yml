@@ -49,6 +49,7 @@ description: >-
   The codeunit must compile against BC 28 with platform 28.0.0.0 and
   application 28.0.0.0, with the prereq app providing
   "CG M045 Watched Record" and "CG M045 Fire Counter".
+domains: [events, codeunits]
 metadata:
   category: advanced-patterns
   tags: [xrec, eventsubscriber, codeunit, onvalidate]

@@ -24,6 +24,7 @@ description: >-
 
   Use event subscribers for Purchase Header events, proper error handling,
   and comprehensive logging. Include approval status management and state transitions.
+domains: [codeunits, events]
 metadata:
   category: business-logic
   tags: [codeunit, interface, event-subscriber, procedure]

@@ -24,6 +24,7 @@ description: >-
      Open the specified table using RecordRef and call Truncate on it.
 
   Include Access = Public on the codeunit.
+domains: [performance, codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, record, procedure, bulk-operations]

@@ -40,6 +40,7 @@ description: >-
             same Group Code filter, and assign the result of
             NextPriority(false, false, '', LocalRec."Priority"). If no
             sibling is found, treat the LastInGroupPriority as ''.
+domains: [pages, codeunits]
 metadata:
   category: advanced-patterns
   tags: [xrec, page, trigger, onnewrecord, belowxrec]

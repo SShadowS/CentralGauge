@@ -21,6 +21,7 @@ description: >-
 
   Include field validation triggers, OnValidate events, and integration with existing Customer events.
   Use proper data classification and include comprehensive validation logic.
+domains: [tables, table-relations]
 metadata:
   category: data-modeling
   tags: [table-extension, fields, keys, triggers]

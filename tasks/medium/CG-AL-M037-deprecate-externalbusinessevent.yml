@@ -20,6 +20,7 @@ description: >-
      b. Procedure "CGSalesEventV2" with an empty body. Decorate it with one attribute:
 
         - ExternalBusinessEvent attribute with EventName 'cgSalesEvent', DisplayName 'CG Sales Event', Description 'Renamed event in v2', Category set to the Sales value of the same enum, Version '2.0'.
+domains: [events, enums]
 metadata:
   category: business-logic
   tags: [externalbusinessevent, obsolete, deprecation, codeunit, enum, v15]

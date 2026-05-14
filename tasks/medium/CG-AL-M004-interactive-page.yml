@@ -23,6 +23,7 @@ description: >-
   - Actions that modify data should request confirmation
 
   Dynamic action behavior: Disable CalculateTotals and ApplyDiscount when Status is Released.
+domains: [pages]
 metadata:
   category: user-interface
   tags: [page, fields, triggers, validation]

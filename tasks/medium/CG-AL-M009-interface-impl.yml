@@ -21,6 +21,7 @@ description: >-
 
   Use proper interface syntax, implements keyword, and include error handling
   for all procedures. Add logging and audit trail functionality.
+domains: [interfaces, codeunits]
 metadata:
   category: interfaces-events
   tags: [interface, codeunit, procedure]

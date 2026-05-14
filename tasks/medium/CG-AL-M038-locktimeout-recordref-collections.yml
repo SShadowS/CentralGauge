@@ -20,6 +20,7 @@ description: >-
      d. Return the list's Count.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [database, locktimeoutduration, list, recordref, generics, v16]

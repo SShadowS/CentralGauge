@@ -24,6 +24,7 @@ description: >-
      d. Procedure "InvokeReportOverloadsForCompile" with no return value. Inside an `if false then` block, invokes Report.Run, Report.RunModal, and Report.Execute on CGFqnSalesList using the namespace-qualified name as a Text argument. The unreachable block validates the FQN-string overloads at compile time.
 
   Use proper Caption properties on each object.
+domains: [codeunits, pages, tables, reports]
 metadata:
   category: business-logic
   tags: [namespace, fqn, codeunit, page, report, recordref, v17]

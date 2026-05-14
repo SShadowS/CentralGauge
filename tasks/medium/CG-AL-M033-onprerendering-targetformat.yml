@@ -27,6 +27,7 @@ description: >-
      - Xml   -> 'xml'
 
   4. Call RenderingPayload.Add('targetFormat', FmtText) to write the lowercase string into the rendering payload.
+domains: [reports]
 metadata:
   category: business-logic
   tags: [report, onprerendering, targetformat, reportformat, v15]

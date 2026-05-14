@@ -18,6 +18,7 @@ description: >-
   Include proper error handling: CalculateLineTotal should raise 'Quantity must be positive' for negative quantities
   and 'Price must be positive' for negative prices.
   Follow Business Central patterns with proper Access = Public.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, validation, calculations]

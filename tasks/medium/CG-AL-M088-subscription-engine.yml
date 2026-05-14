@@ -25,6 +25,7 @@ description: >-
   - Total days in period depends on Plan (Basic=30, Premium=90, Enterprise=365).
   - Formula: (TotalAmount / Total Days) * (Total Days - DaysUsed).
   - Round the result to 2 decimal places.
+domains: [enums, codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, calculations]

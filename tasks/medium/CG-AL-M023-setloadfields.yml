@@ -29,6 +29,7 @@ description: >-
      Return list of item numbers where Unit Price >= MinPrice.
 
   Include Access = Public on the codeunit.
+domains: [performance, codeunits]
 metadata:
   category: advanced-patterns
   tags: [codeunit, procedure, recordref]

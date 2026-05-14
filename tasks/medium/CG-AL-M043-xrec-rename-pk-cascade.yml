@@ -25,6 +25,7 @@ description: >-
 
   Access on the table is left at default. No tableextension, no codeunit, no
   page is required.
+domains: [tables, table-relations]
 metadata:
   category: advanced-patterns
   tags: [xrec, table, rename, trigger]

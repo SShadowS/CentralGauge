@@ -16,6 +16,7 @@ description: >-
   3. Return the captured Boolean value.
 
   Include Access = Public on the codeunit.
+domains: [integration, codeunits]
 metadata:
   category: business-logic
   tags: [httpclient, useservercertificatevalidation, v15]

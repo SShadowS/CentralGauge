@@ -12,6 +12,7 @@ description: >-
     - CalcFormula = sum of the Amount field on the existing "CG FF Line" table (ID 69081), filtered where the Line's "Header No." equals the parent Header's "No.".
     - Editable = false
     - Caption = 'Total Amount'
+domains: [flowfields, tables]
 metadata:
   category: data-modeling
   tags: [tableextension, flowfield, calcformula, al0896]

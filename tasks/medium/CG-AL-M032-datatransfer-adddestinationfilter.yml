@@ -24,6 +24,7 @@ description: >-
   6. Call CopyFields to execute the transfer.
 
   Include Access = Public on the codeunit.
+domains: [install-upgrade, codeunits]
 metadata:
   category: advanced-patterns
   tags: [datatransfer, adddestinationfilter, codeunit, install, v17, upgrade]

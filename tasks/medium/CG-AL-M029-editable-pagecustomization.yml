@@ -10,6 +10,7 @@ description: >-
   Use the customization field control identifier "MyHiddenField" and set its source expression to Rec."Hidden Field". Use any layout positioning action that places the new field at the start of the Content area.
 
   Include a proper Caption on the pagecustomization.
+domains: [pages]
 metadata:
   category: user-interface
   tags: [pagecustomization, editable, customization, v16]

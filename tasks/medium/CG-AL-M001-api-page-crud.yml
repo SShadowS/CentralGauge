@@ -23,6 +23,7 @@ description: >-
 
   Validation logic must live on the table (via the tableextension), so any caller -
   the API page, ordinary AL code, or a future page extension - sees the same rules.
+domains: [pages, tables]
 metadata:
   category: user-interface
   tags: [api-page, tableextension, fields, validation]

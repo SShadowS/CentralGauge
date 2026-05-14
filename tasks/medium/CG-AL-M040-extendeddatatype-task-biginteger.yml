@@ -14,6 +14,7 @@ description: >-
   2. field(10; "Task Reference"; BigInteger) - sets ExtendedDataType to the runtime-16.1 enum value that allows the client to render the BigInteger value as a task reference.
 
   Set the primary key to "No.".
+domains: [tables]
 metadata:
   category: data-modeling
   tags: [table, biginteger, extendeddatatype, task, v16]

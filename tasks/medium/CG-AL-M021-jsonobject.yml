@@ -34,6 +34,7 @@ description: >-
      exist, return 0.
 
   Include Access = Public on the codeunit.
+domains: [integration, codeunits]
 metadata:
   category: data-exchange
   tags: [json, codeunit, procedure]

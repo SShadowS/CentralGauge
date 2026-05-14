@@ -24,6 +24,7 @@ description: >-
     Error message must be exactly: "Cannot delete active contract"
 
   Include proper captions, data classification, and field validation patterns.
+domains: [tables, table-relations]
 metadata:
   category: data-modeling
   tags: [table, fields, keys, validation, triggers]
