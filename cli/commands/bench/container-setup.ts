@@ -140,6 +140,15 @@ export async function setupContainer(
       };
     }
     await containerProvider.setup(setupConfig);
+
+    // A freshly created container has no test harness yet — publish it now so
+    // the SOAP test path is available from the first bench run (the compiler
+    // folder is warmed up inside ensureTestHarness).
+    if ("ensureTestHarness" in containerProvider) {
+      await (containerProvider as BcContainerProvider).ensureTestHarness([
+        containerName,
+      ]);
+    }
   }
 
   return {
