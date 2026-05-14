@@ -229,3 +229,15 @@ Deno.test("getState() sorts containers: configured order first, then unseeded by
   const names = state.containers.map((c) => c.containerName);
   assertEquals(names, ["Cronus28", "Cronus281", "CronusAA", "CronusZZ"]);
 });
+
+Deno.test("expectedContainerNames dedups duplicates while preserving first-occurrence order", () => {
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainerNames: ["Cronus28", "Cronus281", "Cronus28"],
+  });
+  const state = mon.getState();
+  assertEquals(state.containers.map((c) => c.containerName), [
+    "Cronus28",
+    "Cronus281",
+  ]);
+});

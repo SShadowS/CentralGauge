@@ -64,7 +64,7 @@ export class ContainerHealthMonitor {
     this.globalOutageRatio = opts.globalOutageRatio ?? 0.5;
     this.expectedContainers = opts.expectedContainers;
     this.globalOutageMinContainers = opts.globalOutageMinContainers ?? 3;
-    this.configuredOrder = opts.expectedContainerNames ?? [];
+    this.configuredOrder = Array.from(new Set(opts.expectedContainerNames ?? []));
     for (const name of this.configuredOrder) {
       this.containers.set(name, {
         containerName: name,
