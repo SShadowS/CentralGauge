@@ -4,7 +4,6 @@
  */
 
 import { z } from "zod";
-import { type Domain, DomainSchema } from "./domains.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
@@ -12,6 +11,7 @@ import type {
   CLIPromptOverrides,
   PromptInjectionConfig,
 } from "../prompts/mod.ts";
+import { type Domain, DomainSchema } from "./domains.ts";
 
 const TaskManifestExpectedSchema = z.object({
   compile: z.boolean(),
@@ -108,7 +108,7 @@ export interface TaskManifest {
   /** Metrics to collect for this task */
   metrics: string[];
 
-  /** AL/BC domains this task exercises (controlled vocabulary). */
+  /** AL/BC domains this task exercises (controlled vocabulary) */
   domains?: Domain[] | undefined;
 
   /** Optional task metadata */

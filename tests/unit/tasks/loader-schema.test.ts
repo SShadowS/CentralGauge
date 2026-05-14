@@ -72,6 +72,25 @@ metrics:
 `;
     await withTempManifest(yaml, async (p) => {
       const err = await assertRejects(() => loadTaskManifest(p), Error);
+      assertStringIncludes(err.message, "domains.1");
+    });
+  });
+
+  it("rejects a manifest with an empty domains array", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Empty domains should fail.
+domains: []
+expected:
+  compile: true
+metrics:
+  - compile_pass
+`;
+    await withTempManifest(yaml, async (p) => {
+      const err = await assertRejects(() => loadTaskManifest(p), Error);
       assertStringIncludes(err.message, "domains");
     });
   });
