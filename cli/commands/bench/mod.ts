@@ -49,6 +49,7 @@ export {
   buildParallelOptions,
   executeParallelBenchmark,
   toHashResult,
+  warnSingleContainerInfraRetry,
 } from "./parallel-executor.ts";
 
 // Concurrency defaults

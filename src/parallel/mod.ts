@@ -46,7 +46,24 @@ export {
   QueueTimeoutError,
 } from "./compile-queue.ts";
 export { CompileQueuePool } from "./compile-queue-pool.ts";
-export type { CompileWorkQueue } from "./compile-queue-pool.ts";
+export type {
+  CompileEnqueueOptions,
+  CompileWorkQueue,
+} from "./compile-queue-pool.ts";
+
+// Inline infra retry errors
+export {
+  InfraRetriesExhaustedError,
+  NoEligibleContainersError,
+} from "./errors.ts";
+
+// Inline infra retry helper
+export { withInfraRetry } from "./infra-retry.ts";
+export type {
+  RetryOperation,
+  WithInfraRetryOptions,
+  WithInfraRetryResult,
+} from "./infra-retry.ts";
 
 // LLM work pool
 export { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";

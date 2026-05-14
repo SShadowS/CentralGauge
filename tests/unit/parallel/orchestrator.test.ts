@@ -1652,6 +1652,7 @@ function createTestOptions(): {
   maxTokens: number;
   outputDir: string;
   debugMode: boolean;
+  infraRetriesPerAttempt?: number;
 } {
   return {
     containerProvider: "mock",
@@ -2438,4 +2439,369 @@ describe("stamps attempt.containerName from compile result", () => {
       "attempt.containerName should match the container from CompileWorkResult, not options.containerName",
     );
   });
+});
+
+// =============================================================================
+// Inline infra-retry integration (Task 4)
+// =============================================================================
+
+import { MultiContainerMockCompileQueue } from "../../utils/multi-container-mock-compile-queue.ts";
+
+/**
+ * Build the LLM mock so submitBatch returns a deterministic successful
+ * response. Used by every retry test below so the work always reaches the
+ * compile phase. Returns a `{ callCount }` accessor that tests can use to
+ * verify how many LLM attempts ran (we can't go through `setDefaultResult`
+ * because that hits the per-item shape and the `recordCall`-based counter is
+ * bypassed when we replace `submitBatch` outright).
+ */
+function configureMockLLMSuccess(
+  pool: MockLLMWorkPool,
+): { getCallCount: () => number } {
+  let calls = 0;
+  pool.submitBatch = (items) => {
+    calls++;
+    const results = new Map();
+    for (const item of items) {
+      results.set(item.llmModel, {
+        workItemId: item.id,
+        success: true,
+        code: `codeunit 50100 "Test" { trigger OnRun() begin end; }`,
+        llmResponse: {
+          content: "test",
+          model: item.llmModel,
+          duration: 100,
+          finishReason: "stop",
+          usage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+          },
+        },
+        duration: 100,
+        readyForCompile: true,
+      });
+    }
+    return Promise.resolve(results);
+  };
+  return { getCallCount: () => calls };
+}
+
+describe("orchestrator: inline infra retry wiring", () => {
+  it(
+    "compile infra on Cronus28 -> retry succeeds on Cronus281",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      configureMockLLMSuccess(mockLLMPool);
+
+      const psSessionErr = new ContainerError(
+        "PSSession disconnected during compile",
+        "Cronus28",
+        "compile",
+      );
+
+      const mockQueue = new MultiContainerMockCompileQueue([
+        "Cronus28",
+        "Cronus281",
+      ]);
+      mockQueue.setConfigFor("Cronus28", { compileThrowError: psSessionErr });
+      // Cronus281 left at default success behavior.
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { containerNames: ["Cronus28", "Cronus281"] },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileWorkQueueFactory: () => mockQueue,
+        },
+      );
+
+      const options = createTestOptions();
+      options.containerName = "Cronus28";
+      options.infraRetriesPerAttempt = 1;
+
+      const result = await orchestrator.runParallel(
+        [createMockManifest({ id: "retry-success-task" })],
+        createTestVariants(),
+        options,
+      );
+
+      assertEquals(result.taskResults.length, 1);
+      const modelResult = result.taskResults[0]!.modelResults.get(
+        "mock/mock-gpt-4",
+      );
+      assertExists(modelResult, "model result exists");
+      assertEquals(modelResult.success, true, "task succeeded via retry");
+      const attempt = modelResult.attempts[0]!;
+      assertExists(attempt.infraRetries, "attempt carries retry trail");
+      assertEquals(attempt.infraRetries.length, 1, "exactly one retry");
+      assertEquals(
+        attempt.infraRetries[0]!.originalContainerName,
+        "Cronus28",
+      );
+      assertEquals(
+        attempt.infraRetries[0]!.retryContainerName,
+        "Cronus281",
+      );
+      assertEquals(attempt.infraRetries[0]!.outcome, "succeeded");
+    },
+  );
+
+  it(
+    "test infra on Cronus28 -> retry succeeds on Cronus281 (full compile+test re-run)",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      configureMockLLMSuccess(mockLLMPool);
+
+      const testInfraErr = new ContainerError(
+        "Run-TestsInBcContainer failed: PSSession closed",
+        "Cronus28",
+        "test",
+      );
+
+      const mockQueue = new MultiContainerMockCompileQueue([
+        "Cronus28",
+        "Cronus281",
+      ]);
+      // Cronus28: compile succeeds, test throws.
+      mockQueue.setConfigFor("Cronus28", {
+        testThrowError: testInfraErr,
+        hasTests: true,
+      });
+      // Cronus281: full success including tests.
+      mockQueue.setConfigFor("Cronus281", { hasTests: true });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { containerNames: ["Cronus28", "Cronus281"] },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileWorkQueueFactory: () => mockQueue,
+        },
+      );
+
+      const options = createTestOptions();
+      options.containerName = "Cronus28";
+      options.infraRetriesPerAttempt = 1;
+
+      const manifest = createMockManifest({
+        id: "retry-test-phase-task",
+        expected: { compile: true, testApp: "TestApp" },
+      });
+
+      const result = await orchestrator.runParallel(
+        [manifest],
+        createTestVariants(),
+        options,
+      );
+
+      const modelResult = result.taskResults[0]!.modelResults.get(
+        "mock/mock-gpt-4",
+      );
+      assertExists(modelResult);
+      assertEquals(modelResult.success, true);
+      const attempt = modelResult.attempts[0]!;
+      assertExists(attempt.infraRetries);
+      assertEquals(attempt.infraRetries.length, 1);
+      assertEquals(
+        attempt.infraRetries[0]!.originalContainerName,
+        "Cronus28",
+      );
+      assertEquals(
+        attempt.infraRetries[0]!.retryContainerName,
+        "Cronus281",
+      );
+
+      // Atomic compile+test re-run: each container saw a compile call.
+      assertEquals(
+        mockQueue.getCompileCallCount("Cronus28"),
+        1,
+        "Cronus28 compiled once before the test phase threw",
+      );
+      assertEquals(
+        mockQueue.getCompileCallCount("Cronus281"),
+        1,
+        "Cronus281 re-compiled on retry (proves atomic compile+test re-run)",
+      );
+    },
+  );
+
+  it(
+    "both containers infra -> synthesized result has trail + exhaustion metadata",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      configureMockLLMSuccess(mockLLMPool);
+
+      const err28 = new ContainerError(
+        "PSSession disconnected on Cronus28",
+        "Cronus28",
+        "compile",
+      );
+      const err281 = new ContainerError(
+        "PSSession disconnected on Cronus281",
+        "Cronus281",
+        "compile",
+      );
+
+      const mockQueue = new MultiContainerMockCompileQueue([
+        "Cronus28",
+        "Cronus281",
+      ]);
+      mockQueue.setConfigFor("Cronus28", { compileThrowError: err28 });
+      mockQueue.setConfigFor("Cronus281", { compileThrowError: err281 });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { containerNames: ["Cronus28", "Cronus281"] },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileWorkQueueFactory: () => mockQueue,
+        },
+      );
+
+      const options = createTestOptions();
+      options.containerName = "Cronus28";
+      options.infraRetriesPerAttempt = 1;
+
+      const result = await orchestrator.runParallel(
+        [createMockManifest({ id: "exhausted-task" })],
+        createTestVariants(),
+        options,
+      );
+
+      const modelResult = result.taskResults[0]!.modelResults.get(
+        "mock/mock-gpt-4",
+      );
+      assertExists(modelResult, "synthesized infra result exists");
+      assertEquals(modelResult.success, false);
+      const attempt = modelResult.attempts[0]!;
+      assertExists(attempt);
+      const firstReason = attempt.failureReasons[0];
+      assertExists(firstReason);
+      assert(
+        firstReason.startsWith("Infra error:"),
+        `failureReasons[0] should start with "Infra error:" but got: ${firstReason}`,
+      );
+      assertExists(attempt.infraRetries, "trail attached");
+      assertEquals(attempt.infraRetries.length, 1);
+      assertEquals(attempt.infraRetryExhausted, true);
+      assertEquals(attempt.infraRetryExhaustionReason, "budget_exhausted");
+    },
+  );
+
+  it(
+    "single container + infra failure -> synthesized result has exhaustion metadata + empty trail",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      configureMockLLMSuccess(mockLLMPool);
+
+      const err = new ContainerError(
+        "PSSession disconnected on Cronus28",
+        "Cronus28",
+        "compile",
+      );
+
+      const mockQueue = new MultiContainerMockCompileQueue(["Cronus28"]);
+      mockQueue.setConfigFor("Cronus28", { compileThrowError: err });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { containerNames: ["Cronus28"] },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileWorkQueueFactory: () => mockQueue,
+        },
+      );
+
+      const options = createTestOptions();
+      options.containerName = "Cronus28";
+      options.infraRetriesPerAttempt = 1;
+
+      const result = await orchestrator.runParallel(
+        [createMockManifest({ id: "single-container-task" })],
+        createTestVariants(),
+        options,
+      );
+
+      const modelResult = result.taskResults[0]!.modelResults.get(
+        "mock/mock-gpt-4",
+      );
+      assertExists(modelResult, "synthesized infra result exists");
+      assertEquals(modelResult.success, false);
+      const attempt = modelResult.attempts[0]!;
+      assertExists(attempt);
+      // Single-container short-circuit means no retry ran.
+      assert(
+        attempt.infraRetries === undefined ||
+          attempt.infraRetries.length === 0,
+        "no retry trail on single-container short-circuit",
+      );
+      assertEquals(attempt.infraRetryExhausted, true);
+      assertEquals(
+        attempt.infraRetryExhaustionReason,
+        "no_eligible_containers",
+      );
+    },
+  );
+
+  it(
+    "infra retry success does NOT consume model attemptLimit",
+    async () => {
+      const mockLLMPool = new MockLLMWorkPool();
+      const mockContainerProvider = createMockContainerProvider();
+      const llmTracker = configureMockLLMSuccess(mockLLMPool);
+
+      const compileErr = new ContainerError(
+        "PSSession disconnected",
+        "Cronus28",
+        "compile",
+      );
+
+      const mockQueue = new MultiContainerMockCompileQueue([
+        "Cronus28",
+        "Cronus281",
+      ]);
+      mockQueue.setConfigFor("Cronus28", { compileThrowError: compileErr });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { containerNames: ["Cronus28", "Cronus281"] },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileWorkQueueFactory: () => mockQueue,
+        },
+      );
+
+      const options = createTestOptions();
+      options.containerName = "Cronus28";
+      options.attemptLimit = 2;
+      options.infraRetriesPerAttempt = 1;
+
+      const result = await orchestrator.runParallel(
+        [createMockManifest({ id: "attempt-budget-task" })],
+        createTestVariants(),
+        options,
+      );
+
+      const modelResult = result.taskResults[0]!.modelResults.get(
+        "mock/mock-gpt-4",
+      );
+      assertExists(modelResult);
+      assertEquals(modelResult.success, true, "succeeded via inline retry");
+      assertEquals(
+        modelResult.attempts.length,
+        1,
+        "single LLM attempt; infra retry did not consume attemptLimit",
+      );
+      assertEquals(
+        llmTracker.getCallCount(),
+        1,
+        "exactly one LLM call",
+      );
+    },
+  );
 });

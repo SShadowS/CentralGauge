@@ -7,6 +7,8 @@ import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import type {
   ExecutionAttempt,
+  InfraRetryExhaustionReason,
+  InfraRetryOutcome,
   TaskExecutionContext,
   TaskExecutionResult,
   TaskManifest,
@@ -573,6 +575,45 @@ export type ParallelExecutionEvent =
     fingerprint?: string | undefined;
     /** Named signature id, if matched */
     signatureId?: string | undefined;
+  }
+  | {
+    type: "infra_retry_started";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    originalContainerName: string;
+    fingerprint: string;
+    signatureLabel?: string;
+  }
+  | {
+    type: "infra_retry_succeeded";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    durationMs: number;
+  }
+  | {
+    type: "infra_retry_failed";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    outcome: Exclude<InfraRetryOutcome, "succeeded">;
+    durationMs: number;
+  }
+  | {
+    type: "infra_retry_exhausted";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    totalRetries: number;
+    finalContainerName: string;
+    fingerprint?: string;
+    reason: InfraRetryExhaustionReason;
   };
 
 /**
@@ -653,6 +694,26 @@ export type CompileQueueFactory = (
 ) => CompileQueue;
 
 /**
+ * Factory function type for creating a CompileWorkQueue spanning one or more
+ * containers. When supplied, this factory takes precedence over
+ * `compileQueueFactory` and is used for BOTH the single-container and
+ * multi-container paths — letting tests inject a queue implementation that
+ * understands `excludeContainers`/`onRouted` semantics (which the inline
+ * infra-retry helper relies on). When omitted, the orchestrator falls back
+ * to the legacy behavior: `CompileQueuePool` for multi-container, the
+ * `compileQueueFactory` for single-container.
+ */
+export type CompileWorkQueueFactory = (
+  containerProvider: ContainerProvider,
+  containerNames: string[],
+  options?: {
+    maxQueueSize?: number;
+    timeout?: number;
+    compileConcurrency?: number;
+  },
+) => import("./compile-queue-pool.ts").CompileWorkQueue;
+
+/**
  * Injectable dependencies for ParallelBenchmarkOrchestrator
  * All properties are optional - defaults will be used if not provided
  */
@@ -671,6 +732,15 @@ export interface OrchestratorDependencies {
 
   /** Factory for creating CompileQueue (defaults to new CompileQueue constructor) */
   compileQueueFactory?: CompileQueueFactory;
+
+  /**
+   * Optional factory for the underlying `CompileWorkQueue`. When supplied,
+   * this takes precedence over `compileQueueFactory` and is used for BOTH
+   * single- and multi-container topologies. Primary use case: tests that
+   * need to inject a mock implementing `excludeContainers`/`onRouted` so the
+   * inline infra-retry helper can drive different per-container behavior.
+   */
+  compileWorkQueueFactory?: CompileWorkQueueFactory;
 }
 
 // =============================================================================

@@ -140,4 +140,36 @@ export type SSEEvent =
     type: "health-snapshot";
     state: import("../../src/health/types.ts").ContainerHealthState;
   }
+  | {
+    /**
+     * Inline infra-retry lifecycle. `phase` reflects which orchestrator
+     * event triggered this SSE event:
+     * - "started": retry kicked off; `retryContainerName` still unknown.
+     * - "succeeded": retry produced a non-infra outcome (pass or real fail).
+     * - "failed": retry produced another infra failure or a non-infra
+     *   failure that the row's regular state machine should surface.
+     * - "exhausted": no more retries will be attempted (budget hit, no
+     *   eligible containers, global outage, missing container assignment).
+     */
+    type: "inline-infra-retry";
+    phase: "started" | "succeeded" | "failed" | "exhausted";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    /** Absent for zero-retry exhaustion (single-container short-circuit). */
+    retryNumber?: number;
+    originalContainerName?: string;
+    /** Absent during "started" — only known once the retry has been routed. */
+    retryContainerName?: string;
+    fingerprint?: string;
+    signatureLabel?: string;
+    durationMs?: number;
+    /** Only meaningful for "exhausted". */
+    reason?: import("../../src/tasks/interfaces.ts").InfraRetryExhaustionReason;
+    /** Only meaningful for "failed". */
+    outcome?: Exclude<
+      import("../../src/tasks/interfaces.ts").InfraRetryOutcome,
+      "succeeded"
+    >;
+  }
   | { type: "benchmark-complete" };

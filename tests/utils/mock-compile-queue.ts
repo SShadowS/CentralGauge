@@ -11,6 +11,7 @@ import type {
   CompileWorkResult,
   QueueStats,
 } from "../../src/parallel/types.ts";
+import type { CompileEnqueueOptions } from "../../src/parallel/compile-queue-pool.ts";
 import type {
   CompilationResult,
   TestResult,
@@ -228,10 +229,25 @@ export class MockCompileQueue {
   }
 
   /**
-   * Enqueue a compile job and return promise that resolves when complete
+   * Enqueue a compile job and return promise that resolves when complete.
+   *
+   * Accepts the optional second arg used by the inline infra-retry helper
+   * (`excludeContainers` + `onRouted`). When supplied, this mock fires
+   * `onRouted` with a fake container name and otherwise ignores the
+   * exclusion list — the per-container fault-injection tests use
+   * `MultiContainerMockCompileQueue` (a richer helper) when they need
+   * per-container behavior.
    */
-  async enqueue(item: CompileWorkItem): Promise<CompileWorkResult> {
-    this.recordCall("enqueue", item);
+  async enqueue(
+    item: CompileWorkItem,
+    options?: CompileEnqueueOptions,
+  ): Promise<CompileWorkResult> {
+    this.recordCall("enqueue", item, options);
+
+    // Fire onRouted so the inline retry helper sees a valid container name
+    // even with this minimal mock. Real per-container behavior lives in
+    // `MultiContainerMockCompileQueue`.
+    options?.onRouted?.("mock-container");
 
     const config = this.getConfigForItem(item);
 
