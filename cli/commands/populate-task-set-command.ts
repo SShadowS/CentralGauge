@@ -45,11 +45,12 @@ interface PopulateTaskSetOptions {
 
 type Difficulty = "easy" | "medium" | "hard";
 
-interface TaskRow {
+export interface TaskRow {
   task_id: string;
   content_hash: string;
   difficulty: Difficulty;
   category_slug: string;
+  domains: string[];
   manifest: Record<string, unknown>;
 }
 
@@ -98,7 +99,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return encodeHex(new Uint8Array(digest));
 }
 
-async function readTasksFromDir(tasksDir: string): Promise<TaskRow[]> {
+export async function readTasksFromDir(tasksDir: string): Promise<TaskRow[]> {
   const rows: TaskRow[] = [];
   for await (
     const e of walk(tasksDir, { exts: [".yml"], includeDirs: false })
@@ -118,11 +119,16 @@ async function readTasksFromDir(tasksDir: string): Promise<TaskRow[]> {
     const categorySlug = (md && typeof md["category"] === "string")
       ? (md["category"] as string)
       : "uncategorized";
+    const rawDomains = manifest["domains"];
+    const domains = Array.isArray(rawDomains)
+      ? rawDomains.filter((d): d is string => typeof d === "string")
+      : [];
     rows.push({
       task_id: taskId,
       content_hash: await sha256Hex(bytes),
       difficulty: difficultyFromPath(rel),
       category_slug: categorySlug,
+      domains,
       manifest,
     });
   }
