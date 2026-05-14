@@ -79,3 +79,31 @@ Deno.test("projectUsesTestPage scans all test files, not just the first", async 
     await cleanupTempDir(dir);
   }
 });
+
+Deno.test("projectUsesTestPage detects a TestPage parameter declaration", async () => {
+  const dir = await createTempDir("routing");
+  try {
+    const f = `${dir}/CG.Test.al`;
+    await Deno.writeTextFile(
+      f,
+      "codeunit 80100 X { procedure H(var P: testpage 138) begin end; }",
+    );
+    assertEquals(await projectUsesTestPage(project(dir, [f])), true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});
+
+Deno.test("projectUsesTestPage detects a TestRequestPage declaration", async () => {
+  const dir = await createTempDir("routing");
+  try {
+    const f = `${dir}/CG.Test.al`;
+    await Deno.writeTextFile(
+      f,
+      'codeunit 80101 X { procedure T() var P: TestRequestPage "My Report"; begin end; }',
+    );
+    assertEquals(await projectUsesTestPage(project(dir, [f])), true);
+  } finally {
+    await cleanupTempDir(dir);
+  }
+});

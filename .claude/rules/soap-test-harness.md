@@ -9,7 +9,7 @@ legacy client-session path.
 A web-service session has no UI/test-service connection — `TestPage.OpenView()`
 throws `System.NotSupportedException` at `NavSession.CreateNavTestService()`.
 That failure is indistinguishable from a real test failure in harness output,
-so routing is decided **statically** by scanning test source for `TestPage`.
+so routing is decided **statically** by parsing test source with the tree-sitter-al grammar.
 
 ## Components
 
