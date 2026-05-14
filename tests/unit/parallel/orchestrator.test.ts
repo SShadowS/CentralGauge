@@ -1567,6 +1567,7 @@ describe("ParallelBenchmarkOrchestrator - Dependency Injection", () => {
             enqueue: () =>
               Promise.resolve({
                 workItemId: "mock",
+                containerName: "mock",
                 compilationResult: {
                   success: true,
                   errors: [],
@@ -1575,6 +1576,7 @@ describe("ParallelBenchmarkOrchestrator - Dependency Injection", () => {
                   duration: 100,
                 },
                 duration: 100,
+                compileDuration: 100,
               }),
             drain: () => Promise.resolve(),
             get length() {
