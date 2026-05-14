@@ -26,6 +26,8 @@ export const DOMAINS = [
   "queries",
   // logic objects
   "codeunits",
+  "reflection",
+  "error-handling",
   "interfaces",
   "events",
   // platform / cross-cutting
@@ -34,6 +36,8 @@ export const DOMAINS = [
   "posting",
   "dimensions",
   "testability",
+  "json",
+  "web-services",
   "integration",
   "performance",
 ] as const;

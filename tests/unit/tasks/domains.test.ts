@@ -7,6 +7,10 @@ describe("domains vocabulary", () => {
     assert(isDomain("tables"));
     assert(isDomain("flowfields"));
     assert(isDomain("codeunits"));
+    assert(isDomain("reflection"));
+    assert(isDomain("error-handling"));
+    assert(isDomain("json"));
+    assert(isDomain("web-services"));
   });
 
   it("isDomain rejects unknown or non-string values", () => {
