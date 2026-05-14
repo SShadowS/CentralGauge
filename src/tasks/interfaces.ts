@@ -40,8 +40,10 @@ export const TaskManifestSchema = z.object({
   max_attempts: z.number().int().positive(),
   expected: TaskManifestExpectedSchema,
   metrics: z.array(z.string()),
-  domains: z.array(DomainSchema).min(1, "domains must list at least one domain")
-    .optional(),
+  domains: z.array(DomainSchema).min(
+    1,
+    "domains must list at least one domain",
+  ),
   metadata: TaskManifestMetadataSchema.optional(),
   prompts: z.unknown().optional(),
 }).passthrough();
@@ -109,7 +111,7 @@ export interface TaskManifest {
   metrics: string[];
 
   /** AL/BC domains this task exercises (controlled vocabulary) */
-  domains?: Domain[] | undefined;
+  domains: Domain[];
 
   /** Optional task metadata */
   metadata?: {

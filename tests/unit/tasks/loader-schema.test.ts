@@ -25,6 +25,7 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: A valid manifest for schema testing.
+domains: [codeunits]
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H999.Test.al
@@ -84,6 +85,24 @@ fix_template: bugfix.md
 max_attempts: 2
 description: Empty domains should fail.
 domains: []
+expected:
+  compile: true
+metrics:
+  - compile_pass
+`;
+    await withTempManifest(yaml, async (p) => {
+      const err = await assertRejects(() => loadTaskManifest(p), Error);
+      assertStringIncludes(err.message, "domains");
+    });
+  });
+
+  it("rejects a manifest with no domains field (now required)", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Missing domains should now fail.
 expected:
   compile: true
 metrics:
