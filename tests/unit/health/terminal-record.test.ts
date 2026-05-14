@@ -47,6 +47,32 @@ Deno.test("synthesized result has correct shape", () => {
   assertExists(r.executionId);
 });
 
+Deno.test("synthesized infra attempt stamps containerName from ContainerError", () => {
+  const result = synthesizeInfraFailureResult({
+    manifestId: "T1",
+    context: { variantId: "v", containerName: "Cronus28" },
+    error: new ContainerError(
+      "publish exploded",
+      "Cronus284",
+      "publish",
+    ),
+    classification: { fingerprint: "test:xyz" },
+    startTime: new Date(0),
+  });
+  assertEquals(result.attempts[0]?.containerName, "Cronus284");
+});
+
+Deno.test("synthesized infra attempt has undefined containerName for generic error", () => {
+  const result = synthesizeInfraFailureResult({
+    manifestId: "T1",
+    context: { variantId: "v" },
+    error: new Error("misc"),
+    classification: { fingerprint: "test:xyz" },
+    startTime: new Date(0),
+  });
+  assertEquals(result.attempts[0]?.containerName, undefined);
+});
+
 Deno.test("executionId is unique across calls", () => {
   const err = new ContainerError("X", "C", "test");
   const ctx = {

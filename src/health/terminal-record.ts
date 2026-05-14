@@ -83,6 +83,9 @@ export function synthesizeInfraFailureResult(
     cost: 0,
     duration: endTime.getTime() - input.startTime.getTime(),
   };
+  if (err instanceof ContainerError) {
+    attempt.containerName = err.containerName;
+  }
 
   return {
     taskId: input.manifestId,
