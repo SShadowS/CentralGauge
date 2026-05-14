@@ -18,6 +18,7 @@ description: >-
   2. [Test] procedure "DemoTestPasses" that takes no parameters and has an empty body (no assertions are required; it simply documents that the codeunit hosts a runnable test).
 
   Include Access = Public on the codeunit.
+domains: [testability]
 metadata:
   category: testing
   tags: [codeunit, test, testtype, requiredtestisolation, v16]

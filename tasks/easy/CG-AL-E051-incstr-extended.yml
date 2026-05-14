@@ -23,6 +23,7 @@ description: >-
      Example: DecrementValue('ORD-005') returns 'ORD-004'.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, string-operations, procedure]

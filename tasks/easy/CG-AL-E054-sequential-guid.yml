@@ -18,6 +18,7 @@ description: >-
      Return true if the two GUIDs are not equal to each other (i.e., they are different).
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, guid, procedure]

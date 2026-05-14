@@ -26,6 +26,7 @@ description: >-
   10. Procedure "TimeToInvariantText" that takes Time parameter Value and returns Text in the culture-invariant XML form.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, totext]

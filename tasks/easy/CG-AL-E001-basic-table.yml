@@ -12,6 +12,7 @@ description: >-
 
   Include proper captions and data classification.
   Set appropriate primary key and ensure the table follows Business Central conventions.
+domains: [tables]
 metadata:
   category: data-modeling
   tags: [table, fields, keys, captions, data-classification]

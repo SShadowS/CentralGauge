@@ -18,6 +18,7 @@ description: >-
      Return true if the FQN string contains a dot character.
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, record, procedure]

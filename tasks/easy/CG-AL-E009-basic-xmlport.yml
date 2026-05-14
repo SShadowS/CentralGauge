@@ -11,6 +11,7 @@ description: >-
   Configure the XMLport for export only with proper schema structure.
   Use the Item table as the data source and include appropriate field mappings.
   Follow Business Central XMLport conventions and include proper direction and format settings.
+domains: [xmlports]
 metadata:
   category: data-exchange
   tags: [xmlport, fields, xml]

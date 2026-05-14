@@ -18,6 +18,7 @@ description: >-
      "Order: [OrderNo], Amount: [Amount], Shipped: [IsShipped], Date: [OrderDate]"
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, procedure, enum]

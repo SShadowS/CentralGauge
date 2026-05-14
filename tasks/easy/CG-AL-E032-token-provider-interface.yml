@@ -11,6 +11,7 @@ description: >-
   Procedures:
   - GetToken(Endpoint: Text; ForceRefresh: Boolean): Text
   - ClearCache()
+domains: [interfaces]
 metadata:
   category: interfaces-events
   tags: [interface, codeunit, procedure]

@@ -11,6 +11,7 @@ description: >-
 
   Include proper Access property and ensure all procedures have appropriate parameter and return types.
   Follow Business Central interface conventions and include basic documentation comments.
+domains: [interfaces]
 metadata:
   category: interfaces-events
   tags: [interface, codeunit, procedure]

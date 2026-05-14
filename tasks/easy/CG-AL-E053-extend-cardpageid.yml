@@ -13,6 +13,7 @@ description: >-
   that runs the Item Card page for the current record.
 
   Include ApplicationArea = All on the action.
+domains: [pages]
 metadata:
   category: user-interface
   tags: [page-extension, table]

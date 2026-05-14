@@ -30,6 +30,7 @@ description: >-
      (Replace [CustomerName] with the actual parameter value)
 
   Include Access = Public on the codeunit.
+domains: [codeunits]
 metadata:
   category: business-logic
   tags: [codeunit, string-operations, procedure]

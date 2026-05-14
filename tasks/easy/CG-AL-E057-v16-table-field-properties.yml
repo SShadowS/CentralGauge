@@ -22,6 +22,7 @@ description: >-
   6. field(32; "Cust Editable"; Integer) - sets AllowInCustomizations to the enum value that exposes the field in page customizations and allows it to be made editable.
 
   Set the primary key to "No.".
+domains: [tables]
 metadata:
   category: data-modeling
   tags: [table, fields, masktype, extendeddatatype, allowincustomizations, v16]
