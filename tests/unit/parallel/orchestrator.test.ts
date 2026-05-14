@@ -2428,7 +2428,11 @@ describe("stamps attempt.containerName from compile result", () => {
       debugMode: false,
     };
 
-    const result = await orchestrator.runParallel([manifest], variants, options);
+    const result = await orchestrator.runParallel(
+      [manifest],
+      variants,
+      options,
+    );
 
     assertExists(result.results[0], "result exists");
     const attempt = result.results[0]!.attempts[0];
