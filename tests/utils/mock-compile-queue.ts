@@ -322,8 +322,8 @@ export class MockCompileQueue {
 /**
  * Create a new MockCompileQueue instance
  */
-export function createMockCompileQueue(): MockCompileQueue {
-  return new MockCompileQueue();
+export function createMockCompileQueue(containerName?: string): MockCompileQueue {
+  return new MockCompileQueue(containerName);
 }
 
 /**
