@@ -145,6 +145,14 @@ export interface TaskExecutionContext {
   /** Variant configuration overrides applied to this execution */
   variantConfig?: VariantConfig | undefined;
   containerProvider: string;
+  /**
+   * @deprecated for outcome attribution. This is a routing hint / default
+   * set once at context creation from `--container` and never updated when
+   * a queue pool routes work to a different container. For health
+   * attribution, read `attempt.containerName` via the helpers in
+   * `src/tasks/attribution.ts`. Legitimate uses: single-container
+   * routing, agent/sandbox executor paths, executor-v2 default container.
+   */
   containerName: string;
 
   // Template paths (resolved)
