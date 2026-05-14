@@ -54,7 +54,7 @@ description: >-
      after a fresh Get on the record.
 
   Include Access = Public on the codeunit.
-domains: [codeunits]
+domains: [reflection]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, blob, media, fieldtype]

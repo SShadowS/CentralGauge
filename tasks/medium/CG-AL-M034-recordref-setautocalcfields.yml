@@ -24,7 +24,7 @@ description: >-
   7. Return the Decimal value.
 
   Include Access = Public on the codeunit.
-domains: [flowfields, codeunits]
+domains: [flowfields, reflection]
 metadata:
   category: data-modeling
   tags: [recordref, setautocalcfields, flowfield, fieldref, v15]

@@ -32,7 +32,7 @@ description: >-
      otherwise return "none".
 
   Include Access = Public on the codeunit.
-domains: [integration, codeunits]
+domains: [json, codeunits]
 metadata:
   category: data-exchange
   tags: [json, codeunit, procedure]

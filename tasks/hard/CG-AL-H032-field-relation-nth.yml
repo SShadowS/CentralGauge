@@ -52,7 +52,7 @@ description: >-
      target.
 
   Include Access = Public on the codeunit.
-domains: [table-relations, codeunits]
+domains: [table-relations, reflection]
 metadata:
   category: advanced-patterns
   tags: [field-metadata, relation, recordref, table-relation]

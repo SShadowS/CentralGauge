@@ -90,7 +90,7 @@ description: >-
   Also create interface "IFieldTransformer" with procedure:
   Transform(var FieldRef: FieldRef): Variant
   (Return the new value to set, or the same value to keep unchanged)
-domains: [interfaces, codeunits]
+domains: [interfaces, reflection]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, codeunit, procedure]

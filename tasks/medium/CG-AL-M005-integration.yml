@@ -31,7 +31,7 @@ description: >-
   Include proper HTTP client usage with error handling, retry logic for failed requests,
   authentication headers, JSON serialization/deserialization, and timeout handling.
   Use HttpClient, JsonToken, JsonObject patterns and include comprehensive error messages.
-domains: [integration, codeunits]
+domains: [json, web-services, codeunits]
 metadata:
   category: data-exchange
   tags: [http, json, codeunit, external-api, error-handling]

@@ -30,7 +30,7 @@ description: >-
     - Catching errors with asserterror inside ValidateAll.
     - Returning early before the loop completes.
 
-domains: [codeunits]
+domains: [error-handling]
 metadata:
   category: error-handling
   tags: [collectible-errors, error-behavior, batch-validation]

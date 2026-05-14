@@ -27,7 +27,7 @@ description: >-
 
   Include Access = Public on the codeunit.
   Use HttpClient, HttpRequestMessage, HttpResponseMessage, and HttpContent appropriately.
-domains: [integration, codeunits]
+domains: [web-services, json, codeunits]
 metadata:
   category: data-exchange
   tags: [http, json, codeunit, procedure]

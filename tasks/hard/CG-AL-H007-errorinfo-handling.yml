@@ -36,7 +36,7 @@ description: >-
      - Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)
 
   Critical: Use ErrorInfo.Create() pattern and CustomDimensions correctly.
-domains: [codeunits, enums]
+domains: [error-handling, enums]
 metadata:
   category: error-handling
   tags: [errorinfo, codeunit, procedure]

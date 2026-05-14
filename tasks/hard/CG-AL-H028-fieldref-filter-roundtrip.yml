@@ -36,7 +36,7 @@ description: >-
      FieldRef. The procedure does not return a value.
 
   Include Access = Public on the codeunit.
-domains: [codeunits]
+domains: [reflection]
 metadata:
   category: advanced-patterns
   tags: [recordref, fieldref, filter, format, xml]

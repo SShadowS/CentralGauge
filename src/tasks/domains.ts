@@ -38,7 +38,6 @@ export const DOMAINS = [
   "testability",
   "json",
   "web-services",
-  "integration",
   "performance",
 ] as const;
 

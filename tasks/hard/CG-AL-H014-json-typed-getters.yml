@@ -20,7 +20,7 @@ description: >-
      {data: {details: {amount: 123.45}}}. Navigate through nested objects using Get() and
      extract the decimal amount. Return Decimal.
 
-domains: [integration, codeunits]
+domains: [json, codeunits]
 metadata:
   category: data-exchange
   tags: [json, codeunit, procedure]
