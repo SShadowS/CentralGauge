@@ -834,6 +834,14 @@ export class BcContainerProvider implements ContainerProvider {
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
             -appProjectFolder "${escapedProject}" -appOutputFolder "${escapedOutput}" -ErrorAction Stop
+          # Remove any existing CG Test Harness (any version) before publishing.
+          # Publishing over a different installed version makes the ForceSync
+          # publish+install conflict (tenant left OperationalWithSyncPending).
+          # The harness is schemaless, so the unpublish is clean.
+          $old = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" })
+          foreach ($o in $old) {
+            Unpublish-BcContainerApp -containerName "${name}" -appName $o.Name -publisher $o.Publisher -version $o.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
+          }
           Publish-BcContainerApp -containerName "${name}" -appFile $app \`
             -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
           Write-Output "HARNESS_PUBLISHED:$app"
