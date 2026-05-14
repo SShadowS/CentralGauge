@@ -2382,14 +2382,17 @@ describe("orchestrator catch block: infra error handling", () => {
 // ExecutionAttempt.containerName stamping
 // =============================================================================
 
-describe("stamps attempt.containerName", () => {
+describe("stamps attempt.containerName from compile result", () => {
   it("should record the container name from CompileWorkResult on ExecutionAttempt", async () => {
-    const targetContainer = "Cronus283";
+    // Use DIFFERENT values so the test discriminates between options.containerName
+    // (stale routing hint) and compileResult.containerName (actual routed container).
+    const routingHint = "Cronus28";
+    const actualContainer = "Cronus283";
 
     const mockLLMPool = new MockLLMWorkPool();
     mockLLMPool.setDefaultResult({ success: true });
 
-    const mockCompileQueue = new MockCompileQueue(targetContainer);
+    const mockCompileQueue = new MockCompileQueue(actualContainer);
     mockCompileQueue.setDefaultResult({
       compilationSuccess: true,
     });
@@ -2416,7 +2419,7 @@ describe("stamps attempt.containerName", () => {
     ];
     const options = {
       containerProvider: "mock",
-      containerName: targetContainer,
+      containerName: routingHint,
       attemptLimit: 1,
       temperature: 0.1,
       maxTokens: 4000,
@@ -2431,8 +2434,8 @@ describe("stamps attempt.containerName", () => {
     assertExists(attempt, "attempt exists");
     assertEquals(
       attempt.containerName,
-      targetContainer,
-      "attempt.containerName should match the container from CompileWorkResult",
+      actualContainer,
+      "attempt.containerName should match the container from CompileWorkResult, not options.containerName",
     );
   });
 });
