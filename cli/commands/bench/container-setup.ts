@@ -114,6 +114,12 @@ export async function setupContainer(
         containerName,
       ]);
     }
+    // Publish test harness during setup
+    if ("ensureTestHarness" in containerProvider) {
+      await (containerProvider as BcContainerProvider).ensureTestHarness([
+        containerName,
+      ]);
+    }
   } else {
     log.container("Setting up...");
     const setupConfig: ContainerConfig = {
@@ -218,6 +224,13 @@ export async function setupContainers(
   // Pre-create compiler folders for all containers before any work is enqueued
   if ("warmupCompilerFolders" in containerProvider) {
     await (containerProvider as BcContainerProvider).warmupCompilerFolders(
+      containerNames,
+    );
+  }
+
+  // Publish test harness during setup
+  if ("ensureTestHarness" in containerProvider) {
+    await (containerProvider as BcContainerProvider).ensureTestHarness(
       containerNames,
     );
   }
