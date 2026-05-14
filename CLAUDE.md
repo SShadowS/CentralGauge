@@ -252,6 +252,7 @@ Detailed pattern documentation lives in `.claude/rules/`:
 | Docker Sandbox    | `docker-sandbox.md`        | Container isolation, MCP HTTP transport, workspace mapping             |
 | MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                |
 | Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures      |
+| SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner    |
 
 ### Configuration Hierarchy
 
