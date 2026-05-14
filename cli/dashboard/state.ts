@@ -60,7 +60,10 @@ export class DashboardStateManager {
     this.healthMonitor = new ContainerHealthMonitor({
       windowSize: 20,
       ...(config.containerNames && config.containerNames.length > 0
-        ? { expectedContainers: config.containerNames.length }
+        ? {
+          expectedContainers: config.containerNames.length,
+          expectedContainerNames: config.containerNames,
+        }
         : {}),
     });
   }
