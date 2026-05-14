@@ -195,3 +195,37 @@ Deno.test("globalOutageMinContainers default 3 prevents 2-container global", () 
     2,
   );
 });
+
+Deno.test("expectedContainerNames seeds zero-count rows before any record()", () => {
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainerNames: ["Cronus28", "Cronus281", "Cronus282"],
+  });
+  const state = mon.getState();
+  assertEquals(state.containers.length, 3);
+  for (const c of state.containers) {
+    assertEquals(c.passCount, 0);
+    assertEquals(c.failCount, 0);
+    assertEquals(c.errorCount, 0);
+  }
+});
+
+Deno.test("getState() sorts containers: configured order first, then unseeded by name", () => {
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainerNames: ["Cronus28", "Cronus281"],
+  });
+  mon.record({
+    containerName: "CronusZZ",
+    result: "pass",
+    timestamp: 1000,
+  });
+  mon.record({
+    containerName: "CronusAA",
+    result: "pass",
+    timestamp: 1001,
+  });
+  const state = mon.getState();
+  const names = state.containers.map((c) => c.containerName);
+  assertEquals(names, ["Cronus28", "Cronus281", "CronusAA", "CronusZZ"]);
+});

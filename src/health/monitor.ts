@@ -27,6 +27,13 @@ interface MonitorOptions {
    * failures shouldn't be enough to quarantine the fleet.
    */
   globalOutageMinContainers?: number;
+  /**
+   * Configured container names. When supplied, the monitor seeds
+   * zero-count `ContainerHealth` rows for each name on construction so the
+   * dashboard health card lists all configured containers from run start.
+   * The order is also used by `getState()` for deterministic output.
+   */
+  expectedContainerNames?: string[];
 }
 
 /**
@@ -43,6 +50,7 @@ export class ContainerHealthMonitor {
   private readonly globalOutageRatio: number;
   private readonly expectedContainers: number | undefined;
   private readonly globalOutageMinContainers: number;
+  private readonly configuredOrder: ReadonlyArray<string>;
   private readonly containers = new Map<string, ContainerHealth>();
   /** Per-container × fingerprint count over last window */
   private fpHistory = new Map<string, Array<{ fp?: string; t: number }>>();
@@ -56,6 +64,16 @@ export class ContainerHealthMonitor {
     this.globalOutageRatio = opts.globalOutageRatio ?? 0.5;
     this.expectedContainers = opts.expectedContainers;
     this.globalOutageMinContainers = opts.globalOutageMinContainers ?? 3;
+    this.configuredOrder = opts.expectedContainerNames ?? [];
+    for (const name of this.configuredOrder) {
+      this.containers.set(name, {
+        containerName: name,
+        recent: [],
+        passCount: 0,
+        failCount: 0,
+        errorCount: 0,
+      });
+    }
   }
 
   record(o: ContainerOutcome): void {
@@ -200,17 +218,26 @@ export class ContainerHealthMonitor {
   }
 
   getState(): ContainerHealthState {
-    const containers = Array.from(this.containers.values()).map((c) => {
+    const configured = new Set(this.configuredOrder);
+    const seenUnconfigured = Array.from(this.containers.keys())
+      .filter((name) => !configured.has(name))
+      .sort();
+    const orderedNames = [...this.configuredOrder, ...seenUnconfigured];
+
+    const containers: ContainerHealth[] = [];
+    for (const name of orderedNames) {
+      const c = this.containers.get(name);
+      if (!c) continue;
       const copy: ContainerHealth = {
         containerName: c.containerName,
-        recent: [...c.recent], // deep copy — callers may mutate freely
+        recent: [...c.recent],
         passCount: c.passCount,
         failCount: c.failCount,
         errorCount: c.errorCount,
       };
-      if (c.alert) copy.alert = { ...c.alert }; // deep copy alert
-      return copy;
-    });
+      if (c.alert) copy.alert = { ...c.alert };
+      containers.push(copy);
+    }
     const alerts: HealthAlert[] = containers
       .map((c) => c.alert)
       .filter((a): a is HealthAlert => a !== undefined);
