@@ -5,6 +5,12 @@ import type { ExecutionAttempt, TaskExecutionContext } from "./interfaces.ts";
  * True when an attempt reached container-backed work (compile or test).
  * Used by health attribution to skip LLM-only failures so they don't
  * get misattributed to the stale routing hint on `context.containerName`.
+ *
+ * NOT a complete attribution gate on its own: an attempt may have reached
+ * container work but lost the container name (`attempt.containerName`
+ * undefined). Callers performing health attribution must additionally
+ * verify `getActualAttemptContainerName(attempt) !== undefined` before
+ * recording an outcome.
  */
 export function didContainerWork(attempt: ExecutionAttempt): boolean {
   return attempt.compilationResult !== undefined ||

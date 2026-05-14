@@ -98,3 +98,20 @@ Deno.test("legacy fallback prefers attempt, falls back to context", () => {
     "Cronus28",
   );
 });
+
+Deno.test("didContainerWork true even when attempt.containerName is undefined", () => {
+  const a = makeAttempt({
+    compilationResult: {
+      success: true,
+      errors: [],
+      warnings: [],
+      output: "",
+      duration: 0,
+    },
+    // containerName deliberately absent
+  });
+  assertEquals(didContainerWork(a), true);
+  assertEquals(getActualAttemptContainerName(a), undefined);
+  // Demonstrates the pair: container work happened but attribution target
+  // is unknown. Callers performing health attribution must check both.
+});

@@ -35,3 +35,10 @@ export { LLMCaller, type LLMCallResult } from "./llm-caller.ts";
 
 // Executor
 export { TaskExecutorV2 } from "./executor-v2.ts";
+
+// Attribution helpers
+export {
+  didContainerWork,
+  getActualAttemptContainerName,
+  getAttemptContainerNameWithLegacyFallback,
+} from "./attribution.ts";
