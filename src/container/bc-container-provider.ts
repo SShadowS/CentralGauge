@@ -1157,9 +1157,16 @@ export class BcContainerProvider implements ContainerProvider {
 
   /** Build the harness SOAP config for a container from env + credentials. */
   private soapConfigFor(containerName: string): SoapTestRunnerConfig {
+    const portRaw = Deno.env.get("CENTRALGAUGE_BC_SOAP_PORT") ?? "7047";
+    const port = Number(portRaw);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error(
+        `CENTRALGAUGE_BC_SOAP_PORT is not a valid port: "${portRaw}"`,
+      );
+    }
     return {
       host: containerName,
-      port: Number(Deno.env.get("CENTRALGAUGE_BC_SOAP_PORT") ?? "7047"),
+      port,
       company: Deno.env.get("CENTRALGAUGE_BC_COMPANY") ?? "My Company",
       tenant: Deno.env.get("CENTRALGAUGE_BC_TENANT") ?? "default",
       credentials: this.getCredentials(containerName),
