@@ -38,7 +38,7 @@
     "@types/dompurify": "^3.2.0",
     "@types/node": "^25.6.0",
     "jsdom": "^29.0.2",
-    "svelte": "^5.55.5",
+    "svelte": "^5.55.7",
     "svelte-check": "^4.4.6",
     "tsx": "^4.20.6",
     "typescript": "^6.0.3",
