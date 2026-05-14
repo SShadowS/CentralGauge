@@ -30,11 +30,17 @@ export async function projectUsesTestPage(
     try {
       source = await Deno.readTextFile(file);
     } catch (e) {
-      log.warn("could not read test file for routing; assuming non-TestPage", {
-        file,
-        error: e instanceof Error ? e.message : String(e),
-      });
-      continue;
+      // Safe default: an unreadable test file might declare a TestPage, and a
+      // TestPage test wrongly sent to the SOAP path fails in a way that looks
+      // like a real test failure. Route to the legacy client-session path.
+      log.warn(
+        "could not read test file for routing; assuming TestPage (safe default)",
+        {
+          file,
+          error: e instanceof Error ? e.message : String(e),
+        },
+      );
+      return true;
     }
     if (TEST_PAGE_DECL.test(source)) {
       log.debug("project uses TestPage; routing to client-session path", {

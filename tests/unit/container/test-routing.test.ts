@@ -50,9 +50,32 @@ Deno.test("projectUsesTestPage ignores the word inside identifiers/comments", as
   }
 });
 
-Deno.test("projectUsesTestPage tolerates a missing test file", async () => {
+Deno.test("projectUsesTestPage routes an unreadable test file to the legacy path", async () => {
+  // Safe default: unknown content is treated as potentially using TestPage.
   assertEquals(
     await projectUsesTestPage(project("/nope", ["/nope/missing.al"])),
-    false,
+    true,
   );
+});
+
+Deno.test("projectUsesTestPage scans all test files, not just the first", async () => {
+  const dir = await createTempDir("routing");
+  try {
+    const plain = `${dir}/Plain.Test.al`;
+    const withPage = `${dir}/Page.Test.al`;
+    await Deno.writeTextFile(
+      plain,
+      "codeunit 80001 X { procedure T() begin end; }",
+    );
+    await Deno.writeTextFile(
+      withPage,
+      'codeunit 80002 Y { procedure T() var P: TestPage "Customer Card"; begin end; }',
+    );
+    assertEquals(
+      await projectUsesTestPage(project(dir, [plain, withPage])),
+      true,
+    );
+  } finally {
+    await cleanupTempDir(dir);
+  }
 });
