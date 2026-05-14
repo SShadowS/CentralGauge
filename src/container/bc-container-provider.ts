@@ -123,6 +123,12 @@ export class BcContainerProvider implements ContainerProvider {
   private static readonly COMPILER_CACHE_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
 
+  // Source folder of the CG Test Harness AL app (compiled + published once per
+  // container so the SOAP test path is available).
+  private static readonly HARNESS_APP_DIR = "infra/cg-test-harness";
+  private static readonly HARNESS_APP_NAME = "CG Test Harness";
+  private static readonly HARNESS_APP_VERSION = "1.0.0.0";
+
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`
   // in `./session-slot.ts` for the full lifecycle contract. One slot per
@@ -776,6 +782,64 @@ export class BcContainerProvider implements ContainerProvider {
   async warmupCompilerFolders(containerNames: string[]): Promise<void> {
     for (const name of containerNames) {
       await this.getOrCreateCompilerFolder(name);
+    }
+  }
+
+  /**
+   * Ensure the `CG Test Harness` app is published on each container. Compiles
+   * it from `infra/cg-test-harness/` against the container's compiler folder
+   * and publishes it, unless the expected name+version is already installed.
+   * Idempotent; safe to call at every bench startup.
+   */
+  async ensureTestHarness(containerNames: string[]): Promise<void> {
+    if (!this.isWindows()) return;
+    for (const name of containerNames) {
+      try {
+        const installed = await this.executePowerShell(`
+          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
+            $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
+            $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
+          }
+          if ($a) { Write-Output "HARNESS_PRESENT" } else { Write-Output "HARNESS_ABSENT" }
+        `);
+        if (installed.output.includes("HARNESS_PRESENT")) {
+          log.info(`Test harness already published on ${name}`);
+          continue;
+        }
+
+        const compilerFolder = await this.getOrCreateCompilerFolder(name);
+        const projectDir = BcContainerProvider.HARNESS_APP_DIR;
+        const outputDir = `${projectDir}/output`;
+        await Deno.mkdir(outputDir, { recursive: true });
+
+        const escapedCompiler = compilerFolder.replace(/\\/g, "\\\\");
+        const result = await this.executePowerShell(`
+          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          $bcContainerHelperConfig.usePwshForBc24 = $false
+          Get-ChildItem "${outputDir}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
+          $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
+            -appProjectFolder "${projectDir}" -appOutputFolder "${outputDir}" -ErrorAction Stop
+          Publish-BcContainerApp -containerName "${name}" -appFile $app \`
+            -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+          Write-Output "HARNESS_PUBLISHED:$app"
+        `);
+        if (!result.output.includes("HARNESS_PUBLISHED:")) {
+          throw this.buildPwshError({
+            containerName: name,
+            operation: "setup",
+            message: "Failed to compile/publish CG Test Harness",
+            output: result.output,
+          });
+        }
+        log.info(`Test harness published on ${name}`);
+      } catch (e) {
+        // Non-fatal: runTests() falls back to the legacy path when the harness
+        // is unavailable, so a deploy failure must not abort the bench.
+        log.warn(`ensureTestHarness failed for ${name}; SOAP path disabled`, {
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
     }
   }
 
