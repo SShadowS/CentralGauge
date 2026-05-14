@@ -248,36 +248,30 @@ export class DashboardEventBridge {
     }
 
     // Record one health outcome per attempt that reached container-backed
-    // work. Synthesized infra results (first failureReason starts with
-    // "Infra error:") still skip this path -- they arrive via the error
-    // event handler which already records the failing container.
-    const firstReason = result.attempts[0]?.failureReasons?.[0] ?? "";
-    if (!firstReason.startsWith("Infra error:")) {
-      let broadcasted = false;
-      for (const attempt of result.attempts) {
-        if (!didContainerWork(attempt)) continue;
-        const containerName = getActualAttemptContainerName(attempt);
-        if (!containerName) continue;
-        const compileFailed = attempt.compilationResult !== undefined &&
-          attempt.compilationResult.success === false;
-        const testFailed = attempt.testResult !== undefined &&
-          attempt.testResult.success === false;
-        const outcome: "pass" | "fail" = (compileFailed || testFailed)
+    // work. Synthesized infra results were already filtered above by the
+    // early return; the error event handler records their failing container.
+    let broadcasted = false;
+    for (const attempt of result.attempts) {
+      if (!didContainerWork(attempt)) continue;
+      const containerName = getActualAttemptContainerName(attempt);
+      if (!containerName) continue;
+      const outcome: "pass" | "fail" =
+        (attempt.compilationResult?.success === false ||
+            attempt.testResult?.success === false)
           ? "fail"
           : "pass";
-        this.state.recordContainerOutcome({
-          containerName,
-          result: outcome,
-          timestamp: Date.now(),
-        });
-        broadcasted = true;
-      }
-      if (broadcasted) {
-        this.broadcast({
-          type: "container-health",
-          state: this.state.getHealthSnapshot(),
-        });
-      }
+      this.state.recordContainerOutcome({
+        containerName,
+        result: outcome,
+        timestamp: Date.now(),
+      });
+      broadcasted = true;
+    }
+    if (broadcasted) {
+      this.broadcast({
+        type: "container-health",
+        state: this.state.getHealthSnapshot(),
+      });
     }
 
     // Add cost point
