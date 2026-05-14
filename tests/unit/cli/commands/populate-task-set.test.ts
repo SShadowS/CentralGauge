@@ -14,7 +14,7 @@ async function writeTask(
   await Deno.writeTextFile(join(dir, fileName), yaml);
 }
 
-describe("readTasksFromDir domains extraction", () => {
+describe("readTasksFromDir", () => {
   it("extracts the domains array onto the task row", async () => {
     const tasksDir = await Deno.makeTempDir({ prefix: "cg-pts-" });
     try {
@@ -62,7 +62,35 @@ metrics:
 `,
       );
       const rows = await readTasksFromDir(tasksDir);
+      assertEquals(rows.length, 1);
       assertEquals(rows[0]!.domains, []);
+    } finally {
+      await Deno.remove(tasksDir, { recursive: true });
+    }
+  });
+
+  it("drops non-string elements from a mixed domains array", async () => {
+    const tasksDir = await Deno.makeTempDir({ prefix: "cg-pts-" });
+    try {
+      await writeTask(
+        tasksDir,
+        "easy",
+        "CG-AL-E003.yml",
+        `id: CG-AL-E003
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Mixed-type domains.
+domains: [tables, 42, null]
+expected:
+  compile: true
+metrics:
+  - compile_pass
+`,
+      );
+      const rows = await readTasksFromDir(tasksDir);
+      assertEquals(rows.length, 1);
+      assertEquals(rows[0]!.domains, ["tables"]);
     } finally {
       await Deno.remove(tasksDir, { recursive: true });
     }
