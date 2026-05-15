@@ -49,6 +49,7 @@ import {
 import {
   buildCleanupStaleCandidatesScript,
   buildCompileScript,
+  buildPrepareCandidateScript,
   buildTestScript,
 } from "./bc-script-builders.ts";
 import { runTestsViaSoap } from "./soap-test-client.ts";
@@ -1199,6 +1200,81 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Combined cleanup + publish in ONE warm-slot script invocation.
+   *
+   * Replaces the SOAP fork's previous `cleanupStaleCandidates()` +
+   * `publishApp()` two-call sequence. Smoke trace
+   * `results/smoke-trace-<stamp>/trace.json` showed each call was paying ~120 s
+   * of BCH Windows-PowerShell sub-session spin-up because BCH disposes
+   * the bridge at end-of-script. Combining halves that overhead AND
+   * routes cleanup through `Invoke-ScriptInBcContainer` (direct in-container
+   * `Uninstall-NAVApp` / `Unpublish-NAVApp`, ~4 s per diagnostic 2.D4)
+   * instead of the slow host-side `Unpublish-BcContainerApp` BCH wrapper.
+   *
+   * Filter for what counts as a stale candidate to remove:
+   *   Publisher == "CentralGauge" AND
+   *   Name -notlike "*Prereq*" AND
+   *   Name != "CG Test Harness"
+   *
+   * See `buildPrepareCandidateScript` for the emitted markers.
+   */
+  async prepareCandidateApp(
+    containerName: string,
+    appPath: string,
+  ): Promise<void> {
+    log.info(`Preparing candidate app on container: ${containerName}`);
+
+    // Copy the .app to the BCH shared folder so it's reachable from inside
+    // the container without changing the script's path scheme.
+    const appFileName = appPath.split(/[/\\]/).pop()!;
+    const uuid = crypto.randomUUID().slice(0, 8);
+    const sharedFolder =
+      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
+    await Deno.mkdir(sharedFolder, { recursive: true });
+    await Deno.copyFile(appPath, sharedAppPath);
+    const escapedHostPath = sharedAppPath.replace(/\\/g, "\\\\");
+
+    const script = buildPrepareCandidateScript(
+      containerName,
+      escapedHostPath,
+      BcContainerProvider.HARNESS_APP_NAME,
+    );
+
+    let result: { output: string; exitCode: number };
+    try {
+      result = await this.runScriptThroughSession(
+        containerName,
+        script,
+        "prepare-candidate",
+      );
+    } finally {
+      // Best-effort cleanup of the staged file regardless of outcome.
+      try {
+        await Deno.remove(sharedAppPath);
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!result.output.includes("PREPARE_PUBLISH_OK")) {
+      throw this.buildPwshError({
+        containerName,
+        operation: "publish",
+        message: "prepareCandidateApp failed",
+        output: result.output,
+      });
+    }
+    if (result.output.includes("PREPARE_CLEANUP_FOUND")) {
+      log.info(`Cleaned stale candidates in ${containerName}`, {
+        output: result.output.split("\n")
+          .filter((l) => l.startsWith("PREPARE_CLEANUP_"))
+          .join(" | "),
+      });
+    }
+  }
+
+  /**
    * Unpublish lingering CentralGauge prereq apps whose Name is not in the
    * expected set. Prevents cross-task ID collisions when a previous task's
    * prereq remains installed (e.g. M001 Prereq's Product table 69001 vs
@@ -1331,28 +1407,23 @@ export class BcContainerProvider implements ContainerProvider {
         path: "soap" as const,
       };
       try {
-        // Every candidate shares BENCHMARK_APP_ID; without this, the 2nd task
-        // on a container hits "same App ID and Version" because the prior
-        // task's app (different Name, same App ID) is still published.
-        // publishApp's own cleanup only catches same-Name conflicts.
+        // Combined cleanup + publish in ONE warm-slot script. Previously
+        // these were two separate calls each paying ~120 s of BCH
+        // Windows-PowerShell sub-session spin-up (smoke trace
+        // results/smoke-trace-<stamp>/trace.json). The new `prepareCandidateApp`:
+        //   (a) cleans prior CentralGauge non-prereq non-harness apps via
+        //       Invoke-ScriptInBcContainer { Uninstall-NAVApp + Unpublish-NAVApp }
+        //       (~4 s end-to-end per diagnostic 2.D4); and
+        //   (b) Publish-BcContainerApp -sync -syncMode ForceSync -install
+        //       in the same script. One bridge setup, not two.
         await tracer.span(
-          "cleanup",
+          "prepare-candidate",
           {
             tid: containerName,
-            cat: ["container", "cleanup"],
+            cat: ["container", "cleanup", "publish"],
             args: traceArgs,
           },
-          () => this.cleanupStaleCandidates(containerName),
-        );
-        // The harness only RUNS tests; the app must be published first.
-        await tracer.span(
-          "publish-app",
-          {
-            tid: containerName,
-            cat: ["container", "publish"],
-            args: traceArgs,
-          },
-          () => this.publishApp(containerName, actualAppFilePath!),
+          () => this.prepareCandidateApp(containerName, actualAppFilePath!),
         );
         const soapResult = await tracer.span(
           "test.soap.total",

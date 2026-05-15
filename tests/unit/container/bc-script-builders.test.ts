@@ -1,6 +1,7 @@
 import { assert, assertStringIncludes } from "@std/assert";
 import {
   buildCleanupStaleCandidatesScript,
+  buildPrepareCandidateScript,
   buildPublishScript,
   buildTestScript,
 } from "../../../src/container/bc-script-builders.ts";
@@ -99,5 +100,103 @@ Deno.test("buildTestScript composes publish (with harness exclusion) and run-tes
   assert(
     /Run-TestsInBcContainer\s/.test(script),
     "buildTestScript should invoke Run-TestsInBcContainer",
+  );
+});
+
+// buildPrepareCandidateScript: combined cleanup + publish, designed to pay
+// the BCH Windows-PowerShell bridge cost ONCE per task instead of twice.
+
+Deno.test("buildPrepareCandidateScript routes cleanup through Invoke-ScriptInBcContainer", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+  );
+  // Cleanup MUST go through in-container PSSession (~4 s) not host-side
+  // Unpublish-BcContainerApp (~120 s with workaround on).
+  assertStringIncludes(
+    script,
+    `Invoke-ScriptInBcContainer -containerName "Cronus28"`,
+  );
+  assertStringIncludes(script, `Get-NAVAppInfo -ServerInstance BC`);
+  assert(
+    /Uninstall-NAVApp/.test(script),
+    "must call Uninstall-NAVApp inside container",
+  );
+  assert(
+    /Unpublish-NAVApp/.test(script),
+    "must call Unpublish-NAVApp inside container",
+  );
+});
+
+Deno.test("buildPrepareCandidateScript cleanup filter matches the legacy buildPublishScript exclusions", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+  );
+  // Same Publisher + Name filter the legacy cleanup uses, just inside the
+  // container instead of on the host.
+  assertStringIncludes(script, `$_.Publisher -eq "CentralGauge"`);
+  assertStringIncludes(script, `$_.Name -notlike "*Prereq*"`);
+  assertStringIncludes(script, `$_.Name -ne $harnessName`);
+});
+
+Deno.test("buildPrepareCandidateScript publishes via BCH wrapper with sync+install", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+  );
+  // Publish step still uses the host-side BCH wrapper because it needs
+  // -sync -syncMode ForceSync -install in one call.
+  assert(
+    /Publish-BcContainerApp[^\n]*-sync[^\n]*-syncMode ForceSync[^\n]*-install/
+      .test(script),
+    "must invoke Publish-BcContainerApp with -sync -syncMode ForceSync -install",
+  );
+  assertStringIncludes(script, "PREPARE_PUBLISH_START:");
+  assertStringIncludes(script, "PREPARE_PUBLISH_END:");
+  assertStringIncludes(script, "PREPARE_PUBLISH_OK");
+});
+
+Deno.test("buildPrepareCandidateScript honors the supplied harness name", () => {
+  // The harness exclusion is interpolated, not hard-coded. A typo in
+  // HARNESS_APP_NAME on the TS side would otherwise sweep the harness.
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Alt Harness",
+  );
+  assertStringIncludes(script, `-argumentList "CG Alt Harness"`);
+});
+
+Deno.test("buildPrepareCandidateScript emits marker keys host-side parser expects", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+  );
+  // The provider's prepareCandidateApp method greps these markers.
+  assertStringIncludes(script, "PREPARE_CLEANUP_NONE");
+  assertStringIncludes(script, "PREPARE_CLEANUP_FOUND:");
+  assertStringIncludes(script, "PREPARE_CLEANUP_REMOVE:");
+  assertStringIncludes(script, "PREPARE_PUBLISH_OK");
+  assertStringIncludes(script, "PREPARE_PUBLISH_FAILED:");
+});
+
+Deno.test("buildPrepareCandidateScript exits non-zero on publish failure", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+  );
+  // Without this, the host-side check for PREPARE_PUBLISH_OK would still
+  // bail with the right error, but the slot exit code would be 0 — leading
+  // to confusing trace data. Make the script's exit code reflect the
+  // failure.
+  assert(
+    /PREPARE_PUBLISH_FAILED[^\n]*[\s\S]*?exit 1/.test(script),
+    "publish failure path must emit PREPARE_PUBLISH_FAILED then exit 1",
   );
 });

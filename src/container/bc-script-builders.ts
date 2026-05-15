@@ -100,6 +100,96 @@ export function buildCleanupStaleCandidatesScript(
 }
 
 /**
+ * Build the combined "prepare candidate app" script: targeted cleanup of
+ * prior CentralGauge candidate(s) via direct in-container NAV cmdlets,
+ * followed by a Publish-BcContainerApp of the new candidate. ONE script
+ * invocation through the warm slot.
+ *
+ * Why this exists. The trace smoke (results/smoke-trace-<stamp>/trace.json)
+ * showed `cleanupStaleCandidates` and `publishApp` each costing ~120 s
+ * even on the warm per-container session slot, because BCH's
+ * Windows-PowerShell sub-session (under `usePwshForBc24 = $false`) is
+ * disposed at end-of-script. Combining the two into one script pays the
+ * bridge setup ONCE instead of twice.
+ *
+ * Cleanup uses `Invoke-ScriptInBcContainer { Get-NAVAppInfo | Uninstall-NAVApp; Unpublish-NAVApp }`
+ * inside the container. Diagnostic 2.D4 showed this path runs in ~4 s on
+ * a corrupted post-Run-TestsInBcContainer container — well-behaved, no
+ * BCH wrapper retry needed.
+ *
+ * Filter mirrors `buildCleanupStaleCandidatesScript`:
+ *   Publisher == "CentralGauge" AND Name -notlike "*Prereq*" AND
+ *   Name != harnessAppName
+ *
+ * Output markers (host-side parser keys off these):
+ *   PREPARE_CLEANUP_FOUND:<n>
+ *   PREPARE_CLEANUP_REMOVE:<name> v<version>
+ *   PREPARE_CLEANUP_WARN:<name> - <reason>
+ *   PREPARE_PUBLISH_START:<unix-ms>
+ *   PREPARE_PUBLISH_END:<unix-ms>
+ *   PREPARE_PUBLISH_OK
+ *   PREPARE_PUBLISH_FAILED:<msg>
+ */
+export function buildPrepareCandidateScript(
+  containerName: string,
+  escapedAppFile: string,
+  harnessAppName: string,
+): string {
+  return `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      $bcContainerHelperConfig.usePwshForBc24 = $false
+
+      # --- A-prime cleanup: direct in-container NAV cmdlets ---
+      # Bypasses BCH's host-side wrapper entirely. Reuses the container's
+      # already-running Windows PowerShell + Microsoft.Dynamics.Nav.Management
+      # PSSession (cached by Invoke-ScriptInBcContainer). Diagnostic 2.D4
+      # measured this at ~4 s end-to-end.
+      try {
+        $cleanupReport = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          param($harnessName)
+          $stale = @(Get-NAVAppInfo -ServerInstance BC | Where-Object {
+            $_.Publisher -eq "CentralGauge" -and
+            $_.Name -notlike "*Prereq*" -and
+            $_.Name -ne $harnessName
+          })
+          if ($stale.Count -eq 0) {
+            Write-Output "PREPARE_CLEANUP_NONE"
+            return
+          }
+          Write-Output "PREPARE_CLEANUP_FOUND:$($stale.Count)"
+          foreach ($app in $stale) {
+            try {
+              Write-Output "PREPARE_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop } catch {
+                Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
+              }
+            } catch {
+              Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
+            }
+          }
+        } -argumentList "${harnessAppName}"
+        $cleanupReport | ForEach-Object { Write-Output $_ }
+      } catch {
+        Write-Output "PREPARE_CLEANUP_WARN:invoke-script - $($_.Exception.Message)"
+      }
+
+      # --- Publish new candidate via the host-side BCH wrapper ---
+      # Sync + install in one call so the next SOAP test can run immediately.
+      try {
+        Write-Output "PREPARE_PUBLISH_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+        Write-Output "PREPARE_PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        Write-Output "PREPARE_PUBLISH_OK"
+      } catch {
+        Write-Output "PREPARE_PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+        Write-Output "PREPARE_PUBLISH_FAILED:$($_.Exception.Message)"
+        exit 1
+      }
+    `;
+}
+
+/**
  * Build the publish app script block
  */
 export function buildPublishScript(
