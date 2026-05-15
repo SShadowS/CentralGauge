@@ -13,7 +13,7 @@ export interface PwshSessionOptions {
   defaultTimeoutMs?: number;
   /** Bootstrap timeout in ms (init phase). Default 60_000. */
   bootstrapTimeoutMs?: number;
-  /** PowerShell init script run once after spawn. Defaults to bccontainerhelper import + usePwshForBc24=false. */
+  /** PowerShell init script run once after spawn. Defaults to bccontainerhelper@6.1.14 import + usePwshForBc24=false. */
   bootstrapScript?: string;
   /** Test seam: factory for spawning the pwsh child process. */
   spawnFactory?: () => SpawnedProcess;
@@ -49,7 +49,7 @@ const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 60_000;
 const DEFAULT_BOOTSTRAP_SCRIPT = `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
-Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
 $bcContainerHelperConfig.usePwshForBc24 = $false
 `.trim();
 

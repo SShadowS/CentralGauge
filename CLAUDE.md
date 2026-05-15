@@ -60,13 +60,35 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## bccontainerhelper config quirks
 
-- Pinned to **6.1.11** in `bc-container-provider.ts` + `bc-script-builders.ts`
-  (6.1.12+ disables PSSession for BC v28+ by default — breaks publish flow).
-- `$bcContainerHelperConfig.usePwshForBc24 = $false` is REQUIRED in the bench's
-  PowerShell scripts. With `$true`, the cached PSSession loses
-  `Get-NavServerInstance` after any `Unpublish-BcContainerApp`, and the next
-  `Publish-BcContainerApp` crashes. Don't flip without reproducing the
-  multi-unpublish test sequence.
+- Pinned to **6.1.14** in `bc-container-provider.ts` + `bc-script-builders.ts` +
+  `pwsh-session.ts` (bumped from 6.1.11 on 2026-05-15; the 6.1.12+ change that
+  disables the Windows-PowerShell PSSession by default does NOT break
+  Publish/Unpublish in 6.1.14 when the workaround below stays on).
+- `$bcContainerHelperConfig.usePwshForBc24 = $false` is STILL REQUIRED.
+  6.1.14 fixes the simple multi-cycle publish-then-unpublish flow
+  (`scripts/bcch-pwsh-repro.ps1` Phase A passes 3 cycles) but does NOT fix
+  the production flow where `Run-TestsInBcContainer` precedes
+  `Unpublish-BcContainerApp` on the same container — see
+  `scripts/microbench-soap.ts` log. Without the workaround, the next
+  `Unpublish-BcContainerApp` from any pwsh 7 process inherits the corrupted
+  BC NST PSSession and throws `Get-NAVAppInfo is not recognized`. Cost of
+  the workaround: each fresh-pwsh `Get-BcContainerAppInfo` call forks a
+  Windows PowerShell sub-session (~120 s vs ~5 s without). Production
+  amortizes this through the long-lived per-container session slot
+  (`runScriptThroughSession`), where BCH caches the sub-session once.
+- Before flipping the workaround off, re-run BOTH:
+  - `scripts/bcch-pwsh-repro.ps1` against the new bcch version (must pass), and
+  - `scripts/microbench-soap.ts` end-to-end (the prenuke between L2 and L3
+    must succeed without `Get-NAVAppInfo` error).
+- **SOAP test harness path is OFF by default** (kill-switch state, 2026-05-15).
+  Opt in with `CENTRALGAUGE_SOAP_TEST_RUNNER=1`. The SOAP test step itself is
+  ~38× faster than legacy `Run-TestsInBcContainer`, but the surrounding
+  `cleanupStaleCandidates` + `publishApp` use fresh-pwsh `executePowerShell`
+  which pays ~120 s per BCH cmdlet (Windows-PowerShell sub-session fork). Net
+  per-task overhead currently dwarfs the test-step gain. Phase 2/3 of
+  `BenchBattleplan.md` will route cleanup through the warm per-container slot
+  and flip the default back on. Until then, leave SOAP off so benches keep
+  the ~7-8 h legacy baseline.
 
 ## Project Structure
 
@@ -252,7 +274,7 @@ Detailed pattern documentation lives in `.claude/rules/`:
 | Docker Sandbox    | `docker-sandbox.md`        | Container isolation, MCP HTTP transport, workspace mapping             |
 | MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                |
 | Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures      |
-| SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner    |
+| SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner   |
 
 ### Configuration Hierarchy
 

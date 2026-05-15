@@ -14,10 +14,10 @@ export function buildCompileScript(
   outputDir: string,
 ): string {
   return `
-      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@6.1.11 sentinel=2026-04-25-B"
+      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@6.1.14 sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
 
       try {
         $result = Compile-AppWithBcCompilerFolder \`
@@ -62,7 +62,7 @@ export function buildCleanupStaleCandidatesScript(
   harnessAppName: string,
 ): string {
   return `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       $bcContainerHelperConfig.usePwshForBc24 = $false
       $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         $_.Publisher -eq "CentralGauge" -and
@@ -78,7 +78,7 @@ export function buildCleanupStaleCandidatesScript(
         try {
           Write-Output "CANDIDATE_CLEANUP_REMOVE: $($app.Name) v$($app.Version)"
           Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
-          # bccontainerhelper@6.1.11 sometimes reports Unpublish success while BC
+          # bccontainerhelper@6.1.14 sometimes reports Unpublish success while BC
           # NST still has the app. Verify and force NST-level cleanup if so —
           # otherwise the next Publish hits "same App ID and Version".
           $stillThere = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
@@ -229,14 +229,15 @@ export function buildTestScript(
   // Prereqs are already published by publishApp() - just publish main app and run tests
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
-      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.11 usePwshForBc24=False sentinel=2026-04-25-B"
+      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.14 usePwshForBc24=False sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
-      # disappears and Publish-BcContainerApp fails. Verified by direct repro.
+      # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
+      # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
       $bcContainerHelperConfig.usePwshForBc24 = $false
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force

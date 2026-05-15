@@ -275,7 +275,7 @@ export class BcContainerProvider implements ContainerProvider {
    * Pre-nuke any leftover CentralGauge-published apps in the given containers
    * before the bench starts. A previous bench run that was killed mid-test
    * may have left prereq or main apps in BC NST's catalog; without removal
-   * the next bench's first publishApp hits the bccontainerhelper@6.1.11
+   * the next bench's first publishApp hits the bccontainerhelper@6.1.14
    * Unpublish-success-but-not-really race on every prereq. Single
    * spawn-per-call per container, idempotent.
    *
@@ -288,7 +288,7 @@ export class BcContainerProvider implements ContainerProvider {
     await Promise.all(
       containerNames.map(async (name) => {
         const script = `
-          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
           $bcContainerHelperConfig.usePwshForBc24 = $false
           $existing = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Publisher -eq "CentralGauge" -and $_.Name -ne "${BcContainerProvider.HARNESS_APP_NAME}" })
           if ($existing.Count -eq 0) {
@@ -513,8 +513,8 @@ export class BcContainerProvider implements ContainerProvider {
     if (isModuleMissing(checkModule.output)) {
       log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
-        Install-Module bccontainerhelper -RequiredVersion 6.1.11 -Force -AllowClobber -Scope CurrentUser
-        Import-Module bccontainerhelper -RequiredVersion 6.1.11
+        Install-Module bccontainerhelper -RequiredVersion 6.1.14 -Force -AllowClobber -Scope CurrentUser
+        Import-Module bccontainerhelper -RequiredVersion 6.1.14
         Write-Output "MODULE_INSTALLED"
       `);
 
@@ -531,7 +531,7 @@ export class BcContainerProvider implements ContainerProvider {
 
     // Remove existing container if it exists
     await this.executePowerShell(`
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       if (Get-BcContainer -containerName "${config.name}" -ErrorAction SilentlyContinue) {
         Write-Output "Removing existing container: ${config.name}"
         Remove-BcContainer -containerName "${config.name}"
@@ -540,7 +540,7 @@ export class BcContainerProvider implements ContainerProvider {
 
     // Create new container
     const setupScript = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
 
       Write-Output "Creating Business Central container: ${config.name}"
       New-BcContainer \`
@@ -576,7 +576,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Starting container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       Start-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} started"
     `;
@@ -600,7 +600,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Stopping container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       Stop-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} stopped"
     `;
@@ -624,7 +624,7 @@ export class BcContainerProvider implements ContainerProvider {
     log.info(`Removing container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       Remove-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} removed"
     `;
@@ -646,7 +646,7 @@ export class BcContainerProvider implements ContainerProvider {
 
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
 
       # Check if container exists using Get-BcContainers (plural)
       $containers = Get-BcContainers
@@ -759,7 +759,7 @@ export class BcContainerProvider implements ContainerProvider {
       : "";
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
       $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit${cacheParams}
@@ -806,7 +806,7 @@ export class BcContainerProvider implements ContainerProvider {
     for (const name of containerNames) {
       try {
         const installed = await this.executePowerShell(`
-          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
           $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
             $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
             $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
@@ -836,7 +836,7 @@ export class BcContainerProvider implements ContainerProvider {
         const escapedProject = projectDir.replace(/\\/g, "\\\\");
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
-          Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
           $bcContainerHelperConfig.usePwshForBc24 = $false
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
@@ -1011,20 +1011,21 @@ export class BcContainerProvider implements ContainerProvider {
     const appVersion = fileNameParts[fileNameParts.length - 1] || "";
 
     const script = `
-      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.11 usePwshForBc24=False sentinel=2026-05-03-A"
+      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.14 usePwshForBc24=False sentinel=2026-05-03-A"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
-      # disappears and Publish-BcContainerApp fails. Verified by direct repro.
+      # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
+      # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
       $bcContainerHelperConfig.usePwshForBc24 = $false
 
       # FAST PATH: prereqs and other apps with stable IDs (e.g. main app's
       # fixed BENCHMARK_APP_ID) are bytewise stable per (Name, Publisher,
       # Version). If BC's catalog already has an exact match, republish is a
-      # no-op AND avoids hitting bccontainerhelper@6.1.11's
+      # no-op AND avoids hitting bccontainerhelper@6.1.14's
       # Unpublish-then-Publish race where Unpublish reports success but BC's
       # NST keeps the app registered, breaking the subsequent Publish with
       # "same App ID and Version as a previously published Extension".
@@ -1051,7 +1052,7 @@ export class BcContainerProvider implements ContainerProvider {
           Write-Host "Unpublishing existing app: $($oldApp.Name) v$($oldApp.Version)"
           Unpublish-BcContainerApp -containerName "${containerName}" -appName $oldApp.Name -publisher $oldApp.Publisher -version $oldApp.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
 
-          # DEFENSIVE PATH: bccontainerhelper@6.1.11's Unpublish reports success
+          # DEFENSIVE PATH: bccontainerhelper@6.1.14's Unpublish reports success
           # even when BC NST's app catalog still lists the app. Verify and force
           # an NST-level uninstall+unpublish if so. Without this, the subsequent
           # Publish fails with "same App ID and Version".
@@ -1172,7 +1173,7 @@ export class BcContainerProvider implements ContainerProvider {
       ")";
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       $bcContainerHelperConfig.usePwshForBc24 = $false
 
       $expectedNames = ${expectedNamesLit}
@@ -1196,12 +1197,21 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Whether the SOAP harness path is enabled. Disabled by setting
-   * `CENTRALGAUGE_SOAP_TEST_RUNNER=0` (escape hatch — falls back to the
-   * legacy client-session path for every test).
+   * Whether the SOAP harness path is enabled. **Off by default** — opt in
+   * by setting `CENTRALGAUGE_SOAP_TEST_RUNNER=1`.
+   *
+   * Background: the SOAP test path itself is ~38× faster than the legacy
+   * `Run-TestsInBcContainer` call (Step 1 microbench: 14.7s → 0.11s),
+   * but the surrounding `cleanupStaleCandidates` + `publishApp` use
+   * `executePowerShell` (fresh pwsh per call) which forks a fresh
+   * Windows-PowerShell sub-session per BCH cmdlet (~120 s spin-up). Net
+   * per-task overhead on the SOAP fork is currently ~120 s, dwarfing the
+   * ~14 s test saving. Until Phase 2/3 of `BenchBattleplan.md` route
+   * cleanup through the warm per-container slot, the SOAP path is
+   * disabled by default so benches retain the ~7-8 h legacy baseline.
    */
   private soapTestRunnerEnabled(): boolean {
-    return Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER") !== "0";
+    return Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER") === "1";
   }
 
   /** Build the harness SOAP config for a container from env + credentials. */
@@ -1496,7 +1506,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       Copy-ToNavContainer -containerName "${containerName}" -localPath "${localPath}" -containerPath "${containerPath}"
       Write-Output "Copied ${localPath} to ${containerName}:${containerPath}"
     `;
@@ -1520,7 +1530,7 @@ export class BcContainerProvider implements ContainerProvider {
     localPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       Copy-FromNavContainer -containerName "${containerName}" -containerPath "${containerPath}" -localPath "${localPath}"
       Write-Output "Copied ${containerName}:${containerPath} to ${localPath}"
     `;
@@ -1543,7 +1553,7 @@ export class BcContainerProvider implements ContainerProvider {
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.11
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14
       $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock { ${command} }
       Write-Output $result
     `;
@@ -1554,7 +1564,7 @@ export class BcContainerProvider implements ContainerProvider {
   async isHealthy(containerName: string): Promise<boolean> {
     try {
       const script = `
-        Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+        Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;
