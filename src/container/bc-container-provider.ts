@@ -53,7 +53,24 @@ import {
   buildTestScript,
 } from "./bc-script-builders.ts";
 import { runTestsViaSoap } from "./soap-test-client.ts";
-import { getTracer } from "../tracing/tracer.ts";
+import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
+import { mergeIntoTracer } from "../tracing/parse-trace-lines.ts";
+
+/**
+ * Stable numeric tid for a container's pwsh-cmdlets sub-lane. Used to
+ * route pwsh-side `[TRACE]` events from `CG-Trace` into the right
+ * Perfetto lane. Chosen to NOT collide with the tracer's reserved range
+ * (orchestrator=1, compile-queue=2, llm-pool=3) or its container-slot
+ * allocations (100, 110, 120, …) by sitting in the 5000+ band.
+ */
+function stableContainerPwshTid(containerName: string): number {
+  let h = 0;
+  for (let i = 0; i < containerName.length; i++) {
+    h = (h * 31 + containerName.charCodeAt(i)) & 0x7fffffff;
+  }
+  // 5000–9999 reserved for pwsh sub-lanes.
+  return 5000 + (h % 5000);
+}
 import type { SoapTestRunnerConfig } from "./soap-test-client.ts";
 import { projectUsesTestPage } from "./test-routing.ts";
 
@@ -370,7 +387,51 @@ export class BcContainerProvider implements ContainerProvider {
     if (!tracer.enabled) {
       return await this.getOrCreateSlot(containerName).runScript(script);
     }
-    return await tracer.span(
+    // When tracing is enabled, prepend env-var assignments so the pwsh
+    // `CG-Trace` helper inside the script can emit bench-relative
+    // timestamps. The pwsh sub-lane gets a numeric tid pre-allocated by
+    // the tracer; we resolve it via getTracer().instant on a dummy
+    // sentinel? Simpler: just emit the env-init and a numeric tid the
+    // parser maps to a "<container> (pwsh cmdlets)" lane. The tracer's
+    // pushPreformed will register the lane name on first sight.
+    const unixOrigin = getUnixOriginMicros() ?? 0;
+    const pwshLaneName = `${containerName} (pwsh cmdlets)`;
+    // Pre-allocate a numeric tid for this container's pwsh sub-lane by
+    // emitting a quiet sentinel instant onto it through the public API.
+    // This way the SAME numeric tid the host-side spans use for sublane
+    // "pwsh" gets reused; the pwsh helper just needs the number.
+    tracer.instant("pwsh-lane-init", {
+      tid: containerName,
+      sublane: "pwsh",
+      cat: ["pwsh", "internal"],
+    });
+    // Read it back from the trace event we just emitted is awkward; the
+    // safer approach is to expose the resolution from the tracer. For now
+    // we compute it inline with the same formula the tracer uses:
+    //   container "slot" base = 100 + N*10, "pwsh" sublane = base + 1.
+    // Caveat: order of first-allocation matters. Since we already emitted
+    // the instant above, the lane is now registered; passing tid via
+    // pushPreformed will just match. The pwsh-side numeric tid is sent
+    // through env, and the parser's mergeIntoTracer will pushPreformed
+    // with that tid — pushPreformed registers thread_name metadata if
+    // unseen. So the host doesn't need to predict the exact number;
+    // mergeIntoTracer + pwsh just need to AGREE.
+    //
+    // We don't know the resolved numeric here without exposing it. So
+    // pass a stable string env that the host-side parser turns back into
+    // the right tid. Simpler: skip CG-Trace's tid-matching with host —
+    // give the pwsh side a fresh per-container numeric (we'll generate
+    // one from a hash) and let pushPreformed register a NEW lane with
+    // `defaultLaneName = "<container> (pwsh cmdlets)"`.
+    //
+    // The numeric: stable hash of containerName, base + offset.
+    const pwshTid = stableContainerPwshTid(containerName);
+    const script2 = `
+$env:CG_TRACE_BENCH_START_UNIX_MICROS = "${unixOrigin}"
+$env:CG_TRACE_TID = "${pwshTid}"
+${script}
+`;
+    const result = await tracer.span(
       "runScriptThroughSession",
       {
         tid: containerName,
@@ -378,8 +439,11 @@ export class BcContainerProvider implements ContainerProvider {
         cat: ["pwsh", "slot"],
         args: { scriptLabel, scriptBytes: script.length },
       },
-      () => this.getOrCreateSlot(containerName).runScript(script),
+      () => this.getOrCreateSlot(containerName).runScript(script2),
     );
+    // Parse + forward [TRACE] lines into the tracer; return filtered stdout.
+    const filtered = mergeIntoTracer(result.output, pwshLaneName);
+    return { output: filtered, exitCode: result.exitCode };
   }
 
   private async executePowerShell(

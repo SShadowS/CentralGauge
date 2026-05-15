@@ -82,6 +82,15 @@ export interface TracerAPI {
   beginAsync(name: string, opts: SpanOptions): SpanHandle;
   /** Flush and close (writes final trace file). Idempotent. */
   close(): Promise<void>;
+  /**
+   * Push a pre-formed event from a non-host emitter (e.g. the pwsh-side
+   * `CG-Trace` helper, parsed via `parseTraceLines`). The pwsh helper has
+   * already computed bench-relative `ts` / `dur` (using the wall-clock
+   * origin TS exposed via `CG_TRACE_BENCH_START_UNIX_MICROS`), so we
+   * forward as-is. Lanes get a default `thread_name` registered on first
+   * sight if the caller didn't already declare them.
+   */
+  pushPreformed(ev: TraceEvent, defaultLaneName?: string): void;
 }
 
 /**
@@ -104,6 +113,7 @@ const DISABLED_TRACER: TracerAPI = {
   close() {
     return Promise.resolve();
   },
+  pushPreformed() {},
 };
 
 /** Real implementation, allocated only when tracing is enabled. */
@@ -447,6 +457,42 @@ class ActiveTracer implements TracerAPI {
         }. Disabling tracing for remainder of run.`,
       );
     }
+  }
+
+  /**
+   * Accept a pre-formed event from the pwsh `[TRACE]` parser. The event
+   * already has bench-relative `ts` (and `dur` for `X` phases) computed
+   * via `CG_TRACE_BENCH_START_UNIX_MICROS`, so we forward as-is. Args are
+   * still sanitized through `sanitizeArgs` to enforce redaction + length
+   * caps. If the tid hasn't been seen before, register a default
+   * `thread_name` so Perfetto labels the lane.
+   */
+  pushPreformed(ev: TraceEvent, defaultLaneName?: string): void {
+    // Register lane metadata if this tid is new.
+    const seenAsLane = Array.from(this.laneTids.values()).includes(ev.tid);
+    if (!seenAsLane) {
+      const label = defaultLaneName ?? `tid-${ev.tid}`;
+      // We can't easily reverse-map a numeric tid back to a lane name, so
+      // just stash a synthetic key so we don't re-emit metadata.
+      this.laneTids.set(`numeric:${ev.tid}`, ev.tid);
+      this.emitMetadata("thread_name", ev.pid ?? 0, ev.tid, { name: label });
+    }
+    const sanitized = this.sanitizeArgs(ev.args);
+    const cleaned: TraceEvent = {
+      name: ev.name,
+      ph: ev.ph,
+      pid: ev.pid ?? 0,
+      tid: ev.tid,
+      ...(ev.cat !== undefined ? { cat: ev.cat } : {}),
+      ...(ev.ts !== undefined ? { ts: ev.ts } : {}),
+      ...(ev.dur !== undefined ? { dur: ev.dur } : {}),
+      ...(ev.id !== undefined ? { id: ev.id } : {}),
+      ...(ev.s !== undefined ? { s: ev.s } : {}),
+      ...(sanitized && Object.keys(sanitized).length > 0
+        ? { args: sanitized }
+        : {}),
+    };
+    this.push(cleaned);
   }
 
   async close(): Promise<void> {

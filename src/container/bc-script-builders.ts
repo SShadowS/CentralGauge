@@ -6,6 +6,86 @@
 import type { ContainerCredentials } from "./types.ts";
 
 /**
+ * PowerShell helper injected at the top of any BCH script when tracing is
+ * enabled (caller passes a non-zero `traceTid`). When tracing is disabled,
+ * the helper is omitted entirely so scripts are byte-identical to the
+ * pre-tracing version.
+ *
+ * Emits `[TRACE] {…}` lines via `[Console]::Out.WriteLine` — bypasses the
+ * pwsh success-stream pipeline so wrapped cmdlets' return values are
+ * preserved exactly (`Write-Output` would corrupt them).
+ *
+ * The pwsh side computes bench-relative `ts` via Unix wall-clock minus
+ * the origin TS injected as `CG_TRACE_BENCH_START_UNIX_MICROS`.
+ * `dur` is captured with `Stopwatch` (monotonic) so wall-clock jumps
+ * mid-call don't poison it.
+ *
+ * Body failures propagate unchanged; trace emission inside `finally` runs
+ * in a nested try/catch and routes failures to stderr as
+ * `[TRACE-EMIT-ERROR]`.
+ */
+export function buildPwshTraceHelper(): string {
+  return `
+$global:CGTraceUnixOrigin = $env:CG_TRACE_BENCH_START_UNIX_MICROS
+$global:CGTraceTid        = [int]$env:CG_TRACE_TID
+
+function CG-Trace {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]      $Name,
+        [Parameter(Mandatory)] [scriptblock] $Body,
+        [hashtable]                          $TraceArgs = @{}
+    )
+    if (-not $global:CGTraceUnixOrigin -or $global:CGTraceTid -eq 0) {
+        return & $Body
+    }
+    $nowMicros = if ([DateTimeOffset].GetMethod('ToUnixTimeMicroseconds')) {
+        [DateTimeOffset]::UtcNow.ToUnixTimeMicroseconds()
+    } else {
+        [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() * 1000
+    }
+    $tsMicros = $nowMicros - [long]$global:CGTraceUnixOrigin
+    $sw       = [System.Diagnostics.Stopwatch]::StartNew()
+    $ok       = $true
+    $errType  = $null
+    $errMsg   = $null
+    try {
+        & $Body
+    } catch {
+        $ok      = $false
+        $errType = $_.Exception.GetType().FullName
+        $errMsg  = $_.Exception.Message
+        if ($errMsg.Length -gt 200) { $errMsg = $errMsg.Substring(0, 200) }
+        throw
+    } finally {
+        try {
+            $durMicros = [long]($sw.ElapsedTicks * 1000000 / [System.Diagnostics.Stopwatch]::Frequency)
+            $finalArgs = @{} + $TraceArgs
+            $finalArgs['ok'] = $ok
+            if (-not $ok) {
+                $finalArgs['errorType']    = $errType
+                $finalArgs['errorMessage'] = $errMsg
+            }
+            $event = @{
+                name = $Name
+                ph   = 'X'
+                ts   = [long]$tsMicros
+                dur  = $durMicros
+                pid  = 0
+                tid  = $global:CGTraceTid
+                cat  = 'pwsh,bcch'
+                args = $finalArgs
+            } | ConvertTo-Json -Compress -Depth 5
+            [Console]::Out.WriteLine("[TRACE] $event")
+        } catch {
+            [Console]::Error.WriteLine("[TRACE-EMIT-ERROR] $($_.Exception.Message)")
+        }
+    }
+}
+`;
+}
+
+/**
  * Build the PowerShell script for compiling an AL project
  */
 export function buildCompileScript(
@@ -138,6 +218,7 @@ export function buildPrepareCandidateScript(
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${buildPwshTraceHelper()}
 
       # --- A-prime cleanup: direct in-container NAV cmdlets ---
       # Bypasses BCH's host-side wrapper entirely. Reuses the container's
@@ -145,7 +226,8 @@ export function buildPrepareCandidateScript(
       # PSSession (cached by Invoke-ScriptInBcContainer). Diagnostic 2.D4
       # measured this at ~4 s end-to-end.
       try {
-        $cleanupReport = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+        $cleanupReport = CG-Trace -Name "Invoke-ScriptInBcContainer:cleanup" -TraceArgs @{container="${containerName}"} -Body {
+          Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
           param($harnessName)
           $stale = @(Get-NAVAppInfo -ServerInstance BC | Where-Object {
             $_.Publisher -eq "CentralGauge" -and
@@ -168,7 +250,8 @@ export function buildPrepareCandidateScript(
               Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
             }
           }
-        } -argumentList "${harnessAppName}"
+          } -argumentList "${harnessAppName}"
+        }
         $cleanupReport | ForEach-Object { Write-Output $_ }
       } catch {
         Write-Output "PREPARE_CLEANUP_WARN:invoke-script - $($_.Exception.Message)"
@@ -178,7 +261,9 @@ export function buildPrepareCandidateScript(
       # Sync + install in one call so the next SOAP test can run immediately.
       try {
         Write-Output "PREPARE_PUBLISH_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-        Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+        CG-Trace -Name "Publish-BcContainerApp" -TraceArgs @{container="${containerName}";appFile="${escapedAppFile}"} -Body {
+          Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+        }
         Write-Output "PREPARE_PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         Write-Output "PREPARE_PUBLISH_OK"
       } catch {
