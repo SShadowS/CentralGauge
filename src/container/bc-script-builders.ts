@@ -62,6 +62,7 @@ export function buildPublishScript(
       $conflictApps = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         ($publishersToClean -contains $_.Publisher -or $_.Name -like "*Task*") -and
         $_.Name -notlike "*Prereq*" -and
+        $_.Name -ne "CG Test Harness" -and
         $_.Publisher -ne "Microsoft"
       })
       foreach ($app in $conflictApps) {

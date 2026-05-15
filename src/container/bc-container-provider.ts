@@ -286,7 +286,7 @@ export class BcContainerProvider implements ContainerProvider {
         const script = `
           Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
           $bcContainerHelperConfig.usePwshForBc24 = $false
-          $existing = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Publisher -eq "CentralGauge" })
+          $existing = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Publisher -eq "CentralGauge" -and $_.Name -ne "${BcContainerProvider.HARNESS_APP_NAME}" })
           if ($existing.Count -eq 0) {
             Write-Output "PRENUKE_CLEAN: ${name}"
             return
