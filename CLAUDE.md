@@ -80,15 +80,32 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   - `scripts/bcch-pwsh-repro.ps1` against the new bcch version (must pass), and
   - `scripts/microbench-soap.ts` end-to-end (the prenuke between L2 and L3
     must succeed without `Get-NAVAppInfo` error).
-- **SOAP test harness path is OFF by default** (kill-switch state, 2026-05-15).
-  Opt in with `CENTRALGAUGE_SOAP_TEST_RUNNER=1`. The SOAP test step itself is
-  ~38× faster than legacy `Run-TestsInBcContainer`, but the surrounding
-  `cleanupStaleCandidates` + `publishApp` use fresh-pwsh `executePowerShell`
-  which pays ~120 s per BCH cmdlet (Windows-PowerShell sub-session fork). Net
-  per-task overhead currently dwarfs the test-step gain. Phase 2/3 of
-  `BenchBattleplan.md` will route cleanup through the warm per-container slot
-  and flip the default back on. Until then, leave SOAP off so benches keep
-  the ~7-8 h legacy baseline.
+- **SOAP test harness path is ON by default** (2026-05-15, after Phase 2
+  of `BenchBattleplan.md`). Opt out via `CENTRALGAUGE_SOAP_TEST_RUNNER=0`
+  if the legacy path is needed for diagnostics. Mini bench A+C:
+  `1 h 1 m legacy → 29 m 29 s SOAP` (52 % faster) on 2 models × 3 tasks ×
+  2 containers; projected benchsmall ~3.5-4 h vs ~7-8 h legacy.
+  - The SOAP test step itself (`runTestsViaSoap`) is ~38× faster than
+    `Run-TestsInBcContainer` (microbench: 14.7 s → 0.11 s).
+  - The pre-publish cleanup + new candidate publish go through
+    `BcContainerProvider.prepareCandidateApp()` — ONE warm-slot script
+    invocation that bypasses BCH's slow host-side `Unpublish-BcContainerApp`
+    wrapper. Cleanup runs `Invoke-ScriptInBcContainer { Get-NAVAppInfo
+    | Uninstall-NAVApp; Unpublish-NAVApp }` directly inside the
+    container (reuses the container's already-running WinPS PSSession,
+    ~4 s). Publish stays on host-side `Publish-BcContainerApp` because
+    it needs `-sync -syncMode ForceSync -install` in one call.
+  - Smoke trace `results/smoke-trace-AplusC-<stamp>/trace.json`:
+    `prepare-candidate` span = 14.6 s, replacing what was previously
+    `cleanup` 125 s + `publish-app` 128 s = 253 s/task.
+  - Old `cleanupStaleCandidates` + `publishApp` methods stay for prereq
+    publishing and the bench-startup prenuke. Only the per-task SOAP-fork
+    hot path uses the combined `prepareCandidateApp`.
+  - DO NOT split `prepareCandidateApp` back into separate
+    `cleanupStaleCandidates` + `publishApp` calls on the hot path. BCH
+    disposes its Windows-PowerShell sub-session at end-of-script under
+    `usePwshForBc24=$false`, so each separate `runScriptThroughSession`
+    call would re-pay the ~120 s bridge setup.
 
 ## Project Structure
 

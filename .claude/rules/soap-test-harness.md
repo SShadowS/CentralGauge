@@ -26,11 +26,16 @@ so routing is decided **statically** by parsing test source with the tree-sitter
 - Containers are multi-tenant — the web-service URL MUST include `?tenant=<tenant>`
   or it returns HTTP 401.
 - The harness only RUNS tests; `runTests()` still publishes the app first.
-- **Path is OFF by default** (2026-05-15 kill-switch). Opt in with
-  `CENTRALGAUGE_SOAP_TEST_RUNNER=1`. The test step is ~38× faster than
-  legacy but the surrounding cleanup/publish currently pays ~120 s/task
-  via fresh-pwsh BCH cmdlets — net loss until `BenchBattleplan.md`
-  Phase 2/3 routes cleanup through the warm per-container slot.
+- **Path is ON by default** (2026-05-15, after Phase 2 of
+  `BenchBattleplan.md`). Opt out via `CENTRALGAUGE_SOAP_TEST_RUNNER=0`.
+  Mini bench A+C: legacy 1 h 1 m → SOAP 29 m 29 s on 2 models × 3 tasks ×
+  2 containers (-52 %). Projected benchsmall ~3.5-4 h.
+- Pre-publish cleanup + new candidate publish go through
+  `BcContainerProvider.prepareCandidateApp()` — one warm-slot script that
+  routes cleanup via `Invoke-ScriptInBcContainer { Uninstall-NAVApp;
+  Unpublish-NAVApp }` (direct in-container, ~4 s) and then runs
+  `Publish-BcContainerApp -sync -syncMode ForceSync -install` in the
+  same script. ONE BCH bridge setup, not two.
 - Env knobs: `CENTRALGAUGE_BC_COMPANY` (default `My Company`),
   `CENTRALGAUGE_BC_TENANT` (default `default`), `CENTRALGAUGE_BC_SOAP_PORT`
   (default `7047`).
