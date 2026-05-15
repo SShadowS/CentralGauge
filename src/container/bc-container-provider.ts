@@ -52,6 +52,7 @@ import {
   buildTestScript,
 } from "./bc-script-builders.ts";
 import { runTestsViaSoap } from "./soap-test-client.ts";
+import { getTracer } from "../tracing/tracer.ts";
 import type { SoapTestRunnerConfig } from "./soap-test-client.ts";
 import { projectUsesTestPage } from "./test-routing.ts";
 
@@ -354,12 +355,30 @@ export class BcContainerProvider implements ContainerProvider {
   /**
    * Execute a script via the per-container session slot.
    * Slot handles: lock, session reuse, init, retry-on-crash, fallback.
+   *
+   * `scriptLabel` is used purely for tracing — pass "cleanup" / "publish" /
+   * "test" / "compile" so the Perfetto trace can distinguish call types on
+   * the same container slot lane. Optional; defaults to "unknown".
    */
   private async runScriptThroughSession(
     containerName: string,
     script: string,
+    scriptLabel = "unknown",
   ): Promise<{ output: string; exitCode: number }> {
-    return await this.getOrCreateSlot(containerName).runScript(script);
+    const tracer = getTracer();
+    if (!tracer.enabled) {
+      return await this.getOrCreateSlot(containerName).runScript(script);
+    }
+    return await tracer.span(
+      "runScriptThroughSession",
+      {
+        tid: containerName,
+        sublane: "slot",
+        cat: ["pwsh", "slot"],
+        args: { scriptLabel, scriptBytes: script.length },
+      },
+      () => this.getOrCreateSlot(containerName).runScript(script),
+    );
   }
 
   private async executePowerShell(
@@ -1077,7 +1096,14 @@ export class BcContainerProvider implements ContainerProvider {
       }
     `;
 
-    const result = await this.executePowerShell(script);
+    // Route through the persistent per-container session slot so the BCH
+    // module-load + Windows-PowerShell sub-session spin-up (~120 s) is paid
+    // once at session init, not per task. See BenchBattleplan.md Phase 2.
+    const result = await this.runScriptThroughSession(
+      containerName,
+      script,
+      "publish",
+    );
 
     // Cleanup the copied file
     try {
@@ -1127,7 +1153,17 @@ export class BcContainerProvider implements ContainerProvider {
       BcContainerProvider.HARNESS_APP_NAME,
     );
     try {
-      const result = await this.executePowerShell(script);
+      // Route through the persistent per-container session slot rather than
+      // `executePowerShell` so we don't pay the cold-pwsh + BCH module-load
+      // + Windows-PowerShell sub-session spin-up (~120 s/call) on every
+      // task. The slot pays this once at session init; subsequent
+      // Get-BcContainerAppInfo / Unpublish-BcContainerApp calls amortize.
+      // See BenchBattleplan.md Phase 2.
+      const result = await this.runScriptThroughSession(
+        containerName,
+        script,
+        "cleanup",
+      );
       if (result.output.includes("CANDIDATE_CLEANUP_FOUND")) {
         log.info(`Cleaned up stale candidates in ${containerName}`, {
           output: result.output.split("\n")
@@ -1197,21 +1233,17 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Whether the SOAP harness path is enabled. **Off by default** — opt in
-   * by setting `CENTRALGAUGE_SOAP_TEST_RUNNER=1`.
+   * Whether the SOAP harness path is enabled. **On by default** — opt out
+   * by setting `CENTRALGAUGE_SOAP_TEST_RUNNER=0` (escape hatch — forces
+   * the legacy client-session path for every test).
    *
-   * Background: the SOAP test path itself is ~38× faster than the legacy
-   * `Run-TestsInBcContainer` call (Step 1 microbench: 14.7s → 0.11s),
-   * but the surrounding `cleanupStaleCandidates` + `publishApp` use
-   * `executePowerShell` (fresh pwsh per call) which forks a fresh
-   * Windows-PowerShell sub-session per BCH cmdlet (~120 s spin-up). Net
-   * per-task overhead on the SOAP fork is currently ~120 s, dwarfing the
-   * ~14 s test saving. Until Phase 2/3 of `BenchBattleplan.md` route
-   * cleanup through the warm per-container slot, the SOAP path is
-   * disabled by default so benches retain the ~7-8 h legacy baseline.
+   * SOAP test step is ~38× faster than legacy `Run-TestsInBcContainer`
+   * (microbench: 14.7s → 0.11s). Phase 2 (warm-slot routing for
+   * `cleanupStaleCandidates` + `publishApp`) eliminated the fresh-pwsh
+   * cleanup overhead that previously cancelled the gain.
    */
   private soapTestRunnerEnabled(): boolean {
-    return Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER") === "1";
+    return Deno.env.get("CENTRALGAUGE_SOAP_TEST_RUNNER") !== "0";
   }
 
   /** Build the harness SOAP config for a container from env + credentials. */
@@ -1273,18 +1305,45 @@ export class BcContainerProvider implements ContainerProvider {
       project.testFiles?.length > 0 &&
       !(await projectUsesTestPage(project))
     ) {
+      const tracer = getTracer();
+      const traceArgs = {
+        taskId: (project.appJson as { id?: string } | undefined)?.id,
+        container: containerName,
+        path: "soap" as const,
+      };
       try {
         // Every candidate shares BENCHMARK_APP_ID; without this, the 2nd task
         // on a container hits "same App ID and Version" because the prior
         // task's app (different Name, same App ID) is still published.
         // publishApp's own cleanup only catches same-Name conflicts.
-        await this.cleanupStaleCandidates(containerName);
+        await tracer.span(
+          "cleanup",
+          {
+            tid: containerName,
+            cat: ["container", "cleanup"],
+            args: traceArgs,
+          },
+          () => this.cleanupStaleCandidates(containerName),
+        );
         // The harness only RUNS tests; the app must be published first.
-        await this.publishApp(containerName, actualAppFilePath);
-        const soapResult = await runTestsViaSoap(
-          this.soapConfigFor(containerName),
-          testCodeunitId,
-          extensionId,
+        await tracer.span(
+          "publish-app",
+          {
+            tid: containerName,
+            cat: ["container", "publish"],
+            args: traceArgs,
+          },
+          () => this.publishApp(containerName, actualAppFilePath!),
+        );
+        const soapResult = await tracer.span(
+          "test.soap.total",
+          { tid: containerName, cat: ["soap", "test"], args: traceArgs },
+          () =>
+            runTestsViaSoap(
+              this.soapConfigFor(containerName),
+              testCodeunitId,
+              extensionId,
+            ),
         );
         this.logTestResult(
           soapResult.success,
@@ -1297,6 +1356,14 @@ export class BcContainerProvider implements ContainerProvider {
         });
         return soapResult;
       } catch (e) {
+        getTracer().instant("soap-fallback-to-legacy", {
+          tid: containerName,
+          cat: ["soap", "fallback"],
+          args: {
+            errorType: e instanceof Error ? e.constructor.name : "unknown",
+            errorMessage: e instanceof Error ? e.message : String(e),
+          },
+        });
         // Any harness problem (deploy missing, fault, network) falls back to
         // the legacy path so the bench never loses a test run to the new path.
         const warnCtx: Record<string, unknown> = {
@@ -1335,7 +1402,11 @@ export class BcContainerProvider implements ContainerProvider {
       extensionId,
       testCodeunitId,
     );
-    const result = await this.runScriptThroughSession(containerName, script);
+    const result = await this.runScriptThroughSession(
+      containerName,
+      script,
+      "test-legacy",
+    );
     const duration = Date.now() - startTime;
 
     // Infra-failure markers in the test harness output (NOT model AL failures).

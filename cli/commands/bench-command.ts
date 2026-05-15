@@ -38,6 +38,12 @@ import {
   type VariantProbe,
 } from "../../src/doctor/mod.ts";
 import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
+import {
+  closeTracer,
+  getTracer,
+  initTracer,
+  resolveTracePath,
+} from "../../src/tracing/tracer.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -195,6 +201,18 @@ export function registerBenchCommand(cli: Command): void {
       "Skip the live dashboard HTTP server; exit cleanly when the run finishes (for scripted/non-interactive use)",
     )
     .option(
+      "--trace",
+      "Enable bench tracing; writes Chrome Trace Event JSON to <output>/trace.json (drag-drop into ui.perfetto.dev)",
+    )
+    .option(
+      "--trace-file <path:string>",
+      "Override the trace output path (implies --trace)",
+    )
+    .option(
+      "--no-trace",
+      "Disable tracing even if CENTRALGAUGE_TRACE_FILE is set",
+    )
+    .option(
       "-y, --yes",
       "Non-interactive; auto-accept API-fetched pricing during ingest",
       { default: false },
@@ -204,6 +222,27 @@ export function registerBenchCommand(cli: Command): void {
       // Must run before any container provider is instantiated (registry caches instances).
       if (options.persistentPwsh === false) {
         Deno.env.set("CENTRALGAUGE_PWSH_PERSISTENT", "0");
+      }
+
+      // Init bench tracing if requested. Idempotent — safe even if the action
+      // re-enters (e.g. via preset reload). The tracer's periodic flush and
+      // SIGINT handler keep the on-disk file valid mid-run.
+      const outputDir = (options.output as string | undefined) ?? "results/";
+      const tracePath = resolveTracePath({
+        // Cliffy's --no-trace inverse: option becomes `trace: false` when flag is present.
+        noTrace: options.trace === false,
+        trace: options.trace === true,
+        traceFile: options.traceFile as string | undefined,
+        defaultDir: outputDir,
+      });
+      if (tracePath) {
+        initTracer(tracePath);
+        console.log(colors.gray(`[Tracing] writing to ${tracePath}`));
+        getTracer().instant("bench.start", {
+          tid: "orchestrator",
+          cat: ["bench"],
+          args: { outputDir },
+        });
       }
 
       // Handle --list-presets
@@ -651,6 +690,8 @@ export function registerBenchCommand(cli: Command): void {
         );
         // Don't call Deno.exit - the HTTP server keeps the event loop alive
       } else {
+        // Flush trace before exit so the very last events aren't lost.
+        await closeTracer();
         // Explicitly exit to close any lingering connections
         Deno.exit(0);
       }

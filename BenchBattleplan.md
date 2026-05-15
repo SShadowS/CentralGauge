@@ -61,18 +61,17 @@ but dormant. Bench returns to ~7-8 h legacy baseline today.
 
 **Tasks.**
 
-- [ ] **1.1** In `src/container/bc-container-provider.ts`, change
+- [x] **1.1** In `src/container/bc-container-provider.ts`, change
   `soapTestRunnerEnabled()` semantics from "on unless `=0`" to
   "off unless `=1`". Update its docstring + any callers' comments.
-- [ ] **1.2** Update CLAUDE.md ("SOAP harness path" memory bullet) to reflect
+- [x] **1.2** Update CLAUDE.md ("SOAP harness path" memory bullet) to reflect
   the new default + the env var name + why.
-- [ ] **1.3** Update `.claude/rules/soap-test-harness.md` "Escape hatch"
+- [x] **1.3** Update `.claude/rules/soap-test-harness.md` "Escape hatch"
   line: it's now an opt-IN, not opt-OUT.
-- [ ] **1.4** Run `deno task test:unit`. Expect 0 failures. If any test
-  asserted the SOAP path runs by default, update it (mock env or pass
-  `CENTRALGAUGE_SOAP_TEST_RUNNER=1`).
-- [ ] **1.5** Run `deno check && deno lint && deno fmt` scoped to changes.
-- [ ] **1.6** Commit: `feat(bench): flip SOAP runner default to off (kill switch)`.
+- [x] **1.4** Run `deno task test:unit`. 827 passed, 0 failed (no test
+  asserted the SOAP-on default).
+- [x] **1.5** Run `deno check && deno lint && deno fmt` scoped to changes.
+- [x] **1.6** Commit `e54428d`: `feat(bench): flip SOAP runner default to off (kill switch)`.
 - [ ] **1.7** [User] Run `.\scripts\benchsmall.ps1`; confirm ETA returns
   to ~7-8 h.
 
