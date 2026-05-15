@@ -45,6 +45,61 @@ export function buildCompileScript(
 }
 
 /**
+ * Build the PowerShell script that unpublishes any prior CentralGauge
+ * benchmark candidate app from a container.
+ *
+ * Mirrors the `buildPublishScript` cleanup filter, scoped to candidates only:
+ *   Publisher == "CentralGauge" AND Name -notlike "*Prereq*" AND
+ *   Name != "CG Test Harness"
+ *
+ * Used by `BcContainerProvider.cleanupStaleCandidates` to clear the catalog
+ * before publishing a new candidate. Every benchmark candidate shares the
+ * fixed `BENCHMARK_APP_ID`; without this sweep, the next Publish fails with
+ * "same App ID and Version as a previously published Extension".
+ */
+export function buildCleanupStaleCandidatesScript(
+  containerName: string,
+  harnessAppName: string,
+): string {
+  return `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.11 -WarningAction SilentlyContinue
+      $bcContainerHelperConfig.usePwshForBc24 = $false
+      $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
+        $_.Publisher -eq "CentralGauge" -and
+        $_.Name -notlike "*Prereq*" -and
+        $_.Name -ne "${harnessAppName}"
+      })
+      if ($stale.Count -eq 0) {
+        Write-Output "CANDIDATE_CLEANUP_NONE"
+        return
+      }
+      Write-Output "CANDIDATE_CLEANUP_FOUND: $($stale.Count)"
+      foreach ($app in $stale) {
+        try {
+          Write-Output "CANDIDATE_CLEANUP_REMOVE: $($app.Name) v$($app.Version)"
+          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
+          # bccontainerhelper@6.1.11 sometimes reports Unpublish success while BC
+          # NST still has the app. Verify and force NST-level cleanup if so —
+          # otherwise the next Publish hits "same App ID and Version".
+          $stillThere = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
+            $_.Name -eq $app.Name -and $_.Publisher -eq $app.Publisher -and $_.Version -eq $app.Version
+          }
+          if ($stillThere) {
+            Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+              param($n, $p, $v)
+              try { Uninstall-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Force -ErrorAction SilentlyContinue } catch { }
+              try { Unpublish-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -ErrorAction SilentlyContinue } catch { }
+            } -argumentList $app.Name, $app.Publisher, $app.Version
+          }
+        } catch {
+          Write-Output "CANDIDATE_CLEANUP_WARN: $($app.Name) - $($_.Exception.Message)"
+        }
+      }
+      Write-Output "CANDIDATE_CLEANUP_DONE"
+    `;
+}
+
+/**
  * Build the publish app script block
  */
 export function buildPublishScript(

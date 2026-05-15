@@ -1,5 +1,6 @@
 import { assert, assertStringIncludes } from "@std/assert";
 import {
+  buildCleanupStaleCandidatesScript,
   buildPublishScript,
   buildTestScript,
 } from "../../../src/container/bc-script-builders.ts";
@@ -17,6 +18,69 @@ Deno.test("buildPublishScript excludes CG Test Harness from cleanup", () => {
 Deno.test("buildPublishScript still excludes prereq apps from cleanup", () => {
   const script = buildPublishScript("Cronus28", "C:\\\\some\\\\app.app");
   assertStringIncludes(script, `$_.Name -notlike "*Prereq*"`);
+});
+
+// All benchmark candidates share a single BENCHMARK_APP_ID; the cleanup
+// script must sweep prior candidates (different Name, same App ID) before a
+// publish or BC rejects with "same App ID and Version as a previously
+// published Extension". The filter must NOT touch prereqs or the harness.
+
+Deno.test("buildCleanupStaleCandidatesScript scopes to CentralGauge publisher", () => {
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus28",
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `$_.Publisher -eq "CentralGauge"`);
+});
+
+Deno.test("buildCleanupStaleCandidatesScript excludes prereqs", () => {
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus28",
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `$_.Name -notlike "*Prereq*"`);
+});
+
+Deno.test("buildCleanupStaleCandidatesScript excludes the test harness", () => {
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus28",
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `$_.Name -ne "CG Test Harness"`);
+});
+
+Deno.test("buildCleanupStaleCandidatesScript honors the supplied harness name", () => {
+  // Defensive: ensure the harness name interpolates rather than being hard-coded
+  // in the builder. A typo in BcContainerProvider.HARNESS_APP_NAME would
+  // otherwise silently include the harness in the sweep.
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus28",
+    "CG Alt Harness",
+  );
+  assertStringIncludes(script, `$_.Name -ne "CG Alt Harness"`);
+});
+
+Deno.test("buildCleanupStaleCandidatesScript targets the given container", () => {
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus281",
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `-containerName "Cronus281"`);
+});
+
+Deno.test("buildCleanupStaleCandidatesScript uses Unpublish-BcContainerApp with -unInstall -force", () => {
+  // The benchmark relies on app being fully removed (not just unpublished)
+  // before the next publish. Missing -unInstall leaves the app installed and
+  // blocks Publish; missing -force makes the call interactive in pwsh
+  // sessions where confirmation prompts fail silently.
+  const script = buildCleanupStaleCandidatesScript(
+    "Cronus28",
+    "CG Test Harness",
+  );
+  assert(
+    /Unpublish-BcContainerApp[^\n]*-unInstall[^\n]*-force/.test(script),
+    "cleanup must invoke Unpublish-BcContainerApp with both -unInstall and -force",
+  );
 });
 
 Deno.test("buildTestScript composes publish (with harness exclusion) and run-tests", () => {

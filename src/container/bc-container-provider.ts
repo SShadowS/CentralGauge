@@ -46,7 +46,11 @@ import {
   parseStatusOutput,
   parseTestResults,
 } from "./bc-output-parsers.ts";
-import { buildCompileScript, buildTestScript } from "./bc-script-builders.ts";
+import {
+  buildCleanupStaleCandidatesScript,
+  buildCompileScript,
+  buildTestScript,
+} from "./bc-script-builders.ts";
 import { runTestsViaSoap } from "./soap-test-client.ts";
 import type { SoapTestRunnerConfig } from "./soap-test-client.ts";
 import { projectUsesTestPage } from "./test-routing.ts";
@@ -1094,6 +1098,51 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Unpublish any prior CentralGauge candidate app before publishing a new one.
+   *
+   * Every benchmark candidate shares the fixed `BENCHMARK_APP_ID`
+   * ("00000000-cafe-0000-0000-be4c00decade", see compile-queue.ts) but each
+   * task gets a distinct Name (e.g. `CentralGauge_CG-AL-E001_1`). `publishApp`
+   * only handles same-Name updates: a different-named candidate from a prior
+   * task slips past its cleanup branch and BC then rejects the publish with
+   * "same App ID and Version as a previously published Extension".
+   *
+   * The legacy `buildPublishScript` cleanup (script-builder layer) used to
+   * sweep these up, but the SOAP-fork path in `runTests()` calls `publishApp`
+   * directly and skips that script. Calling this first restores the same
+   * pre-publish hygiene.
+   *
+   * Filter mirrors `buildPublishScript`:
+   *   Publisher == "CentralGauge" AND Name != "CG Test Harness" AND
+   *   Name -notlike "*Prereq*"
+   *
+   * Best-effort: failures are swallowed (the subsequent `publishApp`'s own
+   * guard catches anything left behind and throws a recoverable error).
+   */
+  async cleanupStaleCandidates(containerName: string): Promise<void> {
+    if (!this.isWindows()) return;
+    const script = buildCleanupStaleCandidatesScript(
+      containerName,
+      BcContainerProvider.HARNESS_APP_NAME,
+    );
+    try {
+      const result = await this.executePowerShell(script);
+      if (result.output.includes("CANDIDATE_CLEANUP_FOUND")) {
+        log.info(`Cleaned up stale candidates in ${containerName}`, {
+          output: result.output.split("\n")
+            .filter((l) => l.startsWith("CANDIDATE_CLEANUP_"))
+            .join(" | "),
+        });
+      }
+    } catch (e) {
+      // Non-fatal: publishApp's own guard will catch anything left behind.
+      log.warn(`cleanupStaleCandidates failed for ${containerName}`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  /**
    * Unpublish lingering CentralGauge prereq apps whose Name is not in the
    * expected set. Prevents cross-task ID collisions when a previous task's
    * prereq remains installed (e.g. M001 Prereq's Product table 69001 vs
@@ -1215,6 +1264,11 @@ export class BcContainerProvider implements ContainerProvider {
       !(await projectUsesTestPage(project))
     ) {
       try {
+        // Every candidate shares BENCHMARK_APP_ID; without this, the 2nd task
+        // on a container hits "same App ID and Version" because the prior
+        // task's app (different Name, same App ID) is still published.
+        // publishApp's own cleanup only catches same-Name conflicts.
+        await this.cleanupStaleCandidates(containerName);
         // The harness only RUNS tests; the app must be published first.
         await this.publishApp(containerName, actualAppFilePath);
         const soapResult = await runTestsViaSoap(
@@ -1235,9 +1289,20 @@ export class BcContainerProvider implements ContainerProvider {
       } catch (e) {
         // Any harness problem (deploy missing, fault, network) falls back to
         // the legacy path so the bench never loses a test run to the new path.
+        const warnCtx: Record<string, unknown> = {
+          error: e instanceof Error ? e.message : String(e),
+        };
+        if (e instanceof ContainerError) {
+          warnCtx["operation"] = e.operation;
+          if (e.rawOutput && e.rawOutput.length > 0) {
+            // Tail of the redacted pwsh output (buildPwshError already
+            // captures up to 4096 chars). Trim to keep the log line bounded.
+            warnCtx["rawOutputTail"] = e.rawOutput.slice(-2000);
+          }
+        }
         contextLog.warn(
           "SOAP harness path failed; falling back to client-session path",
-          { error: e instanceof Error ? e.message : String(e) },
+          warnCtx,
         );
       }
     }
