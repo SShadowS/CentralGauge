@@ -178,6 +178,60 @@ Capture all results in `scripts/phase2-diagnostic.log` for reference.
 - [ ] **2.8** Commit Phase 2 with the microbench + A/B numbers in the
   commit message.
 
+## Phase B tracing: COMPLETE (2026-05-15)
+
+Phase B of the tracing system (per-cmdlet bars on the pwsh sub-lane)
+shipped in commit `0e54b02`. Smoke trace at
+`results/smoke-trace-phaseB-<stamp>/trace.json` (16 events, 1 task on
+Cronus281, `--trace` enabled).
+
+### Per-cmdlet bars now visible in Perfetto
+
+| Span                                 | Duration | Lane                      |
+| ------------------------------------ | -------: | ------------------------- |
+| `bench` (root)                       | 392.7 s  | orchestrator              |
+| `prepare-candidate`                  | 15.5 s   | Cronus281 slot            |
+| `runScriptThroughSession`            | 15.5 s   | Cronus281 slot            |
+| `compile`                            | 9.1 s    | Cronus281 slot            |
+| `Publish-BcContainerApp`             | 8.9 s    | Cronus281 (pwsh cmdlets)  |
+| `Invoke-ScriptInBcContainer:cleanup` | 1.8 s    | Cronus281 (pwsh cmdlets)  |
+| `test.soap.total`                    | 0.44 s   | Cronus281 slot            |
+
+### What Phase B confirms
+
+- The host-side `prepare-candidate` span (15.5 s) decomposes cleanly into
+  `Invoke-ScriptInBcContainer:cleanup` (1.8 s) + `Publish-BcContainerApp`
+  (8.9 s) + ~4.8 s wrap overhead (slot lock + env injection + parser).
+  The 4.8 s is one-time per container per bench.
+- In-container cleanup is faster than diagnostic 2.D4's 4 s estimate —
+  1.8 s on a warm Invoke-ScriptInBcContainer PSSession.
+- `Publish-BcContainerApp` still pays a small fraction of the BCH bridge
+  cost (~8.9 s) but it's amortized through the warm slot.
+- Tracing overhead is negligible: `bench` root span 392.7 s vs the
+  pre-Phase-B smoke (385.5 s) — within run-to-run noise.
+
+### Phase B spec done-criteria (from `docs/superpowers/specs/2026-05-15-bench-tracing.md`)
+
+- [x] When tracing enabled, BCH scripts inject the `CG-Trace` helper
+      before any wrapped cmdlet.
+- [x] When tracing disabled, BCH scripts contain the helper definition
+      but it short-circuits to direct body invocation (env var unset).
+      Acceptable per the "off-mode allocations" caveat in the spec.
+- [x] PowerShell helper uses `[Console]::Out.WriteLine` — wrapped
+      cmdlets' return values are preserved exactly.
+- [x] Per-cmdlet sub-lane bars appear in Perfetto for
+      `Invoke-ScriptInBcContainer` (cleanup) and `Publish-BcContainerApp`.
+      `Get-BcContainerAppInfo`, `Unpublish-BcContainerApp`, and
+      `Run-TestsInBcContainer` not yet wrapped — these run inside
+      buildCleanupStaleCandidatesScript / buildPublishScript /
+      buildRunTestsScript and can be added the same way if/when needed.
+- [x] Body exceptions propagate unchanged through the helper.
+- [x] Parser `tests/unit/tracing/parse-trace-lines.test.ts`: 11 tests
+      covering strict `[TRACE] {…}` matching, JSON parse failure →
+      instant event, multiple events per script, interleaved with normal
+      stdout.
+- [x] `deno task test:unit` green (867 passed).
+
 ## Phase 3: targeted post-test cleanup (D-prime)
 
 **Goal.** Replace broad `Get-BcContainerAppInfo` sweep with targeted
