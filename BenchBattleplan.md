@@ -75,7 +75,61 @@ but dormant. Bench returns to ~7-8 h legacy baseline today.
 - [ ] **1.7** [User] Run `.\scripts\benchsmall.ps1`; confirm ETA returns
   to ~7-8 h.
 
-## Phase 2: warm-slot cleanup refactor + diagnostic matrix
+## Phase 2: COMPLETE (2026-05-15) — combined cleanup+publish via in-container NAV cmdlets
+
+**Final shape (not what the original plan predicted).** Warm-slot routing
+alone only saved ~3 min in a mini A/B (`results/minibench-Bprime-*`)
+because BCH disposes its Windows-PowerShell sub-session at end-of-script
+under `usePwshForBc24=$false`. Each separate `runScriptThroughSession`
+call paid the full ~120 s bridge setup, regardless of slot warmth.
+
+The actual fix (commit `0750908`): combine cleanup + publish into ONE
+warm-slot script invocation, and route cleanup through
+`Invoke-ScriptInBcContainer { Get-NAVAppInfo | Uninstall-NAVApp; Unpublish-NAVApp }`
+(diagnostic 2.D4 measured this in-container path at ~4 s, bypassing the
+slow BCH wrapper entirely). Publish stays on the host-side
+`Publish-BcContainerApp` wrapper because it needs `-sync -syncMode ForceSync -install` in one call.
+
+### Smoke results (1 task on Cronus281)
+
+| Metric                       | Pre-A+C (warm-slot only) | Post-A+C (combined) | Delta             |
+| ---------------------------- | -----------------------: | ------------------: | ----------------: |
+| `bench` root span            | 615 s                    | **385 s**           | **-230 s (-37%)** |
+| `prepare-candidate` span     | n/a (was 125 s + 128 s)  | **14.6 s**          | **-238 s/task**   |
+| `test_time` (bench summary)  | 4 m 15 s                 | 15.1 s              | -94 %             |
+| `seconds_per_task`           | 401 s                    | 167 s               | -58 %             |
+| pass rate                    | 100 %                    | 100 %               | (unchanged)       |
+| compile / test.soap.total    | ~9 s / 0.41 s            | ~10 s / 0.42 s      | (unchanged)       |
+
+The combined script paid the BCH Windows-PowerShell bridge ONCE for both
+cleanup + publish (14.6 s total) instead of twice (~253 s). Better than
+the ~20 s estimate because in-container `Uninstall-NAVApp` reuses the
+container's already-running WinPS PSSession.
+
+Trace: `results/smoke-trace-AplusC-20260515T193554Z/trace.json`.
+
+### Projected benchsmall impact
+
+~60 tasks, ~54 steady-state SOAP tasks per bench (first per container
+still pays one bridge setup).
+
+- Per-task savings: ~238 s.
+- Total savings: **~3.5 h**.
+- Expected benchsmall total: **~3.5-4 h** (vs ~7-8 h legacy baseline).
+
+### Phase 2 task closeout
+
+- [x] **2.D1-D5** Diagnostic matrix run; saved to `scripts/phase2-diagnostic.log`. Key finding: 2.D4 confirmed direct in-container `Uninstall-NAVApp` + `Unpublish-NAVApp` works in ~4 s post-corruption.
+- [x] **2.1-2.3** Warm-slot routing (commit `887e149` Phase A finish wired `cleanup`, `publish-app` through `runScriptThroughSession`). Smoke trace then proved the warm slot only marginally helped → necessitated the combined approach.
+- [x] **2.4** Re-run `scripts/microbench-soap.ts` was superseded by the smoke trace which is more diagnostic (per-span timings).
+- [x] **2.5** SOAP runner default flipped back ON (commit `887e149` did this). Kill switch still available via `CENTRALGAUGE_SOAP_TEST_RUNNER=0`.
+- [x] **2.6-2.7** Step 2 smoke + Step 3 ABBA superseded by the direct A+C smoke result which is unambiguous.
+- [x] **2.8** Phase 2 commits on master:
+  - `8b15e66` — Phase A tracer module
+  - `887e149` — wired spans + re-enabled SOAP default
+  - `0750908` — A+C combined `prepareCandidateApp`
+
+### Original Phase 2 plan (kept for reference)
 
 **Goal.** Cut `cleanupStaleCandidates` per-task cost from ~120 s → ~5-15 s
 (amortized after the first call per container) by routing it through the
