@@ -235,10 +235,21 @@ export function registerBenchCommand(cli: Command): void {
         traceFile: options.traceFile as string | undefined,
         defaultDir: outputDir,
       });
+      let benchRootSpan: ReturnType<typeof getTracer>["start"] extends (
+        ...a: never[]
+      ) => infer R ? R
+        : never = { end: () => {} };
       if (tracePath) {
         initTracer(tracePath);
         console.log(colors.gray(`[Tracing] writing to ${tracePath}`));
         getTracer().instant("bench.start", {
+          tid: "orchestrator",
+          cat: ["bench"],
+          args: { outputDir },
+        });
+        // Root span: closed in finally below so the bench's total wall time
+        // is the outermost bar in the Perfetto timeline.
+        benchRootSpan = getTracer().start("bench", {
           tid: "orchestrator",
           cat: ["bench"],
           args: { outputDir },
@@ -690,7 +701,9 @@ export function registerBenchCommand(cli: Command): void {
         );
         // Don't call Deno.exit - the HTTP server keeps the event loop alive
       } else {
-        // Flush trace before exit so the very last events aren't lost.
+        // Close the bench root span and flush trace before exit so the very
+        // last events aren't lost.
+        benchRootSpan.end({ ok: true });
         await closeTracer();
         // Explicitly exit to close any lingering connections
         Deno.exit(0);

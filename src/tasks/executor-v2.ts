@@ -17,6 +17,7 @@ import { ContainerProviderRegistry } from "../container/registry.ts";
 import { ConfigManager } from "../config/config.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import { getTracer } from "../tracing/tracer.ts";
 import {
   BC_APPLICATION_VERSION,
   BC_PLATFORM_VERSION,
@@ -42,10 +43,27 @@ export class TaskExecutorV2 {
   async executeTask(
     request: TaskExecutionRequest,
   ): Promise<TaskExecutionResult> {
-    const startTime = Date.now();
-
-    // Transform request into execution context
+    // Transform request into execution context first so we know the task
+    // id + model for the tracer span.
     const context = await TaskTransformer.createExecutionContext(request);
+    return await getTracer().span(
+      "task",
+      {
+        tid: context.containerName ?? "orchestrator",
+        cat: ["task"],
+        args: {
+          taskId: context.manifest.id,
+          model: `${context.llmProvider}/${context.llmModel}`,
+        },
+      },
+      () => this.executeTaskInner(context),
+    );
+  }
+
+  private async executeTaskInner(
+    context: TaskExecutionContext,
+  ): Promise<TaskExecutionResult> {
+    const startTime = Date.now();
     log.info("Executing task", {
       taskId: context.manifest.id,
       model: context.llmModel,

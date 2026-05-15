@@ -936,6 +936,25 @@ export class BcContainerProvider implements ContainerProvider {
     const contextLog = options?.label ? log.child(options.label) : log;
     contextLog.info(`Compiling AL project for container: ${containerName}`);
 
+    return await getTracer().span(
+      "compile",
+      {
+        tid: containerName,
+        cat: ["compile", "container"],
+        args: {
+          taskId: (project.appJson as { id?: string })?.id,
+          container: containerName,
+        },
+      },
+      () => this.compileProjectInner(containerName, project, contextLog),
+    );
+  }
+
+  private async compileProjectInner(
+    containerName: string,
+    project: ALProject,
+    contextLog: typeof log,
+  ): Promise<CompilationResult> {
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
 
@@ -1402,10 +1421,18 @@ export class BcContainerProvider implements ContainerProvider {
       extensionId,
       testCodeunitId,
     );
-    const result = await this.runScriptThroughSession(
-      containerName,
-      script,
-      "test-legacy",
+    const result = await getTracer().span(
+      "test.legacy.total",
+      {
+        tid: containerName,
+        cat: ["legacy", "test"],
+        args: {
+          taskId: extensionId,
+          container: containerName,
+          path: "legacy",
+        },
+      },
+      () => this.runScriptThroughSession(containerName, script, "test-legacy"),
     );
     const duration = Date.now() - startTime;
 

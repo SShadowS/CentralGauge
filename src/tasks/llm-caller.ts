@@ -13,6 +13,7 @@ import {
   TaskExecutionError,
 } from "../errors.ts";
 import { Logger } from "../logger/mod.ts";
+import { getTracer } from "../tracing/tracer.ts";
 
 const log = Logger.create("llm-caller");
 
@@ -103,21 +104,36 @@ export class LLMCaller {
       llmRequest.systemPrompt = systemPrompt;
     }
 
-    // Call LLM with retry for transient errors
-    const codeResult = await this.callWithRetry(
-      async () => {
-        return attemptNumber === 1
-          ? await llmAdapter.generateCode(llmRequest, genContext)
-          : await llmAdapter.generateFix(
-            previousAttempts[previousAttempts.length - 1]!.extractedCode,
-            genContext.errors || [],
-            llmRequest,
-            genContext,
-          );
+    // Call LLM with retry for transient errors.
+    // Wrap in a tracer span so the LLM call shows up as its own bar on the
+    // bench timeline (lane: llm-pool).
+    const codeResult = await getTracer().span(
+      "llm-request",
+      {
+        tid: "llm-pool",
+        cat: ["llm"],
+        args: {
+          taskId: context.manifest.id,
+          model: `${context.llmProvider}/${context.llmModel}`,
+          attempt: attemptNumber,
+        },
       },
-      context.llmProvider,
-      context.manifest.id,
-      attemptNumber,
+      () =>
+        this.callWithRetry(
+          () => {
+            return attemptNumber === 1
+              ? llmAdapter.generateCode(llmRequest, genContext)
+              : llmAdapter.generateFix(
+                previousAttempts[previousAttempts.length - 1]!.extractedCode,
+                genContext.errors || [],
+                llmRequest,
+                genContext,
+              );
+          },
+          context.llmProvider,
+          context.manifest.id,
+          attemptNumber,
+        ),
     );
 
     // Extract code
