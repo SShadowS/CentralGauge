@@ -70,9 +70,30 @@ export type RetryOperation<T> = (params: {
 }) => Promise<T>;
 
 /**
+ * Signal returned by `classifyResult` when the operation succeeded by the
+ * promise contract but actually carries a quarantined / rerouted outcome
+ * that should be retried for free. Used by task #6's waiver path.
+ */
+export interface ResultClassification {
+  /**
+   * "quarantined" => the result was tagged by a container-alert mid-flight;
+   * withInfraRetry treats it as an infra error AND grants a budget waiver
+   * (max 1 per task-attempt per alertId).
+   * "ok" => normal success; return as-is.
+   */
+  kind: "quarantined" | "ok";
+  /** Required when kind === "quarantined". */
+  alertId?: string;
+  /** Container the result actually executed on (the one tagged). */
+  originContainer?: string;
+  /** Health-fingerprint to record in the retry trail; falls back to "(quarantined)". */
+  fingerprint?: string;
+}
+
+/**
  * Configuration for a single `withInfraRetry` invocation.
  */
-export interface WithInfraRetryOptions {
+export interface WithInfraRetryOptions<T = unknown> {
   /** Maximum number of inline retries (in addition to the original attempt). */
   maxRetries: number;
   /** Full set of containers configured for the bench (for short-circuit logic). */
@@ -85,6 +106,14 @@ export interface WithInfraRetryOptions {
   context: { taskId: string; variantId: string; attemptNumber: number };
   /** Injectable jitter (returns ms). Default: 10-50ms random. */
   jitterMs?: () => number;
+  /**
+   * Optional inspector for resolved results. When supplied + returns
+   * `{kind: "quarantined", alertId, ...}`, the state machine treats the
+   * "successful" result as an infra error AND grants a budget waiver
+   * (cause="alert_drain", budgetDebited=false). Capped at 1 waiver per
+   * task-attempt per alertId to prevent gaming.
+   */
+  classifyResult?: (result: T) => ResultClassification;
 }
 
 /**
@@ -101,7 +130,7 @@ export interface WithInfraRetryResult<T> {
  */
 export async function withInfraRetry<T>(
   operation: RetryOperation<T>,
-  options: WithInfraRetryOptions,
+  options: WithInfraRetryOptions<T>,
 ): Promise<WithInfraRetryResult<T>> {
   // ---- Fast path: helper disabled ---------------------------------------
   //
@@ -123,11 +152,24 @@ export async function withInfraRetry<T>(
   const jitter = options.jitterMs ??
     (() => 10 + Math.floor(Math.random() * 40));
   let lastInfraError: Error | undefined;
+  /**
+   * AlertIds that have already been honored with a waived retry. Caps
+   * waivers at 1 per task-attempt per alertId to prevent gaming where a
+   * misclassified "alert" path produces unlimited free retries.
+   */
+  const waivedAlertIds = new Set<string>();
+  /**
+   * Tracks how many "free" retries we have granted in this withInfraRetry
+   * invocation. Each free retry does NOT consume `maxRetries`, so the
+   * effective attempt loop bound is `maxRetries + freeRetriesGranted`.
+   */
+  let freeRetriesGranted = 0;
 
-  // Total attempts allowed = 1 original + maxRetries.
+  // Total attempts allowed = 1 original + (maxRetries + free retries).
+  // The loop bound grows dynamically as free retries are granted.
   for (
     let attemptIndex = 0;
-    attemptIndex <= options.maxRetries;
+    attemptIndex <= options.maxRetries + freeRetriesGranted;
     attemptIndex++
   ) {
     let routedContainer: string | undefined;
@@ -141,6 +183,102 @@ export async function withInfraRetry<T>(
         excludeContainers: [...excludeContainers],
         onRouted,
       });
+
+      // Result-classification path: a resolved result MAY still indicate a
+      // quarantined outcome (the work executed on a container that an
+      // alert raised on mid-flight). When classifyResult returns
+      // "quarantined", we treat it like an infra error AND grant a budget
+      // waiver — provided we haven't already waived for this alertId.
+      const classification = options.classifyResult?.(result);
+      if (classification?.kind === "quarantined") {
+        const durationMs = performance.now() - start;
+        const alertId = classification.alertId ?? "(unknown-alert)";
+        const origin = classification.originContainer ?? routedContainer ??
+          "unknown";
+        const fingerprint = classification.fingerprint ?? "(quarantined)";
+
+        // Finalize active record (if mid-retry).
+        if (attemptIndex > 0 && retries.length > 0) {
+          const last = retries[retries.length - 1]!;
+          last.retryContainerName = origin;
+          last.outcome = "infra_again";
+          last.durationMs = durationMs;
+          options.emit?.({
+            type: "infra_retry_failed",
+            ...options.context,
+            retryNumber: attemptIndex,
+            retryContainerName: origin,
+            outcome: "infra_again",
+            durationMs,
+          });
+        }
+
+        // Cap the waiver — only the FIRST occurrence of a given alertId
+        // is free. Subsequent quarantine hits for the same alertId debit
+        // budget normally (prevents stuck loops + gaming).
+        const isFirstWaiver = !waivedAlertIds.has(alertId);
+        if (isFirstWaiver) {
+          waivedAlertIds.add(alertId);
+          freeRetriesGranted++;
+        }
+
+        // Widen exclusion (we never want to land back on the alerted origin).
+        if (origin !== "unknown" && !excludeContainers.includes(origin)) {
+          excludeContainers.push(origin);
+        }
+        // Health monitor may say more containers are also alerted.
+        const healthExcl = collectHealthExclusions(options.healthMonitor);
+        for (const c of healthExcl.alerted) {
+          if (!excludeContainers.includes(c)) excludeContainers.push(c);
+        }
+
+        // Refuse to retry when the exclusion covers everything.
+        const allCovered = options.configuredContainers.every((c) =>
+          excludeContainers.includes(c)
+        );
+        if (allCovered) {
+          options.emit?.({
+            type: "infra_retry_exhausted",
+            ...options.context,
+            totalRetries: retries.length,
+            finalContainerName: origin,
+            fingerprint,
+            reason: "no_eligible_containers",
+          });
+          throw new InfraRetriesExhaustedError(
+            lastInfraError ?? new Error(`Quarantined on ${origin}`),
+            retries,
+            "no_eligible_containers",
+          );
+        }
+
+        // Push a new retry record describing the waived reroute.
+        const newRecord: InfraRetryRecord = {
+          retryNumber: attemptIndex + 1,
+          originalContainerName: origin,
+          retryContainerName: "(pending)",
+          fingerprint,
+          durationMs: 0,
+          outcome: "infra_again",
+          cause: "alert_drain",
+          budgetDebited: !isFirstWaiver,
+          waiverReason: "trigger_task",
+          alertId,
+        };
+        retries.push(newRecord);
+
+        options.emit?.({
+          type: "infra_retry_started",
+          ...options.context,
+          retryNumber: attemptIndex + 1,
+          originalContainerName: origin,
+          fingerprint,
+        });
+
+        // Anti-stampede pause + loop to retry.
+        await sleep(jitter());
+        continue;
+      }
 
       // Success path: finalize the active retry record if we are in a retry.
       if (attemptIndex > 0) {
@@ -325,6 +463,8 @@ export async function withInfraRetry<T>(
         fingerprint: classification.fingerprint,
         durationMs: 0,
         outcome: "infra_again",
+        cause: "failure",
+        budgetDebited: true,
       };
       if (classification.signature?.label !== undefined) {
         newRecord.signatureLabel = classification.signature.label;
@@ -354,12 +494,28 @@ export async function withInfraRetry<T>(
     }
   }
 
-  // Unreachable — every loop iteration either returns or throws above. The
-  // loop bound `attemptIndex <= maxRetries` plus the C.1 budget-exhausted
-  // branch covers the terminal case. This throw exists only to satisfy the
-  // type checker.
-  /* istanbul ignore next */
-  throw new Error("withInfraRetry: unreachable state-machine exit");
+  // Reached when the loop ran out of budget without throwing — most often
+  // the quarantine-waiver path consumed its single waiver and then hit
+  // another non-waived quarantined result with no normal budget left.
+  // Synthesize budget_exhausted with the trail's tail-end metadata.
+  const lastRecord = retries[retries.length - 1];
+  const finalContainerName = lastRecord?.originalContainerName ??
+    lastRecord?.retryContainerName ?? "unknown";
+  const fingerprint = lastRecord?.fingerprint ?? "(unknown)";
+  options.emit?.({
+    type: "infra_retry_exhausted",
+    ...options.context,
+    totalRetries: retries.length,
+    finalContainerName,
+    fingerprint,
+    reason: "budget_exhausted",
+  });
+  throw new InfraRetriesExhaustedError(
+    lastInfraError ??
+      new Error("withInfraRetry: quarantine waiver budget exhausted"),
+    retries,
+    "budget_exhausted",
+  );
 }
 
 /**

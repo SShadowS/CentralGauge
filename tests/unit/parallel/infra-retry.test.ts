@@ -543,3 +543,134 @@ Deno.test("event sequence on exhaustion: started, failed, exhausted (no succeede
   // Must NOT contain "infra_retry_succeeded".
   assert(!types.includes("infra_retry_succeeded"));
 });
+
+// =============================================================================
+// Quarantine waiver path (task #6)
+// =============================================================================
+
+Deno.test("waiver: quarantined result triggers free retry, does NOT debit budget", async () => {
+  let call = 0;
+  const { retries } = await withInfraRetry<
+    { ok: boolean; quarantined?: { alertId: string } }
+  >(
+    ({ onRouted }) => {
+      call++;
+      if (call === 1) {
+        onRouted("Cronus28");
+        return Promise.resolve({
+          ok: false,
+          quarantined: { alertId: "alert-1" },
+        });
+      }
+      onRouted("Cronus281");
+      return Promise.resolve({ ok: true });
+    },
+    {
+      maxRetries: 1,
+      configuredContainers: ["Cronus28", "Cronus281", "Cronus282"],
+      context: { taskId: "T", variantId: "V", attemptNumber: 1 },
+      classifyResult: (r) =>
+        r.quarantined
+          ? {
+            kind: "quarantined",
+            alertId: r.quarantined.alertId,
+            originContainer: "Cronus28",
+            fingerprint: "quarantine-fp",
+          }
+          : { kind: "ok" },
+      jitterMs: () => 0,
+    },
+  );
+  assertEquals(retries.length, 1);
+  assertEquals(retries[0]!.cause, "alert_drain");
+  assertEquals(retries[0]!.budgetDebited, false);
+  assertEquals(retries[0]!.waiverReason, "trigger_task");
+  assertEquals(retries[0]!.alertId, "alert-1");
+  assertEquals(retries[0]!.outcome, "succeeded");
+});
+
+Deno.test("waiver: free retry on top of a normal infra retry — both records distinct", async () => {
+  let call = 0;
+  const errs = {
+    infra: new ContainerError("publish blew up", "Cronus28", "publish", {}),
+  };
+  const { retries } = await withInfraRetry<
+    { ok: boolean; quarantined?: { alertId: string } }
+  >(
+    ({ onRouted }) => {
+      call++;
+      if (call === 1) {
+        onRouted("Cronus28");
+        return Promise.reject(errs.infra);
+      }
+      if (call === 2) {
+        onRouted("Cronus281");
+        return Promise.resolve({
+          ok: false,
+          quarantined: { alertId: "alert-7" },
+        });
+      }
+      onRouted("Cronus282");
+      return Promise.resolve({ ok: true });
+    },
+    {
+      maxRetries: 1, // 1 normal retry; quarantine waiver gives +1 free
+      configuredContainers: ["Cronus28", "Cronus281", "Cronus282"],
+      context: { taskId: "T", variantId: "V", attemptNumber: 1 },
+      classifyResult: (r) =>
+        r.quarantined
+          ? {
+            kind: "quarantined",
+            alertId: r.quarantined.alertId,
+            originContainer: "Cronus281",
+            fingerprint: "quarantine-fp",
+          }
+          : { kind: "ok" },
+      jitterMs: () => 0,
+    },
+  );
+  assertEquals(retries.length, 2);
+  // First record: normal failure-path retry
+  assertEquals(retries[0]!.cause, "failure");
+  assertEquals(retries[0]!.budgetDebited, true);
+  // Second record: waived alert_drain retry
+  assertEquals(retries[1]!.cause, "alert_drain");
+  assertEquals(retries[1]!.budgetDebited, false);
+  assertEquals(retries[1]!.alertId, "alert-7");
+});
+
+Deno.test("waiver cap: same alertId hit twice does NOT grant unlimited free retries", async () => {
+  let call = 0;
+  // Quarantined alert-X TWICE in a row → only the first is waived; the
+  // second debits budget normally. Since maxRetries=0 and budget already
+  // exhausted by first waiver, the second should raise exhaustion.
+  await assertRejects(
+    () =>
+      withInfraRetry<{ quarantined?: { alertId: string } }>(
+        ({ onRouted }) => {
+          call++;
+          onRouted(`C${call}`);
+          return Promise.resolve({ quarantined: { alertId: "alert-stuck" } });
+        },
+        {
+          maxRetries: 1,
+          configuredContainers: ["C1", "C2", "C3", "C4"],
+          context: { taskId: "T", variantId: "V", attemptNumber: 1 },
+          classifyResult: (r) =>
+            r.quarantined
+              ? {
+                kind: "quarantined",
+                alertId: r.quarantined.alertId,
+                originContainer: "C1",
+                fingerprint: "stuck-fp",
+              }
+              : { kind: "ok" },
+          jitterMs: () => 0,
+        },
+      ),
+    InfraRetriesExhaustedError,
+  );
+  // call sequence: initial (waived), retry1 (waived again? capped),
+  // retry2 (no more budget) — at least 2 calls.
+  assert(call >= 2);
+});

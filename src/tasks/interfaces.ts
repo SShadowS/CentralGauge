@@ -262,6 +262,27 @@ export interface InfraRetryRecord {
   durationMs: number;
   /** Final outcome of this retry. */
   outcome: InfraRetryOutcome;
+  /**
+   * What triggered this retry. "failure" is the legacy infra-error path
+   * (original attempt threw an infra-classified error). "alert_drain" means
+   * the alert-driven drain path triggered the retry — typically because
+   * the in-flight result came back with a `QuarantinedMarker`.
+   */
+  cause?: "failure" | "alert_drain";
+  /**
+   * Whether this retry counted against the per-attempt budget. False for
+   * waived retries (cause === "alert_drain" with `triggered_task`
+   * waiverReason). Absent on legacy records, which always debited.
+   */
+  budgetDebited?: boolean;
+  /**
+   * Why a budget waiver was granted (only set when budgetDebited === false).
+   * - "trigger_task" — this is THE failing task that tripped the alert.
+   * - "quarantine_reroute" — pending task drained off an alerted container.
+   */
+  waiverReason?: "trigger_task" | "quarantine_reroute";
+  /** Monotonic alertId from ContainerHealthMonitor when cause === "alert_drain". */
+  alertId?: string;
 }
 
 /**
