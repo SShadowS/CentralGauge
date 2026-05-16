@@ -924,6 +924,88 @@ describe({
     await Promise.all([p1, p2, p3]);
   });
 
+  it("quarantine wrap preserves original failure on tagged + failed entry", async () => {
+    // Compile failure on a tagged entry → result.quarantined populated.
+    mockProvider.setCompilationConfig({
+      success: false,
+      errors: [
+        {
+          code: "AL0001",
+          message: "Synthesized test error",
+          file: "test.al",
+          line: 1,
+          column: 1,
+          severity: "error",
+        },
+      ],
+    });
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 1,
+    });
+
+    // Use a small compile delay so we can observe an in-flight entry.
+    mockProvider.setCompilationConfig({
+      delay: 100,
+      success: false,
+      errors: [
+        {
+          code: "AL0001",
+          message: "Synthesized test error",
+          file: "test.al",
+          line: 1,
+          column: 1,
+          severity: "error",
+        },
+      ],
+    });
+
+    const itemId = "wi-quarantine";
+    const resultPromise = queue.enqueue(
+      createMockCompileWorkItem({ id: itemId }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Tag it now — entry is in-flight (compile phase).
+    const tagged = queue.markActiveForQuarantine("alert-99");
+    assertEquals(tagged, 1);
+
+    const result = await resultPromise;
+    assertEquals(result.compilationResult.success, false);
+    assertEquals(result.quarantined?.quarantined, true);
+    assertEquals(result.quarantined?.forcedByAlertId, "alert-99");
+    assertEquals(result.quarantined?.originContainer, "Cronus28");
+    // Original failure preserved
+    assertEquals(result.compilationResult.errors.length, 1);
+    assertEquals(
+      result.compilationResult.errors[0]!.message,
+      "Synthesized test error",
+    );
+  });
+
+  it("quarantine wrap is ABSENT when tagged entry succeeds", async () => {
+    mockProvider.setCompilationConfig({
+      delay: 50,
+      success: true,
+    });
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 1,
+    });
+    const resultPromise = queue.enqueue(
+      createMockCompileWorkItem({ id: "wi-ok-tagged" }),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    queue.markActiveForQuarantine("alert-100");
+
+    const result = await resultPromise;
+    assertEquals(result.compilationResult.success, true);
+    // Tagged + success → no quarantine marker (preserves real signal).
+    assertEquals(result.quarantined, undefined);
+  });
+
   it("admit/drain counters track activity over queue lifetime", async () => {
     mockProvider.setCompilationConfig({ delay: 200, success: true });
     const source = new CompileQueue(mockProvider, "Cronus28", {

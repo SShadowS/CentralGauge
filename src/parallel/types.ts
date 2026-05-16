@@ -194,6 +194,28 @@ export interface CompileWorkItem {
 }
 
 /**
+ * Sidecar marker attached to a CompileWorkResult when the entry was tagged
+ * `forcedByAlertId` (in-flight on an alerted container at alert raise time).
+ *
+ * The pipeline preserves the ORIGINAL compile/test outcome on the result so
+ * downstream callers can still inspect what actually happened on the bad
+ * container — this is a ROUTING signal, not evidence the work failed for
+ * model reasons. `withInfraRetry()` (task #6) reads `quarantined === true`
+ * and reroutes on a healthy container without scoring the failure as a
+ * model gap. The synthetic wrap MUST NOT feed back into the health monitor
+ * (no new fingerprint), per GPT review.
+ */
+export interface QuarantinedMarker {
+  quarantined: true;
+  /** alertId that triggered the quarantine — used for telemetry idempotency */
+  forcedByAlertId: string;
+  /** The container the work was ACTUALLY running on when tagged. */
+  originContainer: string;
+  /** Always "container_quarantined" today; reserved for future kinds. */
+  classificationReason: "container_quarantined";
+}
+
+/**
  * Result of compilation
  */
 export interface CompileWorkResult {
@@ -217,6 +239,15 @@ export interface CompileWorkResult {
 
   /** Duration of just the test execution in ms (only if tests ran) */
   testDuration?: number;
+
+  /**
+   * Present when the work was tagged for quarantine (an alert raised on
+   * the executing container mid-flight). The original compile/test fields
+   * above remain populated so audit + debug still see real outcome;
+   * downstream retry logic uses this marker to reroute. Absent on the
+   * normal happy path.
+   */
+  quarantined?: QuarantinedMarker;
 }
 
 // =============================================================================

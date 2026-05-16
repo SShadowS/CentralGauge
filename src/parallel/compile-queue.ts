@@ -645,10 +645,30 @@ export class CompileQueue implements CompileWorkQueue {
       this.totalProcessTime += compilePhaseResult.duration;
       succeeded = compilePhaseResult.compilationResult.success &&
         (compilePhaseResult.testResult?.success ?? true);
+
+      // Quarantine wrap: if the entry was tagged mid-flight by
+      // markActiveForQuarantine() AND the outcome is non-success, attach a
+      // `quarantined` sidecar so withInfraRetry (task #6) reroutes without
+      // scoring as a model failure. SUCCESS results pass through unmarked —
+      // a tagged entry that still passed is real evidence of model+task
+      // performance, no special handling.
+      if (entry.forcedByAlertId !== undefined && !succeeded) {
+        compilePhaseResult.quarantined = {
+          quarantined: true,
+          forcedByAlertId: entry.forcedByAlertId,
+          originContainer: this.containerName,
+          classificationReason: "container_quarantined",
+        };
+      }
       entry.resolve(compilePhaseResult);
     } catch (error) {
       this.processedCount++;
       this.totalProcessTime += Date.now() - startTime;
+      // Thrown errors during pipeline still respect the quarantine flag —
+      // a thrown error from a quarantined entry is also a routing signal,
+      // not a model verdict. The retry path keys off `result.quarantined`
+      // OR `error.containerName + isInfraError(error)`. Here we keep the
+      // original error and let task #6's withInfraRetry wrap it.
       entry.reject(error instanceof Error ? error : new Error(String(error)));
     } finally {
       this.recordCompleted(
