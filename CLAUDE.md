@@ -32,6 +32,22 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   - Score file `# Infra Retries` block summarizes per-run stats including
     zero-retry exhaustions. Dashboard shows ↻N badges live.
   - Operator smoke procedure: see `docs/inline-infra-retry-smoke.md`.
+- **Alert-driven drain + rebalance.** When a container enters `suspect_container`
+  (catastrophic single-failure signatures: `sql_service_down`, `container_offline`,
+  `pssession_lost`) or `persistent_container_failure` (3-of-window noisy fingerprints),
+  the orchestrator:
+  - Excludes it from new dispatch via the pool's monitor-aware gate.
+  - Drains its pending queue onto healthy containers (round-robin, cap-bypass).
+  - Tags in-flight entries so their non-success outcome wraps as a `QuarantinedMarker`.
+  - Free-retries the trigger task (no `infraRetriesPerAttempt` budget cost; cap 1 waiver
+    per task-attempt per `alertId`).
+  - When all containers are alerted, drained entries park in a pool FIFO and auto-flush
+    once a healthy queue reappears; `pool.cancelParked(reason)` is the shutdown escape.
+  - Wiring is opt-in via `OrchestratorDependencies.healthMonitor` —
+    `DashboardStateManager.getHealthMonitor()` is the canonical accessor so orchestrator
+    + dashboard share one monitor (rolling-window state stays consistent).
+  - Telemetry: scores file `# Drain Events` block + JSON top-level `drainEvents[]`.
+  - See `.claude/rules/alert-drain-rebalance.md` for the full flow.
 
 ## Technology Stack
 
@@ -292,6 +308,7 @@ Detailed pattern documentation lives in `.claude/rules/`:
 | MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                |
 | Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures      |
 | SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner   |
+| Alert Drain       | `alert-drain-rebalance.md` | Container-alert drain + rebalance + quarantine wrap + free-requeue waiver |
 
 ### Configuration Hierarchy
 
