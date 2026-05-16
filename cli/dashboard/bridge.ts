@@ -269,6 +269,16 @@ export class DashboardEventBridge {
     let broadcasted = false;
     for (const attempt of result.attempts) {
       if (!didContainerWork(attempt)) continue;
+      // Skip quarantined attempts — routing signal, not model verdict.
+      // The original failure stays on the attempt for audit; the
+      // already-alerted container does not need its failCount bumped.
+      if (
+        (attempt.compilationResult as
+          | { quarantined?: unknown }
+          | undefined)?.quarantined !== undefined
+      ) {
+        continue;
+      }
       const containerName = getActualAttemptContainerName(attempt);
       if (!containerName) continue;
       const outcome: "pass" | "fail" =

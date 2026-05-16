@@ -99,6 +99,44 @@ Deno.test("recorder ignores error events without containerName", () => {
   assertEquals(monitor.getState().containers.length, 0);
 });
 
+Deno.test("recorder SKIPS quarantined attempts (no failCount inflation)", () => {
+  const monitor = new ContainerHealthMonitor({ windowSize: 5 });
+  const emitter = makeEmitter();
+  attachOutcomeRecorder(emitter.on.bind(emitter), monitor);
+
+  // Quarantined attempt: compilation failed BUT was tagged for reroute.
+  // The recorder must not record this as a fail outcome on Cronus28 —
+  // that container is already in alert state and the failure isn't a
+  // fresh model verdict.
+  const result = {
+    taskId: "T1",
+    executionId: "e1",
+    attempts: [
+      {
+        attemptNumber: 1,
+        containerName: "Cronus28",
+        compilationResult: {
+          success: false,
+          quarantined: {
+            quarantined: true,
+            forcedByAlertId: "alert-1",
+            originContainer: "Cronus28",
+            classificationReason: "container_quarantined",
+          },
+        },
+      },
+    ],
+    success: false,
+  } as unknown as TaskExecutionResult;
+  emitter.emit({ type: "result", result });
+
+  const c = monitor.getState().containers.find((x) =>
+    x.containerName === "Cronus28"
+  );
+  // Skipped entirely → no container row added.
+  assertEquals(c, undefined);
+});
+
 Deno.test("recorder unsubscribe stops further recording", () => {
   const monitor = new ContainerHealthMonitor({ windowSize: 5 });
   const emitter = makeEmitter();

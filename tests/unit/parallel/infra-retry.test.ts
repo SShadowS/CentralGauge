@@ -548,6 +548,51 @@ Deno.test("event sequence on exhaustion: started, failed, exhausted (no succeede
 // Quarantine waiver path (task #6)
 // =============================================================================
 
+Deno.test("waiver path does NOT emit infra_retry_started (routing-only, no monitor hit)", async () => {
+  // The quarantine waiver is a routing decision, not new infra evidence.
+  // Emitting infra_retry_started would cause the outcome recorder to
+  // record the alerted container with a synthetic "container_quarantined"
+  // fingerprint, which could trip a redundant persistent_container_failure
+  // alert on the synthetic fp.
+  let call = 0;
+  const events: ParallelExecutionEvent[] = [];
+  await withInfraRetry<{ ok: boolean; quarantined?: { alertId: string } }>(
+    ({ onRouted }) => {
+      call++;
+      if (call === 1) {
+        onRouted("Cronus28");
+        return Promise.resolve({
+          ok: false,
+          quarantined: { alertId: "alert-1" },
+        });
+      }
+      onRouted("Cronus281");
+      return Promise.resolve({ ok: true });
+    },
+    {
+      maxRetries: 1,
+      configuredContainers: ["Cronus28", "Cronus281"],
+      emit: (e) => events.push(e),
+      context: { taskId: "T", variantId: "V", attemptNumber: 1 },
+      classifyResult: (r) =>
+        r.quarantined
+          ? {
+            kind: "quarantined",
+            alertId: r.quarantined.alertId,
+            originContainer: "Cronus28",
+            fingerprint: "quarantine-fp",
+          }
+          : { kind: "ok" },
+      jitterMs: () => 0,
+    },
+  );
+  // The retry SUCCEEDED but no started/succeeded events were emitted from
+  // the quarantine path. (The legacy failure path WOULD emit them; this
+  // test pins the waiver-path silence.)
+  const started = events.filter((e) => e.type === "infra_retry_started");
+  assertEquals(started.length, 0);
+});
+
 Deno.test("waiver: quarantined result triggers free retry, does NOT debit budget", async () => {
   let call = 0;
   const { retries } = await withInfraRetry<

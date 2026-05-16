@@ -46,6 +46,18 @@ export function attachOutcomeRecorder(
         const result = event.result;
         for (const attempt of result.attempts) {
           if (!didContainerWork(attempt)) continue;
+          // Quarantined results are a routing signal, not a fresh model
+          // verdict on this container — the container was ALREADY in
+          // alert state when the work executed there. Skipping prevents
+          // failCount inflation on the already-suspect container.
+          // Original failure stays preserved on the result for audit.
+          if (
+            (attempt.compilationResult as
+              | { quarantined?: unknown }
+              | undefined)?.quarantined !== undefined
+          ) {
+            continue;
+          }
           const containerName = getActualAttemptContainerName(attempt);
           if (!containerName) continue;
           const outcome: "pass" | "fail" =

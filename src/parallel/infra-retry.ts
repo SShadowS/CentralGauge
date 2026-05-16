@@ -267,13 +267,17 @@ export async function withInfraRetry<T>(
         };
         retries.push(newRecord);
 
-        options.emit?.({
-          type: "infra_retry_started",
-          ...options.context,
-          retryNumber: attemptIndex + 1,
-          originalContainerName: origin,
-          fingerprint,
-        });
+        // NOTE: we intentionally do NOT emit `infra_retry_started` here.
+        // The quarantine waiver is a routing decision, not new infra
+        // evidence — the originating alert was already raised by the
+        // real signature (e.g. sql_service_down). Re-emitting an
+        // infra_retry_started with a synthetic "container_quarantined"
+        // fingerprint would re-record the alerted container in the
+        // monitor's rolling window and could trip a redundant
+        // persistent_container_failure alert on the synthetic fp.
+        // Drain telemetry surfaces this routing via
+        // CompileQueuePool.getRebalanceLog() and the # Drain Events
+        // block in scores files — the observability is not lost.
 
         // Anti-stampede pause + loop to retry.
         await sleep(jitter());

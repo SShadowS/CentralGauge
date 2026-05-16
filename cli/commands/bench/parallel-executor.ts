@@ -305,6 +305,23 @@ export async function executeParallelBenchmark(
           }
           : {}),
       });
+
+      // Alert-drain / quarantine / free-requeue needs at least 2
+      // containers to be useful — with a single container, the first
+      // SUSPECT alert immediately excludes the only routing target,
+      // every subsequent enqueue hits NoEligibleContainersError, and
+      // withInfraRetry short-circuits with no_eligible_containers
+      // exhaustion. Warn the operator up front so they understand why
+      // the bench might suddenly stall instead of recovering.
+      const containerCount = containerNames?.length ?? 1;
+      if (containerCount < 2) {
+        log.warn(
+          "[Alert-drain] Single-container topology: alert-drain feature " +
+            "will exclude the only container on first SUSPECT and produce " +
+            "immediate exhaustion. Re-run with --containers a,b[,c...] to " +
+            "benefit from rebalance.",
+        );
+      }
     }
 
     // Start live dashboard (skipped when --no-dashboard is passed for scripted use)
