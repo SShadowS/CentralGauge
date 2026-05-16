@@ -62,6 +62,19 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
     fixHint:
       "Container is down. Run Start-BcContainer or rebuild with New-BcContainer.",
   },
+  {
+    id: "sql_service_down",
+    label: "Container SQL service stopped / NST detached",
+    patterns: [
+      /NavServerNotFoundException/i,
+      /Cannot establish a connection to the SQL Server\/Database/i,
+      /Cannot establish a connection to the SQL Server/i,
+    ],
+    scope: "container",
+    severity: "critical",
+    fixHint:
+      "SQL service is stopped inside the container. Run: docker exec {container} powershell -Command \"Start-Service 'MSSQL$SQLEXPRESS'; Start-Service 'MSSQLFDLauncher$SQLEXPRESS'; Restart-Service 'MicrosoftDynamicsNavServer$BC'\"",
+  },
 ];
 
 /**

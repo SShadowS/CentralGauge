@@ -1,0 +1,30 @@
+[CG-PIN] buildTestScript bccontainerhelper@6.1.14
+PREPARE_PUBLISH_START:1778918394100
+Publishing CentralGauge_CG-AL-E054_2.app via Publish-BcContainerApp -sync -syncMode ForceSync -install
+
+  Category: Microsoft.Dynamics.Nav.Client.Web.SystemHealthChecker
+  EventId: 0
+  ConnectionId: 0HNLI805MMAE4
+  RequestId: 0HNLI805MMAE4:00000002
+  RequestPath: /BC/Health/System
+  ActionId: 54d36601-b86c-466d-941b-981cd0e5ed75
+  ActionName: Microsoft.Dynamics.Nav.WebClient.Controllers.HealthController.System (Prod.Client.WebCoreApp)
+  MemberName: HandleException
+  FilePath: s:\repo\src\Platform\Client\Web\Prod.Client.WebCommon\Services\SystemHealth\SystemHealthChecker.cs
+  LineNumber: 164
+  ExceptionType: Microsoft.Dynamics.Nav.Types.NavServerNotFoundException
+
+   Health call failed.
+
+  Exception:
+  Microsoft.Dynamics.Nav.Types.NavServerNotFoundException: Exception of type 'Microsoft.Dynamics.Nav.Types.NavServerNotFoundException' was thrown.
+     at Microsoft.Dynamics.Nav.Client.HealthClient.ResponseReceived(Object sender, HttpResponseMessage httpResponseMessage) in s:\repo\src\Platform\Client\Shared\Prod.Client.ServiceConnection\HttpService\HealthClient.cs:line 136
+     at Microsoft.Dynamics.Nav.Common.Http.HttpServiceClient.CallService(String requestUrl, HttpMethod method, Object content) in s:\repo\src\Platform\ClientServerShared\Prod.Common\Http\HttpServiceClient.cs:line 0
+     at Microsoft.Dynamics.Nav.Client.HealthClient.GetHealthStatus(String requestUrl) in s:\repo\src\Platform\Client\Shared\Prod.Client.ServiceConnection\HttpService\HealthClient.cs:line 48
+     at Microsoft.Dynamics.Nav.Client.HealthClient.GetSystemHealth() in s:\repo\src\Platform\Client\Shared\Prod.Client.ServiceConnection\HttpService\HealthClient.cs:line 81
+     at Microsoft.Dynamics.Nav.Client.Web.SystemHealthChecker.IsSystemHealthyAsync() in s:\repo\src\Platform\Client\Web\Prod.Client.WebCommon\Services\SystemHealth\SystemHealthChecker.cs:line 67
+
+
+Publish-BcContainerApp Telemetry Correlation Id: 7875dc76-76de-490c-a5e4-160fb6c2fd23
+PREPARE_PUBLISH_END:1778918394988
+PREPARE_PUBLISH_FAILED:Publish-NAVApp: Cannot establish a connection to the SQL Server/Database.

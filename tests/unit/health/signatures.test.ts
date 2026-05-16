@@ -14,6 +14,7 @@ Deno.test("library defines all expected signatures", () => {
       "container_oom",
       "publish_timeout",
       "container_offline",
+      "sql_service_down",
     ]
   ) {
     assertEquals(
@@ -69,6 +70,17 @@ Deno.test("matches container_offline", async () => {
   const sig = matchSignature(text);
   assertExists(sig);
   assertEquals(sig!.id, "container_offline");
+});
+
+Deno.test("matches sql_service_down", async () => {
+  const text = await Deno.readTextFile(
+    "tests/fixtures/infra-logs/sql-service-down.txt",
+  );
+  const sig = matchSignature(text);
+  assertExists(sig);
+  assertEquals(sig!.id, "sql_service_down");
+  assertEquals(sig!.scope, "container");
+  assertEquals(sig!.severity, "critical");
 });
 
 Deno.test("returns undefined on AL compile error fixture (not infra)", async () => {
