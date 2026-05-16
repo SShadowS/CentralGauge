@@ -924,6 +924,40 @@ describe({
     await Promise.all([p1, p2, p3]);
   });
 
+  it("admit/drain counters track activity over queue lifetime", async () => {
+    mockProvider.setCompilationConfig({ delay: 200, success: true });
+    const source = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 1,
+    });
+    const target = new CompileQueue(mockProvider, "Cronus281", {
+      maxQueueSize: 10,
+      timeout: 60000,
+    });
+
+    assertEquals(source.totalDrained, 0);
+    assertEquals(target.totalRebalancedIn, 0);
+    assertEquals(source.peakPendingDepth, 0);
+
+    const p1 = source.enqueue(createMockCompileWorkItem({ id: "wi-a" }))
+      .catch(() => {});
+    const p2 = source.enqueue(createMockCompileWorkItem({ id: "wi-b" }))
+      .catch(() => {});
+
+    await new Promise((r) => setTimeout(r, 20));
+    assert(source.peakPendingDepth >= 1);
+
+    const drained = source.drainPending();
+    assertEquals(source.totalDrained, drained.length);
+
+    for (const e of drained) target.admitRebalancedEntry(e);
+    assertEquals(target.totalRebalancedIn, drained.length);
+
+    source.clear();
+    await Promise.all([p1, p2]);
+  });
+
   it("admitRebalancedEntry skips capacity check and resolves original promise", async () => {
     mockProvider.setCompilationConfig({ success: true });
 

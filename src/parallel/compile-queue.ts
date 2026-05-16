@@ -236,6 +236,14 @@ export class CompileQueue implements CompileWorkQueue {
   private dispatching = false;
   /** Counter for drainPending() telemetry — number of entries drained over the queue's lifetime. */
   private drainedCount = 0;
+  /**
+   * Counter for admitRebalancedEntry() telemetry — number of entries this
+   * queue has accepted via the cap-bypass rebalance path. Distinct from
+   * drainedCount, which tracks entries this queue has shed.
+   */
+  private rebalancedInCount = 0;
+  /** Max pending depth observed at admit time (rebalance + normal enqueue) — drain telemetry. */
+  private maxPendingObserved = 0;
   private containerProvider: ContainerProvider;
   /** Name of the BC container this queue operates against. */
   public readonly containerName: string;
@@ -347,6 +355,9 @@ export class CompileQueue implements CompileWorkQueue {
 
       // Add to queue
       this.queue.push(entry);
+      if (this.queue.length > this.maxPendingObserved) {
+        this.maxPendingObserved = this.queue.length;
+      }
 
       // Start processing (non-blocking)
       this.processQueue().catch((error) => {
@@ -406,6 +417,10 @@ export class CompileQueue implements CompileWorkQueue {
     }, this.timeout);
 
     this.queue.push(entry);
+    this.rebalancedInCount++;
+    if (this.queue.length > this.maxPendingObserved) {
+      this.maxPendingObserved = this.queue.length;
+    }
     this.processQueue().catch((error) => {
       log.error("Error processing compile queue (rebalanced)", {
         error: String(error),
@@ -464,6 +479,20 @@ export class CompileQueue implements CompileWorkQueue {
   /** Number of entries this queue has drained over its lifetime. */
   get totalDrained(): number {
     return this.drainedCount;
+  }
+
+  /**
+   * Number of entries this queue has accepted via the cap-bypass
+   * `admitRebalancedEntry()` path. Drain telemetry surfaces this so
+   * operators can see how often the rebalance route was hot.
+   */
+  get totalRebalancedIn(): number {
+    return this.rebalancedInCount;
+  }
+
+  /** Highest pending depth observed at any admit point. */
+  get peakPendingDepth(): number {
+    return this.maxPendingObserved;
   }
 
   /**
