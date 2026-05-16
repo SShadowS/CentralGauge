@@ -203,14 +203,29 @@ export async function withInfraRetry<T>(
           last.retryContainerName = origin;
           last.outcome = "infra_again";
           last.durationMs = durationMs;
-          options.emit?.({
-            type: "infra_retry_failed",
-            ...options.context,
-            retryNumber: attemptIndex,
-            retryContainerName: origin,
-            outcome: "infra_again",
-            durationMs,
-          });
+          // Route through the quarantine_reroute_failed event when the
+          // PREVIOUS retry was an alert_drain (the one being finalized).
+          // Avoids feeding infra_retry_failed → infra_retry_* recorders.
+          if (last.cause === "alert_drain") {
+            options.emit?.({
+              type: "quarantine_reroute_failed",
+              ...options.context,
+              retryNumber: attemptIndex,
+              retryContainerName: origin,
+              alertId: last.alertId ?? "(unknown)",
+              outcome: "infra_again",
+              durationMs,
+            });
+          } else {
+            options.emit?.({
+              type: "infra_retry_failed",
+              ...options.context,
+              retryNumber: attemptIndex,
+              retryContainerName: origin,
+              outcome: "infra_again",
+              durationMs,
+            });
+          }
         }
 
         // Cap the waiver — only the FIRST occurrence of a given alertId
@@ -267,17 +282,19 @@ export async function withInfraRetry<T>(
         };
         retries.push(newRecord);
 
-        // NOTE: we intentionally do NOT emit `infra_retry_started` here.
-        // The quarantine waiver is a routing decision, not new infra
-        // evidence — the originating alert was already raised by the
-        // real signature (e.g. sql_service_down). Re-emitting an
-        // infra_retry_started with a synthetic "container_quarantined"
-        // fingerprint would re-record the alerted container in the
-        // monitor's rolling window and could trip a redundant
-        // persistent_container_failure alert on the synthetic fp.
-        // Drain telemetry surfaces this routing via
-        // CompileQueuePool.getRebalanceLog() and the # Drain Events
-        // block in scores files — the observability is not lost.
+        // Emit a distinct event type for the waiver routing decision.
+        // OutcomeRecorder + dashboard bridge ignore these (they default-skip
+        // unknown event types) so the synthetic "container_quarantined"
+        // fingerprint never reaches the monitor's rolling window. Operators
+        // still get observability — dashboard renders the reroute inline.
+        options.emit?.({
+          type: "quarantine_reroute_started",
+          ...options.context,
+          retryNumber: attemptIndex + 1,
+          originalContainerName: origin,
+          alertId,
+          budgetDebited: !isFirstWaiver,
+        });
 
         // Anti-stampede pause + loop to retry.
         await sleep(jitter());
@@ -290,13 +307,27 @@ export async function withInfraRetry<T>(
         last.retryContainerName = routedContainer ?? last.retryContainerName;
         last.outcome = "succeeded";
         last.durationMs = performance.now() - start;
-        options.emit?.({
-          type: "infra_retry_succeeded",
-          ...options.context,
-          retryNumber: attemptIndex,
-          retryContainerName: last.retryContainerName,
-          durationMs: last.durationMs,
-        });
+        // Route through quarantine_reroute_succeeded when the previous
+        // retry was an alert_drain — keeps the legacy infra_retry_*
+        // event stream clean of waiver-path success markers.
+        if (last.cause === "alert_drain") {
+          options.emit?.({
+            type: "quarantine_reroute_succeeded",
+            ...options.context,
+            retryNumber: attemptIndex,
+            retryContainerName: last.retryContainerName,
+            alertId: last.alertId ?? "(unknown)",
+            durationMs: last.durationMs,
+          });
+        } else {
+          options.emit?.({
+            type: "infra_retry_succeeded",
+            ...options.context,
+            retryNumber: attemptIndex,
+            retryContainerName: last.retryContainerName,
+            durationMs: last.durationMs,
+          });
+        }
       }
       return { result, retries };
     } catch (err) {
@@ -315,14 +346,26 @@ export async function withInfraRetry<T>(
           last.outcome = outcome;
           last.durationMs = durationMs;
           if (outcome !== "succeeded") {
-            options.emit?.({
-              type: "infra_retry_failed",
-              ...options.context,
-              retryNumber: attemptIndex,
-              retryContainerName: container,
-              outcome,
-              durationMs,
-            });
+            if (last.cause === "alert_drain") {
+              options.emit?.({
+                type: "quarantine_reroute_failed",
+                ...options.context,
+                retryNumber: attemptIndex,
+                retryContainerName: container,
+                alertId: last.alertId ?? "(unknown)",
+                outcome,
+                durationMs,
+              });
+            } else {
+              options.emit?.({
+                type: "infra_retry_failed",
+                ...options.context,
+                retryNumber: attemptIndex,
+                retryContainerName: container,
+                outcome,
+                durationMs,
+              });
+            }
           }
         }
       };

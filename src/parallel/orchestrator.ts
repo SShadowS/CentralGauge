@@ -352,6 +352,18 @@ export class ParallelBenchmarkOrchestrator {
             criticalAbort = error instanceof Error
               ? error
               : new Error(String(error));
+            // Release parked promises immediately so the outer
+            // `Promise.allSettled(taskPromises)` can settle instead of
+            // hanging on entries that will never flush (all containers
+            // alerted + critical abort). The same call also runs in
+            // the outer finally — both are idempotent.
+            if (this.compileQueue instanceof CompileQueuePool) {
+              try {
+                this.compileQueue.cancelParked(
+                  `criticalAbort: ${criticalAbort.message}`,
+                );
+              } catch { /* best-effort */ }
+            }
           }
           throw error;
         } finally {
@@ -377,6 +389,32 @@ export class ParallelBenchmarkOrchestrator {
           });
         }
         this.alertUnsubscribe = undefined;
+      }
+      // Cancel any parked compile entries before drain(). Without this,
+      // parked-forever promises would block this.compileQueue?.drain()
+      // (which waits for all in-flight work) and the bench would hang
+      // forever when every container was alerted simultaneously.
+      // Idempotent — empty parkedEntries makes the call a no-op.
+      if (this.compileQueue instanceof CompileQueuePool) {
+        try {
+          // TS flow-analysis narrows `criticalAbort` to `null` here
+          // because the inner catch re-throws unconditionally. Cast to
+          // the declared type to read the (possibly populated) value.
+          const abortRef = criticalAbort as Error | null;
+          const reason = abortRef instanceof Error
+            ? `criticalAbort: ${abortRef.message}`
+            : "bench run shutdown";
+          const cancelled = this.compileQueue.cancelParked(reason);
+          if (cancelled > 0) {
+            log.warn("Cancelled parked compile entries on shutdown", {
+              cancelled,
+            });
+          }
+        } catch (e) {
+          log.warn("cancelParked threw on cleanup", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
       }
       // Clean up
       await this.llmPool.drain();
@@ -977,6 +1015,14 @@ export class ParallelBenchmarkOrchestrator {
     }
     if (compileResult.testDuration !== undefined) {
       attempt.testDuration = compileResult.testDuration;
+    }
+    // Lift the QuarantinedMarker from the sibling field on CompileWorkResult
+    // onto the attempt itself so the OutcomeRecorder + dashboard bridge can
+    // skip attribution to the alerted container. Without this copy the
+    // marker is lost during attempt construction and the skip checks turn
+    // into no-ops (caught by GPT-5.5 review of the initial gap-closure).
+    if (compileResult.quarantined !== undefined) {
+      attempt.quarantined = compileResult.quarantined;
     }
     return attempt;
   }

@@ -114,6 +114,21 @@ export interface PoolSnapshot {
 
   /** Last N enqueue → container routing decisions. Newest first. */
   recentRouting: RoutingDecision[];
+
+  /**
+   * Number of compile entries currently parked because every container
+   * was alerted at rebalance time. > 0 means the bench is STALLED waiting
+   * for a healthy container to reappear. Operators must restore a
+   * container (or `pool.cancelParked(reason)` aborts the parked promises).
+   */
+  parkedDepth?: number;
+
+  /**
+   * Lifetime count of entries that hit the parked state. Distinct from
+   * `parkedDepth` (which is the current backlog). Drains naturally when
+   * `flushParkedTo` admits them on a healthy queue's next enqueue.
+   */
+  parkedLifetime?: number;
 }
 
 // =============================================================================

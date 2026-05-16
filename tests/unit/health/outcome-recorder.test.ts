@@ -107,7 +107,8 @@ Deno.test("recorder SKIPS quarantined attempts (no failCount inflation)", () => 
   // Quarantined attempt: compilation failed BUT was tagged for reroute.
   // The recorder must not record this as a fail outcome on Cronus28 —
   // that container is already in alert state and the failure isn't a
-  // fresh model verdict.
+  // fresh model verdict. The marker lives at the attempt level (lifted
+  // from CompileWorkResult by orchestrator.createAttempt).
   const result = {
     taskId: "T1",
     executionId: "e1",
@@ -117,12 +118,12 @@ Deno.test("recorder SKIPS quarantined attempts (no failCount inflation)", () => 
         containerName: "Cronus28",
         compilationResult: {
           success: false,
-          quarantined: {
-            quarantined: true,
-            forcedByAlertId: "alert-1",
-            originContainer: "Cronus28",
-            classificationReason: "container_quarantined",
-          },
+        },
+        quarantined: {
+          quarantined: true,
+          forcedByAlertId: "alert-1",
+          originContainer: "Cronus28",
+          classificationReason: "container_quarantined",
         },
       },
     ],

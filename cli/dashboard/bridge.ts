@@ -270,15 +270,11 @@ export class DashboardEventBridge {
     for (const attempt of result.attempts) {
       if (!didContainerWork(attempt)) continue;
       // Skip quarantined attempts — routing signal, not model verdict.
-      // The original failure stays on the attempt for audit; the
-      // already-alerted container does not need its failCount bumped.
-      if (
-        (attempt.compilationResult as
-          | { quarantined?: unknown }
-          | undefined)?.quarantined !== undefined
-      ) {
-        continue;
-      }
+      // Marker lives on attempt.quarantined (lifted from CompileWorkResult
+      // by orchestrator.createAttempt). The original failure stays on
+      // compilationResult/testResult for audit; the already-alerted
+      // container does not need its failCount bumped.
+      if (attempt.quarantined !== undefined) continue;
       const containerName = getActualAttemptContainerName(attempt);
       if (!containerName) continue;
       const outcome: "pass" | "fail" =

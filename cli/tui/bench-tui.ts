@@ -87,8 +87,8 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
       // Synthesized infra-failure results carry "Infra error:" as the first
       // failure reason. Show them as [INFRA] so operators don't blame the
       // model for a container/test-harness fault.
-      const isInfra =
-        (event.result.attempts[0]?.failureReasons?.[0] ?? "").startsWith(
+      const isInfra = (event.result.attempts[0]?.failureReasons?.[0] ?? "")
+        .startsWith(
           "Infra error:",
         );
       const status = event.result.success
@@ -127,7 +127,9 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
       const ctx = isInfra && event.containerName
         ? ` (${event.containerName})`
         : "";
-      return `${event.model ? crayon.magenta(`[${event.model}]`) + " " : ""}${tag}${ctx} ${event.error.message}`;
+      return `${
+        event.model ? crayon.magenta(`[${event.model}]`) + " " : ""
+      }${tag}${ctx} ${event.error.message}`;
     }
 
     // Skip noisy events - these are either too frequent or handled via progress
@@ -142,6 +144,11 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
     case "infra_retry_succeeded":
     case "infra_retry_failed":
     case "infra_retry_exhausted":
+    // Quarantine waiver events — surface via # Drain Events block in
+    // the scores file rather than the live run log. Suppress here.
+    case "quarantine_reroute_started":
+    case "quarantine_reroute_succeeded":
+    case "quarantine_reroute_failed":
       return null;
   }
 }

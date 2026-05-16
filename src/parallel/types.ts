@@ -645,6 +645,45 @@ export type ParallelExecutionEvent =
     finalContainerName: string;
     fingerprint?: string;
     reason: InfraRetryExhaustionReason;
+  }
+  /**
+   * Quarantine waiver triad (task-#6 free-requeue path). Distinct from the
+   * legacy `infra_retry_*` events because the OutcomeRecorder must NOT
+   * record these as `infra_error` outcomes — they are routing decisions,
+   * not new infra evidence. The original signature already raised the
+   * alert; re-recording with a synthetic "container_quarantined"
+   * fingerprint would pollute the rolling window.
+   */
+  | {
+    type: "quarantine_reroute_started";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    originalContainerName: string;
+    alertId: string;
+    budgetDebited: boolean;
+  }
+  | {
+    type: "quarantine_reroute_succeeded";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    alertId: string;
+    durationMs: number;
+  }
+  | {
+    type: "quarantine_reroute_failed";
+    taskId: string;
+    variantId: string;
+    attemptNumber: number;
+    retryNumber: number;
+    retryContainerName: string;
+    alertId: string;
+    outcome: Exclude<InfraRetryOutcome, "succeeded">;
+    durationMs: number;
   };
 
 /**

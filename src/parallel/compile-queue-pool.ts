@@ -506,6 +506,8 @@ export class CompileQueuePool implements CompileWorkQueue {
       },
       imbalanceScore: imbalanceScore(pendingDepths),
       recentRouting: this.routingLog.toArray(),
+      parkedDepth: this.parkedEntries.length,
+      parkedLifetime: this.parkedTotal,
     };
   }
 

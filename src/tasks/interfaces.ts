@@ -338,6 +338,22 @@ export interface ExecutionAttempt {
    */
   infraRetries?: InfraRetryRecord[] | undefined;
   /**
+   * Present when the work executed on a container that an alert raised on
+   * mid-flight (the orchestrator's drain path tagged the entry with
+   * `forcedByAlertId`). Marker is copied from the sibling field on
+   * `CompileWorkResult` during attempt construction so the OutcomeRecorder
+   * + dashboard bridge can SKIP attribution to the alerted container
+   * (it would inflate failCount without adding signal). The original
+   * compile/test outcome remains in `compilationResult` / `testResult`
+   * for audit.
+   */
+  quarantined?: {
+    quarantined: true;
+    forcedByAlertId: string;
+    originContainer: string;
+    classificationReason: "container_quarantined";
+  } | undefined;
+  /**
    * `true` when an infra failure was detected AND the inline retry path did
    * NOT recover the attempt — regardless of whether retries actually executed.
    *

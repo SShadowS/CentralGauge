@@ -548,12 +548,11 @@ Deno.test("event sequence on exhaustion: started, failed, exhausted (no succeede
 // Quarantine waiver path (task #6)
 // =============================================================================
 
-Deno.test("waiver path does NOT emit infra_retry_started (routing-only, no monitor hit)", async () => {
-  // The quarantine waiver is a routing decision, not new infra evidence.
-  // Emitting infra_retry_started would cause the outcome recorder to
-  // record the alerted container with a synthetic "container_quarantined"
-  // fingerprint, which could trip a redundant persistent_container_failure
-  // alert on the synthetic fp.
+Deno.test("waiver path emits quarantine_reroute_* events, NOT infra_retry_*", async () => {
+  // The quarantine waiver routes through a distinct event triad so the
+  // OutcomeRecorder + dashboard bridge can ignore them. The legacy
+  // infra_retry_* events would feed the monitor with a synthetic
+  // "container_quarantined" fingerprint.
   let call = 0;
   const events: ParallelExecutionEvent[] = [];
   await withInfraRetry<{ ok: boolean; quarantined?: { alertId: string } }>(
@@ -586,11 +585,13 @@ Deno.test("waiver path does NOT emit infra_retry_started (routing-only, no monit
       jitterMs: () => 0,
     },
   );
-  // The retry SUCCEEDED but no started/succeeded events were emitted from
-  // the quarantine path. (The legacy failure path WOULD emit them; this
-  // test pins the waiver-path silence.)
-  const started = events.filter((e) => e.type === "infra_retry_started");
-  assertEquals(started.length, 0);
+  const types = events.map((e) => e.type);
+  // The legacy infra_retry_* events MUST NOT appear for the waiver.
+  assertEquals(types.includes("infra_retry_started"), false);
+  assertEquals(types.includes("infra_retry_succeeded"), false);
+  // The quarantine_reroute_* triad MUST appear.
+  assertEquals(types.includes("quarantine_reroute_started"), true);
+  assertEquals(types.includes("quarantine_reroute_succeeded"), true);
 });
 
 Deno.test("waiver: quarantined result triggers free retry, does NOT debit budget", async () => {
