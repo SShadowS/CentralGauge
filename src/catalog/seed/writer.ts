@@ -102,27 +102,21 @@ function pricingRowToYaml(row: PricingRow): string {
   return stringify([row], { lineWidth: -1 });
 }
 
-function findLatestPricing(
+function findPricingAtVersion(
   content: string,
   slug: string,
+  pricingVersion: string,
 ): { input: number; output: number } | null {
   if (content.trim().length === 0) return null;
   const parsed = parseYaml(content) as PricingRow[] | null;
   if (!parsed || !Array.isArray(parsed)) return null;
-  const matches = parsed.filter((r) => r.model_slug === slug);
-  if (matches.length === 0) return null;
-  // Latest by pricing_version (lexicographic ISO date sort, descending).
-  matches.sort((a, b) =>
-    a.pricing_version < b.pricing_version
-      ? 1
-      : a.pricing_version > b.pricing_version
-      ? -1
-      : 0
+  const match = parsed.find(
+    (r) => r.model_slug === slug && r.pricing_version === pricingVersion,
   );
-  const latest = matches[0]!;
+  if (!match) return null;
   return {
-    input: latest.input_per_mtoken,
-    output: latest.output_per_mtoken,
+    input: match.input_per_mtoken,
+    output: match.output_per_mtoken,
   };
 }
 
@@ -131,11 +125,15 @@ export async function appendPricingIfChanged(
   row: PricingRow,
 ): Promise<AppendResult> {
   const existing = await readTextSafe(path);
-  const latest = findLatestPricing(existing, row.model_slug);
+  const sameVersion = findPricingAtVersion(
+    existing,
+    row.model_slug,
+    row.pricing_version,
+  );
   if (
-    latest !== null &&
-    latest.input === row.input_per_mtoken &&
-    latest.output === row.output_per_mtoken
+    sameVersion !== null &&
+    sameVersion.input === row.input_per_mtoken &&
+    sameVersion.output === row.output_per_mtoken
   ) {
     return { added: false };
   }

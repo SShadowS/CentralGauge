@@ -90,6 +90,13 @@ describe("inferFamilySlug", () => {
     assertEquals(inferFamilySlug("google", "models/gemini-pro"), "gemini");
   });
 
+  it("returns 'gemini' for gemini/gemini-3.1-pro-preview", () => {
+    assertEquals(
+      inferFamilySlug("gemini", "gemini-3.1-pro-preview"),
+      "gemini",
+    );
+  });
+
   it("returns 'grok' for openrouter/grok-4.3 (sub-vendor x-ai)", () => {
     assertEquals(inferFamilySlug("openrouter", "grok-4.3", "x-ai"), "grok");
   });

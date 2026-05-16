@@ -70,6 +70,7 @@ export function inferFamilySlug(
       }
       break;
     case "google":
+    case "gemini":
       if (model.startsWith("gemini-") || model.startsWith("models/gemini-")) {
         return "gemini";
       }

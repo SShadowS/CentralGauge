@@ -262,16 +262,10 @@ describe("appendPricingIfChanged", () => {
     }
   });
 
-  it("returns added=false when prices match latest existing row", async () => {
+  it("returns added=false when row already exists at same pricing_version with same rates", async () => {
     const dir = await createTempDir("seed-pricing-skip");
     const path = `${dir}/pricing.yml`;
-    const existing: PricingRow = {
-      ...sampleRow(),
-      pricing_version: "2026-04-01",
-      effective_from: "2026-04-01T00:00:00.000Z",
-      fetched_at: "2026-04-01T00:00:00.000Z",
-    };
-    const original = stringify([existing], { lineWidth: -1 });
+    const original = stringify([sampleRow()], { lineWidth: -1 });
     await Deno.writeTextFile(path, original);
 
     try {
@@ -283,30 +277,26 @@ describe("appendPricingIfChanged", () => {
     }
   });
 
-  it("uses the latest snapshot (by pricing_version) for delta comparison", async () => {
+  it("appends when only older pricing_versions exist (today's row missing)", async () => {
+    // Regression: pre-fix, seeder skipped if latest existing rates matched
+    // incoming rates regardless of pricing_version. This left precheck stuck
+    // demanding today's row that never landed. Now the (slug, pricing_version)
+    // pair drives the decision; rates are only compared within that pair.
     const dir = await createTempDir("seed-pricing-multi");
     const path = `${dir}/pricing.yml`;
     const olderRow: PricingRow = {
-      ...sampleRow(),
-      pricing_version: "2026-01-01",
-      input_per_mtoken: 99,
-      output_per_mtoken: 99,
-    };
-    const newerRow: PricingRow = {
       ...sampleRow(),
       pricing_version: "2026-04-01",
       input_per_mtoken: 1.25,
       output_per_mtoken: 2.5,
     };
-    await Deno.writeTextFile(
-      path,
-      stringify([olderRow, newerRow], { lineWidth: -1 }),
-    );
+    await Deno.writeTextFile(path, stringify([olderRow], { lineWidth: -1 }));
 
     try {
-      // Today's row matches NEWER, so should be skipped despite differing from older.
       const result = await appendPricingIfChanged(path, sampleRow());
-      assertEquals(result.added, false);
+      assertEquals(result.added, true);
+      const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+      assertEquals(parsed.length, 2);
     } finally {
       await cleanupTempDir(dir);
     }

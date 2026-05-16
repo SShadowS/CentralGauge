@@ -35,26 +35,30 @@ export async function applyRepairs(
       check.status !== "failed" ||
       check.remediation?.autoRepairable !== true
     ) continue;
-    const r = repairers.find((rep) => rep.matches(check));
-    if (!r) continue;
-    const started = Date.now();
-    try {
-      const out = await r.run(check);
-      attempted.push({
-        checkId: check.id,
-        repairerId: r.id,
-        ok: out.ok,
-        ...(out.message ? { message: out.message } : {}),
-        durationMs: Date.now() - started,
-      });
-    } catch (e) {
-      attempted.push({
-        checkId: check.id,
-        repairerId: r.id,
-        ok: false,
-        message: e instanceof Error ? e.message : String(e),
-        durationMs: Date.now() - started,
-      });
+    const matched = repairers.filter((rep) => rep.matches(check));
+    if (matched.length === 0) continue;
+    // Run every matching repairer in declaration order. catalog.bench needs
+    // seed → sync; .find() ran only the first and left D1 stale.
+    for (const r of matched) {
+      const started = Date.now();
+      try {
+        const out = await r.run(check);
+        attempted.push({
+          checkId: check.id,
+          repairerId: r.id,
+          ok: out.ok,
+          ...(out.message ? { message: out.message } : {}),
+          durationMs: Date.now() - started,
+        });
+      } catch (e) {
+        attempted.push({
+          checkId: check.id,
+          repairerId: r.id,
+          ok: false,
+          message: e instanceof Error ? e.message : String(e),
+          durationMs: Date.now() - started,
+        });
+      }
     }
   }
   return { attempted };
