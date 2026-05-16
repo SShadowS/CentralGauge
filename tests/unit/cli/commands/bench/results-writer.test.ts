@@ -311,6 +311,7 @@ Deno.test("buildScoreLines", async (t) => {
               failCount: 1,
               errorCount: 297,
               alert: {
+                alertId: "alert-1",
                 kind: "persistent_container_failure",
                 containerName: "Cronus281",
                 fingerprint: "test:abc",

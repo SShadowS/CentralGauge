@@ -74,6 +74,12 @@ export type HealthAlertKind =
   | "global_outage"; // ≥50% containers same fingerprint
 
 export interface HealthAlert {
+  /**
+   * Monotonic per-run identifier, assigned at raise time. Stable for the
+   * lifetime of one ACTIVE alert episode. After clear + re-raise, a new id
+   * is assigned. Consumers use it for drain idempotency.
+   */
+  alertId: string;
   kind: HealthAlertKind;
   containerName: string;
   fingerprint: InfraFingerprint;
@@ -84,6 +90,23 @@ export interface HealthAlert {
   /** Timestamp when alert was raised */
   raisedAt: number;
 }
+
+/**
+ * Return value of `ContainerHealthMonitor.record()`. Used SYNCHRONOUSLY by
+ * the retry path to decide trigger-task waiver — async event listeners run
+ * too late for that decision (the result is already being resolved when
+ * the listener fires).
+ */
+export interface RecordResult {
+  /** True iff this outcome was the one that transitioned a container to ACTIVE alert state */
+  alertRaised: boolean;
+  /** Populated when alertRaised === true */
+  alert?: HealthAlert;
+  state: ContainerHealthState;
+}
+
+/** Listener invoked once per inactive→active alert state transition */
+export type AlertRaisedListener = (alert: HealthAlert) => void;
 
 /**
  * Public state from the monitor — what bridge broadcasts.

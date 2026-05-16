@@ -241,3 +241,128 @@ Deno.test("expectedContainerNames dedups duplicates while preserving first-occur
     "Cronus281",
   ]);
 });
+
+Deno.test("record() returns alertRaised=true ONLY on the transition outcome", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  // First two hits: alert not yet raised
+  for (let i = 0; i < 2; i++) {
+    const r = mon.record({
+      containerName: "Cronus281",
+      result: "infra_error",
+      fingerprint: "test:abc",
+      timestamp: 1000 + i,
+    });
+    assertEquals(r.alertRaised, false);
+    assertEquals(r.alert, undefined);
+  }
+  // Third hit: raises persistent_container_failure
+  const r3 = mon.record({
+    containerName: "Cronus281",
+    result: "infra_error",
+    fingerprint: "test:abc",
+    timestamp: 1003,
+  });
+  assertEquals(r3.alertRaised, true);
+  assertExists(r3.alert);
+  assertEquals(r3.alert!.kind, "persistent_container_failure");
+  // Subsequent hits at same threshold: NOT re-raised
+  const r4 = mon.record({
+    containerName: "Cronus281",
+    result: "infra_error",
+    fingerprint: "test:abc",
+    timestamp: 1004,
+  });
+  assertEquals(r4.alertRaised, false);
+  assertEquals(r4.alert, undefined);
+});
+
+Deno.test("alertId is monotonic and assigned exactly once per transition", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const ids: string[] = [];
+  for (const c of ["Cronus28", "Cronus281"]) {
+    for (let i = 0; i < 3; i++) {
+      const r = mon.record({
+        containerName: c,
+        result: "infra_error",
+        fingerprint: `test:${c}`, // different fp per container so no global outage
+        timestamp: 1000 + i,
+      });
+      if (r.alertRaised && r.alert) ids.push(r.alert.alertId);
+    }
+  }
+  assertEquals(ids.length, 2);
+  assertEquals(
+    ids[0] !== ids[1],
+    true,
+    "alertId must differ across transitions",
+  );
+  // Monotonic: parsed numeric tail of "alert-N" must increase
+  const n0 = parseInt((ids[0] ?? "").replace("alert-", ""), 10);
+  const n1 = parseInt((ids[1] ?? "").replace("alert-", ""), 10);
+  assertEquals(n1 > n0, true);
+});
+
+Deno.test("on('alert_raised') fires exactly once per state transition", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const fired: HealthAlert[] = [];
+  const unsubscribe = mon.on("alert_raised", (alert) => {
+    fired.push(alert);
+  });
+  for (let i = 0; i < 5; i++) {
+    mon.record({
+      containerName: "Cronus281",
+      result: "infra_error",
+      fingerprint: "test:abc",
+      timestamp: 1000 + i,
+    });
+  }
+  assertEquals(
+    fired.length,
+    1,
+    "listener fires exactly once across 5 same-fp hits",
+  );
+  assertEquals(fired[0]!.kind, "persistent_container_failure");
+  assertEquals(typeof fired[0]!.alertId, "string");
+  unsubscribe();
+  // After unsubscribe, no further calls (verify by re-trigger on a different container)
+  for (let i = 0; i < 3; i++) {
+    mon.record({
+      containerName: "Cronus28",
+      result: "infra_error",
+      fingerprint: "test:other",
+      timestamp: 2000 + i,
+    });
+  }
+  assertEquals(fired.length, 1, "no further callbacks after unsubscribe");
+});
+
+Deno.test("on('alert_raised'): listener exception is isolated", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const good: HealthAlert[] = [];
+  mon.on("alert_raised", () => {
+    throw new Error("intentional listener failure");
+  });
+  mon.on("alert_raised", (a) => good.push(a));
+  // Monitor must still update state and still call the second listener
+  for (let i = 0; i < 3; i++) {
+    mon.record({
+      containerName: "Cronus281",
+      result: "infra_error",
+      fingerprint: "test:abc",
+      timestamp: 1000 + i,
+    });
+  }
+  assertEquals(good.length, 1, "second listener must still be called");
+  assertEquals(
+    mon.getState().alerts.length,
+    1,
+    "monitor state must still update",
+  );
+});
+
+Deno.test("on('alert_raised'): unsubscribe is idempotent", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const unsub = mon.on("alert_raised", () => {});
+  unsub();
+  unsub(); // Second call must not throw
+});

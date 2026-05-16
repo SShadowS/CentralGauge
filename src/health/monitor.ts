@@ -1,10 +1,12 @@
 // src/health/monitor.ts
 import { INFRA_SIGNATURES } from "./signatures.ts";
 import type {
+  AlertRaisedListener,
   ContainerHealth,
   ContainerHealthState,
   ContainerOutcome,
   HealthAlert,
+  RecordResult,
 } from "./types.ts";
 
 interface MonitorOptions {
@@ -57,6 +59,10 @@ export class ContainerHealthMonitor {
   /** Alert keys we have already raised (idempotent) */
   private readonly raisedAlerts = new Set<string>();
   private eventId = 0;
+  /** Monotonic counter for `HealthAlert.alertId` */
+  private nextAlertSeq = 0;
+  /** Subscribers invoked once per inactive→active alert transition */
+  private readonly alertListeners = new Set<AlertRaisedListener>();
 
   constructor(opts: MonitorOptions) {
     this.windowSize = opts.windowSize;
@@ -78,7 +84,33 @@ export class ContainerHealthMonitor {
     }
   }
 
-  record(o: ContainerOutcome): void {
+  /**
+   * Subscribe to inactive→active alert transitions. Listener is invoked
+   * EXACTLY ONCE per transition; subsequent outcomes carrying the same
+   * fingerprint while the alert is still active do NOT re-fire. After
+   * clear + re-raise the listener fires again with a fresh `alertId`.
+   *
+   * Listener exceptions are caught and logged so one bad subscriber cannot
+   * break monitor state updates or other subscribers.
+   *
+   * Returns an unsubscribe handle. Idempotent — calling twice is fine.
+   */
+  on(_event: "alert_raised", listener: AlertRaisedListener): () => void {
+    this.alertListeners.add(listener);
+    return () => {
+      this.alertListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Reducer entry point. Records the outcome AND returns a synchronous
+   * signal indicating whether this exact outcome was the one that
+   * transitioned a container into ACTIVE alert state. The retry path
+   * consumes this return value to grant the trigger-task waiver — async
+   * event listeners fire too late for that decision (the failing result
+   * is already being resolved/scored when listeners run).
+   */
+  record(o: ContainerOutcome): RecordResult {
     this.eventId++;
 
     // Update container health counters and rolling window
@@ -115,13 +147,49 @@ export class ContainerHealthMonitor {
     while (hist.length > this.windowSize) hist.shift();
     this.fpHistory.set(o.containerName, hist);
 
+    let alert: HealthAlert | undefined;
     if (o.result === "infra_error" && o.fingerprint) {
-      this.maybeRaiseAlerts(o);
+      alert = this.maybeRaiseAlerts(o);
+    }
+
+    if (alert) {
+      this.fireAlertListeners(alert);
+    }
+
+    const result: RecordResult = {
+      alertRaised: alert !== undefined,
+      state: this.getState(),
+    };
+    if (alert) result.alert = alert;
+    return result;
+  }
+
+  private fireAlertListeners(alert: HealthAlert): void {
+    for (const fn of this.alertListeners) {
+      try {
+        fn(alert);
+      } catch (e) {
+        // Listener exception MUST NOT break monitor state or other listeners
+        console.error(
+          `[ContainerHealthMonitor] alert_raised listener threw: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
     }
   }
 
-  private maybeRaiseAlerts(o: ContainerOutcome): void {
-    if (!o.fingerprint) return;
+  private nextAlertId(): string {
+    return `alert-${++this.nextAlertSeq}`;
+  }
+
+  /**
+   * Returns the newly-raised alert if (and only if) this outcome caused an
+   * inactive→active transition. Returns undefined when no threshold was
+   * crossed or the alert was already active.
+   */
+  private maybeRaiseAlerts(o: ContainerOutcome): HealthAlert | undefined {
+    if (!o.fingerprint) return undefined;
 
     const fingerprint = o.fingerprint;
 
@@ -167,6 +235,7 @@ export class ContainerHealthMonitor {
 
         const sig = INFRA_SIGNATURES.find((s) => s.id === o.signatureId);
         const alert: HealthAlert = {
+          alertId: this.nextAlertId(),
           kind: "global_outage",
           containerName: o.containerName,
           fingerprint,
@@ -180,16 +249,17 @@ export class ContainerHealthMonitor {
         };
         const ch = this.containers.get(o.containerName);
         if (ch) ch.alert = alert;
+        return alert;
       }
       // Suppress per-container alert for this fingerprint
-      return;
+      return undefined;
     }
 
     // Sticky: once a fingerprint becomes a global outage in this run, no
     // per-container alert can fire for it later, even if the rolling window
     // drops below the global ratio.
     if (this.raisedAlerts.has(`global:${o.fingerprint}`)) {
-      return;
+      return undefined;
     }
 
     // Per-container persistent failure threshold
@@ -202,6 +272,7 @@ export class ContainerHealthMonitor {
         this.raisedAlerts.add(key);
         const sig = INFRA_SIGNATURES.find((s) => s.id === o.signatureId);
         const alert: HealthAlert = {
+          alertId: this.nextAlertId(),
           kind: "persistent_container_failure",
           containerName: o.containerName,
           fingerprint,
@@ -215,8 +286,10 @@ export class ContainerHealthMonitor {
         };
         const ch = this.containers.get(o.containerName);
         if (ch) ch.alert = alert;
+        return alert;
       }
     }
+    return undefined;
   }
 
   getState(): ContainerHealthState {
