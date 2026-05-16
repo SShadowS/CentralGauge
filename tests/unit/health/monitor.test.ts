@@ -366,3 +366,114 @@ Deno.test("on('alert_raised'): unsubscribe is idempotent", () => {
   unsub();
   unsub(); // Second call must not throw
 });
+
+Deno.test("SUSPECT: catastrophic signature trips on FIRST hit (sql_service_down)", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const r = mon.record({
+    containerName: "Cronus28",
+    result: "infra_error",
+    fingerprint: "test:sql-fp",
+    signatureId: "sql_service_down",
+    timestamp: 1000,
+  });
+  assertEquals(r.alertRaised, true);
+  assertExists(r.alert);
+  assertEquals(r.alert!.kind, "suspect_container");
+  assertEquals(r.alert!.count, 1);
+  assertEquals(r.alert!.containerName, "Cronus28");
+  assertEquals(mon.getState().alerts.length, 1);
+});
+
+Deno.test("SUSPECT: container_offline + pssession_lost are catastrophic too", () => {
+  for (const sigId of ["container_offline", "pssession_lost"]) {
+    const mon = new ContainerHealthMonitor({ windowSize: 10 });
+    const r = mon.record({
+      containerName: "Cronus28",
+      result: "infra_error",
+      fingerprint: `test:${sigId}`,
+      signatureId: sigId,
+      timestamp: 1000,
+    });
+    assertEquals(
+      r.alertRaised,
+      true,
+      `${sigId} must trip SUSPECT on first hit`,
+    );
+    assertEquals(r.alert!.kind, "suspect_container");
+  }
+});
+
+Deno.test("SUSPECT: non-catastrophic signature still needs 3 hits", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  // syslib0014 is catastrophic-FALSE in signatures.ts (we did not flag it)
+  for (let i = 0; i < 2; i++) {
+    const r = mon.record({
+      containerName: "Cronus28",
+      result: "infra_error",
+      fingerprint: "test:syslib",
+      signatureId: "syslib0014",
+      timestamp: 1000 + i,
+    });
+    assertEquals(r.alertRaised, false);
+  }
+  const r3 = mon.record({
+    containerName: "Cronus28",
+    result: "infra_error",
+    fingerprint: "test:syslib",
+    signatureId: "syslib0014",
+    timestamp: 1003,
+  });
+  assertEquals(r3.alertRaised, true);
+  assertEquals(r3.alert!.kind, "persistent_container_failure");
+});
+
+Deno.test("SUSPECT: idempotent — same (container, fp) does not re-fire", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  const fired: HealthAlert[] = [];
+  mon.on("alert_raised", (a) => fired.push(a));
+  for (let i = 0; i < 5; i++) {
+    mon.record({
+      containerName: "Cronus28",
+      result: "infra_error",
+      fingerprint: "test:sql-fp",
+      signatureId: "sql_service_down",
+      timestamp: 1000 + i,
+    });
+  }
+  assertEquals(fired.length, 1);
+});
+
+Deno.test("SUSPECT: 3+ same-fp hits do NOT upgrade SUSPECT to persistent", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  for (let i = 0; i < 5; i++) {
+    mon.record({
+      containerName: "Cronus28",
+      result: "infra_error",
+      fingerprint: "test:sql-fp",
+      signatureId: "sql_service_down",
+      timestamp: 1000 + i,
+    });
+  }
+  const state = mon.getState();
+  assertEquals(state.alerts.length, 1);
+  assertEquals(state.alerts[0]!.kind, "suspect_container");
+});
+
+Deno.test("SUSPECT: global outage retracts existing suspect alerts", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  // Three containers each raise SUSPECT via sql_service_down — the global
+  // path then kicks in (3-of-3 ≥ 50%) and must retract per-container suspects.
+  for (const c of ["Cronus28", "Cronus281", "Cronus282"]) {
+    mon.record({
+      containerName: c,
+      result: "infra_error",
+      fingerprint: "test:sql-fp",
+      signatureId: "sql_service_down",
+      timestamp: 1000,
+    });
+  }
+  const state = mon.getState();
+  const kinds = state.alerts.map((a) => a.kind);
+  assertEquals(kinds.includes("global_outage"), true);
+  assertEquals(kinds.includes("suspect_container"), false);
+});

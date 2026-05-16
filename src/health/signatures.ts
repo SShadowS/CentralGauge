@@ -25,6 +25,7 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
     severity: "critical",
     fixHint:
       "Container session corrupted after Unpublish. Restart the BC service in the container, or rebuild.",
+    catastrophicSingleFailure: true,
   },
   {
     id: "container_oom",
@@ -61,6 +62,7 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
     severity: "critical",
     fixHint:
       "Container is down. Run Start-BcContainer or rebuild with New-BcContainer.",
+    catastrophicSingleFailure: true,
   },
   {
     id: "sql_service_down",
@@ -74,6 +76,7 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
     severity: "critical",
     fixHint:
       "SQL service is stopped inside the container. Run: docker exec {container} powershell -Command \"Start-Service 'MSSQL$SQLEXPRESS'; Start-Service 'MSSQLFDLauncher$SQLEXPRESS'; Restart-Service 'MicrosoftDynamicsNavServer$BC'\"",
+    catastrophicSingleFailure: true,
   },
 ];
 

@@ -43,6 +43,14 @@ export interface InfraSignature {
   fixHint: string; // actionable
   /** If true, ignore for persistent-failure thresholds (false positives only) */
   ignoreForHealth?: boolean;
+  /**
+   * If true, the monitor raises a `suspect_container` alert on the FIRST
+   * matching infra error (no rolling-window wait). Reserved for signatures
+   * where one hit is definitive proof the container is broken (SQL service
+   * stopped, container offline, BC PSSession lost). Drain + dispatch-gate
+   * widen exclusion on suspect just like persistent.
+   */
+  catastrophicSingleFailure?: boolean;
 }
 
 /**
@@ -69,6 +77,14 @@ export interface ContainerHealth {
 }
 
 export type HealthAlertKind =
+  /**
+   * First-hit quarantine for catastrophic signatures (signatures with
+   * `catastrophicSingleFailure: true`). Raises on the FIRST matching
+   * infra-error outcome — no rolling-window wait. Used so we never burn
+   * 3 attempts before excluding a container that is provably broken
+   * (SQL service down, PSSession lost, container offline).
+   */
+  | "suspect_container"
   | "persistent_container_failure" // 3-of-3 same fingerprint on this container
   | "elevated_container_error_rate" // rate-based + peer-compared
   | "global_outage"; // ≥50% containers same fingerprint

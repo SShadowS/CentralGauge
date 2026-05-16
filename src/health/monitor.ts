@@ -222,13 +222,21 @@ export class ContainerHealthMonitor {
 
         // Retract any per-container alerts already raised for this fingerprint
         // so that getState().alerts contains only the global_outage alert.
+        // Covers BOTH suspect_container (catastrophic single-failure) and
+        // persistent_container_failure (threshold) keys.
         for (const containerName of containersWithThisFp) {
-          const perKey = `persistent:${containerName}:${fingerprint}`;
-          if (this.raisedAlerts.has(perKey)) {
-            this.raisedAlerts.delete(perKey);
-            const ch = this.containers.get(containerName);
-            if (ch && ch.alert?.fingerprint === fingerprint) {
-              delete ch.alert;
+          for (
+            const perKey of [
+              `suspect:${containerName}:${fingerprint}`,
+              `persistent:${containerName}:${fingerprint}`,
+            ]
+          ) {
+            if (this.raisedAlerts.has(perKey)) {
+              this.raisedAlerts.delete(perKey);
+              const ch = this.containers.get(containerName);
+              if (ch && ch.alert?.fingerprint === fingerprint) {
+                delete ch.alert;
+              }
             }
           }
         }
@@ -262,15 +270,52 @@ export class ContainerHealthMonitor {
       return undefined;
     }
 
-    // Per-container persistent failure threshold
+    // SUSPECT: catastrophic single-failure quarantine. If the matched
+    // signature is flagged `catastrophicSingleFailure`, the FIRST
+    // matching outcome raises immediately — no rolling-window wait.
+    // Drain + dispatch-gate widen exclusion identically to a persistent
+    // alert.
+    const sig = INFRA_SIGNATURES.find((s) => s.id === o.signatureId);
+    if (sig?.catastrophicSingleFailure) {
+      const suspectKey = `suspect:${o.containerName}:${fingerprint}`;
+      if (!this.raisedAlerts.has(suspectKey)) {
+        this.raisedAlerts.add(suspectKey);
+        const alert: HealthAlert = {
+          alertId: this.nextAlertId(),
+          kind: "suspect_container",
+          containerName: o.containerName,
+          fingerprint,
+          count: 1,
+          raisedAt: o.timestamp,
+          ...(o.signatureId !== undefined
+            ? { signatureId: o.signatureId }
+            : {}),
+          ...(sig.label !== undefined ? { signatureLabel: sig.label } : {}),
+          ...(sig.fixHint !== undefined ? { fixHint: sig.fixHint } : {}),
+        };
+        const ch = this.containers.get(o.containerName);
+        if (ch) ch.alert = alert;
+        return alert;
+      }
+      // Suspect already active — do not double-raise, do not upgrade to
+      // persistent. The container is already excluded.
+      return undefined;
+    }
+
+    // Per-container persistent failure threshold (non-catastrophic only).
+    // If a SUSPECT alert is already active for this (container, fp), skip
+    // the persistent raise — the container is already excluded and SUSPECT
+    // is the more informative kind.
     const hist = this.fpHistory.get(o.containerName) ?? [];
     const sameFpCount = hist.filter((h) => h.fp === fingerprint).length;
 
     if (sameFpCount >= this.persistentThreshold) {
+      const suspectKey = `suspect:${o.containerName}:${fingerprint}`;
+      if (this.raisedAlerts.has(suspectKey)) return undefined;
+
       const key = `persistent:${o.containerName}:${fingerprint}`;
       if (!this.raisedAlerts.has(key)) {
         this.raisedAlerts.add(key);
-        const sig = INFRA_SIGNATURES.find((s) => s.id === o.signatureId);
         const alert: HealthAlert = {
           alertId: this.nextAlertId(),
           kind: "persistent_container_failure",
