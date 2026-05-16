@@ -54,6 +54,8 @@ export async function saveResultsJson(
   stats: AggregateStats,
   comparisons: TaskComparison[],
   hashResult: HashResult,
+  drainEvents?:
+    import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
 ): Promise<void> {
   await Deno.writeTextFile(
     resultsFile,
@@ -82,6 +84,12 @@ export async function saveResultsJson(
             fileCount: t.testFiles.length + 1,
           })),
         },
+        // Alert-driven drain events (task #8). Top-level so analyzers can
+        // detect runs affected by container alerts without walking attempts.
+        // Optional field — omitted from runs with zero drain activity.
+        ...(drainEvents !== undefined && drainEvents.length > 0
+          ? { drainEvents }
+          : {}),
       },
       null,
       2,
@@ -113,6 +121,15 @@ export interface ScoreLineInput {
    * to keep the score file clean for normal runs.
    */
   results?: TaskExecutionResult[];
+  /**
+   * Optional list of alert-driven drain events emitted by the orchestrator
+   * during this run (see `CompileQueuePool.getRebalanceLog()`). When at
+   * least one event is supplied, appends a `# Drain Events` block to the
+   * scores file. Omitted entirely on runs where no container alert ever
+   * tripped the drain path.
+   */
+  drainEvents?:
+    import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[];
 }
 
 /**
@@ -312,6 +329,34 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     }
   }
 
+  // # Drain Events block — alert-driven drain + rebalance activity (task #8).
+  // Emitted only when at least one drain fired during this run, so normal
+  // runs stay clean. Each event records: alertId, container, fingerprint,
+  // pending drained, requeued, parked, and target distribution.
+  if (input.drainEvents && input.drainEvents.length > 0) {
+    lines.push(``);
+    lines.push(`# Drain Events`);
+    lines.push(`total_drains: ${input.drainEvents.length}`);
+    const totalDrained = input.drainEvents.reduce((s, e) => s + e.drained, 0);
+    const totalRequeued = input.drainEvents.reduce((s, e) => s + e.requeued, 0);
+    const totalParked = input.drainEvents.reduce((s, e) => s + e.parked, 0);
+    lines.push(`total_pending_drained: ${totalDrained}`);
+    lines.push(`total_requeued: ${totalRequeued}`);
+    lines.push(`total_parked: ${totalParked}`);
+    lines.push(`by_event:`);
+    for (const ev of input.drainEvents) {
+      const targets = Object.entries(ev.targetDistribution)
+        .map(([c, n]) => `${c}=${n}`)
+        .join(",") || "(none)";
+      const fp = ev.fingerprint ?? "(none)";
+      lines.push(
+        `  ${ev.alertId} ${ev.containerName} fp=${fp}: ` +
+          `drained=${ev.drained} requeued=${ev.requeued} parked=${ev.parked} ` +
+          `targets=[${targets}]`,
+      );
+    }
+  }
+
   return lines;
 }
 
@@ -331,6 +376,8 @@ export async function saveScoresFile(
   resultCount: number,
   containerHealth?: import("../../../src/health/types.ts").ContainerHealthState,
   results?: TaskExecutionResult[],
+  drainEvents?:
+    import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
 ): Promise<void> {
   const scoreLines = buildScoreLines({
     stats,
@@ -340,6 +387,9 @@ export async function saveScoresFile(
     resultCount,
     ...(containerHealth !== undefined ? { containerHealth } : {}),
     ...(results !== undefined ? { results } : {}),
+    ...(drainEvents !== undefined && drainEvents.length > 0
+      ? { drainEvents }
+      : {}),
   });
   await Deno.writeTextFile(scoreFile, scoreLines.join("\n"));
 }

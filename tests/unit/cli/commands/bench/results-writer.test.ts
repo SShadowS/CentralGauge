@@ -601,4 +601,67 @@ Deno.test("buildScoreLines", async (t) => {
       assertEquals(parsedAttempt.infraRetries?.[0]?.outcome, "infra_again");
     },
   );
+
+  await t.step(
+    "emits # Drain Events block when drainEvents supplied",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-05-14T12:00:00Z"),
+        drainEvents: [
+          {
+            alertId: "alert-1",
+            containerName: "Cronus28",
+            fingerprint: "test:sql",
+            drained: 3,
+            requeued: 3,
+            parked: 0,
+            targetDistribution: { Cronus281: 2, Cronus282: 1 },
+            raisedAt: Date.now(),
+          },
+          {
+            alertId: "alert-2",
+            containerName: "Cronus283",
+            drained: 1,
+            requeued: 0,
+            parked: 1,
+            targetDistribution: {},
+            raisedAt: Date.now(),
+          },
+        ],
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+      assertStringIncludes(content, "# Drain Events");
+      assertStringIncludes(content, "total_drains: 2");
+      assertStringIncludes(content, "total_pending_drained: 4");
+      assertStringIncludes(content, "total_requeued: 3");
+      assertStringIncludes(content, "total_parked: 1");
+      assertStringIncludes(content, "alert-1 Cronus28");
+      assertStringIncludes(content, "Cronus281=2");
+      assertStringIncludes(content, "alert-2 Cronus283 fp=(none)");
+      assertStringIncludes(content, "targets=[(none)]");
+    },
+  );
+
+  await t.step(
+    "omits # Drain Events block on clean runs",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-05-14T12:00:00Z"),
+      };
+      const content = buildScoreLines(input).join("\n");
+      assert(!content.includes("# Drain Events"));
+    },
+  );
 });
