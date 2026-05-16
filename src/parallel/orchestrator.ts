@@ -43,6 +43,7 @@ import type { SynthContext } from "../health/terminal-record.ts";
 import { ContainerError } from "../errors.ts";
 import { withInfraRetry } from "./infra-retry.ts";
 import { InfraRetriesExhaustedError } from "./errors.ts";
+import type { ContainerHealthMonitor } from "../health/monitor.ts";
 import type {
   InfraRetryExhaustionReason,
   InfraRetryRecord,
@@ -114,6 +115,13 @@ export class ParallelBenchmarkOrchestrator {
   private containerProviderFactory: ContainerProviderFactory;
   private compileQueueFactory: CompileQueueFactory;
   private compileWorkQueueFactory: CompileWorkQueueFactory | undefined;
+  /**
+   * Optional shared health monitor (see `OrchestratorDependencies.healthMonitor`).
+   * When set, drives alert-aware routing + drain + waiver.
+   */
+  private healthMonitor: ContainerHealthMonitor | undefined;
+  /** Unsubscribe handle for the alert listener; closed in `runParallel`'s finally. */
+  private alertUnsubscribe: (() => void) | undefined;
 
   // Progress tracking
   private startTime: Date | null = null;
@@ -145,6 +153,7 @@ export class ParallelBenchmarkOrchestrator {
       ((provider, containerName, options) =>
         new CompileQueue(provider, containerName, options));
     this.compileWorkQueueFactory = deps?.compileWorkQueueFactory;
+    this.healthMonitor = deps?.healthMonitor;
   }
 
   /**
@@ -247,13 +256,50 @@ export class ParallelBenchmarkOrchestrator {
       this.compileQueue = new CompileQueuePool(
         this.containerProvider,
         containerNames,
-        queueOptions,
+        {
+          ...queueOptions,
+          ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
+        },
       );
     } else {
       this.compileQueue = this.compileQueueFactory(
         this.containerProvider,
         containerNames?.[0] ?? options.containerName,
         queueOptions,
+      );
+    }
+
+    // Subscribe to alert_raised events on the shared monitor. When a
+    // container enters SUSPECT or persistent ACTIVE alert state we ask the
+    // pool to drain pending work off it. Only meaningful when both the
+    // monitor AND a CompileQueuePool are present — single-queue topologies
+    // have nowhere to reroute. The listener is idempotent per alertId
+    // (pool.rebalanceFromContainer keys on it).
+    if (this.healthMonitor && this.compileQueue instanceof CompileQueuePool) {
+      const pool = this.compileQueue;
+      this.alertUnsubscribe = this.healthMonitor.on(
+        "alert_raised",
+        (alert) => {
+          // Fire-and-forget. The state machine is sync, but we don't want
+          // the listener path to block the monitor.
+          pool.rebalanceFromContainer(
+            alert.containerName,
+            alert.alertId,
+            alert.fingerprint,
+          ).then((outcome) => {
+            log.info(`Alert drain rebalanced ${outcome.requeued} entries`, {
+              alertId: alert.alertId,
+              containerName: alert.containerName,
+              drained: outcome.drained,
+              parked: outcome.parked,
+            });
+          }).catch((err) => {
+            log.error("Alert drain rebalance failed", {
+              alertId: alert.alertId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
+        },
       );
     }
 
@@ -307,6 +353,18 @@ export class ParallelBenchmarkOrchestrator {
       }
     } finally {
       clearInterval(progressTicker);
+      // Unsubscribe alert listener before draining queues to avoid
+      // late-fire reentry into pool methods during shutdown.
+      if (this.alertUnsubscribe) {
+        try {
+          this.alertUnsubscribe();
+        } catch (e) {
+          log.warn("alertUnsubscribe threw on cleanup", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+        this.alertUnsubscribe = undefined;
+      }
       // Clean up
       await this.llmPool.drain();
       await this.compileQueue?.drain();
@@ -590,7 +648,9 @@ export class ParallelBenchmarkOrchestrator {
       ? this.config.containerNames
       : [options.containerName];
 
-    const { result: compileResult, retries } = await withInfraRetry(
+    const { result: compileResult, retries } = await withInfraRetry<
+      CompileWorkResult
+    >(
       ({ excludeContainers, onRouted }) => {
         this.emit({
           type: "compile_started",
@@ -611,6 +671,19 @@ export class ParallelBenchmarkOrchestrator {
           variantId: variant.variantId,
           attemptNumber,
         },
+        ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
+        // Detect the quarantine sidecar attached by `runPipeline` (task #5).
+        // When present, the retry path treats the resolved-but-quarantined
+        // result as an infra error AND grants a budget waiver.
+        classifyResult: (r: CompileWorkResult) =>
+          r.quarantined
+            ? {
+              kind: "quarantined" as const,
+              alertId: r.quarantined.forcedByAlertId,
+              originContainer: r.quarantined.originContainer,
+              fingerprint: "container_quarantined",
+            }
+            : { kind: "ok" as const },
       },
     );
 

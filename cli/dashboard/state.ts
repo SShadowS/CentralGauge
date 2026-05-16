@@ -86,6 +86,16 @@ export class DashboardStateManager {
   }
 
   /**
+   * Return the underlying monitor instance so the orchestrator can wire
+   * the same monitor into its routing/retry/drain paths (task #7). The
+   * dashboard and orchestrator MUST share one monitor — separate instances
+   * would diverge on rolling-window state.
+   */
+  getHealthMonitor(): ContainerHealthMonitor {
+    return this.healthMonitor;
+  }
+
+  /**
    * Create pending cells for a new run
    */
   initializeCells(taskIds: string[], models: string[], run: number): void {

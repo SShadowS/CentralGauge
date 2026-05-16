@@ -772,6 +772,22 @@ export interface OrchestratorDependencies {
    * inline infra-retry helper can drive different per-container behavior.
    */
   compileWorkQueueFactory?: CompileWorkQueueFactory;
+
+  /**
+   * Optional shared `ContainerHealthMonitor`. When supplied:
+   * - `CompileQueuePool.enqueue()` filters alerted containers out of routing.
+   * - `withInfraRetry()` reads its snapshot at retry-decision time.
+   * - The orchestrator subscribes to `alert_raised` and calls
+   *   `pool.rebalanceFromContainer()` to drain pending work off the
+   *   alerted container.
+   * - Each `withInfraRetry` call receives a `classifyResult` callback that
+   *   detects `CompileWorkResult.quarantined` for the free-requeue path.
+   *
+   * Typically passed in from `DashboardStateManager.getHealthMonitor()` so
+   * the orchestrator and the dashboard share one source of truth for
+   * container health.
+   */
+  healthMonitor?: import("../health/monitor.ts").ContainerHealthMonitor;
 }
 
 // =============================================================================
