@@ -62,9 +62,18 @@ export class DashboardServer {
 
   /**
    * Start the dashboard server on an auto-selected port.
+   *
+   * `sharedMonitor` lets the caller (typically `parallel-executor`) inject
+   * a pre-built monitor so the orchestrator and dashboard observe the same
+   * rolling-window state. Omit to let the dashboard construct its own
+   * (legacy behavior; used only by tests + standalone server starts).
    */
-  static async start(config: DashboardConfig): Promise<DashboardServer> {
-    const stateManager = new DashboardStateManager(config);
+  static async start(
+    config: DashboardConfig,
+    sharedMonitor?:
+      import("../../src/health/monitor.ts").ContainerHealthMonitor,
+  ): Promise<DashboardServer> {
+    const stateManager = new DashboardStateManager(config, sharedMonitor);
 
     // Initialize cells for run 1
     stateManager.initializeCells(config.taskIds, config.models, 1);

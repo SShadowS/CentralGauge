@@ -130,6 +130,16 @@ export async function executeParallelBenchmark(
   log.info(`Output: ${options.outputDir}`);
 
   let dashboard: DashboardServer | null = null;
+  /**
+   * Shared `ContainerHealthMonitor` for the entire bench process. Built
+   * unconditionally so the alert-drain / quarantine / free-requeue flow
+   * works on `--no-dashboard` runs too (the dashboard previously owned
+   * the monitor, which made the flow dashboard-only). When the dashboard
+   * runs, it reuses this same instance via `DashboardServer.start(..., monitor)`.
+   */
+  let healthMonitor:
+    | import("../../../src/health/monitor.ts").ContainerHealthMonitor
+    | undefined;
   // Lifted out of the try block so the finally below can dispose persistent
   // sessions even when an error escapes the main flow before normal cleanup.
   let containerProvider:
@@ -277,6 +287,26 @@ export async function executeParallelBenchmark(
       infraRetriesPerAttempt,
     );
 
+    // Build the shared health monitor BEFORE the dashboard so the
+    // orchestrator and the dashboard (if any) reference the same instance.
+    // Window/expected-container options mirror what DashboardStateManager
+    // would have constructed on its own — preserves behavior for runs
+    // that don't pass --no-dashboard.
+    {
+      const { ContainerHealthMonitor } = await import(
+        "../../../src/health/mod.ts"
+      );
+      healthMonitor = new ContainerHealthMonitor({
+        windowSize: 20,
+        ...(containerNames && containerNames.length > 0
+          ? {
+            expectedContainers: containerNames.length,
+            expectedContainerNames: containerNames,
+          }
+          : {}),
+      });
+    }
+
     // Start live dashboard (skipped when --no-dashboard is passed for scripted use)
     if (options.dashboard === false) {
       log.info(
@@ -287,17 +317,20 @@ export async function executeParallelBenchmark(
         const { DashboardServer: DashServer, openBrowser } = await import(
           "../../dashboard/mod.ts"
         );
-        dashboard = await DashServer.start({
-          models: variants.map((v) => v.variantId),
-          taskIds: taskManifests.map((t) => t.id),
-          totalRuns,
-          attempts: options.attempts,
-          temperature: options.temperature || 0.1,
-          containerName: primaryContainerName,
-          ...(containerNames && containerNames.length > 0
-            ? { containerNames }
-            : {}),
-        });
+        dashboard = await DashServer.start(
+          {
+            models: variants.map((v) => v.variantId),
+            taskIds: taskManifests.map((t) => t.id),
+            totalRuns,
+            attempts: options.attempts,
+            temperature: options.temperature || 0.1,
+            containerName: primaryContainerName,
+            ...(containerNames && containerNames.length > 0
+              ? { containerNames }
+              : {}),
+          },
+          healthMonitor,
+        );
         log.info(`[Dashboard] Live at ${dashboard.url}`);
         openBrowser(dashboard.url);
       } catch (e) {
@@ -325,20 +358,33 @@ export async function executeParallelBenchmark(
         config.containerNames = containerNames;
       }
 
-      // Share the dashboard's health monitor with the orchestrator so the
-      // alert-drain / quarantine / free-requeue flow built across tasks
-      // #1-#8 + #10 activates on live runs (when a dashboard exists).
-      // Same monitor instance keeps rolling-window state consistent
-      // between routing decisions, retry decisions, and dashboard display.
-      // When --no-dashboard is used the monitor is omitted; the flow stays
-      // dormant (pre-task-#7 behavior, fully back-compat).
-      const orchestratorDeps = dashboard
-        ? { healthMonitor: dashboard.getHealthMonitor() }
-        : undefined;
+      // Pass the process-wide health monitor (built above, before the
+      // dashboard) into the orchestrator so alert-drain / quarantine /
+      // free-requeue activates on EVERY run — including --no-dashboard.
+      // The dashboard, when present, references the same instance so
+      // rolling-window state stays consistent between routing decisions,
+      // retry decisions, and dashboard display.
+      const orchestratorDeps = healthMonitor ? { healthMonitor } : undefined;
       const orchestrator = new ParallelBenchmarkOrchestrator(
         config,
         orchestratorDeps,
       );
+
+      // When NO dashboard is attached, the dashboard's bridge (which is
+      // what feeds container outcomes into the monitor today) is absent.
+      // Wire the standalone OutcomeRecorder so monitor state still
+      // accumulates and alerts still fire on --no-dashboard runs.
+      // Unsubscribed below in the same scope after runParallel completes.
+      let detachOutcomeRecorder: (() => void) | undefined;
+      if (healthMonitor && !dashboard) {
+        const { attachOutcomeRecorder } = await import(
+          "../../../src/health/outcome-recorder.ts"
+        );
+        detachOutcomeRecorder = attachOutcomeRecorder(
+          orchestrator.on.bind(orchestrator),
+          healthMonitor,
+        );
+      }
 
       if (options.noContinuation) {
         orchestrator.setContinuationEnabled(false);
@@ -599,6 +645,14 @@ export async function executeParallelBenchmark(
             tuiSetup.tui.destroy();
           } catch { /* best-effort */ }
           tuiSetup = null;
+        }
+        // Detach the standalone OutcomeRecorder (no-op when dashboard wired
+        // the bridge instead). Idempotent — safe across early throws.
+        if (detachOutcomeRecorder) {
+          try {
+            detachOutcomeRecorder();
+          } catch { /* best-effort */ }
+          detachOutcomeRecorder = undefined;
         }
       }
     }

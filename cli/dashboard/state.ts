@@ -52,12 +52,22 @@ export class DashboardStateManager {
   /** Container health reducer. Window of 20 outcomes per container. */
   private healthMonitor: ContainerHealthMonitor;
 
-  constructor(config: DashboardConfig) {
+  constructor(
+    config: DashboardConfig,
+    /**
+     * Optional pre-built monitor. When supplied, the dashboard reuses it
+     * instead of constructing its own — guarantees the orchestrator and
+     * the dashboard share one source of truth for container health,
+     * including when --no-dashboard is in effect and `parallel-executor`
+     * built the monitor first to pass into the orchestrator.
+     */
+    sharedMonitor?: ContainerHealthMonitor,
+  ) {
     this.config = config;
     this.taskIds = [...config.taskIds];
     this.models = [...config.models];
     this.totalRuns = config.totalRuns;
-    this.healthMonitor = new ContainerHealthMonitor({
+    this.healthMonitor = sharedMonitor ?? new ContainerHealthMonitor({
       windowSize: 20,
       ...(config.containerNames && config.containerNames.length > 0
         ? {
