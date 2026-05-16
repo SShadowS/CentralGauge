@@ -195,6 +195,19 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
+   * Return the alert-driven drain events the underlying pool recorded
+   * during this run (task #8 telemetry). Empty array when the run did
+   * not use a pool topology, no monitor was wired, or no alert ever
+   * tripped the drain path.
+   */
+  getDrainEvents(): import("./compile-queue-pool.ts").RebalanceOutcome[] {
+    if (this.compileQueue instanceof CompileQueuePool) {
+      return this.compileQueue.getRebalanceLog();
+    }
+    return [];
+  }
+
+  /**
    * Emit an event to all listeners
    */
   private emit(event: ParallelExecutionEvent): void {

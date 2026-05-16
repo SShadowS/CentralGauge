@@ -52,6 +52,15 @@ export class DashboardServer {
   }
 
   /**
+   * Return the underlying `ContainerHealthMonitor` so the orchestrator can
+   * wire it into routing/retry/drain paths (task #7). Dashboard and
+   * orchestrator MUST share one monitor or rolling-window state diverges.
+   */
+  getHealthMonitor(): import("../../src/health/monitor.ts").ContainerHealthMonitor {
+    return this.stateManager.getHealthMonitor();
+  }
+
+  /**
    * Start the dashboard server on an auto-selected port.
    */
   static async start(config: DashboardConfig): Promise<DashboardServer> {

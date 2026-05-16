@@ -325,7 +325,20 @@ export async function executeParallelBenchmark(
         config.containerNames = containerNames;
       }
 
-      const orchestrator = new ParallelBenchmarkOrchestrator(config);
+      // Share the dashboard's health monitor with the orchestrator so the
+      // alert-drain / quarantine / free-requeue flow built across tasks
+      // #1-#8 + #10 activates on live runs (when a dashboard exists).
+      // Same monitor instance keeps rolling-window state consistent
+      // between routing decisions, retry decisions, and dashboard display.
+      // When --no-dashboard is used the monitor is omitted; the flow stays
+      // dormant (pre-task-#7 behavior, fully back-compat).
+      const orchestratorDeps = dashboard
+        ? { healthMonitor: dashboard.getHealthMonitor() }
+        : undefined;
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        config,
+        orchestratorDeps,
+      );
 
       if (options.noContinuation) {
         orchestrator.setContinuationEnabled(false);
@@ -528,12 +541,17 @@ export async function executeParallelBenchmark(
         const timestamp = Date.now();
         const resultsFile =
           `${options.outputDir}/benchmark-results-${timestamp}.json`;
+        // Alert-driven drain events from the orchestrator's pool (task #8).
+        // Empty when no alert tripped during the run; both writers omit
+        // the field/block in that case.
+        const drainEvents = orchestrator.getDrainEvents();
         await saveResultsJson(
           resultsFile,
           finalResults,
           summary.stats,
           summary.comparisons,
           toHashResult(hashResult),
+          drainEvents,
         );
         resultFilePaths.push(resultsFile);
 
@@ -548,6 +566,7 @@ export async function executeParallelBenchmark(
           finalResults.length,
           dashboard?.getHealthSnapshot(),
           finalResults,
+          drainEvents,
         );
 
         // Print summary
