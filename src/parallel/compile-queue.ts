@@ -190,13 +190,32 @@ async function findAllPrereqApps(
 }
 
 /**
- * Internal queue entry with resolve/reject callbacks
+ * Internal queue entry with resolve/reject callbacks.
+ *
+ * Exported so the pool's rebalance path (task #4) can re-admit drained
+ * entries on a healthy queue without losing the original caller's
+ * resolve/reject contract.
  */
-interface QueueEntry {
+export interface QueueEntry {
   item: CompileWorkItem;
   resolve: (result: CompileWorkResult) => void;
   reject: (error: Error) => void;
   enqueuedAt: number;
+  /**
+   * setTimeout handle for the queue-wait timeout. Stored so `drainPending()`
+   * can cancel it cleanly — otherwise the timer fires after the entry has
+   * been re-enqueued on another queue and would no-op (the findIndex
+   * lookup in the original queue returns -1) but leaves a leaked timer.
+   */
+  timeoutHandle?: number;
+  /**
+   * Set by `markActiveForQuarantine()` when a container alert raises while
+   * this entry is in-flight (past `this.queue.shift()`). Read by
+   * `runPipeline()` at result-resolution time (wired in task #5) to wrap
+   * any non-success outcome as a quarantined retry signal instead of an
+   * ordinary failure. Absent = normal scoring.
+   */
+  forcedByAlertId?: string;
 }
 
 /**
@@ -204,10 +223,19 @@ interface QueueEntry {
  */
 export class CompileQueue implements CompileWorkQueue {
   private queue: QueueEntry[] = [];
+  /**
+   * Entries that have been shift()'d out of `this.queue` and are now in
+   * the compile or test phase. Keyed by `item.id` for O(1) lookup from
+   * `markActiveForQuarantine()`. Distinct from `activeWorkItems` (which is
+   * the dashboard-facing snapshot Map; it does NOT carry resolve/reject).
+   */
+  private activeEntries = new Map<string, QueueEntry>();
   private compileSemaphore: Semaphore;
   private testMutex = new Mutex();
   private activeItems = 0;
   private dispatching = false;
+  /** Counter for drainPending() telemetry — number of entries drained over the queue's lifetime. */
+  private drainedCount = 0;
   private containerProvider: ContainerProvider;
   /** Name of the BC container this queue operates against. */
   public readonly containerName: string;
@@ -310,28 +338,30 @@ export class CompileQueue implements CompileWorkQueue {
     const enqueuedAt = Date.now();
 
     return new Promise<CompileWorkResult>((resolve, reject) => {
-      // Add to queue
-      this.queue.push({
+      const entry: QueueEntry = {
         item,
         resolve,
         reject,
         enqueuedAt,
-      });
+      };
+
+      // Add to queue
+      this.queue.push(entry);
 
       // Start processing (non-blocking)
       this.processQueue().catch((error) => {
         log.error("Error processing compile queue", { error: String(error) });
       });
 
-      // Set up timeout
-      setTimeout(() => {
+      // Set up timeout; remember the handle so `drainPending()` can cancel it.
+      entry.timeoutHandle = setTimeout(() => {
         const idx = this.queue.findIndex(
           (e) => e.item.id === item.id && e.enqueuedAt === enqueuedAt,
         );
         if (idx !== -1) {
-          const [entry] = this.queue.splice(idx, 1);
-          if (entry) {
-            entry.reject(
+          const [removed] = this.queue.splice(idx, 1);
+          if (removed) {
+            removed.reject(
               new QueueTimeoutError(
                 `Compile queue timeout after ${this.timeout}ms`,
                 Date.now() - enqueuedAt,
@@ -341,6 +371,99 @@ export class CompileQueue implements CompileWorkQueue {
         }
       }, this.timeout);
     });
+  }
+
+  /**
+   * Re-admit a previously-drained entry. Used by the pool's rebalance path
+   * to move work off an alerted container's queue onto a healthy one
+   * without losing the original caller's resolve/reject contract.
+   *
+   * This skips the `maxQueueSize` check because the entry was already
+   * admitted once — backpressure has already been respected. Normal
+   * `enqueue()` callers still hit the cap.
+   *
+   * NOTE: the public method that wraps this with cap-bypass + counters
+   * lives on `CompileQueuePool` (task #3); this internal entry-point
+   * just plumbs the move-promise.
+   */
+  admitRebalancedEntry(entry: QueueEntry): void {
+    // Refresh the timeout against the new queue (drain cancelled the old one).
+    entry.timeoutHandle = setTimeout(() => {
+      const idx = this.queue.findIndex(
+        (e) => e.item.id === entry.item.id && e.enqueuedAt === entry.enqueuedAt,
+      );
+      if (idx !== -1) {
+        const [removed] = this.queue.splice(idx, 1);
+        if (removed) {
+          removed.reject(
+            new QueueTimeoutError(
+              `Compile queue timeout after ${this.timeout}ms`,
+              Date.now() - entry.enqueuedAt,
+            ),
+          );
+        }
+      }
+    }, this.timeout);
+
+    this.queue.push(entry);
+    this.processQueue().catch((error) => {
+      log.error("Error processing compile queue (rebalanced)", {
+        error: String(error),
+      });
+    });
+  }
+
+  /**
+   * Splice all entries currently in the PENDING list and return them. The
+   * caller (typically `CompileQueuePool.rebalanceFromContainer()`) is
+   * responsible for re-enqueueing them via `admitRebalancedEntry` on a
+   * healthy queue, or rejecting them if no eligible target exists.
+   *
+   * Pending-queue timeout handles are cancelled here so they do not fire
+   * after the entry has moved. In-flight entries (past `shift()`) are
+   * NOT drained — they have already started compiling/testing on this
+   * container; use `markActiveForQuarantine()` to flag them for the
+   * forced-infra wrap at result time.
+   *
+   * Returns the drained entries in their original FIFO order.
+   */
+  drainPending(): QueueEntry[] {
+    const drained = this.queue.splice(0, this.queue.length);
+    for (const entry of drained) {
+      if (entry.timeoutHandle !== undefined) {
+        clearTimeout(entry.timeoutHandle);
+        delete entry.timeoutHandle;
+      }
+    }
+    this.drainedCount += drained.length;
+    return drained;
+  }
+
+  /**
+   * Tag every in-flight entry (currently in compile or test phase on this
+   * container) with `forcedByAlertId`. The pipeline's result-resolution
+   * code (wired in task #5) reads this flag and wraps any non-success
+   * outcome as a quarantined retry signal so the orchestrator's
+   * `withInfraRetry()` reroutes to a healthy container without scoring
+   * the failure as a model gap.
+   *
+   * Returns the number of in-flight entries tagged. Idempotent — calling
+   * twice with the same alertId is a no-op for already-tagged entries.
+   */
+  markActiveForQuarantine(alertId: string): number {
+    let count = 0;
+    for (const entry of this.activeEntries.values()) {
+      if (entry.forcedByAlertId === undefined) {
+        entry.forcedByAlertId = alertId;
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** Number of entries this queue has drained over its lifetime. */
+  get totalDrained(): number {
+    return this.drainedCount;
   }
 
   /**
@@ -367,9 +490,21 @@ export class CompileQueue implements CompileWorkQueue {
         this.totalWaitTime += waitTime;
         this.activeItems++;
 
+        // Pending-queue timeout no longer applies once we've taken the entry
+        // off the queue — operation-level timeouts kick in from here.
+        if (entry.timeoutHandle !== undefined) {
+          clearTimeout(entry.timeoutHandle);
+          delete entry.timeoutHandle;
+        }
+
+        // Track for `markActiveForQuarantine()`. Removed in runPipeline's
+        // finally() once the work fully settles.
+        this.activeEntries.set(entry.item.id, entry);
+
         // Dispatch pipeline — runs in parallel, don't await
         this.runPipeline(entry, releaseCompile).finally(() => {
           this.activeItems--;
+          this.activeEntries.delete(entry.item.id);
         });
       }
     } finally {
@@ -921,11 +1056,19 @@ export class CompileQueue implements CompileWorkQueue {
   }
 
   /**
-   * Clear the queue (cancels pending items)
+   * Clear the queue (cancels pending items).
+   *
+   * Also cancels each entry's queue-wait timeout so the timer does not
+   * fire after rejection. The runtime check against the now-empty queue
+   * would no-op the timer, but we still want to free the handle.
    */
   clear(): void {
     const error = new Error("Queue cleared");
     for (const entry of this.queue) {
+      if (entry.timeoutHandle !== undefined) {
+        clearTimeout(entry.timeoutHandle);
+        delete entry.timeoutHandle;
+      }
       entry.reject(error);
     }
     this.queue = [];

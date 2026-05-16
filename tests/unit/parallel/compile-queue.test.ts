@@ -800,3 +800,173 @@ Deno.test({
     assertEquals(result.containerName, "Cronus282");
   },
 });
+
+describe({
+  name: "CompileQueue.drainPending + markActiveForQuarantine",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  let mockProvider: MockContainerProvider;
+
+  beforeEach(() => {
+    mockProvider = createMockContainerProvider();
+  });
+
+  afterEach(() => {
+    mockProvider.reset();
+  });
+
+  it("drainPending returns all pending entries in FIFO order", async () => {
+    // Slow processing keeps items queued so drainPending() has work to do.
+    mockProvider.setCompilationConfig({ delay: 500, success: true });
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+    });
+    const items = [
+      createMockCompileWorkItem({ id: "wi-1" }),
+      createMockCompileWorkItem({ id: "wi-2" }),
+      createMockCompileWorkItem({ id: "wi-3" }),
+      createMockCompileWorkItem({ id: "wi-4" }),
+    ];
+
+    // Fire 4 enqueues; with compileConcurrency=3 (default) only 3 enter
+    // active and the 4th sits pending.
+    const promises = items.map((it) =>
+      queue.enqueue(it).catch(() => {/* swallow for cleanup */})
+    );
+
+    // Give processQueue a tick to pull active entries.
+    await new Promise((r) => setTimeout(r, 10));
+
+    assert(queue.length >= 1, "at least one entry must be pending");
+    const pendingBefore = queue.length;
+    const drained = queue.drainPending();
+    assertEquals(drained.length, pendingBefore);
+    assertEquals(queue.length, 0);
+    assertEquals(queue.totalDrained, pendingBefore);
+
+    // FIFO order: the drained entries' itemIds match queue order.
+    const drainedIds = drained.map((d) => d.item.id);
+    // 4 items enqueued, 3 active, so the 4th is the only pending one.
+    if (drained.length === 1) {
+      assertEquals(drainedIds, ["wi-4"]);
+    }
+
+    // Drained entries' timeoutHandle must be cancelled.
+    for (const e of drained) {
+      assertEquals(e.timeoutHandle, undefined);
+    }
+
+    // Clean up — reject drained entries' promises so the test exits cleanly.
+    for (const e of drained) e.reject(new Error("test cleanup"));
+    queue.clear();
+    await Promise.all(promises);
+  });
+
+  it("drainPending leaves in-flight entries untouched", async () => {
+    // Long compile delay so the first item stays active during drain.
+    mockProvider.setCompilationConfig({ delay: 1000, success: true });
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 1, // serialize so only 1 in-flight
+    });
+
+    const p1 = queue.enqueue(createMockCompileWorkItem({ id: "wi-1" }))
+      .catch(() => {});
+    const p2 = queue.enqueue(createMockCompileWorkItem({ id: "wi-2" }))
+      .catch(() => {});
+
+    // Yield so wi-1 enters active phase.
+    await new Promise((r) => setTimeout(r, 50));
+
+    assertEquals(queue.length, 1, "wi-2 should still be pending");
+    const drained = queue.drainPending();
+    assertEquals(drained.length, 1);
+    assertEquals(drained[0]!.item.id, "wi-2");
+
+    // wi-1 is still in-flight; isProcessing must still be true.
+    assertEquals(queue.isProcessing, true);
+
+    // Clean up.
+    for (const e of drained) e.reject(new Error("test cleanup"));
+    queue.clear();
+    await Promise.all([p1, p2]);
+  });
+
+  it("markActiveForQuarantine tags only in-flight entries", async () => {
+    mockProvider.setCompilationConfig({ delay: 500, success: true });
+    const queue = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 2,
+    });
+
+    const p1 = queue.enqueue(createMockCompileWorkItem({ id: "wi-1" }))
+      .catch(() => {});
+    const p2 = queue.enqueue(createMockCompileWorkItem({ id: "wi-2" }))
+      .catch(() => {});
+    const p3 = queue.enqueue(createMockCompileWorkItem({ id: "wi-3" }))
+      .catch(() => {});
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // With concurrency=2, two are active, one pending.
+    const tagged = queue.markActiveForQuarantine("alert-7");
+    assertEquals(tagged, 2);
+
+    // Calling again is idempotent — already-tagged entries are not recounted.
+    const taggedAgain = queue.markActiveForQuarantine("alert-7");
+    assertEquals(taggedAgain, 0);
+
+    queue.clear();
+    await Promise.all([p1, p2, p3]);
+  });
+
+  it("admitRebalancedEntry skips capacity check and resolves original promise", async () => {
+    mockProvider.setCompilationConfig({ success: true });
+
+    // Source queue with delay so the entry stays pending until we drain.
+    mockProvider.setCompilationConfig({ delay: 200, success: true });
+    const source = new CompileQueue(mockProvider, "Cronus28", {
+      maxQueueSize: 10,
+      timeout: 60000,
+      compileConcurrency: 1,
+    });
+    const filler = source.enqueue(createMockCompileWorkItem({ id: "filler" }))
+      .catch(() => {});
+    const targetItem = createMockCompileWorkItem({ id: "wi-rebal" });
+    const targetPromise = source.enqueue(targetItem);
+
+    await new Promise((r) => setTimeout(r, 20));
+    const drained = source.drainPending();
+    assertEquals(drained.length, 1);
+    assertEquals(drained[0]!.item.id, "wi-rebal");
+
+    // Re-admit on a FULL target queue (cap=1, filler already active).
+    mockProvider.setCompilationConfig({ delay: 0, success: true });
+    const target = new CompileQueue(mockProvider, "Cronus281", {
+      maxQueueSize: 1,
+      timeout: 60000,
+    });
+    // Pre-fill target so admitRebalancedEntry would normally hit cap.
+    const targetFiller = target.enqueue(
+      createMockCompileWorkItem({ id: "tgt-filler" }),
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    // admitRebalancedEntry MUST NOT throw on the full target.
+    target.admitRebalancedEntry(drained[0]!);
+
+    // Original caller's promise resolves through the target.
+    const result = await targetPromise;
+    assertEquals(result.workItemId, "wi-rebal");
+    assertEquals(result.containerName, "Cronus281");
+
+    // Cleanup
+    await targetFiller;
+    source.clear();
+    await filler;
+  });
+});
