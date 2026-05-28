@@ -98,21 +98,21 @@
   model_slug: anthropic/claude-haiku-4-5-20251001
   effective_from: '2026-05-05T08:11:48.593Z'
   effective_until: null
-  input_per_mtoken: 0.001
-  output_per_mtoken: 0.005
+  input_per_mtoken: 1
+  output_per_mtoken: 5
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-05T08:11:48.593Z'
 - pricing_version: '2026-05-05'
   model_slug: openai/gpt-5.4
   effective_from: '2026-05-05T08:11:48.597Z'
   effective_until: null
-  input_per_mtoken: 0.0025
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 2.5
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-05T08:11:48.597Z'
 - pricing_version: '2026-05-05'
   model_slug: openrouter/x-ai/grok-4.3
@@ -168,111 +168,111 @@
   model_slug: anthropic/claude-sonnet-4-6
   effective_from: '2026-05-08T17:09:02.899Z'
   effective_until: null
-  input_per_mtoken: 0.003
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 3
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-08T17:09:02.899Z'
 - pricing_version: '2026-05-08'
   model_slug: openai/gpt-5.5
   effective_from: '2026-05-08T17:09:02.903Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.030000000000000002
+  input_per_mtoken: 5
+  output_per_mtoken: 30
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-08T17:09:02.903Z'
 - pricing_version: '2026-05-08'
   model_slug: anthropic/claude-opus-4-7
   effective_from: '2026-05-08T22:08:52.099Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-08T22:08:52.099Z'
 - pricing_version: '2026-05-08'
   model_slug: anthropic/claude-opus-4-6
   effective_from: '2026-05-08T22:09:06.891Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-08T22:09:06.891Z'
 - pricing_version: '2026-05-11'
   model_slug: anthropic/claude-haiku-4-5
   effective_from: '2026-05-11T10:39:58.965Z'
   effective_until: null
-  input_per_mtoken: 0.001
-  output_per_mtoken: 0.005
+  input_per_mtoken: 1
+  output_per_mtoken: 5
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:39:58.965Z'
 - pricing_version: '2026-05-11'
   model_slug: gemini/gemini-3.1-pro-preview
   effective_from: '2026-05-11T10:42:52.061Z'
   effective_until: null
-  input_per_mtoken: 0.002
-  output_per_mtoken: 0.012
+  input_per_mtoken: 2
+  output_per_mtoken: 12
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:42:52.061Z'
 - pricing_version: '2026-05-11'
   model_slug: anthropic/claude-opus-4-6
   effective_from: '2026-05-11T10:47:18.405Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:47:18.405Z'
 - pricing_version: '2026-05-11'
   model_slug: anthropic/claude-opus-4-7
   effective_from: '2026-05-11T10:47:18.408Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:47:18.408Z'
 - pricing_version: '2026-05-11'
   model_slug: anthropic/claude-sonnet-4-6
   effective_from: '2026-05-11T10:47:18.409Z'
   effective_until: null
-  input_per_mtoken: 0.003
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 3
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:47:18.409Z'
 - pricing_version: '2026-05-11'
   model_slug: openai/gpt-5.4
   effective_from: '2026-05-11T10:47:18.411Z'
   effective_until: null
-  input_per_mtoken: 0.0025
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 2.5
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:47:18.411Z'
 - pricing_version: '2026-05-11'
   model_slug: openai/gpt-5.5
   effective_from: '2026-05-11T10:47:18.412Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.030000000000000002
+  input_per_mtoken: 5
+  output_per_mtoken: 30
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:47:18.412Z'
 - pricing_version: '2026-05-11'
   model_slug: openrouter/deepseek/deepseek-v4-pro
@@ -298,51 +298,51 @@
   model_slug: anthropic/claude-haiku-4-5-20251001
   effective_from: '2026-05-11T10:54:35.758Z'
   effective_until: null
-  input_per_mtoken: 0.001
-  output_per_mtoken: 0.005
+  input_per_mtoken: 1
+  output_per_mtoken: 5
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-11T10:54:35.758Z'
 - pricing_version: '2026-05-12'
   model_slug: anthropic/claude-opus-4-6
   effective_from: '2026-05-12T11:17:48.529Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-12T11:17:48.529Z'
 - pricing_version: '2026-05-12'
   model_slug: anthropic/claude-opus-4-7
   effective_from: '2026-05-12T11:17:48.532Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-12T11:17:48.532Z'
 - pricing_version: '2026-05-12'
   model_slug: anthropic/claude-sonnet-4-6
   effective_from: '2026-05-12T11:17:48.534Z'
   effective_until: null
-  input_per_mtoken: 0.003
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 3
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-12T11:17:48.534Z'
 - pricing_version: '2026-05-12'
   model_slug: openai/gpt-5.5
   effective_from: '2026-05-12T11:17:48.535Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.030000000000000002
+  input_per_mtoken: 5
+  output_per_mtoken: 30
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-12T11:17:48.535Z'
 - pricing_version: '2026-05-13'
   model_slug: anthropic/claude-sonnet-4-6
@@ -384,79 +384,205 @@
   model_slug: anthropic/claude-opus-4-6
   effective_from: '2026-05-14T07:48:35.003Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-14T07:48:35.003Z'
 - pricing_version: '2026-05-14'
   model_slug: anthropic/claude-opus-4-7
   effective_from: '2026-05-14T07:48:35.006Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-14T07:48:35.006Z'
 - pricing_version: '2026-05-14'
   model_slug: anthropic/claude-sonnet-4-6
   effective_from: '2026-05-14T07:48:35.008Z'
   effective_until: null
-  input_per_mtoken: 0.003
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 3
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-14T07:48:35.008Z'
 - pricing_version: '2026-05-14'
   model_slug: openai/gpt-5.5
   effective_from: '2026-05-14T07:48:35.009Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.030000000000000002
+  input_per_mtoken: 5
+  output_per_mtoken: 30
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-14T07:48:35.009Z'
 - pricing_version: '2026-05-15'
   model_slug: anthropic/claude-opus-4-6
   effective_from: '2026-05-15T07:03:03.721Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-15T07:03:03.721Z'
 - pricing_version: '2026-05-15'
   model_slug: anthropic/claude-opus-4-7
   effective_from: '2026-05-15T07:03:03.725Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.025
+  input_per_mtoken: 5
+  output_per_mtoken: 25
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-15T07:03:03.725Z'
 - pricing_version: '2026-05-15'
   model_slug: anthropic/claude-sonnet-4-6
   effective_from: '2026-05-15T07:03:03.727Z'
   effective_until: null
-  input_per_mtoken: 0.003
-  output_per_mtoken: 0.015000000000000001
+  input_per_mtoken: 3
+  output_per_mtoken: 15
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-15T07:03:03.727Z'
 - pricing_version: '2026-05-15'
   model_slug: openai/gpt-5.5
   effective_from: '2026-05-15T07:03:03.729Z'
   effective_until: null
-  input_per_mtoken: 0.005
-  output_per_mtoken: 0.030000000000000002
+  input_per_mtoken: 5
+  output_per_mtoken: 30
   cache_read_per_mtoken: 0
   cache_write_per_mtoken: 0
-  source: litellm
+  source: litellm-api
   fetched_at: '2026-05-15T07:03:03.729Z'
+- pricing_version: '2026-05-16'
+  model_slug: anthropic/claude-sonnet-4-6
+  effective_from: '2026-05-16T14:36:00.825Z'
+  input_per_mtoken: 3
+  output_per_mtoken: 15
+  cache_read_per_mtoken: 0.3
+  cache_write_per_mtoken: 3.75
+  source: litellm-api
+  fetched_at: '2026-05-16T10:52:25.682Z'
+- pricing_version: '2026-05-16'
+  model_slug: anthropic/claude-opus-4-6
+  effective_from: '2026-05-16T14:36:44.954Z'
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 6.25
+  source: litellm-api
+  fetched_at: '2026-05-16T14:36:17.123Z'
+- pricing_version: '2026-05-16'
+  model_slug: anthropic/claude-opus-4-7
+  effective_from: '2026-05-16T18:32:26.871Z'
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 6.25
+  source: litellm-api
+  fetched_at: '2026-05-16T14:36:57.727Z'
+- pricing_version: '2026-05-16'
+  model_slug: openai/gpt-5.5
+  effective_from: '2026-05-16T18:32:45.148Z'
+  input_per_mtoken: 5
+  output_per_mtoken: 30
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-16T18:32:43.101Z'
+- pricing_version: '2026-05-24'
+  model_slug: gemini/gemini-3.5-flash
+  effective_from: '2026-05-24T19:47:18.769Z'
+  effective_until: null
+  input_per_mtoken: 1.5
+  output_per_mtoken: 9
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-24T19:47:18.769Z'
+- pricing_version: '2026-05-24'
+  model_slug: anthropic/claude-haiku-4-5
+  effective_from: '2026-05-24T19:47:18.774Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-24T19:47:18.774Z'
+- pricing_version: '2026-05-24'
+  model_slug: anthropic/claude-sonnet-4-6
+  effective_from: '2026-05-24T19:47:18.776Z'
+  effective_until: null
+  input_per_mtoken: 3
+  output_per_mtoken: 15
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-24T19:47:18.776Z'
+- pricing_version: '2026-05-24'
+  model_slug: openai/gpt-5.4
+  effective_from: '2026-05-24T19:47:18.778Z'
+  effective_until: null
+  input_per_mtoken: 2.5
+  output_per_mtoken: 15
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-24T19:47:18.778Z'
+- pricing_version: '2026-05-24'
+  model_slug: anthropic/claude-haiku-4-5-20251001
+  effective_from: '2026-05-24T19:48:07.018Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-24T19:48:07.018Z'
+- pricing_version: "2026-05-28"
+  model_slug: anthropic/claude-opus-4-8
+  effective_from: "2026-05-28T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 6.25
+  source: openrouter-api
+  fetched_at: "2026-05-28T00:00:00.000Z"
+- pricing_version: '2026-05-28'
+  model_slug: anthropic/claude-sonnet-4-6
+  effective_from: '2026-05-28T19:08:16.015Z'
+  effective_until: null
+  input_per_mtoken: 3
+  output_per_mtoken: 15
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-28T19:08:16.015Z'
+- pricing_version: '2026-05-28'
+  model_slug: gemini/gemini-3.5-flash
+  effective_from: '2026-05-28T19:08:16.019Z'
+  effective_until: null
+  input_per_mtoken: 1.5
+  output_per_mtoken: 9
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-28T19:08:16.019Z'
+- pricing_version: '2026-05-28'
+  model_slug: anthropic/claude-haiku-4-5-20251001
+  effective_from: '2026-05-28T19:12:13.510Z'
+  effective_until: null
+  input_per_mtoken: 1
+  output_per_mtoken: 5
+  cache_read_per_mtoken: 0
+  cache_write_per_mtoken: 0
+  source: litellm-api
+  fetched_at: '2026-05-28T19:12:13.510Z'

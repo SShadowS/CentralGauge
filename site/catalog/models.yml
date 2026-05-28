@@ -6,6 +6,13 @@
 # display_name   — shown in UI.
 # generation     — provider-internal major generation (informational).
 # released_at    — ISO date of public release (informational, best-effort).
+- slug: anthropic/claude-opus-4-8
+  api_model_id: claude-opus-4-8
+  family: claude
+  display_name: Claude Opus 4.8
+  generation: 4
+  released_at: "2026-05-28"
+
 - slug: anthropic/claude-opus-4-7
   api_model_id: claude-opus-4-7
   family: claude
@@ -109,4 +116,9 @@
   api_model_id: gemini-3.1-pro-preview
   family: gemini
   display_name: Gemini 3.1 Pro Preview
+  generation: 3
+- slug: gemini/gemini-3.5-flash
+  api_model_id: gemini-3.5-flash
+  family: gemini
+  display_name: Gemini 3.5 Flash
   generation: 3
