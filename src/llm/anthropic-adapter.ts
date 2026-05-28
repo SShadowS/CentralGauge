@@ -10,6 +10,7 @@ import type {
 import type {
   DiscoverableAdapter,
   DiscoveredModel,
+  ModelCapabilities,
 } from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
@@ -41,6 +42,64 @@ function modelRejectsTemperature(model: string): boolean {
   return TEMPERATURE_LOCKED_MODELS.some(
     (id) => model === id || model.startsWith(id + "-"),
   );
+}
+
+/** A capability node in the Anthropic /v1/models response: `{ supported: bool }`. */
+interface AnthropicCapability {
+  supported?: boolean;
+}
+
+/** Raw model entry from Anthropic GET /v1/models (fields we consume). */
+export interface AnthropicModelEntry {
+  id: string;
+  display_name?: string;
+  type?: string;
+  created_at?: string;
+  max_input_tokens?: number;
+  max_tokens?: number;
+  capabilities?: Record<string, AnthropicCapability | undefined>;
+}
+
+/**
+ * Map an Anthropic /v1/models entry to a {@link DiscoveredModel}, adopting the
+ * token limits and capability flags the API reports (previously dropped).
+ * Pure + exported for direct unit testing.
+ */
+export function mapAnthropicModelEntry(
+  entry: AnthropicModelEntry,
+): DiscoveredModel {
+  const caps = entry.capabilities;
+  let capabilities: ModelCapabilities | undefined;
+  if (caps) {
+    // Only the supported flags Anthropic exposes today; absent = undefined.
+    const mapped: ModelCapabilities = {};
+    const assign = (
+      key: keyof ModelCapabilities,
+      node?: AnthropicCapability,
+    ) => {
+      if (node && typeof node.supported === "boolean") {
+        mapped[key] = node.supported;
+      }
+    };
+    assign("thinking", caps["thinking"]);
+    assign("imageInput", caps["image_input"]);
+    assign("pdfInput", caps["pdf_input"]);
+    assign("structuredOutputs", caps["structured_outputs"]);
+    assign("batch", caps["batch"]);
+    if (Object.keys(mapped).length > 0) capabilities = mapped;
+  }
+
+  return {
+    id: entry.id,
+    name: entry.display_name,
+    createdAt: entry.created_at
+      ? new Date(entry.created_at).getTime()
+      : undefined,
+    maxInputTokens: entry.max_input_tokens,
+    maxOutputTokens: entry.max_tokens,
+    capabilities,
+    metadata: { type: entry.type },
+  };
 }
 
 export class AnthropicAdapter extends BaseLLMAdapter
@@ -150,22 +209,12 @@ export class AnthropicAdapter extends BaseLLMAdapter
     }
 
     const data = await response.json() as {
-      data?: Array<{
-        id: string;
-        display_name?: string;
-        type?: string;
-        created_at?: string;
-      }>;
+      data?: AnthropicModelEntry[];
     };
 
-    const discoveredModels: DiscoveredModel[] = (data.data ?? []).map((m) => ({
-      id: m.id,
-      name: m.display_name,
-      createdAt: m.created_at ? new Date(m.created_at).getTime() : undefined,
-      metadata: {
-        type: m.type,
-      },
-    }));
+    const discoveredModels: DiscoveredModel[] = (data.data ?? []).map(
+      mapAnthropicModelEntry,
+    );
 
     // Sort by ID for consistent ordering
     discoveredModels.sort((a, b) => a.id.localeCompare(b.id));

@@ -9,7 +9,10 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { AnthropicAdapter } from "../../../src/llm/anthropic-adapter.ts";
+import {
+  AnthropicAdapter,
+  mapAnthropicModelEntry,
+} from "../../../src/llm/anthropic-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
 // Initialize pricing service before any tests run
@@ -686,5 +689,68 @@ Deno.test("AnthropicAdapter - thinking budget configuration", async (t) => {
 
     const cost = adapter.estimateCost(1000, 1000);
     assertEquals(cost > 0, true);
+  });
+});
+
+// =============================================================================
+// Model Metadata Mapping (mapAnthropicModelEntry)
+// =============================================================================
+
+Deno.test("mapAnthropicModelEntry - adopts API metadata", async (t) => {
+  // Mirrors the live GET /v1/models/<id> response shape.
+  const raw = {
+    type: "model",
+    id: "claude-opus-4-8",
+    display_name: "Claude Opus 4.8",
+    created_at: "2026-05-28T00:00:00Z",
+    max_input_tokens: 1_000_000,
+    max_tokens: 128_000,
+    capabilities: {
+      batch: { supported: true },
+      image_input: { supported: true },
+      pdf_input: { supported: true },
+      structured_outputs: { supported: true },
+      thinking: { supported: true },
+    },
+  };
+
+  await t.step("preserves id, name, createdAt, type metadata", () => {
+    const m = mapAnthropicModelEntry(raw);
+    assertEquals(m.id, "claude-opus-4-8");
+    assertEquals(m.name, "Claude Opus 4.8");
+    assertEquals(m.createdAt, new Date("2026-05-28T00:00:00Z").getTime());
+    assertEquals(m.metadata?.["type"], "model");
+  });
+
+  await t.step("maps token limits", () => {
+    const m = mapAnthropicModelEntry(raw);
+    assertEquals(m.maxInputTokens, 1_000_000);
+    assertEquals(m.maxOutputTokens, 128_000);
+  });
+
+  await t.step("maps capability flags", () => {
+    const m = mapAnthropicModelEntry(raw);
+    assertEquals(m.capabilities?.thinking, true);
+    assertEquals(m.capabilities?.imageInput, true);
+    assertEquals(m.capabilities?.pdfInput, true);
+    assertEquals(m.capabilities?.structuredOutputs, true);
+    assertEquals(m.capabilities?.batch, true);
+  });
+
+  await t.step("tolerates a minimal entry with no metadata", () => {
+    const m = mapAnthropicModelEntry({ id: "claude-x", type: "model" });
+    assertEquals(m.id, "claude-x");
+    assertEquals(m.maxInputTokens, undefined);
+    assertEquals(m.maxOutputTokens, undefined);
+    assertEquals(m.capabilities, undefined);
+  });
+
+  await t.step("reflects an explicitly-unsupported capability", () => {
+    const m = mapAnthropicModelEntry({
+      id: "claude-y",
+      type: "model",
+      capabilities: { thinking: { supported: false } },
+    });
+    assertEquals(m.capabilities?.thinking, false);
   });
 });

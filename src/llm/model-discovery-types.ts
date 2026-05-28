@@ -14,6 +14,27 @@ export interface DiscoveredModelPricing {
 }
 
 /**
+ * Cross-provider model capability flags. Each is optional/tri-state: `true`
+ * (supported), `false` (explicitly unsupported), or absent (provider didn't
+ * report it). Mapped from provider-specific shapes (e.g. Anthropic's
+ * `capabilities.<name>.supported`).
+ */
+export interface ModelCapabilities {
+  /** Extended/thinking reasoning supported. */
+  thinking?: boolean;
+  /** Accepts image input. */
+  imageInput?: boolean;
+  /** Accepts PDF/document input. */
+  pdfInput?: boolean;
+  /** Native structured-output / JSON-schema mode. */
+  structuredOutputs?: boolean;
+  /** Tool / function calling. */
+  functionCalling?: boolean;
+  /** Batch API eligible. */
+  batch?: boolean;
+}
+
+/**
  * A model discovered from a provider's API
  */
 export interface DiscoveredModel {
@@ -27,6 +48,12 @@ export interface DiscoveredModel {
   createdAt?: number | undefined;
   /** Optional pricing information (per 1K tokens) */
   pricing?: DiscoveredModelPricing | undefined;
+  /** Max input/context window in tokens, when the API reports it. */
+  maxInputTokens?: number | undefined;
+  /** Max output tokens, when the API reports it. */
+  maxOutputTokens?: number | undefined;
+  /** Cross-provider capability flags, when the API reports them. */
+  capabilities?: ModelCapabilities | undefined;
   /** Provider-specific metadata */
   metadata?: Record<string, unknown> | undefined;
 }
