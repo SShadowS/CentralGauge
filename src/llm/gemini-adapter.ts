@@ -17,6 +17,38 @@ import type {
 } from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
+
+/** Raw model entry from Gemini GET /v1beta/models (fields we consume). */
+export interface GeminiModelEntry {
+  name: string;
+  displayName?: string;
+  description?: string;
+  supportedGenerationMethods?: string[];
+  inputTokenLimit?: number;
+  outputTokenLimit?: number;
+}
+
+/**
+ * Map a Gemini models.list entry to a {@link DiscoveredModel}, adopting the
+ * token limits as typed fields. Gemini's list API exposes no per-capability
+ * flags, so `capabilities` is left undefined; supported methods stay in
+ * metadata. Pure + exported for unit testing.
+ */
+export function mapGeminiModelEntry(entry: GeminiModelEntry): DiscoveredModel {
+  return {
+    // Strip "models/" prefix from name.
+    id: entry.name.replace("models/", ""),
+    name: entry.displayName,
+    description: entry.description,
+    maxInputTokens: entry.inputTokenLimit,
+    maxOutputTokens: entry.outputTokenLimit,
+    metadata: {
+      supportedMethods: entry.supportedGenerationMethods,
+      inputTokenLimit: entry.inputTokenLimit,
+      outputTokenLimit: entry.outputTokenLimit,
+    },
+  };
+}
 import { LLMProviderError } from "../errors.ts";
 import { PricingService } from "./pricing-service.ts";
 import {
@@ -131,30 +163,13 @@ export class GeminiAdapter extends BaseLLMAdapter
     }
 
     const data = await response.json() as {
-      models?: Array<{
-        name: string;
-        displayName?: string;
-        description?: string;
-        supportedGenerationMethods?: string[];
-        inputTokenLimit?: number;
-        outputTokenLimit?: number;
-      }>;
+      models?: GeminiModelEntry[];
     };
 
     // Filter to models that support content generation
     const discoveredModels: DiscoveredModel[] = (data.models ?? [])
       .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-      .map((m) => ({
-        // Strip "models/" prefix from name
-        id: m.name.replace("models/", ""),
-        name: m.displayName,
-        description: m.description,
-        metadata: {
-          supportedMethods: m.supportedGenerationMethods,
-          inputTokenLimit: m.inputTokenLimit,
-          outputTokenLimit: m.outputTokenLimit,
-        },
-      }));
+      .map(mapGeminiModelEntry);
 
     // Sort by ID for consistent ordering
     discoveredModels.sort((a, b) => a.id.localeCompare(b.id));

@@ -10,6 +10,7 @@ import type {
 import type {
   DiscoverableAdapter,
   DiscoveredModel,
+  ModelCapabilities,
 } from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
@@ -17,6 +18,69 @@ import { PricingService } from "./pricing-service.ts";
 import type { ModelPricing } from "./pricing-types.ts";
 
 const log = Logger.create("llm:openrouter");
+
+/** Raw model entry from OpenRouter GET /models (fields we consume). */
+export interface OpenRouterModelEntry {
+  id: string;
+  name?: string;
+  description?: string;
+  created?: number;
+  pricing?: { prompt?: string; completion?: string };
+  context_length?: number;
+  top_provider?: { max_completion_tokens?: number };
+  supported_parameters?: string[];
+  architecture?: { input_modalities?: string[] };
+}
+
+/**
+ * Map an OpenRouter /models entry to a {@link DiscoveredModel}, adopting token
+ * limits, capability flags (from supported_parameters + input_modalities), and
+ * pricing (per-token strings -> per-1K). Pure + exported for unit testing.
+ */
+export function mapOpenRouterModelEntry(
+  model: OpenRouterModelEntry,
+): DiscoveredModel {
+  let pricing: { input: number; output: number } | undefined;
+  if (model.pricing?.prompt && model.pricing?.completion) {
+    const promptPrice = parseFloat(model.pricing.prompt);
+    const completionPrice = parseFloat(model.pricing.completion);
+    if (!isNaN(promptPrice) && !isNaN(completionPrice)) {
+      // Convert from per-token to per-1K tokens.
+      pricing = { input: promptPrice * 1000, output: completionPrice * 1000 };
+    }
+  }
+
+  const params = model.supported_parameters ?? [];
+  const modalities = model.architecture?.input_modalities ?? [];
+  const caps: ModelCapabilities = {};
+  if (params.length > 0) {
+    caps.functionCalling = params.includes("tools");
+    caps.structuredOutputs = params.includes("structured_outputs") ||
+      params.includes("response_format");
+    caps.thinking = params.includes("reasoning") ||
+      params.includes("include_reasoning");
+  }
+  if (modalities.length > 0) {
+    caps.imageInput = modalities.includes("image");
+    caps.pdfInput = modalities.includes("file");
+  }
+  const capabilities = Object.keys(caps).length > 0 ? caps : undefined;
+
+  return {
+    id: model.id,
+    name: model.name,
+    description: model.description,
+    createdAt: model.created ? model.created * 1000 : undefined,
+    pricing,
+    maxInputTokens: model.context_length,
+    maxOutputTokens: model.top_provider?.max_completion_tokens,
+    capabilities,
+    metadata: {
+      context_length: model.context_length,
+      max_completion_tokens: model.top_provider?.max_completion_tokens,
+    },
+  };
+}
 import {
   DEFAULT_API_TIMEOUT_MS,
   DEFAULT_MAX_TOKENS,
@@ -136,50 +200,18 @@ export class OpenRouterAdapter extends BaseLLMAdapter
     }
 
     const data = await response.json() as {
-      data?: Array<{
-        id: string;
-        name?: string;
-        description?: string;
-        created?: number;
-        pricing?: {
-          prompt?: string;
-          completion?: string;
-        };
-        context_length?: number;
-        top_provider?: { max_completion_tokens?: number };
-      }>;
+      data?: OpenRouterModelEntry[];
     };
 
     const discoveredModels: DiscoveredModel[] = [];
     const pricingMap: Record<string, ModelPricing> = {};
 
     for (const model of data.data ?? []) {
-      // Extract pricing - OpenRouter returns cost per token as strings
-      let pricing: { input: number; output: number } | undefined;
-      if (model.pricing?.prompt && model.pricing?.completion) {
-        const promptPrice = parseFloat(model.pricing.prompt);
-        const completionPrice = parseFloat(model.pricing.completion);
-        if (!isNaN(promptPrice) && !isNaN(completionPrice)) {
-          // Convert from per-token to per-1K tokens
-          pricing = {
-            input: promptPrice * 1000,
-            output: completionPrice * 1000,
-          };
-          pricingMap[model.id] = pricing;
-        }
+      const discovered = mapOpenRouterModelEntry(model);
+      discoveredModels.push(discovered);
+      if (discovered.pricing) {
+        pricingMap[model.id] = discovered.pricing;
       }
-
-      discoveredModels.push({
-        id: model.id,
-        name: model.name,
-        description: model.description,
-        createdAt: model.created ? model.created * 1000 : undefined,
-        pricing,
-        metadata: {
-          context_length: model.context_length,
-          max_completion_tokens: model.top_provider?.max_completion_tokens,
-        },
-      });
     }
 
     // Register API pricing with PricingService

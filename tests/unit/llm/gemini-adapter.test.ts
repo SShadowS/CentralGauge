@@ -9,8 +9,46 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { GeminiAdapter } from "../../../src/llm/gemini-adapter.ts";
+import {
+  GeminiAdapter,
+  mapGeminiModelEntry,
+} from "../../../src/llm/gemini-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
+  const raw = {
+    name: "models/gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+    description: "Fast model",
+    supportedGenerationMethods: ["generateContent", "countTokens"],
+    inputTokenLimit: 1_048_576,
+    outputTokenLimit: 65_536,
+  };
+
+  await t.step("strips models/ prefix and maps token limits", () => {
+    const m = mapGeminiModelEntry(raw);
+    assertEquals(m.id, "gemini-3.5-flash");
+    assertEquals(m.name, "Gemini 3.5 Flash");
+    assertEquals(m.maxInputTokens, 1_048_576);
+    assertEquals(m.maxOutputTokens, 65_536);
+  });
+
+  await t.step("leaves capabilities undefined (list API has no flags)", () => {
+    const m = mapGeminiModelEntry(raw);
+    assertEquals(m.capabilities, undefined);
+    assertEquals(
+      m.metadata?.["supportedMethods"],
+      raw.supportedGenerationMethods,
+    );
+  });
+
+  await t.step("tolerates a minimal entry", () => {
+    const m = mapGeminiModelEntry({ name: "models/gemini-x" });
+    assertEquals(m.id, "gemini-x");
+    assertEquals(m.maxInputTokens, undefined);
+    assertEquals(m.maxOutputTokens, undefined);
+  });
+});
 
 // Initialize pricing service before any tests run
 await PricingService.initialize();

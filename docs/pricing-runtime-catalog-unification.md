@@ -77,13 +77,28 @@ belt-and-suspenders against any legacy/reappearing corrupted row.
 
 ## Open follow-ups
 
-### A. Discarded Anthropic `/v1/models` metadata
-`anthropic-adapter.ts:discoverModels()` parses only `id`/`display_name`/
-`type`/`created_at`. The live API also returns `max_input_tokens`,
-`max_tokens`, and a rich `capabilities` object (thinking modes, effort levels,
-batch, citations, structured outputs). Wiring these into `DiscoveredModel`
-would let context limits + capabilities be auto-discovered instead of
-hardcoded. Mirror for OpenAI/Gemini adapters where available.
+### A. API model metadata adoption — IN PROGRESS
+
+`DiscoveredModel` now carries typed `maxInputTokens` / `maxOutputTokens` /
+`capabilities` (`ModelCapabilities`). Adapter coverage:
+
+- **Anthropic** (done): `max_input_tokens`, `max_tokens`, and `capabilities.*`
+  (thinking, image/pdf input, structured outputs, batch) via
+  `mapAnthropicModelEntry`.
+- **OpenRouter** (done): `context_length`, `top_provider.max_completion_tokens`,
+  capabilities from `supported_parameters` (tools, structured_outputs,
+  reasoning) + `architecture.input_modalities` (image, file) via
+  `mapOpenRouterModelEntry`.
+- **Gemini** (done): `inputTokenLimit` / `outputTokenLimit` via
+  `mapGeminiModelEntry`. The list API exposes no per-capability flags, so
+  `capabilities` stays undefined.
+- **OpenAI** (n/a): `/v1/models` returns only `id`/`created`/`owned_by` — no
+  token limits or capabilities to adopt.
+
+Remaining: a CONSUMER for the adopted metadata. It is captured into
+`DiscoveredModel` + the discovery cache but not yet used. Candidate consumers:
+persist context window / capabilities to catalog `models.yml`; default request
+`max_tokens` from `maxOutputTokens`; surface in the `models` CLI command.
 
 ### B. Is `config/pricing.json` still needed?
 With the catalog tier authoritative and LiteLLM as the live API tier,
