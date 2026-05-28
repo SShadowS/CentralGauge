@@ -243,7 +243,7 @@ describe("mergeMetadata", () => {
     assertEquals(result.model.family, "claude");
     assertEquals(result.model.released_at, "2026-01-15");
     assertEquals(result.pricing.input_per_mtoken, 1);
-    assertEquals(result.pricing.source, "litellm");
+    assertEquals(result.pricing.source, "litellm-api");
   });
 
   it("direct provider slug works with LiteLLM only (no OR data)", () => {
@@ -254,7 +254,7 @@ describe("mergeMetadata", () => {
     });
     assertEquals(result.model.family, "gpt");
     assertEquals(result.pricing.input_per_mtoken, 2.5);
-    assertEquals(result.pricing.source, "litellm");
+    assertEquals(result.pricing.source, "litellm-api");
   });
 
   it("throws SEED_NO_PRICING when no source has pricing", () => {
@@ -268,6 +268,52 @@ describe("mergeMetadata", () => {
       CatalogSeedError,
       "no pricing source",
     );
+  });
+
+  it("rejects implausible sub-floor per-MTok pricing (1000x scale bug)", () => {
+    // $5/MTok mistakenly stored as per-1K ($0.005) — the exact legacy bug.
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "anthropic/claude-opus-4-8",
+          litellm: { input: 0.005, output: 0.025 },
+          openrouter: null,
+        }),
+      CatalogSeedError,
+      "unit/scale error",
+    );
+  });
+
+  it("rejects pricing sources that disagree by >100x (unit mismatch)", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "anthropic/claude-opus-4-8",
+          litellm: { input: 0.005, output: 0.025 }, // per-1K leak
+          openrouter: {
+            pricing: { input: 5, output: 25 }, // correct per-MTok
+            displayName: "Claude Opus 4.8",
+            vendor: "Anthropic",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "unit",
+    );
+  });
+
+  it("accepts a genuinely cheap model at the floor boundary", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/some/cheap-model",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 0.05, output: 0.1 },
+        displayName: "Cheap Model",
+        vendor: "Some",
+        releasedAt: null,
+      },
+    });
+    assertEquals(result.pricing.input_per_mtoken, 0.05);
   });
 
   it("direct provider falls back to OR pricing when LiteLLM has none", () => {

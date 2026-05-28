@@ -89,7 +89,7 @@ describe("seedMissingSlugs", () => {
       assertEquals(orCalls, 1);
 
       const pricing = await Deno.readTextFile(`${dir}/pricing.yml`);
-      assertEquals(pricing.includes("source: litellm"), true);
+      assertEquals(pricing.includes("source: litellm-api"), true);
       // LiteLLM value 1.0 wins, not OR's 99
       assertEquals(pricing.includes("input_per_mtoken: 1"), true);
       assertEquals(pricing.includes("input_per_mtoken: 99"), false);

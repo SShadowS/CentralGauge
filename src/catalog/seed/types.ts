@@ -28,7 +28,10 @@ export interface PricingRow {
   output_per_mtoken: number;
   cache_read_per_mtoken: number;
   cache_write_per_mtoken: number;
-  source: "manual" | "litellm" | "openrouter";
+  // "litellm" is LEGACY-ONLY: rows tagged thus were written with a 1000x
+  // scale bug (per-1K stored as per-Mtok) and are distrusted downstream. The
+  // seed runner now emits "litellm-api" (correctly scaled, ×1,000,000).
+  source: "manual" | "litellm" | "litellm-api" | "openrouter";
   fetched_at: string;
 }
 

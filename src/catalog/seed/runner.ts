@@ -12,6 +12,7 @@ import { CatalogSeedError } from "../../errors.ts";
 
 export interface SeedDeps {
   fetchOpenRouter: (orSlug: string) => Promise<OpenRouterMeta | null>;
+  // Returns LiteLLM pricing in per-MILLION-token units (catalog convention).
   fetchLiteLLM: (
     provider: string,
     model: string,
@@ -28,9 +29,10 @@ export interface SeedSummary {
 const defaultDeps: SeedDeps = {
   fetchOpenRouter: fetchOpenRouterMeta,
   fetchLiteLLM: (provider, model) => {
-    // LiteLLMService.getPricing returns LiteLLMPricing | undefined;
-    // translate undefined → null to match the SeedDeps interface.
-    return LiteLLMService.getPricing(provider, model) ?? null;
+    // MUST be per-MTok to match the catalog `*_per_mtoken` fields.
+    // getPricing() returns per-1K and would write 1000x too low — use the
+    // per-MTok accessor. Translate undefined → null for the SeedDeps contract.
+    return LiteLLMService.getPricingPerMTok(provider, model) ?? null;
   },
 };
 

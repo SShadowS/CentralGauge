@@ -347,7 +347,8 @@ export class CatalogSeedError extends CentralGaugeError {
       | "SEED_NETWORK"
       | "SEED_MISSING_KEY"
       | "SEED_YAML_WRITE"
-      | "SEED_INVALID_SLUG",
+      | "SEED_INVALID_SLUG"
+      | "SEED_IMPLAUSIBLE_PRICING",
     context?: Record<string, unknown>,
   ) {
     super(message, code, context);

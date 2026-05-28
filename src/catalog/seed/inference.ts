@@ -139,6 +139,7 @@ export function inferReleasedAt(epochSeconds: number | null): string | null {
 
 interface MergeInput {
   slug: string;
+  /** LiteLLM pricing in per-MILLION-token units (catalog convention). */
   litellm: { input: number; output: number } | null;
   openrouter: OpenRouterMeta | null;
 }
@@ -165,9 +166,10 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
     );
   }
 
-  // Pricing: OR-only for openrouter slugs; prefer LiteLLM for direct provider slugs
+  // Pricing: OR-only for openrouter slugs; prefer LiteLLM for direct provider slugs.
+  // All values here are per-MILLION-token (catalog convention).
   let pricingValues: { input: number; output: number };
-  let pricingSource: "litellm" | "openrouter";
+  let pricingSource: "litellm-api" | "openrouter";
   if (isOpenrouterSlug) {
     if (!input.openrouter) {
       throw new CatalogSeedError(
@@ -181,7 +183,7 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
   } else {
     if (input.litellm) {
       pricingValues = input.litellm;
-      pricingSource = "litellm";
+      pricingSource = "litellm-api";
     } else if (input.openrouter) {
       pricingValues = input.openrouter.pricing;
       pricingSource = "openrouter";
@@ -193,6 +195,12 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
       );
     }
   }
+
+  // Prevention: reject implausible per-MTok pricing before it can be written.
+  // A scale slip (per-token or per-1K mistaken for per-MTok) lands values far
+  // below any real LLM rate; cross-source disagreement of >100x flags a unit
+  // mismatch. This is the gate that stops the 1000x corruption recurring.
+  assertPlausiblePricing(input.slug, pricingValues, pricingSource, input);
 
   const family = inferFamilySlug(
     parsed.provider,
@@ -239,6 +247,66 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
   };
 
   return { model: modelRow, family: familyRow, pricing: pricingRow };
+}
+
+/**
+ * Minimum plausible per-MTok rate for a PAID model. Values in the open
+ * interval (0, this) almost always indicate a unit/scale slip (per-token or
+ * per-1K mistaken for per-MTok). The cheapest real paid LLMs are well above
+ * this; 0 is allowed (free / local models).
+ */
+const MIN_PLAUSIBLE_PER_MTOK = 0.01;
+
+/** Max tolerated ratio between two sources' rates before it reads as a unit mismatch. */
+const MAX_CROSS_SOURCE_RATIO = 100;
+
+/**
+ * Reject pricing that cannot be a real per-MTok rate before it is written to
+ * the catalog. Two checks: an absolute floor (catches the 1000x scale bug that
+ * produced the legacy `source: litellm` rows), and a cross-source magnitude
+ * check when both LiteLLM and OpenRouter are present.
+ */
+function assertPlausiblePricing(
+  slug: string,
+  values: { input: number; output: number },
+  source: string,
+  input: MergeInput,
+): void {
+  for (const field of ["input", "output"] as const) {
+    const v = values[field];
+    if (!Number.isFinite(v) || v < 0) {
+      throw new CatalogSeedError(
+        `implausible ${field} pricing for ${slug}: ${v} (source=${source})`,
+        "SEED_IMPLAUSIBLE_PRICING",
+        { slug, field, value: v, source },
+      );
+    }
+    if (v > 0 && v < MIN_PLAUSIBLE_PER_MTOK) {
+      throw new CatalogSeedError(
+        `implausible ${field} pricing for ${slug}: $${v}/MTok is below the ` +
+          `$${MIN_PLAUSIBLE_PER_MTOK}/MTok floor — likely a unit/scale error ` +
+          `(source=${source})`,
+        "SEED_IMPLAUSIBLE_PRICING",
+        { slug, field, value: v, source },
+      );
+    }
+  }
+
+  if (input.litellm && input.openrouter) {
+    const a = input.litellm.input;
+    const b = input.openrouter.pricing.input;
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    const ratio = lo > 0 ? hi / lo : Infinity;
+    if (ratio > MAX_CROSS_SOURCE_RATIO) {
+      throw new CatalogSeedError(
+        `pricing sources disagree >${MAX_CROSS_SOURCE_RATIO}x for ${slug} ` +
+          `(litellm=${a} vs openrouter=${b} per MTok) — likely a unit mismatch`,
+        "SEED_IMPLAUSIBLE_PRICING",
+        { slug, litellm: a, openrouter: b },
+      );
+    }
+  }
 }
 
 function capitalize(s: string): string {
