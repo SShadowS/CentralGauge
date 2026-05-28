@@ -185,6 +185,12 @@ export interface ModelDetail {
      * (multi-settings ambiguity per IM-2 design rationale).
      */
     settings_suffix: string;
+    /** Context window in tokens, or null when the provider API omits it. */
+    max_input_tokens: number | null;
+    /** Max completion tokens, or null when the provider API omits it. */
+    max_output_tokens: number | null;
+    /** Capability flag names (e.g. ["thinking", "image"]), or null. */
+    capabilities: string[] | null;
   };
   aggregates: {
     avg_score: number;

@@ -14,7 +14,13 @@
   import ShortcomingsSection from '$lib/components/domain/ShortcomingsSection.svelte';
   import RunsTable from '$lib/components/domain/RunsTable.svelte';
   import Button from '$lib/components/ui/Button.svelte';
-  import { formatScore, formatCost, formatDuration } from '$lib/client/format';
+  import Tag from '$lib/components/ui/Tag.svelte';
+  import {
+    formatScore,
+    formatCost,
+    formatDuration,
+    formatTokens as formatTokensCompact,
+  } from '$lib/client/format';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
   // import CheatButton from '$lib/cheat/CheatButton.svelte';
@@ -24,6 +30,26 @@
   let { data } = $props();
 
   const m = $derived(data.model);
+
+  // Adopted provider metadata (token limits + capabilities). Rendered only
+  // when the provider API reported it; absent for sparse providers (OpenAI).
+  const CAP_LABELS: Record<string, string> = {
+    thinking: 'Reasoning',
+    image: 'Vision',
+    pdf: 'PDF',
+    structured: 'Structured output',
+    tools: 'Tools',
+    batch: 'Batch',
+  };
+  const caps = $derived(
+    (m.model.capabilities ?? []).map((c) => CAP_LABELS[c] ?? c),
+  );
+  // Compact window size without a trailing ".0" (1.0M -> 1M).
+  const fmtWindow = (n: number) =>
+    formatTokensCompact(n).replace(/\.0([kM])$/, '$1');
+  const hasSpecs = $derived(
+    !!(m.model.max_input_tokens || m.model.max_output_tokens || caps.length),
+  );
 
   const modelRoute = $derived(`/models/${page.params.slug}`);
 
@@ -117,6 +143,25 @@
     · <FamilyBadge slug={m.model.family_slug} />
     · Added {new Date(m.model.added_at).toLocaleDateString('en-CA')}
   </p>
+  {#if hasSpecs}
+    <div class="model-specs">
+      {#if m.model.max_input_tokens}
+        <span class="spec">
+          <span class="spec-val text-mono">{fmtWindow(m.model.max_input_tokens)}</span> context
+        </span>
+      {/if}
+      {#if m.model.max_output_tokens}
+        <span class="spec">
+          <span class="spec-val text-mono">{fmtWindow(m.model.max_output_tokens)}</span> output
+        </span>
+      {/if}
+      {#if caps.length}
+        <span class="caps">
+          {#each caps as cap}<Tag>{cap}</Tag>{/each}
+        </span>
+      {/if}
+    </div>
+  {/if}
 </header>
 
 <div class="layout" data-cheat-scope>
@@ -240,6 +285,19 @@
   .title-row h1 { font-size: var(--text-3xl); margin: 0; }
   .meta { font-size: var(--text-sm); margin-top: var(--space-3); display: inline-flex; gap: var(--space-3); align-items: center; }
   .meta code { font-size: var(--text-xs); }
+  .model-specs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    margin-top: var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+  }
+  .spec-val { color: var(--text); font-weight: var(--weight-semi); }
+  /* The bordered pills read as their own group; the row gap separates them
+     from the token specs without a divider. */
+  .caps { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
 
   .layout {
     display: grid;
