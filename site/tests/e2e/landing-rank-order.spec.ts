@@ -55,11 +55,11 @@ test.describe("landing page rank order parity", () => {
   }) => {
     await page.goto("/?sort=avg_score:desc", { waitUntil: "networkidle" });
 
-    // The "Avg attempt" <th> acquires aria-sort="descending" when active.
+    // The "Avg score" <th> acquires aria-sort="descending" when active.
     const avgHeader = page.locator(
       "thead th[aria-sort='descending'] button",
     );
-    await expect(avgHeader).toContainText(/avg attempt/i);
+    await expect(avgHeader).toContainText(/avg score/i);
   });
 
   test("deep link ?sort=avg_score:asc reverses avg-attempt sort to ascending", async ({
@@ -70,6 +70,6 @@ test.describe("landing page rank order parity", () => {
     const avgHeader = page.locator(
       "thead th[aria-sort='ascending'] button",
     );
-    await expect(avgHeader).toContainText(/avg attempt/i);
+    await expect(avgHeader).toContainText(/avg score/i);
   });
 });

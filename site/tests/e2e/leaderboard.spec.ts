@@ -17,7 +17,9 @@ test.describe("/", () => {
     // networkidle: sort handlers are wired during Svelte hydration, which
     // races the click under parallel load (3/5 flake observed without it).
     await page.goto("/", { waitUntil: "networkidle" });
-    const scoreHeader = page.getByRole("button", { name: /score/i });
+    // Anchor to exactly "Score" — the demoted "Avg score" column also
+    // contains "score", so a bare /score/i now matches two buttons.
+    const scoreHeader = page.getByRole("button", { name: /^score$/i });
     await scoreHeader.click();
     await expect(page).toHaveURL(/sort=pass_at_n%3Aasc/);
     await scoreHeader.click();
