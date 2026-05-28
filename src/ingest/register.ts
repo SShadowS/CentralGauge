@@ -1,5 +1,4 @@
 import {
-  Confirm,
   Input,
   Number as NumPrompt,
 } from "https://deno.land/x/cliffy@v0.25.7/prompt/mod.ts";
@@ -32,6 +31,34 @@ const postedModelKeys = new Set<string>();
 
 function modelKey(slug: string, apiModelId: string): string {
   return `${slug}\0${apiModelId}`;
+}
+
+// Per-prompt-type "yes to all" latches. Set when the operator answers A; every
+// subsequent prompt of the same kind in this process auto-accepts silently.
+// Reset by _resetEnsureTaskSetCache() for tests.
+let yesToAllModels = false;
+let yesToAllPricing = false;
+
+/**
+ * Y/n/A confirmation. Returns {accepted, all}:
+ *  - accepted = user wants this write to proceed
+ *  - all      = user wants every future prompt of this kind to auto-accept
+ * Empty input or "y"/"yes" = accept once. "a"/"all" = accept + latch. Anything
+ * else = reject.
+ */
+async function promptYesNoAll(
+  message: string,
+): Promise<{ accepted: boolean; all: boolean }> {
+  const ans = await Input.prompt({
+    message: `${message} [Y/n/A=yes to all]`,
+    default: "Y",
+  });
+  const t = ans.trim().toLowerCase();
+  if (t === "a" || t === "all") return { accepted: true, all: true };
+  if (t === "" || t === "y" || t === "yes") {
+    return { accepted: true, all: false };
+  }
+  return { accepted: false, all: false };
 }
 
 export async function ensureModel(
@@ -68,16 +95,20 @@ export async function ensureModel(
     console.log(
       `       Inferred: family=${inferred.family}, display_name='${inferred.display_name}'`,
     );
-    const ok = await Confirm.prompt({
-      message: "Write to catalog + D1?",
-      default: true,
-    });
-    if (!ok) throw new Error(`aborted: model '${slug}' not registered`);
-    const displayName = await Input.prompt({
-      message: "display_name (enter to keep inferred)",
-      default: inferred.display_name,
-    });
-    inferred.display_name = displayName;
+    if (yesToAllModels) {
+      console.log(`[INFO] Auto-accepting (yes-to-all active for models).`);
+    } else {
+      const { accepted, all } = await promptYesNoAll("Write to catalog + D1?");
+      if (!accepted) throw new Error(`aborted: model '${slug}' not registered`);
+      if (all) yesToAllModels = true;
+    }
+    if (!yesToAllModels) {
+      const displayName = await Input.prompt({
+        message: "display_name (enter to keep inferred)",
+        default: inferred.display_name,
+      });
+      inferred.display_name = displayName;
+    }
   }
 
   await appendModel(`${deps.catalogDir}/models.yml`, inferred);
@@ -152,12 +183,14 @@ export async function ensurePricing(
     console.log(
       `       input=${rates.input_per_mtoken}/Mt output=${rates.output_per_mtoken}/Mt`,
     );
-    const ok = await Confirm.prompt({
-      message: "Accept and write?",
-      default: true,
-    });
-    if (!ok) {
-      throw new Error(`aborted: pricing for '${modelSlug}' not accepted`);
+    if (yesToAllPricing) {
+      console.log(`[INFO] Auto-accepting (yes-to-all active for pricing).`);
+    } else {
+      const { accepted, all } = await promptYesNoAll("Accept and write?");
+      if (!accepted) {
+        throw new Error(`aborted: pricing for '${modelSlug}' not accepted`);
+      }
+      if (all) yesToAllPricing = true;
     }
   }
 
@@ -199,6 +232,8 @@ export function _resetEnsureTaskSetCache(): void {
   postedTaskSetHashes.clear();
   postedModelKeys.clear();
   postedPricingKeys.clear();
+  yesToAllModels = false;
+  yesToAllPricing = false;
 }
 
 async function postAdmin(
