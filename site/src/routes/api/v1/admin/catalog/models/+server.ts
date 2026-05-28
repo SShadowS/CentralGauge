@@ -13,6 +13,9 @@ interface ModelUpsert {
   generation?: number | null;
   released_at?: string | null;
   deprecated_at?: string | null;
+  max_input_tokens?: number | null;
+  max_output_tokens?: number | null;
+  capabilities?: string[] | null;
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -69,13 +72,16 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
     await db.prepare(
-      `INSERT INTO models(family_id, slug, api_model_id, display_name, generation, released_at, deprecated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO models(family_id, slug, api_model_id, display_name, generation, released_at, deprecated_at, max_input_tokens, max_output_tokens, capabilities)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(slug, api_model_id) DO UPDATE SET
          display_name = excluded.display_name,
          generation = excluded.generation,
          released_at = excluded.released_at,
-         deprecated_at = excluded.deprecated_at`,
+         deprecated_at = excluded.deprecated_at,
+         max_input_tokens = excluded.max_input_tokens,
+         max_output_tokens = excluded.max_output_tokens,
+         capabilities = excluded.capabilities`,
     ).bind(
       fam.id,
       p.slug,
@@ -84,6 +90,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       p.generation ?? null,
       p.released_at ?? null,
       p.deprecated_at ?? null,
+      p.max_input_tokens ?? null,
+      p.max_output_tokens ?? null,
+      p.capabilities ? JSON.stringify(p.capabilities) : null,
     ).run();
     return jsonResponse({ ok: true }, 200);
   } catch (err) {

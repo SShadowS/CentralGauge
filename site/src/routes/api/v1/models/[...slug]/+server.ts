@@ -19,6 +19,20 @@ interface ModelRow {
   released_at: string | null;
   family_id: number;
   family_slug: string;
+  max_input_tokens: number | null;
+  max_output_tokens: number | null;
+  capabilities: string | null;
+}
+
+/** Parse the capabilities JSON-text column into a string array (or null). */
+function parseCapabilities(raw: string | null): string[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as string[] : null;
+  } catch {
+    return null;
+  }
 }
 
 interface RunRow {
@@ -59,7 +73,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const model = await getFirst<ModelRow>(
       env.DB,
       `SELECT m.id, m.slug, m.display_name, m.api_model_id, m.generation, m.released_at,
-              m.family_id, mf.slug AS family_slug
+              m.family_id, mf.slug AS family_slug,
+              m.max_input_tokens, m.max_output_tokens, m.capabilities
        FROM models m JOIN model_families mf ON mf.id = m.family_id
        WHERE m.slug = ?`,
       [params.slug!],
@@ -254,6 +269,9 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
         family_slug: model.family_slug,
         added_at: addedAt,
         settings_suffix: settingsSuffix,
+        max_input_tokens: model.max_input_tokens,
+        max_output_tokens: model.max_output_tokens,
+        capabilities: parseCapabilities(model.capabilities),
       },
       aggregates: {
         avg_score: agg?.avg_score ?? 0,

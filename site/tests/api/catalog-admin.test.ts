@@ -144,6 +144,36 @@ describe("admin catalog endpoints", () => {
     expect(row?.display_name).toBe("Claude Opus (Test)");
   });
 
+  it("persists adopted model metadata (token limits + capabilities)", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "anthropic/claude-meta-test",
+      api_model_id: "claude-meta-2026",
+      family: "claude",
+      display_name: "Claude Meta (Test)",
+      generation: 99,
+      max_input_tokens: 1_000_000,
+      max_output_tokens: 128_000,
+      capabilities: ["thinking", "image", "pdf"],
+    });
+
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(200);
+
+    const row = await env.DB.prepare(
+      `SELECT max_input_tokens AS inp, max_output_tokens AS outp, capabilities AS caps
+         FROM models WHERE slug = ?`,
+    ).bind("anthropic/claude-meta-test").first<
+      { inp: number; outp: number; caps: string }
+    >();
+    expect(row?.inp).toBe(1_000_000);
+    expect(row?.outp).toBe(128_000);
+    expect(JSON.parse(row?.caps ?? "[]")).toEqual(["thinking", "image", "pdf"]);
+  });
+
   it("upserts a task_set", async () => {
     const { signedRequest } = await signAsAdmin({
       hash: "h".repeat(64),
