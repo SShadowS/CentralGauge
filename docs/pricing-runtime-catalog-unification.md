@@ -111,9 +111,14 @@ Consumers of the adopted metadata (all three landed):
   synced to prod D1 (deployed; verified live at
   `ai.sshadows.dk/api/v1/models/...`).
 
-Remaining: a polished SITE UI surface (model page / leaderboard chips) for the
-context window + capabilities — data is live via the API; the visual component
-is its own frontend-design pass.
+- **Site model page** (done): the model header shows a spec strip — token
+  limits as compact mono values ("1M context · 128k output") and capabilities
+  as `Tag` pills (Reasoning, Vision, PDF, Structured output, Tools, Batch),
+  shown only when the provider reported metadata. Live at
+  `ai.sshadows.dk/models/<slug>`.
+
+Possible future surface: the same chips on the leaderboard rows / compare view
+(not done; the model page covers the primary need).
 
 ### B. Is `config/pricing.json` still needed?
 With the catalog tier authoritative and LiteLLM as the live API tier,
