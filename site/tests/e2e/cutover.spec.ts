@@ -10,24 +10,9 @@ test.describe("P5.5 cutover", () => {
     await expect(page.getByRole("table")).toBeVisible();
   });
 
-  test("/leaderboard 302 redirects to /", async ({ page }) => {
-    const response = await page.goto("/leaderboard");
-    // Playwright follows redirects by default; final URL is `/`. Use a
-    // separate request to assert the initial response status is 302
-    // (not the post-redirect 200 that page.goto returns).
-    const initial = await page.context().request.fetch("/leaderboard", {
-      maxRedirects: 0,
-    });
-    expect(initial.status()).toBe(302);
-    await expect(page).toHaveURL("/");
-  });
-
-  test("/leaderboard?tier=verified preserves query through 302", async ({ page }) => {
-    await page.goto("/leaderboard?tier=verified");
-    // toHaveURL matches against the full URL (incl. http://host:port).
-    // Match the path-and-query suffix without anchoring to a leading slash.
-    await expect(page).toHaveURL(/\/\?tier=verified$/);
-  });
+  // The /leaderboard 302 redirect was retired in the cutover sunset
+  // (2026-05-30); /leaderboard now 404s. The sitemap + nav assertions below
+  // still guard that nothing points back at the old path.
 
   test("robots noindex meta is absent", async ({ page }) => {
     await page.goto("/");

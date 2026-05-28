@@ -17,7 +17,9 @@ describe("RUM beacon emission (server-rendered)", () => {
     // fixture / main entrypoint), NOT the public internet. Bare fetch()
     // would either escape the sandbox or 404 against miniflare's
     // loopback — both make the test silently meaningless.
-    const res = await SELF.fetch("http://x/leaderboard");
+    // Fetch the homepage directly (this previously hit `/leaderboard` and
+    // relied on its 302 -> `/` redirect, retired in the cutover sunset).
+    const res = await SELF.fetch("http://x/");
     expect(res.status).toBe(200); // Fail loudly if the route is broken.
     const html = await res.text();
     expect(html).toMatch(/cloudflareinsights\.com\/beacon\.min\.js/);

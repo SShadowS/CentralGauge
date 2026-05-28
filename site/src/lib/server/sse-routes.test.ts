@@ -89,23 +89,3 @@ describe("routePatternMatches", () => {
     expect(routePatternMatches([], ["/"])).toBe(false);
   });
 });
-
-describe("routePatternMatches — legacy /leaderboard subscription alias (sunset 2026-05-30)", () => {
-  it("treats incoming `/leaderboard` subscription as if it were `/`", () => {
-    // A stale tab pre-cutover holding `routes=%2Fleaderboard` connects after
-    // worker reload; eventToRoutes() emits events tagged `/`; the matcher
-    // must accept the legacy subscription pattern for the alias window.
-    expect(routePatternMatches(["/"], ["/leaderboard"])).toBe(true);
-  });
-
-  it("does NOT match `/leaderboard` subscription against unrelated event routes", () => {
-    expect(routePatternMatches(["/runs"], ["/leaderboard"])).toBe(false);
-  });
-
-  it("alias is unidirectional — `/` subscription does NOT match `/leaderboard` event tag", () => {
-    // Sanity: `eventToRoutes()` no longer emits events tagged `/leaderboard`,
-    // so this case is hypothetical; assert the alias doesn't accidentally
-    // reverse direction.
-    expect(routePatternMatches(["/leaderboard"], ["/"])).toBe(false);
-  });
-});
