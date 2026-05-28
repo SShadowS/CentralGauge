@@ -173,6 +173,21 @@ export class ModelDiscoveryService {
   }
 
   /**
+   * Cached maxOutputTokens for a provider/model, when discovery has run and
+   * the API reported it. Sync + cache-only (never triggers a fetch); returns
+   * undefined when unknown so callers can leave their value unchanged.
+   */
+  static getCachedMaxOutputTokens(
+    provider: string,
+    model: string,
+  ): number | undefined {
+    const cached = this.getFromCache(provider);
+    const entry = cached?.discoveredModels.find((m) => m.id === model);
+    const limit = entry?.maxOutputTokens;
+    return typeof limit === "number" && limit > 0 ? limit : undefined;
+  }
+
+  /**
    * Update the cache for a provider
    */
   private static updateCache(

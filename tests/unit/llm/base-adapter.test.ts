@@ -9,6 +9,7 @@
 
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import {
+  applyMaxOutputCap,
   BaseLLMAdapter,
   type ProviderCallResult,
 } from "../../../src/llm/base-adapter.ts";
@@ -21,6 +22,21 @@ import type {
   StreamOptions,
   StreamResult,
 } from "../../../src/llm/types.ts";
+
+Deno.test("applyMaxOutputCap", async (t) => {
+  await t.step("caps a request above the model limit", () => {
+    assertEquals(applyMaxOutputCap(200_000, 128_000), 128_000);
+  });
+  await t.step("leaves a request below the limit unchanged", () => {
+    assertEquals(applyMaxOutputCap(4000, 128_000), 4000);
+  });
+  await t.step("is a no-op when the limit is unknown", () => {
+    assertEquals(applyMaxOutputCap(200_000, undefined), 200_000);
+  });
+  await t.step("is a no-op for a non-positive limit", () => {
+    assertEquals(applyMaxOutputCap(4000, 0), 4000);
+  });
+});
 
 // =============================================================================
 // Mock Concrete Adapter for Testing

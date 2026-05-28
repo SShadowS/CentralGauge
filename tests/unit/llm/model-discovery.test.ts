@@ -342,3 +342,42 @@ Deno.test("ModelDiscoveryService", async (t) => {
   // Clean up
   ModelDiscoveryService.clearCache();
 });
+
+Deno.test("ModelDiscoveryService.getCachedMaxOutputTokens", async (t) => {
+  await t.step("returns the cached limit after discovery", async () => {
+    ModelDiscoveryService.clearCache();
+    const adapter = new MockDiscoverableAdapter();
+    adapter.setDiscoveredModels([
+      { id: "big-model", name: "Big", maxOutputTokens: 128_000 },
+      { id: "no-limit-model", name: "NoLimit" },
+    ]);
+    await ModelDiscoveryService.getModels("cap-provider", adapter);
+
+    assertEquals(
+      ModelDiscoveryService.getCachedMaxOutputTokens(
+        "cap-provider",
+        "big-model",
+      ),
+      128_000,
+    );
+  });
+
+  await t.step("returns undefined when the model reported no limit", () => {
+    assertEquals(
+      ModelDiscoveryService.getCachedMaxOutputTokens(
+        "cap-provider",
+        "no-limit-model",
+      ),
+      undefined,
+    );
+  });
+
+  await t.step("returns undefined for an unknown provider/model", () => {
+    assertEquals(
+      ModelDiscoveryService.getCachedMaxOutputTokens("nope", "nope"),
+      undefined,
+    );
+  });
+
+  ModelDiscoveryService.clearCache();
+});

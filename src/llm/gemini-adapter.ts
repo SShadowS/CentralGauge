@@ -200,7 +200,7 @@ export class GeminiAdapter extends BaseLLMAdapter
         ...(thinkingBudget !== undefined ? {} : {
           temperature: request.temperature ?? this.config.temperature ?? 0.1,
         }),
-        maxOutputTokens: request.maxTokens ?? this.config.maxTokens ?? 8192,
+        maxOutputTokens: this.resolveMaxTokens(request, 8192),
         ...(request.stop ? { stopSequences: request.stop } : {}),
         ...(request.systemPrompt
           ? { systemInstruction: request.systemPrompt }
@@ -271,7 +271,7 @@ export class GeminiAdapter extends BaseLLMAdapter
           ...(thinkingBudget !== undefined ? {} : {
             temperature: request.temperature ?? this.config.temperature ?? 0.1,
           }),
-          maxOutputTokens: request.maxTokens ?? this.config.maxTokens ?? 8192,
+          maxOutputTokens: this.resolveMaxTokens(request, 8192),
           ...(request.stop ? { stopSequences: request.stop } : {}),
           ...(request.systemPrompt
             ? { systemInstruction: request.systemPrompt }

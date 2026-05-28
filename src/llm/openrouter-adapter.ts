@@ -245,7 +245,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
       model: this.config.model,
       messages,
       temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+      max_tokens: this.resolveMaxTokens(request, 4000),
       ...(request.stop ? { stop: request.stop } : {}),
     });
 
@@ -289,7 +289,7 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         model: this.config.model,
         messages,
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+        max_tokens: this.resolveMaxTokens(request, 4000),
         ...(request.stop ? { stop: request.stop } : {}),
         stream: true,
         stream_options: { include_usage: true },

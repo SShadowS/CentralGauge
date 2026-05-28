@@ -18,6 +18,7 @@ import type {
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
+import { ModelDiscoveryService } from "./model-discovery.ts";
 
 const log = Logger.create("llm");
 
@@ -27,6 +28,17 @@ const log = Logger.create("llm");
 export interface ProviderCallResult {
   response: LLMResponse;
   rawResponse?: unknown;
+}
+
+/**
+ * Cap a requested output-token count at a model's known limit. Returns the
+ * request unchanged when no limit is known (`undefined`/non-positive); only
+ * ever caps DOWNWARD. Pure + exported for unit testing.
+ */
+export function applyMaxOutputCap(requested: number, limit?: number): number {
+  return typeof limit === "number" && limit > 0
+    ? Math.min(requested, limit)
+    : requested;
 }
 
 /**
@@ -92,6 +104,35 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined>;
+
+  // ============================================================================
+  // Shared request helpers
+  // ============================================================================
+
+  /**
+   * Resolve the output-token budget for a request: the requested value
+   * (request -> config -> per-provider `fallback`), capped at the model's
+   * discovered `maxOutputTokens` when known. Prevents requesting more output
+   * than a model allows (a 400 on several providers). No-op when discovery
+   * has not populated a limit for this model.
+   */
+  protected resolveMaxTokens(request: LLMRequest, fallback: number): number {
+    const requested = request.maxTokens ?? this.config.maxTokens ?? fallback;
+    const limit = ModelDiscoveryService.getCachedMaxOutputTokens(
+      this.name,
+      this.config.model,
+    );
+    const capped = applyMaxOutputCap(requested, limit);
+    if (capped < requested) {
+      log.debug("Capped max_tokens to model output limit", {
+        provider: this.name,
+        model: this.config.model,
+        requested,
+        limit,
+      });
+    }
+    return capped;
+  }
 
   // ============================================================================
   // Template Methods - Common implementations using provider hooks

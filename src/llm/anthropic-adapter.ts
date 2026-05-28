@@ -376,7 +376,7 @@ export class AnthropicAdapter extends BaseLLMAdapter
       ? 1
       : (request.temperature ?? this.config.temperature ?? 0.1);
 
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const maxTokens = this.resolveMaxTokens(request, 4000);
 
     // Validate constraint at request time (catches request overrides)
     if (thinkingBudget !== undefined && maxTokens <= thinkingBudget) {

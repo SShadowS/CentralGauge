@@ -233,7 +233,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
     const client = this.ensureClient();
     const startTime = Date.now();
     const reasoningEffort = this.getReasoningEffort();
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const maxTokens = this.resolveMaxTokens(request, 4000);
 
     const response = await client.responses.create({
       model: this.config.model,
@@ -334,7 +334,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
     const state = createStreamState();
     const client = this.ensureClient();
     const reasoningEffort = this.getReasoningEffort();
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const maxTokens = this.resolveMaxTokens(request, 4000);
 
     try {
       const stream = await client.responses.create({
@@ -480,7 +480,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
     stream = false,
   ): OpenAI.Chat.ChatCompletionCreateParams {
     const messages = this.buildMessages(request);
-    const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const maxTokensValue = this.resolveMaxTokens(request, 4000);
     const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
     const isReasoningOnly = this.isReasoningOnlyModel(this.config.model);
     const skipTemperature = isReasoningOnly ||
