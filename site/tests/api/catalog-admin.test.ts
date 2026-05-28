@@ -207,6 +207,56 @@ describe("admin catalog endpoints", () => {
     expect(row?.source).toBe("anthropic-api");
   });
 
+  it("reconciles (updates) an existing pricing row on repost", async () => {
+    const { signedRequest: modelReq } = await signAsAdmin({
+      slug: "anthropic/claude-reconcile-test",
+      api_model_id: "claude-reconcile-2026",
+      family: "claude",
+      display_name: "Claude Reconcile (Test)",
+      generation: 99,
+    });
+    await SELF.fetch("https://x/api/v1/admin/catalog/models", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(modelReq),
+    });
+
+    const post = async (input: number, output: number, source: string) => {
+      const { signedRequest } = await signAsAdmin({
+        pricing_version: "test-reconcile",
+        model_slug: "anthropic/claude-reconcile-test",
+        input_per_mtoken: input,
+        output_per_mtoken: output,
+        cache_read_per_mtoken: 0,
+        cache_write_per_mtoken: 0,
+        effective_from: "2026-05-28T00:00:00Z",
+        source,
+        fetched_at: "2026-05-28T10:00:00Z",
+      });
+      return SELF.fetch("https://x/api/v1/admin/catalog/pricing", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(signedRequest),
+      });
+    };
+
+    // Original corrupted-scale row, then a corrected repost (same key).
+    expect((await post(0.003, 0.015, "litellm")).status).toBe(200);
+    expect((await post(3, 15, "litellm-api")).status).toBe(200);
+
+    const rows = await env.DB.prepare(
+      `SELECT input_per_mtoken AS inp, output_per_mtoken AS outp, source
+         FROM cost_snapshots WHERE pricing_version = ?`,
+    ).bind("test-reconcile").all<
+      { inp: number; outp: number; source: string }
+    >();
+    // Exactly one row (no duplicate), carrying the corrected values.
+    expect(rows.results.length).toBe(1);
+    expect(rows.results[0]?.inp).toBe(3);
+    expect(rows.results[0]?.outp).toBe(15);
+    expect(rows.results[0]?.source).toBe("litellm-api");
+  });
+
   it("rejects ingest-scope key on admin endpoint (insufficient_scope)", async () => {
     const { keyId: ingestKeyId, keypair: ingestKeypair } =
       await registerMachineKey("ingest-attacker", "ingest");

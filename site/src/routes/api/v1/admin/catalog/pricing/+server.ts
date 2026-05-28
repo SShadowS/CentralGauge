@@ -57,14 +57,25 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         "source is required (anthropic-api, openai-api, gemini-api, openrouter-api, manual)",
       );
     }
-    // Idempotent by (pricing_version, model_id); reposts silently no-op
+    // Upsert by (pricing_version, model_id): the catalog YAML is the source of
+    // truth, so a repost RECONCILES the row (corrects values) instead of being
+    // dropped. Reposting identical values is a harmless no-op write.
     // KEEP IN SYNC WITH migrations/0003_cost_source.sql (source, fetched_at)
     await db.prepare(
-      `INSERT OR IGNORE INTO cost_snapshots(
+      `INSERT INTO cost_snapshots(
          pricing_version, model_id, input_per_mtoken, output_per_mtoken,
          cache_read_per_mtoken, cache_write_per_mtoken, effective_from, effective_until,
          source, fetched_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(pricing_version, model_id) DO UPDATE SET
+         input_per_mtoken = excluded.input_per_mtoken,
+         output_per_mtoken = excluded.output_per_mtoken,
+         cache_read_per_mtoken = excluded.cache_read_per_mtoken,
+         cache_write_per_mtoken = excluded.cache_write_per_mtoken,
+         effective_from = excluded.effective_from,
+         effective_until = excluded.effective_until,
+         source = excluded.source,
+         fetched_at = excluded.fetched_at`,
     ).bind(
       p.pricing_version,
       m.id,
