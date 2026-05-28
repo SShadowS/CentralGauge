@@ -31,17 +31,36 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-// Models that reject the `temperature` parameter. Starting with Claude Opus 4.7,
-// Anthropic returns 400 "temperature is deprecated for this model" for any value
-// other than the default. Match exact IDs and dated variants (e.g. "...-20260415").
-const TEMPERATURE_LOCKED_MODELS: readonly string[] = [
-  "claude-opus-4-7",
-];
+// Models that reject the `temperature` parameter (non-Opus, explicit). Opus is
+// handled generationally below. Anthropic returns 400 "temperature is
+// deprecated for this model" for any value other than the default.
+const TEMPERATURE_LOCKED_MODELS: readonly string[] = [];
 
-function modelRejectsTemperature(model: string): boolean {
-  return TEMPERATURE_LOCKED_MODELS.some(
-    (id) => model === id || model.startsWith(id + "-"),
-  );
+/**
+ * Whether a model rejects the `temperature` parameter. Anthropic deprecated it
+ * starting with Claude Opus 4.7; every newer Opus rejects it too. Verified via
+ * /v1/models + live probes: opus-4-6 accepts, opus-4-7 / opus-4-8 reject
+ * (correlates with `thinking.types.enabled.supported === false`). Matching the
+ * Opus generation forward-proofs 4.9 / 5.x without a code change.
+ *
+ * Exported for unit testing.
+ */
+export function modelRejectsTemperature(model: string): boolean {
+  if (
+    TEMPERATURE_LOCKED_MODELS.some(
+      (id) => model === id || model.startsWith(id + "-"),
+    )
+  ) {
+    return true;
+  }
+  // claude-opus-<gen>-<minor>(-<date>) >= 4.7
+  const m = model.match(/^claude-opus-(\d+)-(\d+)/);
+  if (m) {
+    const gen = Number(m[1]);
+    const minor = Number(m[2]);
+    return gen > 4 || (gen === 4 && minor >= 7);
+  }
+  return false;
 }
 
 /** A capability node in the Anthropic /v1/models response: `{ supported: bool }`. */

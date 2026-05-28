@@ -12,8 +12,38 @@ import { assertEquals } from "@std/assert";
 import {
   AnthropicAdapter,
   mapAnthropicModelEntry,
+  modelRejectsTemperature,
 } from "../../../src/llm/anthropic-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+Deno.test("modelRejectsTemperature - Opus 4.7+ rejects, others accept", async (t) => {
+  await t.step("Opus >= 4.7 rejects (incl. future gens + dated)", () => {
+    for (
+      const m of [
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-opus-4-9",
+        "claude-opus-5-0",
+        "claude-opus-4-8-20260528",
+      ]
+    ) {
+      assertEquals(modelRejectsTemperature(m), true, m);
+    }
+  });
+
+  await t.step("Opus <= 4.6 and non-Opus accept", () => {
+    for (
+      const m of [
+        "claude-opus-4-6",
+        "claude-opus-4-1",
+        "claude-sonnet-4-6",
+        "claude-haiku-4-5-20251001",
+      ]
+    ) {
+      assertEquals(modelRejectsTemperature(m), false, m);
+    }
+  });
+});
 
 // Initialize pricing service before any tests run
 await PricingService.initialize();
