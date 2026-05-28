@@ -1273,7 +1273,9 @@ async function displayPricingSummary(variants: ModelVariant[]): Promise<void> {
     const outputFormatted = PricingService.formatPrice(entry.outputPrice);
 
     // Color code by source
-    const sourceColor = entry.source === "[API]"
+    const sourceColor = entry.source === "[Catalog]"
+      ? colors.green
+      : entry.source === "[API]"
       ? colors.green
       : entry.source === "[JSON]"
       ? colors.cyan

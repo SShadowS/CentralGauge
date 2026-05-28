@@ -1,12 +1,14 @@
 /**
  * Pricing Service for LLM cost estimation
  *
- * Loads pricing from config/pricing.json and caches API-fetched pricing.
- * Priority: API pricing > JSON pricing > provider default
+ * Loads pricing from the catalog seed (site/catalog/pricing.yml),
+ * config/pricing.json, and caches API-fetched pricing.
+ * Priority: catalog seed > API pricing > JSON pricing > provider default
  *
  * @module src/llm/pricing-service
  */
 
+import { parse as parseYaml } from "@std/yaml";
 import { Logger } from "../logger/mod.ts";
 import type {
   CachedApiPricing,
@@ -28,6 +30,36 @@ const FALLBACK_PRICING: ModelPricing = {
   output: 0.015, // $15/MTok
 };
 
+/** Candidate locations for the catalog pricing seed (relative to cwd). */
+const CATALOG_PRICING_PATHS = [
+  "site/catalog/pricing.yml",
+  "../site/catalog/pricing.yml",
+  "../../site/catalog/pricing.yml",
+];
+
+/**
+ * Minimal shape of a `site/catalog/pricing.yml` row consumed by the runtime
+ * tracker. Rates are per-MILLION tokens (catalog convention); they are
+ * converted to per-1K on load to match {@link ModelPricing}.
+ */
+export interface CatalogPricingRow {
+  model_slug: string;
+  effective_from: string;
+  effective_until?: string | null;
+  input_per_mtoken: number;
+  output_per_mtoken: number;
+  source?: string;
+}
+
+/**
+ * Catalog pricing sources that are NOT trusted by the runtime tracker. The raw
+ * `litellm` community-JSON dump is ingested with a unit bug (per-token values
+ * written into per-MTok fields, 1000x too low), so its rows are skipped. The
+ * verified `litellm-api` / `openrouter-api` / `manual` sources are trusted.
+ * Tracked for root-cause fix in docs/plans (ingest writer + data purge).
+ */
+const UNTRUSTED_CATALOG_SOURCES = new Set(["litellm"]);
+
 /**
  * Centralized pricing service for LLM cost estimation
  */
@@ -35,6 +67,13 @@ export class PricingService {
   private static config: PricingConfig | null = null;
   private static configLoadPromise: Promise<void> | null = null;
   private static apiCache: Map<string, CachedApiPricing> = new Map();
+  /**
+   * Authoritative human-curated pricing seeded from `site/catalog/pricing.yml`
+   * (the same source the scoreboard reads). Keyed by full vendor-prefixed slug
+   * (`<provider>/<model>`). Ranks ABOVE the API cache so console cost matches
+   * the scoreboard even when a community API (LiteLLM) lags a new model.
+   */
+  private static catalogPricing: Map<string, ModelPricing> | null = null;
 
   /**
    * Initialize the pricing service by loading config
@@ -57,6 +96,9 @@ export class PricingService {
    * Load pricing config from file
    */
   private static async loadConfig(): Promise<void> {
+    // Authoritative catalog seed first (best-effort; never blocks config load).
+    await this.loadCatalogFromDisk();
+
     try {
       // Find config file path relative to module or current working directory
       const paths = [
@@ -135,6 +177,104 @@ export class PricingService {
   }
 
   /**
+   * Read `site/catalog/pricing.yml` from disk and load it into the catalog
+   * tier. Best-effort: a missing/unparseable file leaves the tier empty and
+   * resolution falls through to the API cache. Skips if already populated
+   * (e.g. a test injected rows via {@link loadCatalogPricing}).
+   */
+  private static async loadCatalogFromDisk(): Promise<void> {
+    if (this.catalogPricing) return;
+    for (const path of CATALOG_PRICING_PATHS) {
+      try {
+        const text = await Deno.readTextFile(path);
+        const parsed = parseYaml(text);
+        const rows = Array.isArray(parsed) ? parsed as CatalogPricingRow[] : [];
+        this.loadCatalogPricing(rows);
+        log.debug("Loaded catalog pricing seed", { path, rows: rows.length });
+        return;
+      } catch (e) {
+        if (e instanceof Deno.errors.NotFound) continue;
+        log.debug("Failed to read catalog pricing seed", {
+          path,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    // No file found anywhere — empty tier (non-null so we don't retry).
+    this.catalogPricing ??= new Map();
+  }
+
+  /**
+   * Build the catalog pricing map from raw rows. For each slug, the most
+   * recent still-active entry wins (active = `effective_until` null, then
+   * latest `effective_from`). Per-MTok rates are converted to per-1K.
+   *
+   * Exposed for direct injection in tests.
+   */
+  static loadCatalogPricing(rows: CatalogPricingRow[]): void {
+    const latest = new Map<string, CatalogPricingRow>();
+    for (const row of rows) {
+      if (
+        typeof row?.model_slug !== "string" ||
+        typeof row?.input_per_mtoken !== "number" ||
+        typeof row?.output_per_mtoken !== "number"
+      ) {
+        continue;
+      }
+      // Skip rows from sources known to be unit-corrupted (see const docs).
+      if (row.source && UNTRUSTED_CATALOG_SOURCES.has(row.source)) {
+        continue;
+      }
+      const current = latest.get(row.model_slug);
+      if (!current || this.isFresherRow(row, current)) {
+        latest.set(row.model_slug, row);
+      }
+    }
+
+    const map = new Map<string, ModelPricing>();
+    for (const [slug, row] of latest) {
+      map.set(slug, {
+        input: row.input_per_mtoken / 1000,
+        output: row.output_per_mtoken / 1000,
+      });
+    }
+    this.catalogPricing = map;
+  }
+
+  /**
+   * True when `candidate` supersedes `incumbent`: an active entry
+   * (`effective_until` null) outranks a closed one; ties break on the later
+   * `effective_from` (ISO strings sort lexically).
+   */
+  private static isFresherRow(
+    candidate: CatalogPricingRow,
+    incumbent: CatalogPricingRow,
+  ): boolean {
+    const candidateActive = candidate.effective_until == null ? 1 : 0;
+    const incumbentActive = incumbent.effective_until == null ? 1 : 0;
+    if (candidateActive !== incumbentActive) {
+      return candidateActive > incumbentActive;
+    }
+    return candidate.effective_from > incumbent.effective_from;
+  }
+
+  /** Clear the catalog tier (for testing). */
+  static clearCatalogPricing(): void {
+    this.catalogPricing = new Map();
+  }
+
+  /**
+   * Look up the authoritative catalog price for a `<provider>/<model>` slug.
+   * Returns undefined when the slug is not seeded.
+   */
+  private static lookupCatalog(
+    provider: string,
+    model: string,
+  ): ModelPricing | undefined {
+    return this.catalogPricing?.get(`${provider}/${model}`);
+  }
+
+  /**
    * Get pricing for a specific provider and model
    */
   static async getPrice(
@@ -142,6 +282,13 @@ export class PricingService {
     model: string,
   ): Promise<PricingLookupResult> {
     await this.initialize();
+
+    // Catalog seed is authoritative — it wins over the live API cache so the
+    // console cost matches the scoreboard (both read site/catalog/pricing.yml).
+    const catalogPricing = this.lookupCatalog(provider, model);
+    if (catalogPricing) {
+      return { pricing: catalogPricing, source: "catalog", provider, model };
+    }
 
     const config = this.config!;
     const providerConfig = config.providers[provider];
@@ -197,6 +344,13 @@ export class PricingService {
    * Get pricing synchronously (returns cached/default if not initialized)
    */
   static getPriceSync(provider: string, model: string): ModelPricing {
+    // Catalog seed is authoritative (see getPrice). Checked before config so
+    // it resolves even when the service was never async-initialized.
+    const catalogPricing = this.lookupCatalog(provider, model);
+    if (catalogPricing) {
+      return catalogPricing;
+    }
+
     if (!this.config) {
       return FALLBACK_PRICING;
     }
@@ -393,6 +547,7 @@ export class PricingService {
     this.config = null;
     this.configLoadPromise = null;
     this.apiCache.clear();
+    this.catalogPricing = null;
   }
 
   /**
@@ -400,6 +555,8 @@ export class PricingService {
    */
   static getSourceLabel(source: PricingSource): string {
     switch (source) {
+      case "catalog":
+        return "[Catalog]";
       case "api":
         return "[API]";
       case "json":

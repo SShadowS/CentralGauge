@@ -109,6 +109,32 @@ export class LiteLLMService {
   }
 
   /**
+   * Get pricing in per-MILLION-token units (the catalog `*_per_mtoken`
+   * convention). Use this for catalog seeding; {@link getPricing} returns
+   * per-1K and must NOT be written into per-Mtok fields (a 1000x scale bug).
+   * Returns undefined if model not found or no pricing data.
+   */
+  static getPricingPerMTok(
+    provider: string,
+    model: string,
+  ): { input: number; output: number } | undefined {
+    if (!this.cache) return undefined;
+
+    const entry = this.lookupEntry(provider, model);
+    if (
+      !entry || entry.input_cost_per_token == null ||
+      entry.output_cost_per_token == null
+    ) {
+      return undefined;
+    }
+
+    return {
+      input: entry.input_cost_per_token * 1_000_000,
+      output: entry.output_cost_per_token * 1_000_000,
+    };
+  }
+
+  /**
    * Get max output tokens for a model.
    */
   static getMaxOutputTokens(

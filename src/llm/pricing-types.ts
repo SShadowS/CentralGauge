@@ -46,7 +46,7 @@ export interface PricingConfig {
 /**
  * Source of pricing data
  */
-export type PricingSource = "json" | "api" | "default";
+export type PricingSource = "catalog" | "json" | "api" | "default";
 
 /**
  * Pricing lookup result with metadata

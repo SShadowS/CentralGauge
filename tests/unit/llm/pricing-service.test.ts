@@ -12,6 +12,11 @@ describe("PricingService", () => {
     // Reset and initialize the service before each test
     PricingService.reset();
     await PricingService.initialize();
+    // Isolate from the real site/catalog/pricing.yml that init loads — the
+    // catalog tier is authoritative and would otherwise shadow the API/JSON/
+    // default tiers these suites exercise. The catalog-tier suite below opts
+    // back in by loading its own rows.
+    PricingService.clearCatalogPricing();
   });
 
   afterEach(() => {
@@ -477,6 +482,187 @@ describe("PricingService", () => {
       assertEquals(stats.validEntries, 2);
       assertEquals(stats.providers.includes("provider1"), true);
       assertEquals(stats.providers.includes("provider2"), true);
+    });
+  });
+
+  describe("catalog pricing tier", () => {
+    beforeEach(() => {
+      // Isolate from the real site/catalog/pricing.yml loaded at init.
+      PricingService.clearCatalogPricing();
+      PricingService.clearApiCache();
+    });
+
+    it("should convert per-Mtoken catalog rates to per-1K", async () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 5,
+          output_per_mtoken: 25,
+        },
+      ]);
+
+      const result = await PricingService.getPrice(
+        "anthropic",
+        "claude-opus-4-8",
+      );
+
+      assertEquals(result.source, "catalog");
+      assertEquals(result.pricing.input, 0.005); // $5/MTok -> per 1K
+      assertEquals(result.pricing.output, 0.025); // $25/MTok -> per 1K
+    });
+
+    it("should rank catalog ABOVE the API cache (authoritative)", async () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 5,
+          output_per_mtoken: 25,
+        },
+      ]);
+      // LiteLLM-style stale/wrong API entry for the SAME slug.
+      PricingService.registerApiPricing("anthropic", {
+        "claude-opus-4-8": { input: 0.003, output: 0.015 },
+      });
+
+      const result = await PricingService.getPrice(
+        "anthropic",
+        "claude-opus-4-8",
+      );
+
+      assertEquals(result.source, "catalog");
+      assertEquals(result.pricing.input, 0.005);
+      assertEquals(result.pricing.output, 0.025);
+    });
+
+    it("should fall through to API when the slug is absent from catalog", async () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 5,
+          output_per_mtoken: 25,
+        },
+      ]);
+      PricingService.registerApiPricing("openai", {
+        "gpt-5": { input: 0.001, output: 0.002 },
+      });
+
+      const result = await PricingService.getPrice("openai", "gpt-5");
+
+      assertEquals(result.source, "api");
+      assertEquals(result.pricing.input, 0.001);
+    });
+
+    it("should pick the latest effective entry for a slug", async () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: "2026-06-01T00:00:00.000Z",
+          input_per_mtoken: 5,
+          output_per_mtoken: 25,
+        },
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-06-01T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 6,
+          output_per_mtoken: 30,
+        },
+      ]);
+
+      const result = await PricingService.getPrice(
+        "anthropic",
+        "claude-opus-4-8",
+      );
+
+      assertEquals(result.pricing.input, 0.006); // newest, still-active entry
+      assertEquals(result.pricing.output, 0.03);
+    });
+
+    it("should resolve catalog tier synchronously too", () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-opus-4-8",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 5,
+          output_per_mtoken: 25,
+        },
+      ]);
+
+      const pricing = PricingService.getPriceSync(
+        "anthropic",
+        "claude-opus-4-8",
+      );
+
+      assertEquals(pricing.input, 0.005);
+      assertEquals(pricing.output, 0.025);
+    });
+
+    it("should skip unit-corrupted source:litellm rows even when newest", async () => {
+      PricingService.loadCatalogPricing([
+        // Correct verified-API row, older.
+        {
+          model_slug: "anthropic/claude-sonnet-4-6",
+          effective_from: "2026-05-16T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 3,
+          output_per_mtoken: 15,
+          source: "litellm-api",
+        },
+        // Corrupted raw-litellm row, NEWER — must be ignored.
+        {
+          model_slug: "anthropic/claude-sonnet-4-6",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 0.003,
+          output_per_mtoken: 0.015,
+          source: "litellm",
+        },
+      ]);
+
+      const result = await PricingService.getPrice(
+        "anthropic",
+        "claude-sonnet-4-6",
+      );
+
+      assertEquals(result.source, "catalog");
+      assertEquals(result.pricing.input, 0.003); // $3/MTok -> per 1K (NOT 0.003/MTok)
+      assertEquals(result.pricing.output, 0.015);
+    });
+
+    it("should drop a slug entirely when ALL its rows are untrusted", async () => {
+      PricingService.loadCatalogPricing([
+        {
+          model_slug: "anthropic/claude-haiku-4-5-20251001",
+          effective_from: "2026-05-28T00:00:00.000Z",
+          effective_until: null,
+          input_per_mtoken: 0.001,
+          output_per_mtoken: 0.005,
+          source: "litellm",
+        },
+      ]);
+      // No catalog entry survives -> API tier wins.
+      PricingService.registerApiPricing("anthropic", {
+        "claude-haiku-4-5-20251001": { input: 0.001, output: 0.005 },
+      });
+
+      const result = await PricingService.getPrice(
+        "anthropic",
+        "claude-haiku-4-5-20251001",
+      );
+
+      assertEquals(result.source, "api");
+    });
+
+    it("should label the catalog source as [Catalog]", () => {
+      assertEquals(PricingService.getSourceLabel("catalog"), "[Catalog]");
     });
   });
 });
