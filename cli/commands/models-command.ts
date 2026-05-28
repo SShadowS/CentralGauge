@@ -14,7 +14,11 @@ import {
 import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
 import { LiteLLMService } from "../../src/llm/litellm-service.ts";
 import { PricingService } from "../../src/llm/pricing-service.ts";
-import type { CacheStats, DiscoveryResult } from "../../src/llm/mod.ts";
+import type {
+  CacheStats,
+  DiscoveredModel,
+  DiscoveryResult,
+} from "../../src/llm/mod.ts";
 import type { LLMRequest } from "../../src/llm/types.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
@@ -26,6 +30,50 @@ interface ModelCheckResult {
   accessible: boolean;
   latencyMs: number;
   error?: string;
+}
+
+/** Short labels for capability flags, in display order. */
+const CAPABILITY_LABELS: ReadonlyArray<[string, string]> = [
+  ["thinking", "thinking"],
+  ["imageInput", "image"],
+  ["pdfInput", "pdf"],
+  ["structuredOutputs", "structured"],
+  ["functionCalling", "tools"],
+  ["batch", "batch"],
+];
+
+/** Compact token count: 1000000 -> "1M", 128000 -> "128k". */
+function formatTokenCount(n?: number): string | null {
+  if (!n || n <= 0) return null;
+  if (n >= 1_000_000) {
+    const m = n / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M`;
+  }
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}
+
+/**
+ * One-line summary of a discovered model's adopted metadata (token limits +
+ * supported capabilities), or null when the provider reported none. Pure +
+ * exported for unit testing.
+ */
+export function formatDiscoveredMeta(model: DiscoveredModel): string | null {
+  const parts: string[] = [];
+
+  const ctx = formatTokenCount(model.maxInputTokens);
+  const out = formatTokenCount(model.maxOutputTokens);
+  if (ctx || out) parts.push(`${ctx ?? "?"} ctx / ${out ?? "?"} out`);
+
+  if (model.capabilities) {
+    const caps = model.capabilities as Record<string, boolean | undefined>;
+    const flags = CAPABILITY_LABELS
+      .filter(([key]) => caps[key] === true)
+      .map(([, label]) => label);
+    if (flags.length > 0) parts.push(`[${flags.join(", ")}]`);
+  }
+
+  return parts.length > 0 ? parts.join("  ") : null;
 }
 
 /** Display aliases grouped by provider */
@@ -249,6 +297,8 @@ function displayDiscoveryResult(
       ? ` (${model.name})`
       : "";
     console.log(`   ${model.id}${colors.dim(name)}`);
+    const meta = formatDiscoveredMeta(model);
+    if (meta) console.log(colors.dim(`      ${meta}`));
   });
 
   console.log(
