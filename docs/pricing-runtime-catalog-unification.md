@@ -95,10 +95,25 @@ belt-and-suspenders against any legacy/reappearing corrupted row.
 - **OpenAI** (n/a): `/v1/models` returns only `id`/`created`/`owned_by` — no
   token limits or capabilities to adopt.
 
-Remaining: a CONSUMER for the adopted metadata. It is captured into
-`DiscoveredModel` + the discovery cache but not yet used. Candidate consumers:
-persist context window / capabilities to catalog `models.yml`; default request
-`max_tokens` from `maxOutputTokens`; surface in the `models` CLI command.
+Consumers of the adopted metadata (all three landed):
+
+- **`models` CLI** (done): `--live` prints a dim per-model line
+  ("1M ctx / 128k out  [thinking, image, pdf, structured, batch]") via
+  `formatDiscoveredMeta`.
+- **Request `max_tokens` cap** (done): `BaseLLMAdapter.resolveMaxTokens` caps
+  the requested output at the discovered `maxOutputTokens`
+  (`ModelDiscoveryService.getCachedMaxOutputTokens`), downward only. Avoids
+  400s from over-asking.
+- **Catalog + D1 persistence** (done): migration `0009_model_metadata.sql` adds
+  `max_input_tokens` / `max_output_tokens` / `capabilities` (JSON) to `models`;
+  seed populates from OpenRouter meta; admin endpoint upserts; model detail API
+  returns them. Existing 12 models backfilled from provider discovery and
+  synced to prod D1 (deployed; verified live at
+  `ai.sshadows.dk/api/v1/models/...`).
+
+Remaining: a polished SITE UI surface (model page / leaderboard chips) for the
+context window + capabilities — data is live via the API; the visual component
+is its own frontend-design pass.
 
 ### B. Is `config/pricing.json` still needed?
 With the catalog tier authoritative and LiteLLM as the live API tier,
