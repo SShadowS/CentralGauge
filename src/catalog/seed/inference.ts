@@ -218,6 +218,12 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
     ? `${parsed.subVendor}/${parsed.model}`
     : parsed.model;
 
+  // Adopted metadata: OpenRouter is the only seed source that reports it.
+  const meta = input.openrouter;
+  const capabilities = meta?.capabilities && meta.capabilities.length > 0
+    ? meta.capabilities
+    : undefined;
+
   const modelRow: ModelRow = {
     slug: input.slug,
     api_model_id: apiModelId,
@@ -225,6 +231,11 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
     display_name: displayName,
     generation,
     ...(releasedAt ? { released_at: releasedAt } : {}),
+    ...(meta?.maxInputTokens ? { max_input_tokens: meta.maxInputTokens } : {}),
+    ...(meta?.maxOutputTokens
+      ? { max_output_tokens: meta.maxOutputTokens }
+      : {}),
+    ...(capabilities ? { capabilities } : {}),
   };
 
   const familyRow: FamilyRow = {

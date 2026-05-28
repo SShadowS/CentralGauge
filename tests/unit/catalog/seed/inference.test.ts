@@ -229,6 +229,46 @@ describe("mergeMetadata", () => {
     assertEquals(result.pricing.source, "openrouter");
   });
 
+  it("adopts token limits + capabilities from OR meta", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/anthropic/claude-opus-4.8",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 5, output: 25 },
+        displayName: "Anthropic: Claude Opus 4.8",
+        vendor: "Anthropic",
+        releasedAt: null,
+        maxInputTokens: 1_000_000,
+        maxOutputTokens: 128_000,
+        capabilities: ["thinking", "image", "pdf", "structured", "tools"],
+      },
+    });
+    assertEquals(result.model.max_input_tokens, 1_000_000);
+    assertEquals(result.model.max_output_tokens, 128_000);
+    assertEquals(result.model.capabilities, [
+      "thinking",
+      "image",
+      "pdf",
+      "structured",
+      "tools",
+    ]);
+  });
+
+  it("omits metadata fields when OR meta lacks them", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/x-ai/grok-4.3",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 1.25, output: 2.5 },
+        displayName: "xAI: Grok 4.3",
+        vendor: "xAI",
+        releasedAt: null,
+      },
+    });
+    assertEquals(result.model.max_input_tokens, undefined);
+    assertEquals(result.model.capabilities, undefined);
+  });
+
   it("direct provider slug uses LiteLLM price + OR metadata", () => {
     const result = mergeMetadata({
       slug: "anthropic/claude-haiku-4-5",

@@ -15,6 +15,37 @@ interface OpenRouterModelEntry {
     prompt?: string;
     completion?: string;
   };
+  context_length?: number;
+  top_provider?: { max_completion_tokens?: number };
+  supported_parameters?: string[];
+  architecture?: { input_modalities?: string[] };
+}
+
+/**
+ * Derive catalog capability flag names from an OpenRouter entry's
+ * `supported_parameters` + `architecture.input_modalities`. Returns undefined
+ * when the entry exposes neither (so the field stays absent rather than empty).
+ */
+function deriveOpenRouterCapabilities(
+  entry: OpenRouterModelEntry,
+): string[] | undefined {
+  const params = entry.supported_parameters ?? [];
+  const modalities = entry.architecture?.input_modalities ?? [];
+  if (params.length === 0 && modalities.length === 0) return undefined;
+
+  const flags: string[] = [];
+  if (params.includes("reasoning") || params.includes("include_reasoning")) {
+    flags.push("thinking");
+  }
+  if (modalities.includes("image")) flags.push("image");
+  if (modalities.includes("file")) flags.push("pdf");
+  if (
+    params.includes("structured_outputs") || params.includes("response_format")
+  ) {
+    flags.push("structured");
+  }
+  if (params.includes("tools")) flags.push("tools");
+  return flags;
 }
 
 interface OpenRouterListResponse {
@@ -104,5 +135,8 @@ export async function fetchOpenRouterMeta(
     displayName: entry.name,
     vendor,
     releasedAt: inferReleasedAt(entry.created ?? null),
+    maxInputTokens: entry.context_length,
+    maxOutputTokens: entry.top_provider?.max_completion_tokens,
+    capabilities: deriveOpenRouterCapabilities(entry),
   };
 }

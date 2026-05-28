@@ -11,6 +11,12 @@ export interface ModelRow {
   display_name: string;
   generation: number;
   released_at?: string;
+  /** Context window in tokens, when the provider API reports it. */
+  max_input_tokens?: number;
+  /** Max completion tokens, when the provider API reports it. */
+  max_output_tokens?: number;
+  /** Capability flag names (e.g. ["thinking", "image"]), when reported. */
+  capabilities?: string[];
 }
 
 export interface FamilyRow {
@@ -40,6 +46,12 @@ export interface OpenRouterMeta {
   displayName: string;
   vendor: string;
   releasedAt: string | null;
+  /** Context window in tokens, when reported. */
+  maxInputTokens?: number | undefined;
+  /** Max completion tokens, when reported. */
+  maxOutputTokens?: number | undefined;
+  /** Capability flag names, when reported. */
+  capabilities?: string[] | undefined;
 }
 
 export interface SeedInputs {

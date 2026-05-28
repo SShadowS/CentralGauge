@@ -23,6 +23,12 @@ export interface CatalogModelEntry {
   generation?: number | null;
   released_at?: string | null;
   deprecated_at?: string | null;
+  /** Context window in tokens, when the provider API reports it. */
+  max_input_tokens?: number | null;
+  /** Max completion tokens, when the provider API reports it. */
+  max_output_tokens?: number | null;
+  /** Capability flag names (e.g. ["thinking", "image"]), when reported. */
+  capabilities?: string[] | null;
 }
 
 export interface CatalogPricingEntry extends PricingRates {
