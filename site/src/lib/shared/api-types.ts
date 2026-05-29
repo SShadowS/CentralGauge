@@ -42,6 +42,7 @@ export interface LeaderboardQuery {
    * `avg_score` in PR1).
    */
   sort:
+    | 'auc_2'
     | 'pass_at_n'
     | 'pass_at_1'
     | 'avg_score'
@@ -111,6 +112,22 @@ export interface LeaderboardRow {
    * in a cleanup commit at end of PR1.
    */
   pass_at_1?: number;
+  /**
+   * Solve AUC@2: (pass_at_1 + pass_at_n) / 2. Attempt-adjusted solve rate and
+   * the primary ranking metric. Optional until the row mapper emits it.
+   */
+  auc_2?: number;
+  /**
+   * Conditional repair rate: (pass_at_n − pass_at_1) / (1 − pass_at_1).
+   * 0 when pass_at_1 = 1 (nothing left to repair). Optional until emitted.
+   */
+  repair_rate?: number;
+  /**
+   * 1-based statistical tier (1 = top). Models in the same tier are not
+   * distinguishable by paired bootstrap on the active ranking metric.
+   * Optional: absent until Phase 3 wires tier computation.
+   */
+  tier?: number;
   /**
    * Strict-per-set denominator: count of tasks in active scope
    * (set ∩ category ∩ difficulty). Used as denominator for pass_at_n.
