@@ -23,7 +23,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string; display_na
     pass_at_1: overrides.pass_at_1,
     denominator: overrides.denominator,
     latency_p95_ms: 5000,
-    pass_rate_ci: { lower: 0, upper: 1 },
+    pass_rate_ci: overrides.pass_rate_ci ?? { lower: 0, upper: 1 },
     pass_hat_at_n: 0,
     cost_per_pass_usd: null,
     avg_score: 0.5,
@@ -82,6 +82,50 @@ describe('HeroChart', () => {
       container.querySelectorAll('.bar-row .bar-model'),
     ).map((el) => el.textContent?.trim());
     expect(rankedTexts).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('renders a CI whisker spanning the pass_rate_ci bounds', () => {
+    const rows: LeaderboardRow[] = [
+      makeRow({
+        slug: 'A',
+        display_name: 'A',
+        pass_at_n: 0.8,
+        pass_at_1: 0.8,
+        denominator: 110,
+        tasks_passed_attempt_1: 80,
+        tasks_passed_attempt_2_only: 8,
+        tasks_attempted_distinct: 110,
+        pass_rate_ci: { lower: 0.7, upper: 0.9 },
+      }),
+    ];
+    const { container } = render(HeroChart, { rows, generatedAt: '2026-05-06T00:00:00Z' });
+    const ci = container.querySelector('.bar-ci') as HTMLElement | null;
+    expect(ci).not.toBeNull();
+    expect(parseFloat(ci!.style.left)).toBeCloseTo(70, 1);
+    expect(parseFloat(ci!.style.width)).toBeCloseTo(20, 1);
+    expect(ci!.querySelectorAll('.ci-cap').length).toBe(2);
+  });
+
+  it('clamps CI whisker bounds to 0-100', () => {
+    const rows: LeaderboardRow[] = [
+      makeRow({
+        slug: 'A',
+        display_name: 'A',
+        pass_at_n: 0.95,
+        pass_at_1: 0.95,
+        denominator: 10,
+        tasks_passed_attempt_1: 10,
+        tasks_passed_attempt_2_only: 0,
+        tasks_attempted_distinct: 10,
+        pass_rate_ci: { lower: 0.85, upper: 1.05 },
+      }),
+    ];
+    const { container } = render(HeroChart, { rows, generatedAt: '2026-05-06T00:00:00Z' });
+    const ci = container.querySelector('.bar-ci') as HTMLElement | null;
+    expect(ci).not.toBeNull();
+    expect(parseFloat(ci!.style.left)).toBeCloseTo(85, 1);
+    // upper clamps 105 -> 100, so width = 100 - 85 = 15
+    expect(parseFloat(ci!.style.width)).toBeCloseTo(15, 1);
   });
 
   it('renders coverage subtitle when tasks_attempted_distinct < denominator', () => {

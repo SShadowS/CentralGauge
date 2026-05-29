@@ -22,18 +22,22 @@
     taskCount?: number;
   } = $props();
 
-  type Segs = { p1: number; p2: number; score: number };
+  type Segs = { p1: number; p2: number; score: number; ciLo: number; ciHi: number };
 
   function segs(r: LeaderboardRow): Segs {
     const d = r.denominator || 0;
-    if (d === 0) return { p1: 0, p2: 0, score: 0 };
+    if (d === 0) return { p1: 0, p2: 0, score: 0, ciLo: 0, ciHi: 0 };
     // Compute score from a single division of the combined numerator. Summing
     // two separate divisions (a1/d + a2/d) drifts by ~1e-14, which silently
     // pre-empts the pass_at_1 tiebreak below and mis-ranks tied models.
     const p1 = (r.tasks_passed_attempt_1 / d) * 100;
     const score = ((r.tasks_passed_attempt_1 + r.tasks_passed_attempt_2_only) / d) * 100;
     const p2 = score - p1;
-    return { p1, p2, score };
+    // 95% Wilson interval on pass@n, clamped to the [0,100] track. Signals
+    // that fine-grained rank gaps at small run counts are inside the noise.
+    const ciLo = Math.max(0, (r.pass_rate_ci?.lower ?? 0) * 100);
+    const ciHi = Math.min(100, (r.pass_rate_ci?.upper ?? 0) * 100);
+    return { p1, p2, score, ciLo, ciHi };
   }
 
   const top = $derived(
@@ -87,13 +91,23 @@
           <span
             class="bar-track"
             role="img"
-            aria-label="{s.p1.toFixed(1)}% first try, {s.p2.toFixed(1)}% on retry, {(100 - s.score).toFixed(1)}% failed"
+            aria-label="{s.p1.toFixed(1)}% first try, {s.p2.toFixed(1)}% on retry, {(100 - s.score).toFixed(1)}% failed; 95% confidence interval {s.ciLo.toFixed(1)}% to {s.ciHi.toFixed(1)}%"
           >
             {#if s.p1 > 0}
               <span class="bar-seg seg-a1" style="width: {s.p1}%" title="{s.p1.toFixed(1)}% passed first try"></span>
             {/if}
             {#if s.p2 > 0}
               <span class="bar-seg seg-a2" style="width: {s.p2}%" title="{s.p2.toFixed(1)}% passed on retry"></span>
+            {/if}
+            {#if s.ciHi > s.ciLo}
+              <span
+                class="bar-ci"
+                style="left: {s.ciLo}%; width: {s.ciHi - s.ciLo}%"
+                title="95% CI: {s.ciLo.toFixed(1)}%–{s.ciHi.toFixed(1)}%"
+              >
+                <span class="ci-cap ci-cap-lo"></span>
+                <span class="ci-cap ci-cap-hi"></span>
+              </span>
             {/if}
           </span>
           <span class="bar-score">{s.score.toFixed(1)}</span>
@@ -207,6 +221,7 @@
   .bar-coverage { font-size: var(--text-xs); color: var(--text-faint); font-style: italic; }
 
   .bar-track {
+    position: relative;
     display: flex;
     height: 14px;
     background: var(--surface);
@@ -214,6 +229,35 @@
     border-radius: var(--radius-1);
     overflow: hidden;
   }
+
+  .bar-ci {
+    position: absolute;
+    top: 50%;
+    height: 10px;
+    transform: translateY(-50%);
+    color: var(--text);
+    pointer-events: auto;
+  }
+  /* horizontal connector line, vertically centred on the bar */
+  .bar-ci::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    border-top: 1.5px solid currentColor;
+    opacity: 0.5;
+  }
+  .ci-cap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1.5px;
+    background: currentColor;
+    opacity: 0.6;
+  }
+  .ci-cap-lo { left: 0; }
+  .ci-cap-hi { right: 0; }
   .bar-seg {
     display: block;
     height: 100%;
