@@ -80,7 +80,15 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
               { taskSetHash: resolvedHash, metric: 'auc_2' },
               freshness,
             );
-            for (const r of rows) r.tier = tierMap.get(r.model.slug);
+            // Only assign when a tier exists. Setting `r.tier = undefined`
+            // explicitly would make canonicalJSON (ETag/signing) throw on the
+            // undefined value — a model visible on the leaderboard but absent
+            // from the AUC matrix (e.g. no results in the current set) must
+            // simply have no `tier` key, not an undefined one.
+            for (const r of rows) {
+              const t = tierMap.get(r.model.slug);
+              if (t !== undefined) r.tier = t;
+            }
           }
         } catch (err) {
           // Tier attach is non-fatal: leave tier undefined on all rows.

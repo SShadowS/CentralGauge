@@ -1,6 +1,7 @@
 import { applyD1Migrations, env, SELF } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { LeaderboardRow } from "../../src/lib/shared/api-types";
+import { CACHE_VERSION } from "../../src/lib/server/cache-version";
 import { resetDb } from "../utils/reset-db";
 
 async function seed(): Promise<void> {
@@ -317,8 +318,8 @@ describe("GET /api/v1/leaderboard", () => {
     await res.arrayBuffer();
 
     // The handler stores entries in a named cache (`cg-leaderboard`) keyed by
-    // a synthetic GET request URL with _cv=v3 appended (PR2.1 cache version bump).
-    const cacheKeyUrl = `${url}&_cv=v3`;
+    // a synthetic GET request URL with the current _cv cache version appended.
+    const cacheKeyUrl = `${url}&_cv=${CACHE_VERSION}`;
     const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(cacheKey);
@@ -332,7 +333,7 @@ describe("GET /api/v1/leaderboard", () => {
     expect(res.status).toBe(400);
   });
 
-  it("cache key includes _cv=v3 suffix (PR2.1 cache version bump)", async () => {
+  it("cache key includes the _cv cache-version suffix", async () => {
     // Use a fresh URL so we are guaranteed a cache miss → the handler writes
     // a new entry. After the write we reconstruct the same _cv-bearing URL
     // and assert the entry exists under it.
@@ -342,12 +343,12 @@ describe("GET /api/v1/leaderboard", () => {
     // Drain so the inline cache.put commits before we inspect.
     await res.arrayBuffer();
 
-    // The handler appends _cv=v3 to the synthetic cache key before storing.
-    // Reconstruct the exact URL the handler used and verify the entry exists.
-    const expectedKeyUrl = `${url}&_cv=v3`;
+    // The handler appends _cv=<CACHE_VERSION> to the synthetic cache key before
+    // storing. Reconstruct the exact URL the handler used and verify the entry exists.
+    const expectedKeyUrl = `${url}&_cv=${CACHE_VERSION}`;
     const cache = await caches.open("cg-leaderboard");
     const cached = await cache.match(new Request(expectedKeyUrl, { method: "GET" }));
-    expect(cached, "cache entry must be stored under _cv=v3 key").toBeDefined();
+    expect(cached, `cache entry must be stored under _cv=${CACHE_VERSION} key`).toBeDefined();
 
     // Sanity: the entry is NOT stored under the bare URL (without _cv).
     const bareKey = new Request(url, { method: "GET" });
