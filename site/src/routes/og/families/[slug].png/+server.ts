@@ -58,7 +58,9 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
     const p2 = agg?.tasks_passed_attempt_2_only ?? 0;
     const total = p1 + p2;
     const passAtN = agg?.pass_at_n ?? 0;
-    const auc2 = total > 0 && passAtN > 0
+    // Guard total === 0 (model passed zero tasks): pass_at_n is also 0 there,
+    // so auc_2 = 0 is correct and avoids 0/0 = NaN ("NaN%" on the card).
+    const auc2 = total > 0
       ? (2 * p1 + p2) * passAtN / (2 * total)
       : 0;
     if (auc2 > topAuc2) {
