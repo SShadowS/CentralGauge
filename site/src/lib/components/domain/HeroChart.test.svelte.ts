@@ -21,6 +21,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string; display_na
     tasks_passed_attempt_2_only: overrides.tasks_passed_attempt_2_only ?? 0,
     pass_at_n: overrides.pass_at_n ?? 0,
     pass_at_1: overrides.pass_at_1,
+    auc_2: overrides.auc_2,
     denominator: overrides.denominator,
     latency_p95_ms: 5000,
     pass_rate_ci: overrides.pass_rate_ci ?? { lower: 0, upper: 1 },
@@ -144,6 +145,22 @@ describe('HeroChart', () => {
     const { container } = render(HeroChart, { rows, generatedAt: '2026-05-06T00:00:00Z' });
     expect(container.textContent).not.toContain('attempted');
     expect(container.querySelector('.bar-coverage')).toBeNull();
+  });
+
+  it('orders hero bars by auc_2, not pass_at_n, when they disagree', () => {
+    // low-first-try: pass_at_n=0.9 (higher) but auc_2=0.55 (lower) — few solved first try
+    // high-first-try: pass_at_n=0.8 (lower) but auc_2=0.75 (higher) — most solved first try
+    // Under old score-led sort: low-first-try would appear first (0.9 > 0.8).
+    // Under AUC-led sort: high-first-try must appear first (0.75 > 0.55).
+    const rows: LeaderboardRow[] = [
+      makeRow({ slug: 'low-first-try', display_name: 'Low First Try', denominator: 10, tasks_passed_attempt_1: 2, tasks_passed_attempt_2_only: 7, pass_at_1: 0.2, pass_at_n: 0.9, auc_2: 0.55, tasks_attempted_distinct: 10 }),
+      makeRow({ slug: 'high-first-try', display_name: 'High First Try', denominator: 10, tasks_passed_attempt_1: 7, tasks_passed_attempt_2_only: 1, pass_at_1: 0.7, pass_at_n: 0.8, auc_2: 0.75, tasks_attempted_distinct: 10 }),
+    ];
+    const { container } = render(HeroChart, { rows, generatedAt: '2026-05-06T00:00:00Z' });
+    const rankedTexts = Array.from(
+      container.querySelectorAll('.bar-row .bar-model'),
+    ).map((el) => el.textContent?.trim());
+    expect(rankedTexts).toEqual(['High First Try', 'Low First Try']);
   });
 
   it('omits coverage subtitle when denominator is undefined', () => {

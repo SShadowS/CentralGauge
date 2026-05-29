@@ -53,7 +53,7 @@ export const load: PageServerLoad = async (
   if (apiCache) setHeaders({ "cache-control": apiCache });
 
   const payload = (await res.json()) as LeaderboardResponse;
-  const sort = url.searchParams.get("sort") ?? "pass_at_n:desc";
+  const sort = url.searchParams.get("sort") ?? "auc_2:desc";
 
   // Categories list — best-effort. If the endpoint fails (unlikely; cached
   // 60s), we still render the leaderboard, just without the Category rail.

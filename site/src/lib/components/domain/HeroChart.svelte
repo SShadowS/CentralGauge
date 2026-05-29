@@ -22,11 +22,11 @@
     taskCount?: number;
   } = $props();
 
-  type Segs = { p1: number; p2: number; score: number; ciLo: number; ciHi: number };
+  type Segs = { p1: number; p2: number; score: number; auc: number; ciLo: number; ciHi: number };
 
   function segs(r: LeaderboardRow): Segs {
     const d = r.denominator || 0;
-    if (d === 0) return { p1: 0, p2: 0, score: 0, ciLo: 0, ciHi: 0 };
+    if (d === 0) return { p1: 0, p2: 0, score: 0, auc: 0, ciLo: 0, ciHi: 0 };
     // Compute score from a single division of the combined numerator. Summing
     // two separate divisions (a1/d + a2/d) drifts by ~1e-14, which silently
     // pre-empts the pass_at_1 tiebreak below and mis-ranks tied models.
@@ -37,7 +37,10 @@
     // that fine-grained rank gaps at small run counts are inside the noise.
     const ciLo = Math.max(0, (r.pass_rate_ci?.lower ?? 0) * 100);
     const ciHi = Math.min(100, (r.pass_rate_ci?.upper ?? 0) * 100);
-    return { p1, p2, score, ciLo, ciHi };
+    // AUC@2 from server emission (preferred); fall back to midpoint estimate
+    // for rows published before auc_2 was emitted.
+    const auc = (r.auc_2 ?? ((r.pass_at_1 ?? 0) + score / 100) / 2) * 100;
+    return { p1, p2, score, auc, ciLo, ciHi };
   }
 
   const top = $derived(
@@ -46,7 +49,7 @@
       .filter(({ row }) => (row.denominator ?? 0) > 0)
       .sort(
         (a, b) =>
-          b.s.score - a.s.score ||
+          b.s.auc - a.s.auc ||
           (b.row.pass_at_1 ?? 0) - (a.row.pass_at_1 ?? 0) ||
           a.row.model.slug.localeCompare(b.row.model.slug),
       ),
