@@ -242,3 +242,12 @@ Re-run when bench run 3 lands; diff which tasks flipped.
   in-harness tests pass where `tasks` is seeded). FOLLOW-UP to light up tiers:
   run `centralgauge sync-catalog --apply` to populate prod `tasks`, then the
   cg-tiers cache repopulates on next leaderboard compute (v4 key).
+- 2026-05-30 (cont.): FOLLOW-UP #1 DONE — tier bands LIVE in prod. Note:
+  `sync-catalog` was the WRONG tool (only models/pricing/families). The right
+  one is `populate-task-set` (uploads `tasks`+`task_categories` for the current
+  hash). Local↔prod hash matched (b31c942b…), backfilled 110 tasks (drift=false).
+  Then hit a real bug: tier cache key derived freshness from last_run_at →
+  backfilling tasks didn't bust the stale empty tier result. Fixed by folding
+  task count into the cg-tiers key (commit `6729280`, redeploy `ca2c0d02`).
+  Result: Tier 1 = Opus 4.6/4.7/4.8 + GPT-5.5 + Sonnet 4.6 (0.79→0.75,
+  statistically tied), Tier 2 = Gemini 3.5 Flash (0.69), Tier 3 = Haiku (0.54).
