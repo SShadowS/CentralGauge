@@ -82,9 +82,12 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
             );
             for (const r of rows) r.tier = tierMap.get(r.model.slug);
           }
-        } catch {
+        } catch (err) {
           // Tier attach is non-fatal: leave tier undefined on all rows.
-          // Typical failure: caches.open() unavailable in some CF edge contexts.
+          // Typical failure: caches.open() unavailable in some CF edge contexts,
+          // or D1 latency on the tier-compute round trip. Log so CF Worker logs
+          // capture it — but never rethrow, never alter the response path.
+          console.error('[leaderboard] tier attach failed:', err);
         }
       }
 
