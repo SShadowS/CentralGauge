@@ -39,20 +39,20 @@
         <!-- Model: non-sortable — server does not honour a `model` sort key -->
         <th scope="col">Model</th>
         <!--
-          Score: displays pass_at_n * 100 (strict-scope pass rate, %).
-          Tooltip: tasks solved / tasks in scope, with up to 2 attempts.
+          Solve AUC@2: headline ranking metric. Attempt-adjusted solve rate.
+          Replaces "Score" (pass_at_n) as the primary headline column.
         -->
         <th
           scope="col"
-          data-test="pass-at-n-header"
+          data-test="auc-2-header"
           data-cheat="score-col"
-          aria-sort={ariaSort('pass_at_n')}
-          title="Tasks solved / tasks in scope, with up to 2 attempts."
+          aria-sort={ariaSort('auc_2')}
+          title={METRICS.auc_2?.short}
         >
-          <button class="hbtn" onclick={() => clickSort('pass_at_n')}>
-            Score{#if sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
+          <button class="hbtn" onclick={() => clickSort('auc_2')}>
+            Solve AUC@2{#if sortField === 'auc_2'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
           </button>
-          <MetricInfo id="pass_at_n" />
+          <MetricInfo id="auc_2" />
         </th>
         <!--
           Avg attempt: demoted column — hidden in compact density, visible in comfortable.
@@ -70,9 +70,29 @@
           </button>
           <MetricInfo id="avg_score" />
         </th>
-        <th scope="col" data-cheat="pass-col" aria-sort={ariaSort('pass_at_1')} title={METRICS.pass_at_n?.short}>
-          <button class="hbtn" onclick={() => clickSort('pass_at_1')}>Pass{#if sortField === 'pass_at_1' || sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+        <!--
+          Best-of-2: pass_at_n profile column (strict per-set pass rate, up to 2 attempts).
+        -->
+        <th
+          scope="col"
+          class="th-best-of-2"
+          aria-sort={ariaSort('pass_at_n')}
+          title={METRICS.pass_at_n?.short}
+        >
+          <button class="hbtn" onclick={() => clickSort('pass_at_n')}>
+            Best-of-2{#if sortField === 'pass_at_n'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}
+          </button>
           <MetricInfo id="pass_at_n" />
+        </th>
+        <th scope="col" data-cheat="pass-col" aria-sort={ariaSort('pass_at_1')} title={METRICS.pass_at_1?.short}>
+          <button class="hbtn" onclick={() => clickSort('pass_at_1')}>Pass{#if sortField === 'pass_at_1'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
+          <MetricInfo id="pass_at_1" />
+        </th>
+        <!--
+          Repair: conditional repair rate profile column.
+        -->
+        <th scope="col" class="th-repair" title={METRICS.repair_rate?.short}>
+          Repair <MetricInfo id="repair_rate" />
         </th>
         <th scope="col" class="th-ci" data-cheat="ci-col" title={METRICS.pass_rate_ci?.short}>Confidence ± <MetricInfo id="pass_rate_ci" /></th>
         <th scope="col" data-cheat="cost-col" aria-sort={ariaSort('avg_cost_usd')} title={METRICS.avg_cost_usd?.short}>
@@ -104,8 +124,9 @@
               family_slug={row.family_slug}
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
-          <td class="score text-mono">{(row.pass_at_n * 100).toFixed(1)}</td>
+          <td class="score text-mono">{((row.auc_2 ?? 0) * 100).toFixed(1)}</td>
           <td class="th-avg-attempt text-mono">{formatScore(row.avg_score)}</td>
+          <td class="th-best-of-2 text-mono">{((row.pass_at_n ?? 0) * 100).toFixed(1)}</td>
           <td
             class="attempts-cell"
             data-cheat={i === 0 ? 'worked-example-pass' : undefined}
@@ -124,6 +145,7 @@
               {row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only}/{denom}
             </span>
           </td>
+          <td class="th-repair text-mono">{((row.repair_rate ?? 0) * 100).toFixed(1)}%</td>
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2 * 100).toFixed(1)}%</td>
           <td><CostCell usd={row.avg_cost_usd} /></td>
           <td class="text-mono">{row.cost_per_pass_usd === null ? '—' : `$${row.cost_per_pass_usd.toFixed(4)}`}</td>

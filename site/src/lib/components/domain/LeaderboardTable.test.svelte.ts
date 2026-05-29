@@ -3,6 +3,41 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import LeaderboardTable from './LeaderboardTable.svelte';
 import type { LeaderboardRow } from '$shared/api-types';
 
+function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): LeaderboardRow {
+  return {
+    rank: 1,
+    model: {
+      slug: overrides.slug,
+      display_name: overrides.slug,
+      api_model_id: overrides.slug,
+      settings_suffix: '',
+    },
+    family_slug: 'test',
+    run_count: 1,
+    tasks_attempted: 1,
+    tasks_passed: 1,
+    tasks_attempted_distinct: 1,
+    tasks_passed_attempt_1: 0,
+    tasks_passed_attempt_2_only: 0,
+    pass_at_n: 0,
+    avg_score: 0,
+    avg_cost_usd: 0,
+    verified_runs: 1,
+    last_run_at: '2026-01-01T00:00:00Z',
+    latency_p95_ms: 1000,
+    pass_rate_ci: { lower: 0, upper: 0 },
+    pass_hat_at_n: 0,
+    cost_per_pass_usd: null,
+    ...overrides,
+    model: {
+      slug: overrides.slug,
+      display_name: overrides.slug,
+      api_model_id: overrides.slug,
+      settings_suffix: '',
+    },
+  };
+}
+
 const sampleRows: LeaderboardRow[] = [
   {
     rank: 1,
@@ -28,6 +63,8 @@ const sampleRows: LeaderboardRow[] = [
     pass_rate_ci: { lower: 0.88, upper: 0.95 },
     pass_hat_at_n: 0.99,
     cost_per_pass_usd: 0.005,
+    auc_2: 0.85,
+    repair_rate: 0.2,
   },
   {
     rank: 2,
@@ -53,6 +90,8 @@ const sampleRows: LeaderboardRow[] = [
     pass_rate_ci: { lower: 0.48, upper: 0.84 },
     pass_hat_at_n: 0.91,
     cost_per_pass_usd: null,
+    auc_2: 0.6,
+    repair_rate: 0.0667,
   },
 ];
 
@@ -81,13 +120,13 @@ describe('LeaderboardTable', () => {
     expect(sort).toBe('avg_score:asc');
   });
 
-  it('Score column shows pass_at_n * 100 with 1 decimal', () => {
-    const { container } = render(LeaderboardTable, { rows, sort: 'pass_at_n:desc' });
+  it('Score column (headline) shows auc_2 * 100 with 1 decimal', () => {
+    const { container } = render(LeaderboardTable, { rows, sort: 'auc_2:desc' });
     const scoreCells = container.querySelectorAll('td.score');
-    // Sonnet: 0.916667 * 100 = 91.6667 → "91.7"
-    expect(scoreCells[0]?.textContent?.trim()).toBe('91.7');
-    // Opus: 0.666667 * 100 = 66.6667 → "66.7"
-    expect(scoreCells[1]?.textContent?.trim()).toBe('66.7');
+    // Sonnet: auc_2=0.85 * 100 → "85.0"
+    expect(scoreCells[0]?.textContent?.trim()).toBe('85.0');
+    // Opus: auc_2=0.6 * 100 → "60.0"
+    expect(scoreCells[1]?.textContent?.trim()).toBe('60.0');
   });
 
   it('renders AttemptStackedBar in each row', () => {
@@ -149,13 +188,13 @@ describe('LeaderboardTable', () => {
 
   // D.2 tests — default sort + column alignment
 
-  it('defaults to pass_at_n:desc: pass-at-n-header has aria-sort descending', async () => {
+  it('defaults to auc_2:desc: auc-2-header has aria-sort descending', async () => {
     const { container } = render(LeaderboardTable, {
       rows: sampleRows,
-      sort: 'pass_at_n:desc',
+      sort: 'auc_2:desc',
     });
-    const passHeader = container.querySelector('[data-test="pass-at-n-header"]');
-    expect(passHeader?.getAttribute('aria-sort')).toBe('descending');
+    const aucHeader = container.querySelector('[data-test="auc-2-header"]');
+    expect(aucHeader?.getAttribute('aria-sort')).toBe('descending');
   });
 
   it('renders Score column from pass_at_n strict (1 decimal)', async () => {
@@ -214,5 +253,12 @@ describe('LeaderboardTable', () => {
     );
     expect(lastSeenHeader).toBeDefined();
     expect(lastSeenHeader?.querySelector('button')).toBeNull();
+  });
+
+  it('renders Solve AUC@2 as the headline column value', () => {
+    const rows = [makeRow({ slug: 'm', auc_2: 0.8, pass_at_n: 0.9, repair_rate: 0.6667 })];
+    const { getByText } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
+    expect(getByText('80.0')).toBeInTheDocument(); // headline = auc_2*100
+    expect(getByText('66.7%')).toBeInTheDocument(); // repair column
   });
 });
