@@ -251,3 +251,16 @@ Re-run when bench run 3 lands; diff which tasks flipped.
   task count into the cg-tiers key (commit `6729280`, redeploy `ca2c0d02`).
   Result: Tier 1 = Opus 4.6/4.7/4.8 + GPT-5.5 + Sonnet 4.6 (0.79→0.75,
   statistically tied), Tier 2 = Gemini 3.5 Flash (0.69), Tier 3 = Haiku (0.54).
+- 2026-05-30 (cont.): FOLLOW-UP #2 DONE — `master` fast-forwarded to feat
+  (== deployed `ca2c0d02`); NOT pushed to origin (left as owner decision).
+  FOLLOW-UP #3 PENDING — operator confirms run 3 of the 3-run bench
+  (opus-4-8, gemini-3.1-pro-preview, opus-4-7, gemini-3.5-flash; 110 tasks) is
+  STILL RUNNING, ETA ~3-4h from 2026-05-30. Nothing to launch. ON COMPLETION
+  (a scores-*.txt / benchmark-results-*.json newer than 1780089240878 lands):
+    1. `bash scripts/winloss.sh gemini-3.1-pro-preview results/benchmark-results-1780075023153.json results/benchmark-results-1780089240878.json <RUN3.json>`
+    2. recompute 3-run AUC@2 + repair_rate + paired-bootstrap tiers for the set.
+    3. NOTE: gemini-3.1-pro-preview is NOT yet on the prod leaderboard (those
+       local runs were never ingested). To put it on the live board: ingest the
+       runs (or `centralgauge cycle --llms gemini/gemini-3.1-pro-preview`), then
+       flip visibility if needed. Prod board today = older 19-model set, already
+       showing AUC@2 + tiers correctly.
