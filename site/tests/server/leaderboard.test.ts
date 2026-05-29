@@ -1361,3 +1361,137 @@ describe("pass_at_n tiebreak chain (production hotfix)", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// auc_2 SQL ORDER BY sort (Task 4)
+//
+// Three models all have pass_at_n = 8/10 = 0.8 (tied) but differ in how
+// their 8 passes are split between attempt-1 and attempt-2-only:
+//
+//   M-FIRST:  p1=8, p2_only=0  → auc_2 = (2*8+0)/(2*10) = 16/20 = 0.80
+//   M-SECOND: p1=4, p2_only=4  → auc_2 = (2*4+4)/(2*10) = 12/20 = 0.60
+//   M-THIRD:  p1=0, p2_only=8  → auc_2 = (2*0+8)/(2*10) =  8/20 = 0.40
+//
+// sort=auc_2:desc must return M-FIRST > M-SECOND > M-THIRD.
+// sort=auc_2:asc must return M-THIRD > M-SECOND > M-FIRST.
+// ---------------------------------------------------------------------------
+
+describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+
+    // task_set 'aaaa' has task_count=10 (from seedScaffold).
+    // Insert 10 task rows so results can reference them.
+    for (let i = 1; i <= 10; i++) {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,manifest_json)
+         VALUES ('aaaa',?,?,'easy','{}')`,
+      ).bind(`ta${i}`, `ha${i}`).run();
+    }
+
+    // Three models with reversed m.id ordering vs auc_2 ordering so that a
+    // fallthrough to m.id DESC would give a DIFFERENT result.
+    // M-FIRST  (highest auc_2=0.80) gets the LOWEST m.id so m.id-DESC would
+    // put it last — if the test still passes we know SQL auc_2 sort is active.
+    const seeds = [
+      { id: 100, slug: "M-FIRST",  p1: 8, p2only: 0 },
+      { id: 200, slug: "M-SECOND", p1: 4, p2only: 4 },
+      { id: 300, slug: "M-THIRD",  p1: 0, p2only: 8 },
+    ];
+
+    for (const s of seeds) {
+      await env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+         VALUES (?,1,?,?,?,1)`,
+      ).bind(s.id, s.slug, `m-${s.id}`, s.slug).run();
+      await env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+         VALUES ('v1',?,1.0,2.0,'2026-01-01')`,
+      ).bind(s.id).run();
+
+      const runId = `run-auc2-${s.id}`;
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        runId, "aaaa", s.id, "s", "rig",
+        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+        1, new Uint8Array([0]),
+      ).run();
+
+      // attempt-1 passes
+      for (let i = 0; i < s.p1; i++) {
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
+        ).bind(runId, `ta${i + 1}`).run();
+      }
+      // attempt-2-only passes: attempt 1 fails, attempt 2 passes
+      for (let i = 0; i < s.p2only; i++) {
+        const taskId = `ta${s.p1 + i + 1}`;
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,1,0,0.0,0,1,0,100,50)`,
+        ).bind(runId, taskId).run();
+        await env.DB.prepare(
+          `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+           VALUES (?,?,2,1,1.0,1,1,1,100,50)`,
+        ).bind(runId, taskId).run();
+      }
+    }
+  });
+
+  it("sort=auc_2:desc returns M-FIRST > M-SECOND > M-THIRD", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "auc_2",
+      direction: "desc",
+    });
+    const ranked = rows
+      .filter((r) => ["M-FIRST", "M-SECOND", "M-THIRD"].includes(r.model.slug))
+      .map((r) => r.model.slug);
+    expect(ranked).toEqual(["M-FIRST", "M-SECOND", "M-THIRD"]);
+  });
+
+  it("sort=auc_2:asc returns M-THIRD > M-SECOND > M-FIRST", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "auc_2",
+      direction: "asc",
+    });
+    const ranked = rows
+      .filter((r) => ["M-FIRST", "M-SECOND", "M-THIRD"].includes(r.model.slug))
+      .map((r) => r.model.slug);
+    expect(ranked).toEqual(["M-THIRD", "M-SECOND", "M-FIRST"]);
+  });
+
+  it("all three models share pass_at_n=0.8 (confirming auc_2 discriminates within the tie)", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const subset = rows.filter((r) =>
+      ["M-FIRST", "M-SECOND", "M-THIRD"].includes(r.model.slug),
+    );
+    for (const r of subset) {
+      expect(r.pass_at_n).toBeCloseTo(0.8, 6);
+    }
+  });
+
+  it("auc_2 values are computed correctly (0.80, 0.60, 0.40)", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      sort: "auc_2",
+      direction: "desc",
+    });
+    const first  = rows.find((r) => r.model.slug === "M-FIRST")!;
+    const second = rows.find((r) => r.model.slug === "M-SECOND")!;
+    const third  = rows.find((r) => r.model.slug === "M-THIRD")!;
+    // auc_2 = (2*p1 + p2_only) / (2 * denominator)
+    expect(first.auc_2).toBeCloseTo(16 / 20, 6);  // (2*8+0)/(2*10)
+    expect(second.auc_2).toBeCloseTo(12 / 20, 6); // (2*4+4)/(2*10)
+    expect(third.auc_2).toBeCloseTo(8  / 20, 6);  // (2*0+8)/(2*10)
+  });
+});

@@ -264,6 +264,28 @@ export async function computeLeaderboard(
          ${scopeInA2.clause})`;
 
     switch (q.sort) {
+      case "auc_2":
+        // AUC@2 = (2·p1 + p2_only) / (2·denominator). Single-numerator form;
+        // tiebreak pass_at_1 (same dir), then m.id DESC via ${tie}.
+        // Bind order mirrors pass_at_n: P1 scope-IN, P2-only scope-IN
+        // (NotExists then main), denominator; then P1 scope-IN + denominator
+        // again for the tiebreak occurrence.
+        return {
+          clause: `ORDER BY (2 * (${P1_EXPR}) + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(2 * ?, 0) ${dir}, (${P1_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
+          extraParams: [
+            // Primary: (2*p1 + p2_only) / (2*denominator)
+            ...scopeInA1.params,
+            ...scopeInA2NotExists.params,
+            ...scopeInA2.params,
+            denominator,
+            // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
+            // scope-IN params again).
+            ...scopeInA1.params,
+            denominator,
+          ],
+          sqlLimit: q.limit,
+        };
+
       case "pass_at_n":
         // Strict: (p1 + p2_only) / denominator. Same denominator used in SELECT.
         // Tiebreaker chain: pass_at_1 (same dir), then m.id DESC. Without the
