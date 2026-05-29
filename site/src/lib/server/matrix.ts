@@ -113,8 +113,16 @@ export async function computeMatrix(
     category_name: t.category_name,
   }));
 
-  const taskIds = taskRows.map((t) => t.task_id);
-  const taskIdsPh = taskIds.map(() => "?").join(",");
+  // Reuse the task-selection criteria as a SUBQUERY (not a bound IN-list) for
+  // the models + cells queries. D1 caps bound parameters at 100 per statement;
+  // a literal `task_id IN (?,?,…)` over a 100+ task set throws
+  // "too many SQL variables" (dormant until the tasks catalog was populated).
+  // The subquery carries only the few taskParams (set/category/difficulty).
+  const taskIdSubquery = `
+      SELECT t.task_id FROM tasks t
+      LEFT JOIN task_categories tc ON tc.id = t.category_id
+      ${taskWhereClause}
+    `;
 
   // -- 2. Models query ------------------------------------------------------
   // Filter to models that have at least one result for any task in the set,
@@ -149,12 +157,12 @@ export async function computeMatrix(
         SELECT DISTINCT runs.model_id
         FROM runs
         JOIN results r ON r.run_id = runs.id
-        WHERE r.task_id IN (${taskIdsPh})
+        WHERE r.task_id IN (${taskIdSubquery})
           ${taskSetRunsFilter}
       )
       ORDER BY m.id ASC
     `,
-    taskIds,
+    taskParams,
   );
 
   if (modelRows.length === 0) {
@@ -259,11 +267,11 @@ export async function computeMatrix(
          LIMIT 1) AS concept
       FROM results r
       JOIN runs ON runs.id = r.run_id
-      WHERE r.task_id IN (${taskIdsPh})
+      WHERE r.task_id IN (${taskIdSubquery})
         ${taskSetRunsFilter}
       GROUP BY r.task_id, runs.model_id
     `,
-    taskIds,
+    taskParams,
   );
 
   const cellMap = new Map<string, MatrixCell>();

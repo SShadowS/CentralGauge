@@ -98,6 +98,62 @@ describe("GET /api/v1/matrix", () => {
     expect(typeof body.generated_at).toBe("string");
   });
 
+  it("handles a task set larger than D1's 100-bound-variable limit", async () => {
+    // Regression: the models + cells queries used `task_id IN (?,?,…)` binding
+    // one variable per task. D1 caps bound params at 100, so a 100+ task set
+    // threw "too many SQL variables: SQLITE_ERROR" (a 500). The fix filters via
+    // a task-id subquery instead. Seed 110 tasks with literal SQL (no binds) so
+    // the SEED itself doesn't hit the limit, then assert the API returns 200.
+    await resetDb();
+    const N = 110;
+    const taskValues = Array.from(
+      { length: N },
+      (_, i) => `('current','t/${i}','h${i}','easy',1,'{}')`,
+    ).join(",");
+    const resultValues = Array.from(
+      { length: N },
+      (_, i) => `('r1','t/${i}',1,1,1.0,1)`,
+    ).join(",");
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('current','2026-04-01T00:00:00Z',${N},1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO task_categories(id,slug,name) VALUES (1,'tables','Tables')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json) VALUES ${taskValues}`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO model_families(id,slug,vendor,display_name) VALUES (1,'claude','anthropic','Claude')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'sonnet','claude-sonnet','Sonnet',47)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO settings_profiles(hash,temperature,max_attempts,max_tokens,prompt_version,bc_version) VALUES ('s1',0.0,2,8192,'v1','Cronus28')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'r',?,'ingest','2026-04-01T00:00:00Z')`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES ('r1','current',1,'s1','r','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+      ).bind(new Uint8Array([0])),
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success) VALUES ${resultValues}`,
+      ),
+    ]);
+
+    const res = await SELF.fetch("https://x/api/v1/matrix?_cb=bigset");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as MatrixResponse;
+    expect(body.tasks).toHaveLength(N);
+    expect(body.models).toHaveLength(1);
+    expect(body.cells).toHaveLength(N);
+    expect(body.cells[0]).toHaveLength(1);
+  });
+
   it("cell aggregates match seeded results", async () => {
     const res = await SELF.fetch("https://x/api/v1/matrix?_cb=cells");
     const body = (await res.json()) as MatrixResponse;
