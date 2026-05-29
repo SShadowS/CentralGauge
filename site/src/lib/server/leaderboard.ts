@@ -507,6 +507,14 @@ export async function computeLeaderboard(
       denominator > 0 ? (passedA1 + passedA2Only) / denominator : 0;
     const passAt1Strict = denominator > 0 ? passedA1 / denominator : 0;
 
+    // Solve AUC@2 — single-numerator form to avoid float drift between two
+    // separate /denominator divisions (cf. HeroChart segs() comment).
+    const aucStrict =
+      denominator > 0 ? (2 * passedA1 + passedA2Only) / (2 * denominator) : 0;
+    // Conditional repair rate; 0 when nothing failed first try.
+    const repairRate =
+      passAt1Strict < 1 ? (passAtNStrict - passAt1Strict) / (1 - passAt1Strict) : 0;
+
     const profile = r.settings_hash_unique
       ? (profileByHash.get(r.settings_hash_unique) ?? null)
       : null;
@@ -529,6 +537,8 @@ export async function computeLeaderboard(
       tasks_passed_attempt_2_only: passedA2Only,
       pass_at_n: Math.round(passAtNStrict * 1e6) / 1e6,
       pass_at_1: Math.round(passAt1Strict * 1e6) / 1e6,
+      auc_2: Math.round(aucStrict * 1e6) / 1e6,
+      repair_rate: Math.round(repairRate * 1e6) / 1e6,
       denominator,
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,

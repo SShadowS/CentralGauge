@@ -1202,6 +1202,45 @@ describe("filtered leaderboard aggregates use scope-aware metrics (B.3)", () => 
 });
 
 // ---------------------------------------------------------------------------
+// auc_2 + repair_rate derived metrics (Task 3)
+// ---------------------------------------------------------------------------
+
+describe("computeLeaderboard auc_2 + repair_rate (Task 3)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+  });
+
+  it("emits auc_2 and repair_rate from attempt counts", async () => {
+    // denominator=10 (from task_set 'aaaa' task_count=10)
+    // attempt1=7 (7 tasks passed on first try)
+    // attempt2_only=2 (2 tasks: failed a1, passed a2)
+    // → pass@1 = 7/10 = 0.7, pass@n = (7+2)/10 = 0.9
+    // → auc_2 = (0.7+0.9)/2 = 0.8
+    // → repair_rate = (0.9-0.7)/(1-0.7) = 0.2/0.3 ≈ 0.666667
+    await insertRun("r1");
+    // 7 tasks passed on attempt 1
+    for (let i = 1; i <= 7; i++) {
+      await insertResult("r1", `t${i}`, 1, 1);
+    }
+    // 2 tasks: fail attempt 1, pass attempt 2
+    for (let i = 8; i <= 9; i++) {
+      await insertResult("r1", `t${i}`, 1, 0);
+      await insertResult("r1", `t${i}`, 2, 1);
+    }
+
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const row = rows.find((r) => r.model.slug === "M-A")!;
+    expect(row).toBeDefined();
+    expect(row.auc_2).toBeCloseTo(0.8, 6);
+    expect(row.repair_rate).toBeCloseTo(0.666667, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // pass_at_n tiebreak chain: pass_at_n desc → pass_at_1 desc → m.id DESC.
 //
 // Without the pass_at_1 middle tier, models tied on pass_at_n would collapse
