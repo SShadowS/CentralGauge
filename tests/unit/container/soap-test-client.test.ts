@@ -2,8 +2,27 @@ import { assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
 import {
   buildHarnessUrl,
   buildRunTestsEnvelope,
+  DEFAULT_SOAP_TIMEOUT_MS,
   parseRunTestsResponse,
+  resolveSoapTimeoutMs,
 } from "../../../src/container/soap-test-client.ts";
+
+Deno.test("resolveSoapTimeoutMs", async (t) => {
+  await t.step("defaults when absent or blank", () => {
+    assertEquals(resolveSoapTimeoutMs(undefined), DEFAULT_SOAP_TIMEOUT_MS);
+    assertEquals(resolveSoapTimeoutMs(""), DEFAULT_SOAP_TIMEOUT_MS);
+    assertEquals(resolveSoapTimeoutMs("   "), DEFAULT_SOAP_TIMEOUT_MS);
+  });
+  await t.step("parses a positive value", () => {
+    assertEquals(resolveSoapTimeoutMs("5000"), 5000);
+    assertEquals(resolveSoapTimeoutMs("  3000  "), 3000);
+  });
+  await t.step("defaults on non-positive / non-numeric", () => {
+    assertEquals(resolveSoapTimeoutMs("0"), DEFAULT_SOAP_TIMEOUT_MS);
+    assertEquals(resolveSoapTimeoutMs("-1"), DEFAULT_SOAP_TIMEOUT_MS);
+    assertEquals(resolveSoapTimeoutMs("abc"), DEFAULT_SOAP_TIMEOUT_MS);
+  });
+});
 
 Deno.test("buildRunTestsEnvelope embeds codeunit id and namespace", () => {
   const xml = buildRunTestsEnvelope("", 80052);

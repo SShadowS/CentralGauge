@@ -52,7 +52,7 @@ import {
   buildPrepareCandidateScript,
   buildTestScript,
 } from "./bc-script-builders.ts";
-import { runTestsViaSoap } from "./soap-test-client.ts";
+import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
 import { mergeIntoTracer } from "../tracing/parse-trace-lines.ts";
 
@@ -127,6 +127,57 @@ export interface BcContainerProviderOptions {
   compilePoolPerContainer?: number;
   /** Test seam: factory for creating sessions. Default uses real spawn. */
   sessionFactory?: (name: string) => PwshContainerSession;
+}
+
+// Markers that ONLY appear when the container / BC service / test tooling
+// itself failed — never from model AL code. Always classified as infra.
+const UNCONDITIONAL_INFRA_TEST_MARKERS = [
+  /SYSLIB0014/,
+  /ServicePointManager.*obsolete/i,
+  /Get-NavServerInstance.*not recognized/i,
+  /CommandNotFoundException.*Get-NavServerInstance/i,
+  /Publish-BcContainerApp.*timed out/i,
+  /PUBLISH_FAILED/,
+  /Run-TestsInBcContainer.*failed/i,
+  /container .* not running/i,
+];
+
+// `TEST_ERROR:<msg>` is a generic catch-all around Run-TestsInBcContainer — it
+// fires for ANY exception, including model-induced ones (a faulting test, a
+// runaway that the harness aborts). Treat it as infra ONLY when its message
+// carries a genuine infrastructure signature; otherwise it is a real test
+// failure (score 0, do NOT retry). Deliberately excludes bare "timeout" — a
+// model infinite loop surfaces as a test timeout and must be scored, not retried.
+const TEST_ERROR_INFRA_SIGNATURES = [
+  /SYSLIB0014/i,
+  /\b(?:econnreset|econnrefused|etimedout|enotfound)\b/i,
+  /socket hang up/i,
+  // Allow intervening words: real .NET phrasings are "connection was reset",
+  // "underlying connection was closed", "connection forcibly closed".
+  /connection\b.{0,30}\b(?:reset|refused|closed|forcibly)/i,
+  /unable to connect to the remote server/i,
+  /PSSession.*(?:disconnected|broken|closed|removed)/i,
+  /SQL.*(?:server|service).*(?:down|unavailable|not responding)/i,
+  /Get-NavServerInstance.*(?:not recognized|not found)/i,
+  /container .* not running/i,
+];
+
+/**
+ * Decide whether legacy test-harness output is an INFRA failure (vs a
+ * model/test failure). Unconditional markers are always infra; a bare
+ * `TEST_ERROR:` is infra only when its message matches an infra signature.
+ * A generic test-runner exception (e.g. the model's code faulting) must be
+ * scored as a failure, not retried as infra. Pure + exported for testing.
+ */
+export function isInfraTestFailure(output: string): boolean {
+  if (UNCONDITIONAL_INFRA_TEST_MARKERS.some((re) => re.test(output))) {
+    return true;
+  }
+  const m = output.match(/TEST_ERROR:([^\r\n]*)/);
+  if (m) {
+    return TEST_ERROR_INFRA_SIGNATURES.some((re) => re.test(m[1]!));
+  }
+  return false;
 }
 
 export class BcContainerProvider implements ContainerProvider {
@@ -1420,6 +1471,9 @@ ${script}
       company: Deno.env.get("CENTRALGAUGE_BC_COMPANY") ?? "My Company",
       tenant: Deno.env.get("CENTRALGAUGE_BC_TENANT") ?? "default",
       credentials: this.getCredentials(containerName),
+      timeoutMs: resolveSoapTimeoutMs(
+        Deno.env.get("CENTRALGAUGE_SOAP_TIMEOUT_MS"),
+      ),
     };
   }
 
@@ -1571,24 +1625,14 @@ ${script}
     );
     const duration = Date.now() - startTime;
 
-    // Infra-failure markers in the test harness output (NOT model AL failures).
-    // These indicate the container/PsTestTool/BC service itself failed before
-    // tests could be evaluated — throw a ContainerError so the orchestrator
-    // catch path classifies + records + bans the model from being unfairly
-    // penalized. Order matters: SYSLIB0014 / PSSession / publish must be
-    // caught even when a TEST_ERROR marker is also present.
-    const INFRA_TEST_MARKERS = [
-      /SYSLIB0014/,
-      /ServicePointManager.*obsolete/i,
-      /Get-NavServerInstance.*not recognized/i,
-      /CommandNotFoundException.*Get-NavServerInstance/i,
-      /Publish-BcContainerApp.*timed out/i,
-      /PUBLISH_FAILED/,
-      /TEST_ERROR/,
-      /Run-TestsInBcContainer.*failed/i,
-      /container .* not running/i,
-    ];
-    if (INFRA_TEST_MARKERS.some((re) => re.test(result.output))) {
+    // Infra-failure detection (NOT model AL failures). A genuine
+    // container/BC/test-tool failure throws a ContainerError so the
+    // orchestrator classifies + records it without penalizing the model.
+    // A bare TEST_ERROR (generic Run-TestsInBcContainer exception) is treated
+    // as a real test failure unless its message carries an infra signature —
+    // see isInfraTestFailure — so model-induced faults aren't uselessly
+    // retried as infra. Order is handled inside the helper.
+    if (isInfraTestFailure(result.output)) {
       throw this.buildPwshError({
         containerName,
         operation: "test",

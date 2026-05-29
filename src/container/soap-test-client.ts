@@ -20,6 +20,26 @@ import { ContainerError } from "../errors.ts";
 
 const SOAP_NS = "urn:microsoft-dynamics-schemas/codeunit/CGTestRunner";
 
+/**
+ * Default cap on the harness SOAP call. The harness test execution is
+ * sub-second to a few seconds in practice (observed p99 ~1s, max ~3s), so this
+ * is ~40x headroom — its only job is to bound an unresponsive web service so
+ * the call cannot hang indefinitely (the caller falls back to the legacy path
+ * on timeout). Override with `CENTRALGAUGE_SOAP_TIMEOUT_MS`.
+ */
+export const DEFAULT_SOAP_TIMEOUT_MS = 120_000;
+
+/**
+ * Resolve the SOAP request timeout (ms) from a raw env value, falling back to
+ * {@link DEFAULT_SOAP_TIMEOUT_MS} for absent / non-numeric / non-positive
+ * input. Pure + exported for testing.
+ */
+export function resolveSoapTimeoutMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_SOAP_TIMEOUT_MS;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SOAP_TIMEOUT_MS;
+}
+
 /** Connection details for one container's harness web service. */
 export interface SoapTestRunnerConfig {
   /** Container hostname, e.g. "Cronus28". */
@@ -32,6 +52,8 @@ export interface SoapTestRunnerConfig {
   tenant: string;
   /** Container credentials (Basic auth). */
   credentials: ContainerCredentials;
+  /** Request timeout in ms. Defaults to {@link DEFAULT_SOAP_TIMEOUT_MS}. */
+  timeoutMs?: number;
 }
 
 // AL "Test Method Line".Result option: " ,Failure,Success,Skipped".
@@ -169,6 +191,7 @@ export async function runTestsViaSoap(
   const auth = btoa(
     `${config.credentials.username}:${config.credentials.password}`,
   );
+  const timeoutMs = config.timeoutMs ?? DEFAULT_SOAP_TIMEOUT_MS;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -179,10 +202,19 @@ export async function runTestsViaSoap(
         "Authorization": `Basic ${auth}`,
       },
       body: buildRunTestsEnvelope(extensionId, testCodeunitId),
+      // Bound the call so an unresponsive web service can't hang indefinitely;
+      // on timeout the fetch rejects, we wrap it, and runTests() falls back to
+      // the legacy client-session path.
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
+    const timedOut = e instanceof DOMException && e.name === "TimeoutError";
     throw new ContainerError(
-      `harness SOAP call failed: ${e instanceof Error ? e.message : String(e)}`,
+      timedOut
+        ? `harness SOAP call timed out after ${timeoutMs}ms`
+        : `harness SOAP call failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
       config.host,
       "test",
     );

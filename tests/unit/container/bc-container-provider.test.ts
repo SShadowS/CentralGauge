@@ -13,10 +13,60 @@
  */
 
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
+import {
+  BcContainerProvider,
+  isInfraTestFailure,
+} from "../../../src/container/bc-container-provider.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
+
+Deno.test("isInfraTestFailure", async (t) => {
+  await t.step("unconditional infra markers => infra", () => {
+    assertEquals(
+      isInfraTestFailure("error SYSLIB0014: ServicePointManager"),
+      true,
+    );
+    assertEquals(isInfraTestFailure("PUBLISH_FAILED:boom"), true);
+    assertEquals(
+      isInfraTestFailure("Run-TestsInBcContainer ... failed"),
+      true,
+    );
+    assertEquals(isInfraTestFailure("container Cronus28 is not running"), true);
+  });
+
+  await t.step("TEST_ERROR with an infra signature => infra", () => {
+    assertEquals(
+      isInfraTestFailure("TEST_ERROR: SYSLIB0014 obsolete"),
+      true,
+    );
+    assertEquals(
+      isInfraTestFailure("TEST_ERROR: The SOAP connection was reset"),
+      true,
+    );
+    assertEquals(
+      isInfraTestFailure("TEST_ERROR: Get-NavServerInstance not found"),
+      true,
+    );
+  });
+
+  await t.step(
+    "bare/model TEST_ERROR => NOT infra (scored, not retried)",
+    () => {
+      assertEquals(
+        isInfraTestFailure("TEST_ERROR: The test failed an assertion"),
+        false,
+      );
+      // A model infinite loop surfaces as a test timeout — must be scored.
+      assertEquals(
+        isInfraTestFailure("TEST_ERROR: operation timed out"),
+        false,
+      );
+      assertEquals(isInfraTestFailure("SOME_TESTS_FAILED"), false);
+      assertEquals(isInfraTestFailure("ALL_TESTS_PASSED"), false);
+    },
+  );
+});
 
 // =============================================================================
 // Provider Properties Tests
@@ -1020,7 +1070,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "BcContainerProvider - runTests throws ContainerError on PUBLISH_FAILED",
+  name:
+    "BcContainerProvider - runTests throws ContainerError on PUBLISH_FAILED",
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();

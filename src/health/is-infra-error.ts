@@ -19,7 +19,10 @@ const INFRA_MESSAGE_HINTS = [
   /CommandNotFoundException.*Get-NavServerInstance/i,
   /Run-TestsInBcContainer.*failed/i,
   /Publish-BcContainerApp.*(?:timed out|PSSession|container.*not running)/i,
-  /test_error/i,
+  // NOTE: a bare "TEST_ERROR" is intentionally NOT an infra hint — it is a
+  // generic catch-all around the test runner that also fires for model-induced
+  // faults. Genuine infra still matches the specific hints above. See
+  // isInfraTestFailure in bc-container-provider.ts.
 ];
 
 /**
