@@ -141,6 +141,7 @@ describe("LeaderboardRow — contract completeness", () => {
     // REQUIRED: every key in this array must match LeaderboardRow
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
     // PR2.1: removed pass_at_n_per_attempted (deprecated alias).
+    // Task 3: added auc_2, repair_rate (emitted by row mapper).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -153,6 +154,8 @@ describe("LeaderboardRow — contract completeness", () => {
       "tasks_passed_attempt_2_only",
       "pass_at_n",
       "pass_at_1",
+      "auc_2",
+      "repair_rate",
       "denominator",
       "latency_p95_ms",
       "pass_rate_ci",
@@ -674,42 +677,42 @@ describe("GET /api/v1/leaderboard", () => {
     }
   });
 
-  it('?sort=invalid falls back to default pass_at_n sort (A.6)', async () => {
-    // An unrecognised sort value must not 400 — it silently falls back to pass_at_n
-    // (default flipped from avg_score to pass_at_n in A.6).
+  it('?sort=invalid falls back to default auc_2 sort (Task 5)', async () => {
+    // An unrecognised sort value must not 400 — it silently falls back to auc_2
+    // (default flipped from pass_at_n to auc_2 in Task 5).
     const res = await SELF.fetch('https://x/api/v1/leaderboard?sort=bogus_field&_cb=inv');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
-    // Default seed: both sonnet and opus have pass_at_n=1.0 (both pass 2/2 tasks).
+    // Default seed: both sonnet and opus have auc_2=1.0 (both pass 2/2 tasks at attempt 1).
     // Tiebreaker is m.id DESC → opus (id=2) sorts before sonnet (id=1).
     const firstSlug = (body.data[0].model as Record<string, unknown>).slug;
     expect(firstSlug).toBe('opus-4.7');
     // filters.sort should reflect the normalised fallback value.
     expect((body as Record<string, unknown>).filters).toBeDefined();
     const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('pass_at_n');
+    expect(filters.sort).toBe('auc_2');
   });
 
   // ===========================================================================
-  // Bug 4: default sort is pass_at_n:desc (A.6 default-flip lock-in)
+  // Task 5: default sort is auc_2:desc (flipped from pass_at_n:desc)
   //
-  // Seeds two models where pass_at_n order DIFFERS from avg_score order so the
+  // Seeds two models where auc_2 order DIFFERS from avg_score order so the
   // two sort fields produce distinct rankings. The no-sort-param response must
-  // match pass_at_n:desc, not avg_score:desc.
+  // match auc_2:desc, not avg_score:desc.
   // ===========================================================================
 
-  it('no sort param: default is pass_at_n:desc not avg_score:desc (Bug 4)', async () => {
-    // Add a third model (M-X, id=20) with HIGH avg_score but LOW pass_at_n,
-    // to force a divergence between pass_at_n and avg_score orderings.
-    //   sonnet (id=1): r1+r2 combined → pass_at_n = 2/2 = 1.0, avg_score ~0.75
-    //   opus   (id=2): r3      → pass_at_n = 2/2 = 1.0, avg_score = 1.0
+  it('no sort param: default is auc_2:desc not avg_score:desc (Task 5)', async () => {
+    // Add a third model (M-X, id=20) with HIGH avg_score but LOW auc_2,
+    // to force a divergence between auc_2 and avg_score orderings.
+    //   sonnet (id=1): r1+r2 combined → auc_2 = 1.0, avg_score ~0.75
+    //   opus   (id=2): r3      → auc_2 = 1.0, avg_score = 1.0
     //   M-X   (id=20): single attempt-1 pass with score=1.0 but denominator=2
-    //                  → pass_at_n = 1/2 = 0.5, avg_score = 1.0
+    //                  → auc_2 = 0.75 (pass_at_1=0.5, pass_at_n=1.0 → avg=0.75), avg_score = 1.0
     //
     // avg_score desc:  opus(1.0) ~ M-X(1.0) > sonnet(0.75) [tie between opus+MX]
-    // pass_at_n desc:  sonnet(1.0) ~ opus(1.0) > M-X(0.5)
+    // auc_2 desc:      sonnet(1.0) ~ opus(1.0) > M-X(0.75)
     //
-    // If default is pass_at_n:desc → M-X must be LAST.
+    // If default is auc_2:desc → M-X must be LAST.
     // If default were avg_score:desc → M-X would be in the top 2 (tied with opus).
     await env.DB.batch([
       env.DB.prepare(
@@ -728,20 +731,21 @@ describe("GET /api/v1/leaderboard", () => {
       ),
     ]);
 
-    // No sort param → must use default (pass_at_n:desc).
+    // No sort param → must use default (auc_2:desc).
     const res = await SELF.fetch('https://x/api/v1/leaderboard?_cb=default-sort');
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
-    // filters.sort must reflect the default pass_at_n value.
+    // filters.sort must reflect the default auc_2 value.
     const filters = (body as Record<string, unknown>).filters as Record<string, unknown>;
-    expect(filters.sort).toBe('pass_at_n');
+    expect(filters.sort).toBe('auc_2');
 
-    // M-X has pass_at_n=0.5 (1 of 2 tasks passed) → must sort AFTER sonnet/opus
-    // which each have pass_at_n=1.0. Under avg_score:desc, M-X would tie opus at 1.0.
+    // M-X has lower auc_2 than sonnet/opus (only 1 of 2 tasks passed, all at attempt 1
+    // → pass_at_1=0.5, pass_at_n=0.5 → auc_2=0.5 vs 1.0 for others).
+    // Under avg_score:desc, M-X would tie opus at 1.0.
     const slugs = body.data.map((r) => (r.model as Record<string, unknown>).slug);
     const mxPos = slugs.indexOf('m-x');
     expect(mxPos).toBeGreaterThan(-1);
-    // sonnet and opus both have pass_at_n=1.0 and must precede M-X.
+    // sonnet and opus both have auc_2=1.0 and must precede M-X.
     const sonnetPos = slugs.indexOf('sonnet-4.7');
     const opusPos = slugs.indexOf('opus-4.7');
     expect(sonnetPos).toBeLessThan(mxPos);
@@ -828,6 +832,26 @@ describe("GET /api/v1/leaderboard", () => {
     expect(body.code).toBe("invalid_set_for_metric");
     expect(typeof body.error).toBe("string");
     expect((body.error as string).length).toBeGreaterThan(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Task 5 — auc_2 default sort + whitelist
+  // ---------------------------------------------------------------------------
+
+  it('defaults to auc_2:desc when no sort param is supplied', async () => {
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?set=current&_cb=t5-default');
+    const body = await res.json() as Record<string, unknown>;
+    const filters = body.filters as Record<string, unknown>;
+    expect(filters.sort).toBe('auc_2');
+    expect(filters.direction).toBe('desc');
+  });
+
+  it('accepts ?sort=auc_2:asc as a known sort', async () => {
+    const res = await SELF.fetch('https://x/api/v1/leaderboard?set=current&sort=auc_2:asc&_cb=t5-asc');
+    const body = await res.json() as Record<string, unknown>;
+    const filters = body.filters as Record<string, unknown>;
+    expect(filters.sort).toBe('auc_2');
+    expect(filters.direction).toBe('asc');
   });
 
   // ---------------------------------------------------------------------------

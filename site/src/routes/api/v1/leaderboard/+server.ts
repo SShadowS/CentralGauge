@@ -119,9 +119,10 @@ function parseQuery(url: URL): LeaderboardQuery {
   // Server only acts on whitelisted values; unknown sorts fall through to the
   // default `pass_at_n` ORDER BY (no 400). Default sort flipped from `avg_score`
   // to `pass_at_n` per PR1 spec.
-  const sortRaw = url.searchParams.get('sort') ?? 'pass_at_n:desc';
+  const sortRaw = url.searchParams.get('sort') ?? 'auc_2:desc';
   const [sortFieldRaw, sortDirRaw = 'desc'] = sortRaw.split(':');
   const knownSorts = [
+    'auc_2',
     'pass_at_n',
     'pass_at_1',
     'avg_score',
@@ -132,7 +133,7 @@ function parseQuery(url: URL): LeaderboardQuery {
   type KnownSort = (typeof knownSorts)[number];
   const sort: KnownSort = (knownSorts as readonly string[]).includes(sortFieldRaw)
     ? (sortFieldRaw as KnownSort)
-    : 'pass_at_n';
+    : 'auc_2';
   const direction: 'asc' | 'desc' = sortDirRaw === 'asc' ? 'asc' : 'desc';
 
   const limitRaw = url.searchParams.get('limit');
