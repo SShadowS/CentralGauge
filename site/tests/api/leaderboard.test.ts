@@ -142,6 +142,7 @@ describe("LeaderboardRow — contract completeness", () => {
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
     // PR2.1: removed pass_at_n_per_attempted (deprecated alias).
     // Task 3: added auc_2, repair_rate (emitted by row mapper).
+    // Task 12: added tier (attached when sort=auc_2, which is the default).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -156,6 +157,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "pass_at_1",
       "auc_2",
       "repair_rate",
+      "tier",
       "denominator",
       "latency_p95_ms",
       "pass_rate_ci",
@@ -869,5 +871,25 @@ describe("GET /api/v1/leaderboard", () => {
       const body = await res.json() as { code?: string };
       expect(body.code).toBe("invalid_tier");
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Task 12 — attach paired-bootstrap tier numbers on auc_2 sort
+  // ---------------------------------------------------------------------------
+  it("annotates rows with a 1-based tier when sorted by auc_2 on a concrete set", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=auc_2:desc&_cb=t12-tier");
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.data.every((r) => typeof r.tier === "number" && (r.tier as number) >= 1)).toBe(true);
+  });
+
+  it("rows sorted by non-auc_2 field do not include a tier annotation", async () => {
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=pass_at_n:desc&_cb=t12-notier");
+    expect(res.status).toBe(200);
+    const body = await res.json() as { data: Array<Record<string, unknown>> };
+    expect(body.data.length).toBeGreaterThan(0);
+    // Tier must be absent (undefined → missing key, or explicitly undefined)
+    expect(body.data.every((r) => r.tier === undefined)).toBe(true);
   });
 });

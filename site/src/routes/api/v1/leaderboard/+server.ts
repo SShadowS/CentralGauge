@@ -9,6 +9,7 @@ import { ApiError, errorResponse } from '$lib/server/errors';
 import { ServerTimer } from '$lib/server/server-timing';
 import { isValidTaskSetHash } from '$lib/shared/task-set-hash';
 import { CACHE_VERSION } from '$lib/server/cache-version';
+import { getTierMap } from '$lib/server/tier-data';
 
 const CACHE_TTL_SECONDS = 60;
 
@@ -50,6 +51,43 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     if (!payload) {
       const timer = new ServerTimer();
       const rows = await computeLeaderboard(env.DB, q, timer);
+
+      // Attach paired-bootstrap tier numbers when sorted by auc_2 and a
+      // concrete task-set hash is resolvable. Tiers are a presentational
+      // enhancement; failures MUST NOT break the leaderboard response.
+      if (q.sort === 'auc_2' && rows.length > 0) {
+        try {
+          // Resolve the concrete hash: use q.set directly when it is a valid
+          // 64-char hash; otherwise query D1 for the current task-set hash.
+          let resolvedHash: string | null = null;
+          if (isValidTaskSetHash(q.set)) {
+            resolvedHash = q.set;
+          } else if (q.set === 'current') {
+            const row = await env.DB
+              .prepare(`SELECT hash FROM task_sets WHERE is_current = 1 LIMIT 1`)
+              .first<{ hash: string }>();
+            resolvedHash = row?.hash ?? null;
+          }
+          if (resolvedHash) {
+            // Freshness token: max last_run_at across visible rows so a new
+            // ingest that changes rankings also busts the tier cache.
+            const freshness = rows.reduce(
+              (acc, r) => (r.last_run_at > acc ? r.last_run_at : acc),
+              '',
+            );
+            const tierMap = await getTierMap(
+              env.DB,
+              { taskSetHash: resolvedHash, metric: 'auc_2' },
+              freshness,
+            );
+            for (const r of rows) r.tier = tierMap.get(r.model.slug);
+          }
+        } catch {
+          // Tier attach is non-fatal: leave tier undefined on all rows.
+          // Typical failure: caches.open() unavailable in some CF edge contexts.
+        }
+      }
+
       payload = {
         data: rows,
         next_cursor: null, // single page at P1; keyset paging added in P2

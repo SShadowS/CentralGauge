@@ -138,6 +138,13 @@
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row, i (row.model.slug)}
         {@const denom = row.denominator ?? row.tasks_attempted_distinct}
+        {#if row.tier !== undefined && i > 0 && row.tier !== rows[i - 1].tier}
+          <tr class="tier-divider" data-test="tier-divider">
+            <td colspan="100" title="Ranks within a tier are not statistically distinguishable at this sample size.">
+              Tier {row.tier}
+            </td>
+          </tr>
+        {/if}
         <tr>
           <td class="rank text-mono">{row.rank}</td>
           <th scope="row">
@@ -207,6 +214,7 @@
   tbody tr:last-child td,
   tbody tr:last-child th { border-bottom: 0; }
   tbody tr:hover { background: var(--surface); }
+  .tier-divider td { padding: 0.3rem 0.6rem; font-size: var(--text-sm); color: var(--text-muted); background: var(--surface-elevated); border-top: 2px solid var(--border); }
   .rank { width: 48px; color: var(--text-muted); }
   .score { white-space: nowrap; }
   .ci { white-space: nowrap; color: var(--text-muted); font-size: var(--text-xs); }

@@ -274,4 +274,33 @@ describe('LeaderboardTable', () => {
     const b = render(LeaderboardTable, { props: { rows, sort: 'pass_at_n:desc' } });
     expect(b.container.querySelector('td.score')?.textContent?.trim()).toBe('90.0');
   });
+
+  // ---------------------------------------------------------------------------
+  // Task 12 — tier divider rows
+  // ---------------------------------------------------------------------------
+
+  it('renders a tier divider row between tier 1 and tier 2', () => {
+    const tierRows = [
+      makeRow({ slug: 'a', auc_2: 0.9, tier: 1 }),
+      makeRow({ slug: 'b', auc_2: 0.88, tier: 1 }),
+      makeRow({ slug: 'c', auc_2: 0.7, tier: 2 }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(1);
+  });
+
+  it('renders no tier dividers when rows have no tier field', () => {
+    const { container } = render(LeaderboardTable, { props: { rows: sampleRows, sort: 'auc_2:desc' } });
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(0);
+  });
+
+  it('renders two tier dividers for three distinct tiers', () => {
+    const tierRows = [
+      makeRow({ slug: 'a', auc_2: 0.9, tier: 1 }),
+      makeRow({ slug: 'b', auc_2: 0.7, tier: 2 }),
+      makeRow({ slug: 'c', auc_2: 0.5, tier: 3 }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(2);
+  });
 });
