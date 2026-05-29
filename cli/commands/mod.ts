@@ -18,6 +18,7 @@ export { registerPopulateShortcomingsCommand } from "./populate-shortcomings-com
 export { registerPopulateTaskSetCommand } from "./populate-task-set-command.ts";
 export { registerReportCommand } from "./report-command.ts";
 export { registerRulesCommand } from "./rules-command.ts";
+export { analyzeCommand } from "./analyze/mod.ts";
 export { registerReportDbCommand } from "./report-db-command.ts";
 export { registerStatsCommands } from "./stats-command.ts";
 export { registerStatusCommand } from "./status-command.ts";

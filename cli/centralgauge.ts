@@ -19,6 +19,7 @@ import { SplashScreen } from "../src/utils/splash-screen.ts";
 
 // Command registration functions
 import {
+  analyzeCommand,
   registerAgentsCommand,
   registerBenchCommand,
   registerClusterReviewCommand,
@@ -123,6 +124,7 @@ registerTaskSetCommand(cliAny);
 registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
+cliAny.command("analyze", analyzeCommand);
 
 // `lifecycle` parent — hosts the operator triage subcommands. Wave 4
 // scaffolded the parent for `cluster-review`; Wave 5 (Plan H) adds
