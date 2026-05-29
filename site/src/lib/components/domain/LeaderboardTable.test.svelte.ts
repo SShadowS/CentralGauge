@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import LeaderboardTable from './LeaderboardTable.svelte';
 import type { LeaderboardRow } from '$shared/api-types';
 
@@ -101,15 +101,17 @@ describe('LeaderboardTable', () => {
 
   it('emits sort change when a sortable header is clicked', async () => {
     let sort = 'avg_score:desc';
-    render(LeaderboardTable, {
+    const { container } = render(LeaderboardTable, {
       rows,
       sort,
       onsort: (next: string) => {
         sort = next;
       },
     });
-    // "Avg score" header sorts by avg_score (renamed from "Avg attempt")
-    const avgBtn = screen.getByRole('button', { name: /avg score/i });
+    // "Avg score" header sorts by avg_score (renamed from "Avg attempt").
+    // Scope to thead to avoid collision with the same-label toggle button.
+    const thead = container.querySelector('thead')!;
+    const avgBtn = within(thead).getByRole('button', { name: /avg score/i });
     await fireEvent.click(avgBtn);
     expect(sort).toBe('avg_score:asc');
   });
@@ -254,5 +256,22 @@ describe('LeaderboardTable', () => {
     const { getByText } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
     expect(getByText('80.0')).toBeInTheDocument(); // headline = auc_2*100
     expect(getByText('66.7%')).toBeInTheDocument(); // repair column
+  });
+
+  it('toggling the headline metric calls onsort with the chosen field', async () => {
+    const onsort = vi.fn();
+    const rows = [makeRow({ slug: 'm', auc_2: 0.8, pass_at_1: 0.7, pass_at_n: 0.9, avg_score: 84 })];
+    const { getByRole } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc', onsort } });
+    await fireEvent.click(getByRole('button', { name: /first-try/i }));
+    expect(onsort).toHaveBeenCalledWith('pass_at_1:desc');
+  });
+
+  it('headline cell reflects the active metric', () => {
+    const rows = [makeRow({ slug: 'm', auc_2: 0.8, pass_at_n: 0.9, pass_at_1: 0.7, avg_score: 84 })];
+    const a = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
+    expect(a.container.querySelector('td.score')?.textContent?.trim()).toBe('80.0');
+    a.unmount();
+    const b = render(LeaderboardTable, { props: { rows, sort: 'pass_at_n:desc' } });
+    expect(b.container.querySelector('td.score')?.textContent?.trim()).toBe('90.0');
   });
 });

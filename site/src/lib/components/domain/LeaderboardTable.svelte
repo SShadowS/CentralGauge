@@ -28,9 +28,33 @@
     if (sortField !== field) return 'none';
     return sortDir === 'asc' ? 'ascending' : 'descending';
   }
+
+  function headlineValue(row: LeaderboardRow): string {
+    switch (sortField) {
+      case 'pass_at_1': return ((row.pass_at_1 ?? 0) * 100).toFixed(1);
+      case 'pass_at_n': return ((row.pass_at_n ?? 0) * 100).toFixed(1);
+      case 'avg_score': return formatScore(row.avg_score);
+      default: return ((row.auc_2 ?? 0) * 100).toFixed(1);
+    }
+  }
 </script>
 
 <div class="wrap">
+  <div class="metric-toggle" role="group" aria-label="Headline metric">
+    {#each [
+      { field: 'auc_2', label: 'Solve AUC@2' },
+      { field: 'pass_at_1', label: 'First-try' },
+      { field: 'pass_at_n', label: 'Best-of-2' },
+      { field: 'avg_score', label: 'Avg score' },
+    ] as opt}
+      <button
+        class="seg"
+        class:active={sortField === opt.field}
+        aria-pressed={sortField === opt.field}
+        onclick={() => clickSort(opt.field)}
+      >{opt.label}</button>
+    {/each}
+  </div>
   <table>
     <caption class="sr-only">Leaderboard</caption>
     <thead>
@@ -124,7 +148,7 @@
               family_slug={row.family_slug}
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
-          <td class="score text-mono">{((row.auc_2 ?? 0) * 100).toFixed(1)}</td>
+          <td class="score text-mono">{headlineValue(row)}</td>
           <td class="th-avg-attempt text-mono">{formatScore(row.avg_score)}</td>
           <td class="th-best-of-2 text-mono">{((row.pass_at_n ?? 0) * 100).toFixed(1)}</td>
           <td
@@ -163,6 +187,9 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-2);
   }
+  .metric-toggle { display: flex; gap: 0; margin-bottom: var(--space-3); padding: var(--space-3); border-bottom: 1px solid var(--border); }
+  .metric-toggle .seg { padding: 0.25rem 0.6rem; border: 1px solid var(--border); background: transparent; cursor: pointer; color: var(--text); font-size: var(--text-sm); }
+  .metric-toggle .seg.active { background: var(--surface-elevated); font-weight: var(--weight-semi); }
   table {
     width: 100%;
     border-collapse: collapse;
