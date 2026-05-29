@@ -212,7 +212,23 @@ Re-run when bench run 3 lands; diff which tasks flipped.
     hydration-race, NOT from this branch).
   - Reviews: T7 + T12 got dedicated code-reviewer subagents (both APPROVED);
     hash-resolution consistency for tiers confirmed SAME as computeLeaderboard.
-  - NEXT (not yet done): final whole-branch review; full `test:main` +
-    `test:build` re-run (see §5); then MANUAL deploy `cd site && npm run deploy`
-    — GATED on owner go/no-go. Bench run 3 + leaderboard-visibility flip
-    (`POST /admin/catalog/task-sets {set_current}`) are separate follow-ups.
+  - Final whole-branch review (opus) → HOLD(light): 2 Important findings, fixed.
+- 2026-05-30 (cont.): FINAL HARDENING. Full `test:main` caught 6 real failures
+  the per-task runs missed — fixed, root causes:
+  - **canonicalJSON 500 (4 tests)**: Task 12 set `r.tier = tierMap.get(slug)` =
+    `undefined` for a leaderboard-visible model absent from the AUC matrix; the
+    explicit undefined key made canonicalJSON (ETag/signing) throw → 500 on the
+    endpoint. Guarded to omit the key (commit `1591737`). This was a real prod
+    bug, NOT pre-existing flakiness (Task 8 was green pre-Task-12).
+  - **cache _cv (2 tests)**: my Task 13 v3→v4 bump broke tests hardcoding
+    `_cv=v3`; now import `CACHE_VERSION` (commit `1591737`).
+  - Final-review fixes (commit `d14ccf5`): I-1 defensive tier dividers
+    (max-tier watermark + non-monotonic test); I-2 `/about#scoring` glossary
+    rewritten for AUC@2/repair_rate/tiers; M-1/M-3 stale comments + error msg.
+  - `rum-beacon-emit.test.ts` fails only under full-suite WebSocket-disconnect
+    load; passes isolated; NOT our branch (unrelated RUM feature). Known flaky.
+  - STATE: `test:main` 778+446 green, `test:build` 6/6 green. e2e re-run in
+    progress (UI changed since Task 8). Pending: e2e confirm + MANUAL deploy
+    `cd site && npm run deploy` — GATED on owner go/no-go. Separate follow-ups:
+    bench run 3, leaderboard-visibility flip
+    (`POST /admin/catalog/task-sets {set_current}`).
