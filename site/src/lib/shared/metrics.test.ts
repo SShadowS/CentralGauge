@@ -103,3 +103,21 @@ describe('METRICS registry', () => {
     }
   });
 });
+
+describe('auc_2 + repair_rate registry entries', () => {
+  it('defines auc_2 as a rate and marks it the primary ranking metric', () => {
+    const m = METRICS.auc_2;
+    expect(m).toBeDefined();
+    expect(m.id).toBe('auc_2');
+    expect(m.unit).toBe('rate');
+    expect(m.when.toLowerCase()).toContain('primary');
+  });
+
+  it('defines repair_rate as a rate', () => {
+    expect(METRICS.repair_rate?.unit).toBe('rate');
+  });
+
+  it('demotes pass_at_n: no longer claims to be the primary ranking metric', () => {
+    expect(METRICS.pass_at_n.when.toLowerCase()).not.toContain('primary ranking metric');
+  });
+});

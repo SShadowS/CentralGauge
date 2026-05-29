@@ -54,7 +54,7 @@ export const METRICS: Record<string, MetricDef> = {
     label: 'Pass rate',
     short: 'Tasks solved / tasks in scope, up to 2 attempts (strict per-set denominator).',
     formula: '(tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / task_set_size',
-    when: 'Includes unattempted tasks as failures. Scope-aware; reflects active filters (set, category, difficulty). Primary ranking metric.',
+    when: 'Includes unattempted tasks as failures. Scope-aware; reflects active filters (set, category, difficulty). Final assisted solve rate with up to 2 attempts; drill-down companion to Solve AUC@2.',
     unit: 'rate',
     link: { href: 'https://arxiv.org/abs/2107.03374', text: 'HumanEval paper (Chen et al., 2021)' },
   },
@@ -65,6 +65,24 @@ export const METRICS: Record<string, MetricDef> = {
     short: 'Tasks solved on the first attempt / tasks in scope (strict).',
     formula: 'tasks_passed_attempt_1 / task_set_size',
     when: 'Measures single-shot accuracy without retry credit. Useful when comparing models where the second attempt is not available.',
+    unit: 'rate',
+  },
+
+  auc_2: {
+    id: 'auc_2',
+    label: 'Solve AUC@2',
+    short: 'Attempt-adjusted solve rate: first-try solve = 1.0, second-attempt-only = 0.5.',
+    formula: '(pass_at_1 + pass_at_n) / 2 = (2·tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / (2·task_set_size)',
+    when: 'Primary ranking metric. Rewards first-try correctness over fail-then-repair without ignoring the two-attempt protocol. De-saturates the headline that pass_at_n compresses. Significance via paired bootstrap (tier bands), not Wilson.',
+    unit: 'rate',
+  },
+
+  repair_rate: {
+    id: 'repair_rate',
+    label: 'Repair rate',
+    short: 'Share of first-attempt failures the model fixed on attempt 2.',
+    formula: '(pass_at_n − pass_at_1) / (1 − pass_at_1); defined as 0 when pass_at_1 = 1.',
+    when: 'Conditional recovery skill: high = good at reading compiler/test errors and patching. Profile column, not a ranking metric.',
     unit: 'rate',
   },
 
