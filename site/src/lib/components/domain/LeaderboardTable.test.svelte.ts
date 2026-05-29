@@ -6,12 +6,6 @@ import type { LeaderboardRow } from '$shared/api-types';
 function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): LeaderboardRow {
   return {
     rank: 1,
-    model: {
-      slug: overrides.slug,
-      display_name: overrides.slug,
-      api_model_id: overrides.slug,
-      settings_suffix: '',
-    },
     family_slug: 'test',
     run_count: 1,
     tasks_attempted: 1,
@@ -197,14 +191,14 @@ describe('LeaderboardTable', () => {
     expect(aucHeader?.getAttribute('aria-sort')).toBe('descending');
   });
 
-  it('renders Score column from pass_at_n strict (1 decimal)', async () => {
+  it('Best-of-2 column renders pass_at_n * 100 (1 decimal)', async () => {
     const rowsFixture: LeaderboardRow[] = [
       {
         ...sampleRows[0],
         pass_at_n: 0.732,
       },
     ];
-    const { container } = render(LeaderboardTable, { rows: rowsFixture, sort: 'pass_at_n:desc' });
+    const { container } = render(LeaderboardTable, { rows: rowsFixture, sort: 'auc_2:desc' });
     expect(container.textContent).toContain('73.2');
   });
 
