@@ -51,6 +51,25 @@ describe('HeroChart', () => {
     expect(rankedTexts).toEqual(['C', 'A', 'B']);
   });
 
+  it('tiebreaks equal pass rates by pass_at_1 despite float rounding (96/110 split differently)', () => {
+    // Regression: score was summed as two separate divisions
+    // (a1/d*100 + a2/d*100), so 96/110 split 78+18 vs 69+27 produced a
+    // ~1.4e-14 float difference that pre-empted the pass_at_1 tiebreak and
+    // mis-ranked the higher-pass_at_1 model second.
+    // Opus: 78 first-try + 18 retry = 96/110, pass_at_1 = 0.709
+    // Sonnet: 69 first-try + 27 retry = 96/110, pass_at_1 = 0.627
+    // Both 87.3% => Opus must rank first on the higher pass_at_1.
+    const rows: LeaderboardRow[] = [
+      makeRow({ slug: 'anthropic/claude-sonnet-4-6', display_name: 'Sonnet', pass_at_n: 96 / 110, pass_at_1: 69 / 110, denominator: 110, tasks_passed_attempt_1: 69, tasks_passed_attempt_2_only: 27, tasks_attempted_distinct: 110 }),
+      makeRow({ slug: 'anthropic/claude-opus-4-6', display_name: 'Opus', pass_at_n: 96 / 110, pass_at_1: 78 / 110, denominator: 110, tasks_passed_attempt_1: 78, tasks_passed_attempt_2_only: 18, tasks_attempted_distinct: 110 }),
+    ];
+    const { container } = render(HeroChart, { rows, generatedAt: '2026-05-06T00:00:00Z' });
+    const rankedTexts = Array.from(
+      container.querySelectorAll('.bar-row .bar-model'),
+    ).map((el) => el.textContent?.trim());
+    expect(rankedTexts).toEqual(['Opus', 'Sonnet']);
+  });
+
   it('tiebreaks by slug when score and pass_at_1 are equal', () => {
     // Both rows: 7/10, p1=7 => score=70, pass_at_1=0.7
     // Alpha < Beta => Alpha first

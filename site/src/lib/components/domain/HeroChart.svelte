@@ -27,9 +27,13 @@
   function segs(r: LeaderboardRow): Segs {
     const d = r.denominator || 0;
     if (d === 0) return { p1: 0, p2: 0, score: 0 };
+    // Compute score from a single division of the combined numerator. Summing
+    // two separate divisions (a1/d + a2/d) drifts by ~1e-14, which silently
+    // pre-empts the pass_at_1 tiebreak below and mis-ranks tied models.
     const p1 = (r.tasks_passed_attempt_1 / d) * 100;
-    const p2 = (r.tasks_passed_attempt_2_only / d) * 100;
-    return { p1, p2, score: p1 + p2 };
+    const score = ((r.tasks_passed_attempt_1 + r.tasks_passed_attempt_2_only) / d) * 100;
+    const p2 = score - p1;
+    return { p1, p2, score };
   }
 
   const top = $derived(
