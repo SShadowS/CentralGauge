@@ -98,7 +98,18 @@ export async function getTierMap(
   freshnessToken: string,
 ): Promise<Map<string, number>> {
   const cache = await caches.open('cg-tiers');
-  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/${CACHE_VERSION}/${encodeURIComponent(freshnessToken)}`;
+  // Fold the task-catalog count into the key. The freshness token is derived
+  // from last_run_at, which does NOT change when the `tasks` table is
+  // backfilled (e.g. via `populate-task-set` after a bench whose tasks weren't
+  // yet in the catalog). Without this, a tier result computed while the catalog
+  // was empty (→ no tiers) would be served stale for the 24h TTL even after
+  // backfill. The count flips 0→N on backfill, busting the key.
+  const countRow = await db
+    .prepare(`SELECT COUNT(*) AS n FROM tasks WHERE task_set_hash = ?`)
+    .bind(opts.taskSetHash)
+    .first<{ n: number }>();
+  const taskCount = countRow?.n ?? 0;
+  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;
   const hit = await cache.match(keyUrl);
   if (hit) {
     const cached = (await hit.json()) as TierResult[];
