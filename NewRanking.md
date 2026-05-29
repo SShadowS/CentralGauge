@@ -1,9 +1,11 @@
 # NewRanking.md — Headline metric overhaul: Solve AUC@2 + tier bands
 
-**Status:** PLANNING (no code written yet)
+**Status:** IMPLEMENTED on branch `feat/newranking-auc2-tiers` — all 15 code
+tasks done + green; pending final whole-branch review + manual deploy (gated on
+owner go/no-go). See §8 progress log for commit SHAs.
 **Owner:** Torben
 **Created:** 2026-05-29
-**Last updated:** 2026-05-29
+**Last updated:** 2026-05-30
 **Implementation plan (TDD, bite-sized, resumable):**
 `docs/superpowers/plans/2026-05-29-newranking-auc2-tiers.md` — execute that
 task-by-task; this file (§4 checklist) is the high-level tracker.
@@ -90,6 +92,15 @@ The infra is ~90% present. Confirmed facts:
 - `cache-version.ts:10` currently `CACHE_VERSION = 'v3'`.
 
 ## 4. Plan by phase (file-precise)
+
+> **IMPLEMENTATION COMPLETE (2026-05-30).** All phases below shipped on
+> `feat/newranking-auc2-tiers`. Boxes left unchecked are historical planning
+> detail; the authoritative record of what landed (with commit SHAs and any
+> deviations from the original sketch) is the **§8 progress log**. Notable
+> deviation: tiers are attached in the API endpoint (`+server.ts`), not
+> `+page.server.ts`, and the engine signature is
+> `computeTiers(input, {seed, iterations, alpha})` with `buildAucMatrix` /
+> `getTierMap` split into `tier-data.ts`.
 
 ### Phase 1 — ship the AUC@2 headline (cheap, independently shippable)
 - [ ] `site/src/lib/shared/metrics.ts`: add `auc_2` MetricDef (label
@@ -187,3 +198,21 @@ Re-run when bench run 3 lands; diff which tasks flipped.
 - 2026-05-29: TDD implementation plan written to
   `docs/superpowers/plans/2026-05-29-newranking-auc2-tiers.md` (15 tasks, 4
   phases). Next: `git checkout -b feat/newranking-auc2-tiers`, execute Task 1.
+- 2026-05-30: ALL 15 TASKS IMPLEMENTED via subagent-driven development on
+  `feat/newranking-auc2-tiers`, each TDD + reviewed. Commit SHAs:
+  - T1 metric defs `3aae46a`; T2 API types `4d225d6`; T3 row mapper `7a14849`;
+    T4 AUC SQL sort `e66042e`; T5 API default→auc_2 `4016232`;
+    T6 page+hero sort `43d058b`; T7 headline column `b2e9966` (+fix `64c1b01`);
+    T8 e2e/cheat sweep `7c89a39`; T9 metric toggle `37993c4`;
+    T10 tiering engine `0fd1fdb`; T11 AUC matrix+cache `1e67595`;
+    T12 tiers+dividers `e066c3d` (+log fix `0377454`); T13 cache v4 `8062f03`;
+    T14 OG cards `b26b6db` (+guard `e6130b3`); T15 docs (this commit).
+  - Phase 1 unit/server/build suite green (767 + 440 tests). e2e 133 pass /
+    14 skip / 3 PRE-EXISTING flaky (compare, limitations, models-index —
+    hydration-race, NOT from this branch).
+  - Reviews: T7 + T12 got dedicated code-reviewer subagents (both APPROVED);
+    hash-resolution consistency for tiers confirmed SAME as computeLeaderboard.
+  - NEXT (not yet done): final whole-branch review; full `test:main` +
+    `test:build` re-run (see §5); then MANUAL deploy `cd site && npm run deploy`
+    — GATED on owner go/no-go. Bench run 3 + leaderboard-visibility flip
+    (`POST /admin/catalog/task-sets {set_current}`) are separate follow-ups.

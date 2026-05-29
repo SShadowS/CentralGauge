@@ -220,13 +220,22 @@ would otherwise re-precheck).
   7+ rows hits 429; retry after ~60 s pause.
 - `task_sets.is_current = 1` is required for leaderboard visibility. Admin
   task-sets endpoint accepts `set_current: true` to flip it atomically.
-- Leaderboard headline metric is **`pass_at_n`** (strict per-set: tasks
-  solved / tasks in scope, with up to 2 attempts). Aligns with local
-  bench summary's "Score" column. `avg_score` (per-attempt mean) is
-  retained as a drill-down column. Pre-PR1 readers may have stored URLs
-  using `pass_at_n` with the per-attempted denominator; that field is
-  now exposed under `pass_at_n_per_attempted` (deprecated; removed in
-  PR2).
+- Leaderboard headline metric is **`auc_2`** (Solve AUC@2 =
+  `(pass_at_1 + pass_at_n) / 2`; first-try solve scores 1.0,
+  second-attempt-only 0.5, unsolved 0). It de-saturates the old
+  `pass_at_n` headline, which compressed top models into overlapping CIs
+  at n=110. `pass_at_n` is retained as a "Best-of-2" profile column;
+  `pass_at_1` ("First-try"), `repair_rate`, and `avg_score` are also
+  columns. A metric toggle switches headline/sort between AUC@2 /
+  First-try / Best-of-2 / Avg score. Default sort is `auc_2:desc`
+  (API + page). Significance is shown as **paired-bootstrap tier bands**
+  (`site/src/lib/server/tiers.ts` + `tier-data.ts`), NOT marginal Wilson
+  CI — models in the same tier are not statistically distinguishable.
+  Tier attach is gated on `sort=auc_2` + a concrete task-set hash and is
+  non-fatal (presentational only). `pass_at_n` is still the local bench
+  summary's "Score" column. Pre-PR1 readers may have stored URLs using
+  `pass_at_n` with the per-attempted denominator; that field is now
+  exposed under `pass_at_n_per_attempted` (deprecated; removed in PR2).
 - `set=all` is no longer accepted on `/api/v1/leaderboard` - strict
   pass rate has no well-defined denominator across multiple sets.
   Use `set=current` or a specific 64-char hash. Returns `400
