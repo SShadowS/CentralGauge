@@ -266,6 +266,22 @@ describe('LeaderboardTable', () => {
     expect(onsort).toHaveBeenCalledWith('pass_at_1:desc');
   });
 
+  it('each metric-toggle button has a layman hover tooltip', () => {
+    const rows = [makeRow({ slug: 'm', auc_2: 0.8, pass_at_1: 0.7, pass_at_n: 0.9, avg_score: 84 })];
+    const { container } = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });
+    const segs = Array.from(
+      container.querySelectorAll('.metric-toggle .seg'),
+    ) as HTMLButtonElement[];
+    expect(segs.length).toBe(4);
+    // Every toggle option must carry a non-empty plain-language title (hover).
+    for (const seg of segs) {
+      expect(seg.getAttribute('title')?.length ?? 0).toBeGreaterThan(0);
+    }
+    // The jargon label "Solve AUC@2" must be explained in its tooltip.
+    const auc = segs.find((s) => s.textContent?.includes('Solve AUC@2'))!;
+    expect(auc.getAttribute('title')).toMatch(/first try/i);
+  });
+
   it('headline cell reflects the active metric', () => {
     const rows = [makeRow({ slug: 'm', auc_2: 0.8, pass_at_n: 0.9, pass_at_1: 0.7, avg_score: 84 })];
     const a = render(LeaderboardTable, { props: { rows, sort: 'auc_2:desc' } });

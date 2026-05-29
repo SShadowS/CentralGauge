@@ -60,15 +60,17 @@
 <div class="wrap">
   <div class="metric-toggle" role="group" aria-label="Headline metric">
     {#each [
-      { field: 'auc_2', label: 'Solve AUC@2' },
-      { field: 'pass_at_1', label: 'First-try' },
-      { field: 'pass_at_n', label: 'Best-of-2' },
-      { field: 'avg_score', label: 'Avg score' },
+      { field: 'auc_2', label: 'Solve AUC@2', hint: 'Overall skill score: full credit for solving a task on the first try, half credit if it takes a second attempt.' },
+      { field: 'pass_at_1', label: 'First-try', hint: 'How often the model solves a task on its first attempt.' },
+      { field: 'pass_at_n', label: 'Best-of-2', hint: 'How often the model eventually solves a task, allowed up to two attempts.' },
+      { field: 'avg_score', label: 'Avg score', hint: 'Average partial-credit score per attempt (0–100), including failed tries.' },
     ] as opt}
       <button
         class="seg"
         class:active={sortField === opt.field}
         aria-pressed={sortField === opt.field}
+        title={opt.hint}
+        aria-label={`${opt.label}: ${opt.hint}`}
         onclick={() => clickSort(opt.field)}
       >{opt.label}</button>
     {/each}
