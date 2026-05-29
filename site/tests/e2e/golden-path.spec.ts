@@ -9,9 +9,9 @@ test.describe("golden path", () => {
     await expect(page.getByRole("heading", { level: 1, name: /CentralGauge/i }))
       .toBeVisible();
 
-    // 2. Sort by score (ScoreCell is an <h2 sr-only>; the sort button is a
-    // <button> with text "Score" — use scoreless heading filter to disambiguate).
-    await page.getByRole("button", { name: /^Score/ }).first().click();
+    // 2. Sort by Solve AUC@2 (the headline column button; text starts "Solve AUC@2").
+    // Anchored to data-test="auc-2-header" to avoid matching "Avg score" button.
+    await page.locator("[data-test='auc-2-header'] button").click();
     await expect(page).toHaveURL(/sort=/);
 
     // 3. Filter via family (URL param). The seed fixture doesn't insert

@@ -38,16 +38,16 @@ test.describe("landing page rank order parity", () => {
     expect(trim(heroNames)).toEqual(trim(tableNames));
   });
 
-  test("default sort is pass_at_n descending (Score column shows descending indicator)", async ({
+  test("default sort is auc_2 descending (Solve AUC@2 column shows descending indicator)", async ({
     page,
   }) => {
     await page.goto("/", { waitUntil: "networkidle" });
 
-    // The Score column header cell carries data-test="pass-at-n-header" and
+    // The Solve AUC@2 column header cell carries data-test="auc-2-header" and
     // aria-sort reflecting the active sort direction. Default sort is
-    // pass_at_n:desc (both API and page server agree on this default).
-    const scoreHeader = page.locator("[data-test='pass-at-n-header']");
-    await expect(scoreHeader).toHaveAttribute("aria-sort", "descending");
+    // auc_2:desc (both API and page server agree on this default after Task 5+6).
+    const auc2Header = page.locator("[data-test='auc-2-header']");
+    await expect(auc2Header).toHaveAttribute("aria-sort", "descending");
   });
 
   test("deep link ?sort=avg_score:desc activates avg-attempt column sort descending", async ({

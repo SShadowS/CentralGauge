@@ -39,12 +39,12 @@ test.describe.skip("CHEAT overlay (landing, desktop)", () => {
     await page.locator(".cheat-fab").click();
     await expect(page.locator(".cheat-layer")).toBeVisible();
 
-    // The Score header sits under the click-through layer. force:true bypasses
+    // The Solve AUC@2 header sits under the click-through layer. force:true bypasses
     // Playwright's actionability gate (the layer is pointer-events:none, so the
     // browser will route the click to the underlying button — but Playwright's
     // hit-test sees the layer first).
-    await page.locator('[data-test="pass-at-n-header"] button').click({ force: true });
-    await expect(page).toHaveURL(/sort=pass_at_n/);
+    await page.locator('[data-test="auc-2-header"] button').click({ force: true });
+    await expect(page).toHaveURL(/sort=auc_2/);
 
     // Overlay still present (not auto-closed by click on page underneath)
     await expect(page.locator(".cheat-fab")).toHaveAttribute("aria-pressed", "true");

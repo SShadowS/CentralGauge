@@ -10,8 +10,8 @@ export const landingAnnotations: Annotation[] = [
   {
     id: 'score-col',
     targetSelector: '[data-cheat="score-col"]',
-    body: 'Tasks solved (with up to 2 tries). The headline rank.',
-    bodyPrefix: 'Score',
+    body: 'Attempt-adjusted solve rate. Rewards first-try wins over retry wins. The headline rank.',
+    bodyPrefix: 'Solve AUC@2',
     side: 'top',
     rotation: 2,
   },

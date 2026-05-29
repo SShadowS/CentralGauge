@@ -13,17 +13,17 @@ test.describe("/", () => {
       .toBeVisible();
   });
 
-  test("sort by Score reverses order on second click", async ({ page }) => {
+  test("sort by Solve AUC@2 reverses order on second click", async ({ page }) => {
     // networkidle: sort handlers are wired during Svelte hydration, which
     // races the click under parallel load (3/5 flake observed without it).
     await page.goto("/", { waitUntil: "networkidle" });
-    // Anchor to exactly "Score" — the demoted "Avg score" column also
-    // contains "score", so a bare /score/i now matches two buttons.
-    const scoreHeader = page.getByRole("button", { name: /^score$/i });
-    await scoreHeader.click();
-    await expect(page).toHaveURL(/sort=pass_at_n%3Aasc/);
-    await scoreHeader.click();
-    await expect(page).toHaveURL(/sort=pass_at_n%3Adesc/);
+    // The headline column is now "Solve AUC@2" (data-test="auc-2-header").
+    // Default sort is auc_2:desc; first click flips to auc_2:asc, second back.
+    const auc2Header = page.locator("[data-test='auc-2-header'] button");
+    await auc2Header.click();
+    await expect(page).toHaveURL(/sort=auc_2%3Aasc/);
+    await auc2Header.click();
+    await expect(page).toHaveURL(/sort=auc_2%3Adesc/);
   });
 
   test("filter chip removal updates URL", async ({ page }) => {

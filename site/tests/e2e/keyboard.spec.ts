@@ -18,8 +18,10 @@ test.describe("keyboard", () => {
     // palette nav) attach during Svelte hydration. Default `load` fires
     // before that — keypresses arrive before listeners are wired.
     await page.goto("/", { waitUntil: "networkidle" });
-    const scoreHeader = page.getByRole("button", { name: /Score/ });
-    await scoreHeader.focus();
+    // Target the headline sort button via its stable data-test anchor
+    // (auc-2-header) so the selector is immune to column-label renames.
+    const auc2Header = page.locator("[data-test='auc-2-header'] button");
+    await auc2Header.focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/sort=/);
   });
