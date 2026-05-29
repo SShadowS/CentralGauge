@@ -38,8 +38,8 @@ export interface LeaderboardQuery {
   /**
    * A.6 sort key. All whitelist fields are sorted in SQL before LIMIT
    * (except `latency_p95_ms` which uses a TS post-sort with wide fetch because
-   * SQLite lacks PERCENTILE_CONT). Default is `pass_at_n` (flipped from
-   * `avg_score` in PR1).
+   * SQLite lacks PERCENTILE_CONT). Default is `auc_2` (Solve AUC@2 headline;
+   * flipped from avg_score to pass_at_n in PR1, then to auc_2 in newranking).
    */
   sort:
     | 'auc_2'

@@ -37,6 +37,24 @@
       default: return ((row.auc_2 ?? 0) * 100).toFixed(1);
     }
   }
+
+  // Defensive tier-divider watermark. Precomputed so the template never mutates
+  // state during render. A divider appears only when the tier strictly exceeds
+  // the highest tier seen so far AND at least one prior row has been seen — this
+  // makes dividers monotonic regardless of any tier/row-order disagreement
+  // (e.g. the tier engine ranks by mean-desc/slug while the SQL tiebreak may
+  // produce a different order for tied AUC values).
+  const dividerAt = $derived.by(() => {
+    const out: boolean[] = [];
+    let maxSeen = -Infinity;
+    for (const r of rows) {
+      const t = r.tier;
+      if (t === undefined) { out.push(false); continue; }
+      out.push(t > maxSeen && maxSeen !== -Infinity);
+      if (t > maxSeen) maxSeen = t;
+    }
+    return out;
+  });
 </script>
 
 <div class="wrap">
@@ -138,7 +156,7 @@
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row, i (row.model.slug)}
         {@const denom = row.denominator ?? row.tasks_attempted_distinct}
-        {#if row.tier !== undefined && i > 0 && row.tier !== rows[i - 1].tier}
+        {#if dividerAt[i]}
           <tr class="tier-divider" data-test="tier-divider">
             <td colspan="100" title="Ranks within a tier are not statistically distinguishable at this sample size.">
               Tier {row.tier}

@@ -303,4 +303,19 @@ describe('LeaderboardTable', () => {
     const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
     expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(2);
   });
+
+  it('non-monotonic tier sequence [tier1, tier2, tier1] renders exactly one divider', () => {
+    // Simulates a tier/row-order disagreement: the tier engine may assign tier1
+    // to a model that the SQL row order places after a tier2 model. The defensive
+    // watermark must suppress the spurious second divider.
+    const tierRows = [
+      makeRow({ slug: 'a', auc_2: 0.9, tier: 1 }),
+      makeRow({ slug: 'b', auc_2: 0.7, tier: 2 }),
+      makeRow({ slug: 'c', auc_2: 0.65, tier: 1 }), // tier goes "backwards"
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
+    // Only one divider: before the first tier-2 row. The tier-1 row at the end
+    // must NOT produce a second divider because maxSeen is already 2.
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(1);
+  });
 });

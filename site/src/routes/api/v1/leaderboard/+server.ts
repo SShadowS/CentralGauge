@@ -135,7 +135,7 @@ function parseQuery(url: URL): LeaderboardQuery {
     throw new ApiError(
       400,
       'invalid_set_for_metric',
-      'set=all is not supported for the strict pass_at_n metric. Use set=current or a specific 64-char task_set hash.',
+      'set=all is not supported: cross-set aggregation has no well-defined denominator for the strict per-set ranking metric. Use set=current or a specific 64-char task_set hash.',
     );
   }
   if (set !== 'current' && !isValidTaskSetHash(set)) {
@@ -161,13 +161,14 @@ function parseQuery(url: URL): LeaderboardQuery {
   // P7 Phase B accepts the field; SQL filter wires up in Phase C (categories).
   const category = url.searchParams.get('category')?.trim() || null;
 
-  // A.6 — sort key + direction. Format: `?sort=field:dir` (e.g. `pass_at_n:asc`).
+  // A.6 — sort key + direction. Format: `?sort=field:dir` (e.g. `auc_2:desc`).
   // The page may pass sort fields the SQL ORDER BY doesn't recognize
   // (e.g. `model:desc`, `tasks_passed:desc`, used only by the LeaderboardTable
   // header buttons for client-side affordance, not for server semantics).
   // Server only acts on whitelisted values; unknown sorts fall through to the
-  // default `pass_at_n` ORDER BY (no 400). Default sort flipped from `avg_score`
-  // to `pass_at_n` per PR1 spec.
+  // default `auc_2:desc` ORDER BY (no 400). Default is `auc_2:desc` (Solve AUC@2
+  // headline), flipped from avg_score to pass_at_n in PR1, then to auc_2 in the
+  // newranking-auc2-tiers feature.
   const sortRaw = url.searchParams.get('sort') ?? 'auc_2:desc';
   const [sortFieldRaw, sortDirRaw = 'desc'] = sortRaw.split(':');
   const knownSorts = [

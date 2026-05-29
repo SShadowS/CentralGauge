@@ -103,13 +103,27 @@
     <h2>Scoring metrics</h2>
 
     <p>
-      CentralGauge surfaces three metrics. They measure different things and may diverge for the same model.
+      CentralGauge surfaces four metrics. They measure different aspects of model performance and may diverge for the same model.
     </p>
 
-    <h3>Pass rate (<code>pass_at_n</code>)</h3>
+    <h3>Solve AUC@2 (<code>auc_2</code>) — headline ranking metric</h3>
     <p>
-      The fraction of tasks in scope the model eventually solves, with up to 2 attempts.
+      The primary ranking metric. Defined as <code>(pass_at_1 + pass_at_n) / 2</code>: a model that solves a task on the first try contributes 1.0, a model that needs the second attempt contributes 0.5, and an unsolved task contributes 0.
+    </p>
+    <p>
+      AUC@2 replaced <code>pass_at_n</code> as the headline because, at the current task-set size, top models were compressed into overlapping confidence intervals on pass_at_n — making rankings statistically indistinguishable. AUC@2 de-saturates the top of the leaderboard by rewarding first-try solves more than retry recoveries.
+    </p>
+
+    <h3>First-try pass rate (<code>pass_at_1</code>)</h3>
+    <p>
+      Fraction of tasks in scope the model solves on the first attempt.
       <strong>Strict denominator:</strong> tasks the model did not attempt count as failures.
+    </p>
+
+    <h3>Best-of-2 pass rate (<code>pass_at_n</code>)</h3>
+    <p>
+      Fraction of tasks in scope the model eventually solves with up to 2 attempts.
+      Same strict denominator as <code>pass_at_1</code>. Retained as a profile column so you can see how much a model benefits from retries.
     </p>
     <p>
       <strong>Worked example.</strong> Task set has 50 tasks. Model attempted 4 tasks and passed all 4 — pass rate = 4/50 = 8%. Not 4/4 = 100%. The strict per-set denominator punishes incomplete coverage so a partial-bench run cannot look better than a thorough one.
@@ -118,19 +132,25 @@
       The Pass@1 / Pass@2 stacked bar on each leaderboard row visualizes the per-task breakdown: green for first-try success, amber for retry-recovery, red for unsolved.
     </p>
 
-    <h3>First-try pass rate (<code>pass_at_1</code>)</h3>
+    <h3>Repair rate (<code>repair_rate</code>)</h3>
     <p>
-      Same strict denominator; numerator counts only attempt-1 successes. Used as the leaderboard's tiebreaker when two models share the same <code>pass_at_n</code>.
+      Conditional on failing the first attempt: the fraction of first-try failures the model recovers on the second attempt.
+      Formula: <code>(pass_at_n - pass_at_1) / (1 - pass_at_1)</code>. Zero when the model passes everything on the first try (nothing left to repair).
     </p>
 
     <h3>Avg attempt score (<code>avg_score</code>)</h3>
     <p>
-      Mean of <code>results.score</code> across every attempt (each task contributes up to 2 rows). Lower than <code>pass_at_n</code> because failed attempts pull the mean down. Useful as a drill-down to see partial credit, but never the default rank.
+      Mean of <code>results.score</code> across every attempt (each task contributes up to 2 rows). Lower than <code>pass_at_n</code> because failed attempts pull the mean down. Useful as a drill-down to see partial credit, but not the ranking metric.
+    </p>
+
+    <h3>Statistical tier bands</h3>
+    <p>
+      The leaderboard groups models into <strong>statistical tiers</strong> based on paired bootstrap resampling over the shared task set. Models in the same tier are not statistically distinguishable at the current sample size — the apparent ranking difference within a tier may be noise. Tier boundaries are shown as divider rows in the table.
     </p>
 
     <h3>Set selection</h3>
     <p>
-      Filters <code>set=current</code> and a specific 64-char hash are honored. <code>set=all</code> is rejected (HTTP 400) — strict pass rate is undefined across multiple sets with different denominators.
+      Filters <code>set=current</code> and a specific 64-char hash are honored. <code>set=all</code> is rejected (HTTP 400) — cross-set aggregation has no well-defined denominator for the strict per-set ranking metric.
     </p>
   </section>
 
