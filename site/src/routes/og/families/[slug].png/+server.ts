@@ -40,22 +40,29 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   const members = memberRows.results ?? [];
   const modelIds = members.map((m) => m.id);
 
-  // Compute pass_at_n strict for all family members scoped to current task set.
+  // Compute Solve AUC@2 for all family members scoped to current task set.
   const aggMap = modelIds.length > 0
     ? await computeModelAggregates(env.DB, {
       modelIds,
       taskSetHash: taskSet?.hash ?? null,
     })
-    : new Map<number, { pass_at_n: number }>();
+    : new Map<number, { pass_at_n: number; tasks_passed_attempt_1: number; tasks_passed_attempt_2_only: number }>();
 
-  // Pick the member with the highest pass_at_n; derive its display name.
+  // Pick the member with the highest auc_2; derive its display name.
+  // auc_2 = (2*p1 + p2) * pass_at_n / (2 * (p1 + p2)) (D back-derived from pass_at_n)
   let topModelDisplay = "—";
-  let topPassAtN = 0;
+  let topAuc2 = 0;
   for (const m of members) {
     const agg = aggMap.get(m.id);
-    const p = agg?.pass_at_n ?? 0;
-    if (p > topPassAtN) {
-      topPassAtN = p;
+    const p1 = agg?.tasks_passed_attempt_1 ?? 0;
+    const p2 = agg?.tasks_passed_attempt_2_only ?? 0;
+    const total = p1 + p2;
+    const passAtN = agg?.pass_at_n ?? 0;
+    const auc2 = total > 0 && passAtN > 0
+      ? (2 * p1 + p2) * passAtN / (2 * total)
+      : 0;
+    if (auc2 > topAuc2) {
+      topAuc2 = auc2;
       topModelDisplay = m.display_name;
     }
   }
@@ -71,7 +78,7 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
       vendor: fam.vendor,
       modelCount: members.length,
       topModelDisplay,
-      topPassAtN,
+      topAuc2,
     },
   });
 

@@ -38,13 +38,23 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     ).first<{ hash: string }>(),
   ]);
 
-  // 3. Compute pass_at_n strict for all models to find the leading value.
+  // 3. Compute Solve AUC@2 for all models to find the leading value.
+  //    auc_2 = (2*passedA1 + passedA2Only) / (2*D)
+  //    The strict denominator D is not directly in the aggregate, but we can
+  //    back-derive it: D = (passedA1 + passedA2Only) / pass_at_n (when > 0).
+  //    Substituting: auc_2 = (2*p1 + p2) * pass_at_n / (2 * (p1 + p2))
   const aggMap = await computeModelAggregates(env.DB, {
     taskSetHash: taskSet?.hash ?? null,
   });
-  let topPassAtN = 0;
+  let topAuc2 = 0;
   for (const agg of aggMap.values()) {
-    if (agg.pass_at_n > topPassAtN) topPassAtN = agg.pass_at_n;
+    const p1 = agg.tasks_passed_attempt_1;
+    const p2 = agg.tasks_passed_attempt_2_only;
+    const total = p1 + p2;
+    const auc2 = total > 0 && agg.pass_at_n > 0
+      ? (2 * p1 + p2) * agg.pass_at_n / (2 * total)
+      : 0;
+    if (auc2 > topAuc2) topAuc2 = auc2;
   }
 
   const out = await renderOgPng({
@@ -56,7 +66,7 @@ export const GET: RequestHandler = async ({ url, platform }) => {
       modelCount: counts?.model_count ?? 0,
       runCount: counts?.run_count ?? 0,
       lastRunAt: counts?.last_run_at ?? "1970-01-01T00:00:00Z",
-      topPassAtN,
+      topAuc2,
     },
   });
 

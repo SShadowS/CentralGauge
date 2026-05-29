@@ -68,14 +68,15 @@ export type OgPayload =
     modelCount: number;
     runCount: number;
     lastRunAt: string;
-    /** pass_at_n strict of the leading model on the current task set; 0 when unavailable. */
-    topPassAtN: number;
+    /** Solve AUC@2 of the leading model on the current task set; 0 when unavailable. */
+    topAuc2: number;
   }
   | {
     kind: "model";
     displayName: string;
     familySlug: string;
-    passAtN: number;
+    /** Solve AUC@2 for this model; 0 when unavailable. */
+    auc2: number;
     runCount: number;
   }
   | {
@@ -92,8 +93,8 @@ export type OgPayload =
     vendor: string;
     modelCount: number;
     topModelDisplay: string;
-    /** pass_at_n strict for the best model in the family; 0 when unavailable. */
-    topPassAtN: number;
+    /** Solve AUC@2 for the best model in the family; 0 when unavailable. */
+    topAuc2: number;
   };
 
 export interface OgRenderOpts {
@@ -246,10 +247,10 @@ function renderIndexCard(p: Extract<OgPayload, { kind: "index" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Leading pass rate"),
+        span({ color: COLORS.muted, fontSize: 18 }, "Solve AUC@2"),
         span(
           { fontWeight: 600, fontSize: 48 },
-          (p.topPassAtN * 100).toFixed(1) + "%",
+          (p.topAuc2 * 100).toFixed(1) + "%",
         ),
       ]),
       div({ display: "flex", flexDirection: "column" }, [
@@ -280,10 +281,10 @@ function renderModelCard(p: Extract<OgPayload, { kind: "model" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Pass rate"),
+        span({ color: COLORS.muted, fontSize: 18 }, "Solve AUC@2"),
         span(
           { fontWeight: 600, fontSize: 48 },
-          (p.passAtN * 100).toFixed(1) + "%",
+          (p.auc2 * 100).toFixed(1) + "%",
         ),
       ]),
       div({ display: "flex", flexDirection: "column" }, [
@@ -346,10 +347,10 @@ function renderFamilyCard(p: Extract<OgPayload, { kind: "family" }>): unknown {
       alignItems: "flex-end",
     }, [
       div({ display: "flex", flexDirection: "column" }, [
-        span({ color: COLORS.muted, fontSize: 18 }, "Best pass rate"),
+        span({ color: COLORS.muted, fontSize: 18 }, "Solve AUC@2"),
         span(
           { fontWeight: 600, fontSize: 48 },
-          (p.topPassAtN * 100).toFixed(1) + "%",
+          (p.topAuc2 * 100).toFixed(1) + "%",
         ),
       ]),
       div({ display: "flex", flexDirection: "column" }, [
