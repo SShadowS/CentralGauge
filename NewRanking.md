@@ -232,3 +232,13 @@ Re-run when bench run 3 lands; diff which tasks flipped.
     `cd site && npm run deploy` — GATED on owner go/no-go. Separate follow-ups:
     bench run 3, leaderboard-visibility flip
     (`POST /admin/catalog/task-sets {set_current}`).
+- 2026-05-30 (cont.): DEPLOYED to production (`wrangler deploy`, version
+  `f05ca423`, live ai.sshadows.dk). Smoke test: HTTP 200, default `sort=auc_2`,
+  `auc_2`+`repair_rate` populated; de-saturation confirmed (Sonnet 4.6 drops
+  from tied-#1 on pass_at_n=0.873 to #5 on auc_2=0.75 — highest repair 0.66).
+  KNOWN GAP: **tier bands are empty in prod** because the `tasks` table is
+  unsynced (prod `summary.tasks = 0`, CC-1 state) → `buildAucMatrix` has no task
+  universe → empty tier map → no `tier` key on rows. NOT a code bug (63
+  in-harness tests pass where `tasks` is seeded). FOLLOW-UP to light up tiers:
+  run `centralgauge sync-catalog --apply` to populate prod `tasks`, then the
+  cg-tiers cache repopulates on next leaderboard compute (v4 key).
