@@ -217,7 +217,7 @@
   .legend .sw.a2 { background: var(--chart-warning); }
   .legend .sw.fail { background: var(--chart-danger); }
   .legend .note { margin-left: auto; color: var(--text-faint); }
-  .disclose { background: transparent; border: 0; padding: var(--space-2); color: var(--text-muted); cursor: pointer; display: inline-flex; border-radius: var(--radius-1); }
+  .disclose { background: transparent; border: 0; padding: var(--space-2); color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-1); }
   .disclose:hover { color: var(--text); }
   .disclose:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .detail-row > td { background: var(--surface-elevated); padding: 0; border-bottom: 1px solid var(--border); }

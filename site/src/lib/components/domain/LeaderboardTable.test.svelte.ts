@@ -246,7 +246,7 @@ describe('LeaderboardTable', () => {
 
   it('expands a row when the details toggle is clicked', async () => {
     const { getAllByRole, container } = render(LeaderboardTable, { props: { rows: sampleRows, sort: 'auc_2:desc' } });
-    const toggles = getAllByRole('button', { name: /details/i });
+    const toggles = getAllByRole('button', { name: /^(show|hide) details for/i });
     expect(toggles[0].getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('.detail-row')).toBeNull();
     await fireEvent.click(toggles[0]);
@@ -255,6 +255,14 @@ describe('LeaderboardTable', () => {
     await fireEvent.click(toggles[0]);
     expect(toggles[0].getAttribute('aria-expanded')).toBe('false');
     expect(container.querySelector('.detail-row')).toBeNull();
+  });
+
+  it('can expand two rows independently', async () => {
+    const { getAllByRole, container } = render(LeaderboardTable, { props: { rows: sampleRows, sort: 'auc_2:desc' } });
+    const toggles = getAllByRole('button', { name: /^(show|hide) details for/i });
+    await fireEvent.click(toggles[0]);
+    await fireEvent.click(toggles[1]);
+    expect(container.querySelectorAll('.detail-row').length).toBe(2);
   });
 
   it('dims ranks only for tiers shared by more than one visible model', () => {
