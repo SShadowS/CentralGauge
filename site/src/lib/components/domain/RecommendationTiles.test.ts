@@ -20,7 +20,7 @@ function row(p: Partial<LeaderboardRow>): LeaderboardRow {
 }
 
 describe('RecommendationTiles', () => {
-  it('renders the three tile headings', () => {
+  it('renders all tile headings', () => {
     const { container } = render(RecommendationTiles, {
       props: { rows: [row({ model: { slug: 'a', display_name: 'A', api_model_id: 'a', settings_suffix: '' } })] },
     });
@@ -28,6 +28,7 @@ describe('RecommendationTiles', () => {
     expect(text).toMatch(/best overall/i);
     expect(text).toMatch(/best value/i);
     expect(text).toMatch(/fastest/i);
+    expect(text).toMatch(/best open-weight/i);
   });
 
   it('shows the tie note when overall leader is tied in its tier', () => {

@@ -53,7 +53,9 @@
     {#if rec.open}
       <p class="v"><ModelLink slug={rec.open.model.slug} display_name={rec.open.model.display_name} api_model_id={rec.open.model.api_model_id} family_slug={rec.open.row.family_slug} /><SettingsBadge suffix={rec.open.model.settings_suffix} /></p>
       <p class="sub">{auc2Display(rec.open.row).toFixed(1)} AUC{#if rec.open.row.tier} · Tier {rec.open.row.tier}{/if}</p>
-    {:else}<p class="v">—</p>{/if}
+    {:else}
+      <p class="v">—</p>
+    {/if}
   </div>
 </section>
 

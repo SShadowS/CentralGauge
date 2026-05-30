@@ -52,6 +52,7 @@ describe('pickRecommendations', () => {
     expect(r.overall).toBeNull();
     expect(r.value).toBeNull();
     expect(r.fastest).toBeNull();
+    expect(r.open).toBeNull();
   });
 
   it('overall.tiedWith is undefined when the runner-up is in a different tier', () => {
