@@ -142,6 +142,10 @@ export async function getTierMap(
     .bind(opts.taskSetHash)
     .first<{ n: number }>();
   const taskCount = countRow?.n ?? 0;
+  // taskCount is intentionally the whole-set count (no category filter). The
+  // catKey segment already separates per-category views; taskCount only needs to
+  // bust the cache on catalog backfill (tasks table goes 0→N), which is a
+  // set-wide event regardless of which category is being viewed.
   // Use 'global' (not 'all') so a hypothetical category slug "all" can't collide.
   const catKey = opts.category ? encodeURIComponent(opts.category) : 'global';
   const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;

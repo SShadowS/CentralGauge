@@ -12,6 +12,10 @@
   }
   let { categories, active, total, onselect }: Props = $props();
 
+  // The "All tasks" count is the full task-set total (data.summary.tasks); per-tab
+  // counts cover categorized tasks only, so All may exceed the sum of category
+  // counts when some tasks are uncategorized. That is intentional — All is the
+  // real denominator.
   // Tab model: null slug = All, then one per category.
   const tabs = $derived([
     { slug: null as string | null, name: 'All tasks', count: total },

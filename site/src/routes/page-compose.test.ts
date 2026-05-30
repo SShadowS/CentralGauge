@@ -47,7 +47,7 @@ describe('Leaderboard page composition', () => {
   it('renders category tabs (All + per category) and no sidebar Category fieldset', () => {
     const { container, getAllByRole } = render(Page, { props: { data: data as unknown as PageData } });
     const radiogroups = getAllByRole('radiogroup');
-    expect(radiogroups.length).toBeGreaterThanOrEqual(2); // SortPresets + CategoryTabs
+    expect(radiogroups.length).toBe(2); // SortPresets + CategoryTabs
     expect(container.textContent).toMatch(/all tasks/i);
     expect(container.textContent).toMatch(/Tables/);
     // old sidebar Category legend gone:
