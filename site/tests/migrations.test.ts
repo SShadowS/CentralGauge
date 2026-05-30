@@ -148,3 +148,21 @@ describe("migration 0007 family_diffs", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("migration 0010 task_tags", () => {
+  it("adds tags + task_tags tables and task_categories.description", async () => {
+    const tbls = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tags','task_tags') ORDER BY name",
+    ).all();
+    expect((tbls.results as any[]).map((r) => r.name)).toEqual([
+      "tags",
+      "task_tags",
+    ]);
+    const cols = await env.DB.prepare(
+      "PRAGMA table_info(task_categories)",
+    ).all();
+    expect(
+      (cols.results as any[]).some((c) => c.name === "description"),
+    ).toBe(true);
+  });
+});
