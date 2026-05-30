@@ -78,9 +78,12 @@ for (const id of ids) {
 // facet vocab + which groups each appears in
 const facetGroups = new Map<string, Set<string>>();
 const facetFreq = new Map<string, number>();
-for (const id of ids) for (const f of taskFacets[id]) {
-  facetFreq.set(f, (facetFreq.get(f) ?? 0) + 1);
-  (facetGroups.get(f) ?? facetGroups.set(f, new Set()).get(f)!).add(group[id]);
+for (const id of ids) {
+  const g = group[id] ?? "business-logic";
+  for (const f of (taskFacets[id] ?? [])) {
+    facetFreq.set(f, (facetFreq.get(f) ?? 0) + 1);
+    (facetGroups.get(f) ?? facetGroups.set(f, new Set()).get(f)!).add(g);
+  }
 }
 
 let out = "# Task taxonomy — authoritative for the SITE only (UI + analysis).\n";

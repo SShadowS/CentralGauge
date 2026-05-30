@@ -31,9 +31,11 @@ const cats = [...catTasks.entries()]
 // rate[modelIdx][cat] = sumPassed/sumAttempted over the category's tasks
 function rate(mi: number, cat: string): number | null {
   let p = 0, a = 0;
-  for (const ti of catTasks.get(cat)!) {
-    p += m.cells[ti][mi].passed;
-    a += m.cells[ti][mi].attempted;
+  for (const ti of (catTasks.get(cat) ?? [])) {
+    const cell = m.cells[ti]?.[mi];
+    if (!cell) continue;
+    p += cell.passed;
+    a += cell.attempted;
   }
   return a > 0 ? p / a : null;
 }
@@ -79,6 +81,7 @@ for (let mi = 0; mi < m.models.length; mi++) {
     .sort((a, b) => b.d - a.d);
   const top = rels.slice(0, 3).map((x) => `${x.c} (${pct(x.r)}, ${x.d >= 0 ? "+" : ""}${(x.d * 100).toFixed(0)}pt)`);
   const worst = rels[rels.length - 1];
-  console.log(`${shortName(m.models[mi].slug).padEnd(16)} strong: ${top.join(" · ")}`);
+  if (!worst) continue;
+  console.log(`${shortName(m.models[mi]?.slug ?? "?").padEnd(16)} strong: ${top.join(" · ")}`);
   console.log(`${"".padEnd(16)} weak:   ${worst.c} (${pct(worst.r)}, ${(worst.d * 100).toFixed(0)}pt)`);
 }
