@@ -60,7 +60,8 @@ for (const c of cats) {
     .filter((x) => x.r != null)
     .sort((a, b) => (b.r! - a.r!));
   const lead = ranked[0], second = ranked[1];
-  const margin = lead.r! - second.r!;
+  if (!lead || !second) continue;
+  const margin = (lead.r ?? 0) - (second.r ?? 0);
   console.log(`${c.padEnd(20)} (${catTasks.get(c)!.length} tasks)  →  ${lead.slug} ${pct(lead.r)}  ` +
     `(next: ${second.slug} ${pct(second.r)}, +${(margin * 100).toFixed(0)}pt)`);
 }
