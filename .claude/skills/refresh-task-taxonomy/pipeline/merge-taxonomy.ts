@@ -95,11 +95,14 @@ for (const [f, gs] of [...facetGroups.entries()].sort()) {
   out += `  - slug: ${f}\n    groups: [${[...gs].sort().join(", ")}]\n`;
 }
 out += "\ntasks:\n";
-for (const id of ids) out += `  ${id}: { group: ${group[id]}, tags: [${taskFacets[id].join(", ")}] }\n`;
+for (const id of ids) {
+  const g = group[id] ?? "business-logic";
+  out += `  ${id}: { group: ${g}, tags: [${(taskFacets[id] ?? []).join(", ")}] }\n`;
+}
 await Deno.writeTextFile("site/catalog/task-categories.yml", out);
 
 console.log(`tasks=${ids.length}  facets=${facetFreq.size}`);
-const empty = ids.filter((id) => taskFacets[id].length === 0);
-console.log(`avg facets/task = ${(ids.reduce((s, id) => s + taskFacets[id].length, 0) / ids.length).toFixed(1)}; tasks with 0 facets: ${empty.length} ${empty.join(" ")}`);
+const empty = ids.filter((id) => (taskFacets[id] ?? []).length === 0);
+console.log(`avg facets/task = ${(ids.reduce((s, id) => s + (taskFacets[id] ?? []).length, 0) / ids.length).toFixed(1)}; tasks with 0 facets: ${empty.length} ${empty.join(" ")}`);
 console.log("\nfacet frequency:");
 for (const [f, n] of [...facetFreq.entries()].sort((a, b) => b[1] - a[1])) console.log(`  ${String(n).padStart(2)}  ${f}`);

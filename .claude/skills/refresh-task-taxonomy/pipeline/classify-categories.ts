@@ -29,7 +29,7 @@ for await (const e of walk("tasks", { exts: [".yml"], includeDirs: false })) {
   const slug = e.name.replace(/\.yml$/, "").replace(/CG-AL-[A-Z]\d+-?/, "");
   const tags = (doc.metadata?.tags ?? []).join(" ");
   const hay = `${slug} ${tags}`.toLowerCase();
-  const cat = RULES.find(([, re]) => re.test(hay))![0];
+  const cat = RULES.find(([, re]) => re.test(hay))?.[0] ?? "business-logic";
   rows.push({ id: doc.id, slug, tags, cat });
 }
 
