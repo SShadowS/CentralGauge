@@ -264,3 +264,13 @@ Re-run when bench run 3 lands; diff which tasks flipped.
        runs (or `centralgauge cycle --llms gemini/gemini-3.1-pro-preview`), then
        flip visibility if needed. Prod board today = older 19-model set, already
        showing AUC@2 + tiers correctly.
+- 2026-05-30 (cont.): FOLLOW-UP #3 DONE — run 3 completed
+  (results-1780104903462). Bench AUTO-INGESTED to prod (default). gemini-3.1-pro
+  now LIVE at #1, Tier 1, auc=0.836 (run_count=3). Tiers recomputed
+  automatically — the new runs advanced last_run_at, busting the cg-tiers cache
+  exactly as the freshness-key fix intended (no manual bust needed). 3-run
+  win/loss (scripts/winloss.sh): gemini-3.1-pro 87.6% vs opus-4-7 83.3 /
+  opus-4-8 82.1 / flash 80.9; 24 wins, 9 losses, 4 solo-wins, 1 solo-loss
+  (H034). Persistent weak spots: M007/E050/M036 (compile), H027 (flaky test).
+  Board: Tier1 gemini-pro/opus-4-8/4-7/4-6, Tier2 flash/gpt-5.5/sonnet-4-6,
+  Tier3 haiku. ALL FOLLOW-UPS COMPLETE.
