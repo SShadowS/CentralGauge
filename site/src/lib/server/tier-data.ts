@@ -12,6 +12,9 @@ import { CACHE_VERSION } from './cache-version';
 export interface AucMatrixOptions {
   taskSetHash: string;
   metric: 'auc_2';
+  /** Optional category slug. When set, the matrix spans only this category's
+   * tasks (task universe + per-task scores both restricted). */
+  category?: string | null;
 }
 
 /**
@@ -32,14 +35,25 @@ export async function buildAucMatrix(
   db: D1Database,
   opts: AucMatrixOptions,
 ): Promise<TierInput[]> {
+  const cat = opts.category ?? null;
+
   // 1) Task universe for the set (alignment denominator).
   //    Uses the real schema: tasks table, task_set_hash column.
-  const taskRows = await db
-    .prepare(
-      `SELECT task_id FROM tasks WHERE task_set_hash = ? ORDER BY task_id ASC`,
-    )
-    .bind(opts.taskSetHash)
-    .all<{ task_id: string }>();
+  //    When category is set, restrict to tasks in that category via JOIN.
+  const taskRows = cat
+    ? await db
+        .prepare(
+          `SELECT t.task_id FROM tasks t
+             JOIN task_categories tc ON tc.id = t.category_id
+            WHERE t.task_set_hash = ? AND tc.slug = ?
+            ORDER BY t.task_id ASC`,
+        )
+        .bind(opts.taskSetHash, cat)
+        .all<{ task_id: string }>()
+    : await db
+        .prepare(`SELECT task_id FROM tasks WHERE task_set_hash = ? ORDER BY task_id ASC`)
+        .bind(opts.taskSetHash)
+        .all<{ task_id: string }>();
   const taskIds = (taskRows.results ?? []).map((r) => r.task_id);
   if (taskIds.length === 0) return [];
 
@@ -51,20 +65,39 @@ export async function buildAucMatrix(
   //    Schema: results.run_id → runs.id → runs.model_id → models.slug
   //            results.task_id, results.attempt (1|2), results.passed (0|1)
   //            runs.task_set_hash for scope restriction
-  const rows = await db
-    .prepare(
-      `SELECT m.slug AS slug,
-              r.task_id AS task_id,
-              MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
-              MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
-         FROM results r
-         JOIN runs ru  ON ru.id = r.run_id
-         JOIN models m ON m.id = ru.model_id
-        WHERE ru.task_set_hash = ?
-        GROUP BY ru.model_id, r.task_id`,
-    )
-    .bind(opts.taskSetHash)
-    .all<{ slug: string; task_id: string; p1: number; p2: number }>();
+  //    When category is set, join tasks+task_categories to restrict results to
+  //    the category (join on BOTH task_id and task_set_hash to avoid fan-out
+  //    when a task_id exists in multiple sets).
+  const rows = cat
+    ? await db
+        .prepare(
+          `SELECT m.slug AS slug, r.task_id AS task_id,
+                  MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
+                  MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
+             FROM results r
+             JOIN runs ru  ON ru.id = r.run_id
+             JOIN models m ON m.id = ru.model_id
+             JOIN tasks t  ON t.task_id = r.task_id AND t.task_set_hash = ru.task_set_hash
+             JOIN task_categories tc ON tc.id = t.category_id
+            WHERE ru.task_set_hash = ? AND tc.slug = ?
+            GROUP BY ru.model_id, r.task_id`,
+        )
+        .bind(opts.taskSetHash, cat)
+        .all<{ slug: string; task_id: string; p1: number; p2: number }>()
+    : await db
+        .prepare(
+          `SELECT m.slug AS slug,
+                  r.task_id AS task_id,
+                  MAX(CASE WHEN r.attempt = 1 AND r.passed = 1 THEN 1 ELSE 0 END) AS p1,
+                  MAX(CASE WHEN r.attempt = 2 AND r.passed = 1 THEN 1 ELSE 0 END) AS p2
+             FROM results r
+             JOIN runs ru  ON ru.id = r.run_id
+             JOIN models m ON m.id = ru.model_id
+            WHERE ru.task_set_hash = ?
+            GROUP BY ru.model_id, r.task_id`,
+        )
+        .bind(opts.taskSetHash)
+        .all<{ slug: string; task_id: string; p1: number; p2: number }>();
 
   const bySlug = new Map<string, number[]>();
   for (const r of rows.results ?? []) {
@@ -109,7 +142,8 @@ export async function getTierMap(
     .bind(opts.taskSetHash)
     .first<{ n: number }>();
   const taskCount = countRow?.n ?? 0;
-  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;
+  const catKey = opts.category ? encodeURIComponent(opts.category) : 'all';
+  const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;
   const hit = await cache.match(keyUrl);
   if (hit) {
     const cached = (await hit.json()) as TierResult[];

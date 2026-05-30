@@ -193,4 +193,54 @@ describe('buildAucMatrix', () => {
     expect(m.scores[0]).toBe(0.5); // t-a → attempt-2 only
     expect(m.scores[1]).toBe(1);   // t-b → attempt-1 pass
   });
+
+  it('restricts the matrix to a category when opts.category is set', async () => {
+    // Seed a second category: 'tables' (id=2). The existing seedScaffold already
+    // inserts category id=1 slug='easy'. We add 'tables' here.
+    await env.DB.prepare(
+      `INSERT INTO task_categories(id,slug,name) VALUES (2,'tables','Tables')`,
+    ).run();
+
+    // Insert tasks: ta1,ta2 belong to category 'easy' (id=1);
+    //               tb1 belongs to category 'tables' (id=2).
+    await insertTasks(['ta1', 'ta2']); // category_id=1 ('easy')
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('aaaa','tb1','hash-tb1','easy',2,'{}')`,
+    ).run();
+
+    // One run: model M passes ta1 (attempt 1) and tb1 (attempt 1); ta2 unattempted.
+    await insertRun('r1');
+    await insertResult('r1', 'ta1', 1, 1); // 'easy' task → 1.0
+    await insertResult('r1', 'tb1', 1, 1); // 'tables' task → 1.0
+
+    // Without category filter: all 3 tasks in vector.
+    const matrixAll = await buildAucMatrix(env.DB, { taskSetHash: 'aaaa', metric: 'auc_2' });
+    const mAll = matrixAll.find((x) => x.slug === 'M')!;
+    expect(mAll.scores).toHaveLength(3);
+
+    // With category='easy': only ta1, ta2 in universe (length 2).
+    const matrixEasy = await buildAucMatrix(env.DB, {
+      taskSetHash: 'aaaa',
+      metric: 'auc_2',
+      category: 'easy',
+    });
+    const mEasy = matrixEasy.find((x) => x.slug === 'M')!;
+    expect(mEasy, 'Model M should appear in the easy-category matrix').toBeDefined();
+    // Only 2 tasks in 'easy': ta1 and ta2 (task_id ASC)
+    expect(mEasy.scores).toHaveLength(2);
+    // ta1 passed attempt 1 → 1.0; ta2 unattempted → 0.0; tb1 excluded entirely
+    expect(mEasy.scores).toEqual([1, 0]);
+
+    // With category='tables': only tb1 in universe (length 1).
+    const matrixTables = await buildAucMatrix(env.DB, {
+      taskSetHash: 'aaaa',
+      metric: 'auc_2',
+      category: 'tables',
+    });
+    const mTables = matrixTables.find((x) => x.slug === 'M')!;
+    expect(mTables, 'Model M should appear in the tables-category matrix').toBeDefined();
+    expect(mTables.scores).toHaveLength(1);
+    expect(mTables.scores).toEqual([1]);
+  });
 });
