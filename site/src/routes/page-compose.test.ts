@@ -23,7 +23,7 @@ const data = {
   },
   sort: 'auc_2:desc',
   filters: { set: 'current', category: null },
-  categories: [],
+  categories: [{ slug: 'tables', name: 'Tables', task_count: 64, avg_pass_rate: 0.5 }],
   summary: { runs: 1, models: 1, tasks: 512, total_cost_usd: 0, total_tokens: 0, last_run_at: null, latest_changelog: null, generated_at: '2026-05-30T10:00:00Z' },
   taskSets: [],
   serverTime: '2026-05-30T10:00:00Z',
@@ -42,5 +42,16 @@ describe('Leaderboard page composition', () => {
     expect(text).toMatch(/best overall/i);      // RecommendationTiles
     expect(container.querySelector('[role="radiogroup"]')).not.toBeNull(); // SortPresets
     expect(container.querySelector('[data-test="auc-cell"]')?.textContent).toContain('67.0');
+  });
+
+  it('renders category tabs (All + per category) and no sidebar Category fieldset', () => {
+    const { container, getAllByRole } = render(Page, { props: { data: data as unknown as PageData } });
+    const radiogroups = getAllByRole('radiogroup');
+    expect(radiogroups.length).toBeGreaterThanOrEqual(2); // SortPresets + CategoryTabs
+    expect(container.textContent).toMatch(/all tasks/i);
+    expect(container.textContent).toMatch(/Tables/);
+    // old sidebar Category legend gone:
+    const legends = Array.from(container.querySelectorAll('legend')).map((l) => l.textContent?.trim());
+    expect(legends).not.toContain('Category');
   });
 });

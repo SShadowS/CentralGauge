@@ -8,7 +8,7 @@
   import FreshnessStrip from '$lib/components/domain/FreshnessStrip.svelte';
   import RecommendationTiles from '$lib/components/domain/RecommendationTiles.svelte';
   import SortPresets from '$lib/components/domain/SortPresets.svelte';
-  import Radio from '$lib/components/ui/Radio.svelte';
+  import CategoryTabs from '$lib/components/domain/CategoryTabs.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
@@ -20,7 +20,6 @@
   const FILTER_KEYS = new Set(['set', 'difficulty', 'family', 'since', 'category']);
 
   let setVal = $derived(data.filters.set);
-  let categoryVal = $derived(data.filters.category ?? '');
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
@@ -102,16 +101,6 @@
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
 
-    {#if data.categories.length > 0}
-      <fieldset class="group">
-        <legend>Category</legend>
-        <Radio label="All" name="category" value="" group={categoryVal} onchange={() => pushFilter({ category: null })} />
-        {#each data.categories as cat (cat.slug)}
-          <Radio label={cat.name} name="category" value={cat.slug} group={categoryVal} onchange={() => pushFilter({ category: cat.slug })} />
-        {/each}
-        <a class="rail-link" href="/categories">Browse all →</a>
-      </fieldset>
-    {/if}
   </FilterRail>
 
   <div class="results" data-cheat-scope>
@@ -129,6 +118,14 @@
         <p>No models match these filters.</p>
         <button class="clear" onclick={clearAll}>Clear filters</button>
       </div>
+    {/if}
+    {#if data.categories.length > 0}
+      <CategoryTabs
+        categories={data.categories}
+        active={data.filters.category ?? null}
+        total={data.summary.tasks}
+        onselect={(slug) => pushFilter({ category: slug })}
+      />
     {/if}
     {#if data.leaderboard.data.length > 0}
       <div class="toolbar">
@@ -163,9 +160,6 @@
     .layout { grid-template-columns: 1fr; }
   }
 
-  .group { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
-  .group legend { font-size: var(--text-sm); font-weight: var(--weight-semi); color: var(--text); margin-bottom: var(--space-2); }
-
   .chips { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-bottom: var(--space-5); align-items: center; }
   .clear {
     background: transparent; border: 0;
@@ -176,5 +170,4 @@
   }
   .empty { text-align: center; padding: var(--space-9) 0; color: var(--text-muted); }
   .count { margin-top: var(--space-5); font-size: var(--text-sm); }
-  .rail-link { font-size: var(--text-xs); color: var(--accent); margin-top: var(--space-2); }
 </style>
