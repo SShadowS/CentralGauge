@@ -9,10 +9,11 @@
   import EmptyState from '$lib/components/ui/EmptyState.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
+  import TaxonomyFilter from '$lib/components/domain/TaxonomyFilter.svelte';
 
   let { data } = $props();
 
-  const FILTER_KEYS = new Set(['set', 'difficulty', 'category']);
+  const FILTER_KEYS = new Set(['set', 'difficulty', 'category', 'tag']);
 
   const setVal = $derived(data.filters.set);
   const difficultyVal = $derived(data.filters.difficulty);
@@ -20,13 +21,6 @@
   // Data is server-filtered (Task E0); no client-side filter pass.
   const allRows = $derived(data.tasks.data);
   const filteredRows = $derived(allRows);
-
-  // Category slugs are best-effort from the current page. The full set
-  // would require a separate /api/v1/task-categories endpoint (deferred
-  // to P5.4 if telemetry warrants it).
-  const categorySlugs = $derived(
-    Array.from(new Set(allRows.map((r) => r.category?.slug).filter((s): s is string => !!s))).sort(),
-  );
 
   function pushFilter(updates: Record<string, string | null>) {
     const sp = new URLSearchParams(page.url.searchParams);
@@ -39,6 +33,15 @@
 
   function clearAll() {
     goto('/tasks', { keepFocus: true, noScroll: true, invalidateAll: true });
+  }
+
+  function handleTaxonomyChange(next: { category: string; tags: string[] }) {
+    const sp = new URLSearchParams(page.url.searchParams);
+    if (next.category === '') sp.delete('category'); else sp.set('category', next.category);
+    sp.delete('tag');
+    for (const t of next.tags) sp.append('tag', t);
+    sp.delete('cursor');
+    goto(`?${sp.toString()}`, { keepFocus: true, noScroll: true, invalidateAll: true });
   }
 
   const nextHref = $derived(
@@ -90,22 +93,34 @@
       <Radio label="Hard"   name="difficulty" value="hard"   group={difficultyVal} onchange={() => pushFilter({ difficulty: 'hard' })} />
     </fieldset>
 
-    {#if categorySlugs.length > 0}
-      <fieldset class="group">
-        <legend>Category</legend>
-        <Radio label="All" name="category" value="" group={data.filters.category} onchange={() => pushFilter({ category: null })} />
-        {#each categorySlugs as cs}
-          <Radio label={cs} name="category" value={cs} group={data.filters.category} onchange={() => pushFilter({ category: cs })} />
-        {/each}
-      </fieldset>
-    {/if}
+    <TaxonomyFilter
+      groups={data.taxonomy.groups}
+      tags={data.taxonomy.tags}
+      activeGroup={data.filters.category}
+      activeTags={data.activeTags}
+      onchange={handleTaxonomyChange}
+    />
   </FilterRail>
 
   <div class="results">
     {#if Array.from(page.url.searchParams.entries()).some(([k]) => FILTER_KEYS.has(k))}
       <div class="chips">
         {#each Array.from(page.url.searchParams.entries()).filter(([k]) => FILTER_KEYS.has(k)) as [key, value]}
-          <FilterChip label="{key}: {value}" onremove={() => pushFilter({ [key]: null })} />
+          <FilterChip
+            label="{key}: {value}"
+            onremove={() => {
+              if (key === 'tag') {
+                const sp = new URLSearchParams(page.url.searchParams);
+                const remaining = sp.getAll('tag').filter((t) => t !== value);
+                sp.delete('tag');
+                for (const t of remaining) sp.append('tag', t);
+                sp.delete('cursor');
+                goto(`?${sp.toString()}`, { keepFocus: true, noScroll: true, invalidateAll: true });
+              } else {
+                pushFilter({ [key]: null });
+              }
+            }}
+          />
         {/each}
         <button class="clear" onclick={clearAll}>Clear all</button>
       </div>

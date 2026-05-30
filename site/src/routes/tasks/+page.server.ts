@@ -2,6 +2,7 @@ import type { PageServerLoad } from "./$types";
 import type {
   TasksIndexResponse,
   TaskSetsResponse,
+  TaxonomyResponse,
 } from "$shared/api-types";
 import { error } from "@sveltejs/kit";
 
@@ -19,10 +20,15 @@ export const load: PageServerLoad = async (
   if (difficulty) sp.set("difficulty", difficulty);
   const category = url.searchParams.get("category") ?? "";
   if (category) sp.set("category", category);
+  const activeTags = url.searchParams.getAll("tag");
+  for (const tag of activeTags) {
+    sp.append("tag", tag);
+  }
 
-  const [res, tsRes] = await Promise.all([
+  const [res, tsRes, taxRes] = await Promise.all([
     fetch(`/api/v1/tasks?${sp.toString()}`),
     fetch("/api/v1/task-sets"),
+    fetch("/api/v1/taxonomy"),
   ]);
   if (!res.ok) {
     let body: unknown;
@@ -44,10 +50,16 @@ export const load: PageServerLoad = async (
     ? ((await tsRes.json()) as TaskSetsResponse).data
     : [];
 
+  const taxonomy: TaxonomyResponse = taxRes.ok
+    ? await taxRes.json()
+    : { groups: [], tags: [], generated_at: "" };
+
   return {
     tasks: (await res.json()) as TasksIndexResponse,
     filters: { set, difficulty, category },
     taskSets,
     cursor,
+    taxonomy,
+    activeTags,
   };
 };
