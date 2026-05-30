@@ -3,6 +3,8 @@
   import Badge from '$lib/components/ui/Badge.svelte';
   import Code from '$lib/components/ui/Code.svelte';
   import AttemptCell from '$lib/components/ui/AttemptCell.svelte';
+  import MarkdownRenderer from '$lib/components/domain/MarkdownRenderer.svelte';
+  import { reflowDescription } from '$shared/reflow-description';
   import { formatScore } from '$lib/client/format';
 
   interface Props { task: TaskDetail; }
@@ -42,14 +44,14 @@
 {#if manifest.description}
   <section class="desc">
     <h2>Description</h2>
-    <p>{manifest.description}</p>
+    <MarkdownRenderer source={reflowDescription(manifest.description)} />
   </section>
 {/if}
 
 {#if manifest.objective}
   <section class="obj">
     <h2>Objective</h2>
-    <p>{manifest.objective}</p>
+    <MarkdownRenderer source={reflowDescription(manifest.objective)} />
   </section>
 {/if}
 

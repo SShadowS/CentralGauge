@@ -35,9 +35,11 @@ const t: TaskDetail = {
 };
 
 describe("TaskDetailPanel", () => {
-  it("renders the manifest description when present", () => {
+  it("renders the manifest description when present", async () => {
     render(TaskDetailPanel, { task: t });
-    expect(screen.getByText("Test description")).toBeDefined();
+    // Description renders via MarkdownRenderer (async dynamic import of
+    // marked + dompurify), so wait for it rather than asserting synchronously.
+    expect(await screen.findByText("Test description")).toBeDefined();
   });
 
   it("renders one row per solved-by entry", () => {
