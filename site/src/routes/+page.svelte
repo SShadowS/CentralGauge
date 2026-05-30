@@ -102,7 +102,6 @@
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
     <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />
-
   </FilterRail>
 
   <div class="results" data-cheat-scope>

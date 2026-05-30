@@ -40,7 +40,7 @@
       onclick={() => onselect(o.v)}
       onkeydown={(e) => onKeydown(e, i)}
     >
-      <span class="name">{o.label}</span>
+      {o.label}
     </button>
   {/each}
 </div>
