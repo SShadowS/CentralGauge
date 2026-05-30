@@ -21,8 +21,8 @@ describe('LeaderboardRowDetail', () => {
     const { container, getByRole } = render(LeaderboardRowDetail, { props: { row: row() } });
     const text = container.textContent ?? '';
     expect(text).toMatch(/repair/i);
-    expect(text).toMatch(/55/);
-    expect(text).toMatch(/79/);
+    expect(text).toMatch(/55\.0%/);
+    expect(text).toMatch(/79\.0%/);
     expect(text).toMatch(/8\.4s/);
     const link = getByRole('link', { name: /full report/i });
     expect(link.getAttribute('href')).toBe('/models/opus');
@@ -30,6 +30,13 @@ describe('LeaderboardRowDetail', () => {
 
   it('renders an em dash for null cost/pass', () => {
     const { container } = render(LeaderboardRowDetail, { props: { row: row({ cost_per_pass_usd: null }) } });
+    expect(container.textContent).toContain('—');
+  });
+
+  it('renders an em dash for a missing repair rate', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ repair_rate: undefined }) } });
+    // Reliability group still renders; repair shows the dash.
+    expect(container.textContent).toMatch(/repair/i);
     expect(container.textContent).toContain('—');
   });
 });

@@ -1,7 +1,7 @@
 <!-- site/src/lib/components/domain/LeaderboardRowDetail.svelte -->
 <script lang="ts">
   import type { LeaderboardRow } from '$shared/api-types';
-  import { formatRelativeTime } from '$lib/client/format';
+  import { formatCost, formatRelativeTime } from '$lib/client/format';
   import MetricInfo from './MetricInfo.svelte';
 
   interface Props { row: LeaderboardRow; }
@@ -10,7 +10,7 @@
   const pct = (v: number | null | undefined) =>
     v === null || v === undefined ? '—' : `${(v * 100).toFixed(1)}%`;
   const usd = (v: number | null | undefined) =>
-    v === null || v === undefined ? '—' : `$${v.toFixed(4)}`;
+    v === null || v === undefined ? '—' : formatCost(v);
   const secs = (v: number | null | undefined) =>
     v === null || v === undefined ? '—' : `${(v / 1000).toFixed(1)}s`;
   const passedTotal = $derived(row.tasks_passed_attempt_1 + row.tasks_passed_attempt_2_only);
