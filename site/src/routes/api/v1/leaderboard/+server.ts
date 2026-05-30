@@ -77,7 +77,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
             );
             const tierMap = await getTierMap(
               env.DB,
-              { taskSetHash: resolvedHash, metric: 'auc_2' },
+              { taskSetHash: resolvedHash, metric: 'auc_2', category: q.category ?? null },
               freshness,
             );
             // Only assign when a tier exists. Setting `r.tier = undefined`
