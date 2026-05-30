@@ -1,8 +1,9 @@
 import { render } from '@testing-library/svelte';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidate: vi.fn(), invalidateAll: vi.fn() }));
-vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/'), params: {}, route: { id: '/' } } }));
+// $app/navigation and $app/state are resolved via aliases in
+// vitest.unit.config.ts (tests/mocks/app-navigation.ts + app-state.ts).
+// No inline vi.mock needed — the aliased stubs are complete.
 
 import Page from './+page.svelte';
 import type { PageData } from './$types';
@@ -34,11 +35,12 @@ const data = {
 
 describe('Leaderboard page composition', () => {
   it('renders freshness strip, tiles, presets, and the AUC table headline', () => {
+    // buildSha/buildAt are merged from the layout's data, not page-level PageData — cast is expected.
     const { container } = render(Page, { props: { data: data as unknown as PageData } });
     const text = container.textContent ?? '';
     expect(text).toContain('512 tasks');       // FreshnessStrip
     expect(text).toMatch(/best overall/i);      // RecommendationTiles
-    expect(text).toMatch(/skill/i);             // SortPresets
+    expect(container.querySelector('[role="radiogroup"]')).not.toBeNull(); // SortPresets
     expect(container.querySelector('[data-test="auc-cell"]')?.textContent).toContain('67.0');
   });
 });

@@ -130,9 +130,11 @@
         <button class="clear" onclick={clearAll}>Clear filters</button>
       </div>
     {/if}
-    <div class="toolbar">
-      <SortPresets sort={data.sort} onpreset={onSort} />
-    </div>
+    {#if data.leaderboard.data.length > 0}
+      <div class="toolbar">
+        <SortPresets sort={data.sort} onpreset={onSort} />
+      </div>
+    {/if}
     <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
     {#if data.leaderboard.data.length > 0}
       <p class="count text-muted">
