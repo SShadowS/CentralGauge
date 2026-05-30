@@ -16,12 +16,15 @@ export interface OutcomeMix {
 }
 
 /** First-try / retry / failed split over the strict denominator. Separate from
- * the headline AUC value — this drives the outcome-mix bar only. */
+ * the headline AUC value — this drives the outcome-mix bar only.
+ * Percentages are unrounded floats; callers must not compare with `===`.
+ * Segments are individually clamped so they never sum above 100 even if
+ * attempt counts exceed the denominator. */
 export function outcomeMix(row: LeaderboardRow): OutcomeMix {
   const d = row.denominator || 0;
   if (d <= 0) return { firstTryPct: 0, retryPct: 0, failedPct: 0 };
-  const firstTryPct = (row.tasks_passed_attempt_1 / d) * 100;
-  const retryPct = (row.tasks_passed_attempt_2_only / d) * 100;
+  const firstTryPct = Math.min(100, (row.tasks_passed_attempt_1 / d) * 100);
+  const retryPct = Math.min(Math.max(0, 100 - firstTryPct), (row.tasks_passed_attempt_2_only / d) * 100);
   const failedPct = Math.max(0, 100 - firstTryPct - retryPct);
   return { firstTryPct, retryPct, failedPct };
 }

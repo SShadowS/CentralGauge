@@ -57,6 +57,13 @@ describe('outcomeMix', () => {
     const m = outcomeMix(row({ denominator: 0, tasks_attempted_distinct: 0 }));
     expect(m).toEqual({ firstTryPct: 0, retryPct: 0, failedPct: 0 });
   });
+  it('clamps so segments never exceed 100 when counts exceed the denominator', () => {
+    const m = outcomeMix(row({ tasks_passed_attempt_1: 11, tasks_passed_attempt_2_only: 3, denominator: 10 }));
+    expect(m.firstTryPct).toBe(100);
+    expect(m.retryPct).toBe(0);
+    expect(m.failedPct).toBe(0);
+    expect(m.firstTryPct + m.retryPct + m.failedPct).toBeLessThanOrEqual(100);
+  });
 });
 
 describe('valuePerSolve', () => {
