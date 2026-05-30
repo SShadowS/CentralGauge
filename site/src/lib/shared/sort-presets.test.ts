@@ -1,6 +1,6 @@
 // site/src/lib/shared/sort-presets.test.ts
 import { describe, it, expect } from 'vitest';
-import { PRESETS, presetForSort } from './sort-presets';
+import { PRESETS, presetForSort, sortString } from './sort-presets';
 
 describe('PRESETS', () => {
   it('exposes Skill/Value/Speed with concrete server sort keys', () => {
@@ -28,5 +28,14 @@ describe('presetForSort', () => {
     expect(presetForSort('cost_per_pass_usd:asc')).toBe('value');
     expect(presetForSort('latency_p95_ms:asc')).toBe('speed');
     expect(presetForSort('avg_score:desc')).toBe('skill');
+    expect(presetForSort('avg_score:asc')).toBe('skill');
+  });
+});
+
+describe('sortString', () => {
+  it('emits "field:direction" for each preset', () => {
+    expect(sortString(PRESETS[0])).toBe('auc_2:desc');
+    expect(sortString(PRESETS[1])).toBe('cost_per_pass_usd:asc');
+    expect(sortString(PRESETS[2])).toBe('latency_p95_ms:asc');
   });
 });
