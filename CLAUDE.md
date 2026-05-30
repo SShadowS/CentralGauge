@@ -218,6 +218,16 @@ would otherwise re-precheck).
 - Set `CLOUDFLARE_ACCOUNT_ID=22c8fbe790464b492d9b178cc0f9255b` AND
   `CLOUDFLARE_API_TOKEN` (scope `Account.D1:Edit`) for non-interactive shells.
   `wrangler login` doesn't propagate reliably to subshells.
+- **Migrations BEFORE deploy — strict ordering.** `npm run deploy` is bare
+  `wrangler deploy` and does NOT apply D1 migrations. A new worker that SELECTs
+  a column added by an unapplied migration 500s on every request (e.g. the
+  leaderboard query references `mf.open_weight` unconditionally — added by
+  migration `0011_family_open_weight.sql` in the Phase-3 leaderboard work). When
+  a change adds a migration, the prod deploy order is: (1) `wrangler d1
+  migrations apply <db> --remote` → (2) `centralgauge sync-catalog --apply` (to
+  backfill the new column from `site/catalog/*.yml`) → (3) bump the leaderboard
+  cache `_cv` if the response shape changed → (4) `cd site && npm run deploy`.
+  Never deploy the worker first.
 - `/api/v1/admin/*` rate-limits at ~10 req/min — `sync-catalog --apply` for
   7+ rows hits 429; retry after ~60 s pause.
 - `task_sets.is_current = 1` is required for leaderboard visibility. Admin
