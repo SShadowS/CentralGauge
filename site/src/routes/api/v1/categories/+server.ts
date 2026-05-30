@@ -135,6 +135,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         LEFT JOIN cat_tasks ct ON ct.category_id = tc.id
         LEFT JOIN cat_avg ca ON ca.category_id = tc.id
         GROUP BY tc.id
+        HAVING task_count > 0
         ORDER BY task_count DESC, tc.slug ASC
         `,
         [],

@@ -83,36 +83,53 @@ beforeEach(async () => {
 });
 
 describe("GET /api/v1/categories", () => {
-  it("returns categories ordered by task_count desc with avg_pass_rate", async () => {
+  it("returns categories ordered by task_count desc with avg_pass_rate, excluding orphans", async () => {
     // Vary URL per assertion to avoid named-cache poisoning between tests.
     const res = await SELF.fetch("https://x/api/v1/categories?_cb=ord");
     expect(res.status).toBe(200);
     const body = (await res.json()) as CategoriesIndexResponse;
 
     expect(Array.isArray(body.data)).toBe(true);
-    // 3 categories present in seed
-    expect(body.data).toHaveLength(3);
+    // Only 2 categories have tasks; "permissions" (0 tasks) must be excluded.
+    expect(body.data).toHaveLength(2);
 
-    // tables and pages tied at task_count=2 (sort stable on slug); permissions=0
+    // tables and pages tied at task_count=2 (sort stable on slug)
     const tables = body.data.find((c) => c.slug === "tables")!;
     const pages = body.data.find((c) => c.slug === "pages")!;
-    const perms = body.data.find((c) => c.slug === "permissions")!;
+    const perms = body.data.find((c) => c.slug === "permissions");
     expect(tables.task_count).toBe(2);
     expect(pages.task_count).toBe(2);
-    expect(perms.task_count).toBe(0);
+    // orphan must be absent
+    expect(perms).toBeUndefined();
 
     // Strict formula: SUM(per-model passes) / (model_count * task_count_in_category)
     // tables: 1 model passed 1/2 tasks → 1/(1*2) = 0.5
     // pages:  1 model passed 2/2 tasks → 2/(1*2) = 1.0
     expect(tables.avg_pass_rate).toBeCloseTo(0.5, 5);
     expect(pages.avg_pass_rate).toBeCloseTo(1.0, 5);
-    // No tasks for permissions → null (CROSS JOIN with zero tasks produces no rows)
-    expect(perms.avg_pass_rate).toBeNull();
-
-    // Permissions has the lowest task_count; should appear last under task_count desc.
-    expect(body.data[body.data.length - 1].slug).toBe("permissions");
 
     expect(typeof body.generated_at).toBe("string");
+  });
+
+  it("excludes orphan categories (0 tasks in current set) from response", async () => {
+    // Seed an extra orphan category with no tasks pointing to it in the current set.
+    await env.DB.prepare(
+      `INSERT INTO task_categories(id,slug,name) VALUES (10,'legacy-orphan','Legacy Orphan')`,
+    ).run();
+
+    const res = await SELF.fetch("https://x/api/v1/categories?_cb=orphan-excl");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as CategoriesIndexResponse;
+
+    // "legacy-orphan" has no tasks → must not appear
+    const orphan = body.data.find((c) => c.slug === "legacy-orphan");
+    expect(orphan).toBeUndefined();
+
+    // categories WITH tasks still appear
+    const tables = body.data.find((c) => c.slug === "tables");
+    const pages = body.data.find((c) => c.slug === "pages");
+    expect(tables).toBeDefined();
+    expect(pages).toBeDefined();
   });
 
   it("C3: avg_pass_rate is strict (passes/task_count) not per-attempt AVG(r.passed)", async () => {

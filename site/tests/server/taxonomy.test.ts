@@ -104,3 +104,72 @@ it("upsert updates an existing group's name/description", async () => {
   expect(g?.name).toBe("Data Modeling");
   expect(g?.description).toBe("new");
 });
+
+it("prunes orphan groups (not in payload, no tasks) while preserving referenced categories", async () => {
+  await seedTwoTasks("h1");
+
+  // Pre-insert an orphan category with no tasks.
+  await env.DB
+    .prepare("INSERT INTO task_categories(slug,name) VALUES ('legacy-empty','Legacy Empty')")
+    .run();
+
+  // Pre-insert a category that HAS a task but is NOT in the payload — must survive.
+  await env.DB
+    .prepare("INSERT INTO task_categories(id,slug,name) VALUES (99,'in-use-not-in-payload','In Use')")
+    .run();
+  // Assign t1 to the in-use-not-in-payload category so it is referenced.
+  await env.DB
+    .prepare("UPDATE tasks SET category_id=99 WHERE task_set_hash='h1' AND task_id='t1'")
+    .run();
+
+  // Apply taxonomy with only "data-modeling" in the payload groups.
+  await applyTaxonomy(env.DB, "h1", {
+    groups: [{ slug: "data-modeling", name: "Data Modeling" }],
+    tags: [],
+    tasks: {
+      t2: { group: "data-modeling", tags: [] },
+    },
+  });
+
+  // "legacy-empty" is not in payload AND has no tasks → must be deleted.
+  const orphan = await env.DB
+    .prepare("SELECT slug FROM task_categories WHERE slug='legacy-empty'")
+    .first<{ slug: string }>();
+  expect(orphan).toBeNull();
+
+  // "data-modeling" is in the payload → must survive.
+  const dm = await env.DB
+    .prepare("SELECT slug FROM task_categories WHERE slug='data-modeling'")
+    .first<{ slug: string }>();
+  expect(dm?.slug).toBe("data-modeling");
+
+  // "in-use-not-in-payload" has a task pointing to it → must survive even though
+  // it is absent from the payload (unreferenced guard prevents accidental deletion).
+  const inUse = await env.DB
+    .prepare("SELECT slug FROM task_categories WHERE slug='in-use-not-in-payload'")
+    .first<{ slug: string }>();
+  expect(inUse?.slug).toBe("in-use-not-in-payload");
+});
+
+it("skips prune when payload has no groups (empty keep list guard)", async () => {
+  await seedTwoTasks("h1");
+
+  // Pre-insert an orphan (no tasks) — must NOT be deleted when groups list is empty.
+  await env.DB
+    .prepare("INSERT INTO task_categories(slug,name) VALUES ('legacy-safe','Legacy Safe')")
+    .run();
+
+  // Apply with empty groups — the guard prevents building NOT IN () which is
+  // invalid SQL on SQLite and would delete everything.
+  await applyTaxonomy(env.DB, "h1", {
+    groups: [],
+    tags: [],
+    tasks: {},
+  });
+
+  const row = await env.DB
+    .prepare("SELECT slug FROM task_categories WHERE slug='legacy-safe'")
+    .first<{ slug: string }>();
+  // Must still exist — prune was skipped because keep list was empty.
+  expect(row?.slug).toBe("legacy-safe");
+});

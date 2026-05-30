@@ -71,6 +71,23 @@ export async function applyTaxonomy(
   // 4. Replace task_tags for this hash (DELETE then INSERT = idempotent).
   await db.prepare("DELETE FROM task_tags WHERE task_set_hash=?").bind(taskSetHash).run();
 
+  // 5. Prune orphan groups: rows in task_categories that are NOT in the
+  //    payload's slugs AND are not referenced by any task. This makes the
+  //    catalog file authoritative without risking deletion of any category
+  //    that is still in use by a task.
+  const keep = tax.groups.map((g) => g.slug);
+  if (keep.length > 0) {
+    const placeholders = keep.map(() => "?").join(",");
+    await db
+      .prepare(
+        `DELETE FROM task_categories
+          WHERE slug NOT IN (${placeholders})
+            AND id NOT IN (SELECT DISTINCT category_id FROM tasks WHERE category_id IS NOT NULL)`,
+      )
+      .bind(...keep)
+      .run();
+  }
+
   const rows: { taskId: string; slug: string }[] = [];
   for (const [taskId, a] of entries) {
     for (const slug of a.tags) {
