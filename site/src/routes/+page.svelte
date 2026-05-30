@@ -5,7 +5,9 @@
   import FilterRail from '$lib/components/domain/FilterRail.svelte';
   import FilterChip from '$lib/components/domain/FilterChip.svelte';
   import LiveStatus from '$lib/components/domain/LiveStatus.svelte';
-  import HeroChart from '$lib/components/domain/HeroChart.svelte';
+  import FreshnessStrip from '$lib/components/domain/FreshnessStrip.svelte';
+  import RecommendationTiles from '$lib/components/domain/RecommendationTiles.svelte';
+  import SortPresets from '$lib/components/domain/SortPresets.svelte';
   import Radio from '$lib/components/ui/Radio.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
@@ -77,11 +79,14 @@
   <meta name="description" content="LLM AL/BC benchmark leaderboard. {data.leaderboard.data.length} models ranked by score." />
 </svelte:head>
 
-<HeroChart
-  rows={data.leaderboard.data}
-  generatedAt={data.leaderboard.generated_at}
-  taskCount={data.summary.tasks}
-/>
+<header class="page-head">
+  <h1>CentralGauge</h1>
+  <p class="lede">Benchmark for LLMs on Microsoft Dynamics 365 Business Central AL code.</p>
+</header>
+
+<FreshnessStrip generatedAt={data.leaderboard.generated_at} taskCount={data.summary.tasks} />
+
+<RecommendationTiles rows={data.leaderboard.data} />
 
 {#if data.flags.sse_live_updates && sse}
   <p class="live-line">
@@ -125,6 +130,9 @@
         <button class="clear" onclick={clearAll}>Clear filters</button>
       </div>
     {/if}
+    <div class="toolbar">
+      <SortPresets sort={data.sort} onpreset={onSort} />
+    </div>
     <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
     {#if data.leaderboard.data.length > 0}
       <p class="count text-muted">
@@ -137,6 +145,10 @@
 <!-- <CheatButton annotations={landingAnnotations} /> -->
 
 <style>
+  .page-head h1 { font-size: var(--text-3xl); margin: 0 0 var(--space-3); letter-spacing: var(--tracking-tight); }
+  .lede { font-size: var(--text-lg); color: var(--text); margin: 0; max-width: 64ch; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--space-4); }
+
   .live-line { margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
 
   .layout {

@@ -1,0 +1,44 @@
+import { render } from '@testing-library/svelte';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidate: vi.fn(), invalidateAll: vi.fn() }));
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/'), params: {}, route: { id: '/' } } }));
+
+import Page from './+page.svelte';
+import type { PageData } from './$types';
+
+const data = {
+  leaderboard: {
+    data: [{
+      rank: 1, model: { slug: 'opus', display_name: 'Opus', api_model_id: 'o', settings_suffix: '' },
+      family_slug: 'f', run_count: 1, tasks_attempted: 100, tasks_passed: 79,
+      tasks_attempted_distinct: 100, tasks_passed_attempt_1: 55, tasks_passed_attempt_2_only: 24,
+      pass_at_n: 0.79, pass_at_1: 0.55, auc_2: 0.67, repair_rate: 0.53, tier: 1, denominator: 100,
+      cost_per_pass_usd: 0.27, avg_score: 70, avg_cost_usd: 0.21, verified_runs: 1,
+      pass_rate_ci: { lower: 0.64, upper: 0.70 }, latency_p95_ms: 8400, last_run_at: '2026-05-30T00:00:00Z',
+    }],
+    next_cursor: null, generated_at: '2026-05-30T10:00:00Z',
+    filters: { set: 'current', tier: 'all', difficulty: null, family: null, since: null, category: null, sort: 'auc_2', direction: 'desc', limit: 50, cursor: null },
+  },
+  sort: 'auc_2:desc',
+  filters: { set: 'current', category: null },
+  categories: [],
+  summary: { runs: 1, models: 1, tasks: 512, total_cost_usd: 0, total_tokens: 0, last_run_at: null, latest_changelog: null, generated_at: '2026-05-30T10:00:00Z' },
+  taskSets: [],
+  serverTime: '2026-05-30T10:00:00Z',
+  flags: { sse_live_updates: false },
+  buildSha: 'test-sha',
+  buildAt: '2026-05-30T10:00:00Z',
+  cfWebAnalyticsToken: null,
+};
+
+describe('Leaderboard page composition', () => {
+  it('renders freshness strip, tiles, presets, and the AUC table headline', () => {
+    const { container } = render(Page, { props: { data: data as unknown as PageData } });
+    const text = container.textContent ?? '';
+    expect(text).toContain('512 tasks');       // FreshnessStrip
+    expect(text).toMatch(/best overall/i);      // RecommendationTiles
+    expect(text).toMatch(/skill/i);             // SortPresets
+    expect(container.querySelector('[data-test="auc-cell"]')?.textContent).toContain('67.0');
+  });
+});
