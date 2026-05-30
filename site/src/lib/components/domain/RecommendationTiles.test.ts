@@ -35,5 +35,6 @@ describe('RecommendationTiles', () => {
     ];
     const { container } = render(RecommendationTiles, { props: { rows } });
     expect(container.textContent).toMatch(/tied with GPT/i);
+    expect(container.textContent).toMatch(/Tier 1/i);
   });
 });
