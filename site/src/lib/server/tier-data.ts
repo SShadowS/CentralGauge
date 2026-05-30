@@ -142,7 +142,8 @@ export async function getTierMap(
     .bind(opts.taskSetHash)
     .first<{ n: number }>();
   const taskCount = countRow?.n ?? 0;
-  const catKey = opts.category ? encodeURIComponent(opts.category) : 'all';
+  // Use 'global' (not 'all') so a hypothetical category slug "all" can't collide.
+  const catKey = opts.category ? encodeURIComponent(opts.category) : 'global';
   const keyUrl = `https://cache.local/tiers/${opts.taskSetHash}/${opts.metric}/c${catKey}/${CACHE_VERSION}/t${taskCount}/${encodeURIComponent(freshnessToken)}`;
   const hit = await cache.match(keyUrl);
   if (hit) {

@@ -243,4 +243,54 @@ describe('buildAucMatrix', () => {
     expect(mTables.scores).toHaveLength(1);
     expect(mTables.scores).toEqual([1]);
   });
+
+  it('excludes a model with zero results in the filtered category', async () => {
+    // Same two-category setup: 'easy' (id=1, seeded) + 'tables' (id=2).
+    await env.DB.prepare(
+      `INSERT INTO task_categories(id,slug,name) VALUES (2,'tables','Tables')`,
+    ).run();
+    await insertTasks(['ta1', 'ta2']); // category_id=1 ('easy')
+    await env.DB.prepare(
+      `INSERT OR IGNORE INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+       VALUES ('aaaa','tb1','hash-tb1','easy',2,'{}')`,
+    ).run();
+
+    // Model M (id=1) passes ta1 ('easy', attempt 1).
+    await insertRun('r1');
+    await insertResult('r1', 'ta1', 1, 1);
+
+    // Second model 'beta' (id=2) whose ONLY result is on tb1 ('tables').
+    // insertRun/insertResult are hardcoded to model_id=1, so seed inline.
+    await env.DB.prepare(
+      `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+       VALUES (2,1,'beta','b','Model Beta',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('r-beta','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+    )
+      .bind(new Uint8Array([0]))
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+       VALUES ('r-beta','tb1',1,1,1,1,1,1,100,50)`,
+    ).run();
+
+    // beta has no results in 'easy' → absent from the easy matrix entirely
+    // (NOT present with an all-zero vector).
+    const matrixEasy = await buildAucMatrix(env.DB, {
+      taskSetHash: 'aaaa',
+      metric: 'auc_2',
+      category: 'easy',
+    });
+    expect(matrixEasy.find((r) => r.slug === 'beta')).toBeUndefined();
+
+    // beta DOES appear in the 'tables' matrix.
+    const matrixTables = await buildAucMatrix(env.DB, {
+      taskSetHash: 'aaaa',
+      metric: 'auc_2',
+      category: 'tables',
+    });
+    expect(matrixTables.find((r) => r.slug === 'beta')).toBeDefined();
+  });
 });
