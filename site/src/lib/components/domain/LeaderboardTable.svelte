@@ -7,6 +7,8 @@
   import OutcomeMixBar from './OutcomeMixBar.svelte';
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
   import { auc2Display, outcomeMix } from '$lib/shared/leaderboard-derive';
+  import LeaderboardRowDetail from './LeaderboardRowDetail.svelte';
+  import { SvelteSet } from 'svelte/reactivity';
 
   interface Props {
     rows: LeaderboardRow[];
@@ -58,6 +60,12 @@
     for (const r of rows) if (r.tier !== undefined) counts.set(r.tier, (counts.get(r.tier) ?? 0) + 1);
     return new Set([...counts].filter(([, n]) => n > 1).map(([t]) => t));
   });
+
+  const expanded = new SvelteSet<string>();
+  function toggle(slug: string) {
+    if (expanded.has(slug)) expanded.delete(slug);
+    else expanded.add(slug);
+  }
 </script>
 
 <div class="wrap">
@@ -95,8 +103,7 @@
           <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>p95{#if sortField === 'latency_p95_ms'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="latency_p95_ms" />
         </th>
-        <!-- Phase 4: row-expand disclosure control lands here -->
-        <th scope="col" aria-label="Details"></th>
+        <th scope="col" class="chev"><span class="sr-only">Details</span></th>
       </tr>
     </thead>
     <tbody aria-live="polite" aria-atomic="false">
@@ -126,8 +133,25 @@
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{(((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2) * 100).toFixed(1)}</td>
           <td><CostCell usd={row.avg_cost_usd} /></td>
           <td class="text-mono">{(row.latency_p95_ms / 1000).toFixed(1)}s</td>
-          <td class="chev" aria-hidden="true"></td>
+          <td class="chev">
+            <button
+              class="disclose"
+              aria-expanded={expanded.has(row.model.slug)}
+              aria-controls="detail-{row.model.slug}"
+              aria-label="{expanded.has(row.model.slug) ? 'Hide' : 'Show'} details for {row.model.display_name}"
+              onclick={() => toggle(row.model.slug)}
+            >
+              {#if expanded.has(row.model.slug)}<ChevronUp size={16} />{:else}<ChevronDown size={16} />{/if}
+            </button>
+          </td>
         </tr>
+        {#if expanded.has(row.model.slug)}
+          <tr class="detail-row">
+            <td colspan="100" id="detail-{row.model.slug}">
+              <LeaderboardRowDetail {row} />
+            </td>
+          </tr>
+        {/if}
       {/each}
     </tbody>
   </table>
@@ -193,4 +217,9 @@
   .legend .sw.a2 { background: var(--chart-warning); }
   .legend .sw.fail { background: var(--chart-danger); }
   .legend .note { margin-left: auto; color: var(--text-faint); }
+  .disclose { background: transparent; border: 0; padding: var(--space-2); color: var(--text-muted); cursor: pointer; display: inline-flex; border-radius: var(--radius-1); }
+  .disclose:hover { color: var(--text); }
+  .disclose:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .detail-row > td { background: var(--surface-elevated); padding: 0; border-bottom: 1px solid var(--border); }
+  .detail-row:hover { background: var(--surface-elevated); }
 </style>
