@@ -54,6 +54,62 @@ describe("admin catalog endpoints", () => {
     expect(row?.display_name).toBe("Test Family");
   });
 
+  it("persists open_weight=true on family upsert", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "open-fam",
+      vendor: "OpenVendor",
+      display_name: "Open Family",
+      open_weight: true,
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(200);
+    const row = await env.DB.prepare(
+      `SELECT open_weight FROM model_families WHERE slug = ?`,
+    ).bind("open-fam").first<{ open_weight: number | null }>();
+    expect(row?.open_weight).toBe(1);
+  });
+
+  it("persists open_weight=false on family upsert", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "closed-fam",
+      vendor: "ClosedVendor",
+      display_name: "Closed Family",
+      open_weight: false,
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(200);
+    const row = await env.DB.prepare(
+      `SELECT open_weight FROM model_families WHERE slug = ?`,
+    ).bind("closed-fam").first<{ open_weight: number | null }>();
+    expect(row?.open_weight).toBe(0);
+  });
+
+  it("persists open_weight=NULL when omitted on family upsert", async () => {
+    const { signedRequest } = await signAsAdmin({
+      slug: "unknown-fam",
+      vendor: "UnknownVendor",
+      display_name: "Unknown Family",
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(resp.status).toBe(200);
+    const row = await env.DB.prepare(
+      `SELECT open_weight FROM model_families WHERE slug = ?`,
+    ).bind("unknown-fam").first<{ open_weight: number | null }>();
+    expect(row?.open_weight).toBeNull();
+  });
+
   it("updates an existing family on slug conflict", async () => {
     const { signedRequest: first } = await signAsAdmin({
       slug: "test-fam-2",

@@ -9,6 +9,7 @@ interface FamilyUpsert {
   slug: string;
   vendor: string;
   display_name: string;
+  open_weight?: boolean | null;
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
@@ -40,13 +41,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         "slug, vendor, display_name required",
       );
     }
+    const openWeight = p.open_weight === undefined || p.open_weight === null
+      ? null
+      : p.open_weight ? 1 : 0;
     await db.prepare(
-      `INSERT INTO model_families(slug, vendor, display_name)
-       VALUES (?, ?, ?)
+      `INSERT INTO model_families(slug, vendor, display_name, open_weight)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(slug) DO UPDATE SET
          vendor = excluded.vendor,
-         display_name = excluded.display_name`,
-    ).bind(p.slug, p.vendor, p.display_name).run();
+         display_name = excluded.display_name,
+         open_weight = excluded.open_weight`,
+    ).bind(p.slug, p.vendor, p.display_name, openWeight).run();
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
     return errorResponse(err);

@@ -42,6 +42,7 @@ export interface CatalogFamilyEntry {
   slug: string;
   vendor: string;
   display_name: string;
+  open_weight?: boolean | null;
 }
 
 export interface IngestConfig {
