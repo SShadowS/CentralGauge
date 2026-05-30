@@ -14,6 +14,7 @@ function row(p: Partial<LeaderboardRow>): LeaderboardRow {
     pass_rate_ci: { lower: 0.6, upper: 0.8 }, latency_p95_ms: 5000,
     pass_hat_at_n: 0.7,
     last_run_at: '2026-05-30T00:00:00Z',
+    open_weight: null,
     ...p,
   } as LeaderboardRow;
 }
@@ -69,5 +70,19 @@ describe('pickRecommendations', () => {
   it('fastest is null when no row clears the skill threshold', () => {
     const rs = [row({ auc_2: 0.5 }), row({ auc_2: 0.6 })];
     expect(pickRecommendations(rs).fastest).toBeNull();
+  });
+
+  it('open = highest auc_2 among open-weight models only', () => {
+    const rs = [
+      row({ model: { slug: 'opus', display_name: 'Opus', api_model_id: 'o', settings_suffix: '' }, auc_2: 0.85, open_weight: false }),
+      row({ model: { slug: 'ds', display_name: 'DeepSeek', api_model_id: 'd', settings_suffix: '' }, auc_2: 0.71, open_weight: true }),
+      row({ model: { slug: 'qw', display_name: 'Qwen', api_model_id: 'q', settings_suffix: '' }, auc_2: 0.68, open_weight: true }),
+    ];
+    expect(pickRecommendations(rs).open?.model.slug).toBe('ds');
+  });
+
+  it('open is null when no model is open-weight', () => {
+    const rs = [row({ open_weight: false }), row({ open_weight: null })];
+    expect(pickRecommendations(rs).open).toBeNull();
   });
 });

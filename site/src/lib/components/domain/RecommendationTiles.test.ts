@@ -13,7 +13,9 @@ function row(p: Partial<LeaderboardRow>): LeaderboardRow {
     cost_per_pass_usd: 0.1, avg_score: 80, avg_cost_usd: 0.1, verified_runs: 1,
     pass_rate_ci: { lower: 0.7, upper: 0.9 }, latency_p95_ms: 3000,
     pass_hat_at_n: 0.8,
-    last_run_at: '2026-05-30T00:00:00Z', ...p,
+    last_run_at: '2026-05-30T00:00:00Z',
+    open_weight: null,
+    ...p,
   } as LeaderboardRow;
 }
 
@@ -36,5 +38,15 @@ describe('RecommendationTiles', () => {
     const { container } = render(RecommendationTiles, { props: { rows } });
     expect(container.textContent).toMatch(/tied with GPT/i);
     expect(container.textContent).toMatch(/Tier 1/i);
+  });
+
+  it('renders the Best open-weight tile with the top open model', () => {
+    const rows = [
+      row({ model: { slug: 'opus', display_name: 'Opus', api_model_id: 'o', settings_suffix: '' }, auc_2: 0.85, open_weight: false }),
+      row({ model: { slug: 'ds', display_name: 'DeepSeek', api_model_id: 'd', settings_suffix: '' }, auc_2: 0.71, open_weight: true }),
+    ];
+    const { container } = render(RecommendationTiles, { props: { rows } });
+    expect(container.textContent).toMatch(/best open-weight/i);
+    expect(container.textContent).toMatch(/DeepSeek/);
   });
 });

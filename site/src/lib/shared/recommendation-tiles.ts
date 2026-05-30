@@ -22,12 +22,13 @@ export interface Recommendations {
   overall: TilePick | null;
   value: TilePick | null;
   fastest: TilePick | null;
+  open: TilePick | null;
 }
 
 const auc = (r: LeaderboardRow) => r.auc_2 ?? ((r.pass_at_1 ?? 0) + (r.pass_at_n ?? 0)) / 2;
 
 export function pickRecommendations(rows: LeaderboardRow[]): Recommendations {
-  if (rows.length === 0) return { overall: null, value: null, fastest: null };
+  if (rows.length === 0) return { overall: null, value: null, fastest: null, open: null };
 
   const byAuc = [...rows].sort((a, b) => auc(b) - auc(a));
   const leader = byAuc[0];
@@ -50,5 +51,9 @@ export function pickRecommendations(rows: LeaderboardRow[]): Recommendations {
   const fastRow = speedEligible.sort((a, b) => a.latency_p95_ms - b.latency_p95_ms)[0];
   const fastest: TilePick | null = fastRow ? { model: fastRow.model, row: fastRow } : null;
 
-  return { overall, value, fastest };
+  const openEligible = rows.filter((r) => r.open_weight === true);
+  const openRow = openEligible.sort((a, b) => auc(b) - auc(a))[0];
+  const open: TilePick | null = openRow ? { model: openRow.model, row: openRow } : null;
+
+  return { overall, value, fastest, open };
 }

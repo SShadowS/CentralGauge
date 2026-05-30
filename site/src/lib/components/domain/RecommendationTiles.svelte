@@ -47,15 +47,24 @@
       <p class="v">—</p>
     {/if}
   </div>
+
+  <div class="tile">
+    <p class="k"><span aria-hidden="true">🔓</span> Best open-weight</p>
+    {#if rec.open}
+      <p class="v"><ModelLink slug={rec.open.model.slug} display_name={rec.open.model.display_name} api_model_id={rec.open.model.api_model_id} family_slug={rec.open.row.family_slug} /><SettingsBadge suffix={rec.open.model.settings_suffix} /></p>
+      <p class="sub">{auc2Display(rec.open.row).toFixed(1)} AUC{#if rec.open.row.tier} · Tier {rec.open.row.tier}{/if}</p>
+    {:else}<p class="v">—</p>{/if}
+  </div>
 </section>
 
 <style>
   .tiles {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: var(--space-4);
     margin: var(--space-5) 0;
   }
+  @media (max-width: 1100px) and (min-width: 769px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 768px) { .tiles { grid-template-columns: 1fr; } }
   .tile {
     border: 1px solid var(--border);
