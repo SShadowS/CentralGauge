@@ -243,4 +243,17 @@ describe('LeaderboardTable', () => {
     const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
     expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(1);
   });
+
+  it('dims ranks only for tiers shared by more than one visible model', () => {
+    const tierRows = [
+      makeRow({ slug: 'a', rank: 1, tier: 1 }),
+      makeRow({ slug: 'b', rank: 2, tier: 1 }),
+      makeRow({ slug: 'c', rank: 3, tier: 2 }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:desc' } });
+    const rankCells = container.querySelectorAll('td.rank');
+    expect(rankCells[0].classList.contains('tied')).toBe(true); // tier 1, shared
+    expect(rankCells[1].classList.contains('tied')).toBe(true); // tier 1, shared
+    expect(rankCells[2].classList.contains('tied')).toBe(false); // tier 2, alone
+  });
 });

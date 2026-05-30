@@ -49,6 +49,15 @@
     }
     return out;
   });
+
+  // A rank is "statistically tied" only when its tier is shared by more than
+  // one visible row. The tier engine assigns every row a tier, so dimming on
+  // "has a tier" alone would dim every rank — only multi-member tiers count.
+  const tiedTiers = $derived.by(() => {
+    const counts = new Map<number, number>();
+    for (const r of rows) if (r.tier !== undefined) counts.set(r.tier, (counts.get(r.tier) ?? 0) + 1);
+    return new Set([...counts].filter(([, n]) => n > 1).map(([t]) => t));
+  });
 </script>
 
 <div class="wrap">
@@ -75,7 +84,9 @@
           <MetricInfo id="auc_2" />
         </th>
         <!-- CI: non-sortable confidence half-width -->
-        <th scope="col" class="th-ci">CI <MetricInfo id="pass_rate_ci" /></th>
+        <th scope="col" class="ci-head">
+          <span class="th-ci">CI <MetricInfo id="pass_rate_ci" /></span>
+        </th>
         <th scope="col" aria-sort={ariaSort('avg_cost_usd')}>
           <button class="hbtn" onclick={() => clickSort('avg_cost_usd')}>Cost / task{#if sortField === 'avg_cost_usd'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="avg_cost_usd" />
@@ -99,7 +110,7 @@
           </tr>
         {/if}
         <tr>
-          <td class="rank text-mono" class:tied={row.tier !== undefined}>{row.rank}</td>
+          <td class="rank text-mono" class:tied={row.tier !== undefined && tiedTiers.has(row.tier)}>{row.rank}</td>
           <th scope="row">
             <ModelLink
               slug={row.model.slug}
@@ -153,6 +164,7 @@
   tbody tr:hover { background: var(--surface); }
   .tier-divider td { padding: 0.3rem 0.6rem; font-size: var(--text-sm); color: var(--text-muted); background: var(--surface-elevated); border-top: 2px solid var(--border); }
   .rank { width: 48px; color: var(--text-muted); }
+  .chev { width: 40px; padding: 0; }
   .rank.tied { color: var(--text-faint); font-weight: var(--weight-regular); }
   .ci { white-space: nowrap; color: var(--text-muted); font-size: var(--text-xs); }
   .hbtn {
