@@ -71,7 +71,7 @@ export const METRICS: Record<string, MetricDef> = {
   auc_2: {
     id: 'auc_2',
     label: 'Solve AUC@2',
-    short: 'Overall skill: full credit for solving on the first try, half credit if it takes a second attempt. Not the same as the solved fraction.',
+    short: 'Skill score: full credit for a first-try solve, half for a retry solve. Not the solve rate.',
     formula: 'AUC@2 = (pass@1 + solve@2) / 2',
     when: 'Use as the headline ranking metric. Rewards first-try correctness over fail-then-repair without ignoring the two-attempt protocol. De-saturates the headline that pass_at_n compresses. Significance via paired bootstrap (tier bands), not Wilson.',
     unit: 'rate',

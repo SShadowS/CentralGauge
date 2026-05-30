@@ -110,7 +110,7 @@ describe('auc_2 + repair_rate registry entries', () => {
     expect(m).toBeDefined();
     expect(m.id).toBe('auc_2');
     expect(m.unit).toBe('rate');
-    expect(m.when.toLowerCase()).toContain('primary');
+    expect(m.when.toLowerCase()).toContain('headline');
   });
 
   it('defines repair_rate as a rate', () => {
