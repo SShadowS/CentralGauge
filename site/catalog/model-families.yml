@@ -4,21 +4,28 @@
 - slug: claude
   vendor: Anthropic
   display_name: Claude
+  open_weight: false
 - slug: gpt
   vendor: OpenAI
   display_name: GPT
+  open_weight: false
 - slug: gemini
   vendor: Google
   display_name: Gemini
+  open_weight: false
 - slug: deepseek
   vendor: DeepSeek
   display_name: DeepSeek
+  open_weight: true
 - slug: grok
   vendor: xAI
   display_name: Grok
+  open_weight: false
 - slug: qwen3.6
   vendor: Qwen
   display_name: Qwen3.6
+  open_weight: true
 - slug: qwen3.5
   vendor: Qwen
   display_name: Qwen3.5
+  open_weight: true
