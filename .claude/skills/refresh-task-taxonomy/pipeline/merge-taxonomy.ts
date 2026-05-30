@@ -33,7 +33,20 @@ const GROUP_OVERRIDE: Record<string, string> = {
   "CG-AL-H034": "error-transactions",
 };
 
-const enriched: Record<string, string[]> = JSON.parse(await Deno.readTextFile(".claude/skills/refresh-task-taxonomy/pipeline/enriched-tags.json"));
+const ENRICHED_PATH =
+  ".claude/skills/refresh-task-taxonomy/pipeline/enriched-tags.json";
+let enrichedRaw: string;
+try {
+  enrichedRaw = await Deno.readTextFile(ENRICHED_PATH);
+} catch {
+  console.error(
+    `Missing ${ENRICHED_PATH}.\n` +
+      "Run step 2 first: the enrich-task-tags workflow, then save its " +
+      "`taskTags` object to that path. See the refresh-task-taxonomy SKILL.md.",
+  );
+  Deno.exit(1);
+}
+const enriched: Record<string, string[]> = JSON.parse(enrichedRaw);
 // drop ubiquitous non-discriminating facet
 const DROP_FACET = new Set(["codeunit"]);
 // genuinely-new niche facets the workflow flagged (gap → task)
@@ -57,7 +70,7 @@ for await (const e of walk("tasks", { exts: [".yml"], includeDirs: false })) {
 const ids = Object.keys(enriched).sort();
 const taskFacets: Record<string, string[]> = {};
 for (const id of ids) {
-  const set = new Set(enriched[id].filter((f) => !DROP_FACET.has(f)));
+  const set = new Set((enriched[id] ?? []).filter((f) => !DROP_FACET.has(f)));
   for (const a of ADD[id] ?? []) set.add(a);
   taskFacets[id] = [...set].sort();
 }
