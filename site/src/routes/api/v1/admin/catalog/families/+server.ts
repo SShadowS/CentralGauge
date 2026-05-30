@@ -50,7 +50,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
        ON CONFLICT(slug) DO UPDATE SET
          vendor = excluded.vendor,
          display_name = excluded.display_name,
-         open_weight = excluded.open_weight`,
+         open_weight = COALESCE(excluded.open_weight, open_weight)`,
     ).bind(p.slug, p.vendor, p.display_name, openWeight).run();
     return jsonResponse({ ok: true }, 200);
   } catch (err) {

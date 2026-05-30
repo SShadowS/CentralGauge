@@ -110,6 +110,40 @@ describe("admin catalog endpoints", () => {
     expect(row?.open_weight).toBeNull();
   });
 
+  it("re-upsert without open_weight preserves a previously set value", async () => {
+    // 1) upsert with open_weight: true → stored 1
+    const { signedRequest: first } = await signAsAdmin({
+      slug: "preserve-fam",
+      vendor: "PreserveVendor",
+      display_name: "Preserve Family",
+      open_weight: true,
+    });
+    await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(first),
+    });
+
+    // 2) re-upsert SAME slug with NO open_weight field
+    const { signedRequest: second } = await signAsAdmin({
+      slug: "preserve-fam",
+      vendor: "PreserveVendor",
+      display_name: "Preserve Family (renamed)",
+    });
+    const resp = await SELF.fetch("https://x/api/v1/admin/catalog/families", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(second),
+    });
+    expect(resp.status).toBe(200);
+
+    // 3) open_weight still 1 (not clobbered to NULL)
+    const row = await env.DB.prepare(
+      `SELECT open_weight FROM model_families WHERE slug = ?`,
+    ).bind("preserve-fam").first<{ open_weight: number | null }>();
+    expect(row?.open_weight).toBe(1);
+  });
+
   it("updates an existing family on slug conflict", async () => {
     const { signedRequest: first } = await signAsAdmin({
       slug: "test-fam-2",
