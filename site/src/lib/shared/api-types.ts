@@ -688,6 +688,32 @@ export interface SearchResponse {
 }
 
 // =============================================================================
+// Taxonomy vocab — GET /api/v1/taxonomy  (T6: filter UI vocab endpoint)
+// =============================================================================
+//
+// Returns the full group + facet-tag vocabulary with current-set task counts.
+// Groups with zero tasks in the current set are omitted (HAVING task_count > 0).
+
+export interface TaxonomyGroup {
+  slug: string;
+  name: string;
+  description: string | null;
+  task_count: number;
+}
+
+export interface TaxonomyTag {
+  slug: string;
+  name: string;
+  task_count: number;
+}
+
+export interface TaxonomyResponse {
+  groups: TaxonomyGroup[];
+  tags: TaxonomyTag[];
+  generated_at: string;
+}
+
+// =============================================================================
 // Global shortcomings — GET /api/v1/shortcomings  (NEW endpoint, P5.3 Task A8)
 // =============================================================================
 
