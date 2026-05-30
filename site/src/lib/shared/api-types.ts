@@ -73,6 +73,9 @@ export interface LeaderboardRow {
     settings_suffix: string;
   };
   family_slug: string;
+  /** Whether the model's family is open-weight (weights downloadable). null when
+   * the family's openness is unknown. Sourced from model_families.open_weight. */
+  open_weight?: boolean | null;
   run_count: number;
   /**
    * @deprecated Per-attempt count (COUNT(*) over results). Preserved for

@@ -372,6 +372,7 @@ export async function computeLeaderboard(
       m.display_name AS model_display,
       m.api_model_id AS model_api,
       mf.slug AS family_slug,
+      mf.open_weight AS open_weight,
       -- Settings hash + ambiguity flag. The actual settings_profiles join
       -- happens in TS to sidestep SQLite "misuse of aggregate function MAX()"
       -- inside scalar subqueries that reference outer aggregates.
@@ -428,6 +429,7 @@ export async function computeLeaderboard(
     model_display: string;
     model_api: string;
     family_slug: string;
+    open_weight: number | null;
     settings_hash_unique: string | null;
     run_count: number;
     tasks_attempted: number;
@@ -552,6 +554,7 @@ export async function computeLeaderboard(
         settings_suffix: settingsSuffix,
       },
       family_slug: r.family_slug,
+      open_weight: r.open_weight === null || r.open_weight === undefined ? null : r.open_weight === 1,
       run_count: r.run_count,
       tasks_attempted: r.tasks_attempted,
       tasks_passed: r.tasks_passed ?? 0,

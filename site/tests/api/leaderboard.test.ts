@@ -148,6 +148,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "rank",
       "model",
       "family_slug",
+      "open_weight",
       "run_count",
       "tasks_attempted",
       "tasks_passed",

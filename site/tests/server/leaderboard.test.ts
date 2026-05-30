@@ -1495,3 +1495,112 @@ describe("auc_2 SQL ORDER BY sort (Task 4)", () => {
     expect(third.auc_2).toBeCloseTo(8  / 20, 6);  // (2*0+8)/(2*10)
   });
 });
+
+// ---------------------------------------------------------------------------
+// open_weight on leaderboard rows (Phase 3 Task 3)
+//
+// Seed three model families:
+//   fam-open:        open_weight = 1  → open_weight: true
+//   fam-proprietary: open_weight = 0  → open_weight: false
+//   fam-unknown:     open_weight = NULL → open_weight: null
+//
+// Each family has one model with one run + one result so the model appears on
+// the leaderboard.
+// ---------------------------------------------------------------------------
+
+describe("open_weight on leaderboard rows (Phase 3 Task 3)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+
+    // Shared scaffolding: task_set, settings profile, machine key.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('aaaa','2026-01-01T00:00:00Z',10,1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO settings_profiles(hash,temperature,max_attempts) VALUES ('s',0.0,2)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'rig',?,'ingest','2026-01-01T00:00:00Z')`,
+      ).bind(new Uint8Array([0])),
+    ]);
+
+    // Three families with distinct open_weight values.
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (1,'fam-open','OpenVendor','Open Family',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (2,'fam-proprietary','PropVendor','Prop Family',0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (3,'fam-unknown','UnkVendor','Unknown Family',NULL)`,
+    ).run();
+
+    // One model per family.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'M-OPEN','m-open','Model Open',1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (2,2,'M-PROP','m-prop','Model Prop',1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (3,3,'M-UNK','m-unk','Model Unknown',1)`,
+      ),
+    ]);
+
+    // Cost snapshots for all three models.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',1,1.0,2.0,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',2,1.0,2.0,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',3,1.0,2.0,'2026-01-01')`,
+      ),
+    ]);
+
+    // One run + one result per model so each appears on the leaderboard.
+    for (const [runId, modelId] of [["r1", 1], ["r2", 2], ["r3", 3]] as const) {
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        runId, "aaaa", modelId, "s", "rig",
+        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+        1, new Uint8Array([0]),
+      ).run();
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
+      ).bind(runId, `t-${runId}`).run();
+    }
+  });
+
+  it("open_weight=1 on family surfaces as true on the leaderboard row", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const row = rows.find((r) => r.model.slug === "M-OPEN");
+    expect(row, "M-OPEN row should be present").toBeDefined();
+    expect(row!.open_weight).toBe(true);
+  });
+
+  it("open_weight=0 on family surfaces as false on the leaderboard row", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const row = rows.find((r) => r.model.slug === "M-PROP");
+    expect(row, "M-PROP row should be present").toBeDefined();
+    expect(row!.open_weight).toBe(false);
+  });
+
+  it("open_weight=NULL on family surfaces as null on the leaderboard row", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const row = rows.find((r) => r.model.slug === "M-UNK");
+    expect(row, "M-UNK row should be present").toBeDefined();
+    expect(row!.open_weight).toBeNull();
+  });
+});
