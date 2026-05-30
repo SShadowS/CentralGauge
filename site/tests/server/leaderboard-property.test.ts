@@ -32,6 +32,7 @@ const baseQuery: LeaderboardQuery = {
   family: null,
   since: null,
   category: null,
+  openness: null,
   sort: "pass_at_n",
   direction: "desc",
   limit: 50,

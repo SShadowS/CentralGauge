@@ -165,6 +165,18 @@ export async function computeLeaderboard(
     wheres.push(`mf.slug = ?`);
     params.push(q.family);
   }
+  // Phase 3 Task 4: openness filter. NULL-open_weight rows are excluded from
+  // BOTH buckets — unknown openness should not claim either side. `mf` is
+  // already JOIN'd in the main query (JOIN model_families mf ON mf.id = m.family_id).
+  // This is a model-level (family-level) attribute that restricts which MODELS
+  // appear; it does NOT need subquery mirroring in p1/p2 correlated subqueries
+  // because those subqueries correlate on model_id (not family) and the outer
+  // WHERE already restricts which model_ids are in scope.
+  if (q.openness === 'open') {
+    wheres.push('mf.open_weight = 1');
+  } else if (q.openness === 'proprietary') {
+    wheres.push('mf.open_weight = 0');
+  }
   if (q.since) {
     wheres.push(`runs.started_at >= ?`);
     params.push(q.since);

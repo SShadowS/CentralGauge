@@ -30,6 +30,7 @@ const baseQuery: LeaderboardQuery = {
   family: null,
   since: null,
   category: null,
+  openness: null,
   sort: "avg_score",
   direction: "desc",
   limit: 50,
@@ -1602,5 +1603,140 @@ describe("open_weight on leaderboard rows (Phase 3 Task 3)", () => {
     const row = rows.find((r) => r.model.slug === "M-UNK");
     expect(row, "M-UNK row should be present").toBeDefined();
     expect(row!.open_weight).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// openness filter (Phase 3 Task 4)
+//
+// Seed: three model families with open_weight = 1, 0, and NULL respectively.
+// Each family has one model with one run + one result so all three appear on
+// the unfiltered leaderboard.
+//
+// openness=null:        all three models returned
+// openness='open':      only M-OPEN returned (proprietary + null excluded)
+// openness='proprietary': only M-PROP returned (open + null excluded)
+//
+// Subquery mirroring NOT needed: the p1/p2_only correlated subqueries
+// correlate on model_id (ru1.model_id = m.id / ru2.model_id = m.id).
+// The outer GROUP BY restricts which model_ids reach the result mapper,
+// so adding `mf.open_weight = 1/0` to the outer WHERE already limits which
+// models appear — the subqueries count pass results for the included model_id
+// only, which is correct. open_weight is a model-family attribute, not a
+// task/result attribute, so it has no per-task-count semantics that would
+// require separate subquery mirroring (unlike category/difficulty filters
+// that affect which task_ids are counted in numerators).
+// ---------------------------------------------------------------------------
+
+describe("openness filter (Phase 3 Task 4)", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+
+    // Shared scaffolding: task_set, settings profile, machine key.
+    // Reuses the same pattern as the Task 3 describe block above.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES ('aaaa','2026-01-01T00:00:00Z',10,1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO settings_profiles(hash,temperature,max_attempts) VALUES ('s',0.0,2)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO machine_keys(id,machine_id,public_key,scope,created_at) VALUES (1,'rig',?,'ingest','2026-01-01T00:00:00Z')`,
+      ).bind(new Uint8Array([0])),
+    ]);
+
+    // Three families with distinct open_weight values.
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (1,'fam-open','OpenVendor','Open Family',1)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (2,'fam-proprietary','PropVendor','Prop Family',0)`,
+    ).run();
+    await env.DB.prepare(
+      `INSERT INTO model_families(id,slug,vendor,display_name,open_weight) VALUES (3,'fam-unknown','UnkVendor','Unknown Family',NULL)`,
+    ).run();
+
+    // One model per family.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (1,1,'M-OPEN','m-open','Model Open',1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (2,2,'M-PROP','m-prop','Model Prop',1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation) VALUES (3,3,'M-UNK','m-unk','Model Unknown',1)`,
+      ),
+    ]);
+
+    // Cost snapshots for all three models.
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',1,1.0,2.0,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',2,1.0,2.0,'2026-01-01')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from) VALUES ('v1',3,1.0,2.0,'2026-01-01')`,
+      ),
+    ]);
+
+    // One run + one result per model so each appears on the leaderboard.
+    for (const [runId, modelId] of [["r1", 1], ["r2", 2], ["r3", 3]] as const) {
+      await env.DB.prepare(
+        `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ).bind(
+        runId, "aaaa", modelId, "s", "rig",
+        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+        1, new Uint8Array([0]),
+      ).run();
+      await env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES (?,?,1,1,1.0,1,1,1,100,50)`,
+      ).bind(runId, `t-${runId}`).run();
+    }
+  });
+
+  it("openness=null returns all three models (open, proprietary, and null-openness)", async () => {
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: null });
+    const slugs = rows.map((r) => r.model.slug).sort();
+    expect(slugs).toContain("M-OPEN");
+    expect(slugs).toContain("M-PROP");
+    expect(slugs).toContain("M-UNK");
+    expect(rows).toHaveLength(3);
+  });
+
+  it("openness='open' returns ONLY the open-weight model (excludes proprietary AND null)", async () => {
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "open" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].model.slug).toBe("M-OPEN");
+    expect(rows[0].open_weight).toBe(true);
+  });
+
+  it("openness='proprietary' returns ONLY the proprietary model (excludes open AND null)", async () => {
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "proprietary" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].model.slug).toBe("M-PROP");
+    expect(rows[0].open_weight).toBe(false);
+  });
+
+  it("openness='open' does not affect pass counts (subquery mirroring not needed)", async () => {
+    // M-OPEN has exactly 1 result that passed on attempt 1.
+    // With openness='open', pass_at_n must still be 1/10 = 0.1 (strict).
+    // If subquery mirroring were incorrectly applied it could corrupt the count.
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, openness: "open" });
+    expect(rows).toHaveLength(1);
+    const row = rows[0];
+    expect(row.tasks_passed_attempt_1).toBe(1);
+    expect(row.tasks_passed_attempt_2_only).toBe(0);
+    expect(row.pass_at_n).toBeCloseTo(1 / 10, 6);
+    expect(row.denominator).toBe(10);
   });
 });

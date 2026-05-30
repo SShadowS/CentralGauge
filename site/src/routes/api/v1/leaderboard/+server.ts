@@ -161,6 +161,12 @@ function parseQuery(url: URL): LeaderboardQuery {
   // P7 Phase B accepts the field; SQL filter wires up in Phase C (categories).
   const category = url.searchParams.get('category')?.trim() || null;
 
+  // Phase 3 Task 4: openness filter. Lenient parse — invalid values become null
+  // (matching the lenient sort style: no 400, just ignore unknown values).
+  const opennessRaw = url.searchParams.get('openness');
+  const openness: 'open' | 'proprietary' | null =
+    opennessRaw === 'open' || opennessRaw === 'proprietary' ? opennessRaw : null;
+
   // A.6 — sort key + direction. Format: `?sort=field:dir` (e.g. `auc_2:desc`).
   // The page may pass sort fields the SQL ORDER BY doesn't recognize
   // (e.g. `model:desc`, `tasks_passed:desc`, used only by the LeaderboardTable
@@ -199,6 +205,7 @@ function parseQuery(url: URL): LeaderboardQuery {
     family,
     since,
     category,
+    openness,
     sort,
     direction,
     limit,

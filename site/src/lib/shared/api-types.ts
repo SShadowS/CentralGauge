@@ -36,6 +36,14 @@ export interface LeaderboardQuery {
    */
   category: string | null;
   /**
+   * Optional openness filter (Phase 3 Task 4). Restricts the leaderboard to
+   * models in open-weight families (`'open'`) or proprietary families
+   * (`'proprietary'`). `null` (default) returns all models regardless of
+   * openness. Models whose family has `open_weight = NULL` are excluded from
+   * BOTH buckets — unknown openness does not claim either side.
+   */
+  openness: 'open' | 'proprietary' | null;
+  /**
    * A.6 sort key. All whitelist fields are sorted in SQL before LIMIT
    * (except `latency_p95_ms` which uses a TS post-sort with wide fetch because
    * SQLite lacks PERCENTILE_CONT). Default is `auc_2` (Solve AUC@2 headline;
