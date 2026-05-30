@@ -52,4 +52,22 @@ describe('pickRecommendations', () => {
     expect(r.value).toBeNull();
     expect(r.fastest).toBeNull();
   });
+
+  it('overall.tiedWith is undefined when the runner-up is in a different tier', () => {
+    const rs = [
+      row({ model: { slug: 'a', display_name: 'A', api_model_id: 'a', settings_suffix: '' }, auc_2: 0.9, tier: 1 }),
+      row({ model: { slug: 'b', display_name: 'B', api_model_id: 'b', settings_suffix: '' }, auc_2: 0.8, tier: 2 }),
+    ];
+    expect(pickRecommendations(rs).overall!.tiedWith).toBeUndefined();
+  });
+
+  it('value is null when every row is value-ineligible (all cost null)', () => {
+    const rs = [row({ tier: 1, cost_per_pass_usd: null }), row({ tier: 2, cost_per_pass_usd: null })];
+    expect(pickRecommendations(rs).value).toBeNull();
+  });
+
+  it('fastest is null when no row clears the skill threshold', () => {
+    const rs = [row({ auc_2: 0.5 }), row({ auc_2: 0.6 })];
+    expect(pickRecommendations(rs).fastest).toBeNull();
+  });
 });
