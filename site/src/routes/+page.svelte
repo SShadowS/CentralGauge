@@ -10,6 +10,7 @@
   import SortPresets from '$lib/components/domain/SortPresets.svelte';
   import CategoryTabs from '$lib/components/domain/CategoryTabs.svelte';
   import SetPicker from '$lib/components/domain/SetPicker.svelte';
+  import OpennessFilter from '$lib/components/domain/OpennessFilter.svelte';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
   // import CheatButton from '$lib/cheat/CheatButton.svelte';
@@ -17,7 +18,7 @@
 
   let { data } = $props();
 
-  const FILTER_KEYS = new Set(['set', 'difficulty', 'family', 'since', 'category']);
+  const FILTER_KEYS = new Set(['set', 'difficulty', 'family', 'since', 'category', 'openness']);
 
   let setVal = $derived(data.filters.set);
 
@@ -100,6 +101,7 @@
       selected={setVal}
       onchange={(next) => pushFilter({ set: next === 'current' ? null : next })}
     />
+    <OpennessFilter value={data.filters.openness ?? null} onselect={(v) => pushFilter({ openness: v })} />
 
   </FilterRail>
 
