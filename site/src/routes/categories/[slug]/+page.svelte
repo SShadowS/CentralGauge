@@ -53,7 +53,7 @@
       {/snippet}
     </EmptyState>
   {:else}
-    <LeaderboardTable rows={data.leaderboard.data} sort="pass_at_n:desc" />
+    <LeaderboardTable rows={data.leaderboard.data} sort="auc_2:desc" />
   {/if}
 </section>
 

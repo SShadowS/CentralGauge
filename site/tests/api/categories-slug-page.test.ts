@@ -133,14 +133,14 @@ describe("GET /categories/easy — page server load", () => {
   );
 
   it(
-    "renders the leaderboard table with pass_at_n column sorted descending by default",
+    "renders the leaderboard table with the AUC@2 column sorted descending by default",
     async () => {
       const res = await SELF.fetch("https://x/categories/easy?_cb=sort-default");
       expect(res.status).toBe(200);
       const html = await res.text();
 
-      // The LeaderboardTable receives sort="pass_at_n:desc" which sets
-      // aria-sort="descending" on the Pass column header. Verify via the
+      // The LeaderboardTable receives sort="auc_2:desc" which sets
+      // aria-sort="descending" on the Solve AUC@2 column header. Verify via the
       // rendered aria attribute so we don't depend on visual text position.
       expect(html).toContain('aria-sort="descending"');
     },
