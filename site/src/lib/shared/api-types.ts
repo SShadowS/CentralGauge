@@ -605,6 +605,8 @@ export interface TasksIndexItem {
   content_hash: string;
   task_set_hash: string;
   category: TaskCategory | null;
+  /** Facet tag slugs for this task (sorted); empty when untagged. */
+  tags: string[];
 }
 
 export interface TasksIndexResponse {

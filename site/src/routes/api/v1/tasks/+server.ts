@@ -81,6 +81,39 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+
+    // Fetch tags for the resolved set in one query scoped by task_set_hash
+    // (avoids binding one variable per task — D1 caps bound params at ~100).
+    const tagMap = new Map<string, string[]>();
+    if (page.length > 0) {
+      // All page rows share the same task_set_hash (or come from is_current=1 set).
+      // Use the hash from the first page row; for set=current all rows share one hash.
+      // For set=all, group by task_set_hash individually.
+      const distinctHashes = [...new Set(page.map((r) => r.task_set_hash))];
+      for (const hash of distinctHashes) {
+        const tagRows = await getAll<{ task_id: string; slug: string }>(
+          env.DB,
+          `SELECT tt.task_id AS task_id, tg.slug AS slug
+           FROM task_tags tt JOIN tags tg ON tg.id = tt.tag_id
+           WHERE tt.task_set_hash = ?`,
+          [hash],
+        );
+        for (const tr of tagRows) {
+          const key = `${hash}\0${tr.task_id}`;
+          const list = tagMap.get(key);
+          if (list) {
+            list.push(tr.slug);
+          } else {
+            tagMap.set(key, [tr.slug]);
+          }
+        }
+      }
+      // Sort each list once
+      for (const list of tagMap.values()) {
+        list.sort();
+      }
+    }
+
     const data = page.map((r) => ({
       id: r.id,
       difficulty: r.difficulty,
@@ -89,6 +122,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       category: r.category_slug
         ? { slug: r.category_slug, name: r.category_name! }
         : null,
+      tags: tagMap.get(`${r.task_set_hash}\0${r.id}`) ?? [],
     }));
     const next_cursor = hasMore
       ? encodeCursor({ id: page[page.length - 1].id } satisfies TaskCursor)

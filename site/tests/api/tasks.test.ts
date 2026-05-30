@@ -169,6 +169,40 @@ describe("GET /api/v1/tasks — filters", () => {
   });
 });
 
+describe("GET /api/v1/tasks — tags", () => {
+  it("returns facet tags per task", async () => {
+    // Seed tags and task_tags for the task 'easy/a' (already in current set via seed())
+    await env.DB.batch([
+      env.DB.prepare(`INSERT INTO tags(id,slug,name) VALUES (1,'keys','Keys'),(2,'table','Table')`),
+      env.DB.prepare(
+        `INSERT INTO task_tags(task_set_hash,task_id,tag_id) VALUES ('ts','easy/a',1),('ts','easy/a',2)`,
+      ),
+    ]);
+    const res = await SELF.fetch("https://x/api/v1/tasks?set=current&_cb=tags");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: Array<{ id: string; tags: string[] }>;
+    };
+    const t1 = body.data.find((r) => r.id === "easy/a");
+    expect(t1).toBeDefined();
+    expect(t1!.tags).toEqual(["keys", "table"]);
+  });
+
+  it("returns empty tags array for an untagged task", async () => {
+    // No task_tags inserted — 'hard/b' has no tags
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?set=current&_cb=notags",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      data: Array<{ id: string; tags: string[] }>;
+    };
+    const t2 = body.data.find((r) => r.id === "hard/b");
+    expect(t2).toBeDefined();
+    expect(t2!.tags).toEqual([]);
+  });
+});
+
 describe("GET /api/v1/tasks/:id", () => {
   it("returns task detail + solved-by matrix", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks/easy/a");
