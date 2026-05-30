@@ -11,7 +11,9 @@
 
   const empty = $derived(firstTryPct + retryPct + failedPct <= 0);
   const ariaLabel = $derived(
-    `${firstTryPct.toFixed(0)}% solved first try, ${retryPct.toFixed(0)}% solved on retry, ${failedPct.toFixed(0)}% failed`,
+    empty
+      ? 'No outcome data'
+      : `${Math.round(firstTryPct)}% solved first try, ${Math.round(retryPct)}% solved on retry, ${Math.round(failedPct)}% failed`,
   );
 </script>
 
@@ -19,9 +21,9 @@
   {#if empty}
     <div class="seg seg-empty">—</div>
   {:else}
-    {#if firstTryPct > 0}<div class="seg seg-a1" style="width: {firstTryPct}%"></div>{/if}
-    {#if retryPct > 0}<div class="seg seg-a2" style="width: {retryPct}%"></div>{/if}
-    {#if failedPct > 0}<div class="seg seg-fail" style="width: {failedPct}%"></div>{/if}
+    {#if firstTryPct > 0}<div class="seg seg-a1" style="width: {firstTryPct}%" title="{Math.round(firstTryPct)}% solved first try"></div>{/if}
+    {#if retryPct > 0}<div class="seg seg-a2" style="width: {retryPct}%" title="{Math.round(retryPct)}% solved on retry"></div>{/if}
+    {#if failedPct > 0}<div class="seg seg-fail" style="width: {failedPct}%" title="{Math.round(failedPct)}% failed"></div>{/if}
   {/if}
 </div>
 

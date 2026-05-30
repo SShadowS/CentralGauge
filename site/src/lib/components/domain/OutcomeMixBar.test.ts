@@ -19,4 +19,13 @@ describe('OutcomeMixBar', () => {
     });
     expect(container.textContent).toContain('—');
   });
+
+  it('omits segments whose percentage is zero', () => {
+    const { container } = render(OutcomeMixBar, {
+      props: { firstTryPct: 0, retryPct: 50, failedPct: 50 },
+    });
+    expect(container.querySelector('.seg-a1')).toBeNull();
+    expect(container.querySelector('.seg-a2')).not.toBeNull();
+    expect(container.querySelector('.seg-fail')).not.toBeNull();
+  });
 });
