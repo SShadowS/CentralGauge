@@ -37,6 +37,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       );
     }
     const category = url.searchParams.get("category")?.trim() || null;
+    const tags = url.searchParams.getAll("tag").map((s) => s.trim()).filter(Boolean);
     const cursor = decodeCursor<TaskCursor>(url.searchParams.get("cursor"));
 
     const params: (string | number)[] = [];
@@ -60,6 +61,23 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     if (category) {
       wheres.push(`tc.slug = ?`);
       params.push(category);
+    }
+    if (tags.length > 0) {
+      // AND semantics: task must have ALL listed tag slugs.
+      // Bind order: one ? per slug, then the integer count — matches textual ? order.
+      // Bound params = tags.length + 1 (safely small, well under D1's ~100 cap).
+      wheres.push(
+        `t.task_id IN (
+          SELECT tt.task_id FROM task_tags tt
+          JOIN tags g ON g.id = tt.tag_id
+          WHERE tt.task_set_hash = t.task_set_hash
+            AND g.slug IN (${tags.map(() => "?").join(",")})
+          GROUP BY tt.task_id
+          HAVING COUNT(DISTINCT g.slug) = ?
+        )`,
+      );
+      for (const slug of tags) params.push(slug);
+      params.push(tags.length);
     }
 
     const sql = `

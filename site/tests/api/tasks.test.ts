@@ -203,6 +203,58 @@ describe("GET /api/v1/tasks — tags", () => {
   });
 });
 
+describe("GET /api/v1/tasks — ?tag filter", () => {
+  // Seed: t1 (easy/a) has tags 'keys' + 'table', t2 (hard/b) has tag 'table' only,
+  // t3 (medium/c) exists with no tags.
+  async function seedTagFilter() {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+         VALUES ('ts','medium/c','hash-c','easy',1,'{"id":"medium/c","goal":"Third task"}')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO tags(id,slug,name) VALUES (1,'keys','Keys'),(2,'table','Table')`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO task_tags(task_set_hash,task_id,tag_id)
+         VALUES ('ts','easy/a',1),('ts','easy/a',2),('ts','hard/b',2)`,
+      ),
+    ]);
+  }
+
+  it("filters tasks by a single ?tag (AND base case)", async () => {
+    await seedTagFilter();
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?set=current&tag=keys&_cb=f1",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ id: string }> };
+    const ids = body.data.map((r) => r.id);
+    expect(ids).toEqual(["easy/a"]); // only easy/a has 'keys'
+  });
+
+  it("filters by multiple ?tag with AND semantics", async () => {
+    await seedTagFilter();
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?set=current&tag=keys&tag=table&_cb=f2",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ id: string }> };
+    const ids = body.data.map((r) => r.id);
+    expect(ids).toEqual(["easy/a"]); // only easy/a has BOTH keys AND table; hard/b has only table
+  });
+
+  it("unknown tag yields no rows", async () => {
+    await seedTagFilter();
+    const res = await SELF.fetch(
+      "https://x/api/v1/tasks?set=current&tag=nope&_cb=f3",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Array<{ id: string }> };
+    expect(body.data).toEqual([]);
+  });
+});
+
 describe("GET /api/v1/tasks/:id", () => {
   it("returns task detail + solved-by matrix", async () => {
     const res = await SELF.fetch("https://x/api/v1/tasks/easy/a");
