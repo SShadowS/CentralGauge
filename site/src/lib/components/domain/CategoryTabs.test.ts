@@ -30,4 +30,15 @@ describe('CategoryTabs', () => {
     await fireEvent.click(getByRole('radio', { name: /all tasks/i }));
     expect(onselect).toHaveBeenCalledWith(null);
   });
+
+  it('moves selection with arrow keys (wrapping)', async () => {
+    const onselect = vi.fn();
+    const { getByRole } = render(CategoryTabs, { props: { categories: cats, active: null, total: 512, onselect } });
+    const allTab = getByRole('radio', { name: /all tasks/i });
+    await fireEvent.keyDown(allTab, { key: 'ArrowRight' });
+    expect(onselect).toHaveBeenCalledWith('tables'); // next after All
+    onselect.mockClear();
+    await fireEvent.keyDown(allTab, { key: 'ArrowLeft' });
+    expect(onselect).toHaveBeenCalledWith('pages');  // wraps to last
+  });
 });

@@ -14,8 +14,8 @@
 
   // Tab model: null slug = All, then one per category.
   const tabs = $derived([
-    { slug: null as string | null, name: 'All tasks', count: total ?? undefined },
-    ...categories.map((c) => ({ slug: c.slug as string | null, name: c.name, count: c.task_count })),
+    { slug: null as string | null, name: 'All tasks', count: total },
+    ...categories.map((c) => ({ slug: c.slug, name: c.name, count: c.task_count })),
   ]);
 
   function onKeydown(e: KeyboardEvent, index: number) {
@@ -32,7 +32,7 @@
 </script>
 
 <div class="tabs" role="radiogroup" aria-label="Task category">
-  {#each tabs as t, i (t.slug ?? '__all__')}
+  {#each tabs as t, i (t.slug !== null ? `cat:${t.slug}` : 'all')}
     <button
       type="button"
       role="radio"
