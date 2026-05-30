@@ -529,8 +529,9 @@ export async function computeLeaderboard(
       denominator > 0 ? (passedA1 + passedA2Only) / denominator : 0;
     const passAt1Strict = denominator > 0 ? passedA1 / denominator : 0;
 
-    // Solve AUC@2 — single-numerator form to avoid float drift between two
-    // separate /denominator divisions (cf. HeroChart segs() comment).
+    // Solve AUC@2 — single-numerator form: (2·p1 + p2_only) / (2·d).
+    // Using one division instead of two keeps the result bit-identical to
+    // what the client recomputes from auc_2Display, avoiding float drift.
     const aucStrict =
       denominator > 0 ? (2 * passedA1 + passedA2Only) / (2 * denominator) : 0;
     // Conditional repair rate; 0 when nothing failed first try.

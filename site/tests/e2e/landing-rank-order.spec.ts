@@ -1,13 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Verifies the landing-page table sort behaviour after the leaderboard
- * redesign (Task 9 trimmed the table, Task 10 removed the HeroChart in favour
- * of FreshnessStrip + RecommendationTiles + SortPresets).
+ * Verifies landing-page table sort behaviour.
  *
- * The old hero-bar / table row-order parity check is gone — there is no
- * HeroChart on the page anymore. Sort-deep-link coverage moves to the columns
- * that survive the trim: Solve AUC@2, Cost / task (avg_cost_usd), p95 latency.
+ * Covers two scenarios:
+ *   1. Default sort: the page loads with auc_2:desc active (aria-sort on the
+ *      Solve AUC@2 header reflects "descending").
+ *   2. Deep-link sort: ?sort=<field>:<dir> activates the named column and
+ *      direction — tested for avg_cost_usd descending and ascending.
+ *
+ * Columns under test: Solve AUC@2, Cost / task (avg_cost_usd), p95 latency.
  */
 test.describe("landing page sort behaviour", () => {
   test("default sort is auc_2 descending (Solve AUC@2 column shows descending indicator)", async ({

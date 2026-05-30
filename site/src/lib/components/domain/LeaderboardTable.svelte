@@ -95,7 +95,7 @@
           <button class="hbtn" onclick={() => clickSort('latency_p95_ms')}>p95{#if sortField === 'latency_p95_ms'} {#if sortDir === 'asc'}<ChevronUp size={12} />{:else}<ChevronDown size={12} />{/if}{/if}</button>
           <MetricInfo id="latency_p95_ms" />
         </th>
-        <!-- Expand chevron column -->
+        <!-- Phase 4: row-expand disclosure control lands here -->
         <th scope="col" aria-label="Details"></th>
       </tr>
     </thead>

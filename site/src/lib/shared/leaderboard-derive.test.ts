@@ -1,6 +1,6 @@
 // site/src/lib/shared/leaderboard-derive.test.ts
 import { describe, it, expect } from 'vitest';
-import { auc2Display, outcomeMix, valuePerSolve } from './leaderboard-derive';
+import { auc2Display, outcomeMix } from './leaderboard-derive';
 import type { LeaderboardRow } from './api-types';
 
 function row(p: Partial<LeaderboardRow>): LeaderboardRow {
@@ -66,11 +66,3 @@ describe('outcomeMix', () => {
   });
 });
 
-describe('valuePerSolve', () => {
-  it('returns cost_per_pass_usd when present', () => {
-    expect(valuePerSolve(row({ cost_per_pass_usd: 0.06 }))).toBe(0.06);
-  });
-  it('returns null when cost_per_pass_usd is null', () => {
-    expect(valuePerSolve(row({ cost_per_pass_usd: null }))).toBeNull();
-  });
-});

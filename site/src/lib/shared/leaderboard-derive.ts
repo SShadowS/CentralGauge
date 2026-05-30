@@ -29,8 +29,3 @@ export function outcomeMix(row: LeaderboardRow): OutcomeMix {
   return { firstTryPct, retryPct, failedPct };
 }
 
-/** Cost per solved task (any-attempt pass). Null when the server could not
- * compute it (no solves, or missing pricing). */
-export function valuePerSolve(row: LeaderboardRow): number | null {
-  return row.cost_per_pass_usd;
-}
