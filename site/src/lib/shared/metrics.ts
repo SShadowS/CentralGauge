@@ -71,9 +71,9 @@ export const METRICS: Record<string, MetricDef> = {
   auc_2: {
     id: 'auc_2',
     label: 'Solve AUC@2',
-    short: 'Attempt-adjusted solve rate: first-try solve = 1.0, second-attempt-only = 0.5.',
-    formula: '(pass_at_1 + pass_at_n) / 2 = (2·tasks_passed_attempt_1 + tasks_passed_attempt_2_only) / (2·task_set_size)',
-    when: 'Primary ranking metric. Rewards first-try correctness over fail-then-repair without ignoring the two-attempt protocol. De-saturates the headline that pass_at_n compresses. Significance via paired bootstrap (tier bands), not Wilson.',
+    short: 'Overall skill: full credit for solving on the first try, half credit if it takes a second attempt. Not the same as the solved fraction.',
+    formula: 'AUC@2 = (pass@1 + solve@2) / 2',
+    when: 'Use as the headline ranking metric. Rewards first-try correctness over fail-then-repair without ignoring the two-attempt protocol. De-saturates the headline that pass_at_n compresses. Significance via paired bootstrap (tier bands), not Wilson.',
     unit: 'rate',
   },
 
@@ -151,7 +151,7 @@ export const METRICS: Record<string, MetricDef> = {
   cost_per_pass_usd: {
     id: 'cost_per_pass_usd',
     label: '$/Pass',
-    short: 'Total cost divided by number of distinct tasks passed. Lower is better.',
+    short: 'Average USD cost per solved task (any-attempt pass).',
     formula: 'SUM(cost_usd) / tasks_passed_distinct across all runs.',
     when: 'Best single cost-efficiency metric. Penalises expensive models that pass few tasks and rewards cheap models with high pass rates.',
     unit: 'usd',
