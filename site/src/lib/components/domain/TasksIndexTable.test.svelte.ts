@@ -10,6 +10,7 @@ const rows: TasksIndexItem[] = [
     content_hash: "a".repeat(64),
     task_set_hash: "b".repeat(64),
     category: { slug: "syntax", name: "Syntax" },
+    tags: [],
   },
   {
     id: "CG-AL-M002",
@@ -17,6 +18,7 @@ const rows: TasksIndexItem[] = [
     content_hash: "c".repeat(64),
     task_set_hash: "b".repeat(64),
     category: null,
+    tags: [],
   },
   {
     id: "CG-AL-H003",
@@ -24,6 +26,7 @@ const rows: TasksIndexItem[] = [
     content_hash: "d".repeat(64),
     task_set_hash: "b".repeat(64),
     category: { slug: "reports", name: "Reports" },
+    tags: [],
   },
 ];
 
