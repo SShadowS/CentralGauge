@@ -44,23 +44,20 @@
     goto(`?${sp.toString()}`, { keepFocus: true, noScroll: true, invalidateAll: true });
   }
 
-  const nextHref = $derived(
-    data.tasks.next_cursor
-      ? `?${new URLSearchParams({
-          ...Object.fromEntries(page.url.searchParams),
-          cursor: data.tasks.next_cursor,
-        }).toString()}`
-      : null,
-  );
-  const prevHref = $derived(
-    data.cursor
-      ? `?${new URLSearchParams({
-          ...Object.fromEntries(
-            Array.from(page.url.searchParams.entries()).filter(([k]) => k !== 'cursor'),
-          ),
-        }).toString()}`
-      : null,
-  );
+  const nextHref = $derived.by(() => {
+    if (!data.tasks.next_cursor) return null;
+    // Copy URLSearchParams directly (not via Object.fromEntries) so
+    // duplicate keys like multi-value ?tag= are preserved.
+    const sp = new URLSearchParams(page.url.searchParams);
+    sp.set('cursor', data.tasks.next_cursor);
+    return `?${sp.toString()}`;
+  });
+  const prevHref = $derived.by(() => {
+    if (!data.cursor) return null;
+    const sp = new URLSearchParams(page.url.searchParams);
+    sp.delete('cursor');
+    return `?${sp.toString()}`;
+  });
 </script>
 
 <svelte:head>
