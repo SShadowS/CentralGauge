@@ -99,6 +99,7 @@ describe("LLMAdapterRegistry", () => {
               },
             }),
           estimateCost: () => 0,
+          estimateUsageCost: () => 0,
           isHealthy: () => Promise.resolve(true),
         }) as LLMAdapter;
 
@@ -142,6 +143,7 @@ describe("LLMAdapterRegistry", () => {
               },
             }),
           estimateCost: () => 0,
+          estimateUsageCost: () => 0,
           isHealthy: () => Promise.resolve(true),
         }) as LLMAdapter);
 

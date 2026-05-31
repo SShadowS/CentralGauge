@@ -134,6 +134,12 @@ export interface LLMAdapter {
   // Utility methods
   validateConfig(config: LLMConfig): string[]; // Returns validation errors
   estimateCost(promptTokens: number, completionTokens: number): number;
+  /**
+   * Estimate cost from a full {@link TokenUsage}, including cache-read/cache-write
+   * tokens (which `estimateCost` cannot see). Prefer this for accounting actual
+   * spend; cache tokens are billed and omitting them undercounts cached requests.
+   */
+  estimateUsageCost(usage: TokenUsage): number;
   isHealthy(): Promise<boolean>;
 }
 

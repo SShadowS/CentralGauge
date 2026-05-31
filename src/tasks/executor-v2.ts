@@ -277,10 +277,10 @@ export class TaskExecutorV2 {
       score: evaluation.score,
       failureReasons: evaluation.reasons,
       tokensUsed: codeResult.response.usage.totalTokens,
-      cost: llmAdapter.estimateCost(
-        codeResult.response.usage.promptTokens,
-        codeResult.response.usage.completionTokens,
-      ),
+      // Cache-aware: includes cache-read/cache-write tokens (Anthropic prompt
+      // caching) that estimateCost(prompt, completion) cannot see. completionTokens
+      // already folds in reasoning/thinking, so this is the full per-attempt spend.
+      cost: llmAdapter.estimateUsageCost(codeResult.response.usage),
       duration: Date.now() - attemptStart,
     };
 

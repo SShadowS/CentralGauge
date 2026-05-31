@@ -14,11 +14,13 @@ import type {
   StreamingLLMAdapter,
   StreamOptions,
   StreamResult,
+  TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
 import { ModelDiscoveryService } from "./model-discovery.ts";
+import { PricingService } from "./pricing-service.ts";
 
 const log = Logger.create("llm");
 
@@ -84,6 +86,24 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
    * Estimate the cost in USD for the given token usage.
    */
   abstract estimateCost(promptTokens: number, completionTokens: number): number;
+
+  /**
+   * Estimate cost from a full {@link TokenUsage}, including cache-read and
+   * cache-write tokens. `estimateCost` only sees prompt + completion, so it
+   * undercounts cached requests (notably Anthropic prompt caching); this folds
+   * in the cache terms via the cache-aware pricing path. For providers/usages
+   * with no cache tokens it equals `estimateCost(prompt, completion)`.
+   */
+  estimateUsageCost(usage: TokenUsage): number {
+    return PricingService.estimateCostWithCacheSync(
+      this.name,
+      this.config.model,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cacheCreationTokens,
+      usage.cacheReadTokens,
+    );
+  }
 
   /**
    * Make an API call to the provider.

@@ -228,6 +228,17 @@ export class MockLLMAdapter implements LLMAdapter {
     );
   }
 
+  estimateUsageCost(usage: TokenUsage): number {
+    return PricingService.estimateCostWithCacheSync(
+      this.name,
+      this.config.model,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cacheCreationTokens,
+      usage.cacheReadTokens,
+    );
+  }
+
   isHealthy(): Promise<boolean> {
     return Promise.resolve(true);
   }

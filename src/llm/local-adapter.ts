@@ -213,6 +213,17 @@ export class LocalLLMAdapter
     );
   }
 
+  estimateUsageCost(usage: TokenUsage): number {
+    return PricingService.estimateCostWithCacheSync(
+      this.name,
+      this.config.model,
+      usage.promptTokens,
+      usage.completionTokens,
+      usage.cacheCreationTokens,
+      usage.cacheReadTokens,
+    );
+  }
+
   async isHealthy(): Promise<boolean> {
     try {
       // Simple health check with minimal request

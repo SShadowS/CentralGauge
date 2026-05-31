@@ -13,6 +13,7 @@ import type {
   LLMAdapter,
   LLMConfig,
   LLMRequest,
+  TokenUsage,
 } from "../../../src/llm/types.ts";
 
 /**
@@ -57,6 +58,9 @@ class MockDiscoverableAdapter implements LLMAdapter, DiscoverableAdapter {
   estimateCost(_promptTokens: number, _completionTokens: number): number {
     return 0;
   }
+  estimateUsageCost(_usage: TokenUsage): number {
+    return 0;
+  }
   isHealthy(): Promise<boolean> {
     return Promise.resolve(true);
   }
@@ -79,6 +83,9 @@ class MockNonDiscoverableAdapter implements LLMAdapter {
     return [];
   }
   estimateCost(_promptTokens: number, _completionTokens: number): number {
+    return 0;
+  }
+  estimateUsageCost(_usage: TokenUsage): number {
     return 0;
   }
   isHealthy(): Promise<boolean> {
