@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { LeaderboardRow } from '$lib/shared/api-types';
   import { computeValueMap } from '$lib/shared/value-map';
+  import { formatCost } from '$lib/client/format';
 
   interface Props {
     rows: LeaderboardRow[];
@@ -36,7 +37,6 @@
   <div class="chart-wrap">
     <svg
       viewBox="0 0 {width} {height}"
-      width="100%"
       role="img"
       aria-label="Cost vs Solve AUC@2 scatter, {nLabel}"
     >
@@ -144,14 +144,14 @@
           href="/models/{p.slug}"
           class="dot"
           class:dominated={!p.onFrontier}
-          aria-label="{p.display_name}: {p.auc.toFixed(1)} AUC at ${p.cost.toFixed(2)}/task"
+          aria-label="{p.display_name}: {p.auc.toFixed(1)} AUC at {formatCost(p.cost)}/task"
         >
           <circle
             cx={p.cx}
             cy={p.cy}
             r={p.onFrontier ? 5 : 4}
           />
-          <title>{p.display_name} — {p.auc.toFixed(1)} AUC · ${p.cost.toFixed(2)}/task{p.onFrontier ? ' · best-value frontier' : ''}</title>
+          <title>{p.display_name} — {p.auc.toFixed(1)} AUC · {formatCost(p.cost)}/task{p.onFrontier ? ' · best-value frontier' : ''}</title>
         </a>
       {/each}
     </svg>
@@ -170,7 +170,9 @@
   }
 
   svg {
+    width: 100%;
     height: auto;
+    max-width: 640px;
     display: block;
   }
 
@@ -187,9 +189,9 @@
     opacity: 0.4;
   }
 
-  .dot:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+  .dot:focus-visible circle {
+    stroke: var(--accent);
+    stroke-width: 2px;
   }
 
   .dot:hover circle {
