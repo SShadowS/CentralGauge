@@ -75,6 +75,45 @@ interface GeminiUsageMetadata {
   thoughtsTokenCount?: number;
 }
 
+/**
+ * Build canonical {@link TokenUsage} token counts from Gemini usage metadata.
+ *
+ * Gemini reports `candidatesTokenCount` (visible output) and
+ * `thoughtsTokenCount` (hidden thinking) SEPARATELY — unlike Anthropic and
+ * OpenAI, whose `output_tokens` / `completion_tokens` already fold reasoning
+ * into a single output count. Thinking is billed at the output rate, so the
+ * true billable output is `candidates + thoughts`. We fold them into
+ * `completionTokens` so that field means "total billable output" uniformly
+ * across every provider; `reasoningTokens` is retained as the (subset)
+ * breakdown for analytics only. Invariant: `reasoningTokens <= completionTokens`.
+ *
+ * Without this fold, Gemini's persisted `tokens_out` (and therefore its derived
+ * cost) silently excludes thinking tokens — an undercount that grows with the
+ * model's thinking budget.
+ *
+ * @param um         Gemini `usageMetadata` (may be undefined when the API omits it).
+ * @param estPrompt  Fallback prompt-token estimate when the API omits `promptTokenCount`.
+ * @param estVisible Fallback visible-output estimate when the API omits `candidatesTokenCount`.
+ */
+export function buildGeminiUsage(
+  um: GeminiUsageMetadata | undefined,
+  estPrompt: number,
+  estVisible: number,
+): Omit<TokenUsage, "estimatedCost"> {
+  const promptTokens = um?.promptTokenCount ?? estPrompt;
+  const visibleTokens = um?.candidatesTokenCount ?? estVisible;
+  const thoughtsTokens = um?.thoughtsTokenCount ?? 0;
+  const completionTokens = visibleTokens + thoughtsTokens;
+  return {
+    promptTokens,
+    completionTokens,
+    // Gemini's totalTokenCount already includes thoughts; prefer it, else derive
+    // from the folded completion so total stays consistent with the parts.
+    totalTokens: um?.totalTokenCount ?? (promptTokens + completionTokens),
+    ...(thoughtsTokens ? { reasoningTokens: thoughtsTokens } : {}),
+  };
+}
+
 export class GeminiAdapter extends BaseLLMAdapter
   implements DiscoverableAdapter {
   readonly name = "gemini";
@@ -218,20 +257,16 @@ export class GeminiAdapter extends BaseLLMAdapter
     const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
     const estimatedCompletionTokens = Math.ceil(contentText.length / 4);
 
-    const thoughtsTokens = (apiResponse.usageMetadata as GeminiUsageMetadata)
-      ?.thoughtsTokenCount;
+    const usageBase = buildGeminiUsage(
+      apiResponse.usageMetadata as GeminiUsageMetadata | undefined,
+      estimatedPromptTokens,
+      estimatedCompletionTokens,
+    );
     const usage: TokenUsage = {
-      promptTokens: apiResponse.usageMetadata?.promptTokenCount ??
-        estimatedPromptTokens,
-      completionTokens: apiResponse.usageMetadata?.candidatesTokenCount ??
-        estimatedCompletionTokens,
-      totalTokens: apiResponse.usageMetadata?.totalTokenCount ??
-        (estimatedPromptTokens + estimatedCompletionTokens),
-      ...(thoughtsTokens ? { reasoningTokens: thoughtsTokens } : {}),
+      ...usageBase,
       estimatedCost: this.estimateCost(
-        apiResponse.usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
-        apiResponse.usageMetadata?.candidatesTokenCount ??
-          estimatedCompletionTokens,
+        usageBase.promptTokens,
+        usageBase.completionTokens,
       ),
     };
 
@@ -300,21 +335,19 @@ export class GeminiAdapter extends BaseLLMAdapter
         }
       }
 
-      // Build usage from API metadata or estimate tokens
-      const promptTokens = usageMetadata?.promptTokenCount ??
-        estimateTokens(request.prompt);
-      const completionTokens = usageMetadata?.candidatesTokenCount ??
-        estimateTokens(state.accumulatedText);
-
-      const thoughtsTokens = (usageMetadata as GeminiUsageMetadata | undefined)
-        ?.thoughtsTokenCount;
+      // Build usage from API metadata or estimate tokens. Thinking tokens are
+      // folded into completionTokens here (see buildGeminiUsage).
+      const usageBase = buildGeminiUsage(
+        usageMetadata as GeminiUsageMetadata | undefined,
+        estimateTokens(request.prompt),
+        estimateTokens(state.accumulatedText),
+      );
       const usage: TokenUsage = {
-        promptTokens,
-        completionTokens,
-        totalTokens: usageMetadata?.totalTokenCount ??
-          (promptTokens + completionTokens),
-        ...(thoughtsTokens ? { reasoningTokens: thoughtsTokens } : {}),
-        estimatedCost: this.estimateCost(promptTokens, completionTokens),
+        ...usageBase,
+        estimatedCost: this.estimateCost(
+          usageBase.promptTokens,
+          usageBase.completionTokens,
+        ),
       };
 
       const { finalChunk, result } = finalizeStream({

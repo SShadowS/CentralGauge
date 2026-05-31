@@ -10,10 +10,71 @@
 
 import { assertEquals } from "@std/assert";
 import {
+  buildGeminiUsage,
   GeminiAdapter,
   mapGeminiModelEntry,
 } from "../../../src/llm/gemini-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async (t) => {
+  await t.step("completionTokens = candidates + thoughts", () => {
+    const u = buildGeminiUsage(
+      {
+        promptTokenCount: 1000,
+        candidatesTokenCount: 500,
+        thoughtsTokenCount: 4000,
+        totalTokenCount: 5500,
+      },
+      0,
+      0,
+    );
+    // Billable output is visible + thinking, not visible alone.
+    assertEquals(u.completionTokens, 4500);
+    // reasoningTokens is the subset breakdown, <= completionTokens.
+    assertEquals(u.reasoningTokens, 4000);
+    assertEquals(u.promptTokens, 1000);
+    // Gemini's own total already includes thoughts — preferred verbatim.
+    assertEquals(u.totalTokens, 5500);
+  });
+
+  await t.step("invariant: reasoningTokens <= completionTokens", () => {
+    const u = buildGeminiUsage(
+      {
+        promptTokenCount: 10,
+        candidatesTokenCount: 20,
+        thoughtsTokenCount: 80,
+      },
+      0,
+      0,
+    );
+    assertEquals(u.completionTokens, 100);
+    assertEquals(u.reasoningTokens, 80);
+    assertEquals((u.reasoningTokens ?? 0) <= u.completionTokens, true);
+    // No API total provided -> derived as prompt + folded completion.
+    assertEquals(u.totalTokens, 110);
+  });
+
+  await t.step(
+    "no thoughts -> completion is visible only, no reasoning key",
+    () => {
+      const u = buildGeminiUsage(
+        { promptTokenCount: 10, candidatesTokenCount: 20, totalTokenCount: 30 },
+        0,
+        0,
+      );
+      assertEquals(u.completionTokens, 20);
+      assertEquals(u.reasoningTokens, undefined);
+    },
+  );
+
+  await t.step("missing metadata -> falls back to estimates", () => {
+    const u = buildGeminiUsage(undefined, 42, 17);
+    assertEquals(u.promptTokens, 42);
+    assertEquals(u.completionTokens, 17);
+    assertEquals(u.totalTokens, 59);
+    assertEquals(u.reasoningTokens, undefined);
+  });
+});
 
 Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
   const raw = {
