@@ -67,4 +67,30 @@ describe('computeValueMap', () => {
     expect(vm.frontierPath).toBe('');
     expect(vm.omittedCount).toBe(1);
   });
+
+  it('places a single priced model at horizontal center without NaN', () => {
+    const vm = computeValueMap([row({ slug: 'only', auc_2: 0.7, avg_cost_usd: 0.10 })], dims);
+    const p = vm.points[0];
+    expect(Number.isFinite(p.cx)).toBe(true);
+    expect(p.cx).toBeCloseTo(dims.padding + (dims.width - 2 * dims.padding) / 2, 5);
+  });
+
+  it('falls back to (pass_at_1 + pass_at_n)/2 when auc_2 is absent', () => {
+    const r = row({ slug: 'fb', auc_2: 0.6, avg_cost_usd: 0.10 });
+    // unset auc_2; set pass_at_1/pass_at_n so fallback = (0.5 + 0.7)/2 = 0.6 → 60 AUC
+    (r as { auc_2?: number }).auc_2 = undefined;
+    (r as { pass_at_1?: number }).pass_at_1 = 0.5;
+    (r as { pass_at_n: number }).pass_at_n = 0.7;
+    const vm = computeValueMap([r], dims);
+    expect(vm.points[0].auc).toBeCloseTo(60, 5);
+  });
+
+  it('emits a $-prefixed power-of-ten x tick label within range', () => {
+    const vm = computeValueMap([
+      row({ slug: 'lo', auc_2: 0.7, avg_cost_usd: 0.10 }),
+      row({ slug: 'hi', auc_2: 0.7, avg_cost_usd: 1.00 }),
+    ], dims);
+    expect(vm.xTicks.length).toBeGreaterThan(0);
+    expect(vm.xTicks.every((t) => t.label.startsWith('$'))).toBe(true);
+  });
 });

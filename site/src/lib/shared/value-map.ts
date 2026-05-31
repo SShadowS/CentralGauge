@@ -38,8 +38,8 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   const innerH = height - 2 * padding;
 
   const logs = priced.map((r) => Math.log10(r.avg_cost_usd));
-  let minLog = Math.min(...logs);
-  let maxLog = Math.max(...logs);
+  let minLog = logs.reduce((a, b) => Math.min(a, b), Infinity);
+  let maxLog = logs.reduce((a, b) => Math.max(a, b), -Infinity);
   if (minLog === maxLog) { minLog -= 0.5; maxLog += 0.5; } // avoid divide-by-zero for a single x
 
   // Y is the AUC 0..100 axis, fixed so plots are comparable across filters.
@@ -84,7 +84,7 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   const xTicks: ValueMapModel['xTicks'] = [];
   for (let e = Math.ceil(minLog); e <= Math.floor(maxLog); e++) {
     const value = Math.pow(10, e);
-    xTicks.push({ value, x: xOf(value), label: value < 1 ? `$${value}` : `$${value}` });
+    xTicks.push({ value, x: xOf(value), label: `$${value}` });
   }
   const yTicks: ValueMapModel['yTicks'] = [];
   for (let v = 0; v <= 100; v += 25) yTicks.push({ value: v, y: yOf(v), label: String(v) });
