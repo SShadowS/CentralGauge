@@ -11,4 +11,15 @@ describe('ViewToggle', () => {
     await fireEvent.click(getByRole('radio', { name: /value map/i }));
     expect(onselect).toHaveBeenCalledWith('value-map');
   });
+
+  it('moves selection with arrow keys (wrapping)', async () => {
+    const onselect = vi.fn();
+    const { getByRole } = render(ViewToggle, { props: { value: 'table', onselect } });
+    const tableRadio = getByRole('radio', { name: /table/i });
+    await fireEvent.keyDown(tableRadio, { key: 'ArrowRight' });
+    expect(onselect).toHaveBeenCalledWith('value-map'); // next after table
+    onselect.mockClear();
+    await fireEvent.keyDown(tableRadio, { key: 'ArrowLeft' });
+    expect(onselect).toHaveBeenCalledWith('value-map'); // wraps to last
+  });
 });
