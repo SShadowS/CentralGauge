@@ -1,6 +1,7 @@
 import type { RequestHandler } from "./$types";
 import { cachedJson } from "$lib/server/cache";
 import { getFirst } from "$lib/server/db";
+import { rowCostUsd } from "$lib/server/cost-sql";
 import { errorResponse } from "$lib/server/errors";
 import { parseChangelog } from "$lib/server/changelog";
 import type { ChangelogEntry, SummaryStats } from "$lib/shared/api-types";
@@ -76,10 +77,11 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
         env.DB,
         `
         SELECT
-          COALESCE(SUM(
-            (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
-          ), 0) AS total_cost_usd,
-          COALESCE(SUM(r.tokens_in + r.tokens_out), 0) AS total_tokens
+          COALESCE(SUM(${rowCostUsd()}), 0) AS total_cost_usd,
+          -- All billable token classes, mirroring the cost formula. tokens_out
+          -- already includes reasoning; cache read/write are added so the token
+          -- total and the cost total cover the same set of tokens.
+          COALESCE(SUM(r.tokens_in + r.tokens_out + r.tokens_cache_read + r.tokens_cache_write), 0) AS total_tokens
         FROM results r
         JOIN runs ON runs.id = r.run_id
         JOIN cost_snapshots cs ON cs.model_id = runs.model_id

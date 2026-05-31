@@ -1,6 +1,7 @@
 import { formatSettingsSuffix, type SettingsProfileLike } from './settings-suffix';
 import type { ServerTimer } from './server-timing';
 import { computeDenominator } from './denominator';
+import { rowCostUsd } from './cost-sql';
 
 /**
  * Single source of truth for per-model aggregates (run_count, verified_runs,
@@ -289,10 +290,10 @@ export async function computeModelAggregates(
            COUNT(DISTINCT CASE WHEN runs.tier = 'verified' THEN runs.id ELSE NULL END) AS verified_runs,
            AVG(r.score)                                                  AS avg_score,
            -- Per-task cost (matches /api/v1/leaderboard semantics).
-           SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
+           SUM(${rowCostUsd()})
              / NULLIF(COUNT(DISTINCT r.task_id), 0)                      AS avg_cost_usd,
            -- Total cost (un-divided) — used for cost_per_pass_usd.
-           SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0)
+           SUM(${rowCostUsd()})
                                                                           AS total_cost_usd,
            MAX(runs.started_at)                                          AS last_run_at,
            COUNT(r.id) AS tasks_attempted,

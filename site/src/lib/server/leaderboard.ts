@@ -4,6 +4,7 @@ import type {
   LeaderboardRow,
 } from "$shared/api-types";
 import { getAll } from "./db";
+import { rowCostUsd } from "./cost-sql";
 import { computeModelAggregates, type Aggregate } from "./model-aggregates";
 import {
   formatSettingsSuffix,
@@ -339,7 +340,7 @@ export async function computeLeaderboard(
       case "avg_cost_usd":
         // Repeat the expression (SQLite cannot reference SELECT aliases in ORDER BY).
         return {
-          clause: `ORDER BY SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
+          clause: `ORDER BY SUM(${rowCostUsd()}) / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
           extraParams: [],
           sqlLimit: q.limit,
         };
@@ -350,7 +351,7 @@ export async function computeLeaderboard(
         // ONE set of scope-IN params is required (not two). Duplicating them
         // causes a bind-order bug when category/difficulty filters are active.
         return {
-          clause: `ORDER BY (SUM((r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
+          clause: `ORDER BY (SUM(${rowCostUsd()}) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
           extraParams: [
             ...scopeInA1.params,
             ...scopeInA2NotExists.params,
@@ -418,9 +419,7 @@ export async function computeLeaderboard(
       -- fairer "what does X cost to use" number than per-attempt because a
       -- model that retries more would otherwise look cheaper (each retry
       -- is another data point dragging the per-attempt mean down).
-      SUM(
-        (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
-      ) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
+      SUM(${rowCostUsd()}) / NULLIF(COUNT(DISTINCT r.task_id), 0) AS avg_cost_usd,
       MAX(runs.started_at) AS last_run_at
     FROM runs
     JOIN models m ON m.id = runs.model_id

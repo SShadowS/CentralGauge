@@ -1740,3 +1740,66 @@ describe("openness filter (Phase 3 Task 4)", () => {
     expect(row.denominator).toBe(10);
   });
 });
+
+// ---------------------------------------------------------------------------
+// rowCostUsd integration — cache tokens included in cost (Gap 2 regression)
+// ---------------------------------------------------------------------------
+
+describe("cost includes cache-read/cache-write tokens", () => {
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+  beforeEach(async () => {
+    await resetDb();
+    await seedScaffold();
+    await insertTasks(["t1"], "easy", 1);
+  });
+
+  it("avg_cost_usd sums all four billable token classes, not just input+output", async () => {
+    // seedScaffold's v1 snapshot has input=1.0, output=2.0 and no cache rates.
+    // Give it cache rates so the cache terms are observable.
+    await env.DB.prepare(
+      `UPDATE cost_snapshots SET cache_read_per_mtoken=0.5, cache_write_per_mtoken=10
+       WHERE pricing_version='v1' AND model_id=1`,
+    ).run();
+    await insertRun("run-cache");
+    // One passing result on t1 with every token class populated:
+    //   tokens_in=1000      -> 1000 * 1.0  = 1000
+    //   tokens_out=200      -> 200  * 2.0  =  400
+    //   tokens_cache_read=4000  -> 4000 * 0.5 = 2000
+    //   tokens_cache_write=100  -> 100  * 10  = 1000
+    //   total = 4400 / 1e6 = 0.0044
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,tokens_cache_read,tokens_cache_write)
+       VALUES ('run-cache','t1',1,1,1.0,1,1,1,1000,200,4000,100)`,
+    ).run();
+
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, sort: "avg_cost_usd" });
+    expect(rows).toHaveLength(1);
+    // Pre-fix (input+output only) this was 1400/1e6 = 0.0014 — the cache terms
+    // (3000/1e6) were silently dropped. Asserting 0.0044 locks the fix in.
+    expect(rows[0].avg_cost_usd).toBeCloseTo(0.0044, 9);
+  });
+
+  it("NULL cache rates do not null out the whole row cost (COALESCE guard)", async () => {
+    // Explicit NULL cache rates — a legacy snapshot could have these. Without
+    // COALESCE, tokens_cache_* * NULL = NULL turns the entire row cost into NULL
+    // and the model silently drops out of cost sorts.
+    await env.DB.prepare(
+      `UPDATE cost_snapshots SET cache_read_per_mtoken=NULL, cache_write_per_mtoken=NULL
+       WHERE pricing_version='v1' AND model_id=1`,
+    ).run();
+    await insertRun("run-null-cache");
+    // Cache tokens present but their rate is NULL -> cache terms contribute 0.
+    //   tokens_in=1000 * 1.0 = 1000; tokens_out=200 * 2.0 = 400 -> 1400/1e6 = 0.0014
+    await env.DB.prepare(
+      `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,tokens_cache_read,tokens_cache_write)
+       VALUES ('run-null-cache','t1',1,1,1.0,1,1,1,1000,200,4000,100)`,
+    ).run();
+
+    const rows = await computeLeaderboard(env.DB, { ...baseQuery, sort: "avg_cost_usd" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].avg_cost_usd).not.toBeNull();
+    expect(rows[0].avg_cost_usd).toBeCloseTo(0.0014, 9);
+  });
+});

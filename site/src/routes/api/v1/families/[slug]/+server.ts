@@ -3,6 +3,7 @@ import { cachedJson } from "$lib/server/cache";
 import { getAll, getFirst } from "$lib/server/db";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import { computeDenominator } from "$lib/server/denominator";
+import { rowCostUsd } from "$lib/server/cost-sql";
 
 export const GET: RequestHandler = async ({ request, params, platform }) => {
   const env = platform!.env;
@@ -108,7 +109,7 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
                AS last_run_at,
              SUM(
                CASE WHEN runs.task_set_hash = ds.dominant_hash
-                    THEN (r.tokens_in * cs.input_per_mtoken + r.tokens_out * cs.output_per_mtoken) / 1000000.0
+                    THEN ${rowCostUsd()}
                END
              )
                / NULLIF(COUNT(DISTINCT CASE WHEN runs.task_set_hash = ds.dominant_hash THEN r.task_id END), 0)
