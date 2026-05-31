@@ -160,6 +160,59 @@ Deno.test("buildPrepareCandidateScript publishes via BCH wrapper with sync+insta
   assertStringIncludes(script, "PREPARE_PUBLISH_OK");
 });
 
+Deno.test("buildPrepareCandidateScript uses -useDevEndpoint by default", () => {
+  const prev = Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");
+  Deno.env.delete("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");
+  try {
+    const script = buildPrepareCandidateScript(
+      "Cronus28",
+      "C:\\\\some\\\\app.app",
+      "CG Test Harness",
+      { username: "u", password: "p" },
+    );
+    // Default ON: flag + credential ride the SAME publish call, after -install.
+    assert(
+      /Publish-BcContainerApp[^\n]*-install -useDevEndpoint -credential \$cgPubCredential/
+        .test(script),
+      "dev-endpoint publish must be on by default with a credential",
+    );
+    assertStringIncludes(script, `New-Object PSCredential("u"`);
+  } finally {
+    if (prev === undefined) {
+      Deno.env.delete("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");
+    } else {
+      Deno.env.set("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH", prev);
+    }
+  }
+});
+
+Deno.test("buildPrepareCandidateScript omits -useDevEndpoint when CENTRALGAUGE_DEV_ENDPOINT_PUBLISH=0", () => {
+  const prev = Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");
+  Deno.env.set("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH", "0");
+  try {
+    const script = buildPrepareCandidateScript(
+      "Cronus28",
+      "C:\\\\some\\\\app.app",
+      "CG Test Harness",
+    );
+    assert(
+      !script.includes("-useDevEndpoint"),
+      "must fall back to the legacy wrapper publish when opted out",
+    );
+    // No stray credential setup on the legacy path.
+    assert(
+      !script.includes("$cgPubCredential"),
+      "legacy path must not build a publish credential",
+    );
+  } finally {
+    if (prev === undefined) {
+      Deno.env.delete("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");
+    } else {
+      Deno.env.set("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH", prev);
+    }
+  }
+});
+
 Deno.test("buildPrepareCandidateScript honors the supplied harness name", () => {
   // The harness exclusion is interpolated, not hard-coded. A typo in
   // HARNESS_APP_NAME on the TS side would otherwise sweep the harness.

@@ -214,12 +214,35 @@ export function buildPrepareCandidateScript(
   containerName: string,
   escapedAppFile: string,
   harnessAppName: string,
+  credentials: ContainerCredentials = { username: "admin", password: "admin" },
 ): string {
+  // Publish the candidate via the BC development-service HTTP endpoint
+  // (`POST :<devport>/<instance>/dev/apps`, the F5/VS Code path) instead of
+  // the PSSession-based Publish-NAVApp wrapper. Skips the host->container
+  // file copy + WinPS bridge marshalling; keeps the ForceSync schema apply
+  // (real server work). Microbench (E001, n=3): publish ~5.7s -> ~4.1s,
+  // prepare-candidate ~8.8s -> ~7.1s (~20-30% faster on the serial mutex
+  // hold). Default ON; opt out with CENTRALGAUGE_DEV_ENDPOINT_PUBLISH=0.
+  //
+  // The dev endpoint authenticates over HTTP Basic (the container runs
+  // -auth NavUserPassword), so it REQUIRES an explicit -credential — unlike
+  // the legacy wrapper, which rides the session's Windows auth. Build the
+  // PSCredential inline (mirrors buildRunTestsScript) only when enabled.
+  const useDevEndpoint =
+    Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH") !== "0";
+  const devCredentialSetup = useDevEndpoint
+    ? `      $cgPubPassword = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
+      $cgPubCredential = New-Object PSCredential("${credentials.username}", $cgPubPassword)
+`
+    : "";
+  const devEndpointFlag = useDevEndpoint
+    ? " -useDevEndpoint -credential $cgPubCredential"
+    : "";
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
       $bcContainerHelperConfig.usePwshForBc24 = $false
       ${buildPwshTraceHelper()}
-
+${devCredentialSetup}
       # --- A-prime cleanup: direct in-container NAV cmdlets ---
       # Bypasses BCH's host-side wrapper entirely. Reuses the container's
       # already-running Windows PowerShell + Microsoft.Dynamics.Nav.Management
@@ -262,7 +285,7 @@ export function buildPrepareCandidateScript(
       try {
         Write-Output "PREPARE_PUBLISH_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         CG-Trace -Name "Publish-BcContainerApp" -TraceArgs @{container="${containerName}";appFile="${escapedAppFile}"} -Body {
-          Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+          Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install${devEndpointFlag} -ErrorAction Stop
         }
         Write-Output "PREPARE_PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         Write-Output "PREPARE_PUBLISH_OK"

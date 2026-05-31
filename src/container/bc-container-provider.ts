@@ -1354,6 +1354,7 @@ ${script}
       containerName,
       escapedHostPath,
       BcContainerProvider.HARNESS_APP_NAME,
+      this.getCredentials(containerName),
     );
 
     let result: { output: string; exitCode: number };
