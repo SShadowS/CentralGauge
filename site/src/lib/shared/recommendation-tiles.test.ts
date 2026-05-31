@@ -36,9 +36,19 @@ describe('pickRecommendations', () => {
     expect(o.tiedWith).toBe('GPT');
   });
 
-  it('value = lowest cost_per_pass among eligible (tier <= 2), NOT the sub-threshold cheap model', () => {
+  it('value = lowest cost_per_pass among eligible (AUC >= 75), NOT the sub-threshold cheap model', () => {
     const v = pickRecommendations(rows).value!;
-    expect(v.model.slug).toBe('gem');
+    expect(v.model.slug).toBe('gem'); // cheapest among AUC>=75; 'cheap' (AUC 40) excluded
+  });
+
+  it('value still picks when tiers are absent (Value/Speed presets drop server tiers)', () => {
+    const rs = [
+      row({ model: { slug: 'a', display_name: 'A', api_model_id: 'a', settings_suffix: '' }, auc_2: 0.85, tier: undefined, cost_per_pass_usd: 0.30 }),
+      row({ model: { slug: 'b', display_name: 'B', api_model_id: 'b', settings_suffix: '' }, auc_2: 0.80, tier: undefined, cost_per_pass_usd: 0.05 }),
+      row({ model: { slug: 'weak', display_name: 'Weak', api_model_id: 'w', settings_suffix: '' }, auc_2: 0.50, tier: undefined, cost_per_pass_usd: 0.01 }),
+    ];
+    const v = pickRecommendations(rs).value!;
+    expect(v.model.slug).toBe('b'); // cheapest among AUC>=75 ('weak' excluded), tier irrelevant
   });
 
   it('fastest = lowest p95 among models with auc_2 >= SKILL_THRESHOLD', () => {
@@ -63,8 +73,8 @@ describe('pickRecommendations', () => {
     expect(pickRecommendations(rs).overall!.tiedWith).toBeUndefined();
   });
 
-  it('value is null when every row is value-ineligible (all cost null)', () => {
-    const rs = [row({ tier: 1, cost_per_pass_usd: null }), row({ tier: 2, cost_per_pass_usd: null })];
+  it('value is null when every skill-worthy row has null cost', () => {
+    const rs = [row({ auc_2: 0.85, cost_per_pass_usd: null }), row({ auc_2: 0.82, cost_per_pass_usd: null })];
     expect(pickRecommendations(rs).value).toBeNull();
   });
 

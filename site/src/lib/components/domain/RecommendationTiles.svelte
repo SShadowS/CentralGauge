@@ -29,7 +29,7 @@
   </div>
 
   <div class="tile">
-    <p class="k"><span aria-hidden="true">💸</span> Best value · Tier 1–2</p>
+    <p class="k"><span aria-hidden="true">💸</span> Best value · AUC ≥ {threshPct}</p>
     {#if rec.value}
       <div class="v"><ModelLink slug={rec.value.model.slug} display_name={rec.value.model.display_name} api_model_id={rec.value.model.api_model_id} family_slug={rec.value.row.family_slug} /><SettingsBadge suffix={rec.value.model.settings_suffix} /></div>
       <p class="sub">{auc2Display(rec.value.row).toFixed(1)} AUC · ${rec.value.row.cost_per_pass_usd?.toFixed(2)}/solved</p>

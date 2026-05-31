@@ -2,12 +2,11 @@
 import type { LeaderboardRow } from './api-types';
 
 /** Minimum Solve AUC@2 (0–1) a model must clear to be eligible for the
- * "Fastest" tile. Prevents a fast-but-weak model from winning on speed. */
+ * "Fastest" and "Best value" tiles — a fast-or-cheap-but-weak model is not a
+ * useful recommendation. AUC@2 is on every row regardless of sort, so this gate
+ * (unlike a tier-based one) stays correct under the Value/Speed presets where
+ * the server does not attach statistical tiers. */
 export const SKILL_THRESHOLD = 0.75;
-
-/** Max tier (inclusive, 1 = top) eligible for the "Best value" tile. Keeps the
- * value pick among genuinely competitive models. */
-export const VALUE_MAX_TIER = 2;
 
 export interface TilePick {
   model: LeaderboardRow['model'];
@@ -39,8 +38,10 @@ export function pickRecommendations(rows: LeaderboardRow[]): Recommendations {
       : undefined;
   const overall: TilePick = { model: leader.model, row: leader, tiedWith };
 
+  // Cheapest per-solved-task among skill-worthy models (AUC@2 >= threshold).
+  // Tier-independent so the pick stays stable under the Value/Speed presets.
   const valueEligible = rows.filter(
-    (r) => r.cost_per_pass_usd !== null && r.tier !== undefined && r.tier >= 1 && r.tier <= VALUE_MAX_TIER,
+    (r) => r.cost_per_pass_usd !== null && auc(r) >= SKILL_THRESHOLD,
   );
   const valueRow = valueEligible.sort(
     (a, b) => (a.cost_per_pass_usd as number) - (b.cost_per_pass_usd as number),
