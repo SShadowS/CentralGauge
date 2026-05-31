@@ -21,7 +21,14 @@ export interface ResultInput {
   tests_total: number;
   tests_passed: number;
   tokens_in: number;
+  /** Total billable output tokens (visible + folded reasoning). */
   tokens_out: number;
+  /**
+   * Reasoning/thinking tokens — a SUBSET of tokens_out (already billed inside
+   * it), for analytics only. Optional for backward compatibility with CLIs
+   * predating this field; absent/undefined is treated as 0 on insert.
+   */
+  tokens_reasoning?: number;
   tokens_cache_read: number;
   tokens_cache_write: number;
   durations_ms: { llm?: number; compile?: number; test?: number };

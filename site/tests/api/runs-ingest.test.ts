@@ -128,6 +128,57 @@ describe("POST /api/v1/runs", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects tokens_reasoning greater than tokens_out", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const base = makeRunPayload();
+    // tokens_out=500 in the fixture; 600 reasoning violates reasoning <= out.
+    const payload = makeRunPayload({
+      results: [{ ...base.results[0], tokens_reasoning: 600 }],
+    });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-bad-reasoning";
+
+    const res = await SELF.fetch("http://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("invalid_tokens_reasoning");
+  });
+
+  it("rejects negative token counts", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const base = makeRunPayload();
+    const payload = makeRunPayload({
+      results: [{ ...base.results[0], tokens_in: -1 }],
+    });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-neg-tokens";
+
+    const res = await SELF.fetch("http://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("invalid_tokens");
+  });
+
   it("logs an ingest_event on success", async () => {
     const { keyId, keypair } = await registerIngestKey();
     const payload = makeRunPayload();

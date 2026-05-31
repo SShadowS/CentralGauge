@@ -28,7 +28,15 @@ export interface BenchResultItem {
   tests_total: number;
   tests_passed: number;
   tokens_in: number;
+  /** Total billable output tokens (visible + folded reasoning across providers). */
   tokens_out: number;
+  /**
+   * Reasoning/thinking tokens, when the provider exposes the split. This is a
+   * SUBSET of tokens_out (already billed inside it) — analytics/transparency
+   * only, never added again in cost computation. 0 when unknown (e.g. Anthropic
+   * does not separate thinking from output_tokens).
+   */
+  tokens_reasoning: number;
   tokens_cache_read: number;
   tokens_cache_write: number;
   durations_ms: { llm?: number; compile?: number; test?: number };
@@ -90,6 +98,7 @@ export async function ingestRun(
       tests_passed: r.tests_passed,
       tokens_in: r.tokens_in,
       tokens_out: r.tokens_out,
+      tokens_reasoning: r.tokens_reasoning,
       tokens_cache_read: r.tokens_cache_read,
       tokens_cache_write: r.tokens_cache_write,
       durations_ms: r.durations_ms,

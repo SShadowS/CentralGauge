@@ -1,0 +1,16 @@
+-- Reasoning/thinking tokens per result.
+--
+-- Gemini reports thinking (thoughtsTokenCount) separately from visible output
+-- (candidatesTokenCount); the CLI now folds the two into tokens_out so that
+-- column means "total billable output" uniformly across providers. This column
+-- records the reasoning SUBSET of that total for analytics/transparency
+-- (e.g. "what fraction of output was hidden thinking").
+--
+-- IMPORTANT: tokens_reasoning is already counted inside tokens_out and is billed
+-- at the output rate there. It MUST NOT be added again in any cost expression —
+-- doing so double-counts. Cost stays a function of tokens_out only.
+--
+-- DEFAULT 0 backfills every historical row. Past Gemini runs predate the fold,
+-- so their tokens_out still excludes thinking and their tokens_reasoning is 0;
+-- those rows are corrected only by re-benching, not by this migration.
+ALTER TABLE results ADD COLUMN tokens_reasoning INTEGER NOT NULL DEFAULT 0;

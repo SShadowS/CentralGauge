@@ -328,15 +328,43 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           `score must be a finite 0-100 value (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
+      // Boundary validation for token counts. Even though ingest is Ed25519-signed
+      // by trusted machine keys, a buggy/stale client could otherwise corrupt the
+      // cost-bearing columns. Reject non-integer/negative counts, and enforce the
+      // documented invariant that reasoning tokens are a SUBSET of total output.
+      const tokensReasoning = r.tokens_reasoning ?? 0;
+      const tokenFields: ReadonlyArray<[string, number]> = [
+        ["tokens_in", r.tokens_in],
+        ["tokens_out", r.tokens_out],
+        ["tokens_reasoning", tokensReasoning],
+        ["tokens_cache_read", r.tokens_cache_read],
+        ["tokens_cache_write", r.tokens_cache_write],
+      ];
+      for (const [name, value] of tokenFields) {
+        if (!Number.isInteger(value) || value < 0) {
+          throw new ApiError(
+            400,
+            "invalid_tokens",
+            `${name} must be a non-negative integer (task ${r.task_id} attempt ${r.attempt})`,
+          );
+        }
+      }
+      if (tokensReasoning > r.tokens_out) {
+        throw new ApiError(
+          400,
+          "invalid_tokens_reasoning",
+          `tokens_reasoning must be <= tokens_out (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
       statements.push(
         db.prepare(`
           INSERT INTO results(
             run_id, task_id, attempt, passed, score, compile_success, compile_errors_json,
             tests_total, tests_passed,
-            tokens_in, tokens_out, tokens_cache_read, tokens_cache_write,
+            tokens_in, tokens_out, tokens_reasoning, tokens_cache_read, tokens_cache_write,
             llm_duration_ms, compile_duration_ms, test_duration_ms,
             failure_reasons_json, transcript_r2_key, code_r2_key
-          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?, ?,?,?, ?,?,?)
+          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?)
         `).bind(
           signed.run_id,
           r.task_id,
@@ -349,6 +377,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           r.tests_passed,
           r.tokens_in,
           r.tokens_out,
+          tokensReasoning,
           r.tokens_cache_read,
           r.tokens_cache_write,
           r.durations_ms.llm ?? null,

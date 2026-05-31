@@ -94,6 +94,7 @@ function attemptToItem(
     tests_passed: a.testResult?.passedTests ?? 0,
     tokens_in: a.llmResponse.usage.promptTokens,
     tokens_out: a.llmResponse.usage.completionTokens,
+    tokens_reasoning: a.llmResponse.usage.reasoningTokens ?? 0,
     tokens_cache_read: a.llmResponse.usage.cacheReadTokens ?? 0,
     tokens_cache_write: a.llmResponse.usage.cacheCreationTokens ?? 0,
     durations_ms,
