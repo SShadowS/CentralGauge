@@ -62,4 +62,25 @@ describe('Leaderboard page composition', () => {
     // table headline present by default
     expect(container.querySelector('[data-test="auc-cell"]')).not.toBeNull();
   });
+
+  it('Speed preset filters models below AUC@2 75 out of the table', () => {
+    const base = data.leaderboard.data[0];
+    const speedData = {
+      ...data,
+      sort: 'latency_p95_ms:asc', // Speed preset active
+      leaderboard: {
+        ...data.leaderboard,
+        data: [
+          { ...base, model: { slug: 'fast-good', display_name: 'FastGood', api_model_id: 'fg', settings_suffix: '' }, auc_2: 0.80, tier: 1, latency_p95_ms: 1000 },
+          // Realistic: a weak model sits in a lower tier, so it isn't "tied" with FastGood in the tiles.
+          { ...base, model: { slug: 'haiku', display_name: 'WeakHaiku', api_model_id: 'h', settings_suffix: '' }, auc_2: 0.53, tier: 3, latency_p95_ms: 500 },
+        ],
+      },
+    };
+    const { container } = render(Page, { props: { data: speedData as unknown as PageData } });
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/FastGood/);          // AUC 80 -> kept in the Speed view
+    expect(text).not.toMatch(/WeakHaiku/);     // AUC 53 -> filtered out of the table
+    expect(text).toMatch(/Showing 1 of 2/);    // count reflects the eligibility filter
+  });
 });

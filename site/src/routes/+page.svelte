@@ -13,6 +13,7 @@
   import OpennessFilter from '$lib/components/domain/OpennessFilter.svelte';
   import ViewToggle from '$lib/components/domain/ViewToggle.svelte';
   import ValueMap from '$lib/components/domain/ValueMap.svelte';
+  import { presetForSort, presetEligible } from '$lib/shared/sort-presets';
   import { useEventSource, type EventSourceHandle } from '$lib/client/use-event-source.svelte';
   // CHEAT overlay temporarily hidden. Re-enable by reverting this commit.
   // import CheatButton from '$lib/cheat/CheatButton.svelte';
@@ -25,6 +26,12 @@
   let view = $state<'table' | 'value-map'>('table');
 
   let setVal = $derived(data.filters.set);
+
+  // Active sort preset + the rows that belong in its view. The Speed preset is
+  // gated to AUC@2 >= 75 (its label promises it); Skill/Value gate nothing. The
+  // scatter (value-map) always shows the full set — only the table is scoped.
+  let activePreset = $derived(presetForSort(data.sort));
+  let tableRows = $derived(data.leaderboard.data.filter((r) => presetEligible(activePreset, r)));
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
@@ -141,11 +148,11 @@
     {#if view === 'value-map'}
       <ValueMap rows={data.leaderboard.data} />
     {:else}
-      <LeaderboardTable rows={data.leaderboard.data} sort={data.sort} onsort={onSort} />
+      <LeaderboardTable rows={tableRows} sort={data.sort} onsort={onSort} />
     {/if}
     {#if data.leaderboard.data.length > 0}
       <p class="count text-muted">
-        Showing {data.leaderboard.data.length} of {data.leaderboard.data.length}
+        Showing {tableRows.length} of {data.leaderboard.data.length}
       </p>
     {/if}
   </div>

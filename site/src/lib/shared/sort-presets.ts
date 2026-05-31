@@ -1,4 +1,8 @@
 // site/src/lib/shared/sort-presets.ts
+import type { LeaderboardRow } from './api-types';
+import { aucFraction } from './leaderboard-derive';
+import { SKILL_THRESHOLD } from './recommendation-tiles';
+
 export interface SortPreset {
   id: 'skill' | 'value' | 'speed';
   label: string;
@@ -23,4 +27,16 @@ export function presetForSort(sort: string): SortPreset['id'] {
   const [field] = sort.split(':');
   const match = PRESETS.find((p) => p.sortKey === field);
   return match ? match.id : 'skill';
+}
+
+/**
+ * Whether a row belongs in a preset's view. The Speed preset is gated to
+ * skill-worthy models (Solve AUC@2 >= SKILL_THRESHOLD, i.e. >= 75) so a
+ * fast-but-weak model doesn't top the "Speed" list — this enforces the
+ * "p95 ↑ · AUC ≥ 75" label, which previously only sorted and never filtered.
+ * Skill and Value declare no eligibility in their labels, so they gate nothing.
+ */
+export function presetEligible(preset: SortPreset['id'], row: LeaderboardRow): boolean {
+  if (preset === 'speed') return aucFraction(row) >= SKILL_THRESHOLD;
+  return true;
 }
