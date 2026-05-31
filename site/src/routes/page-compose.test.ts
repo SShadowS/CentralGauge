@@ -71,9 +71,10 @@ describe('Leaderboard page composition', () => {
       leaderboard: {
         ...data.leaderboard,
         data: [
-          { ...base, model: { slug: 'fast-good', display_name: 'FastGood', api_model_id: 'fg', settings_suffix: '' }, auc_2: 0.80, tier: 1, latency_p95_ms: 1000 },
-          // Realistic: a weak model sits in a lower tier, so it isn't "tied" with FastGood in the tiles.
-          { ...base, model: { slug: 'haiku', display_name: 'WeakHaiku', api_model_id: 'h', settings_suffix: '' }, auc_2: 0.53, tier: 3, latency_p95_ms: 500 },
+          // WeakHaiku is FASTER (p95 500) so it's server-rank 1 under the p95 sort,
+          // but AUC 53 -> filtered out. FastGood is server-rank 2.
+          { ...base, rank: 1, model: { slug: 'haiku', display_name: 'WeakHaiku', api_model_id: 'h', settings_suffix: '' }, auc_2: 0.53, tier: 3, latency_p95_ms: 500 },
+          { ...base, rank: 2, model: { slug: 'fast-good', display_name: 'FastGood', api_model_id: 'fg', settings_suffix: '' }, auc_2: 0.80, tier: 1, latency_p95_ms: 1000 },
         ],
       },
     };
@@ -82,5 +83,8 @@ describe('Leaderboard page composition', () => {
     expect(text).toMatch(/FastGood/);          // AUC 80 -> kept in the Speed view
     expect(text).not.toMatch(/WeakHaiku/);     // AUC 53 -> filtered out of the table
     expect(text).toMatch(/Showing 1 of 2/);    // count reflects the eligibility filter
+    // Renumbered: FastGood was server-rank 2 (WeakHaiku rank 1 dropped) but the
+    // visible list starts at #1.
+    expect(container.querySelector('table tbody td.rank')?.textContent?.trim()).toBe('1');
   });
 });

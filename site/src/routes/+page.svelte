@@ -30,8 +30,16 @@
   // Active sort preset + the rows that belong in its view. The Speed preset is
   // gated to AUC@2 >= 75 (its label promises it); Skill/Value gate nothing. The
   // scatter (value-map) always shows the full set — only the table is scoped.
+  // After filtering, renumber rank 1..N so the visible list always starts at #1:
+  // the server rank is the position in the full UNFILTERED sort, so dropping the
+  // (fast-but-weak) rank-1 row under Speed would otherwise leave the list at #2.
+  // No-op for Skill/Value (nothing filtered → already 1..N in order).
   let activePreset = $derived(presetForSort(data.sort));
-  let tableRows = $derived(data.leaderboard.data.filter((r) => presetEligible(activePreset, r)));
+  let tableRows = $derived(
+    data.leaderboard.data
+      .filter((r) => presetEligible(activePreset, r))
+      .map((r, i) => ({ ...r, rank: i + 1 })),
+  );
 
   // SSE wiring. Only opens when the flag is on AND we're in the browser.
   // Server-side $effect doesn't run, but the import of useEventSource itself
