@@ -207,7 +207,7 @@ export interface QueueEntry {
    * been re-enqueued on another queue and would no-op (the findIndex
    * lookup in the original queue returns -1) but leaves a leaked timer.
    */
-  timeoutHandle?: number;
+  timeoutHandle?: ReturnType<typeof setTimeout>;
   /**
    * Set by `markActiveForQuarantine()` when a container alert raises while
    * this entry is in-flight (past `this.queue.shift()`). Read by

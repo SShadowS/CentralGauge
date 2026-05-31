@@ -33,7 +33,7 @@ export class DashboardEventBridge {
   private cumulativeCost = 0;
 
   // Pool-snapshot emitter state
-  private poolTicker: number | null = null;
+  private poolTicker: ReturnType<typeof setInterval> | null = null;
   private latestPoolSnapshot: PoolSnapshot | null = null;
 
   constructor(

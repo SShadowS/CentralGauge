@@ -33,7 +33,7 @@ async function runDocker(
   const process = command.spawn();
 
   // Handle timeout if specified
-  let timeoutId: number | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   if (options?.timeout) {
     timeoutId = setTimeout(() => {
       try {
@@ -114,7 +114,7 @@ class WindowsSandbox implements Sandbox {
     const process = dockerCommand.spawn();
 
     // Set up timeout
-    let timeoutId: number | undefined;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     if (timeout) {
       timeoutId = setTimeout(() => {

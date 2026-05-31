@@ -429,7 +429,7 @@ export async function executeParallelBenchmark(
       // try/finally below can tear them down even when runParallel,
       // result-writing, or formatted-output throws.
       let tuiSetup: ReturnType<typeof BenchTui.setup> | null = null;
-      let jsonPoolTicker: number | null = null;
+      let jsonPoolTicker: ReturnType<typeof setInterval> | null = null;
       const stopJsonPoolTicker = () => {
         if (jsonPoolTicker !== null) {
           clearInterval(jsonPoolTicker);

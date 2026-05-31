@@ -167,8 +167,14 @@ class DockerCommandMock {
       };
     };
 
-    // deno-lint-ignore no-explicit-any
-    (Deno as any).Command = MockCommand;
+    // Deno 2.8 exposes Deno.Command as a getter-only accessor, so a plain
+    // `Deno.Command = ...` assignment throws. Redefine it as a configurable
+    // data property so the mock installs regardless of test order.
+    Object.defineProperty(Deno, "Command", {
+      value: MockCommand,
+      configurable: true,
+      writable: true,
+    });
     this.installed = true;
     return this;
   }
@@ -179,8 +185,11 @@ class DockerCommandMock {
   restore(): this {
     if (!this.installed || !this.originalCommand) return this;
 
-    // deno-lint-ignore no-explicit-any
-    (Deno as any).Command = this.originalCommand;
+    Object.defineProperty(Deno, "Command", {
+      value: this.originalCommand,
+      configurable: true,
+      writable: true,
+    });
     this.originalCommand = null;
     this.installed = false;
     return this;

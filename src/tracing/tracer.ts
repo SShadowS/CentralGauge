@@ -129,7 +129,7 @@ class ActiveTracer implements TracerAPI {
   private nextContainerSlotTid = 100;
   private nextAsyncId = 1;
 
-  private flushTimer: number | null = null;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
   private writeFailed = false;
   private signalHandler: (() => void) | null = null;
