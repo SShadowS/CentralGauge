@@ -93,4 +93,13 @@ describe('computeValueMap', () => {
     expect(vm.xTicks.length).toBeGreaterThan(0);
     expect(vm.xTicks.every((t) => t.label.startsWith('$'))).toBe(true);
   });
+
+  it('falls back to min/max cost ticks when all models share one decade', () => {
+    const vm = computeValueMap([
+      row({ slug: 'a', auc_2: 0.7, avg_cost_usd: 0.02 }),
+      row({ slug: 'b', auc_2: 0.6, avg_cost_usd: 0.05 }),
+    ], dims);
+    expect(vm.xTicks.length).toBeGreaterThan(0);
+    expect(vm.xTicks.every((t) => t.label.startsWith('$'))).toBe(true);
+  });
 });

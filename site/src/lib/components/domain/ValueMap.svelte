@@ -189,6 +189,10 @@
     opacity: 0.4;
   }
 
+  .dot.dominated:focus-visible circle {
+    opacity: 1;
+  }
+
   .dot:focus-visible circle {
     stroke: var(--accent);
     stroke-width: 2px;

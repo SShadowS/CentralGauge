@@ -1,5 +1,6 @@
 // site/src/lib/shared/value-map.ts
 import type { LeaderboardRow } from './api-types';
+import { aucFraction } from './leaderboard-derive';
 
 export interface ValueMapDims { width: number; height: number; padding: number; }
 
@@ -11,8 +12,6 @@ export interface ValuePoint {
   cx: number;       // pixel x
   cy: number;       // pixel y (SVG, grows downward)
   onFrontier: boolean;
-  open_weight?: boolean | null;
-  tier?: number;
 }
 
 export interface ValueMapModel {
@@ -23,8 +22,7 @@ export interface ValueMapModel {
   omittedCount: number;
 }
 
-const aucOf = (r: LeaderboardRow) =>
-  (r.auc_2 ?? ((r.pass_at_1 ?? 0) + (r.pass_at_n ?? 0)) / 2) * 100;
+const aucOf = (r: LeaderboardRow) => aucFraction(r) * 100;
 
 export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): ValueMapModel {
   const { width, height, padding } = dims;
@@ -70,8 +68,6 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
     cx: xOf(r.avg_cost_usd),
     cy: yOf(aucOf(r)),
     onFrontier: frontierSlugs.has(r.model.slug),
-    open_weight: r.open_weight,
-    tier: r.tier,
   }));
 
   // Frontier polyline through frontier points sorted by cost asc.
@@ -85,6 +81,17 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   for (let e = Math.ceil(minLog); e <= Math.floor(maxLog); e++) {
     const value = Math.pow(10, e);
     xTicks.push({ value, x: xOf(value), label: `$${value}` });
+  }
+  // Fallback: when all priced models share one decade, no integer power-of-ten
+  // tick falls in range. Emit ticks at the actual min/max cost so the axis is
+  // never blank.
+  if (xTicks.length === 0) {
+    const costs = priced.map((r) => r.avg_cost_usd);
+    const lo = costs.reduce((a, b) => Math.min(a, b), Infinity);
+    const hi = costs.reduce((a, b) => Math.max(a, b), -Infinity);
+    for (const value of lo === hi ? [lo] : [lo, hi]) {
+      xTicks.push({ value, x: xOf(value), label: `$${value}` });
+    }
   }
   const yTicks: ValueMapModel['yTicks'] = [];
   for (let v = 0; v <= 100; v += 25) yTicks.push({ value: v, y: yOf(v), label: String(v) });
