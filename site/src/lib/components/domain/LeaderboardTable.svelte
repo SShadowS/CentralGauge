@@ -61,6 +61,12 @@
     return new Set([...counts].filter(([, n]) => n > 1).map(([t]) => t));
   });
 
+  // Tier dividers + dim-rank are an AUC-ranking visualization — they only read
+  // correctly when rows are ordered by auc_2. Rows now carry tiers under every
+  // sort (the tiles need them), but under Value/Speed the order is cost/latency,
+  // so suppress the divider bands + rank dimming there to avoid misplaced tiers.
+  const showTierUi = $derived(sortField === 'auc_2');
+
   const expanded = new SvelteSet<string>();
   function toggle(slug: string) {
     if (expanded.has(slug)) expanded.delete(slug);
@@ -109,7 +115,7 @@
     <tbody aria-live="polite" aria-atomic="false">
       {#each rows as row, i (row.model.slug)}
         {@const mix = outcomeMix(row)}
-        {#if dividerAt[i]}
+        {#if showTierUi && dividerAt[i]}
           <tr class="tier-divider" data-test="tier-divider">
             <td colspan="100" title="Ranks within a tier are not statistically distinguishable at this sample size.">
               Tier {row.tier}
@@ -117,7 +123,7 @@
           </tr>
         {/if}
         <tr>
-          <td class="rank text-mono" class:tied={row.tier !== undefined && tiedTiers.has(row.tier)}>{row.rank}</td>
+          <td class="rank text-mono" class:tied={showTierUi && row.tier !== undefined && tiedTiers.has(row.tier)}>{row.rank}</td>
           <th scope="row">
             <ModelLink
               slug={row.model.slug}
@@ -159,7 +165,7 @@
     <span><i class="sw a1"></i> solved 1st try</span>
     <span><i class="sw a2"></i> on retry</span>
     <span><i class="sw fail"></i> failed</span>
-    <span class="note">dim rank = statistically tied</span>
+    {#if showTierUi}<span class="note">dim rank = statistically tied</span>{/if}
   </div>
 </div>
 

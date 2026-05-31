@@ -244,6 +244,17 @@ describe('LeaderboardTable', () => {
     expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(1);
   });
 
+  it('suppresses tier dividers + dim-rank under a non-auc_2 sort (tiers present, order is by another metric)', () => {
+    const tierRows = [
+      makeRow({ slug: 'a', auc_2: 0.9, tier: 1 }),
+      makeRow({ slug: 'b', auc_2: 0.88, tier: 1 }), // shares tier 1 -> would dim under auc_2 sort
+      makeRow({ slug: 'c', auc_2: 0.7, tier: 2 }),  // -> would yield a divider under auc_2 sort
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'latency_p95_ms:asc' } });
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(0); // no bands off the auc ranking
+    expect(container.querySelectorAll('td.rank.tied').length).toBe(0);               // no dim-rank off the auc ranking
+  });
+
   it('expands a row when the details toggle is clicked', async () => {
     const { getAllByRole, container } = render(LeaderboardTable, { props: { rows: sampleRows, sort: 'auc_2:desc' } });
     const toggles = getAllByRole('button', { name: /^(show|hide) details for/i });

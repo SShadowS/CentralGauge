@@ -243,8 +243,13 @@ would otherwise re-precheck).
   (API + page). Significance is shown as **paired-bootstrap tier bands**
   (`site/src/lib/server/tiers.ts` + `tier-data.ts`), NOT marginal Wilson
   CI — models in the same tier are not statistically distinguishable.
-  Tier attach is gated on `sort=auc_2` + a concrete task-set hash and is
-  non-fatal (presentational only). `pass_at_n` is still the local bench
+  Tier attach happens for ANY sort as long as a concrete task-set hash
+  resolves (tier is intrinsic to the (task-set, category) AUC matrix, not the
+  sort order; the `getTierMap` cache key is sort-independent so it is shared
+  across sorts). It is non-fatal (presentational only). The leaderboard TABLE
+  only RENDERS tier dividers + dim-rank under `sort=auc_2` (where row order
+  matches tier order); the recommendation tiles read `row.tier` under every
+  sort. `pass_at_n` is still the local bench
   summary's "Score" column. Pre-PR1 readers may have stored URLs using
   `pass_at_n` with the per-attempted denominator; that field is now
   exposed under `pass_at_n_per_attempted` (deprecated; removed in PR2).

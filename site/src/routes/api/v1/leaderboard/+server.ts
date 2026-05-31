@@ -52,10 +52,16 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const timer = new ServerTimer();
       const rows = await computeLeaderboard(env.DB, q, timer);
 
-      // Attach paired-bootstrap tier numbers when sorted by auc_2 and a
-      // concrete task-set hash is resolvable. Tiers are a presentational
-      // enhancement; failures MUST NOT break the leaderboard response.
-      if (q.sort === 'auc_2' && rows.length > 0) {
+      // Attach paired-bootstrap tier numbers whenever a concrete task-set hash
+      // is resolvable, REGARDLESS of sort. A model's tier is intrinsic to the
+      // (task-set, category) AUC@2 matrix — not to how the table is ordered —
+      // so tile/UI logic keyed on `tier` stays correct under the Value/Speed
+      // sorts too. The getTierMap cache key is sort-independent, so this is
+      // shared across sorts (no extra compute on the hot path). Tiers are a
+      // presentational enhancement; failures MUST NOT break the response. (The
+      // table only RENDERS tier dividers + dim-rank under the auc_2 sort, where
+      // row order matches tier order; see LeaderboardTable.svelte.)
+      if (rows.length > 0) {
         try {
           // Resolve the concrete hash: use q.set directly when it is a valid
           // 64-char hash; otherwise query D1 for the current task-set hash.

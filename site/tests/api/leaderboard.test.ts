@@ -886,12 +886,15 @@ describe("GET /api/v1/leaderboard", () => {
     expect(body.data.every((r) => typeof r.tier === "number" && (r.tier as number) >= 1)).toBe(true);
   });
 
-  it("rows sorted by non-auc_2 field do not include a tier annotation", async () => {
-    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=pass_at_n:desc&_cb=t12-notier");
+  it("annotates rows with a tier under a non-auc_2 sort too (tier is sort-independent)", async () => {
+    // Tier is intrinsic to the (task-set, category) AUC matrix, so it is now
+    // attached regardless of the table's sort field — the tiles rely on it
+    // under the Value/Speed presets. (The table only renders tier dividers +
+    // dim-rank under the auc_2 sort.)
+    const res = await SELF.fetch("https://x/api/v1/leaderboard?set=current&sort=pass_at_n:desc&_cb=t12-tier-anysort");
     expect(res.status).toBe(200);
     const body = await res.json() as { data: Array<Record<string, unknown>> };
     expect(body.data.length).toBeGreaterThan(0);
-    // Tier must be absent (undefined → missing key, or explicitly undefined)
-    expect(body.data.every((r) => r.tier === undefined)).toBe(true);
+    expect(body.data.every((r) => typeof r.tier === "number" && (r.tier as number) >= 1)).toBe(true);
   });
 });
