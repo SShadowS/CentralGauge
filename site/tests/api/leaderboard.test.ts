@@ -143,7 +143,8 @@ describe("LeaderboardRow — contract completeness", () => {
     // in site/src/lib/shared/api-types.ts. Keep in sync with that type.
     // PR2.1: removed pass_at_n_per_attempted (deprecated alias).
     // Task 3: added auc_2, repair_rate (emitted by row mapper).
-    // Task 12: added tier (attached when sort=auc_2, which is the default).
+    // Task 12: added tier. Now attached under ANY sort with a concrete hash
+    // (tier is intrinsic to the AUC matrix); this contract test uses the default.
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",

@@ -255,6 +255,17 @@ describe('LeaderboardTable', () => {
     expect(container.querySelectorAll('td.rank.tied').length).toBe(0);               // no dim-rank off the auc ranking
   });
 
+  it('suppresses tier UI under auc_2 ASCENDING (dividers only valid in descending order)', () => {
+    const tierRows = [
+      makeRow({ slug: 'a', auc_2: 0.9, tier: 1 }),
+      makeRow({ slug: 'b', auc_2: 0.88, tier: 1 }),
+      makeRow({ slug: 'c', auc_2: 0.7, tier: 2 }),
+    ];
+    const { container } = render(LeaderboardTable, { props: { rows: tierRows, sort: 'auc_2:asc' } });
+    expect(container.querySelectorAll('[data-test="tier-divider"]').length).toBe(0);
+    expect(container.querySelectorAll('td.rank.tied').length).toBe(0);
+  });
+
   it('expands a row when the details toggle is clicked', async () => {
     const { getAllByRole, container } = render(LeaderboardTable, { props: { rows: sampleRows, sort: 'auc_2:desc' } });
     const toggles = getAllByRole('button', { name: /^(show|hide) details for/i });

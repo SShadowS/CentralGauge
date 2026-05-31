@@ -6,9 +6,12 @@
  * v5: leaderboard redesign (Phases 1-5) — `open_weight` added to each
  * leaderboard row (Phase 3) plus per-category tier scoping; retires any v4
  * response cached without the `open_weight` field.
+ * v6: tiers attach under ANY sort (not just auc_2), so non-auc-sorted
+ * leaderboard responses now carry the `tier` key; retires v5 non-auc entries
+ * cached without it.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v5';
+export const CACHE_VERSION = 'v6';

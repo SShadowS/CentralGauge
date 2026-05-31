@@ -62,10 +62,13 @@
   });
 
   // Tier dividers + dim-rank are an AUC-ranking visualization — they only read
-  // correctly when rows are ordered by auc_2. Rows now carry tiers under every
-  // sort (the tiles need them), but under Value/Speed the order is cost/latency,
-  // so suppress the divider bands + rank dimming there to avoid misplaced tiers.
-  const showTierUi = $derived(sortField === 'auc_2');
+  // correctly when rows are ordered by auc_2 DESCENDING (best→worst), so the
+  // monotonic tier watermark lands on the right boundaries. Rows now carry tiers
+  // under every sort (the tiles need them), but under Value/Speed (cost/latency)
+  // — or even auc_2 ASCENDING — the order doesn't match tier order, so suppress
+  // the bands + dimming there. `sortDir !== 'asc'` also covers a bare `auc_2`
+  // (no direction) as the canonical descending default.
+  const showTierUi = $derived(sortField === 'auc_2' && sortDir !== 'asc');
 
   const expanded = new SvelteSet<string>();
   function toggle(slug: string) {
