@@ -7,6 +7,7 @@
   import OutcomeMixBar from './OutcomeMixBar.svelte';
   import { ChevronDown, ChevronUp } from '$lib/components/ui/icons';
   import { auc2Display, outcomeMix } from '$lib/shared/leaderboard-derive';
+  import { isCostProvisional } from '$lib/shared/cost-provisional';
   import LeaderboardRowDetail from './LeaderboardRowDetail.svelte';
   import { SvelteSet } from 'svelte/reactivity';
 
@@ -140,7 +141,7 @@
             <OutcomeMixBar firstTryPct={mix.firstTryPct} retryPct={mix.retryPct} failedPct={mix.failedPct} />
           </td>
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{(((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2) * 100).toFixed(1)}</td>
-          <td><CostCell usd={row.avg_cost_usd} /></td>
+          <td><CostCell usd={row.avg_cost_usd} provisional={isCostProvisional(row.model.slug)} /></td>
           <td class="text-mono">{(row.latency_p95_ms / 1000).toFixed(1)}s</td>
           <td class="chev">
             <button

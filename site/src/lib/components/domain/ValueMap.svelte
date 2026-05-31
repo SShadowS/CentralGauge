@@ -144,14 +144,15 @@
           href="/models/{p.slug}"
           class="dot"
           class:dominated={!p.onFrontier}
-          aria-label="{p.display_name}: {p.auc.toFixed(1)} AUC at {formatCost(p.cost)}/task"
+          class:provisional={p.provisional}
+          aria-label="{p.display_name}: {p.auc.toFixed(1)} AUC at {formatCost(p.cost)}/task{p.provisional ? ' (cost under review)' : ''}"
         >
           <circle
             cx={p.cx}
             cy={p.cy}
             r={p.onFrontier ? 5 : 4}
           />
-          <title>{p.display_name} — {p.auc.toFixed(1)} AUC · {formatCost(p.cost)}/task{p.onFrontier ? ' · best-value frontier' : ''}</title>
+          <title>{p.display_name} — {p.auc.toFixed(1)} AUC · {formatCost(p.cost)}/task{p.provisional ? ' · cost under review (understated)' : p.onFrontier ? ' · best-value frontier' : ''}</title>
         </a>
       {/each}
     </svg>
@@ -187,6 +188,22 @@
 
   .dot.dominated circle {
     opacity: 0.4;
+  }
+
+  /* Provisional-cost models: hollow muted marker so the wrong x-position reads
+     as "not a real value point". They are never on the frontier. */
+  .dot.provisional circle {
+    fill: none;
+    stroke: var(--text-faint);
+    stroke-width: 1.5px;
+    stroke-dasharray: 2 2;
+    opacity: 0.7;
+  }
+
+  .dot.provisional:hover circle,
+  .dot.provisional:focus-visible circle {
+    fill: none;
+    opacity: 1;
   }
 
   .dot.dominated:focus-visible circle {

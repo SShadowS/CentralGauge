@@ -40,6 +40,22 @@ describe('computeValueMap', () => {
     expect(onF.has('worse')).toBe(false); // dominated by 'best'
   });
 
+  it('a provisional-cost model is marked and never on the frontier', () => {
+    // The provisional model is cheapest + highest auc — it would normally
+    // dominate the frontier, but its cost is understated so it must be excluded
+    // from the frontier (still plotted, marked provisional).
+    const vm = computeValueMap([
+      row({ slug: 'gemini/gemini-3.1-pro-preview', auc_2: 0.84, avg_cost_usd: 0.03 }),
+      row({ slug: 'gpt', auc_2: 0.81, avg_cost_usd: 0.20 }),
+    ], dims);
+    const gem = vm.points.find((p) => p.slug === 'gemini/gemini-3.1-pro-preview')!;
+    const gpt = vm.points.find((p) => p.slug === 'gpt')!;
+    expect(gem.provisional).toBe(true);
+    expect(gem.onFrontier).toBe(false); // excluded despite being cheapest+best
+    expect(gpt.provisional).toBe(false);
+    expect(gpt.onFrontier).toBe(true); // the real value frontier
+  });
+
   it('maps cost on a log scale: cheaper model sits left of pricier model', () => {
     const vm = computeValueMap([
       row({ slug: 'cheap', auc_2: 0.7, avg_cost_usd: 0.01 }),

@@ -51,6 +51,17 @@ describe('pickRecommendations', () => {
     expect(v.model.slug).toBe('b'); // cheapest among AUC>=75 ('weak' excluded), tier irrelevant
   });
 
+  it('value excludes a provisional-cost model even when it is cheapest', () => {
+    const rs = [
+      // Provisional slug, cheapest + skill-worthy -> would win, but its cost is
+      // understated so it must be skipped.
+      row({ model: { slug: 'gemini/gemini-3.1-pro-preview', display_name: 'Gemini 3.1 Pro', api_model_id: 'g', settings_suffix: '' }, auc_2: 0.84, cost_per_pass_usd: 0.03 }),
+      row({ model: { slug: 'gpt', display_name: 'GPT', api_model_id: 'gp', settings_suffix: '' }, auc_2: 0.81, cost_per_pass_usd: 0.20 }),
+    ];
+    const v = pickRecommendations(rs).value!;
+    expect(v.model.slug).toBe('gpt'); // provisional Gemini skipped despite being cheaper
+  });
+
   it('fastest = lowest p95 among models with auc_2 >= SKILL_THRESHOLD', () => {
     const f = pickRecommendations(rows).fastest!;
     expect(SKILL_THRESHOLD).toBe(0.75);

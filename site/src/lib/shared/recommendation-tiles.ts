@@ -1,5 +1,6 @@
 // site/src/lib/shared/recommendation-tiles.ts
 import type { LeaderboardRow } from './api-types';
+import { isCostProvisional } from './cost-provisional';
 
 /** Minimum Solve AUC@2 (0–1) a model must clear to be eligible for the
  * "Fastest" and "Best value" tiles — a fast-or-cheap-but-weak model is not a
@@ -40,8 +41,13 @@ export function pickRecommendations(rows: LeaderboardRow[]): Recommendations {
 
   // Cheapest per-solved-task among skill-worthy models (AUC@2 >= threshold).
   // Tier-independent so the pick stays stable under the Value/Speed presets.
+  // Models with provisional (understated) cost are excluded — recommending them
+  // as "best value" off a known-wrong cost would be misleading.
   const valueEligible = rows.filter(
-    (r) => r.cost_per_pass_usd !== null && auc(r) >= SKILL_THRESHOLD,
+    (r) =>
+      r.cost_per_pass_usd !== null &&
+      auc(r) >= SKILL_THRESHOLD &&
+      !isCostProvisional(r.model.slug),
   );
   const valueRow = valueEligible.sort(
     (a, b) => (a.cost_per_pass_usd as number) - (b.cost_per_pass_usd as number),

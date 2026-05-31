@@ -1,6 +1,7 @@
 // site/src/lib/shared/value-map.ts
 import type { LeaderboardRow } from './api-types';
 import { aucFraction } from './leaderboard-derive';
+import { isCostProvisional } from './cost-provisional';
 
 export interface ValueMapDims { width: number; height: number; padding: number; }
 
@@ -12,6 +13,7 @@ export interface ValuePoint {
   cx: number;       // pixel x
   cy: number;       // pixel y (SVG, grows downward)
   onFrontier: boolean;
+  provisional: boolean; // cost understated/under review — dimmed, never on frontier
 }
 
 export interface ValueMapModel {
@@ -53,9 +55,13 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
   // running max auc; ties in cost resolved by auc desc so the better one wins.
   const sorted = [...priced].sort((a, b) =>
     a.avg_cost_usd - b.avg_cost_usd || aucOf(b) - aucOf(a));
+  // Provisional-cost models are skipped in the sweep: their x-position (cost) is
+  // understated, so letting them define the value frontier would be wrong. They
+  // are still plotted (dimmed) so their skill is visible.
   const frontierSlugs = new Set<string>();
   let runningMaxAuc = -Infinity;
   for (const r of sorted) {
+    if (isCostProvisional(r.model.slug)) continue;
     const a = aucOf(r);
     if (a > runningMaxAuc) { frontierSlugs.add(r.model.slug); runningMaxAuc = a; }
   }
@@ -68,6 +74,7 @@ export function computeValueMap(rows: LeaderboardRow[], dims: ValueMapDims): Val
     cx: xOf(r.avg_cost_usd),
     cy: yOf(aucOf(r)),
     onFrontier: frontierSlugs.has(r.model.slug),
+    provisional: isCostProvisional(r.model.slug),
   }));
 
   // Frontier polyline through frontier points sorted by cost asc.
