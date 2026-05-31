@@ -316,9 +316,14 @@ export class CommandMock {
       // deno-lint-ignore no-explicit-any
     } as any;
 
-    // Replace Deno.Command
-    // deno-lint-ignore no-explicit-any
-    (Deno as any).Command = MockCommand;
+    // Replace Deno.Command. Deno 2.8 exposes Deno.Command as a getter-only
+    // accessor, so a plain assignment throws; redefine it as a configurable
+    // data property so the mock installs regardless of test order.
+    Object.defineProperty(Deno, "Command", {
+      value: MockCommand,
+      configurable: true,
+      writable: true,
+    });
     this.installed = true;
 
     return this;
@@ -332,8 +337,11 @@ export class CommandMock {
       return this;
     }
 
-    // deno-lint-ignore no-explicit-any
-    (Deno as any).Command = this.originalCommand;
+    Object.defineProperty(Deno, "Command", {
+      value: this.originalCommand,
+      configurable: true,
+      writable: true,
+    });
     this.originalCommand = null;
     this.installed = false;
 
