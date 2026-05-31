@@ -9,7 +9,11 @@ test.describe("/models", () => {
   });
 
   test("Has runs filter scopes the table", async ({ page }) => {
-    await page.goto("/models");
+    // networkidle: the "With runs" Radio's onchange (-> pushFilter -> goto) is
+    // wired only during Svelte hydration. Default `load` returns before that,
+    // so a bare goto + check() checks the radio natively before the handler
+    // exists and the navigation never fires.
+    await page.goto("/models", { waitUntil: "networkidle" });
     await page.getByLabel("With runs").check();
     await expect(page).toHaveURL(/has_runs=yes/);
   });
