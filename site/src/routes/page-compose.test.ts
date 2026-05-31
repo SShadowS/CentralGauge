@@ -47,12 +47,19 @@ describe('Leaderboard page composition', () => {
   it('renders category tabs (All + per category) and no sidebar Category fieldset', () => {
     const { container, getAllByRole } = render(Page, { props: { data: data as unknown as PageData } });
     const radiogroups = getAllByRole('radiogroup');
-    expect(radiogroups.length).toBe(3); // SortPresets + CategoryTabs + OpennessFilter
+    expect(radiogroups.length).toBe(4); // SortPresets + CategoryTabs + OpennessFilter + ViewToggle
     expect(container.textContent).toMatch(/all tasks/i);
     expect(container.textContent).toMatch(/Tables/);
     expect(container.textContent).toMatch(/proprietary/i); // OpennessFilter rendered
     // old sidebar Category legend gone:
     const legends = Array.from(container.querySelectorAll('legend')).map((l) => l.textContent?.trim());
     expect(legends).not.toContain('Category');
+  });
+
+  it('defaults to the table view and offers a value-map toggle', () => {
+    const { container, getByRole } = render(Page, { props: { data: data as unknown as PageData } });
+    expect(getByRole('radio', { name: /value map/i })).not.toBeNull();
+    // table headline present by default
+    expect(container.querySelector('[data-test="auc-cell"]')).not.toBeNull();
   });
 });
