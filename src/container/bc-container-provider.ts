@@ -181,6 +181,38 @@ export function isInfraTestFailure(output: string): boolean {
   return false;
 }
 
+/**
+ * Build a failed TestResult representing a model-attributable candidate
+ * publish/install defect (object-ID collision in a clean env, install-trigger
+ * error, schema-sync validation). RETURNED (not thrown) so the normal
+ * test-failure aggregation path scores it as a model failure: compile credit
+ * retained, no test credit, NOT retried as infra. `output` is preserved (with a
+ * leading class marker) for debugging + telemetry. Pure + exported for testing.
+ */
+export function makePublishFailureTestResult(
+  output: string,
+  durationMs: number,
+): TestResult {
+  const m = output.match(/PUBLISH_FAILED:([^\r\n]*)/);
+  const detail = (m?.[1] ?? "candidate publish/install failed").trim();
+  return {
+    success: false,
+    totalTests: 1,
+    passedTests: 0,
+    failedTests: 1,
+    duration: durationMs,
+    results: [
+      {
+        name: "Publish/Install",
+        passed: false,
+        duration: 0,
+        error: `Candidate publish/install defect: ${detail}`,
+      },
+    ],
+    output: `PUBLISH_DEFECT_CLASS:model\n${output}`,
+  };
+}
+
 export class BcContainerProvider implements ContainerProvider {
   readonly name = "bccontainer";
   readonly platform = "windows" as const;

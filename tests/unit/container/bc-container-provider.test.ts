@@ -12,10 +12,16 @@
  * cover actual PowerShell execution with real BC containers.
  */
 
-import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import {
   BcContainerProvider,
   isInfraTestFailure,
+  makePublishFailureTestResult,
 } from "../../../src/container/bc-container-provider.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
@@ -2006,4 +2012,25 @@ Deno.test({
       await Deno.remove(tmpDir, { recursive: true }).catch(() => {});
     }
   },
+});
+
+// =============================================================================
+// makePublishFailureTestResult
+// =============================================================================
+
+Deno.test("makePublishFailureTestResult: shapes a failed Publish/Install TestResult", () => {
+  const r = makePublishFailureTestResult(
+    "PREPARE_PUBLISH_FAILED:OnInstallAppPerCompany raised an error",
+    1234,
+  );
+  assertEquals(r.success, false);
+  assertEquals(r.totalTests, 1);
+  assertEquals(r.passedTests, 0);
+  assertEquals(r.failedTests, 1);
+  assertEquals(r.totalTests, r.passedTests + r.failedTests);
+  assertEquals(r.duration, 1234);
+  assertEquals(r.results.length, 1);
+  assertEquals(r.results[0]!.name, "Publish/Install");
+  assertEquals(r.results[0]!.passed, false);
+  assert(r.results[0]!.error!.includes("OnInstallAppPerCompany"));
 });
