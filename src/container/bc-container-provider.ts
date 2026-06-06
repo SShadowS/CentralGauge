@@ -194,6 +194,9 @@ export function makePublishFailureTestResult(
   output: string,
   durationMs: number,
 ): TestResult {
+  // Matches BOTH the legacy `PUBLISH_FAILED:` marker and the SOAP
+  // `PREPARE_PUBLISH_FAILED:` marker (the former is a substring of the latter).
+  // If either marker is renamed, this falls back to the generic detail below.
   const m = output.match(/PUBLISH_FAILED:([^\r\n]*)/);
   const detail = (m?.[1] ?? "candidate publish/install failed").trim();
   return {

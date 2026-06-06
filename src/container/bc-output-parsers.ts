@@ -292,7 +292,11 @@ export function parseTestResults(output: string): {
       continue;
     }
 
-    // Handle status markers
+    // Handle status markers.
+    // NOTE: the legacy `runTests` path now intercepts PUBLISH_FAILED output
+    // upstream and classifies it terminally (see the ownership block in
+    // bc-container-provider.runTests), so this branch is unreachable from that
+    // path. Kept as defensive parsing for any other caller of parseTestResults.
     if (trimmedLine.startsWith("PUBLISH_FAILED:")) {
       publishFailed = true;
       continue;
