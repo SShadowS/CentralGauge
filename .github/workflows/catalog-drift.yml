@@ -17,6 +17,12 @@ jobs:
         with: { node-version: 20 }
       - name: Install site deps
         run: cd site && npm ci
+      # vitest 4's oxc transform resolves tsconfig.json, which `extends`
+      # ./.svelte-kit/tsconfig.json. That file only exists after a sync, so
+      # without this step the probe fails with "Tsconfig not found" before
+      # any test runs. Site CI gets it for free via `npm run build`.
+      - name: Generate .svelte-kit/tsconfig.json
+        run: cd site && npx svelte-kit sync
       - name: Run catalog-drift invariant
         env:
           CI_PROD_PROBE: "1"
