@@ -29,6 +29,12 @@ Deno.test("classifyPublishFailure: collision WITH cleanup-incomplete is infra", 
   assertEquals(classifyPublishFailure(out), "infra");
 });
 
+Deno.test("classifyPublishFailure: PREPARE_CLEANUP_WARN contamination is infra", () => {
+  const out =
+    "PREPARE_CLEANUP_WARN:CG-AL-H022 Prereq - in use\nPREPARE_PUBLISH_FAILED:already defined in multiple apps";
+  assertEquals(classifyPublishFailure(out), "infra");
+});
+
 Deno.test("classifyPublishFailure: PSSession loss during publish is infra", () => {
   assertEquals(
     classifyPublishFailure(

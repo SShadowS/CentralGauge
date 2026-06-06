@@ -17,6 +17,12 @@ const INFRA_PUBLISH_SIGNATURES: RegExp[] = [
   /\b(timeout|timed\s+out)\b/i,
   /\b(?:econnreset|econnrefused|etimedout|enotfound)\b/i,
   /socket hang up/i,
+  // Known edge case: a single-line model error that also mentions e.g.
+  // "connection closed" will be classified infra. This is acceptable per the
+  // "infra for safety" precedence — a misclassified model defect is merely
+  // rerouted/retried, never falsely penalized. Do NOT broaden the model
+  // signatures to "fix" this; that would risk scoring real infra blips as
+  // model failures.
   /connection\b.{0,30}\b(?:reset|refused|closed|forcibly)/i,
   /unable to connect to the remote server/i,
   /PSSession.*(?:disconnected|broken|closed|removed)/i,
