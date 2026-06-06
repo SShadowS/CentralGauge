@@ -25,6 +25,7 @@ import { Logger } from "../logger/mod.ts";
 import {
   captureRawTail,
   classifyPublishFailure,
+  isCollisionPublishFailure,
   redactSensitive,
   writeArtifact,
 } from "../health/mod.ts";
@@ -1619,6 +1620,31 @@ ${script}
         });
         return soapResult;
       } catch (e) {
+        // Ownership of a candidate publish/install failure. Install-trigger and
+        // schema-sync defects are deterministic + model-owned -> score as a
+        // model failure immediately (no legacy double-publish). Duplicate-object
+        // COLLISIONS fall back to legacy: SOAP prepare cleanup only sweeps
+        // CentralGauge apps, so a collision may be stale non-CentralGauge
+        // contamination that legacy's broader cleanup removes. Legacy then
+        // classifies terminally, so a genuine model collision is still scored
+        // and a real infra blip is still rerouted.
+        const publishOut = e instanceof ContainerError
+          ? (e.rawOutput ?? e.message)
+          : (e instanceof Error ? e.message : String(e));
+        if (
+          e instanceof ContainerError && e.operation === "publish" &&
+          classifyPublishFailure(publishOut) === "model" &&
+          !isCollisionPublishFailure(publishOut)
+        ) {
+          contextLog.info(
+            "Candidate install/schema defect (model-attributable); scoring as model failure",
+            { container: containerName },
+          );
+          return makePublishFailureTestResult(
+            publishOut,
+            Date.now() - startTime,
+          );
+        }
         getTracer().instant("soap-fallback-to-legacy", {
           tid: containerName,
           cat: ["soap", "fallback"],
