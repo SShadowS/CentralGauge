@@ -298,6 +298,134 @@ ${devCredentialSetup}
 }
 
 /**
+ * Build the per-task "orphan prereq" cleanup script: removes CentralGauge
+ * prereq apps left resident by a PRIOR task before the current task publishes
+ * its own prereqs. Without this, two tasks whose prereqs declare the same
+ * object ID (e.g. table 69225 across CG-AL-H022/H023/H024/H026) end up resident
+ * simultaneously and the next publish fails with "defined in multiple apps",
+ * scoring an innocent fixture as an `infra` failure. See GitHub issue #10.
+ *
+ * Why in-container (issue #10). The previous implementation ran host-side
+ * `Unpublish-BcContainerApp` through `executePowerShell` (cold `pwsh`), which is
+ * unreliable under pwsh 7 with `usePwshForBc24 = $false` — it dies after the
+ * first app and the sweep silently no-ops, so orphans accumulate. This builder
+ * mirrors `buildPrepareCandidateScript`: the actual uninstall/unpublish runs
+ * INSIDE the container via `Invoke-ScriptInBcContainer { Get-NAVAppInfo |
+ * Uninstall-NAVApp; Unpublish-NAVApp }`, which works regardless of host shell.
+ * Route it through `runScriptThroughSession` (the warm slot), NOT a fresh
+ * `powershell.exe`, to avoid re-paying the ~120 s BCH bridge setup per task.
+ *
+ * Two-phase ordering (issue #10). The prior task's CANDIDATE app is usually
+ * still installed when this runs (candidate cleanup happens later, inside
+ * `runTests` -> `prepareCandidateApp`), and that candidate depends on the prior
+ * task's prereqs. Removing a prereq while a dependent candidate is still
+ * resident fails ("still in use"), so we remove non-prereq CentralGauge apps
+ * (except the harness) FIRST, then the orphan prereqs — the same ordering the
+ * bench-startup prenuke uses.
+ *
+ * Multi-pass with progress detection. Prereqs can depend on each other
+ * (H024 -> H022): the depended-upon app only unpublishes after its dependent is
+ * gone. We loop, re-querying the remaining orphan set after each pass, and stop
+ * when none remain OR a pass makes no progress (a stuck dependency). A loud
+ * `PREREQ_CLEANUP_INCOMPLETE:<remaining>` marker fires if any survive so the
+ * caller can fail with correct attribution instead of accumulating silently.
+ *
+ * `expectedPrereqNames` are the Names of the CURRENT task's prereqs (which must
+ * stay resident). Anything matching `*Prereq*` under publisher CentralGauge not
+ * in that set is an orphan.
+ *
+ * Output markers (host-side parser keys off these):
+ *   PREREQ_CLEANUP_NONE
+ *   PREREQ_CLEANUP_FOUND:<n>
+ *   PREREQ_CLEANUP_REMOVE:<name> v<version>
+ *   PREREQ_CLEANUP_WARN:<name> - <reason>
+ *   PREREQ_CLEANUP_INCOMPLETE:<remaining>
+ *   PREREQ_CLEANUP_DONE
+ */
+export function buildPrereqCleanupScript(
+  containerName: string,
+  expectedPrereqNames: string[],
+  harnessAppName: string,
+): string {
+  const escapeForPS = (s: string) => s.replace(/'/g, "''");
+  const expectedNamesLit = expectedPrereqNames.length === 0
+    ? "@()"
+    : "@(" + expectedPrereqNames.map((n) => `'${escapeForPS(n)}'`).join(",") +
+      ")";
+  return `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      $bcContainerHelperConfig.usePwshForBc24 = $false
+
+      $expectedNames = ${expectedNamesLit}
+      try {
+        $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          param($expected, $harnessName)
+          $out = @()
+
+          # Phase 1: remove CentralGauge non-prereq apps (except the harness).
+          # The prior task's candidate depends on its prereqs; it must go first
+          # or the prereq unpublish fails "still in use".
+          $cands = @(Get-NAVAppInfo -ServerInstance BC | Where-Object {
+            $_.Publisher -eq "CentralGauge" -and
+            $_.Name -notlike "*Prereq*" -and
+            $_.Name -ne $harnessName
+          })
+          foreach ($app in $cands) {
+            $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+            try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+            try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop } catch {
+              $out += "PREREQ_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
+            }
+          }
+
+          # Phase 2: remove orphan prereqs not in the current task's expected
+          # set, multi-pass for inter-prereq dependency chains.
+          $getOrphans = {
+            @(Get-NAVAppInfo -ServerInstance BC | Where-Object {
+              $_.Publisher -eq "CentralGauge" -and
+              $_.Name -like "*Prereq*" -and
+              ($expected -notcontains $_.Name)
+            })
+          }
+          $remaining = (& $getOrphans).Count
+
+          if ($remaining -eq 0 -and $cands.Count -eq 0) {
+            $out += "PREREQ_CLEANUP_NONE"
+          } else {
+            $out += "PREREQ_CLEANUP_FOUND:$($remaining + $cands.Count)"
+          }
+
+          $maxPasses = 6
+          for ($pass = 1; $pass -le $maxPasses; $pass++) {
+            $orphans = & $getOrphans
+            if ($orphans.Count -eq 0) { $remaining = 0; break }
+            foreach ($app in $orphans) {
+              $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop } catch {
+                $out += "PREREQ_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
+              }
+            }
+            # Re-query for real progress rather than trusting the calls above
+            # (Uninstall used -ErrorAction SilentlyContinue and BCH/NST can lie).
+            $after = (& $getOrphans).Count
+            $remaining = $after
+            if ($after -eq 0) { break }
+            if ($after -ge $orphans.Count) { break }  # no progress -> stuck dependency
+          }
+
+          if ($remaining -gt 0) { $out += "PREREQ_CLEANUP_INCOMPLETE:$remaining" }
+          $out += "PREREQ_CLEANUP_DONE"
+          $out
+        } -argumentList (,$expectedNames), "${escapeForPS(harnessAppName)}"
+        $report | ForEach-Object { Write-Output $_ }
+      } catch {
+        Write-Output "PREREQ_CLEANUP_WARN:invoke-script - $($_.Exception.Message)"
+      }
+    `;
+}
+
+/**
  * Build the publish app script block
  */
 export function buildPublishScript(
