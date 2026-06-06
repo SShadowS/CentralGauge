@@ -664,4 +664,167 @@ Deno.test("buildScoreLines", async (t) => {
       assert(!content.includes("# Drain Events"));
     },
   );
+
+  await t.step(
+    "emits # Publish Defects block when model-attributable publish defects present",
+    () => {
+      // Attempt with the canonical PUBLISH_DEFECT_CLASS:model marker in output
+      const defectAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: false,
+        failureReasons: [
+          "Tests failed",
+          "  Publish/Install: Candidate publish/install defect: Object ID collision",
+        ],
+        testResult: {
+          success: false,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          duration: 100,
+          results: [
+            {
+              name: "Publish/Install",
+              passed: false,
+              duration: 0,
+              error: "Candidate publish/install defect: Object ID collision",
+            },
+          ],
+          output:
+            "PUBLISH_DEFECT_CLASS:model\nPUBLISH_FAILED:Object ID collision",
+        },
+      });
+      // A normal failed attempt (no publish defect marker)
+      const normalFailAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: false,
+        failureReasons: ["Tests failed", "  TestSomething: assertion error"],
+        testResult: {
+          success: false,
+          totalTests: 1,
+          passedTests: 0,
+          failedTests: 1,
+          duration: 50,
+          results: [
+            {
+              name: "TestSomething",
+              passed: false,
+              duration: 0,
+              error: "assertion error",
+            },
+          ],
+          output: "Some normal test output",
+        },
+      });
+
+      const results: TaskExecutionResult[] = [
+        {
+          taskId: "CG-AL-P01",
+          executionId: "exec-p1",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [defectAttempt],
+          success: false,
+          finalScore: 0,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 0,
+          successRate: 0,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+        {
+          taskId: "CG-AL-P02",
+          executionId: "exec-p2",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [defectAttempt, defectAttempt],
+          success: false,
+          finalScore: 0,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 0,
+          successRate: 0,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+        {
+          taskId: "CG-AL-P03",
+          executionId: "exec-p3",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [normalFailAttempt],
+          success: false,
+          finalScore: 0,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 0,
+          successRate: 0,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+      ];
+
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 3,
+        modelNames: ["sonnet"],
+        attempts: 2,
+        resultCount: 3,
+        timestamp: new Date("2026-06-06T12:00:00Z"),
+        results,
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+
+      // 3 defect attempts across two tasks (1 + 2)
+      assertStringIncludes(content, "# Publish Defects");
+      assertStringIncludes(content, "candidate_publish_model_defects: 3");
+    },
+  );
+
+  await t.step(
+    "omits # Publish Defects block on runs with no model-attributable defects",
+    () => {
+      const normalAttempt: ExecutionAttempt = createMockExecutionAttempt({
+        attemptNumber: 1,
+        success: true,
+      });
+      const results: TaskExecutionResult[] = [
+        {
+          taskId: "CG-AL-P04",
+          executionId: "exec-p4",
+          context: {} as TaskExecutionResult["context"],
+          attempts: [normalAttempt],
+          success: true,
+          finalScore: 100,
+          totalTokensUsed: 0,
+          totalCost: 0,
+          totalDuration: 0,
+          passedAttemptNumber: 1,
+          successRate: 1,
+          executedAt: new Date(),
+          executedBy: "centralgauge",
+          environment: {},
+        },
+      ];
+
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-06-06T12:00:00Z"),
+        results,
+      };
+
+      const content = buildScoreLines(input).join("\n");
+      assert(!content.includes("# Publish Defects"));
+    },
+  );
 });

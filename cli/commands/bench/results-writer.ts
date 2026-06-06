@@ -329,6 +329,31 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     }
   }
 
+  // # Publish Defects block — model-attributable candidate publish/install
+  // defects. Detection: any attempt whose testResult.output starts with
+  // "PUBLISH_DEFECT_CLASS:model" (canonical marker set by
+  // makePublishFailureTestResult in bc-container-provider.ts). Infra-caused
+  // publish failures use a different code path and are NOT marked with that
+  // prefix, so this count is strictly model-attributed. Emitted only when
+  // count > 0 so normal runs stay clean.
+  if (input.results && input.results.length > 0) {
+    let publishDefectCount = 0;
+    for (const r of input.results) {
+      for (const a of r.attempts) {
+        if (
+          a.testResult?.output?.startsWith("PUBLISH_DEFECT_CLASS:model")
+        ) {
+          publishDefectCount++;
+        }
+      }
+    }
+    if (publishDefectCount > 0) {
+      lines.push(``);
+      lines.push(`# Publish Defects`);
+      lines.push(`candidate_publish_model_defects: ${publishDefectCount}`);
+    }
+  }
+
   // # Drain Events block — alert-driven drain + rebalance activity (task #8).
   // Emitted only when at least one drain fired during this run, so normal
   // runs stay clean. Each event records: alertId, container, fingerprint,
