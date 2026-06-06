@@ -2,6 +2,7 @@ import { assert, assertStringIncludes } from "@std/assert";
 import {
   buildCleanupStaleCandidatesScript,
   buildPrepareCandidateScript,
+  buildPrereqCleanupScript,
   buildPublishScript,
   buildTestScript,
 } from "../../../src/container/bc-script-builders.ts";
@@ -252,4 +253,113 @@ Deno.test("buildPrepareCandidateScript exits non-zero on publish failure", () =>
     /PREPARE_PUBLISH_FAILED[^\n]*[\s\S]*?exit 1/.test(script),
     "publish failure path must emit PREPARE_PUBLISH_FAILED then exit 1",
   );
+});
+
+// =============================================================================
+// buildPrereqCleanupScript: in-container, two-phase, multi-pass orphan-prereq
+// sweep. Fixes GitHub issue #10 (host-side pwsh-7 sweep silently no-opped ->
+// cross-task object-ID collisions -> false `infra` failures).
+// =============================================================================
+
+Deno.test("buildPrereqCleanupScript routes the unpublish through Invoke-ScriptInBcContainer", () => {
+  // The whole point of the fix: the uninstall/unpublish runs INSIDE the
+  // container (works regardless of host shell), not host-side under pwsh 7.
+  const script = buildPrereqCleanupScript(
+    "Cronus28",
+    ["CG-AL-E002 Prereq"],
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, "Invoke-ScriptInBcContainer");
+});
+
+Deno.test("buildPrereqCleanupScript uses in-container NAV cmdlets, not host-side Unpublish-BcContainerApp", () => {
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  assertStringIncludes(script, "Uninstall-NAVApp");
+  assertStringIncludes(script, "Unpublish-NAVApp");
+  assert(
+    !script.includes("Unpublish-BcContainerApp"),
+    "must NOT use the host-side BCH wrapper that fails under pwsh 7",
+  );
+});
+
+Deno.test("buildPrereqCleanupScript scopes to CentralGauge publisher", () => {
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  assertStringIncludes(script, `$_.Publisher -eq "CentralGauge"`);
+});
+
+Deno.test("buildPrereqCleanupScript removes non-prereq apps before prereqs (dependency ordering)", () => {
+  // A prior task's candidate depends on its prereqs; it must be removed first
+  // or the prereq unpublish fails "still in use". Phase 1 filter excludes
+  // prereqs and the harness; phase 2 targets prereqs.
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  const phase1 = script.indexOf(`$_.Name -notlike "*Prereq*"`);
+  const phase2 = script.indexOf(`$_.Name -like "*Prereq*"`);
+  assert(phase1 >= 0 && phase2 >= 0, "both phases must be present");
+  assert(
+    phase1 < phase2,
+    "non-prereq cleanup (phase 1) must precede prereq cleanup (phase 2)",
+  );
+});
+
+Deno.test("buildPrereqCleanupScript keeps the current task's expected prereqs", () => {
+  const script = buildPrereqCleanupScript(
+    "Cronus28",
+    ["CG-AL-H022 Prereq", "CG-AL-H023 Prereq"],
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `'CG-AL-H022 Prereq'`);
+  assertStringIncludes(script, `'CG-AL-H023 Prereq'`);
+  assertStringIncludes(script, "$expected -notcontains $_.Name");
+});
+
+Deno.test("buildPrereqCleanupScript excludes the harness by the supplied name", () => {
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Alt Harness");
+  assertStringIncludes(script, `"CG Alt Harness"`);
+  assertStringIncludes(script, "$_.Name -ne $harnessName");
+});
+
+Deno.test("buildPrereqCleanupScript empty expected set yields @()", () => {
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  assertStringIncludes(script, "$expectedNames = @()");
+});
+
+Deno.test("buildPrereqCleanupScript loops multi-pass with progress detection", () => {
+  // Inter-prereq dependency chains (H024 -> H022) need repeated passes; the
+  // loop must re-query the orphan set and stop on no-progress.
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  assert(
+    /for \(\$pass = 1; \$pass -le/.test(script),
+    "must have a bounded pass loop",
+  );
+  assertStringIncludes(script, "no progress -> stuck dependency");
+});
+
+Deno.test("buildPrereqCleanupScript emits the marker keys the host parser expects", () => {
+  const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
+  for (
+    const marker of [
+      "PREREQ_CLEANUP_NONE",
+      "PREREQ_CLEANUP_FOUND:",
+      "PREREQ_CLEANUP_REMOVE:",
+      "PREREQ_CLEANUP_WARN:",
+      "PREREQ_CLEANUP_INCOMPLETE:",
+      "PREREQ_CLEANUP_DONE",
+    ]
+  ) {
+    assertStringIncludes(script, marker);
+  }
+});
+
+Deno.test("buildPrereqCleanupScript targets the given container", () => {
+  const script = buildPrereqCleanupScript("Cronus281", [], "CG Test Harness");
+  assertStringIncludes(script, `-containerName "Cronus281"`);
+});
+
+Deno.test("buildPrereqCleanupScript escapes single quotes in expected names", () => {
+  const script = buildPrereqCleanupScript(
+    "Cronus28",
+    ["O'Brien Prereq"],
+    "CG Test Harness",
+  );
+  assertStringIncludes(script, `'O''Brien Prereq'`);
 });

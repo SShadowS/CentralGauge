@@ -50,6 +50,7 @@ import {
   buildCleanupStaleCandidatesScript,
   buildCompileScript,
   buildPrepareCandidateScript,
+  buildPrereqCleanupScript,
   buildTestScript,
 } from "./bc-script-builders.ts";
 import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
@@ -1397,50 +1398,71 @@ ${script}
    * E002 Prereq's Product Category table 69001).
    *
    * Filename convention: Publisher_Name_Version.app
+   *
+   * The actual uninstall/unpublish runs INSIDE the container via
+   * `Invoke-ScriptInBcContainer` (see `buildPrereqCleanupScript`), routed
+   * through the warm per-container session slot. The previous host-side
+   * `Unpublish-BcContainerApp` path silently no-opped under pwsh 7 with
+   * `usePwshForBc24 = $false`, so orphans accumulated and tripped cross-task
+   * "defined in multiple apps" publish failures (GitHub issue #10).
+   *
+   * Throws a `ContainerError` if cleanup is incomplete (a prereq survives the
+   * multi-pass sweep) so the failure is attributed to container-state cleanup
+   * rather than the innocent current fixture's publish.
    */
   async cleanupOrphanedPrereqs(
     containerName: string,
     expectedPrereqAppPaths: string[],
   ): Promise<void> {
-    const expected = expectedPrereqAppPaths
+    if (!this.isWindows()) return;
+
+    const expectedNames = expectedPrereqAppPaths
       .map((p) => p.split(/[/\\]/).pop() ?? "")
       .map((fileName) => {
         const parts = fileName.replace(".app", "").split("_");
-        const publisher = parts[0] ?? "";
-        const name = parts.slice(1, -1).join("_");
-        return { publisher, name };
+        // Filename convention: Publisher_Name_Version.app
+        return parts.slice(1, -1).join("_");
       })
-      .filter((x) => x.name.length > 0);
+      .filter((name) => name.length > 0);
 
-    // Quote and join as PowerShell string array literals, e.g.
-    //   $expectedNames = @('CG-AL-E002 Prereq','CG-AL-H022 Prereq')
-    const escapeForPS = (s: string) => s.replace(/'/g, "''");
-    const expectedNamesLit = expected.length === 0 ? "@()" : "@(" +
-      expected.map((e) => `'${escapeForPS(e.name)}'`).join(",") +
-      ")";
+    const script = buildPrereqCleanupScript(
+      containerName,
+      expectedNames,
+      BcContainerProvider.HARNESS_APP_NAME,
+    );
 
-    const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+    // Route through the persistent per-container session slot (NOT
+    // executePowerShell) so we don't re-pay the ~120 s BCH bridge setup per
+    // task. Mirrors prepareCandidateApp / cleanupStaleCandidates.
+    const result = await this.runScriptThroughSession(
+      containerName,
+      script,
+      "prereq-cleanup",
+    );
 
-      $expectedNames = ${expectedNamesLit}
-      $orphans = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
-        $_.Publisher -eq "CentralGauge" -and
-        $_.Name -like "*Prereq*" -and
-        ($expectedNames -notcontains $_.Name)
-      })
-      foreach ($app in $orphans) {
-        try {
-          Write-Output "PREREQ_ORPHAN_REMOVE: $($app.Name) v$($app.Version)"
-          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
-        } catch {
-          Write-Output "PREREQ_ORPHAN_WARN: $($app.Name) - $($_.Exception.Message)"
-        }
-      }
-      Write-Output "PREREQ_CLEANUP_DONE"
-    `;
+    if (result.output.includes("PREREQ_CLEANUP_FOUND")) {
+      log.info(`Swept orphan prereqs in ${containerName}`, {
+        output: result.output.split("\n")
+          .filter((l) => l.startsWith("PREREQ_CLEANUP_"))
+          .join(" | "),
+      });
+    }
 
-    await this.executePowerShell(script);
+    // Loud-marker enforcement: if any orphan prereq survived the multi-pass
+    // sweep, fail HERE (container contamination) instead of letting the
+    // subsequent prereq publish fail with a misleading "defined in multiple
+    // apps" attributed to the current fixture.
+    if (
+      result.output.includes("PREREQ_CLEANUP_INCOMPLETE") ||
+      !result.output.includes("PREREQ_CLEANUP_DONE")
+    ) {
+      throw this.buildPwshError({
+        containerName,
+        operation: "setup",
+        message: "Orphan prereq cleanup incomplete (container contamination)",
+        output: result.output,
+      });
+    }
   }
 
   /**
