@@ -24,6 +24,7 @@ import { fromFileUrl } from "@std/path";
 import { Logger } from "../logger/mod.ts";
 import {
   captureRawTail,
+  classifyPublishFailure,
   redactSensitive,
   writeArtifact,
 } from "../health/mod.ts";
@@ -138,7 +139,6 @@ const UNCONDITIONAL_INFRA_TEST_MARKERS = [
   /Get-NavServerInstance.*not recognized/i,
   /CommandNotFoundException.*Get-NavServerInstance/i,
   /Publish-BcContainerApp.*timed out/i,
-  /PUBLISH_FAILED/,
   /Run-TestsInBcContainer.*failed/i,
   /container .* not running/i,
 ];
@@ -1680,6 +1680,41 @@ ${script}
     );
     const duration = Date.now() - startTime;
 
+    // Remove the staged candidate copy now so the publish-failure early
+    // return / infra throw below cannot leak it.
+    try {
+      await Deno.remove(sharedAppPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    // Publish-failure ownership (legacy path), TERMINAL — does NOT fall through.
+    // model  -> failed TestResult (scored as a model failure, no retry)
+    // infra  -> throw ContainerError("publish") (reroute)
+    // unknown-> throw ContainerError("publish") as infra for safety (v1);
+    //           telemetry tags it. (isInfraTestFailure no longer catches
+    //           PUBLISH_FAILED, so this must handle every class itself.)
+    if (result.output.includes("PUBLISH_FAILED")) {
+      const cls = classifyPublishFailure(result.output);
+      if (cls === "model") {
+        contextLog.info(
+          "Candidate publish/install defect (model-attributable)",
+          {
+            container: containerName,
+          },
+        );
+        return makePublishFailureTestResult(result.output, duration);
+      }
+      throw this.buildPwshError({
+        containerName,
+        operation: "publish",
+        message: cls === "unknown"
+          ? "Candidate publish failed (unclassified)"
+          : "Candidate publish failed (infra)",
+        output: result.output,
+      });
+    }
+
     // Infra-failure detection (NOT model AL failures). A genuine
     // container/BC/test-tool failure throws a ContainerError so the
     // orchestrator classifies + records it without penalizing the model.
@@ -1710,13 +1745,6 @@ ${script}
       TEST_START: hasTestStart,
       TEST_END: hasTestEnd,
     });
-
-    // Cleanup copied file
-    try {
-      await Deno.remove(sharedAppPath);
-    } catch {
-      // Ignore cleanup errors
-    }
 
     // Parse and return results
     const { results, allPassed, publishFailed } = parseTestResults(

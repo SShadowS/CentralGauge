@@ -33,7 +33,9 @@ Deno.test("isInfraTestFailure", async (t) => {
       isInfraTestFailure("error SYSLIB0014: ServicePointManager"),
       true,
     );
-    assertEquals(isInfraTestFailure("PUBLISH_FAILED:boom"), true);
+    // PUBLISH_FAILED is no longer an unconditional infra marker — it is
+    // handled by the terminal classifyPublishFailure block in runTests.
+    assertEquals(isInfraTestFailure("PUBLISH_FAILED:boom"), false);
     assertEquals(
       isInfraTestFailure("Run-TestsInBcContainer ... failed"),
       true,
@@ -72,6 +74,24 @@ Deno.test("isInfraTestFailure", async (t) => {
       assertEquals(isInfraTestFailure("ALL_TESTS_PASSED"), false);
     },
   );
+});
+
+Deno.test("isInfraTestFailure: a bare model PUBLISH_FAILED is NOT infra", () => {
+  assertEquals(
+    isInfraTestFailure("PUBLISH_FAILED:Table 'X' is already defined in app"),
+    false,
+  );
+});
+
+Deno.test("isInfraTestFailure: a non-publish TEST_ERROR infra signature is still infra", () => {
+  assertEquals(
+    isInfraTestFailure("TEST_ERROR:SQL server service is down"),
+    true,
+  );
+});
+
+Deno.test("isInfraTestFailure: unrelated test output is not infra", () => {
+  assertEquals(isInfraTestFailure("TEST_START: ... TEST_END:"), false);
 });
 
 // =============================================================================
@@ -1093,9 +1113,10 @@ Deno.test({
         "mock app content",
       );
 
-      // Mock: publish fails — this is an infra failure, not a model failure,
-      // so Phase A surfaces it as a ContainerError that the orchestrator
-      // classifies + records in container health, not a silent success:false.
+      // Mock: publish fails with an unclassified/unknown message — this is
+      // treated as infra for safety and surfaces as a ContainerError with
+      // operation "publish" (terminal classifier, not the old unconditional
+      // infra marker path). The orchestrator routes it for reroute/retry.
       mock.mockPowerShell([], "PUBLISH_FAILED:Unable to sync database");
 
       const provider = new BcContainerProvider();
@@ -1120,7 +1141,9 @@ Deno.test({
       assertEquals(thrown instanceof ContainerError, true);
       const err = thrown as InstanceType<typeof ContainerError>;
       assertEquals(err.containerName, "TestContainer");
-      assertEquals(err.operation, "test");
+      // "publish" operation — classified by terminal classifyPublishFailure block,
+      // not the old unconditional PUBLISH_FAILED marker in isInfraTestFailure.
+      assertEquals(err.operation, "publish");
     } finally {
       mock.restore();
       await Deno.remove(tempDir, { recursive: true });
