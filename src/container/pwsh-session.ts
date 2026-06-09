@@ -5,6 +5,7 @@
  */
 
 import { PwshSessionError } from "../errors.ts";
+import { bcchUsePwshForBc24Line } from "./bcch-config.ts";
 
 export interface PwshSessionOptions {
   /** Recycle after this many execute() calls. Default 100. */
@@ -46,12 +47,16 @@ export interface SpawnedProcess {
 const DEFAULT_RECYCLE_THRESHOLD = 100;
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BOOTSTRAP_TIMEOUT_MS = 60_000;
-const DEFAULT_BOOTSTRAP_SCRIPT = `
+// Built per-call so the usePwshForBc24 knob (see bcch-config.ts / GH #12) is
+// resolved from the env at session-spawn time, not frozen at module load.
+function defaultBootstrapScript(): string {
+  return `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-$bcContainerHelperConfig.usePwshForBc24 = $false
+${bcchUsePwshForBc24Line()}
 `.trim();
+}
 
 export class PwshContainerSession {
   private _state: SessionState = "dead";
@@ -77,7 +82,7 @@ export class PwshContainerSession {
     this._defaultTimeoutMs = options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this._bootstrapTimeoutMs = options.bootstrapTimeoutMs ??
       DEFAULT_BOOTSTRAP_TIMEOUT_MS;
-    this._bootstrapScript = options.bootstrapScript ?? DEFAULT_BOOTSTRAP_SCRIPT;
+    this._bootstrapScript = options.bootstrapScript ?? defaultBootstrapScript();
     this._spawnFactory = options.spawnFactory ?? defaultSpawnFactory;
     this._stderrSink = options.stderrSink ?? (() => {});
   }

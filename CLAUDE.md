@@ -89,7 +89,18 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   `pwsh-session.ts` (bumped from 6.1.11 on 2026-05-15; the 6.1.12+ change that
   disables the Windows-PowerShell PSSession by default does NOT break
   Publish/Unpublish in 6.1.14 when the workaround below stays on).
-- `$bcContainerHelperConfig.usePwshForBc24 = $false` is STILL REQUIRED.
+- **`usePwshForBc24` is now a scoped knob, not a hardcoded literal** (GH #12).
+  Single source of truth: `src/container/bcch-config.ts`
+  (`bcchUsePwshForBc24Line()`); every emit site in `bc-container-provider.ts` +
+  `bc-script-builders.ts` + `pwsh-session.ts` routes through it. **Default is
+  `$false`** (the verified workaround below — no run changes). Opt into fast
+  pwsh-7 mode with **`CENTRALGAUGE_BCCH_USE_PWSH_BC24=1`** ONLY on an image you
+  have verified does NOT hit the Get-NavServerInstance-after-Unpublish bug. We
+  deliberately do NOT auto-gate on BC version — the April failure was never
+  re-tested on BC28. The `[CG-PIN]` sentinels print the resolved value
+  (`usePwshForBc24=True/False`) so bench output proves the mode.
+- **Why the default stays `$false` (the workaround) is STILL REQUIRED on
+  unverified images.**
   6.1.14 fixes the simple multi-cycle publish-then-unpublish flow
   (`scripts/bcch-pwsh-repro.ps1` Phase A passes 3 cycles) but does NOT fix
   the production flow where `Run-TestsInBcContainer` precedes
@@ -101,6 +112,13 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   Windows PowerShell sub-session (~120 s vs ~5 s without). Production
   amortizes this through the long-lived per-container session slot
   (`runScriptThroughSession`), where BCH caches the sub-session once.
+  - **GH #12: on BC28 / Windows Server 2025 / ltsc2025 the `$false` (WinPS 5.1
+    in-container) path costs ~380-440 s per heavy op (~30-40x), dominating bench
+    wall time and blowing the 300 s session timeout (which then triggers a
+    fresh-spawn re-run — a double-execution amplifier).** A 6-task easy bench:
+    67.5 min pinned → 6.9 min with the knob off, identical pass results. If you
+    are on such an image AND have verified the Unpublish bug doesn't reproduce,
+    set `CENTRALGAUGE_BCCH_USE_PWSH_BC24=1` for the speedup.
 - Before flipping the workaround off, re-run BOTH:
   - `scripts/bcch-pwsh-repro.ps1` against the new bcch version (must pass), and
   - `scripts/microbench-soap.ts` end-to-end (the prenuke between L2 and L3

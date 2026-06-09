@@ -23,6 +23,10 @@ import { ensureDir } from "@std/fs";
 import { fromFileUrl } from "@std/path";
 import { Logger } from "../logger/mod.ts";
 import {
+  bcchUsePwshForBc24Line,
+  bcchUsePwshForBc24Sentinel,
+} from "./bcch-config.ts";
+import {
   captureRawTail,
   classifyPublishFailure,
   isCollisionPublishFailure,
@@ -469,7 +473,7 @@ export class BcContainerProvider implements ContainerProvider {
     );
     const script = `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
           $out = @()
@@ -1206,7 +1210,7 @@ ${script}
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
           Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-          $bcContainerHelperConfig.usePwshForBc24 = $false
+          ${bcchUsePwshForBc24Line()}
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
             -appProjectFolder "${escapedProject}" -appOutputFolder "${escapedOutput}" -ErrorAction Stop
@@ -1399,7 +1403,7 @@ ${script}
     const appVersion = fileNameParts[fileNameParts.length - 1] || "";
 
     const script = `
-      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.14 usePwshForBc24=False sentinel=2026-05-03-A"
+      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.14 usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-05-03-A"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
@@ -1408,7 +1412,7 @@ ${script}
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
       # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
       # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
 
       # FAST PATH: prereqs and other apps with stable IDs (e.g. main app's
       # fixed BENCHMARK_APP_ID) are bytewise stable per (Name, Publisher,

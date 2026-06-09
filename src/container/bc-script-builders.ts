@@ -4,6 +4,10 @@
  */
 
 import type { ContainerCredentials } from "./types.ts";
+import {
+  bcchUsePwshForBc24Line,
+  bcchUsePwshForBc24Sentinel,
+} from "./bcch-config.ts";
 
 /**
  * PowerShell helper injected at the top of any BCH script when tracing is
@@ -143,7 +147,7 @@ export function buildCleanupStaleCandidatesScript(
 ): string {
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
       $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         $_.Publisher -eq "CentralGauge" -and
         $_.Name -notlike "*Prereq*" -and
@@ -240,7 +244,7 @@ export function buildPrepareCandidateScript(
     : "";
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
       ${buildPwshTraceHelper()}
 ${devCredentialSetup}
       # --- A-prime cleanup: direct in-container NAV cmdlets ---
@@ -354,7 +358,7 @@ export function buildPrereqCleanupScript(
       ")";
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
 
       $expectedNames = ${expectedNamesLit}
       try {
@@ -555,7 +559,7 @@ export function buildTestScript(
   // Prereqs are already published by publishApp() - just publish main app and run tests
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
-      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.14 usePwshForBc24=False sentinel=2026-04-25-B"
+      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.14 usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
@@ -564,7 +568,7 @@ export function buildTestScript(
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
       # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
       # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
-      $bcContainerHelperConfig.usePwshForBc24 = $false
+      ${bcchUsePwshForBc24Line()}
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
