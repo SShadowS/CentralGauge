@@ -407,14 +407,24 @@ export function buildPrereqCleanupScript(
             $before = $removable.Count
             if ($before -eq 0) { break }
             foreach ($app in $removable) {
+              # The bench installs candidates/prereqs per-TENANT, so an app's
+              # published package is tenant-scoped: Unpublish-NAVApp WITHOUT
+              # -Tenant reports "not published" and silently leaves it (the real
+              # cause of the stuck chain). Try tenant scope first, then global as
+              # a fallback for any globally-published app.
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue } catch { }
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
-              try {
-                Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction Stop
-                $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
-              } catch {
-                # Non-leaf this pass (a dependent is still published). Silent +
-                # retried next pass — avoids the per-pass "required by" WARN spam.
+              $done = $false
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop; $done = $true } catch { }
+              if (-not $done) {
+                try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop; $done = $true } catch { }
               }
+              if ($done) {
+                $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+              }
+              # else: non-leaf this pass (a dependent still published) OR not
+              # found in either scope -> retried next pass; the no-progress
+              # guard breaks + emits BLOCKED if nothing can be removed.
             }
             $after = @((& $snapshot) | Where-Object { & $isRemovable $_ }).Count
             if ($after -eq 0) { break }
