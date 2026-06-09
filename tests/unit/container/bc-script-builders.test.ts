@@ -288,17 +288,18 @@ Deno.test("buildPrereqCleanupScript scopes to CentralGauge publisher", () => {
   assertStringIncludes(script, `$a.Publisher -ne "CentralGauge"`);
 });
 
-Deno.test("buildPrereqCleanupScript removes leaf-first (dependency-safe topological order)", () => {
-  // The hardened sweep computes the set of apps depended on by any published
-  // app and only unpublishes removable apps with NO dependents (leaves). This
-  // unwinds candidate -> H024 Prereq -> H022 Prereq without "required by"
-  // failures, regardless of enumeration order.
+Deno.test("buildPrereqCleanupScript removes empirically leaf-first (progress-based, no .Dependencies)", () => {
+  // The hardened sweep attempts every removable app each pass; non-leaves throw
+  // "required by" and are retried next pass. Progress is measured by re-querying
+  // the removable count (NOT by reading the unreliable .Dependencies metadata).
   const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
-  assertStringIncludes(script, "$dependedOn");
-  assertStringIncludes(script, "$_.Dependencies"); // builds the dependent set
-  assertStringIncludes(script, "$leaves");
-  // A leaf is a removable app NOT present in the dependedOn set.
-  assertStringIncludes(script, "$dependedOn.ContainsKey($_.Name)");
+  assertStringIncludes(script, "$isRemovable");
+  assertStringIncludes(script, "Unpublish-NAVApp"); // attempt-based removal
+  assertStringIncludes(script, "$after -ge $before"); // no-progress detection
+  assert(
+    !script.includes(".Dependencies"),
+    "must NOT read Get-NAVAppInfo .Dependencies (unreliably populated)",
+  );
 });
 
 Deno.test("buildPrereqCleanupScript keeps the current task's expected prereqs", () => {
@@ -332,7 +333,7 @@ Deno.test("buildPrereqCleanupScript loops bounded, leaf-first, with stuck diagno
     /for \(\$pass = 1; \$pass -le/.test(script),
     "must have a bounded pass loop",
   );
-  assertStringIncludes(script, "if ($leaves.Count -eq 0)");
+  assertStringIncludes(script, "if ($after -ge $before)"); // stuck detection
   assertStringIncludes(script, "PREREQ_CLEANUP_BLOCKED:");
 });
 

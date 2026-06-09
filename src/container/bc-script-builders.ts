@@ -327,22 +327,22 @@ ${devCredentialSetup}
  * (except the harness) FIRST, then the orphan prereqs — the same ordering the
  * bench-startup prenuke uses.
  *
- * Leaf-first topological removal. Removable = every CentralGauge non-prereq
+ * Empirical leaf-first removal. Removable = every CentralGauge non-prereq
  * candidate + every orphan prereq (a `*Prereq*` app NOT in the current task's
- * `expectedPrereqNames`). Each pass computes the set of app Names/AppIds
- * depended on by ANY still-published app and unpublishes only the removable
- * apps that have NO dependents (leaves). This guarantees every Unpublish
- * succeeds — no "required by the following apps" failures — and unwinds chains
- * deterministically (candidate -> H024 Prereq -> H022 Prereq), regardless of
- * Get-NAVAppInfo enumeration order. The previous arbitrary-order multi-pass
- * could wedge: if the candidate failed to drop, its prereqs stayed pinned
- * forever and the loop gave up on the first no-progress pass.
+ * `expectedPrereqNames`), treated as ONE set (the old Phase-1/Phase-2 split
+ * wedged when a candidate survived and left its prereqs pinned forever). Each
+ * pass attempts to unpublish EVERY removable app: leaves succeed; a non-leaf
+ * throws "required by the following apps", is swallowed, and is retried next
+ * pass once its dependents are gone — peeling the chain (candidate -> H024
+ * Prereq -> H022 Prereq) one layer per pass. We do NOT read Get-NAVAppInfo
+ * `.Dependencies` (not reliably populated); progress is measured by re-querying
+ * the removable count after each pass.
  *
- * If a removable app cannot become a leaf (a KEPT app — harness / expected
- * prereq / Microsoft — genuinely depends on it), the pass emits
- * `PREREQ_CLEANUP_BLOCKED:<name> <- <dependents>` for diagnosis and stops; the
- * final recount then fires `PREREQ_CLEANUP_INCOMPLETE:<remaining>` so the caller
- * fails with correct attribution instead of accumulating silently.
+ * Continue while a pass makes progress (>= 1 removed). If a full pass removes
+ * nothing, the survivors are pinned by a KEPT app (expected prereq / harness /
+ * Microsoft): emit `PREREQ_CLEANUP_BLOCKED:<name> v<version>` for diagnosis and
+ * stop; the final recount fires `PREREQ_CLEANUP_INCOMPLETE:<remaining>` so the
+ * caller fails with correct attribution instead of accumulating silently.
  *
  * `expectedPrereqNames` are the Names of the CURRENT task's prereqs (kept).
  *
@@ -351,7 +351,7 @@ ${devCredentialSetup}
  *   PREREQ_CLEANUP_FOUND:<n>
  *   PREREQ_CLEANUP_REMOVE:<name> v<version>
  *   PREREQ_CLEANUP_WARN:<name> - <reason>
- *   PREREQ_CLEANUP_BLOCKED:<name> <- <dependents>
+ *   PREREQ_CLEANUP_BLOCKED:<name> v<version>
  *   PREREQ_CLEANUP_INCOMPLETE:<remaining>
  *   PREREQ_CLEANUP_DONE
  */
@@ -394,50 +394,37 @@ export function buildPrereqCleanupScript(
             $out += "PREREQ_CLEANUP_FOUND:$($removable0.Count)"
           }
 
-          # Leaf-first topological removal: each pass, only unpublish apps that
-          # NOTHING still-published depends on. Guarantees every Unpublish
-          # succeeds (no "required by" failures) and unwinds chains
-          # (candidate -> H024 Prereq -> H022 Prereq) deterministically. Cap
-          # passes generously; each pass removes >= 1 leaf or breaks.
+          # Empirical leaf-first removal (does NOT read app dependency metadata,
+          # which Get-NAVAppInfo does not reliably populate): each pass attempts
+          # to unpublish EVERY removable app. Leaves succeed; a non-leaf throws
+          # "required by the following apps", is swallowed, and is retried next
+          # pass once its dependents are gone. Continue while a pass makes
+          # progress (>= 1 removed). If a full pass removes nothing, the
+          # survivors are pinned by a KEPT app -> emit BLOCKED + stop.
           $maxPasses = 25
           for ($pass = 1; $pass -le $maxPasses; $pass++) {
-            $all = & $snapshot
-            $removable = @($all | Where-Object { & $isRemovable $_ })
-            if ($removable.Count -eq 0) { break }
-
-            # Names/AppIds depended on by ANY still-published app.
-            $dependedOn = @{}
-            foreach ($a in $all) {
-              foreach ($d in @($a.Dependencies)) {
-                if ($d.Name)  { $dependedOn[$d.Name] = $true }
-                if ($d.AppId) { $dependedOn["id:$($d.AppId)"] = $true }
+            $removable = @((& $snapshot) | Where-Object { & $isRemovable $_ })
+            $before = $removable.Count
+            if ($before -eq 0) { break }
+            foreach ($app in $removable) {
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
+              try {
+                Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction Stop
+                $out += "PREREQ_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+              } catch {
+                # Non-leaf this pass (a dependent is still published). Silent +
+                # retried next pass — avoids the per-pass "required by" WARN spam.
               }
             }
-
-            $leaves = @($removable | Where-Object {
-              -not ($dependedOn.ContainsKey($_.Name) -or
-                    $dependedOn.ContainsKey("id:$($_.AppId)"))
-            })
-
-            if ($leaves.Count -eq 0) {
-              # Stuck: every removable app still has a dependent (a non-removable
-              # app — kept prereq/harness/Microsoft — depends on it). Emit
-              # blockers for diagnosis and stop; the final recount flags INCOMPLETE.
-              foreach ($r in $removable) {
-                $deps = @($all | Where-Object {
-                  @($_.Dependencies) | Where-Object { $_.Name -eq $r.Name }
-                } | ForEach-Object { $_.Name } | Select-Object -Unique)
-                $out += "PREREQ_CLEANUP_BLOCKED:$($r.Name) <- $($deps -join ',')"
+            $after = @((& $snapshot) | Where-Object { & $isRemovable $_ }).Count
+            if ($after -eq 0) { break }
+            if ($after -ge $before) {
+              # No progress in a full pass -> genuinely stuck: a KEPT app
+              # (expected prereq / harness / Microsoft) depends on these.
+              foreach ($s in @((& $snapshot) | Where-Object { & $isRemovable $_ })) {
+                $out += "PREREQ_CLEANUP_BLOCKED:$($s.Name) v$($s.Version)"
               }
               break
-            }
-
-            foreach ($leaf in $leaves) {
-              $out += "PREREQ_CLEANUP_REMOVE:$($leaf.Name) v$($leaf.Version)"
-              try { Uninstall-NAVApp -ServerInstance BC -Name $leaf.Name -Publisher $leaf.Publisher -Version $leaf.Version -Force -ErrorAction SilentlyContinue } catch { }
-              try { Unpublish-NAVApp -ServerInstance BC -Name $leaf.Name -Publisher $leaf.Publisher -Version $leaf.Version -ErrorAction Stop } catch {
-                $out += "PREREQ_CLEANUP_WARN:$($leaf.Name) - $($_.Exception.Message)"
-              }
             }
           }
 
