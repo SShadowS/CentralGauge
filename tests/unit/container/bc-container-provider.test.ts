@@ -110,6 +110,16 @@ Deno.test("BcContainerProvider - Provider Properties", async (t) => {
   });
 });
 
+Deno.test("BcContainerProvider - disposeContainerSlot is a no-op with no slots", async () => {
+  // Recovery R5 path. With no session slot/compile pool yet created for the
+  // name, disposeContainerSlot must resolve cleanly (pure in-memory map
+  // manipulation) without touching any real container — safe off-Windows.
+  const provider = new BcContainerProvider();
+  await provider.disposeContainerSlot("NoSuchContainer");
+  // Idempotent — a second call is also a no-op.
+  await provider.disposeContainerSlot("NoSuchContainer");
+});
+
 // =============================================================================
 // Credential Management Tests (no PowerShell needed)
 // =============================================================================
