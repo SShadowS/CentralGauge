@@ -43,6 +43,10 @@ Deno.test("modelRejectsTemperature - Opus 4.7+ rejects, others accept", async (t
       assertEquals(modelRejectsTemperature(m), false, m);
     }
   });
+
+  await t.step("Fable 5 rejects (explicit lock, not Opus-matched)", () => {
+    assertEquals(modelRejectsTemperature("claude-fable-5"), true);
+  });
 });
 
 // Initialize pricing service before any tests run

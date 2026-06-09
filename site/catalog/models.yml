@@ -1,3 +1,13 @@
+- slug: anthropic/claude-fable-5
+  api_model_id: claude-fable-5
+  family: claude
+  display_name: Claude Fable 5
+  generation: 5
+  released_at: "2026-06-09"
+  max_input_tokens: 1000000
+  max_output_tokens: 128000
+  capabilities: [thinking, image, pdf, structured, batch]
+
 - slug: anthropic/claude-opus-4-8
   api_model_id: claude-opus-4-8
   family: claude

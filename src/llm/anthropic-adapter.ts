@@ -34,7 +34,9 @@ import {
 // Models that reject the `temperature` parameter (non-Opus, explicit). Opus is
 // handled generationally below. Anthropic returns 400 "temperature is
 // deprecated for this model" for any value other than the default.
-const TEMPERATURE_LOCKED_MODELS: readonly string[] = [];
+// Fable 5 sits above the Opus tier and shares the Opus 4.7+ request surface
+// (no temperature/top_p/top_k); it is not matched by the Opus regex.
+const TEMPERATURE_LOCKED_MODELS: readonly string[] = ["claude-fable-5"];
 
 /**
  * Whether a model rejects the `temperature` parameter. Anthropic deprecated it
