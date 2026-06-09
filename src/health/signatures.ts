@@ -66,11 +66,17 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
   },
   {
     id: "sql_service_down",
-    label: "Container SQL service stopped / NST detached",
+    label: "Container SQL service stopped / NST detached / SQL unresponsive",
     patterns: [
       /NavServerNotFoundException/i,
       /Cannot establish a connection to the SQL Server\/Database/i,
       /Cannot establish a connection to the SQL Server/i,
+      // SQL is up but unresponsive: the local SQLEXPRESS has no free worker /
+      // is IO-stalled, so NST's SNI handshake/read times out. Appears as
+      // "TCP Provider, error: 0 - The wait operation timed out". One hit is
+      // proof the in-container SQL is saturated -> exclude + recover.
+      /TCP Provider, error: 0 - The wait operation timed out/i,
+      /A connection was successfully established with the server, but then an error occurred/i,
     ],
     scope: "container",
     severity: "critical",

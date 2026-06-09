@@ -83,6 +83,16 @@ Deno.test("matches sql_service_down", async () => {
   assertEquals(sig!.severity, "critical");
 });
 
+Deno.test("matches sql_service_down on SQL wait-operation-timed-out (unresponsive SQL)", () => {
+  const text =
+    "Sync-NAVApp: A network-related or instance-specific error occurred. " +
+    "(provider: TCP Provider, error: 0 - The wait operation timed out.)";
+  const sig = matchSignature(text);
+  assertExists(sig);
+  assertEquals(sig!.id, "sql_service_down");
+  assertEquals(sig!.catastrophicSingleFailure, true);
+});
+
 Deno.test("returns undefined on AL compile error fixture (not infra)", async () => {
   const text = await Deno.readTextFile(
     "tests/fixtures/infra-logs/al-compile-error.txt",

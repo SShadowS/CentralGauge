@@ -20,9 +20,11 @@ import {
 } from "@std/assert";
 import {
   BcContainerProvider,
+  decideSoapFailureAction,
   isInfraTestFailure,
   makePublishFailureTestResult,
 } from "../../../src/container/bc-container-provider.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
@@ -107,6 +109,50 @@ Deno.test("BcContainerProvider - Provider Properties", async (t) => {
   await t.step('platform property returns "windows"', () => {
     const provider = new BcContainerProvider();
     assertEquals(provider.platform, "windows");
+  });
+});
+
+Deno.test("decideSoapFailureAction - routing", async (t) => {
+  await t.step("SOAP call timeout -> reroute_infra (not legacy)", () => {
+    const e = new ContainerError(
+      "harness SOAP call timed out after 30000ms",
+      "Cronus28",
+      "test",
+    );
+    assertEquals(decideSoapFailureAction(e, e.message), "reroute_infra");
+  });
+
+  await t.step("HTTP 401 -> reroute_infra", () => {
+    const e = new ContainerError(
+      "harness SOAP call HTTP 401: Unauthorized",
+      "Cronus28",
+      "test",
+    );
+    assertEquals(decideSoapFailureAction(e, e.message), "reroute_infra");
+  });
+
+  await t.step("SQL wait-operation-timed-out publish -> reroute_infra", () => {
+    const out =
+      "Sync-NAVApp: (provider: TCP Provider, error: 0 - The wait operation timed out.)";
+    const e = new ContainerError("publish failed", "Cronus28", "publish");
+    assertEquals(decideSoapFailureAction(e, out), "reroute_infra");
+  });
+
+  await t.step("model schema-sync defect -> score_model", () => {
+    const out = "schema synchronization failed: destructive changes detected";
+    const e = new ContainerError("publish failed", "Cronus28", "publish");
+    assertEquals(decideSoapFailureAction(e, out), "score_model");
+  });
+
+  await t.step("duplicate-object collision -> fallback_legacy", () => {
+    const out = "Table 'X' is already defined in app 'Y'";
+    const e = new ContainerError("publish failed", "Cronus28", "publish");
+    assertEquals(decideSoapFailureAction(e, out), "fallback_legacy");
+  });
+
+  await t.step("unknown non-infra error -> fallback_legacy", () => {
+    const e = new Error("totally unrecognized non-infra weirdness");
+    assertEquals(decideSoapFailureAction(e, e.message), "fallback_legacy");
   });
 });
 

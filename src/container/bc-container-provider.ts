@@ -26,6 +26,7 @@ import {
   captureRawTail,
   classifyPublishFailure,
   isCollisionPublishFailure,
+  isInfraError,
   redactSensitive,
   writeArtifact,
 } from "../health/mod.ts";
@@ -180,6 +181,50 @@ export function isInfraTestFailure(output: string): boolean {
     return TEST_ERROR_INFRA_SIGNATURES.some((re) => re.test(m[1]!));
   }
   return false;
+}
+
+/** What `runTests()` should do when the SOAP test path throws. */
+export type SoapFailureAction =
+  | "score_model"
+  | "reroute_infra"
+  | "fallback_legacy";
+
+/**
+ * Decide how to handle a SOAP test-path failure. Pure + exported for testing.
+ *
+ * - `score_model`: deterministic model-owned candidate publish/install/schema
+ *   defect (NOT a collision) -> score as a model failure, no retry.
+ * - `fallback_legacy`: duplicate-object COLLISION (legacy's broader cleanup may
+ *   clear stale non-CentralGauge contamination) or a genuinely unknown
+ *   non-infra error -> last-resort legacy client-session path.
+ * - `reroute_infra`: ANY infrastructure failure — SOAP timeout, HTTP 401,
+ *   SQL "wait operation timed out", PSSession/network loss, publish-infra.
+ *   Reroute to a HEALTHY container via the inline infra-retry path; do NOT run
+ *   the legacy path on the SAME container.
+ *
+ * WHY reroute and not fall back to legacy on infra: the aborted SOAP request
+ * keeps executing inside the NST (the host fetch abort sends no server-side
+ * cancellation), so launching a SECOND publish+test via the legacy path runs
+ * two concurrent test executions on the same container, exhausting the local
+ * SQLEXPRESS worker pool ("TCP Provider, error: 0 - The wait operation timed
+ * out"). That is the progressive-degradation death spiral. Legacy is also
+ * frequently broken on these containers (PsTestTool SYSLIB0014), so the
+ * fallback rescues nothing while doubling load.
+ */
+export function decideSoapFailureAction(
+  error: unknown,
+  publishOut: string,
+): SoapFailureAction {
+  const isPublish = error instanceof ContainerError &&
+    error.operation === "publish";
+  if (isPublish && isCollisionPublishFailure(publishOut)) {
+    return "fallback_legacy";
+  }
+  if (isPublish && classifyPublishFailure(publishOut) === "model") {
+    return "score_model";
+  }
+  if (isInfraError(error)) return "reroute_infra";
+  return "fallback_legacy";
 }
 
 /**
@@ -1685,22 +1730,21 @@ ${script}
         });
         return soapResult;
       } catch (e) {
-        // Ownership of a candidate publish/install failure. Install-trigger and
-        // schema-sync defects are deterministic + model-owned -> score as a
-        // model failure immediately (no legacy double-publish). Duplicate-object
-        // COLLISIONS fall back to legacy: SOAP prepare cleanup only sweeps
-        // CentralGauge apps, so a collision may be stale non-CentralGauge
-        // contamination that legacy's broader cleanup removes. Legacy then
-        // classifies terminally, so a genuine model collision is still scored
-        // and a real infra blip is still rerouted.
+        // Route the SOAP failure (see decideSoapFailureAction for the full
+        // rationale). Three outcomes:
+        //  - score_model: deterministic model publish/install/schema defect.
+        //  - reroute_infra: ANY infra failure (SOAP timeout, 401, SQL
+        //    "wait operation timed out", PSSession/network) -> throw so the
+        //    inline infra-retry reroutes to a HEALTHY container. Do NOT run
+        //    legacy on this container: the aborted SOAP request keeps running
+        //    server-side, and a second concurrent publish+test exhausts the
+        //    in-container SQL worker pool (the degradation death spiral).
+        //  - fallback_legacy: collision or unknown non-infra -> legacy path.
         const publishOut = e instanceof ContainerError
           ? (e.rawOutput ?? e.message)
           : (e instanceof Error ? e.message : String(e));
-        if (
-          e instanceof ContainerError && e.operation === "publish" &&
-          classifyPublishFailure(publishOut) === "model" &&
-          !isCollisionPublishFailure(publishOut)
-        ) {
+        const action = decideSoapFailureAction(e, publishOut);
+        if (action === "score_model") {
           contextLog.info(
             "Candidate install/schema defect (model-attributable); scoring as model failure",
             { container: containerName },
@@ -1708,6 +1752,33 @@ ${script}
           return makePublishFailureTestResult(
             publishOut,
             Date.now() - startTime,
+          );
+        }
+        if (action === "reroute_infra") {
+          getTracer().instant("soap-infra-reroute", {
+            tid: containerName,
+            cat: ["soap", "infra", "reroute"],
+            args: {
+              errorType: e instanceof Error ? e.constructor.name : "unknown",
+              errorMessage: e instanceof Error ? e.message : String(e),
+            },
+          });
+          contextLog.warn(
+            "SOAP harness infra failure; rerouting to a healthy container " +
+              "(NOT falling back to legacy on the same container)",
+            {
+              container: containerName,
+              error: e instanceof Error ? e.message : String(e),
+            },
+          );
+          // Re-throw as a ContainerError(test) so isInfraError() recognizes it
+          // and the inline infra-retry path reroutes to a different container.
+          throw e instanceof ContainerError ? e : new ContainerError(
+            `SOAP harness infra failure: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+            containerName,
+            "test",
           );
         }
         getTracer().instant("soap-fallback-to-legacy", {
@@ -1718,8 +1789,8 @@ ${script}
             errorMessage: e instanceof Error ? e.message : String(e),
           },
         });
-        // Any harness problem (deploy missing, fault, network) falls back to
-        // the legacy path so the bench never loses a test run to the new path.
+        // Collision or unknown non-infra: legacy's broader cleanup may resolve
+        // it. (Infra never reaches here — it rerouted above.)
         const warnCtx: Record<string, unknown> = {
           error: e instanceof Error ? e.message : String(e),
         };
