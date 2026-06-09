@@ -256,9 +256,10 @@ Deno.test("buildPrepareCandidateScript exits non-zero on publish failure", () =>
 });
 
 // =============================================================================
-// buildPrereqCleanupScript: in-container, two-phase, multi-pass orphan-prereq
+// buildPrereqCleanupScript: in-container, leaf-first topological orphan-prereq
 // sweep. Fixes GitHub issue #10 (host-side pwsh-7 sweep silently no-opped ->
-// cross-task object-ID collisions -> false `infra` failures).
+// cross-task object-ID collisions -> false `infra` failures) and the chained-
+// dependency wedge ("required by the following apps" -> INCOMPLETE).
 // =============================================================================
 
 Deno.test("buildPrereqCleanupScript routes the unpublish through Invoke-ScriptInBcContainer", () => {
@@ -284,21 +285,20 @@ Deno.test("buildPrereqCleanupScript uses in-container NAV cmdlets, not host-side
 
 Deno.test("buildPrereqCleanupScript scopes to CentralGauge publisher", () => {
   const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
-  assertStringIncludes(script, `$_.Publisher -eq "CentralGauge"`);
+  assertStringIncludes(script, `$a.Publisher -ne "CentralGauge"`);
 });
 
-Deno.test("buildPrereqCleanupScript removes non-prereq apps before prereqs (dependency ordering)", () => {
-  // A prior task's candidate depends on its prereqs; it must be removed first
-  // or the prereq unpublish fails "still in use". Phase 1 filter excludes
-  // prereqs and the harness; phase 2 targets prereqs.
+Deno.test("buildPrereqCleanupScript removes leaf-first (dependency-safe topological order)", () => {
+  // The hardened sweep computes the set of apps depended on by any published
+  // app and only unpublishes removable apps with NO dependents (leaves). This
+  // unwinds candidate -> H024 Prereq -> H022 Prereq without "required by"
+  // failures, regardless of enumeration order.
   const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
-  const phase1 = script.indexOf(`$_.Name -notlike "*Prereq*"`);
-  const phase2 = script.indexOf(`$_.Name -like "*Prereq*"`);
-  assert(phase1 >= 0 && phase2 >= 0, "both phases must be present");
-  assert(
-    phase1 < phase2,
-    "non-prereq cleanup (phase 1) must precede prereq cleanup (phase 2)",
-  );
+  assertStringIncludes(script, "$dependedOn");
+  assertStringIncludes(script, "$_.Dependencies"); // builds the dependent set
+  assertStringIncludes(script, "$leaves");
+  // A leaf is a removable app NOT present in the dependedOn set.
+  assertStringIncludes(script, "$dependedOn.ContainsKey($_.Name)");
 });
 
 Deno.test("buildPrereqCleanupScript keeps the current task's expected prereqs", () => {
@@ -309,13 +309,13 @@ Deno.test("buildPrereqCleanupScript keeps the current task's expected prereqs", 
   );
   assertStringIncludes(script, `'CG-AL-H022 Prereq'`);
   assertStringIncludes(script, `'CG-AL-H023 Prereq'`);
-  assertStringIncludes(script, "$expected -notcontains $_.Name");
+  assertStringIncludes(script, "$expected -notcontains $a.Name");
 });
 
 Deno.test("buildPrereqCleanupScript excludes the harness by the supplied name", () => {
   const script = buildPrereqCleanupScript("Cronus28", [], "CG Alt Harness");
   assertStringIncludes(script, `"CG Alt Harness"`);
-  assertStringIncludes(script, "$_.Name -ne $harnessName");
+  assertStringIncludes(script, "$a.Name -eq $harnessName");
 });
 
 Deno.test("buildPrereqCleanupScript empty expected set yields @()", () => {
@@ -323,15 +323,17 @@ Deno.test("buildPrereqCleanupScript empty expected set yields @()", () => {
   assertStringIncludes(script, "$expectedNames = @()");
 });
 
-Deno.test("buildPrereqCleanupScript loops multi-pass with progress detection", () => {
-  // Inter-prereq dependency chains (H024 -> H022) need repeated passes; the
-  // loop must re-query the orphan set and stop on no-progress.
+Deno.test("buildPrereqCleanupScript loops bounded, leaf-first, with stuck diagnostics", () => {
+  // Inter-prereq dependency chains (H024 -> H022) unwind over repeated leaf-first
+  // passes; the loop is bounded and emits BLOCKED diagnostics when a removable
+  // app can never become a leaf (a kept app depends on it).
   const script = buildPrereqCleanupScript("Cronus28", [], "CG Test Harness");
   assert(
     /for \(\$pass = 1; \$pass -le/.test(script),
     "must have a bounded pass loop",
   );
-  assertStringIncludes(script, "no progress -> stuck dependency");
+  assertStringIncludes(script, "if ($leaves.Count -eq 0)");
+  assertStringIncludes(script, "PREREQ_CLEANUP_BLOCKED:");
 });
 
 Deno.test("buildPrereqCleanupScript emits the marker keys the host parser expects", () => {

@@ -2077,8 +2077,8 @@ Deno.test({
     for (const script of calledScripts) {
       assertStringIncludes(
         script,
-        '$_.Publisher -eq "CentralGauge"',
-        "script must filter by Publisher=CentralGauge",
+        '$a.Publisher -ne "CentralGauge"',
+        "script must scope removal to Publisher=CentralGauge",
       );
       assertStringIncludes(
         script,
