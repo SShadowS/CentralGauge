@@ -28,6 +28,7 @@ import { ContainerError } from "../../../src/errors.ts";
 import { PwshContainerSession } from "../../../src/container/pwsh-session.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 import { createMockPwshProcess } from "../../utils/mock-pwsh-process.ts";
+import { MockEnv } from "../../utils/test-helpers.ts";
 
 Deno.test("isInfraTestFailure", async (t) => {
   await t.step("unconditional infra markers => infra", () => {
@@ -154,6 +155,58 @@ Deno.test("decideSoapFailureAction - routing", async (t) => {
     const e = new Error("totally unrecognized non-infra weirdness");
     assertEquals(decideSoapFailureAction(e, e.message), "fallback_legacy");
   });
+});
+
+Deno.test("maybeMaintainNst - no-op when env knob unset", async () => {
+  const provider = new BcContainerProvider();
+  let called = 0;
+  // deno-lint-ignore no-explicit-any
+  (provider as any).runScriptThroughSession = () => {
+    called++;
+    return Promise.resolve({ output: "", exitCode: 0 });
+  };
+  const mockEnv = new MockEnv();
+  try {
+    mockEnv.delete("CENTRALGAUGE_NST_MAINTAIN_EVERY");
+    await provider.maybeMaintainNst("Cronus28");
+    assertEquals(called, 0, "disabled by default");
+  } finally {
+    mockEnv.restore();
+  }
+});
+
+Deno.test({
+  name: "maybeMaintainNst - runs every N tasks (FREEPROCCACHE + session sweep)",
+  ignore: Deno.build.os !== "windows", // method early-returns off-Windows
+  async fn() {
+    const provider = new BcContainerProvider();
+    const scripts: string[] = [];
+    // deno-lint-ignore no-explicit-any
+    (provider as any).runScriptThroughSession = (
+      _name: string,
+      script: string,
+    ) => {
+      scripts.push(script);
+      return Promise.resolve({
+        output: "NST_MAINTAIN_FREEPROCCACHE:ok\nNST_MAINTAIN_DONE:Cronus28",
+        exitCode: 0,
+      });
+    };
+    const mockEnv = new MockEnv();
+    try {
+      mockEnv.set("CENTRALGAUGE_NST_MAINTAIN_EVERY", "2");
+      await provider.maybeMaintainNst("Cronus28"); // count 1 -> no run
+      assertEquals(scripts.length, 0);
+      await provider.maybeMaintainNst("Cronus28"); // count 2 -> run + reset
+      assertEquals(scripts.length, 1);
+      assertStringIncludes(scripts[0]!, "DBCC FREEPROCCACHE");
+      assertStringIncludes(scripts[0]!, "Remove-NAVServerSession");
+      await provider.maybeMaintainNst("Cronus28"); // count 1 again -> no run
+      assertEquals(scripts.length, 1, "counter reset after maintenance");
+    } finally {
+      mockEnv.restore();
+    }
+  },
 });
 
 Deno.test("BcContainerProvider - disposeContainerSlot is a no-op with no slots", async () => {

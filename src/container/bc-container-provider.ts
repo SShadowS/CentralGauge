@@ -303,6 +303,9 @@ export class BcContainerProvider implements ContainerProvider {
   // pwsh stdin pipe or (b) pay the ~15 s bccontainerhelper module-load tax
   // on every spawn. See `CompileSessionPool` in `./compile-session-pool.ts`.
   private readonly compilePools = new Map<string, CompileSessionPool>();
+  // Per-container completed-task counter for periodic light NST maintenance
+  // (FREEPROCCACHE + stale-session sweep). See `maybeMaintainNst`.
+  private readonly nstMaintainCounts = new Map<string, number>();
   private readonly persistentEnabled: boolean;
   private readonly compilePoolPerContainer: number;
   private readonly _sessionFactory: (name: string) => PwshContainerSession;
@@ -421,6 +424,93 @@ export class BcContainerProvider implements ContainerProvider {
     const pool = this.compilePools.get(name);
     if (pool) tasks.push(pool.maybeRecycle());
     await Promise.all(tasks);
+  }
+
+  /**
+   * Resolve the periodic-maintenance cadence from the env. `0`/absent disables.
+   * Env-only knob (mirrors `CENTRALGAUGE_SOAP_TEST_RUNNER`):
+   * `CENTRALGAUGE_NST_MAINTAIN_EVERY=N` runs light maintenance every N tasks
+   * per container.
+   */
+  private nstMaintainEvery(): number {
+    const raw = Deno.env.get("CENTRALGAUGE_NST_MAINTAIN_EVERY");
+    if (!raw) return 0;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  /**
+   * Periodic LIGHT in-container maintenance every N tasks (no NST restart).
+   * Counters the progressive in-container SQL pressure that builds across a
+   * long-lived container:
+   *   1. `DBCC FREEPROCCACHE` — clears the plan-cache churn that per-task
+   *      `Sync-NAVApp -ForceSync` DDL generates (the durable half of the
+   *      "TCP Provider wait operation timed out" degradation).
+   *   2. Sweep stale web-service / test sessions so the NST session table
+   *      doesn't accumulate.
+   *
+   * Routed through the warm session slot (NOT a restart), so the slot stays
+   * valid. Best-effort: failures are logged, never thrown — maintenance must
+   * not abort task processing. Disabled by default
+   * (`CENTRALGAUGE_NST_MAINTAIN_EVERY` unset/0). Called between tasks with the
+   * test mutex released, so nothing is in flight on the container.
+   */
+  async maybeMaintainNst(containerName: string): Promise<void> {
+    const every = this.nstMaintainEvery();
+    if (every <= 0 || !this.isWindows()) return;
+    const n = (this.nstMaintainCounts.get(containerName) ?? 0) + 1;
+    if (n < every) {
+      this.nstMaintainCounts.set(containerName, n);
+      return;
+    }
+    this.nstMaintainCounts.set(containerName, 0);
+    log.info(
+      `Light NST maintenance on ${containerName} (every ${every} tasks): FREEPROCCACHE + stale-session sweep`,
+    );
+    const script = `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      $bcContainerHelperConfig.usePwshForBc24 = $false
+      try {
+        $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          $out = @()
+          # 1. Sweep stale web-service / API / test sessions (never the admin /
+          #    Windows client). Conservative: best-effort, swallow per-session.
+          try {
+            $sw = @(Get-NAVServerSession -ServerInstance BC | Where-Object {
+              $_.ClientType -in @('WebServiceClient','SOAP','ODataV3','ODataV4','NavApiClient')
+            })
+            foreach ($s in $sw) {
+              try { Remove-NAVServerSession -ServerInstance BC -SessionId $s.SessionId -Force -ErrorAction SilentlyContinue } catch { }
+            }
+            $out += "NST_MAINTAIN_SESSIONS:$($sw.Count)"
+          } catch { $out += "NST_MAINTAIN_WARN_SESSIONS:$($_.Exception.Message)" }
+          # 2. Free SQL plan cache (server-scoped) to clear ForceSync DDL churn.
+          try {
+            & sqlcmd -S "localhost\\SQLEXPRESS" -E -b -Q "DBCC FREEPROCCACHE;" | Out-Null
+            $out += "NST_MAINTAIN_FREEPROCCACHE:ok"
+          } catch { $out += "NST_MAINTAIN_WARN_SQL:$($_.Exception.Message)" }
+          $out
+        }
+        $report | ForEach-Object { Write-Output $_ }
+        Write-Output "NST_MAINTAIN_DONE:${containerName}"
+      } catch { Write-Output "NST_MAINTAIN_WARN:$($_.Exception.Message)" }
+    `;
+    try {
+      const result = await this.runScriptThroughSession(
+        containerName,
+        script,
+        "nst-maintain",
+      );
+      log.info(`NST maintenance done on ${containerName}`, {
+        output: result.output.split("\n")
+          .filter((l) => l.startsWith("NST_MAINTAIN_"))
+          .join(" | "),
+      });
+    } catch (e) {
+      log.warn(`maybeMaintainNst failed for ${containerName}`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 
   /**

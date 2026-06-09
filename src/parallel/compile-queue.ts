@@ -640,6 +640,20 @@ export class CompileQueue implements CompileWorkQueue {
         }
       }
 
+      // Periodic light in-container maintenance (FREEPROCCACHE + stale-session
+      // sweep, no NST restart). Same safe between-tasks point: testMutex
+      // released, nothing in flight on this container. Best-effort.
+      if (this.containerProvider.maybeMaintainNst) {
+        try {
+          await this.containerProvider.maybeMaintainNst(this.containerName);
+        } catch (e) {
+          log.warn(
+            `maybeMaintainNst threw for ${this.containerName}`,
+            { error: e instanceof Error ? e.message : String(e) },
+          );
+        }
+      }
+
       compilePhaseResult.duration = Date.now() - startTime;
       this.processedCount++;
       this.totalProcessTime += compilePhaseResult.duration;

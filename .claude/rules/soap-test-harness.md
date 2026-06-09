@@ -39,5 +39,25 @@ so routing is decided **statically** by parsing test source with the tree-sitter
 - Env knobs: `CENTRALGAUGE_BC_COMPANY` (default `My Company`),
   `CENTRALGAUGE_BC_TENANT` (default `default`), `CENTRALGAUGE_BC_SOAP_PORT`
   (default `7047`).
-- Any harness failure falls back to the legacy path — the bench never loses a
-  run to the new path.
+- **Infra failures REROUTE, they do NOT fall back to legacy.** `runTests()`
+  classifies a SOAP failure via `decideSoapFailureAction`:
+  - `score_model` — deterministic model publish/install/schema defect.
+  - `fallback_legacy` — duplicate-object COLLISION (needs legacy's broader
+    cleanup) or a genuinely unknown non-infra error.
+  - `reroute_infra` — ANY infra failure (SOAP timeout, HTTP 401, SQL
+    "wait operation timed out", PSSession/network) -> throws `ContainerError`
+    so the inline infra-retry reroutes to a HEALTHY container.
+  Why: on a SOAP timeout the aborted host fetch sends NO server-side
+  cancellation, so the AL test keeps running in the NST. Falling back to legacy
+  then ran a SECOND concurrent publish+test on the same container, exhausting
+  the in-container SQLEXPRESS worker pool ("TCP Provider, error: 0 - The wait
+  operation timed out") — a progressive death spiral. Legacy is also frequently
+  broken on these containers (PsTestTool SYSLIB0014). Confirmed via GPT-5.5 +
+  Gemini 3.1 Pro review.
+- **Periodic light NST maintenance** counters the durable in-container SQL
+  pressure (per-task `ForceSync` plan-cache churn + session buildup). Set
+  `CENTRALGAUGE_NST_MAINTAIN_EVERY=N` (default 0 = off): every N tasks per
+  container, between tasks (test mutex released), the provider runs — WITHOUT an
+  NST restart — `Invoke-ScriptInBcContainer { Remove-NAVServerSession <stale
+  web-service>; DBCC FREEPROCCACHE }` via the warm slot. Best-effort; never
+  aborts a task. `BcContainerProvider.maybeMaintainNst`.

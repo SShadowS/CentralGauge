@@ -80,4 +80,10 @@ export interface ContainerProvider {
 
   // Persistent session recycle hook (optional - only persistent-session providers implement)
   maybeRecycleSession?(containerName: string): Promise<void>;
+
+  // Periodic LIGHT in-container maintenance (no NST restart): clears SQL
+  // plan-cache churn from per-task ForceSync and sweeps stale web-service
+  // sessions, every N tasks. Counters the progressive in-container SQL
+  // pressure. Optional — only the BC provider implements it.
+  maybeMaintainNst?(containerName: string): Promise<void>;
 }
