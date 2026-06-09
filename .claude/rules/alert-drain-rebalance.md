@@ -140,16 +140,76 @@ by_event:
 
 `benchmark-results-*.json` gets an optional top-level `drainEvents[]` array carrying the full `RebalanceOutcome` objects. Top-level (not nested in attempts) so analyzers can detect runs affected by container alerts without walking attempts.
 
+## Recovery + re-admission (the counterpart)
+
+Drain excludes a bad container; **recovery** brings it back. Without it,
+`ch.alert` is sticky for the whole run — an excluded container is never
+re-admitted even if it fully recovers, and there is no auto-restart. Recovery
+cannot be passive: an excluded container receives zero new outcomes (the
+dispatch gate starves it), so it must be **actively re-probed** out-of-band.
+
+`ContainerRecoveryProber` (`src/health/recovery-prober.ts`) runs on an interval
+while the bench runs. Per tick, for each container with a per-container alert
+(`suspect_container` / `persistent_container_failure` — `global_outage` is
+skipped):
+
+1. Probe `containerProvider.isHealthy()` (`Test-BcContainer`). Debounce streak
+   keyed by `{container, alertId}`.
+2. After N consecutive healthy probes, check `pool.canReadmit(name)` (quiesce
+   gate: `load === 0`, no pending/in-flight — so a stale pre-alert failure
+   can't re-poison after clear).
+3. Dispose the per-container warm slot (`disposeContainerSlot`) so a container
+   that passes `Test-BcContainer` but holds a corrupted host-side PSSession
+   forces a fresh session on the next task.
+4. `monitor.clearAlert(name, alertId, reason)` — **compare-and-clear by
+   alertId**: a stale probe never clears an alert replaced mid-probe. Purges
+   that container's `suspect:`/`persistent:` dedupe keys so a re-death re-raises
+   with a fresh `alertId`. Refuses `global_outage`.
+5. `pool.onContainerRecovered(name)` flushes parked work; the dispatch gate
+   re-includes the container automatically once `ch.alert` is gone.
+
+**Suspect policy:** a bare probe doesn't prove a catastrophic suspect (SQL down,
+offline, PSSession lost) recovered. With `recoveryAutoRestart: false` (default)
+suspects are NOT probed (`restart_required_but_disabled`); with it true the
+prober restarts FIRST (`restartContainer` → `Restart-BcContainer`), disposes the
+slot, then requires the healthy-probe streak.
+
+**Flap guard:** `maxRecoveriesPerContainer` cap + exponential backoff per
+`{container, alertId}`. A container that recovers and re-dies past the cap is
+left excluded (`flap_cap_reached`).
+
+**Lifecycle (shutdown order):** the prober is single-flight, abort-safe, and
+per-probe timeout-bounded. In `runParallel`'s finally it is stopped FIRST
+(`await prober.stop()` aborts in-flight probes + awaits the current tick),
+BEFORE `alertUnsubscribe` — so no clear/re-admit fires during shutdown.
+
+**Opt-in:** off by default (`bench.recoveryProbeIntervalMs: 0`). Enable with a
+positive interval; `CENTRALGAUGE_BENCH_RECOVERY=0` is the env off-switch. Only
+active when a monitor + `CompileQueuePool` are present (same gate as drain).
+
+### Recovery telemetry
+
+Scores file gets a `# Recovery Events` block (emitted only when ≥1 event), and
+`benchmark-results-*.json` an optional top-level `recoveryEvents[]`. Both cover
+success AND failure/skip paths (`recovered`, `restart_succeeded/failed`,
+`flap_cap_reached`, `restart_required_but_disabled`, `probe_timeout`,
+`clear_skipped_*`). The dashboard health card shows `↺ recovery N/M` (and
+`exhausted` once flap-capped) via `ContainerHealth.recovery`, set by
+`monitor.setRecoveryState()`.
+
 ## Files
 
 | File | Role |
 |---|---|
-| `src/health/monitor.ts` | Synchronous `record()` return + `on("alert_raised")` event |
+| `src/health/monitor.ts` | `record()` return, `on("alert_raised"/"alert_cleared")`, `clearAlert()` (CAS), `setRecoveryState()` |
+| `src/health/recovery-prober.ts` | `ContainerRecoveryProber` — re-probe → quiesce → dispose slot → clearAlert → re-admit; suspect/restart policy; flap cap |
 | `src/health/signatures.ts` | `catastrophicSingleFailure: true` flag on SQL/PSSession/offline |
 | `src/health/types.ts` | `RecordResult`, `suspect_container` kind, `alertId` field, `QuarantinedMarker` |
 | `src/parallel/compile-queue.ts` | `drainPending`, `markActiveForQuarantine`, `admitRebalancedEntry`, quarantine wrap |
-| `src/parallel/compile-queue-pool.ts` | `rebalanceFromContainer`, monitor-aware `enqueue`, parked-entries FIFO |
+| `src/parallel/compile-queue-pool.ts` | `rebalanceFromContainer`, monitor-aware `enqueue`, parked-entries FIFO, `canReadmit`/`onContainerRecovered` |
+| `src/container/bc-container-provider.ts` | `disposeContainerSlot` (R5 fresh session), `restartContainer` (Layer 3) |
 | `src/parallel/infra-retry.ts` | `classifyResult` + waiver loop, `cause`/`budgetDebited`/`alertId` fields |
 | `src/parallel/orchestrator.ts` | Monitor wiring + alert subscription + classifyResult callback |
 | `cli/dashboard/state.ts` | `getHealthMonitor()` accessor |
-| `cli/commands/bench/results-writer.ts` | `# Drain Events` block + JSON top-level `drainEvents[]` |
+| `cli/commands/bench/results-writer.ts` | `# Drain Events` + `# Recovery Events` blocks + JSON `drainEvents[]`/`recoveryEvents[]` |
+| `cli/dashboard/page.ts` | health card `↺ recovery N/M` badge from `ContainerHealth.recovery` |

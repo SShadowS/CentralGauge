@@ -74,6 +74,17 @@ export interface ContainerHealth {
   errorCount: number;
   /** Currently active alert, if any */
   alert?: HealthAlert;
+  /**
+   * Recovery-prober progress for this container, when recovery is enabled.
+   * `attempts` = successful recoveries so far this run; `max` =
+   * configured cap; `exhausted` = flap cap reached (prober gave up, the
+   * container stays excluded). Surfaced on the dashboard health card.
+   */
+  recovery?: {
+    attempts: number;
+    max: number;
+    exhausted: boolean;
+  };
 }
 
 export type HealthAlertKind =

@@ -24,12 +24,22 @@ function mkAlert(
 /** Minimal fake monitor with one mutable alert + CAS clearAlert. */
 function makeMonitor(initial?: HealthAlert) {
   let alert = initial;
+  const recoveryStates: Array<
+    { name: string; attempts: number; max: number; exhausted: boolean }
+  > = [];
   return {
     setAlert(a: HealthAlert | undefined) {
       alert = a;
     },
     current() {
       return alert;
+    },
+    recoveryStates,
+    setRecoveryState(
+      name: string,
+      s: { attempts: number; max: number; exhausted: boolean },
+    ) {
+      recoveryStates.push({ name, ...s });
     },
     getState(): ContainerHealthState {
       return {
@@ -235,6 +245,20 @@ Deno.test("disposeSession runs on probe-only recovery too (R5)", async () => {
   });
   await prober.tick();
   assertEquals(disposed, ["Cronus28"]);
+});
+
+Deno.test("setRecoveryState pushed on recovery (attempts, exhausted=false)", async () => {
+  const { prober, monitor } = setup({
+    alert: mkAlert("persistent_container_failure", "alert-1"),
+    cfg: { successesRequired: 1 },
+  });
+  await prober.tick();
+  const states = monitor.recoveryStates;
+  assertEquals(states.length >= 1, true);
+  const last = states[states.length - 1]!;
+  assertEquals(last.name, "Cronus28");
+  assertEquals(last.attempts, 1);
+  assertEquals(last.exhausted, false);
 });
 
 Deno.test("flap cap: stops recovering after maxRecoveriesPerContainer", async () => {

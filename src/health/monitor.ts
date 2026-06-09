@@ -161,6 +161,22 @@ export class ContainerHealthMonitor {
     return alert;
   }
 
+  /**
+   * Record recovery-prober progress for a container so the dashboard health
+   * card can show "↺ recovery N/M" (and "exhausted" once the flap cap is hit).
+   * Presentational only — does not affect alert state. No-op for unknown
+   * containers. Bumps eventId so SSE consumers re-render.
+   */
+  setRecoveryState(
+    containerName: string,
+    state: { attempts: number; max: number; exhausted: boolean },
+  ): void {
+    const ch = this.containers.get(containerName);
+    if (!ch) return;
+    ch.recovery = { ...state };
+    this.eventId++;
+  }
+
   private fireAlertClearedListeners(alert: HealthAlert, reason: string): void {
     for (const fn of this.alertClearedListeners) {
       try {
@@ -430,6 +446,7 @@ export class ContainerHealthMonitor {
         errorCount: c.errorCount,
       };
       if (c.alert) copy.alert = { ...c.alert };
+      if (c.recovery) copy.recovery = { ...c.recovery };
       containers.push(copy);
     }
     const alerts: HealthAlert[] = containers

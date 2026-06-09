@@ -487,6 +487,8 @@ body.dark .container-card .sparkline polyline { stroke: #60a5fa; }
 .health-card.healthy { border-color: #16a34a; }
 .health-card .name { font-weight: 600; margin-bottom: 4px; }
 .health-card .counts { color: #6b7280; }
+.health-card .recovery { color: #2563eb; margin-top: 4px; font-size: 11px; }
+.health-card .recovery.exhausted { color: #dc2626; font-weight: 600; }
 .health-sparkline { display: flex; gap: 2px; margin-top: 4px; }
 .health-sparkline span {
   display: inline-block;
@@ -950,10 +952,18 @@ const DASHBOARD_JS = `
       const spark = c.recent.map(function(r) {
         return '<span class="' + r + '"></span>';
       }).join('');
+      var recovery = '';
+      if (c.recovery) {
+        var exhausted = c.recovery.exhausted;
+        recovery = '<div class="recovery' + (exhausted ? ' exhausted' : '') +
+          '">↺ recovery ' + c.recovery.attempts + '/' + c.recovery.max +
+          (exhausted ? ' exhausted' : '') + '</div>';
+      }
       card.innerHTML =
         '<div class="name">' + esc(c.containerName) + '</div>' +
         '<div class="counts">pass=' + c.passCount + ' fail=' + c.failCount +
         ' err=' + c.errorCount + '</div>' +
+        recovery +
         '<div class="health-sparkline">' + spark + '</div>';
       grid.appendChild(card);
     }

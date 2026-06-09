@@ -82,6 +82,11 @@ export interface RecoveryProberDeps {
       expectedAlertId: string,
       reason: string,
     ): HealthAlert | undefined;
+    /** Optional: record recovery progress for the dashboard health card. */
+    setRecoveryState?: (
+      containerName: string,
+      state: { attempts: number; max: number; exhausted: boolean },
+    ) => void;
   };
   pool: {
     canReadmit(containerName: string, alertId?: string): boolean;
@@ -228,6 +233,11 @@ export class ContainerRecoveryProber {
 
     if (st.recoveriesCompleted >= this.cfg.maxRecoveriesPerContainer) {
       st.disabledReason = "flap_cap";
+      this.deps.monitor.setRecoveryState?.(name, {
+        attempts: st.recoveriesCompleted,
+        max: this.cfg.maxRecoveriesPerContainer,
+        exhausted: true,
+      });
       this.emit("flap_cap_reached", alert);
       return;
     }
@@ -252,6 +262,11 @@ export class ContainerRecoveryProber {
     ) {
       if (st.restartAttempts >= this.cfg.maxRestartAttempts) {
         st.disabledReason = "flap_cap";
+        this.deps.monitor.setRecoveryState?.(name, {
+          attempts: st.recoveriesCompleted,
+          max: this.cfg.maxRecoveriesPerContainer,
+          exhausted: true,
+        });
         this.emit("flap_cap_reached", alert);
         return;
       }
@@ -330,6 +345,11 @@ export class ContainerRecoveryProber {
     st.recoveriesCompleted++;
     st.successStreak = 0;
     st.restarted = false;
+    this.deps.monitor.setRecoveryState?.(name, {
+      attempts: st.recoveriesCompleted,
+      max: this.cfg.maxRecoveriesPerContainer,
+      exhausted: false,
+    });
     this.emit("recovered", alert);
   }
 

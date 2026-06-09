@@ -619,6 +619,27 @@ Deno.test("clearAlert: bumps eventId so consumers observe the change", () => {
   assertEquals(mon.getState().eventId > before, true);
 });
 
+Deno.test("setRecoveryState: surfaces on the container snapshot + bumps eventId", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  raisePersistent(mon, "Cronus281", "test:abc");
+  const before = mon.getState().eventId;
+  mon.setRecoveryState("Cronus281", { attempts: 1, max: 2, exhausted: false });
+  const after = mon.getState();
+  const c = after.containers.find((x) => x.containerName === "Cronus281");
+  assertExists(c);
+  assertEquals(c!.recovery, { attempts: 1, max: 2, exhausted: false });
+  assertEquals(after.eventId > before, true);
+});
+
+Deno.test("setRecoveryState: no-op for unknown container", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  mon.setRecoveryState("ghost", { attempts: 1, max: 2, exhausted: true });
+  assertEquals(
+    mon.getState().containers.find((x) => x.containerName === "ghost"),
+    undefined,
+  );
+});
+
 Deno.test("on('alert_cleared'): listener exception is isolated", () => {
   const mon = new ContainerHealthMonitor({ windowSize: 10 });
   const good: HealthAlert[] = [];
