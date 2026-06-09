@@ -666,6 +666,67 @@ Deno.test("buildScoreLines", async (t) => {
   );
 
   await t.step(
+    "emits # Recovery Events block when recoveryEvents supplied",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-06-09T12:00:00Z"),
+        recoveryEvents: [
+          {
+            type: "recovered",
+            containerName: "Cronus28",
+            alertId: "alert-1",
+            kind: "persistent_container_failure",
+            at: 1000,
+          },
+          {
+            type: "restart_succeeded",
+            containerName: "Cronus281",
+            alertId: "alert-2",
+            kind: "suspect_container",
+            at: 1001,
+          },
+          {
+            type: "flap_cap_reached",
+            containerName: "Cronus282",
+            alertId: "alert-3",
+            kind: "persistent_container_failure",
+            at: 1002,
+          },
+        ],
+      };
+      const content = buildScoreLines(input).join("\n");
+      assertStringIncludes(content, "# Recovery Events");
+      assertStringIncludes(content, "total_events: 3");
+      assertStringIncludes(content, "recovered: 1");
+      assertStringIncludes(content, "restarts_succeeded: 1");
+      assertStringIncludes(content, "flap_caps_reached: 1");
+      assertStringIncludes(content, "recovered_containers: [Cronus28]");
+      assertStringIncludes(content, "flap_capped_containers: [Cronus282]");
+    },
+  );
+
+  await t.step(
+    "omits # Recovery Events block when none supplied",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats(),
+        taskCount: 1,
+        modelNames: ["sonnet"],
+        attempts: 1,
+        resultCount: 1,
+        timestamp: new Date("2026-06-09T12:00:00Z"),
+      };
+      const content = buildScoreLines(input).join("\n");
+      assert(!content.includes("# Recovery Events"));
+    },
+  );
+
+  await t.step(
     "emits # Publish Defects block when model-attributable publish defects present",
     () => {
       // Attempt with the canonical PUBLISH_DEFECT_CLASS:model marker in output
