@@ -56,6 +56,8 @@ export async function saveResultsJson(
   hashResult: HashResult,
   drainEvents?:
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
+  recoveryEvents?:
+    import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
 ): Promise<void> {
   await Deno.writeTextFile(
     resultsFile,
@@ -89,6 +91,11 @@ export async function saveResultsJson(
         // Optional field — omitted from runs with zero drain activity.
         ...(drainEvents !== undefined && drainEvents.length > 0
           ? { drainEvents }
+          : {}),
+        // Recovery prober events (re-probe / restart / re-admit). Top-level,
+        // optional — omitted when recovery is disabled or never fired.
+        ...(recoveryEvents !== undefined && recoveryEvents.length > 0
+          ? { recoveryEvents }
           : {}),
       },
       null,
@@ -130,6 +137,14 @@ export interface ScoreLineInput {
    */
   drainEvents?:
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[];
+  /**
+   * Optional recovery-prober events emitted this run (see
+   * `ParallelBenchmarkOrchestrator.getRecoveryEvents()`). When at least one is
+   * supplied, appends a `# Recovery Events` block. Omitted entirely when
+   * recovery is disabled or never fired.
+   */
+  recoveryEvents?:
+    import("../../../src/health/recovery-prober.ts").RecoveryEvent[];
 }
 
 /**
@@ -382,6 +397,40 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
     }
   }
 
+  // # Recovery Events block — recovery-prober activity. Emitted only when the
+  // prober produced at least one event this run. Surfaces both successes
+  // (recovered) and the operationally-important failure/skip paths.
+  if (input.recoveryEvents && input.recoveryEvents.length > 0) {
+    const evs = input.recoveryEvents;
+    const count = (t: string) => evs.filter((e) => e.type === t).length;
+    lines.push(``);
+    lines.push(`# Recovery Events`);
+    lines.push(`total_events: ${evs.length}`);
+    lines.push(`recovered: ${count("recovered")}`);
+    lines.push(`restarts_succeeded: ${count("restart_succeeded")}`);
+    lines.push(`restarts_failed: ${count("restart_failed")}`);
+    lines.push(`flap_caps_reached: ${count("flap_cap_reached")}`);
+    lines.push(
+      `restart_required_but_disabled: ${
+        count("restart_required_but_disabled")
+      }`,
+    );
+    lines.push(`probe_timeouts: ${count("probe_timeout")}`);
+    // Per-container terminal disposition: recovered vs still-excluded.
+    const recoveredBy = new Set(
+      evs.filter((e) => e.type === "recovered").map((e) => e.containerName),
+    );
+    const flapped = new Set(
+      evs.filter((e) => e.type === "flap_cap_reached").map((e) =>
+        e.containerName
+      ),
+    );
+    lines.push(
+      `recovered_containers: [${[...recoveredBy].join(",") || "none"}]`,
+    );
+    lines.push(`flap_capped_containers: [${[...flapped].join(",") || "none"}]`);
+  }
+
   return lines;
 }
 
@@ -403,6 +452,8 @@ export async function saveScoresFile(
   results?: TaskExecutionResult[],
   drainEvents?:
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
+  recoveryEvents?:
+    import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
 ): Promise<void> {
   const scoreLines = buildScoreLines({
     stats,
@@ -414,6 +465,9 @@ export async function saveScoresFile(
     ...(results !== undefined ? { results } : {}),
     ...(drainEvents !== undefined && drainEvents.length > 0
       ? { drainEvents }
+      : {}),
+    ...(recoveryEvents !== undefined && recoveryEvents.length > 0
+      ? { recoveryEvents }
       : {}),
   });
   await Deno.writeTextFile(scoreFile, scoreLines.join("\n"));

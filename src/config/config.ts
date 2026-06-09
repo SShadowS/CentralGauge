@@ -197,6 +197,26 @@ export interface BenchConfig {
    * an off-switch only, mirroring `CENTRALGAUGE_BENCH_PRECHECK`.
    */
   infraRetriesPerAttempt?: number;
+
+  /**
+   * Recovery prober: probe cadence in ms for re-probing alerted (excluded)
+   * containers. `0` disables recovery entirely. Default 0 (opt-in for the
+   * first release — see the recovery plan R10). Env off-switch:
+   * `CENTRALGAUGE_BENCH_RECOVERY=0` forces 0 regardless of YAML.
+   */
+  recoveryProbeIntervalMs?: number;
+  /** Per-probe timeout in ms. Default 30000. */
+  recoveryProbeTimeoutMs?: number;
+  /** Consecutive healthy probes required before re-admission. Default 2. */
+  recoveryProbeSuccessesRequired?: number;
+  /** Max successful recoveries per container per run (flap cap). Default 2. */
+  recoveryMaxPerContainer?: number;
+  /** Restart a suspect container before probing it. Default false. */
+  recoveryAutoRestart?: boolean;
+  /** Max restart attempts per container per run. Default 1. */
+  recoveryMaxRestartAttempts?: number;
+  /** Base backoff (ms) after a failed/skipped probe; grows per failure. Default 1000. */
+  recoveryBackoffBaseMs?: number;
 }
 
 /**
@@ -205,6 +225,13 @@ export interface BenchConfig {
  */
 export const BENCH_DEFAULTS: Required<BenchConfig> = {
   infraRetriesPerAttempt: 1,
+  recoveryProbeIntervalMs: 0, // disabled by default (opt-in; plan R10)
+  recoveryProbeTimeoutMs: 30_000,
+  recoveryProbeSuccessesRequired: 2,
+  recoveryMaxPerContainer: 2,
+  recoveryAutoRestart: false,
+  recoveryMaxRestartAttempts: 1,
+  recoveryBackoffBaseMs: 1000,
 };
 
 /**
@@ -237,7 +264,83 @@ export function mergeBenchDefaults(
       `bench.infraRetriesPerAttempt must be >= 0, got ${raw}`,
     );
   }
-  return { infraRetriesPerAttempt: raw };
+
+  // Validate recovery knobs (plan R10). Each is a non-negative integer except
+  // the boolean autoRestart; successesRequired must be >= 1.
+  const reqInt = (
+    field: keyof BenchConfig,
+    value: number,
+    min: number,
+  ): number => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new ConfigurationError(
+        `bench.${field} must be a finite number, got ${JSON.stringify(value)}`,
+      );
+    }
+    if (!Number.isInteger(value)) {
+      throw new ConfigurationError(
+        `bench.${field} must be an integer, got ${value}`,
+      );
+    }
+    if (value < min) {
+      throw new ConfigurationError(
+        `bench.${field} must be >= ${min}, got ${value}`,
+      );
+    }
+    return value;
+  };
+
+  const recoveryProbeIntervalMs = reqInt(
+    "recoveryProbeIntervalMs",
+    c.recoveryProbeIntervalMs ?? BENCH_DEFAULTS.recoveryProbeIntervalMs,
+    0,
+  );
+  const recoveryProbeTimeoutMs = reqInt(
+    "recoveryProbeTimeoutMs",
+    c.recoveryProbeTimeoutMs ?? BENCH_DEFAULTS.recoveryProbeTimeoutMs,
+    1,
+  );
+  const recoveryProbeSuccessesRequired = reqInt(
+    "recoveryProbeSuccessesRequired",
+    c.recoveryProbeSuccessesRequired ??
+      BENCH_DEFAULTS.recoveryProbeSuccessesRequired,
+    1,
+  );
+  const recoveryMaxPerContainer = reqInt(
+    "recoveryMaxPerContainer",
+    c.recoveryMaxPerContainer ?? BENCH_DEFAULTS.recoveryMaxPerContainer,
+    0,
+  );
+  const recoveryMaxRestartAttempts = reqInt(
+    "recoveryMaxRestartAttempts",
+    c.recoveryMaxRestartAttempts ?? BENCH_DEFAULTS.recoveryMaxRestartAttempts,
+    0,
+  );
+  const recoveryBackoffBaseMs = reqInt(
+    "recoveryBackoffBaseMs",
+    c.recoveryBackoffBaseMs ?? BENCH_DEFAULTS.recoveryBackoffBaseMs,
+    1,
+  );
+  const recoveryAutoRestart = c.recoveryAutoRestart ??
+    BENCH_DEFAULTS.recoveryAutoRestart;
+  if (typeof recoveryAutoRestart !== "boolean") {
+    throw new ConfigurationError(
+      `bench.recoveryAutoRestart must be a boolean, got ${
+        JSON.stringify(c.recoveryAutoRestart)
+      }`,
+    );
+  }
+
+  return {
+    infraRetriesPerAttempt: raw,
+    recoveryProbeIntervalMs,
+    recoveryProbeTimeoutMs,
+    recoveryProbeSuccessesRequired,
+    recoveryMaxPerContainer,
+    recoveryAutoRestart,
+    recoveryMaxRestartAttempts,
+    recoveryBackoffBaseMs,
+  };
 }
 
 /**
@@ -413,6 +516,11 @@ export class ConfigManager {
     const envRaw = Deno.env.get("CENTRALGAUGE_BENCH_INFRA_RETRY");
     if (envRaw === "0") {
       merged = { ...merged, infraRetriesPerAttempt: 0 };
+    }
+    // Recovery off-switch (plan R10): forces the prober disabled regardless of
+    // YAML. Mirrors the infra-retry env hook — off-switch only.
+    if (Deno.env.get("CENTRALGAUGE_BENCH_RECOVERY") === "0") {
+      merged = { ...merged, recoveryProbeIntervalMs: 0 };
     }
     return mergeBenchDefaults(merged);
   }

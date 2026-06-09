@@ -103,3 +103,79 @@ Deno.test("mergeBenchDefaults rejects non-number value", () => {
     "infraRetriesPerAttempt",
   );
 });
+
+// --- recovery knobs (plan R10) ----------------------------------------------
+
+Deno.test("recovery defaults: disabled by default (opt-in)", () => {
+  assertEquals(BENCH_DEFAULTS.recoveryProbeIntervalMs, 0);
+  assertEquals(BENCH_DEFAULTS.recoveryProbeTimeoutMs, 30_000);
+  assertEquals(BENCH_DEFAULTS.recoveryProbeSuccessesRequired, 2);
+  assertEquals(BENCH_DEFAULTS.recoveryMaxPerContainer, 2);
+  assertEquals(BENCH_DEFAULTS.recoveryAutoRestart, false);
+  assertEquals(BENCH_DEFAULTS.recoveryMaxRestartAttempts, 1);
+  assertEquals(BENCH_DEFAULTS.recoveryBackoffBaseMs, 1000);
+});
+
+Deno.test("recovery: explicit values pass through", () => {
+  const r = mergeBenchDefaults({
+    recoveryProbeIntervalMs: 90_000,
+    recoveryAutoRestart: true,
+    recoveryProbeSuccessesRequired: 3,
+  });
+  assertEquals(r.recoveryProbeIntervalMs, 90_000);
+  assertEquals(r.recoveryAutoRestart, true);
+  assertEquals(r.recoveryProbeSuccessesRequired, 3);
+});
+
+Deno.test("recovery: probeIntervalMs accepts 0 (disabled)", () => {
+  assertEquals(
+    mergeBenchDefaults({ recoveryProbeIntervalMs: 0 })
+      .recoveryProbeIntervalMs,
+    0,
+  );
+});
+
+Deno.test("recovery: successesRequired must be >= 1", () => {
+  assertThrows(
+    () => mergeBenchDefaults({ recoveryProbeSuccessesRequired: 0 }),
+    ConfigurationError,
+    "recoveryProbeSuccessesRequired",
+  );
+});
+
+Deno.test("recovery: probeTimeoutMs must be >= 1", () => {
+  assertThrows(
+    () => mergeBenchDefaults({ recoveryProbeTimeoutMs: 0 }),
+    ConfigurationError,
+    "recoveryProbeTimeoutMs",
+  );
+});
+
+Deno.test("recovery: rejects negative maxPerContainer", () => {
+  assertThrows(
+    () => mergeBenchDefaults({ recoveryMaxPerContainer: -1 }),
+    ConfigurationError,
+    "recoveryMaxPerContainer",
+  );
+});
+
+Deno.test("recovery: rejects non-boolean autoRestart", () => {
+  assertThrows(
+    () =>
+      mergeBenchDefaults(
+        { recoveryAutoRestart: "yes" } as unknown as {
+          recoveryAutoRestart?: boolean;
+        },
+      ),
+    ConfigurationError,
+    "recoveryAutoRestart",
+  );
+});
+
+Deno.test("recovery: rejects non-integer probeIntervalMs", () => {
+  assertThrows(
+    () => mergeBenchDefaults({ recoveryProbeIntervalMs: 1.5 }),
+    ConfigurationError,
+    "recoveryProbeIntervalMs",
+  );
+});

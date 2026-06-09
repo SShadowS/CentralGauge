@@ -9,6 +9,7 @@ import { EnvLoader } from "../../../src/utils/env-loader.ts";
 import { SplashScreen } from "../../../src/utils/splash-screen.ts";
 import { DebugLogger } from "../../../src/utils/debug-logger.ts";
 import { BENCH_DEFAULTS, ConfigManager } from "../../../src/config/config.ts";
+import type { BenchConfig } from "../../../src/config/config.ts";
 import { ModelPresetRegistry } from "../../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
@@ -285,6 +286,7 @@ export async function executeParallelBenchmark(
       primaryContainerName,
       containerProvider.name,
       infraRetriesPerAttempt,
+      appConfig.bench,
     );
 
     // Build the shared health monitor BEFORE the dashboard so the
@@ -608,6 +610,8 @@ export async function executeParallelBenchmark(
         // Empty when no alert tripped during the run; both writers omit
         // the field/block in that case.
         const drainEvents = orchestrator.getDrainEvents();
+        // Recovery-prober events (empty when recovery disabled / never fired).
+        const recoveryEvents = orchestrator.getRecoveryEvents();
         await saveResultsJson(
           resultsFile,
           finalResults,
@@ -615,6 +619,7 @@ export async function executeParallelBenchmark(
           summary.comparisons,
           toHashResult(hashResult),
           drainEvents,
+          recoveryEvents,
         );
         resultFilePaths.push(resultsFile);
 
@@ -630,6 +635,7 @@ export async function executeParallelBenchmark(
           dashboard?.getHealthSnapshot(),
           finalResults,
           drainEvents,
+          recoveryEvents,
         );
 
         // Print summary
@@ -1069,6 +1075,7 @@ export function buildParallelOptions(
   containerName: string,
   containerProviderName: string,
   infraRetriesPerAttempt: number = BENCH_DEFAULTS.infraRetriesPerAttempt,
+  bench?: BenchConfig,
 ): import("../../../src/parallel/mod.ts").ParallelBenchmarkOptions {
   const parallelOptions:
     import("../../../src/parallel/mod.ts").ParallelBenchmarkOptions = {
@@ -1081,6 +1088,22 @@ export function buildParallelOptions(
       debugMode: options.debug || false,
       stream: options.stream ?? false,
       infraRetriesPerAttempt,
+      // Recovery prober knobs (resolved bench config; defaults keep it
+      // disabled). `0` interval => prober off.
+      recoveryProbeIntervalMs: bench?.recoveryProbeIntervalMs ??
+        BENCH_DEFAULTS.recoveryProbeIntervalMs,
+      recoveryProbeTimeoutMs: bench?.recoveryProbeTimeoutMs ??
+        BENCH_DEFAULTS.recoveryProbeTimeoutMs,
+      recoveryProbeSuccessesRequired: bench?.recoveryProbeSuccessesRequired ??
+        BENCH_DEFAULTS.recoveryProbeSuccessesRequired,
+      recoveryMaxPerContainer: bench?.recoveryMaxPerContainer ??
+        BENCH_DEFAULTS.recoveryMaxPerContainer,
+      recoveryAutoRestart: bench?.recoveryAutoRestart ??
+        BENCH_DEFAULTS.recoveryAutoRestart,
+      recoveryMaxRestartAttempts: bench?.recoveryMaxRestartAttempts ??
+        BENCH_DEFAULTS.recoveryMaxRestartAttempts,
+      recoveryBackoffBaseMs: bench?.recoveryBackoffBaseMs ??
+        BENCH_DEFAULTS.recoveryBackoffBaseMs,
     };
   if (options.promptOverrides) {
     parallelOptions.promptOverrides = options.promptOverrides;

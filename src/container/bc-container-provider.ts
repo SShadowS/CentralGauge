@@ -379,6 +379,75 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Dispose the per-container session slot AND compile pool for ONE container,
+   * removing them from the maps so the next `runScriptThroughSession()` /
+   * compile lazily rebuilds fresh sessions.
+   *
+   * Recovery plan R5: a container can pass `Test-BcContainer` while its
+   * host-side warm slot still holds a corrupted BC PSSession (the
+   * `Get-NAVAppInfo`-not-recognized state under `usePwshForBc24=$false`).
+   * Re-admitting without disposing would have the next real task fail on the
+   * stale session even though the container itself is healthy. Forcing fresh
+   * sessions clears that before the container takes work again.
+   */
+  async disposeContainerSlot(name: string): Promise<void> {
+    const slot = this.slots.get(name);
+    const pool = this.compilePools.get(name);
+    this.slots.delete(name);
+    this.compilePools.delete(name);
+    await Promise.all([
+      slot ? slot.dispose() : Promise.resolve(),
+      pool ? pool.dispose() : Promise.resolve(),
+    ]);
+  }
+
+  /**
+   * Restart a BC container (recovery Layer 3). Runs `Restart-BcContainer`
+   * host-side via a fresh pwsh — the container's own session is presumed broken
+   * (SQL down / PSSession lost / offline), so we cannot route through the warm
+   * slot. Disposes the stale per-container slots first so nothing reuses the
+   * dying container and the next task builds a fresh session.
+   *
+   * `opts.signal` is accepted for interface symmetry; the underlying pwsh call
+   * is not itself cancellable, so abort only stops the caller from awaiting.
+   * Returns true on a clean `Restart-BcContainer`.
+   */
+  async restartContainer(
+    name: string,
+    _opts?: { signal?: AbortSignal },
+  ): Promise<boolean> {
+    if (!this.isWindows()) return false;
+    // Drop stale sessions first so nothing tries to reuse the dying container.
+    await this.disposeContainerSlot(name);
+    const script = `
+      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      try {
+        Restart-BcContainer -containerName "${name}" -ErrorAction Stop
+        Write-Output "RESTART_OK:${name}"
+      } catch {
+        Write-Output "RESTART_FAIL:${name} - $($_.Exception.Message)"
+      }
+    `;
+    try {
+      const result = await this.executePowerShell(script);
+      const ok = result.output.includes(`RESTART_OK:${name}`);
+      if (!ok) {
+        log.warn(`restartContainer did not confirm OK for ${name}`, {
+          output: result.output.split("\n").filter((l) =>
+            l.startsWith("RESTART_")
+          ).join(" | "),
+        });
+      }
+      return ok;
+    } catch (e) {
+      log.warn(`restartContainer failed for ${name}`, {
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return false;
+    }
+  }
+
+  /**
    * Pre-nuke any leftover CentralGauge-published apps in the given containers
    * before the bench starts. A previous bench run that was killed mid-test
    * may have left prereq or main apps in BC NST's catalog; without removal

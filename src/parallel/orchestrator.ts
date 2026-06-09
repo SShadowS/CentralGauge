@@ -36,9 +36,11 @@ import type { ContainerProvider } from "../container/interface.ts";
 import type { ModelVariant } from "../llm/variant-types.ts";
 import {
   classifyInfraError,
+  ContainerRecoveryProber,
   isInfraError,
   synthesizeInfraFailureResult,
 } from "../health/mod.ts";
+import type { RecoveryEvent } from "../health/mod.ts";
 import type { SynthContext } from "../health/terminal-record.ts";
 import { ContainerError } from "../errors.ts";
 import { withInfraRetry } from "./infra-retry.ts";
@@ -97,6 +99,21 @@ export interface ParallelBenchmarkOptions {
    * resolve a default of 1 at the use-site (see Task 1 plan).
    */
   infraRetriesPerAttempt?: number;
+
+  /**
+   * Recovery prober knobs (resolved from `bench.recovery*`). When
+   * `recoveryProbeIntervalMs > 0` AND a health monitor + CompileQueuePool are
+   * present, the orchestrator runs a {@link ContainerRecoveryProber} that
+   * re-probes alerted containers and re-admits them on recovery. `0` (default)
+   * disables it.
+   */
+  recoveryProbeIntervalMs?: number;
+  recoveryProbeTimeoutMs?: number;
+  recoveryProbeSuccessesRequired?: number;
+  recoveryMaxPerContainer?: number;
+  recoveryAutoRestart?: boolean;
+  recoveryMaxRestartAttempts?: number;
+  recoveryBackoffBaseMs?: number;
 }
 
 /**
@@ -122,6 +139,10 @@ export class ParallelBenchmarkOrchestrator {
   private healthMonitor: ContainerHealthMonitor | undefined;
   /** Unsubscribe handle for the alert listener; closed in `runParallel`'s finally. */
   private alertUnsubscribe: (() => void) | undefined;
+  /** Recovery prober; started after the alert subscription, stopped first in finally. */
+  private recoveryProber: ContainerRecoveryProber | undefined;
+  /** Recovery events collected from the prober for the scores/JSON telemetry. */
+  private recoveryEvents: RecoveryEvent[] = [];
 
   // Progress tracking
   private startTime: Date | null = null;
@@ -314,6 +335,71 @@ export class ParallelBenchmarkOrchestrator {
           });
         },
       );
+
+      // Recovery prober (plan Layer 2/3): re-probe alerted containers and
+      // re-admit on recovery. Opt-in — only when an interval is configured.
+      const probeInterval = options.recoveryProbeIntervalMs ?? 0;
+      const provider = this.containerProvider;
+      if (probeInterval > 0 && provider) {
+        const monitor = this.healthMonitor;
+        const autoRestart = options.recoveryAutoRestart ?? false;
+        // disposeContainerSlot / restartContainer live on BcContainerProvider,
+        // not the ContainerProvider interface — feature-detect them.
+        const hasDispose = "disposeContainerSlot" in provider &&
+          typeof (provider as { disposeContainerSlot?: unknown })
+              .disposeContainerSlot === "function";
+        const hasRestart = "restartContainer" in provider &&
+          typeof (provider as { restartContainer?: unknown })
+              .restartContainer === "function";
+        this.recoveryProber = new ContainerRecoveryProber(
+          {
+            monitor,
+            pool,
+            // isHealthy on the interface takes (name); signal isn't propagated
+            // to the underlying pwsh, but Test-BcContainer self-terminates so
+            // the per-probe timeout still bounds the tick.
+            isHealthy: (name) => provider.isHealthy(name),
+            now: () => Date.now(),
+            onEvent: (ev) => this.recoveryEvents.push(ev),
+            ...(hasDispose
+              ? {
+                disposeSession: (name: string) =>
+                  (provider as {
+                    disposeContainerSlot: (n: string) => Promise<void>;
+                  }).disposeContainerSlot(name),
+              }
+              : {}),
+            ...(autoRestart && hasRestart
+              ? {
+                restartContainer: (
+                  name: string,
+                  o?: { signal?: AbortSignal },
+                ) =>
+                  (provider as {
+                    restartContainer: (
+                      n: string,
+                      opts?: { signal?: AbortSignal },
+                    ) => Promise<boolean>;
+                  }).restartContainer(name, o),
+              }
+              : {}),
+          },
+          {
+            probeIntervalMs: probeInterval,
+            probeTimeoutMs: options.recoveryProbeTimeoutMs ?? 30_000,
+            successesRequired: options.recoveryProbeSuccessesRequired ?? 2,
+            maxRecoveriesPerContainer: options.recoveryMaxPerContainer ?? 2,
+            autoRestart,
+            maxRestartAttempts: options.recoveryMaxRestartAttempts ?? 1,
+            backoffBaseMs: options.recoveryBackoffBaseMs ?? 1000,
+          },
+        );
+        this.recoveryProber.start();
+        log.info("Container recovery prober started", {
+          probeIntervalMs: probeInterval,
+          autoRestart,
+        });
+      }
     }
 
     const taskResults: (ParallelTaskResult | undefined)[] = new Array(
@@ -378,6 +464,19 @@ export class ParallelBenchmarkOrchestrator {
       }
     } finally {
       clearInterval(progressTicker);
+      // Stop the recovery prober FIRST (plan R2 shutdown order): abort
+      // in-flight probes and await the current tick so no clear/re-admit
+      // fires after this point, BEFORE unsubscribing the alert listener.
+      if (this.recoveryProber) {
+        try {
+          await this.recoveryProber.stop();
+        } catch (e) {
+          log.warn("recoveryProber.stop threw on cleanup", {
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
+        this.recoveryProber = undefined;
+      }
       // Unsubscribe alert listener before draining queues to avoid
       // late-fire reentry into pool methods during shutdown.
       if (this.alertUnsubscribe) {
@@ -1169,6 +1268,15 @@ export class ParallelBenchmarkOrchestrator {
    */
   getPoolSnapshot() {
     return this.compileQueue?.getPoolSnapshot() ?? null;
+  }
+
+  /**
+   * Recovery events collected from the prober this run (empty when recovery
+   * is disabled). Consumed by the results writer for the `# Recovery Events`
+   * block + the JSON `recoveryEvents[]`.
+   */
+  getRecoveryEvents(): RecoveryEvent[] {
+    return this.recoveryEvents;
   }
 
   get results(): ResultAggregator {
