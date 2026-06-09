@@ -1,0 +1,2472 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/plans/container-recovery-readmission/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Container Recovery & Re-admission — Implementation Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#container-recovery-re-admission-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Container Recovery &amp; Re-admission — Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#design" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Design
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Design">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#layer-1-monitor-clearalert-pure-reducer-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 1 — Monitor: clearAlert (pure reducer change)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-2-recovery-prober-pool-re-admission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 2 — Recovery prober + pool re-admission
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#layer-3-optional-auto-restart-config-gated-default-off" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Layer 3 — Optional auto-restart (config-gated, default OFF)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-centralgaugeyml-under-bench" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config (.centralgauge.yml under bench)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Telemetry
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risks-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risks / decisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#revisions-from-gpt-55-gemini-31-pro-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Revisions from GPT-5.5 + Gemini 3.1 Pro review
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/plans/container-recovery-readmission.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="container-recovery-re-admission-implementation-plan">Container Recovery &amp; Re-admission — Implementation Plan<a class="headerlink" href="#container-recovery-re-admission-implementation-plan" title="Permanent link">&para;</a></h1>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>Once a container raises a per-container health alert (<code>suspect_container</code> or
+<code>persistent_container_failure</code>), it is excluded from dispatch for the rest of
+the run and <strong>never re-admitted, even if it fully recovers</strong>. There is also no
+auto-restart. Today's behavior (verified in code):</p>
+<ul>
+<li><code>ContainerHealthMonitor</code> sets <code>ch.alert</code> on raise (<code>monitor.ts</code> ~297/333).
+  The ONLY place <code>ch.alert</code> is deleted is the global-outage retraction
+  (<code>monitor.ts:234-238</code>). A <code>pass</code> outcome bumps counters and ages the rolling
+  fingerprint window but <strong>never clears <code>ch.alert</code></strong>. <code>raisedAlerts</code> is a <code>Set</code>
+  with no prune. Alerts are sticky for the run.</li>
+<li>Dispatch gate <code>CompileQueuePool.alertedContainerNames()</code>
+  (<code>compile-queue-pool.ts:154-158</code>) excludes any container whose snapshot has
+  <code>c.alert</code>, on every <code>enqueue()</code> and <code>rebalanceFromContainer()</code>. Parked work
+  flushes only onto non-alerted queues.</li>
+<li>No <code>Restart-BcContainer</code> anywhere. <code>isHealthy()</code>
+  (<code>bc-container-provider.ts:1946</code>, <code>Test-BcContainer</code>) is only called at
+  startup (<code>container-setup.ts</code>) and as a pre-task gate
+  (<code>executor-v2.ts:101</code>). Nothing acts on a failed probe by restarting, and
+  nothing re-probes an excluded container.</li>
+</ul>
+<p><strong>Key constraint:</strong> recovery cannot be passive. An excluded container receives
+no further outcomes (the gate stops routing to it), so it can never accumulate
+the passes a passive "N consecutive good outcomes" rule would need. Recovery
+<strong>must</strong> actively re-probe excluded containers out-of-band.</p>
+<h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
+<p>While a bench is running, detect that an alerted container has recovered
+(optionally after restarting it), clear its alert, and route work to it again —
+without consuming model attempt budgets and without destabilizing the run when
+a container flaps.</p>
+<h2 id="design">Design<a class="headerlink" href="#design" title="Permanent link">&para;</a></h2>
+<p>Three layers, sequenceable. Layer 1+2 deliver the core value; Layer 3 (restart)
+is optional and riskier.</p>
+<h3 id="layer-1-monitor-clearalert-pure-reducer-change">Layer 1 — Monitor: <code>clearAlert</code> (pure reducer change)<a class="headerlink" href="#layer-1-monitor-clearalert-pure-reducer-change" title="Permanent link">&para;</a></h3>
+<p>Add to <code>ContainerHealthMonitor</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="cm">/** Clear an active per-container alert after recovery. Returns the cleared</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="cm"> * alert, or undefined if none was active. Does NOT clear global_outage. */</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nx">clearAlert</span><span class="p">(</span><span class="nx">containerName</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nx">HealthAlert</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="kc">undefined</span>
+</code></pre></div>
+<p>Behavior:
+- Read <code>ch.alert</code>; if absent or <code>kind === "global_outage"</code>, return undefined
+  (global is fleet-level; one container recovering must not clear it).
+- Delete <code>ch.alert</code>.
+- Remove this container's <code>suspect:&lt;c&gt;:&lt;fp&gt;</code> and <code>persistent:&lt;c&gt;:&lt;fp&gt;</code> keys from
+  <code>raisedAlerts</code> so a <strong>future</strong> failure can re-raise with a fresh <code>alertId</code>.
+  Without this, a recovered-then-redead container would silently never re-alert.
+- Do NOT touch <code>global:&lt;fp&gt;</code> keys (the sticky-global guard at <code>monitor.ts:269</code>
+  stays intact).
+- Fire a new <code>alert_cleared</code> listener channel (mirror <code>on("alert_raised")</code>):
+  add <code>on("alert_cleared", listener)</code> + <code>fireAlertClearedListeners</code>.
+- Keep the reducer clock-free: <code>reason</code> + caller-supplied data only, no
+  <code>Date.now()</code> (consistent with the existing no-clock design).</p>
+<p>New type: extend <code>AlertRaisedListener</code> usage — add
+<code>AlertClearedListener = (alert: HealthAlert, reason: string) =&gt; void</code>.</p>
+<h3 id="layer-2-recovery-prober-pool-re-admission">Layer 2 — Recovery prober + pool re-admission<a class="headerlink" href="#layer-2-recovery-prober-pool-re-admission" title="Permanent link">&para;</a></h3>
+<p><strong><code>ContainerRecoveryProber</code></strong> (new, <code>src/health/recovery-prober.ts</code> or folded
+into the orchestrator): an interval loop, active only while the bench runs.</p>
+<p>Per tick (default every 90 s):
+1. From <code>monitor.getState()</code>, collect containers with an active <strong>per-container</strong>
+   alert (<code>suspect_container</code> | <code>persistent_container_failure</code>). Skip
+   <code>global_outage</code>.
+2. For each, call <code>containerProvider.isHealthy(name)</code> (<code>Test-BcContainer</code>).
+   Track consecutive successes per container.
+3. On <code>recoveryProbeSuccessesRequired</code> consecutive healthy probes (default 2,
+   debounce against flapping):
+   - (Layer 3, if enabled) restart first — see below.
+   - <code>monitor.clearAlert(name, "recovered_after_probe")</code>.
+   - Notify the pool to flush parked entries onto the now-eligible container.
+4. Cooldown + flap guard: cap total recoveries per container per run
+   (<code>maxRecoveriesPerContainer</code>, default 2); exponential backoff on re-probe
+   after a re-death so a flapping container doesn't churn dispatch.</p>
+<p>Wiring: mirror the existing alert subscription in <code>orchestrator.ts:291</code> — start
+the prober only when <code>this.healthMonitor</code> is present, stop it in the same
+<code>finally</code> that calls <code>alertUnsubscribe</code> (avoid late fire during shutdown).</p>
+<p><strong>Pool re-admission:</strong> <code>alertedContainerNames()</code> already re-includes a container
+the instant its <code>ch.alert</code> is gone, so future <code>enqueue()</code> routes there with no
+change. Parked entries, however, only flush on the next <code>enqueue()</code>. Add:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nx">CompileQueuePool</span><span class="p">.</span><span class="nx">onContainerRecovered</span><span class="p">(</span><span class="nx">name</span><span class="o">:</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="ow">void</span>
+</code></pre></div>
+<p>which recomputes the eligible set and calls the existing <code>flushParkedTo(eligible)</code>
+immediately, so parked work doesn't wait for the next organic enqueue. The
+prober calls this after <code>clearAlert</code>.</p>
+<h3 id="layer-3-optional-auto-restart-config-gated-default-off">Layer 3 — Optional auto-restart (config-gated, default OFF)<a class="headerlink" href="#layer-3-optional-auto-restart-config-gated-default-off" title="Permanent link">&para;</a></h3>
+<p>New provider method (none exists today):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nx">BcContainerProvider</span><span class="p">.</span><span class="nx">restartContainer</span><span class="p">(</span><span class="nx">name</span><span class="p">)</span><span class="o">:</span><span class="w"> </span><span class="nb">Promise</span><span class="o">&lt;</span><span class="kt">boolean</span><span class="o">&gt;</span>
+</code></pre></div>
+<p><code>Restart-BcContainer -containerName &lt;name&gt;</code> via the warm slot / executePowerShell,
+return success. When <code>bench.autoRestartUnhealthyContainers</code> is true, the prober
+restarts a still-unhealthy alerted container (up to
+<code>maxRestartAttemptsPerContainer</code>, default 1) before probing for recovery.</p>
+<p>Per-kind policy:
+- <code>persistent_container_failure</code> → probe-only recovery is fine (often transient).
+- <code>suspect_container</code> (SQL down / PSSession lost / offline) → require a restart
+  before re-admission; a bare probe rarely flips these without intervention.</p>
+<p>Restart only ever targets the <strong>dead</strong> container; in-flight work on healthy
+slots is untouched.</p>
+<h2 id="config-centralgaugeyml-under-bench">Config (<code>.centralgauge.yml</code> under <code>bench</code>)<a class="headerlink" href="#config-centralgaugeyml-under-bench" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>recoveryProbeIntervalMs</code></td>
+<td><code>90000</code></td>
+<td>Probe cadence; <code>0</code> disables recovery entirely</td>
+</tr>
+<tr>
+<td><code>recoveryProbeSuccessesRequired</code></td>
+<td><code>2</code></td>
+<td>Consecutive healthy probes before re-admit</td>
+</tr>
+<tr>
+<td><code>maxRecoveriesPerContainer</code></td>
+<td><code>2</code></td>
+<td>Flap cap per run</td>
+</tr>
+<tr>
+<td><code>autoRestartUnhealthyContainers</code></td>
+<td><code>false</code></td>
+<td>Layer 3 master switch</td>
+</tr>
+<tr>
+<td><code>maxRestartAttemptsPerContainer</code></td>
+<td><code>1</code></td>
+<td>Restart cap per run</td>
+</tr>
+</tbody>
+</table>
+<p>Env overrides via <code>CENTRALGAUGE_BENCH_*</code> to match existing knobs. Default
+(<code>autoRestart=false</code>, probe enabled) is safe: probe + re-admit only, no restarts.</p>
+<h2 id="telemetry">Telemetry<a class="headerlink" href="#telemetry" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Scores file: new <code># Recovery Events</code> block (emitted only when ≥1 recovery
+  fires) — per container: alertId cleared, kind, probe count, restarted?,
+  re-admitted-at.</li>
+<li><code>benchmark-results-*.json</code>: top-level <code>recoveryEvents[]</code> (mirror
+  <code>drainEvents[]</code>, top-level so analyzers can detect recovered runs without
+  walking attempts).</li>
+<li>Dashboard: drop the sticky red banner when the alert clears; show a <code>↺
+  recovered</code> badge. (<code>cli/dashboard/state.ts</code> reads the shared monitor via
+  <code>getHealthMonitor()</code>.)</li>
+</ul>
+<h2 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>monitor.clearAlert</code>: clears per-container alert; leaves <code>global_outage</code>;
+  removes <code>suspect:</code>/<code>persistent:</code> keys so a later failure re-raises with a NEW
+  <code>alertId</code>; fires <code>alert_cleared</code> once.</li>
+<li>Prober: debounce (no clear before N successes); clear + <code>onContainerRecovered</code>
+  on success; flap cap honored; skips <code>global_outage</code>. Mock <code>isHealthy</code>,
+  monitor, pool — <strong>no real container</strong> (bench-safe).</li>
+<li>Pool <code>onContainerRecovered</code>: flushes parked FIFO onto the recovered queue;
+  no-op when nothing parked.</li>
+<li>Integration: alerted → drained → cleared → next <code>enqueue</code> routes to it again.</li>
+<li>Layer 3: <code>restartContainer</code> builds the right script; per-kind policy
+  (suspect requires restart, persistent probe-only); restart cap.</li>
+</ul>
+<h2 id="risks-decisions">Risks / decisions<a class="headerlink" href="#risks-decisions" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Flapping containers</strong> — exponential backoff + <code>maxRecoveriesPerContainer</code>
+  cap. A container that recovers and re-dies twice stays excluded for the run.</li>
+<li><strong>Re-raise after clear</strong> — MUST remove <code>raisedAlerts</code> keys in <code>clearAlert</code>, or
+  a recovered-then-redead container silently never re-alerts. Covered by a
+  dedicated unit test.</li>
+<li><strong>global_outage</strong> — out of scope for recovery; one container recovering does
+  not lift a fleet-wide outage. (Note: global currently sets <code>.alert</code> only on
+  the trigger container — a pre-existing quirk, not addressed here.)</li>
+<li><strong>Opt-in parity</strong> — recovery only runs when the monitor is wired
+  (<code>OrchestratorDependencies.healthMonitor</code>). No monitor → no exclusion AND no
+  recovery; behavior unchanged. Document alongside the alert-drain opt-in note.</li>
+<li><strong>Cost</strong> — <code>Test-BcContainer</code> per alerted container per tick is cheap; only
+  alerted containers are probed, and only while alerts are active.</li>
+</ul>
+<h2 id="files">Files<a class="headerlink" href="#files" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/health/monitor.ts</code></td>
+<td><code>clearAlert()</code>, <code>on("alert_cleared")</code>, <code>fireAlertClearedListeners</code></td>
+</tr>
+<tr>
+<td><code>src/health/types.ts</code></td>
+<td><code>AlertClearedListener</code></td>
+</tr>
+<tr>
+<td><code>src/health/recovery-prober.ts</code></td>
+<td>NEW — interval probe loop, debounce, flap cap</td>
+</tr>
+<tr>
+<td><code>src/parallel/compile-queue-pool.ts</code></td>
+<td><code>onContainerRecovered()</code> → flush parked</td>
+</tr>
+<tr>
+<td><code>src/container/bc-container-provider.ts</code></td>
+<td><code>restartContainer()</code> (Layer 3)</td>
+</tr>
+<tr>
+<td><code>src/parallel/orchestrator.ts</code></td>
+<td>start/stop prober alongside alert subscription</td>
+</tr>
+<tr>
+<td><code>cli/commands/bench/results-writer.ts</code></td>
+<td><code># Recovery Events</code> + <code>recoveryEvents[]</code></td>
+</tr>
+<tr>
+<td><code>cli/dashboard/state.ts</code> + dashboard view</td>
+<td>clear banner, <code>↺ recovered</code> badge</td>
+</tr>
+<tr>
+<td><code>src/config/*</code></td>
+<td>new <code>bench.*</code> recovery knobs + env overrides</td>
+</tr>
+<tr>
+<td><code>.claude/rules/alert-drain-rebalance.md</code></td>
+<td>document the recovery counterpart</td>
+</tr>
+<tr>
+<td>tests</td>
+<td>monitor, prober, pool, integration, restart</td>
+</tr>
+</tbody>
+</table>
+<h2 id="sequencing">Sequencing<a class="headerlink" href="#sequencing" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Layer 1 (<code>clearAlert</code> + tests) — safe, isolated reducer change.</li>
+<li>Layer 2 (prober + <code>onContainerRecovered</code> + wiring + telemetry) — delivers
+   probe-only auto-recovery. <strong>Opt-in for the first release</strong> (see Revision R10),
+   no restarts.</li>
+<li>Layer 3 (<code>restartContainer</code> + per-kind policy) — opt-in restart, last.</li>
+</ol>
+<hr />
+<h2 id="revisions-from-gpt-55-gemini-31-pro-review">Revisions from GPT-5.5 + Gemini 3.1 Pro review<a class="headerlink" href="#revisions-from-gpt-55-gemini-31-pro-review" title="Permanent link">&para;</a></h2>
+<p>Both models reviewed the above and independently converged on the same race /
+lifecycle blockers. Adopted changes (supersede the relevant sections above):</p>
+<p><strong>R1 — <code>clearAlert</code> is alert-ID conditional (CAS). [P0]</strong>
+Signature becomes <code>clearAlert(containerName, expectedAlertId, reason)</code>. Clears
+only if <code>ch.alert?.alertId === expectedAlertId</code> AND kind is not <code>global_outage</code>.
+A probe validates a <em>specific</em> alert episode; an alert that was replaced
+mid-probe must not be cleared by a stale probe result. Store the exact dedupe
+key on <code>HealthAlert</code> (e.g. <code>raiseKey</code>) and purge that one key, only after the
+CAS check passes.</p>
+<p><strong>R2 — Prober is single-flight + abort-safe. [P0]</strong>
+Not a loose <code>setInterval</code>. Requirements: one in-flight probe per container max;
+no overlapping ticks; <code>AbortSignal</code> threaded into <code>isHealthy(name,{signal})</code> and
+<code>restartContainer(name,{signal})</code>; new <code>recoveryProbeTimeoutMs</code> (default 30000)
+per probe; check stopped/aborted flag before AND after every <code>await</code>; swallow
+<code>AbortError</code>. Shutdown order: (1) abort+stop prober, (2) await prober stopped,
+(3) unsubscribe alert listeners, (4) finalize drains/results. Debounce streak
+keyed by <code>{containerName, alertId}</code> — a streak for alert <code>A</code> must not carry into
+alert <code>B</code>.</p>
+<p><strong>R3 — Quiesce gate before re-admit (stale-outcome guard). [P0]</strong>
+An excluded container can still have pre-alert in-flight work that fails <em>after</em>
+recovery, and (with keys purged) instantly re-raise. Before <code>clearAlert</code>, the
+prober must confirm the pool is quiesced for that container via new
+<code>pool.canReadmit(name, expectedAlertId)</code> = no queued work, no in-flight attempt,
+drain for that alert complete. If not quiesced: back off, keep the alert, do not
+clear. (Stronger alternative, deferred: tag each dispatched attempt with a
+health epoch and have the monitor ignore outcomes from attempts started before
+the latest recovery epoch.)</p>
+<p><strong>R4 — Pool-side exclusion state, not monitor-only. [P0]</strong>
+Dispatch exclusion becomes <code>monitorAlert || poolHealthExcluded</code>. Pool marks a
+container <code>healthExcluded</code> on alert-raise/drain and only clears it inside
+<code>onContainerRecovered(name, expectedAlertId)</code> after re-checking eligibility.
+Prevents re-admission racing an in-progress drain.</p>
+<p><strong>R5 — PSSession recovery needs warm-slot disposal, not (just) restart. [P0/domain]</strong>
+The standout catch. A container can pass <code>Test-BcContainer</code> while the host-side
+per-container warm session slot is still corrupted — exactly the
+<code>Get-NAVAppInfo</code>-not-recognized PSSession corruption documented in CLAUDE.md
+(<code>usePwshForBc24=$false</code>). So:
+- On recovery (especially <code>pssession_lost</code>), <strong>dispose the per-container session
+  slot</strong> (and compile pool slot) so the next task forces a fresh session.
+  Reuse the existing slot-disposal path (<code>disposeContainerSlots</code>-style).
+- The recovery probe should validate through the <strong>real execution path</strong> (warm
+  slot), not only a bypass <code>executePowerShell(Test-BcContainer)</code>, or it can pass
+  while real compiles still fail on the stale session.</p>
+<p><strong>R6 — Suspect policy reconciled; no fruitless probing. [P0]</strong>
+- <code>persistent_container_failure</code> → eligible for probe-only recovery.
+- <code>suspect_container</code> with <code>autoRestartUnhealthyContainers=false</code> → do NOT probe
+  on the interval (pure waste); emit <code>restart_required_but_disabled</code> once and
+  leave excluded.
+- <code>suspect_container</code> with restart enabled → restart FIRST (with session-slot
+  disposal), THEN require N healthy probes, THEN clear. Never restart <em>after</em> a
+  healthy streak (that was a bug in the original Layer 2 step ordering).</p>
+<p><strong>R7 — Thundering-herd guard on flush. [P1]</strong>
+<code>admitRebalancedEntry</code> already bypasses the queue-size cap, so flushing the full
+parked FIFO onto a lone freshly-recovered container can instantly re-kill it.
+<code>onContainerRecovered</code> must respect per-container concurrency limits — flush
+across ALL eligible queues by the existing balancing rule, and cap how much
+lands on the just-recovered one (trickle/prime, not dump). Idempotent + no-op
+under shutdown/draining/still-alerted.</p>
+<p><strong>R8 — Flap state machine made explicit. [P1]</strong>
+Per-container recovery state: <code>successStreakByAlertId</code>, <code>recoveriesCompleted</code>,
+<code>restartAttempts</code>, <code>nextProbeNotBefore</code>, <code>lastClearedAlertId</code>,
+<code>disabledForRunReason</code>. Cap counts on successful clear. After
+<code>maxRecoveriesPerContainer</code>: stop probing for the run, emit
+<code>recovery_disabled_flap_cap</code>. Exponential backoff per <code>{container, alertId}</code>.</p>
+<p><strong>R9 — Telemetry covers failure/skip paths + dashboard attempt count. [P1/P2]</strong>
+Emit: probe started/success/fail/timeout, streak change, clear-skipped
+(id-mismatch / global / not-quiesced), restart attempted/succeeded/failed,
+session-reset attempted/failed, flap-cap reached, unrecovered-at-end. Dashboard
+adds <code>recoveryAttempts</code> to the container snapshot so an exhausted container reads
+"Alerted (Recovery 2/2 exhausted)", not a bare red banner. Timestamps stamped by
+the prober/orchestrator (monitor stays clock-free).</p>
+<p><strong>R10 — Ship opt-in first; add config validation + timeout knob. [P2]</strong>
+Given the race surface, <code>recoveryProbeIntervalMs</code> defaults to <code>0</code> (disabled) for
+the first release; enable after the CAS/quiesce/abort protections land and are
+tested. Add <code>recoveryProbeTimeoutMs</code> (default 30000). Validate all knobs
+(<code>&gt;=1</code> successes, <code>&gt;=0</code> caps, reject negatives, <code>0</code> interval = disabled).</p>
+<p><strong>Global outage (unchanged, now explicit):</strong> the prober skips <code>global_outage</code>
+alerts and emits <code>skipped_global_outage</code>; global retraction remains the only
+clear path; the trigger-container-only <code>.alert</code> quirk is still out of scope.</p>
+<p><strong>Added tests (beyond the original list):</strong> CAS clear (probe A vs current B →
+no-op); streak reset on alert-id change; stale in-flight failure after clear;
+not-quiesced → no clear/flush; drain/recovery interleave; prober shutdown with
+<code>isHealthy</code> pending → no clear; overlapping ticks → single-flight; probe
+timeout/reject → streak reset + telemetry; flap cap → probing disabled;
+parked-FIFO order + concurrency cap on recovered queue + idempotent duplicate
+recovery; suspect-restart-disabled policy; post-restart session-slot disposal.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

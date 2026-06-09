@@ -1,0 +1,2676 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-04-29-model-lifecycle-event-sourcing/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Model Lifecycle — Event-Sourced Tracking, Provenance Graph, and Orchestrated Bench Cycle — Implementation Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#model-lifecycle-event-sourced-tracking-provenance-graph-and-orchestrated-bench-cycle-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Model Lifecycle — Event-Sourced Tracking, Provenance Graph, and Orchestrated Bench Cycle — Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-pre-flight-operational-state-at-plan-write-time-2026-04-29" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Pre-flight (operational state at plan-write time, 2026-04-29)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-a-schema-event-log-foundation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase A — Schema + event log foundation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-b-backfill-slug-migration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase B — Backfill + slug migration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-c-orchestrator-cycle-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase C — Orchestrator (cycle command)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-d-concept-registry-clustering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase D — Concept registry + clustering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-e-differential-analysis-resolved-persisting-regressed-new" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase E — Differential analysis (resolved / persisting / regressed / new)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-f-quality-gating-review-ui" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase F — Quality gating + review UI
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-g-ci-integration-weekly-cycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase G — CI integration (weekly cycle)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-h-centralgauge-status-cli-command" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase H — centralgauge status CLI command
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-j-acceptance-docs-integration-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase J — Acceptance, docs, integration tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema-appendix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema appendix
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-types-appendix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event types appendix
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-04-29-model-lifecycle-event-sourcing.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="model-lifecycle-event-sourced-tracking-provenance-graph-and-orchestrated-bench-cycle-implementation-plan">Model Lifecycle — Event-Sourced Tracking, Provenance Graph, and Orchestrated Bench Cycle — Implementation Plan<a class="headerlink" href="#model-lifecycle-event-sourced-tracking-provenance-graph-and-orchestrated-bench-cycle-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Eliminate the manual, file-driven, drift-prone workflow that today connects a model bench run to its surfaced shortcomings on the production site. Replace it with an event-sourced lifecycle log in prod D1, a canonical concept registry, automatic differential analysis between model generations, a quality-gated human-review UI, an orchestrated <code>cycle</code> command with checkpointing, and CI scheduling. Every state transition (bench started, debug captured, analysis completed, shortcomings published) becomes an immutable event with full provenance, recorded once in D1, with downstream views (CLI status matrix, web admin dashboard, family-trajectory diffs on the public site) derived by reduction over the event log.</p>
+<p><strong>Why this plan exists.</strong> The end-to-end bench → debug → analyze → publish pipeline today is six commands across two repos with no shared state:</p>
+<ol>
+<li><code>bench --llms X --debug --tasks ...</code> ingests results to prod D1; writes <code>debug/&lt;session&gt;/</code> locally.</li>
+<li><code>verify &lt;debug-dir&gt; --shortcomings-only --model X</code> calls an LLM analyzer on the debug output and writes <code>model-shortcomings/&lt;jsonModel&gt;.json</code> locally.</li>
+<li><code>populate-shortcomings --only X</code> reads the JSON, looks up <code>result_id</code>s via <code>wrangler d1 execute --remote</code>, signs a payload, POSTs to <code>/api/v1/shortcomings/batch</code>.</li>
+<li>The site reads <code>/api/v1/models/&lt;slug&gt;/limitations</code> and <code>/api/v1/shortcomings</code> to render the data.</li>
+</ol>
+<p>The pain surfaces every time a model is added (verified during the 2026-04-29 session that motivated this plan):</p>
+<ul>
+<li>No way to ask "which models have I benched, debugged, analyzed, published?" — the operator must remember.</li>
+<li>No way to ask "is this analysis run stale relative to the current task set?" — task set hashes drift silently.</li>
+<li>Slug naming is split across 3 conventions: bench JSON <code>model</code> field (un-prefixed legacy <code>claude-opus-4-6</code>, sometimes vendor-prefixed <code>deepseek/deepseek-v3.2</code>), production catalog (<code>anthropic/claude-opus-4-6</code>, <code>openrouter/deepseek/deepseek-v4-pro</code>), and a hardcoded <code>VENDOR_PREFIX_MAP</code> in <code>populate-shortcomings-command.ts:82</code> that goes stale every release. Six of fifteen JSON files in <code>model-shortcomings/</code> skip on the most recent operator run because their model field is unmapped.</li>
+<li>Re-publishing the same JSON re-runs all the wrangler D1 lookups even when nothing changed (wasteful + slow).</li>
+<li>0-occurrence uploads are silent (<code>{"upserted":7,"occurrences":0}</code> happens routinely; the operator can't tell whether it's normal — affected_tasks didn't run under this slug — or a bug — the slug lookup mismatched and dropped real data).</li>
+<li>Re-bench produces a new debug session, a new analysis run, a new JSON, a new POST — but no diff against the previous generation. The site's <code>/families/&lt;vendor&gt;/&lt;family&gt;</code> page shows avg_score going up, but no story about <em>which</em> concepts the new model fixed and which still hurt. The most interesting question this dataset can answer ("does this model release actually improve at the things it was bad at?") cannot be answered today.</li>
+<li>Analyzer hallucinations (parse-failure rows with empty <code>correct_pattern</code>/<code>incorrect_pattern</code>, concept names that don't match AL terminology, error codes attributed to the wrong concept) leak into <code>model-shortcomings/*.json</code> and from there occasionally into prod when an operator skims and uploads without reading every entry. There is no quality gate.</li>
+<li>Tool-version drift is invisible. A bench run with deno 1.44.5 + wrangler 3.95 + claude-code 0.4 produces a different debug envelope from the same run with deno 1.46 + wrangler 4.x + claude-code 0.5; today nothing records which version produced any given session, so divergence between two runs of the same model is not investigable.</li>
+</ul>
+<p>This plan is the response to the operator's explicit request — <em>"the best solution, not the easiest, time is not a factor"</em> — to that pain.</p>
+<p>After this plan lands:</p>
+<ol>
+<li><strong>Single source of truth in prod D1.</strong> A new <code>lifecycle_events</code> table is the immutable append-only log of every state transition. All other lifecycle state (current bench/debug/analysis/publish status per model+task_set) is derived by reduction. Local files (<code>debug/</code>, <code>model-shortcomings/</code>) become artifacts referenced from events, not the canonical record.</li>
+<li><strong><code>centralgauge status</code></strong> prints a per-model lifecycle matrix in the terminal, surfacing next-action hints (<code>opus-4-7: missing analysis run; suggest \</code>centralgauge verify debug/2026-04-28T... --model anthropic/claude-opus-4-7``).</li>
+<li><strong><code>centralgauge cycle --llms X</code></strong> runs the full pipeline (bench → debug capture → analyze → publish) with each step checkpointed against <code>lifecycle_events</code>. Failure resumes from the last successful event. <code>--from</code> / <code>--to</code> / <code>--force-rerun</code> for granular control. Same-model concurrency gated by an <code>in_progress</code> event.</li>
+<li><strong>Canonical concept registry.</strong> A new <code>concepts</code> table holds the deduplicated AL pedagogical concepts ("flowfield-calcfields-requirement", "reserved-keyword-as-parameter-name", etc.). <code>shortcomings</code> rows reference <code>concept_id</code> instead of carrying a per-model concept slug. New concepts are clustered against existing ones at analysis time (LLM proposes, registry merges or creates). Result: <code>/concepts/&lt;slug&gt;</code> page on the public site lists every model that hit each concept with frequency-over-time trend, family rollup at <code>/families/&lt;vendor&gt;/&lt;family&gt;</code> shows "concept X resolved between gen 4-6 and 4-7."</li>
+<li><strong>Differential analysis on every release.</strong> When <code>model.released</code> event fires for a new generation (<code>claude-opus-4-7</code> ships, catalog gains the row, lifecycle records the event), the cycle command auto-diffs the new analysis against the previous generation under the same task set. Output: per concept, one of <code>resolved | persisting | regressed | new</code>. Surfaced on <code>/families/&lt;vendor&gt;/&lt;family&gt;</code> as the trajectory story.</li>
+<li><strong>Quality-gated publishing.</strong> Every analysis entry carries a confidence score: schema validity (correctPattern/incorrectPattern non-empty, errorCodes are AL error codes, AL concept names match an allowlist) + cross-LLM agreement (a second model evaluates the first's output) + concept-cluster consistency (proposed concept matches existing canonical; reject orphan duplicates). Below threshold routes to a <code>/admin/lifecycle/review</code> page (web UI) with raw debug + LLM rationale side-by-side. Operator accepts or rejects. Decision logged as <code>analysis.accepted</code> or <code>analysis.rejected</code> event.</li>
+<li><strong>Reproducibility envelope.</strong> Every event records: <code>tool_versions_json</code> (deno, wrangler, claude-code, BC compiler version), <code>task_set_hash</code>, <code>settings_hash</code>, <code>machine_id</code>, <code>git_sha</code>. Two events with identical envelopes that produced divergent results = an automatic finding ("model output non-deterministic at temperature=0; recorded at lifecycle_events.id=...").</li>
+<li><strong>CI integration.</strong> A weekly GitHub Actions workflow runs <code>centralgauge status</code> against the catalog, identifies models with stale lifecycle (no run in N days against the current task set), runs <code>cycle</code> for each, and posts a digest. Operator reviews the next morning.</li>
+<li><strong>Slug drift killed.</strong> All <code>model-shortcomings/*.json</code> files are migrated to vendor-prefixed slugs matching the production catalog. The <code>VENDOR_PREFIX_MAP</code> is deleted. The 6 currently-unmapped files become uploadable. Going forward, the verify command writes the production slug directly (no transformation needed at populate time).</li>
+<li><strong>Web admin lifecycle dashboard at <code>/admin/lifecycle</code>.</strong> Authenticated reviewer surface that mirrors <code>centralgauge status</code> in browser, with: pending-review queue (entries below confidence threshold), confidence histogram, accept/reject UI with full provenance pane, manual replay button (re-run analysis with a different model), event-log timeline view per model.</li>
+</ol>
+<p><strong>Architecture.</strong> Five new domains plus one schema migration. The plan does not touch the existing public site routes (leaderboard, /models, /matrix, /categories, /tasks); those stay backwards-compatible and gain new derived data once the lifecycle log is populated.</p>
+<ul>
+<li><strong>Schema</strong> — <code>lifecycle_events</code>, <code>concepts</code>, link columns on <code>shortcomings</code>, materialized state views via SQL (<code>v_lifecycle_state</code> per model+task_set).</li>
+<li><strong>Event-log domain</strong> — append-only writer, reduction-based state derivation, replay tooling, backfill script.</li>
+<li><strong>Orchestrator domain</strong> — <code>cycle</code> command, checkpoint resolver, step retry policy, concurrency gates.</li>
+<li><strong>Concept domain</strong> — clustering at analyzer time, registry CRUD, family + cross-model rollup queries.</li>
+<li><strong>Quality + review domain</strong> — confidence scoring, review queue, web admin UI.</li>
+<li><strong>CI domain</strong> — weekly cron, status digest, failure escalation.</li>
+</ul>
+<blockquote>
+<p><strong>Design rationale: event sourcing, not status columns.</strong> The instinct is to add <code>status</code> columns to <code>models</code> (last_benched_at, last_analyzed_at, last_published_at). It works for "show current state" but throws away history: nobody can answer "when did we last re-analyze opus-4-6 against task set hash H?" or "did the publish event on 2026-04-22 actually succeed, or did it 200-with-zero-occurrences silently?" An immutable event log answers both — current state is a reduction, history is a <code>SELECT * FROM lifecycle_events WHERE model_slug=...</code>. Event sourcing also makes the system auditable in ways status columns cannot: every transition has a provenance row (who/when/why/what tool versions). When a regression is observed in production data, the event log answers "what changed since the last good state."</p>
+<p><strong>Design rationale: D1 as the event store, not a separate tool.</strong> Cloudflare's offerings include Durable Objects (already used for SSE broadcast), KV (rate-limited), D1 (ACID, transactional, joinable). Event sourcing wants ACID writes joinable to the existing <code>models</code>/<code>runs</code>/<code>results</code>/<code>shortcomings</code> tables. D1 is the only option with all three. Trade: D1 has size limits (10 GB per database, ~1KB per row practical for query performance). Lifecycle events are sparse — ~10 per model per release × ~50 models × ~10 releases/yr = 5000 events/yr. Five years = 25K rows. Negligible.</p>
+<p><strong>Design rationale: concept registry replaces per-model concept slug duplication, with append-only invariants.</strong> Current schema has <code>shortcomings.concept TEXT NOT NULL</code> populated per-model — <code>reserved-keyword-as-parameter-name</code> appears as 4 separate rows across 4 models, with 4 slightly different descriptions, 4 different <code>correct_pattern</code> snippets, all describing the same AL pitfall. The cross-model story ("which models hit this concept?", "is this a generation issue or a vendor issue?") requires an OUTER JOIN on string equality of free-text concept names — fragile, lossy, untracked. A canonical <code>concepts</code> table normalizes the namespace: each AL pedagogical pitfall is one row; <code>shortcomings</code> references <code>concept_id</code>.</p>
+<p><strong>Clustering is irreversible without invariants.</strong> False merges (two distinct concepts collapsed into one) lose the original intent — <code>shortcomings.concept_id</code> rows pointing to the merged concept can no longer be split back without manual per-row reconciliation. False splits are recoverable but messy. To make the failure mode survivable:</p>
+<ol>
+<li><strong>Three-tier threshold, not two.</strong> Slug-equal OR cosine-similarity ≥ 0.85 → auto-merge (existing concept wins). Cosine 0.70–0.85 → mandatory review queue (operator decides per-pair). Cosine &lt; 0.70 → auto-create new concept. The 0.70–0.85 band catches the genuinely ambiguous cases that operator-review is for; the previous "Levenshtein &lt; 5 OR similarity &gt; 0.85" did not have a review band and would silently merge edge cases.</li>
+<li><strong>Never DELETE from concepts.</strong> A merge writes a <code>concept.merged</code> event + updates <code>shortcomings.concept_id</code> (in a transaction) + writes the alias row. The merged-out row keeps a <code>superseded_by INTEGER REFERENCES concepts(id)</code> pointer. Splits work in reverse — write <code>concept.split</code>, create new concept rows, point <code>shortcomings.concept_id</code> to the new ones, the original keeps <code>split_into_event_id</code>.</li>
+<li><strong>Every concept-write is an event.</strong> New event types: <code>concept.created</code>, <code>concept.merged</code>, <code>concept.split</code>, <code>concept.aliased</code>. Each carries the LLM-proposed slug, similarity score, reviewer (when applicable), and the resulting concept_id(s). Provenance for "why does flowfield-calc-required exist" answerable from the event log.</li>
+<li><strong>All concept mutations run inside a D1 transaction.</strong> D1 supports <code>BEGIN/COMMIT</code> via batched statements; the merge/split path uses <code>db.batch([UPDATE shortcomings ..., INSERT INTO concept_aliases ..., INSERT INTO lifecycle_events ..., UPDATE concepts SET superseded_by ...])</code>. A partial-merge state where shortcomings point at the new concept but the alias row is missing is impossible.</li>
+<li><strong>Cache invalidation on every concept write.</strong> <code>/api/v1/concepts/&lt;slug&gt;</code> is cached via Cache API (s-maxage=300). Every concept-mutating path (<code>concept.created/.merged/.split/.aliased</code>) calls <code>cache.delete()</code> on the affected slug + any aliases — Cache API has no purge-by-tag, must be explicit.</li>
+</ol>
+<p>Migration: at backfill (Phase D1), cluster existing <code>concept</code> strings (LLM-driven; cluster proposals in the 0.70–0.85 band route to <code>lifecycle cluster review</code> interactive CLI). Going forward: at analyze time, the LLM proposes a concept name + the system checks for existing match. Result: <code>/concepts/&lt;slug&gt;</code> page becomes possible — a public-facing pedagogical surface — and the registry is recoverable when (not if) clustering misjudges.</p>
+<p><strong>Design rationale: differential analysis is automatic AND constrained to matching analyzer models.</strong> The interesting question this benchmark exists to answer is <em>"does the next model generation actually fix the previous one's weaknesses?"</em> Today this is invisible — <code>/families/&lt;vendor&gt;/&lt;family&gt;</code> shows avg_score trajectory, no concept-level story. The lifecycle log makes the answer cheap: every <code>analysis.completed</code> event for model M (gen N) under task set hash H triggers a comparison query against the most recent <code>analysis.completed</code> event for the same family, prior generation (gen N-1), same H, <strong>and matching analyzer model</strong>.</p>
+<p><strong>The analyzer-match constraint is mandatory.</strong> A diff between gen N (analyzed by claude-opus-4-6) and gen N+1 (analyzed by gpt-5.5) reports phantom regressions — the new analyzer notices things the old one missed, and "regressed" becomes meaningless noise. Best version: only emit a structured <code>resolved/persisting/regressed/new</code> diff when <code>analyzer_model_a == analyzer_model_b</code>. When they differ (e.g., the operator switched analyzers between runs), the family page shows a "Cross-analyzer comparison — analyzer drift may produce phantom deltas. Re-analyze gen N with <code>&lt;current analyzer&gt;</code> to compare like-with-like." card with a one-click re-analysis button (calls <code>cycle --llms &lt;gen-N&gt; --from analyze --analyzer-model &lt;gen-N+1's analyzer&gt;</code>). Re-analysis requires the original debug bundle to be in R2 (per the R2 retention decision in Phase C); otherwise the button is disabled with "Original debug session not retained — diff unavailable."</p>
+<p>Output: per concept, <code>resolved | persisting | regressed | new</code> with explicit <code>analyzer_model</code> field on the response. Cached on the family page (Cache API, s-maxage=300, invalidated on <code>analysis.completed</code> event for either generation). Operator does not have to think about it — but the data refuses to mislead when the inputs aren't comparable.</p>
+<p><strong>Design rationale: quality gating is a human-in-the-loop checkpoint, not an LLM-only filter, with sampled cross-LLM agreement.</strong> A pure LLM-based confidence score will reject some valid analyses and accept some hallucinated ones — the analyzer-of-analyzers has the same failure modes as the analyzer. Best version uses LLM scoring as a <em>triage signal</em>, not the gate: high confidence (above threshold) auto-publishes, below routes to human review. The threshold is conservative enough that the queue size is manageable (~10-20 entries per release based on current 5-15% hallucination rate × ~150 entries/release). The review UI surfaces the raw debug output side-by-side with the LLM's rationale; operator decides in seconds. Decision is recorded as an event so that future analyses can learn the rejection patterns (e.g., "concept X is a hallucination concept; auto-reject").</p>
+<p><strong>Cross-LLM agreement check is sampled, not exhaustive.</strong> Re-running every analyzer entry through a second model doubles analyzer API spend (~150 entries/release × ~$0.05/entry × 2 models = ~$15/release pre-sampling; ~$30 with the second-LLM pass). Sampling 20% drops the second-LLM cost to ~$3/release while still catching systemic hallucination patterns. Selection: deterministic by entry hash modulo 5 (same entries get re-checked across runs for trend visibility). The remaining 80% gate on schema validity + concept-cluster consistency alone — both cheap, deterministic, no API calls. The sampling rate is a config knob in <code>.centralgauge.yml</code> (<code>lifecycle.cross_llm_sample_rate: 0.2</code>); operator can crank to 1.0 during high-stakes releases or down to 0.0 to disable.</p>
+<p><strong>Design rationale: reproducibility envelope is mandatory on every event.</strong> Every event records <code>{ deno, wrangler, claude_code, bc_compiler, git_sha, task_set_hash, settings_hash, machine_id }</code>. Two motivations: (1) when a regression is observed, the envelope answers "what changed?" — an LLM provider's silent server-side rollback, a local dev's local override, a CI runner upgrade, all become traceable; (2) replay tooling can reconstruct a past run's exact conditions when investigating divergence. Cost: ~100 bytes per event. Trivial relative to the value.</p>
+<p><strong>Replay requires R2-resident debug bundles, not operator-local <code>debug/</code> folders.</strong> The replay promise is hollow if last month's debug session was pruned from the operator's disk. Phase C's debug-capture step therefore tars the local <code>debug/&lt;session&gt;/</code> directory and uploads it to R2 at <code>lifecycle/debug/&lt;model_slug&gt;/&lt;session_id&gt;.tar.zst</code>; the resulting <code>r2_prefix</code> is recorded in the <code>debug.captured</code> event. Re-analysis (e.g., when Phase E surfaces an analyzer-mismatch and offers a re-analyze button) downloads from R2, extracts to a temp dir, and runs verify against it. Retention: indefinite (debug sessions are small — typical session ~5MB compressed; 50 models × 4 sessions/yr × 5MB = ~1GB/yr at R2 free tier 10GB). Local <code>debug/</code> folders remain operator-convenience artifacts; the R2 copy is canonical.</p>
+<p><strong>Design rationale: CLI status + web admin dashboard, not just CLI.</strong> Two surfaces because the human operator wears two hats. CLI is the operator's daily driver — fast, scriptable, embeddable in CI. Web is the reviewer's daily driver — needs the side-by-side diff view, accept/reject UI, syntax-highlighted code panes, concept-page navigation. Both read from the same event log; neither is canonical. The web dashboard is mounted at <code>/admin/lifecycle</code> behind admin auth (the same admin key used by <code>populate-shortcomings</code>); no public surface change.</p>
+<p><strong>Design rationale: orchestrator checkpointing semantics — last-success replay, idempotent steps, race-free locking.</strong> Each step in the cycle (bench, debug-capture, analyze, publish) records a <code>*.started</code> and <code>*.completed</code> (or <code>.failed</code>) event pair. On re-run, the orchestrator queries <code>lifecycle_events</code> for the most recent state of each step under the current envelope; skips steps that completed successfully and whose envelope has not changed; resumes from the first incomplete step. Forced re-run via <code>--force-rerun analyze</code> writes a fresh <code>analyze.started</code> event regardless.</p>
+<p><strong>Lock-token tiebreaker for D1 read-after-write race.</strong> D1 has eventually-consistent read replicas across regions; a <code>cycle.started</code> event written from region A may not be visible in region B for ~1s. A naive "is there an in_progress event?" check loses to that race. Mitigation: on cycle entry, the orchestrator generates <code>lock_token = crypto.randomUUID()</code>, writes <code>cycle.started{lock_token}</code>, then immediately reads back the most recent <code>cycle.started</code> for that (model_slug, task_set_hash) where no terminal pair exists. If the read-back's <code>lock_token != mine</code>, the orchestrator aborts with <code>cycle.aborted{reason='lost_race', winner_lock_token=...}</code> and exits 1. Only one writer wins; the other yields cleanly. Trade: an extra D1 read on every cycle entry (~10ms). Acceptable given cycle runs are 5–30 minutes.</p>
+<p><strong>TTL is 2× the observed upper bound, not a guess.</strong> Phase 0 establishes baseline: longest observed bench run is ~45 min (gpt-5.5 with thinking budget 50K against full task set). Lock TTL = 90 min for cycle, 60 min for individual steps. When TTL fires, the orchestrator emits <code>cycle.timed_out{prior_event_id, ttl_seconds, last_progress_event_type}</code> so audit history reflects the timeout (not silent retry).</p>
+<p><strong>Crashed-worker recovery via <code>--force-unlock</code>.</strong> When SIGKILL or worker eviction kills a cycle mid-run, the lock persists until TTL (90 min). Operator who needs to retry sooner runs <code>cycle --force-unlock &lt;model&gt;</code>; the command writes <code>cycle.aborted{reason='manual_unlock', actor_id, prior_event_id}</code> to release the lock. Warning printed: "This will abort an apparently-active cycle for <model>; confirm no other process is running."</p>
+<p>Cross-model concurrency: unbounded (different models do not share state). Same-model concurrency: gated by lock token + TTL.</p>
+<p><strong>Design rationale: slug migration is now-or-never.</strong> Every release adds another JSON file with whichever slug the bench operator happens to use that day. Today's <code>VENDOR_PREFIX_MAP</code> carries 4 hardcoded mappings; six recent files are unmapped. Migrating the existing 15 files once + standardizing the verify command's output going forward kills the drift class entirely. Doing it lazily later means migrating 30+ files instead of 15, and another year of <code>--only</code> failures.</p>
+<p><strong>Design rationale: backfill creates synthetic events for existing data, with <code>actor=migration</code>, with explicit edge-case handling.</strong> The <code>models</code>, <code>runs</code>, <code>results</code>, <code>shortcomings</code> tables are not empty. Without backfill, <code>centralgauge status</code> shows everything as <code>BENCHED only</code> until each model is re-benched — an operationally backward state. Backfill issues synthetic <code>bench.completed</code>, <code>analysis.completed</code>, <code>publish.completed</code> events for every existing <code>(model, task_set, run)</code> triple, dated to the actual <code>runs.started_at</code> / <code>shortcomings.first_seen</code> / <code>shortcoming_occurrences.first_seen_at</code> timestamps. Tool-version envelopes are unknown for backfilled events; field is <code>null</code> and <code>migration_note</code> documents why.</p>
+<p><strong>Edge-case decisions</strong> (resolved here, not deferred):</p>
+<ol>
+<li><strong>One <code>bench.completed</code> per <code>runs</code> row, not per (model, task_set) aggregate.</strong> Synthesizing one event per actual run preserves timestamp granularity and makes <code>currentState</code> reductions return the most-recent run's envelope. Aggregate-per-(model,task_set) would lose the multi-run history that the diff phase depends on. Per current state: ~45 <code>bench.completed</code> events from existing runs.</li>
+<li><strong>NULL <code>task_set_hash</code> on pre-P6 runs uses sentinel <code>'pre-p6-unknown'</code>.</strong> Some legacy runs predate P6's <code>task_sets</code> table being meaningful; their <code>task_set_hash</code> column is NULL. Synthetic events for these write <code>task_set_hash='pre-p6-unknown'</code> + <code>migration_note='task_set_hash unknown — pre-P6 era'</code>. Status command displays them in a separate "legacy" section so they don't pollute the current matrix; diff phase skips them (no comparable baseline).</li>
+<li><strong>CASCADE-deleted occurrences orphaning publish events.</strong> Some historical <code>shortcomings</code> rows exist whose <code>shortcoming_occurrences</code> were CASCADE-deleted when their <code>runs</code> row was purged. For these, <code>publish.completed</code> synthesizes from <code>shortcomings.last_seen</code> (not the missing occurrences row) with <code>migration_note='occurrences cascaded'</code> + <code>payload_json={occurrences_count: 0}</code>.</li>
+<li><strong>Multi-task-set models produce one event chain per (model, task_set) pair.</strong> A model with runs against 2 task sets produces 2 BENCHED states, not 1 merged state. Status command shows both rows.</li>
+</ol>
+<p>Re-counted Phase B5 acceptance: ~45 bench events (one per run) + ~12 analysis events (~6 models × up to 2 task sets each, where shortcomings exist) + ~7 publish events (matching the populated shortcomings rows) ≈ ~64 synthetic events total. Acceptance assertion (post-B6): for every (model_slug, task_set_hash) with <code>shortcomings</code> rows, <code>lifecycle_events</code> contains at least one <code>analysis.completed</code> for that pair; same for <code>shortcoming_occurrences</code> ↔ <code>publish.completed</code>. If the assertion fails, abort and investigate before proceeding to Phase D.</p>
+<p><strong>Design rationale: the analyzer LLM choice is configurable, default = claude-opus-4-6.</strong> Today <code>verify --model claude-opus-4-6</code> hardcodes the analyzer. Best version parameterizes it (<code>cycle --analyzer-model X</code>) so the operator can experiment with cheaper analyzers (gpt-5.5-mini for cost, gemini-3.1-pro for diversity) and the cross-LLM agreement check naturally uses a different model from the primary. Captured in the <code>analysis.completed</code> event payload; downstream queries can filter ("show only entries analyzed by claude-opus-4-6").</p>
+<p><strong>Design rationale: web admin auth via Cloudflare Access (GitHub OAuth), NOT browser-resident keys.</strong> First instinct was to reuse the existing Ed25519 admin key by having the operator paste it into a session-only browser field. That is broken: the moment a private signing key sits in JS memory it is exposed to every dependency in the SvelteKit bundle, every analytics shim, every browser extension with page-script access. The CLI is materially safer because the key sits on disk at <code>admin_key_path</code> referenced by <code>.centralgauge.yml</code> and is loaded only by signing code paths.</p>
+<p>Best version: <strong>Cloudflare Access in front of <code>/admin/lifecycle/*</code></strong> with GitHub OAuth as the identity provider. Free for &lt;50 seats; ~30-min one-time setup; no new key material in the browser. The worker validates the <code>CF-Access-Jwt-Assertion</code> header on every admin request via Cloudflare's published JWKs and rejects unauthenticated traffic at the edge. The CLI keeps using the admin signing key for <code>/api/v1/admin/lifecycle/events</code> (CLI traffic does not pass through CF Access — the worker accepts EITHER a valid CF Access JWT OR a valid Ed25519 admin signature on admin endpoints). Two identities, separate revocation paths — if a browser session is compromised, revoke at CF Access without rotating the CLI key.</p>
+<p>Setup runbook lives in <code>docs/site/operations.md</code> (Phase J3). Configuration: <code>cloudflare.com/access</code> → Application: <code>admin.centralgauge.sshadows.workers.dev/lifecycle/*</code> → Policy: GitHub email allowlist of operator(s). Worker reads <code>env.CF_ACCESS_AUD</code> (audience tag) + verifies against <code>https://&lt;team&gt;.cloudflareaccess.com/cdn-cgi/access/certs</code>.</p>
+</blockquote>
+<p><strong>Tech Stack:</strong> Same as P7. Adds: zod (analyzer output schema validation; already in repo via SvelteKit but newly invoked at the verify CLI side), <code>fzstd</code> (already deferred from P7 for incorrect_pattern decompression — now needed for review UI), no new runtime deps in the worker. One D1 migration (<code>0006_lifecycle.sql</code>) adds tables. CI gains one workflow (<code>weekly-cycle.yml</code>).</p>
+<p><strong>Spec:</strong> This plan is its own spec. No prior P-series spec covers it.</p>
+<p><strong>Phase letters are identifiers, not run order.</strong> The execution sequence is:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>A (foundation) → B (backfill + slug migration) → D-prompt (analyzer prompt + endpoint changes only) →
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>C (orchestrator) → D-data (clustering + concept registry backfill) → E (differential) →
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>F (quality + review UI) → H (status CLI) → G (CI workflow) → J (docs + acceptance)
+</code></pre></div>
+<p>D is split because Phase C's <code>cycle analyze</code> step writes records that include <code>concept_slug_proposed</code>. Without D-prompt's analyzer prompt + endpoint changes landed first, C would write data in the old per-model <code>concept TEXT</code> shape that immediately needs migration. D-data (the clustering + backfill of historical <code>shortcomings</code> rows into the canonical registry) can ship after C — at that point the registry has fresh entries from C's analyses, and the backfill clusters them against the historical legacy. F runs in parallel with E once D-data is done; H + G are parallelizable after F.</p>
+<p><strong>D-prompt = Tasks D2 + D3 + D4</strong> (analyzer prompt schema, batch endpoint accepting <code>concept_slug_proposed</code>, cache invalidation hooks). <strong>D-data = Tasks D1 + D5 + D6 + D7</strong> (legacy backfill clustering, JOIN updates, tests, review CLI). The D commit lands as a single unit at the original Phase D commit point — D-prompt tasks ship behind a feature-flag-equivalent (the analyzer can write the new fields before any consumer reads them).</p>
+<p><strong>Out of scope (deferred to follow-up plans):</strong></p>
+<ul>
+<li>Reproduction-bundle download UX (re-run a past analysis locally from the event log + R2 artifacts) — interesting but enormous; track separately.</li>
+<li>Multi-task-set comparison ("how does opus-4-7 do under task set H1 vs H2?") — needs storage of historical task sets, deferred.</li>
+<li>Concept-page public surface (<code>/concepts/&lt;slug&gt;</code>) — the schema work in Phase D enables it; the route + UI work is its own follow-up plan.</li>
+<li>Custom-domain flip (P6 Phase G — still held by user gate).</li>
+<li>Cross-task contamination analysis ("which tasks correlate in success across models?") — needs more runs to surface signal; defer until 100+ runs accumulate.</li>
+<li>Replacing the analyzer LLM with a non-LLM heuristic engine — out of scope; the LLM-based analyzer is the canonical choice for this plan.</li>
+</ul>
+<hr />
+<h2 id="phase-0-pre-flight-operational-state-at-plan-write-time-2026-04-29">Phase 0 — Pre-flight (operational state at plan-write time, 2026-04-29)<a class="headerlink" href="#phase-0-pre-flight-operational-state-at-plan-write-time-2026-04-29" title="Permanent link">&para;</a></h2>
+<p>Before any task begins, plan executors must understand the production state these phases consume. This is fixed information at plan-author time; it is NOT something to re-investigate.</p>
+<p><strong>Production D1 state (verified via <code>wrangler d1 execute centralgauge --remote</code>):</strong></p>
+<ul>
+<li><code>models</code> — 6 rows (anthropic/claude-opus-4-6, openai/gpt-5.5, openai/gpt-5.3-codex, openrouter/deepseek/deepseek-v4-pro, anthropic/claude-opus-4-7, anthropic/claude-sonnet-4-6).</li>
+<li><code>model_families</code> — 4 rows (anthropic/claude-opus, anthropic/claude-sonnet, openai/gpt-5, openrouter/deepseek).</li>
+<li><code>runs</code> — ~45 rows across the 6 models, 2 task sets (current + 1 historical).</li>
+<li><code>results</code> — ~5400 rows.</li>
+<li><code>shortcomings</code> — 7 rows for <code>anthropic/claude-opus-4-6</code> (newly populated 2026-04-29 via <code>populate-shortcomings</code>); 0 rows for all other models.</li>
+<li><code>shortcoming_occurrences</code> — 0 rows globally (the 7 opus-4-6 shortcomings uploaded with empty occurrences arrays; CC-2 from P7 still applies).</li>
+<li><code>task_sets</code> — 2 rows; one with <code>is_current=1</code>.</li>
+<li><code>task_categories</code> — 6 rows (Tables, Pages, Codeunits, Reports, Permissions, Queries).</li>
+<li><code>cost_snapshots</code> — ~30 rows; <code>pricing_version</code> = <code>2026-04-29</code>.</li>
+</ul>
+<p><strong>Local files:</strong></p>
+<ul>
+<li><code>model-shortcomings/*.json</code> — 15 files (verified via <code>ls</code>). 2 have JSONs matching the <code>VENDOR_PREFIX_MAP</code> in <code>populate-shortcomings-command.ts:82</code>: <code>claude-opus-4-6</code>, <code>gpt-5.3-codex</code>. 6 are unmapped legacy snapshots that need fresh slug decisions: <code>claude-opus-4-5-20251101</code>, <code>claude-sonnet-4-5-20250929</code>, <code>claude-sonnet-4-6</code>, <code>gemini-3-pro-preview</code>, <code>gemini-3.1-pro-preview</code>, <code>gpt-5.2-2025-12-11</code>. 7 are vendor-prefixed via underscore separator and get <code>openrouter/</code> prepended at populate time today: <code>deepseek_deepseek-v3.2</code>, <code>minimax_minimax-m2.5</code>, <code>moonshotai_kimi-k2.5</code>, <code>qwen_qwen3-coder-next</code>, <code>qwen_qwen3-max-thinking</code>, <code>x-ai_grok-code-fast-1</code>, <code>z-ai_glm-5</code>. Total: 2 + 6 + 7 = 15. (Note: <code>VENDOR_PREFIX_MAP</code> lists 4 mappings — <code>claude-opus-4-7</code> and <code>gpt-5.5</code> are mappings that have no corresponding JSON file yet.) Phase B2 enumerates the authoritative migration list.</li>
+<li><code>debug/</code> — typically a half-dozen recent sessions per active development cycle. Auto-pruned by some operators; we cannot rely on every historical session being present.</li>
+<li><code>.centralgauge.yml</code> — operator config; <code>admin_key_path</code> + <code>admin_key_id</code> configured (verified working 2026-04-29).</li>
+<li><code>site/wrangler.toml</code> — declares <code>account_id</code> (newly read by <code>populate-shortcomings</code> per the 2026-04-29 fix; the same code path is reused by lifecycle commands).</li>
+</ul>
+<p><strong>Tool-version baseline (operator's machine, 2026-04-29):</strong> deno 1.46.3, wrangler 3.114.x, claude-code 0.4.x, BC AL compiler ALC 27.0. These are the envelope values the migration backfill will use as <code>null</code> (unknown for past events) but every new event records explicitly.</p>
+<p><strong>Phase 0 outputs (for executor reference):</strong></p>
+<ul>
+<li>6 currently-mapped slugs: anthropic/claude-opus-4-6, anthropic/claude-opus-4-7, openai/gpt-5.5, openai/gpt-5.3-codex (in catalog), openrouter/deepseek/deepseek-v4-pro, anthropic/claude-sonnet-4-6.</li>
+<li>9 JSON files needing slug migration: enumerated in Phase B Task B2.</li>
+<li>Catalog drift: 0 (all current models have catalog rows). No <code>sync-catalog</code> action needed pre-plan.</li>
+</ul>
+<hr />
+<h2 id="phase-a-schema-event-log-foundation">Phase A — Schema + event log foundation<a class="headerlink" href="#phase-a-schema-event-log-foundation" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Land the immutable append-only event log + supporting tables; provide the writer + reader primitives every later phase consumes. No behavior change visible to operators yet.</p>
+<ul>
+<li>[ ] <strong>A1</strong> — Write D1 migration <code>site/migrations/0006_lifecycle.sql</code>. Tables: <code>lifecycle_events</code>, <code>concepts</code>, <code>concept_aliases</code>, <code>pending_review</code>. Columns on <code>shortcomings</code>: <code>concept_id INTEGER REFERENCES concepts(id)</code>, <code>analysis_event_id INTEGER REFERENCES lifecycle_events(id)</code>, <code>confidence REAL</code>, <code>published_event_id INTEGER</code>. Indexes on <code>lifecycle_events(model_slug, task_set_hash, event_type, ts DESC)</code> and <code>concepts(slug)</code>. <strong>All four tables ship in <code>0006_lifecycle.sql</code></strong> — putting <code>pending_review</code> in a separate migration would require Phase F to ship a fresh migration after Phase A is in production, and the schema is small enough to land together. Detailed schema in <strong>Schema appendix</strong> at end of plan.</li>
+<li>[ ] <strong>A2</strong> — Apply migration to production D1 via <code>wrangler d1 execute centralgauge --remote --file=site/migrations/0006_lifecycle.sql</code>. Verify with read-only query.</li>
+<li>[ ] <strong>A3</strong> — Implement <code>src/lifecycle/event-log.ts</code> with <code>appendEvent(event)</code>, <code>queryEvents(filter)</code>, <code>currentState(modelSlug, taskSetHash)</code> (reduction). All TS-side; calls <code>/api/v1/admin/lifecycle/*</code> endpoints when run from CLI; calls D1 directly when run from the worker.</li>
+<li>[ ] <strong>A3.5</strong> — Define SQL view <code>v_lifecycle_state</code> in <code>0006_lifecycle.sql</code>. View shape: <code>(model_slug, task_set_hash, step, last_ts, last_event_id, last_event_type, last_payload_hash, last_envelope_json)</code> where <code>step ∈ {bench, debug, analyze, publish, cycle}</code>. Implementation: per-step <code>SELECT model_slug, task_set_hash, MAX(ts) AS last_ts, ...</code> GROUP BY (model_slug, task_set_hash) UNIONed across step prefixes. Backed by the existing <code>idx_lifecycle_events_lookup</code> index — D1 has no materialized views, but a view + index seek is performant at this scale. Every consumer (CLI status, web admin status, cycle resume) reads from the view, NOT from a TS-side reduction — eliminates drift across consumers.</li>
+<li>[ ] <strong>A4</strong> — Implement worker endpoints: <code>POST /api/v1/admin/lifecycle/events</code> (signed; verifier scope), <code>GET /api/v1/admin/lifecycle/events?model=&amp;task_set=&amp;since=</code>, <code>GET /api/v1/admin/lifecycle/state?model=&amp;task_set=</code>. Tests in <code>site/tests/api/lifecycle.test.ts</code>.</li>
+<li>[ ] <strong>A5</strong> — Reproducibility envelope helper: <code>src/lifecycle/envelope.ts</code> collects deno/wrangler/claude-code/BC versions, git_sha, machine_id, task_set_hash, settings_hash. Called once per command invocation; passed to <code>appendEvent</code>.</li>
+<li>[ ] <strong>A6</strong> — Unit + integration tests: event append idempotency (same payload_hash + timestamp → second insert is rejected), envelope collection, reduction correctness for a synthetic 5-event sequence, <code>v_lifecycle_state</code> returns expected rows after each event sequence.</li>
+<li>[ ] <strong>A7</strong> — Throughput acceptance test: write 100 events in a tight loop against a staging D1 (synthetic model+task_set pairs); confirm no rate-limit or quota errors. Validates the weekly-CI burst pattern from Phase G.</li>
+<li>[ ] <strong>A-COMMIT</strong> — One commit when A1...A7 are green: <code>feat(site,cli): lifecycle event log foundation (schema + writer + reader + envelope + view)</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> <code>centralgauge lifecycle event-log --model anthropic/claude-opus-4-6</code> (debug command added in A3) returns the empty list. Migration applies cleanly to fresh + existing D1. New event written via <code>appendEvent</code> is queryable within 100ms.</p>
+</blockquote>
+<hr />
+<h2 id="phase-b-backfill-slug-migration">Phase B — Backfill + slug migration<a class="headerlink" href="#phase-b-backfill-slug-migration" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Populate the event log with synthetic events for every existing bench/analysis/publish action; migrate the 15 <code>model-shortcomings/*.json</code> files to vendor-prefixed slugs; delete <code>VENDOR_PREFIX_MAP</code>.</p>
+<ul>
+<li>[ ] <strong>B1</strong> — Backfill script <code>scripts/backfill-lifecycle.ts</code> walks <code>runs</code> (synthesizes <code>bench.completed</code> per <code>(model_id, task_set_hash, started_at)</code>), walks <code>shortcomings</code> rows (synthesizes <code>analysis.completed</code> per <code>(model_slug, task_set_hash, first_seen)</code>), walks <code>shortcoming_occurrences</code> rows (synthesizes <code>publish.completed</code> per analysis). All synthetic events: <code>actor='migration'</code>, <code>tool_versions_json=null</code>, <code>migration_note='backfilled at &lt;ts&gt;'</code>.</li>
+<li>[ ] <strong>B2</strong> — Slug migration script <code>scripts/migrate-shortcomings-slugs.ts</code> rewrites the 15 JSON files in-place, replacing the <code>model</code> field with the production slug. <strong>Mapped JSONs (2 files):</strong></li>
+<li><code>claude-opus-4-6.json</code> <code>model</code> → <code>anthropic/claude-opus-4-6</code>; rename file → <code>anthropic_claude-opus-4-6.json</code></li>
+<li><code>gpt-5.3-codex.json</code> <code>model</code> → <code>openai/gpt-5.3-codex</code>; rename file → <code>openai_gpt-5.3-codex.json</code></li>
+<li><strong>Unmapped legacy snapshots (6 files; collapse date suffix where present):</strong></li>
+<li><code>claude-opus-4-5-20251101.json</code> <code>model</code> → <code>anthropic/claude-opus-4-5</code>; rename → <code>anthropic_claude-opus-4-5.json</code></li>
+<li><code>claude-sonnet-4-6.json</code> <code>model</code> → <code>anthropic/claude-sonnet-4-6</code>; rename → <code>anthropic_claude-sonnet-4-6.json</code></li>
+<li><code>claude-sonnet-4-5-20250929.json</code> <code>model</code> → <code>anthropic/claude-sonnet-4-5</code>; rename → <code>anthropic_claude-sonnet-4-5.json</code></li>
+<li><code>gpt-5.2-2025-12-11.json</code> <code>model</code> → <code>openai/gpt-5.2</code>; rename → <code>openai_gpt-5.2.json</code></li>
+<li><code>gemini-3-pro-preview.json</code> <code>model</code> → <code>google/gemini-3-pro-preview</code>; rename → <code>google_gemini-3-pro-preview.json</code></li>
+<li><code>gemini-3.1-pro-preview.json</code> <code>model</code> → <code>google/gemini-3.1-pro-preview</code>; rename → <code>google_gemini-3.1-pro-preview.json</code></li>
+<li><strong>Vendor-prefixed via underscore (7 files; convert <code>_</code> → <code>/</code> and prepend <code>openrouter/</code>):</strong></li>
+<li><code>deepseek_deepseek-v3.2.json</code> <code>model</code> → <code>openrouter/deepseek/deepseek-v3.2</code>; rename → <code>openrouter_deepseek_deepseek-v3.2.json</code></li>
+<li><code>minimax_minimax-m2.5.json</code> <code>model</code> → <code>openrouter/minimax/minimax-m2.5</code>; rename → <code>openrouter_minimax_minimax-m2.5.json</code></li>
+<li><code>moonshotai_kimi-k2.5.json</code> <code>model</code> → <code>openrouter/moonshotai/kimi-k2.5</code>; rename → <code>openrouter_moonshotai_kimi-k2.5.json</code></li>
+<li><code>qwen_qwen3-max-thinking.json</code> <code>model</code> → <code>openrouter/qwen/qwen3-max-thinking</code>; rename → <code>openrouter_qwen_qwen3-max-thinking.json</code></li>
+<li><code>qwen_qwen3-coder-next.json</code> <code>model</code> → <code>openrouter/qwen/qwen3-coder-next</code>; rename → <code>openrouter_qwen_qwen3-coder-next.json</code></li>
+<li><code>x-ai_grok-code-fast-1.json</code> <code>model</code> → <code>openrouter/x-ai/grok-code-fast-1</code>; rename → <code>openrouter_x-ai_grok-code-fast-1.json</code></li>
+<li><code>z-ai_glm-5.json</code> <code>model</code> → <code>openrouter/z-ai/glm-5</code>; rename → <code>openrouter_z-ai_glm-5.json</code></li>
+<li><strong>Total: 2 + 6 + 7 = 15 files migrated.</strong> File-name convention: replace <code>/</code> in the slug with <code>_</code> for the filesystem-safe filename. Glob discovery in <code>populate-shortcomings</code> reads the <code>model</code> field, not the filename, so file names are operator-readability only.</li>
+<li>[ ] <strong>B3</strong> — Update <code>verify</code> command to write the production slug directly (no transformation at populate time). Slug derived from the bench config's <code>models</code> entry, which already carries the prod slug. <code>cli/commands/verify-command.ts:140</code> model option default value becomes the slug; the JSON file path follows.</li>
+<li>[ ] <strong>B4</strong> — Delete <code>VENDOR_PREFIX_MAP</code> and the slug transformation in <code>cli/commands/populate-shortcomings-command.ts:78-98</code>. The function becomes pass-through (the JSON <code>model</code> field is the prod slug). Update tests.</li>
+<li>[ ] <strong>B5</strong> — Run B1 + B2 end-to-end against staging copy of prod D1. Verify event count matches the backfill rationale: ~45 bench (one per <code>runs</code> row) + ~12 analysis (per (model,task_set) where shortcomings exist) + ~7 publish (matching populated shortcomings) ≈ ~64 synthetic events. Run the post-backfill invariant assertion: every (model_slug, task_set_hash) with <code>shortcomings</code> rows has ≥1 <code>analysis.completed</code> event for that pair; every (model_slug, task_set_hash) with <code>shortcoming_occurrences</code> has ≥1 <code>publish.completed</code> event. Compare states pre/post — no <code>models</code>/<code>runs</code>/<code>results</code>/<code>shortcomings</code> content changed; only <code>lifecycle_events</code> populated + JSON <code>model</code> fields renamed. Pre-P6 runs (NULL <code>task_set_hash</code>) emit events under sentinel <code>'pre-p6-unknown'</code>; verify they appear in a separate matrix section in <code>status --legacy</code>.</li>
+<li>[ ] <strong>B6</strong> — Run B1 + B2 against production. Backup first via <code>wrangler d1 backup create centralgauge</code>. Re-run the invariant assertion against production. Roll back via the backup if any assertion fails.</li>
+<li>[ ] <strong>B-COMMIT</strong> — One commit when B1...B6 are green: <code>feat(cli,site): backfill lifecycle log + migrate shortcomings slugs (kill VENDOR_PREFIX_MAP)</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> <code>centralgauge lifecycle status</code> (added in Phase H) shows all 6 prod models with at least <code>BENCHED</code> state; the 7 opus-4-6 shortcomings show <code>PUBLISHED</code>. All 15 JSON files have vendor-prefixed slugs. <code>populate-shortcomings --only openrouter/deepseek/deepseek-v3.2</code> (previously skipped) succeeds.</p>
+</blockquote>
+<hr />
+<h2 id="phase-c-orchestrator-cycle-command">Phase C — Orchestrator (<code>cycle</code> command)<a class="headerlink" href="#phase-c-orchestrator-cycle-command" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> One command that runs bench → debug → analyze → publish, checkpointed against the event log, resumable on failure.</p>
+<p><strong>Dependency:</strong> D-prompt tasks (D2 + D3 + D4) must land before C's analyze step is implemented. C's <code>cycle analyze</code> calls the verify command's analyzer + posts to <code>/api/v1/shortcomings/batch</code>; both consume the new <code>concept_slug_proposed</code> field. D-data (D1 + D5 + D6 + D7) ships after C with the historical-row clustering. See "Phase letters are identifiers, not run order" near the top of this plan for the full execution sequence.</p>
+<ul>
+<li>[ ] <strong>C1</strong> — <code>centralgauge cycle --llms &lt;slug&gt;</code> skeleton (Cliffy command). Flags: <code>--task-set &lt;hash|current&gt;</code>, <code>--from &lt;step&gt;</code>, <code>--to &lt;step&gt;</code>, <code>--force-rerun &lt;step&gt;</code>, <code>--analyzer-model &lt;slug&gt;</code>, <code>--dry-run</code>. Default: full pipeline against current task set.</li>
+<li>[ ] <strong>C2</strong> — Step <code>bench</code>: thin wrapper around existing <code>bench</code> command. Writes <code>bench.started</code> before invocation, <code>bench.completed</code> (with <code>runs_count</code>, <code>tasks_count</code>) after, <code>bench.failed</code> (with error context) on non-zero exit. Already-ingested results detected via env-hash + task-set-hash; skip with <code>bench.skipped</code> event.</li>
+<li>[ ] <strong>C3</strong> — Step <code>debug-capture</code>: identifies the most recent <code>debug/&lt;session&gt;/</code> directory and validates it contains failure traces for the model. Tars the directory (<code>tar -cf - &lt;session&gt; | zstd -19</code>), uploads to R2 at key <code>lifecycle/debug/&lt;model_slug&gt;/&lt;session_id&gt;.tar.zst</code> via the existing R2 client (<code>src/ingest/r2.ts</code>). Records <code>debug.captured</code> (with session_id, local_path, file_count, total_size_bytes, r2_prefix, r2_key, compressed_size_bytes). <code>--debug</code> flag was always required for analyze; cycle enforces it on <code>bench</code> invocation. Retention is indefinite; ~1GB/yr at observed sizes is well under R2 free tier.</li>
+<li>[ ] <strong>C4</strong> — Step <code>analyze</code>: invokes <code>verify --shortcomings-only --model &lt;slug&gt; --analyzer-model &lt;X&gt;</code> (per the parameterization added in B3 + new <code>--analyzer-model</code> flag). Captures the JSON output, schema-validates it (zod), records <code>analysis.completed</code> with <code>confidence</code> (per-entry; aggregated as min) + <code>payload_hash</code> (sha256 of normalized JSON). Below-threshold entries written to a new <code>pending_review</code> table (defined in Phase F).</li>
+<li>[ ] <strong>C5</strong> — Step <code>publish</code>: signed POST to <code>/api/v1/shortcomings/batch</code> (existing). Records <code>publish.started</code> + <code>publish.completed</code> (with <code>upserted</code>, <code>occurrences</code> from response) or <code>publish.failed</code>. Idempotency: if <code>payload_hash</code> matches the most recent <code>analysis.completed</code> and there is a <code>publish.completed</code> event for it, skip with <code>publish.skipped</code>.</li>
+<li>[ ] <strong>C6</strong> — Resume logic in <code>src/lifecycle/orchestrator.ts</code>: at command start, query <code>currentState(modelSlug, taskSetHash)</code>. For each step, if the most recent terminal event is <code>*.completed</code> and envelope matches, skip; if <code>*.failed</code> or <code>*.started</code> (no terminal pair within 30 min), retry; if missing, run.</li>
+<li>[ ] <strong>C7</strong> — Concurrency gate with lock-token tiebreaker. On cycle entry: generate <code>lock_token = crypto.randomUUID()</code>, write <code>cycle.started{lock_token, ttl_seconds: 5400}</code>, then read back the most recent <code>cycle.started</code> for (model, task_set) where no terminal pair exists; if <code>lock_token != mine</code>, write <code>cycle.aborted{reason='lost_race', winner_lock_token}</code> and exit 1. TTL = 90 min for cycle, 60 min per step; on expiry the orchestrator emits <code>cycle.timed_out{prior_event_id, ttl_seconds, last_progress_event_type}</code>. Add <code>--force-unlock &lt;model&gt;</code> flag that writes <code>cycle.aborted{reason='manual_unlock', actor_id}</code> to release a stuck lock; prints a warning + requires <code>--yes</code> to skip confirmation.</li>
+<li>[ ] <strong>C8</strong> — Tests: orchestrator step skip-on-success, resume-on-failure, force-rerun, lock-token race (two parallel <code>cycle</code> invocations against the same (model, task_set) — exactly one must win), TTL expiry emits <code>cycle.timed_out</code>, <code>--force-unlock</code> writes <code>cycle.aborted</code>, dry-run prints plan without writes.</li>
+<li>[ ] <strong>C-COMMIT</strong> — One commit: <code>feat(cli): centralgauge cycle — orchestrated bench → analyze → publish with checkpointing</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> <code>centralgauge cycle --llms anthropic/claude-opus-4-7 --dry-run</code> prints the plan ("would run: bench, debug-capture, analyze, publish") without writes. Without <code>--dry-run</code>, runs end-to-end. Killed mid-run + restarted resumes from last successful step.</p>
+</blockquote>
+<hr />
+<h2 id="phase-d-concept-registry-clustering">Phase D — Concept registry + clustering<a class="headerlink" href="#phase-d-concept-registry-clustering" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Replace per-model concept slug duplication with a canonical registry; cluster existing entries; surface cross-model concept queries.</p>
+<ul>
+<li>[ ] <strong>D1</strong> — Backfill <code>concepts</code> table from existing <code>shortcomings.concept</code> strings. Three-tier cluster algorithm: slug-equal OR cosine-similarity ≥ 0.85 → auto-merge (existing wins; emit <code>concept.aliased</code> event); 0.70–0.85 → mandatory review queue (emit <code>concept.created</code> only after operator accepts via <code>lifecycle cluster review</code> interactive CLI); &lt; 0.70 → auto-create (emit <code>concept.created</code>). The 7 current opus-4-6 shortcomings produce 7 concepts; the 14 incoming from B2-migrated JSONs cluster against those 7 + create new as needed. All cluster operations run in a D1 batch transaction to preserve the per-merge invariant (shortcomings update + alias insert + event insert atomic).</li>
+<li>[ ] <strong>D2</strong> — Update <code>verify</code> command's analyzer prompt to propose a concept name AND check existing concepts for match (system prompt receives current <code>concepts</code> list — top-N most-recently-seen, not all, to keep the prompt bounded). Analyzer output schema: <code>{ concept_slug_proposed, concept_slug_existing_match | null, similarity_score, ... }</code>. Existing-match writes <code>concept.aliased</code>; no-match in 0.70–0.85 band routes to review queue; below 0.70 emits <code>concept.created</code>.</li>
+<li>[ ] <strong>D3</strong> — Update <code>/api/v1/shortcomings/batch</code> endpoint to require <code>concept_id</code> (or <code>concept_slug_proposed</code> + match-check; endpoint resolves to <code>concept_id</code> server-side). Existing per-model <code>concept</code> field deprecated (still accepted for back-compat during transition; deprecation warning logged).</li>
+<li>[ ] <strong>D4</strong> — <code>/api/v1/concepts</code> endpoint (list) + <code>/api/v1/concepts/&lt;slug&gt;</code> endpoint (per-concept detail with model rollup). Cached via Cache API per-slug (s-maxage=300). <strong>Cache invalidation</strong>: <code>src/lib/server/concept-cache.ts</code> exports <code>invalidateConcept(slug, aliases?: string[])</code> that calls <code>cache.delete()</code> on the concept slug + every alias. Called from every concept-write path: <code>concept.created</code>, <code>concept.merged</code> (both winner and loser), <code>concept.split</code> (original + new children), <code>concept.aliased</code>. Without explicit invalidation, the cache serves 5-min stale data after every cluster operation.</li>
+<li>[ ] <strong>D5</strong> — Update <code>/api/v1/models/&lt;slug&gt;/limitations</code> to JOIN through <code>concept_id</code> instead of returning per-model <code>concept</code> strings; output stays back-compat. Filter <code>WHERE c.superseded_by IS NULL</code> so superseded concepts don't surface (their successors do, via the JOIN).</li>
+<li>[ ] <strong>D6</strong> — Tests: clustering correctness (synthetic 4-concept fixture exercises auto-merge / review-band / auto-create paths), concept dedup (re-running analyze on same model+task set produces same concept_ids; merged concepts reachable via aliases), concept-write transaction atomicity (kill mid-batch confirms shortcomings + aliases + events all rollback), cache invalidation after each concept-mutating event.</li>
+<li>[ ] <strong>D7</strong> — Implement <code>lifecycle cluster review</code> interactive CLI (Cliffy command). Lists pending review-queue clusters; per pair shows the proposed slug + existing slug + similarity + sample shortcoming descriptions; operator presses M (merge), C (create), S (split-existing), or skip. Records decision as the corresponding <code>concept.*</code> event with <code>actor_id</code> from operator's git config or <code>--actor</code> flag.</li>
+<li>[ ] <strong>D-COMMIT</strong> — One commit: <code>feat(site,cli): canonical concept registry + clustering at analyze time + review CLI</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> <code>SELECT COUNT(DISTINCT concept_id) FROM shortcomings</code> matches the count in <code>concepts</code> table. Re-running <code>cycle --llms anthropic/claude-opus-4-6</code> does not create duplicate concept rows. <code>/api/v1/concepts/flowfield-calcfields-requirement</code> lists every model that hit it.</p>
+</blockquote>
+<hr />
+<h2 id="phase-e-differential-analysis-resolved-persisting-regressed-new">Phase E — Differential analysis (resolved / persisting / regressed / new)<a class="headerlink" href="#phase-e-differential-analysis-resolved-persisting-regressed-new" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Auto-compute the per-concept diff between adjacent generations of a family; surface on family pages.</p>
+<ul>
+<li>[ ] <strong>E1</strong> — Diff query: <code>src/lifecycle/diff.ts</code> exposes <code>computeGenerationDiff(family_slug, gen_a, gen_b, task_set_hash)</code> returning <code>{ status: 'comparable' | 'analyzer_mismatch' | 'baseline_missing', analyzer_model_a, analyzer_model_b, resolved?: Concept[], persisting?: Concept[], regressed?: Concept[], new?: Concept[] }</code>. When <code>analyzer_model_a !== analyzer_model_b</code>, status = <code>'analyzer_mismatch'</code> and the four buckets are omitted (empty diff would falsely suggest equivalence). Resolved = present in gen_a, absent in gen_b. Persisting = present in both. Regressed = absent in gen_a, present in gen_b. New = present in gen_b, no gen_a baseline (e.g., new task category).</li>
+<li>[ ] <strong>E2</strong> — Trigger: every <code>analysis.completed</code> event for model M (gen N) emits a follow-up async job (worker <code>ctx.waitUntil</code>) that finds the prior gen for the family + computes the diff + caches as a <code>family_diffs</code> row. Materialized for fast read; recomputed on every <code>analysis.completed</code>. Cache API entry invalidated via <code>cache.delete()</code> on the same trigger so the family page does not serve stale 5-min entries after a fresh analysis.</li>
+<li>[ ] <strong>E3</strong> — <code>/api/v1/families/&lt;slug&gt;/diff?from=&lt;gen&gt;&amp;to=&lt;gen&gt;</code> endpoint returning the cached diff with <code>status</code> field. Default from=N-1, to=N (latest two).</li>
+<li>[ ] <strong>E4</strong> — <code>/families/&lt;vendor&gt;/&lt;family&gt;</code> page section: "Concept trajectory" — when status is <code>comparable</code>, renders the 4 buckets (resolved/persisting/regressed/new) as bullet lists with concept names + descriptions + delta badges. When status is <code>analyzer_mismatch</code>, renders a warning card with a one-click "Re-analyze gen N with <current analyzer>" button (only enabled if the original gen-N debug bundle is in R2 — checked via <code>head</code> request on the <code>r2_prefix</code> recorded in <code>debug.captured</code> event). When status is <code>baseline_missing</code> (no prior gen analysis), renders empty-state.</li>
+<li>[ ] <strong>E5</strong> — Tests: synthetic 2-gen fixture, diff buckets correct; 3-gen fixture, transitive resolution detected.</li>
+<li>[ ] <strong>E-COMMIT</strong> — One commit: <code>feat(site): per-generation concept diff on family pages (resolved/persisting/regressed/new)</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> When opus-4-7 has shortcomings populated, <code>/families/anthropic/claude-opus</code> shows "Concept trajectory: 4-7 vs 4-6 — resolved 2, persisting 5, regressed 0, new 1." Each bucket is clickable (links to <code>/concepts/&lt;slug&gt;</code>).</p>
+</blockquote>
+<hr />
+<h2 id="phase-f-quality-gating-review-ui">Phase F — Quality gating + review UI<a class="headerlink" href="#phase-f-quality-gating-review-ui" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> LLM-confidence-scored entries below threshold route to a human-reviewed queue; web admin UI handles accept/reject.</p>
+<ul>
+<li>[ ] <strong>F1</strong> — Confidence scorer <code>src/lifecycle/confidence.ts</code>: per-entry score (0..1) computed from (a) schema validity (correctPattern non-empty, errorCodes pattern-match) — always run, deterministic; (b) concept-cluster consistency (proposed concept matches an existing cluster vs orphan → boost) — always run, no API call; (c) cross-LLM agreement (re-run analyze with a different model; agreement on concept_slug + correct_pattern wording → boost) — <strong>sampled at config-driven rate, default 20%</strong>, selection deterministic by <code>sha256(payload) mod 5</code>. Sampling rate read from <code>.centralgauge.yml</code> <code>lifecycle.cross_llm_sample_rate: 0.2</code>. Threshold: 0.7 default, configurable. Per-release cost at 20% sample = ~$3 in second-LLM API calls (vs ~$15 at 100%).</li>
+<li>[ ] <strong>F2</strong> — <code>pending_review</code> table is already created by Phase A's <code>0006_lifecycle.sql</code> migration (see schema appendix). F2 implements the writer: <code>src/lifecycle/pending-review.ts</code> with <code>enqueue(entry)</code> / <code>markDecided(id, decision, eventId)</code>. Triggered by Phase C's analyze step when an entry's confidence falls below threshold.</li>
+<li>[ ] <strong>F3</strong> — <code>/api/v1/admin/lifecycle/review/queue</code> endpoint (GET, signed). Returns pending rows with full provenance (debug session_id, raw_debug_excerpt, llm_rationale).</li>
+<li>[ ] <strong>F4</strong> — <code>/api/v1/admin/lifecycle/review/&lt;id&gt;/decide</code> endpoint (POST, signed). Body: <code>{ decision: 'accept' | 'reject', reason?: string }</code>. Writes <code>analysis.accepted</code> or <code>analysis.rejected</code> event; on accept, INSERTs into <code>shortcomings</code>.</li>
+<li>[ ] <strong>F5</strong> — Configure Cloudflare Access for <code>/admin/lifecycle/*</code>. CF dashboard: Access → Applications → "CentralGauge Admin Lifecycle" → Self-hosted → hostname <code>centralgauge.sshadows.workers.dev</code> + path prefix <code>/admin/lifecycle/*</code> → Policy: GitHub OAuth with email allowlist (operator email at minimum). Add <code>CF_ACCESS_AUD</code> to <code>wrangler.toml [vars]</code>. Worker middleware <code>src/lib/server/cf-access.ts</code>: extract <code>CF-Access-Jwt-Assertion</code> header, verify signature against <code>https://&lt;team&gt;.cloudflareaccess.com/cdn-cgi/access/certs</code>, set <code>event.locals.cfAccessUser = { email }</code>. Admin endpoints (POST review/decide etc.) accept EITHER CF Access JWT (browser path) OR valid Ed25519 admin signature (CLI path) — the worker tries CF first, falls back to signature. Fail closed if neither.</li>
+<li>[ ] <strong>F6</strong> — Web admin page skeleton at <code>/admin/lifecycle</code>. NO login screen needed — CF Access handles authentication at edge before the request reaches the worker. Navigation: <code>/admin/lifecycle/review</code> (queue), <code>/admin/lifecycle/events</code> (timeline), <code>/admin/lifecycle/status</code> (matrix). The UI calls admin endpoints with the CF Access cookie automatically attached by the browser; no client-side key handling.</li>
+<li>[ ] <strong>F6.5</strong> — Review UI at <code>/admin/lifecycle/review</code>: table of pending entries; click → side-by-side pane (left: raw debug excerpt with line numbers; right: LLM rationale + correct_pattern + incorrect_pattern). Accept/Reject buttons; rejected requires a reason text. Decide endpoint records <code>cfAccessUser.email</code> in the resulting <code>analysis.accepted</code>/<code>analysis.rejected</code> event's <code>actor_id</code> field for provenance.</li>
+<li>[ ] <strong>F7</strong> — Status page at <code>/admin/lifecycle/status</code>: matrix view (rows = models, cols = lifecycle states) mirroring the CLI status output. Click a cell → event timeline for that model+state. Click a model → full event timeline.</li>
+<li>[ ] <strong>F8</strong> — Tests: confidence scoring deterministic, review queue endpoints sign-verify, accept/reject events written + <code>shortcomings</code> updated on accept.</li>
+<li>[ ] <strong>F-COMMIT</strong> — One commit: <code>feat(site): quality gating + web admin review UI for lifecycle</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> Running <code>cycle</code> on a model that produces a hallucinated entry (low confidence) does NOT publish it; entry appears at <code>/admin/lifecycle/review</code>. Operator clicks Accept → entry becomes a <code>shortcomings</code> row + <code>analysis.accepted</code> event written. Operator clicks Reject → entry skipped + <code>analysis.rejected</code> event written.</p>
+</blockquote>
+<hr />
+<h2 id="phase-g-ci-integration-weekly-cycle">Phase G — CI integration (weekly cycle)<a class="headerlink" href="#phase-g-ci-integration-weekly-cycle" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Hands-off weekly run that keeps the lifecycle current for every catalog model; digest posted on completion.</p>
+<ul>
+<li>[ ] <strong>G1</strong> — GitHub Actions workflow <code>.github/workflows/weekly-cycle.yml</code>. Schedule: <code>cron: '0 6 * * MON'</code> (06:00 UTC Monday). Manual trigger via <code>workflow_dispatch</code>.</li>
+<li>[ ] <strong>G2</strong> — Workflow steps: checkout, setup deno, set CLOUDFLARE_API_TOKEN/ANTHROPIC_API_KEY/etc from repo secrets, run <code>centralgauge status --json</code> to identify stale models, loop <code>centralgauge cycle --llms &lt;slug&gt;</code> for each.</li>
+<li>[ ] <strong>G3</strong> — Digest generator: at end of workflow, run <code>centralgauge lifecycle digest --since 7d --format markdown</code> and post to GitHub issue (auto-closed) tagged <code>weekly-cycle-digest</code>. Digest content: per-model state summary, new concepts surfaced, regressions detected, review queue depth.</li>
+<li>[ ] <strong>G4</strong> — Failure escalation: if any <code>cycle</code> exits non-zero, workflow fails + issue stays open; operator triages.</li>
+<li>[ ] <strong>G5</strong> — Tests: workflow YAML lints, digest command unit-tested.</li>
+<li>[ ] <strong>G-COMMIT</strong> — One commit: <code>feat(ci): weekly model lifecycle cycle + digest</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> Manual <code>workflow_dispatch</code> run completes; opens a GitHub issue with the digest. Stale models get re-cycled; current models skip via <code>*.skipped</code> events.</p>
+</blockquote>
+<hr />
+<h2 id="phase-h-centralgauge-status-cli-command">Phase H — <code>centralgauge status</code> CLI command<a class="headerlink" href="#phase-h-centralgauge-status-cli-command" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> The daily-driver CLI surface; matrix view + next-action hints.</p>
+<ul>
+<li>[ ] <strong>H1</strong> — <code>centralgauge status [--model &lt;slug&gt;] [--json]</code> reads <code>lifecycle_events</code> (via <code>/api/v1/admin/lifecycle/state</code>), local <code>debug/</code>, local <code>model-shortcomings/</code>, prod <code>shortcomings</code>. Computes per-model state across BENCHED/DEBUGGED/ANALYZED/PUBLISHED.</li>
+<li>[ ] <strong>H2</strong> — Matrix renderer: ANSI table with state symbols (OK / <code>--</code> / <code>…</code> for in-progress). Width fits 80-col terminal.</li>
+<li>[ ] <strong>H3</strong> — Next-action hints: per stale state, suggest the exact command. E.g., <code>opus-4-7: missing analysis run; run \</code>centralgauge verify debug/<latest> --model anthropic/claude-opus-4-7`<code>(or</code>centralgauge cycle --llms anthropic/claude-opus-4-7 --from analyze`).</li>
+<li>[ ] <strong>H4</strong> — <code>--json</code> flag produces machine-readable output for CI consumption (Phase G uses this).</li>
+<li>[ ] <strong>H5</strong> — Tests: snapshot output for fixture lifecycle events.</li>
+<li>[ ] <strong>H-COMMIT</strong> — One commit: <code>feat(cli): centralgauge status — lifecycle matrix + next-action hints</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> <code>centralgauge status</code> prints the full matrix; <code>centralgauge status --model anthropic/claude-opus-4-7</code> filters; <code>centralgauge status --json</code> validates against a zod schema.</p>
+</blockquote>
+<hr />
+<h2 id="phase-j-acceptance-docs-integration-tests">Phase J — Acceptance, docs, integration tests<a class="headerlink" href="#phase-j-acceptance-docs-integration-tests" title="Permanent link">&para;</a></h2>
+<p><strong>Goal:</strong> Final docs + cross-cut acceptance + close the plan.</p>
+<blockquote>
+<p><strong>Status:</strong> Closed by Wave 7 / Plan J. Final acceptance summary at
+<code>docs/superpowers/plans/2026-04-29-lifecycle-COMPLETE.md</code>.</p>
+</blockquote>
+<ul>
+<li>[x] <strong>J1</strong> — Document the lifecycle workflow in <code>docs/site/lifecycle.md</code>. Cover: state model, the 4 lifecycle commands (<code>status</code>, <code>cycle</code>, <code>verify</code>, <code>populate-shortcomings</code>), the web review UI, the weekly CI cycle, the slug standardization rule. Reference this plan + the schema appendix.</li>
+<li>[x] <strong>J2</strong> — Update <code>CLAUDE.md</code> with a new <code>## Lifecycle</code> section: brief operator guide; <code>centralgauge cycle --llms &lt;slug&gt;</code> is now the recommended way to onboard a model.</li>
+<li>[x] <strong>J3</strong> — Update <code>docs/site/operations.md</code> runbook with the new admin endpoints + review UI.</li>
+<li>[x] <strong>J4</strong> — End-to-end integration test (extended <code>tests/integration/lifecycle/cycle-end-to-end.test.ts</code> with the lock-token tiebreaker case; the existing 6 tests in that file already cover dry-run, force-unlock, skip-on-success, mid-cycle crash, publish idempotency, and resume-on-failure).</li>
+<li>[x] <strong>J5</strong> — Update <code>CHANGELOG.md</code> (project) + <code>docs/site/changelog.md</code> (user-facing — "Lifecycle tracking" entry per the editorial policy: this is a new feature operators can use).</li>
+<li>[x] <strong>J6</strong> — Visual regression baselines for <code>/admin/lifecycle/*</code> and <code>/families/*/diff</code> pages — placeholders staged as <code>test.skip</code> entries; baseline capture deferred to Ubuntu CI per the P5.4 baseline-platform invariant. See <code>docs/site/operations.md</code> → "Deferred lifecycle baselines".</li>
+<li>[x] <strong>J-COMMIT</strong> — Final commit: <code>docs(lifecycle): operator + reviewer guide + acceptance tests</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Acceptance.</strong> All phases A–H green. Running <code>centralgauge cycle --llms anthropic/claude-opus-4-7</code> from a fresh shell produces a complete event chain in <code>lifecycle_events</code>. <code>/admin/lifecycle</code> is accessible. Weekly CI workflow has run at least once successfully.</p>
+</blockquote>
+<hr />
+<h2 id="schema-appendix">Schema appendix<a class="headerlink" href="#schema-appendix" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1">-- Migration 0006_lifecycle.sql</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">AUTOINCREMENT</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="n">ts</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                      </span><span class="c1">-- unix ms</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="n">model_slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                 </span><span class="c1">-- vendor-prefixed</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="n">event_type</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                 </span><span class="c1">-- bench.started, bench.completed, ...</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="n">source_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                           </span><span class="c1">-- session id, run id, payload sha — depends on event</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="n">payload_hash</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                        </span><span class="c1">-- sha256 of normalized payload (for idempotency)</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">  </span><span class="n">tool_versions_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                  </span><span class="c1">-- {deno, wrangler, claude_code, bc_compiler, ...}</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">  </span><span class="n">envelope_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                       </span><span class="c1">-- {git_sha, machine_id, settings_hash, ...}</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">  </span><span class="n">payload_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                        </span><span class="c1">-- event-specific data</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">  </span><span class="n">actor</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;operator&#39;</span><span class="p">,</span><span class="w">   </span><span class="c1">-- &#39;operator&#39; | &#39;ci&#39; | &#39;migration&#39; | &#39;reviewer&#39;</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="n">actor_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                            </span><span class="c1">-- key fingerprint (CLI), CF Access email (web), &#39;github-actions&#39; (CI), null for migration</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">  </span><span class="n">migration_note</span><span class="w"> </span><span class="nb">TEXT</span><span class="w">                       </span><span class="c1">-- non-null only for backfilled events</span>
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="p">);</span>
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>
+<a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_lifecycle_events_lookup</span>
+<a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="w"> </span><span class="p">(</span><span class="n">model_slug</span><span class="p">,</span><span class="w"> </span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">event_type</span><span class="p">,</span><span class="w"> </span><span class="n">ts</span><span class="w"> </span><span class="k">DESC</span><span class="p">);</span>
+<a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>
+<a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_lifecycle_events_payload_hash</span>
+<a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">  </span><span class="k">ON</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="w"> </span><span class="p">(</span><span class="n">payload_hash</span><span class="p">);</span>
+<a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>
+<a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">concepts</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">AUTOINCREMENT</span><span class="p">,</span>
+<a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">  </span><span class="n">slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">UNIQUE</span><span class="p">,</span><span class="w">                </span><span class="c1">-- &#39;flowfield-calcfields-requirement&#39;</span>
+<a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">  </span><span class="n">display_name</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">               </span><span class="c1">-- &#39;FlowField CalcFields requirement&#39;</span>
+<a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">  </span><span class="n">al_concept</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span><span class="w">                 </span><span class="c1">-- the AL pedagogical category</span>
+<a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">  </span><span class="n">description</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">  </span><span class="n">canonical_correct_pattern</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">           </span><span class="c1">-- best-of correctPattern across model occurrences</span>
+<a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="w">  </span><span class="n">first_seen</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-33" name="__codelineno-1-33" href="#__codelineno-1-33"></a><span class="w">  </span><span class="n">last_seen</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-34" name="__codelineno-1-34" href="#__codelineno-1-34"></a><span class="w">  </span><span class="c1">-- Append-only invariants (see clustering rationale): rows are NEVER deleted.</span>
+<a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">  </span><span class="c1">-- A merge sets superseded_by on the loser; a split sets split_into_event_id</span>
+<a id="__codelineno-1-36" name="__codelineno-1-36" href="#__codelineno-1-36"></a><span class="w">  </span><span class="c1">-- on the original and creates new concept rows. Active concepts have both</span>
+<a id="__codelineno-1-37" name="__codelineno-1-37" href="#__codelineno-1-37"></a><span class="w">  </span><span class="c1">-- columns NULL.</span>
+<a id="__codelineno-1-38" name="__codelineno-1-38" href="#__codelineno-1-38"></a><span class="w">  </span><span class="n">superseded_by</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">concepts</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-39" name="__codelineno-1-39" href="#__codelineno-1-39"></a><span class="w">  </span><span class="n">split_into_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-40" name="__codelineno-1-40" href="#__codelineno-1-40"></a><span class="w">  </span><span class="n">provenance_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w">  </span><span class="c1">-- the concept.created event</span>
+<a id="__codelineno-1-41" name="__codelineno-1-41" href="#__codelineno-1-41"></a><span class="p">);</span>
+<a id="__codelineno-1-42" name="__codelineno-1-42" href="#__codelineno-1-42"></a>
+<a id="__codelineno-1-43" name="__codelineno-1-43" href="#__codelineno-1-43"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">concept_aliases</span><span class="w"> </span><span class="p">(</span><span class="w">              </span><span class="c1">-- for clustering: &quot;old slug&quot; → canonical concept_id</span>
+<a id="__codelineno-1-44" name="__codelineno-1-44" href="#__codelineno-1-44"></a><span class="w">  </span><span class="n">alias_slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="p">,</span>
+<a id="__codelineno-1-45" name="__codelineno-1-45" href="#__codelineno-1-45"></a><span class="w">  </span><span class="n">concept_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">concepts</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-46" name="__codelineno-1-46" href="#__codelineno-1-46"></a><span class="w">  </span><span class="n">noted_at</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-47" name="__codelineno-1-47" href="#__codelineno-1-47"></a><span class="w">  </span><span class="n">similarity</span><span class="w"> </span><span class="nb">REAL</span><span class="p">,</span><span class="w">                          </span><span class="c1">-- the cosine score that justified the merge</span>
+<a id="__codelineno-1-48" name="__codelineno-1-48" href="#__codelineno-1-48"></a><span class="w">  </span><span class="n">reviewer_actor_id</span><span class="w"> </span><span class="nb">TEXT</span><span class="p">,</span><span class="w">                   </span><span class="c1">-- non-null for operator-reviewed merges (0.70–0.85 band)</span>
+<a id="__codelineno-1-49" name="__codelineno-1-49" href="#__codelineno-1-49"></a><span class="w">  </span><span class="n">alias_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">)</span>
+<a id="__codelineno-1-50" name="__codelineno-1-50" href="#__codelineno-1-50"></a><span class="p">);</span>
+<a id="__codelineno-1-51" name="__codelineno-1-51" href="#__codelineno-1-51"></a>
+<a id="__codelineno-1-52" name="__codelineno-1-52" href="#__codelineno-1-52"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">shortcomings</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">concept_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">concepts</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+<a id="__codelineno-1-53" name="__codelineno-1-53" href="#__codelineno-1-53"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">shortcomings</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">analysis_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+<a id="__codelineno-1-54" name="__codelineno-1-54" href="#__codelineno-1-54"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">shortcomings</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">published_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">);</span>
+<a id="__codelineno-1-55" name="__codelineno-1-55" href="#__codelineno-1-55"></a><span class="k">ALTER</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">shortcomings</span><span class="w"> </span><span class="k">ADD</span><span class="w"> </span><span class="k">COLUMN</span><span class="w"> </span><span class="n">confidence</span><span class="w"> </span><span class="nb">REAL</span><span class="p">;</span>
+<a id="__codelineno-1-56" name="__codelineno-1-56" href="#__codelineno-1-56"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_shortcomings_concept_id</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">shortcomings</span><span class="p">(</span><span class="n">concept_id</span><span class="p">);</span>
+<a id="__codelineno-1-57" name="__codelineno-1-57" href="#__codelineno-1-57"></a>
+<a id="__codelineno-1-58" name="__codelineno-1-58" href="#__codelineno-1-58"></a><span class="c1">-- v_lifecycle_state: derived current-state-per-step view (read by all consumers).</span>
+<a id="__codelineno-1-59" name="__codelineno-1-59" href="#__codelineno-1-59"></a><span class="c1">-- D1 has no materialized views; this is a regular view backed by</span>
+<a id="__codelineno-1-60" name="__codelineno-1-60" href="#__codelineno-1-60"></a><span class="c1">-- idx_lifecycle_events_lookup. At ~125 events/(model,task_set) it&#39;s fast.</span>
+<a id="__codelineno-1-61" name="__codelineno-1-61" href="#__codelineno-1-61"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">VIEW</span><span class="w"> </span><span class="n">v_lifecycle_state</span><span class="w"> </span><span class="k">AS</span>
+<a id="__codelineno-1-62" name="__codelineno-1-62" href="#__codelineno-1-62"></a><span class="k">SELECT</span>
+<a id="__codelineno-1-63" name="__codelineno-1-63" href="#__codelineno-1-63"></a><span class="w">  </span><span class="n">model_slug</span><span class="p">,</span>
+<a id="__codelineno-1-64" name="__codelineno-1-64" href="#__codelineno-1-64"></a><span class="w">  </span><span class="n">task_set_hash</span><span class="p">,</span>
+<a id="__codelineno-1-65" name="__codelineno-1-65" href="#__codelineno-1-65"></a><span class="w">  </span><span class="k">CASE</span>
+<a id="__codelineno-1-66" name="__codelineno-1-66" href="#__codelineno-1-66"></a><span class="w">    </span><span class="k">WHEN</span><span class="w"> </span><span class="n">event_type</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;bench.%&#39;</span><span class="w">    </span><span class="k">THEN</span><span class="w"> </span><span class="s1">&#39;bench&#39;</span>
+<a id="__codelineno-1-67" name="__codelineno-1-67" href="#__codelineno-1-67"></a><span class="w">    </span><span class="k">WHEN</span><span class="w"> </span><span class="n">event_type</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;debug.%&#39;</span><span class="w">    </span><span class="k">THEN</span><span class="w"> </span><span class="s1">&#39;debug&#39;</span>
+<a id="__codelineno-1-68" name="__codelineno-1-68" href="#__codelineno-1-68"></a><span class="w">    </span><span class="k">WHEN</span><span class="w"> </span><span class="n">event_type</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;analysis.%&#39;</span><span class="w"> </span><span class="k">THEN</span><span class="w"> </span><span class="s1">&#39;analyze&#39;</span>
+<a id="__codelineno-1-69" name="__codelineno-1-69" href="#__codelineno-1-69"></a><span class="w">    </span><span class="k">WHEN</span><span class="w"> </span><span class="n">event_type</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;publish.%&#39;</span><span class="w">  </span><span class="k">THEN</span><span class="w"> </span><span class="s1">&#39;publish&#39;</span>
+<a id="__codelineno-1-70" name="__codelineno-1-70" href="#__codelineno-1-70"></a><span class="w">    </span><span class="k">WHEN</span><span class="w"> </span><span class="n">event_type</span><span class="w"> </span><span class="k">LIKE</span><span class="w"> </span><span class="s1">&#39;cycle.%&#39;</span><span class="w">    </span><span class="k">THEN</span><span class="w"> </span><span class="s1">&#39;cycle&#39;</span>
+<a id="__codelineno-1-71" name="__codelineno-1-71" href="#__codelineno-1-71"></a><span class="w">    </span><span class="k">ELSE</span><span class="w"> </span><span class="s1">&#39;other&#39;</span>
+<a id="__codelineno-1-72" name="__codelineno-1-72" href="#__codelineno-1-72"></a><span class="w">  </span><span class="k">END</span><span class="w"> </span><span class="k">AS</span><span class="w"> </span><span class="n">step</span><span class="p">,</span>
+<a id="__codelineno-1-73" name="__codelineno-1-73" href="#__codelineno-1-73"></a><span class="w">  </span><span class="k">MAX</span><span class="p">(</span><span class="n">ts</span><span class="p">)</span><span class="w">                  </span><span class="k">AS</span><span class="w"> </span><span class="n">last_ts</span><span class="p">,</span>
+<a id="__codelineno-1-74" name="__codelineno-1-74" href="#__codelineno-1-74"></a><span class="w">  </span><span class="k">MAX</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w">                  </span><span class="k">AS</span><span class="w"> </span><span class="n">last_event_id</span><span class="w">  </span><span class="c1">-- ts collisions broken by id</span>
+<a id="__codelineno-1-75" name="__codelineno-1-75" href="#__codelineno-1-75"></a><span class="k">FROM</span><span class="w"> </span><span class="n">lifecycle_events</span>
+<a id="__codelineno-1-76" name="__codelineno-1-76" href="#__codelineno-1-76"></a><span class="k">GROUP</span><span class="w"> </span><span class="k">BY</span><span class="w"> </span><span class="n">model_slug</span><span class="p">,</span><span class="w"> </span><span class="n">task_set_hash</span><span class="p">,</span><span class="w"> </span><span class="n">step</span><span class="p">;</span>
+<a id="__codelineno-1-77" name="__codelineno-1-77" href="#__codelineno-1-77"></a>
+<a id="__codelineno-1-78" name="__codelineno-1-78" href="#__codelineno-1-78"></a><span class="c1">-- pending_review (Phase F gate): entries below confidence threshold await</span>
+<a id="__codelineno-1-79" name="__codelineno-1-79" href="#__codelineno-1-79"></a><span class="c1">-- human triage. Defined in 0006 (not a separate later migration) so the</span>
+<a id="__codelineno-1-80" name="__codelineno-1-80" href="#__codelineno-1-80"></a><span class="c1">-- whole lifecycle schema lands as one transaction.</span>
+<a id="__codelineno-1-81" name="__codelineno-1-81" href="#__codelineno-1-81"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">TABLE</span><span class="w"> </span><span class="n">pending_review</span><span class="w"> </span><span class="p">(</span>
+<a id="__codelineno-1-82" name="__codelineno-1-82" href="#__codelineno-1-82"></a><span class="w">  </span><span class="n">id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">PRIMARY</span><span class="w"> </span><span class="k">KEY</span><span class="w"> </span><span class="n">AUTOINCREMENT</span><span class="p">,</span>
+<a id="__codelineno-1-83" name="__codelineno-1-83" href="#__codelineno-1-83"></a><span class="w">  </span><span class="n">analysis_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">),</span>
+<a id="__codelineno-1-84" name="__codelineno-1-84" href="#__codelineno-1-84"></a><span class="w">  </span><span class="n">model_slug</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-85" name="__codelineno-1-85" href="#__codelineno-1-85"></a><span class="w">  </span><span class="n">concept_slug_proposed</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-86" name="__codelineno-1-86" href="#__codelineno-1-86"></a><span class="w">  </span><span class="n">payload_json</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-87" name="__codelineno-1-87" href="#__codelineno-1-87"></a><span class="w">  </span><span class="n">confidence</span><span class="w"> </span><span class="nb">REAL</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-88" name="__codelineno-1-88" href="#__codelineno-1-88"></a><span class="w">  </span><span class="n">created_at</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="p">,</span>
+<a id="__codelineno-1-89" name="__codelineno-1-89" href="#__codelineno-1-89"></a><span class="w">  </span><span class="n">status</span><span class="w"> </span><span class="nb">TEXT</span><span class="w"> </span><span class="k">NOT</span><span class="w"> </span><span class="k">NULL</span><span class="w"> </span><span class="k">DEFAULT</span><span class="w"> </span><span class="s1">&#39;pending&#39;</span><span class="p">,</span><span class="w">   </span><span class="c1">-- &#39;pending&#39; | &#39;accepted&#39; | &#39;rejected&#39;</span>
+<a id="__codelineno-1-90" name="__codelineno-1-90" href="#__codelineno-1-90"></a><span class="w">  </span><span class="n">reviewer_decision_event_id</span><span class="w"> </span><span class="nb">INTEGER</span><span class="w"> </span><span class="k">REFERENCES</span><span class="w"> </span><span class="n">lifecycle_events</span><span class="p">(</span><span class="n">id</span><span class="p">)</span>
+<a id="__codelineno-1-91" name="__codelineno-1-91" href="#__codelineno-1-91"></a><span class="p">);</span>
+<a id="__codelineno-1-92" name="__codelineno-1-92" href="#__codelineno-1-92"></a>
+<a id="__codelineno-1-93" name="__codelineno-1-93" href="#__codelineno-1-93"></a><span class="k">CREATE</span><span class="w"> </span><span class="k">INDEX</span><span class="w"> </span><span class="n">idx_pending_review_status</span><span class="w"> </span><span class="k">ON</span><span class="w"> </span><span class="n">pending_review</span><span class="p">(</span><span class="n">status</span><span class="p">,</span><span class="w"> </span><span class="n">created_at</span><span class="p">);</span>
+</code></pre></div>
+<h2 id="event-types-appendix">Event types appendix<a class="headerlink" href="#event-types-appendix" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Event type</th>
+<th>Source</th>
+<th>Payload fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bench.started</code></td>
+<td><code>cycle bench</code></td>
+<td><code>tasks_planned, llms_planned[]</code></td>
+</tr>
+<tr>
+<td><code>bench.completed</code></td>
+<td><code>cycle bench</code></td>
+<td><code>runs_count, tasks_count, results_count</code></td>
+</tr>
+<tr>
+<td><code>bench.failed</code></td>
+<td><code>cycle bench</code></td>
+<td><code>error_code, error_message, partial_runs_count</code></td>
+</tr>
+<tr>
+<td><code>bench.skipped</code></td>
+<td><code>cycle bench</code></td>
+<td><code>reason='envelope_unchanged', prior_event_id</code></td>
+</tr>
+<tr>
+<td><code>debug.started</code></td>
+<td><code>cycle debug-capture</code></td>
+<td><code>decision, reason</code> (orchestrator emits before dispatching the step on <code>run</code>/<code>retry</code> decisions)</td>
+</tr>
+<tr>
+<td><code>debug.captured</code></td>
+<td><code>cycle debug-capture</code></td>
+<td><code>session_id, local_path, file_count, total_size_bytes, r2_key, r2_prefix, compressed_size_bytes</code></td>
+</tr>
+<tr>
+<td><code>debug.failed</code></td>
+<td><code>cycle debug-capture</code></td>
+<td><code>error_code, error_message</code> (emitted by step on capture/upload failure; orchestrator also emits via <code>cycle.failed</code>)</td>
+</tr>
+<tr>
+<td><code>debug.skipped</code></td>
+<td><code>cycle debug-capture</code></td>
+<td><code>reason='envelope_unchanged'\|'dry_run', prior_event_id?</code></td>
+</tr>
+<tr>
+<td><code>analysis.started</code></td>
+<td><code>cycle analyze</code></td>
+<td><code>analyzer_model, debug_session_id</code></td>
+</tr>
+<tr>
+<td><code>analysis.completed</code></td>
+<td><code>cycle analyze</code></td>
+<td><code>entries_count, min_confidence, payload_hash, analyzer_model</code></td>
+</tr>
+<tr>
+<td><code>analysis.failed</code></td>
+<td><code>cycle analyze</code></td>
+<td><code>error_code, error_message</code></td>
+</tr>
+<tr>
+<td><code>analysis.skipped</code></td>
+<td><code>cycle analyze</code></td>
+<td><code>reason='envelope_unchanged'\|'dry_run', prior_event_id?</code></td>
+</tr>
+<tr>
+<td><code>analysis.accepted</code></td>
+<td>review UI</td>
+<td><code>pending_review_id, reviewer, reason?</code></td>
+</tr>
+<tr>
+<td><code>analysis.rejected</code></td>
+<td>review UI</td>
+<td><code>pending_review_id, reviewer, reason</code></td>
+</tr>
+<tr>
+<td><code>publish.started</code></td>
+<td><code>cycle publish</code></td>
+<td><code>payload_hash, entries_count</code></td>
+</tr>
+<tr>
+<td><code>publish.completed</code></td>
+<td><code>cycle publish</code></td>
+<td><code>upserted, occurrences</code></td>
+</tr>
+<tr>
+<td><code>publish.failed</code></td>
+<td><code>cycle publish</code></td>
+<td><code>error_code, http_status, error_message</code></td>
+</tr>
+<tr>
+<td><code>publish.skipped</code></td>
+<td><code>cycle publish</code></td>
+<td><code>reason='payload_unchanged', prior_event_id</code></td>
+</tr>
+<tr>
+<td><code>cycle.started</code></td>
+<td><code>cycle</code></td>
+<td><code>from_step, to_step, force_rerun_steps[]</code></td>
+</tr>
+<tr>
+<td><code>cycle.completed</code></td>
+<td><code>cycle</code></td>
+<td><code>steps_run[], steps_skipped[]</code></td>
+</tr>
+<tr>
+<td><code>cycle.failed</code></td>
+<td><code>cycle</code></td>
+<td><code>failed_step, error_code, error_message</code></td>
+</tr>
+<tr>
+<td><code>cycle.timed_out</code></td>
+<td><code>cycle</code> (TTL fire)</td>
+<td><code>prior_event_id, ttl_seconds, last_progress_event_type</code></td>
+</tr>
+<tr>
+<td><code>cycle.aborted</code></td>
+<td><code>cycle --force-unlock</code></td>
+<td><code>prior_event_id, reason, actor_id</code></td>
+</tr>
+<tr>
+<td><code>concept.created</code></td>
+<td>analyze</td>
+<td><code>concept_id, slug, llm_proposed_slug, similarity_to_nearest, analyzer_model</code></td>
+</tr>
+<tr>
+<td><code>concept.merged</code></td>
+<td>clustering / review</td>
+<td><code>winner_concept_id, loser_concept_id, similarity, reviewer_actor_id</code></td>
+</tr>
+<tr>
+<td><code>concept.split</code></td>
+<td>review</td>
+<td><code>original_concept_id, new_concept_ids[], reviewer_actor_id, reason</code></td>
+</tr>
+<tr>
+<td><code>concept.aliased</code></td>
+<td>clustering / review</td>
+<td><code>alias_slug, concept_id, similarity, reviewer_actor_id</code></td>
+</tr>
+<tr>
+<td><code>model.released</code></td>
+<td>catalog sync</td>
+<td><code>family_slug, generation, vendor</code></td>
+</tr>
+<tr>
+<td><code>task_set.changed</code></td>
+<td>task set update</td>
+<td><code>prior_hash, new_hash, prior_current</code> (consequence: any in-flight cycle for any model aborts with <code>cycle.failed{reason='task_set_changed_mid_run'}</code>; status command flags every model under <code>prior_hash</code> as "stale task_set" until re-cycled)</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
