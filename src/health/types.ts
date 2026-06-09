@@ -125,6 +125,13 @@ export interface RecordResult {
 export type AlertRaisedListener = (alert: HealthAlert) => void;
 
 /**
+ * Listener invoked once per active→cleared alert transition (recovery).
+ * `alert` is the alert that was just cleared; `reason` is a free-text cause
+ * supplied by the caller (e.g. "recovered_after_probe").
+ */
+export type AlertClearedListener = (alert: HealthAlert, reason: string) => void;
+
+/**
  * Public state from the monitor — what bridge broadcasts.
  */
 export interface ContainerHealthState {

@@ -1,6 +1,7 @@
 // src/health/monitor.ts
 import { INFRA_SIGNATURES } from "./signatures.ts";
 import type {
+  AlertClearedListener,
   AlertRaisedListener,
   ContainerHealth,
   ContainerHealthState,
@@ -63,6 +64,8 @@ export class ContainerHealthMonitor {
   private nextAlertSeq = 0;
   /** Subscribers invoked once per inactive→active alert transition */
   private readonly alertListeners = new Set<AlertRaisedListener>();
+  /** Subscribers invoked once per active→cleared alert transition (recovery) */
+  private readonly alertClearedListeners = new Set<AlertClearedListener>();
 
   constructor(opts: MonitorOptions) {
     this.windowSize = opts.windowSize;
@@ -95,11 +98,82 @@ export class ContainerHealthMonitor {
    *
    * Returns an unsubscribe handle. Idempotent — calling twice is fine.
    */
-  on(_event: "alert_raised", listener: AlertRaisedListener): () => void {
-    this.alertListeners.add(listener);
+  on(event: "alert_raised", listener: AlertRaisedListener): () => void;
+  on(event: "alert_cleared", listener: AlertClearedListener): () => void;
+  on(
+    event: "alert_raised" | "alert_cleared",
+    listener: AlertRaisedListener | AlertClearedListener,
+  ): () => void {
+    if (event === "alert_cleared") {
+      const l = listener as AlertClearedListener;
+      this.alertClearedListeners.add(l);
+      return () => {
+        this.alertClearedListeners.delete(l);
+      };
+    }
+    const l = listener as AlertRaisedListener;
+    this.alertListeners.add(l);
     return () => {
-      this.alertListeners.delete(listener);
+      this.alertListeners.delete(l);
     };
+  }
+
+  /**
+   * Clear an active per-container alert after recovery (compare-and-clear).
+   *
+   * CAS by `alertId`: a recovery probe validates a SPECIFIC alert episode.
+   * If the active alert was replaced mid-probe (e.g. a new failure raised a
+   * fresh alert with a new `alertId`), a stale probe MUST NOT clear it — so
+   * the clear only proceeds when `ch.alert.alertId === expectedAlertId`.
+   *
+   * Refuses to clear `global_outage` (fleet-level; one container recovering
+   * must not lift it — global retraction remains the only path).
+   *
+   * On a successful clear it purges THIS container's per-fingerprint dedupe
+   * keys (`suspect:` + `persistent:`) from `raisedAlerts`, so a future failure
+   * on the same fingerprint can re-raise with a fresh `alertId`. Without this
+   * a recovered-then-redead container would silently never re-alert. Global
+   * keys are left intact.
+   *
+   * Returns the cleared alert, or undefined when nothing was cleared (no
+   * active alert / global_outage / alertId mismatch).
+   */
+  clearAlert(
+    containerName: string,
+    expectedAlertId: string,
+    reason: string,
+  ): HealthAlert | undefined {
+    const ch = this.containers.get(containerName);
+    if (!ch || !ch.alert) return undefined;
+    const alert = ch.alert;
+    if (alert.kind === "global_outage") return undefined;
+    if (alert.alertId !== expectedAlertId) return undefined;
+
+    delete ch.alert;
+    // Re-derive and purge BOTH per-container dedupe keys for this fingerprint
+    // so either alert kind can re-raise after a re-death. Leave global keys.
+    const fp = alert.fingerprint;
+    this.raisedAlerts.delete(`suspect:${containerName}:${fp}`);
+    this.raisedAlerts.delete(`persistent:${containerName}:${fp}`);
+    // Bump eventId so SSE / dashboard consumers observe the state change.
+    this.eventId++;
+    this.fireAlertClearedListeners(alert, reason);
+    return alert;
+  }
+
+  private fireAlertClearedListeners(alert: HealthAlert, reason: string): void {
+    for (const fn of this.alertClearedListeners) {
+      try {
+        fn(alert, reason);
+      } catch (e) {
+        // Listener exception MUST NOT break monitor state or other listeners.
+        console.error(
+          `[ContainerHealthMonitor] alert_cleared listener threw: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
   }
 
   /**
