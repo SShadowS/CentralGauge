@@ -1939,15 +1939,20 @@ Deno.test({
   async fn() {
     const calledScripts: string[] = [];
     const provider = new BcContainerProvider();
+    // Mock the warm-slot boundary (prenuke now routes through
+    // runScriptThroughSession, not the cold executePowerShell path).
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = (script: string) => {
+    (provider as any).runScriptThroughSession = (
+      _name: string,
+      script: string,
+    ) => {
       calledScripts.push(script);
       return Promise.resolve({
         output: [
-          "PRENUKE_FOUND: Cronus28 count=2",
-          "PRENUKE_REMOVE: CentralGauge_CG-AL-E001_1 v1.0.0.0",
-          "PRENUKE_REMOVE: CG-AL-H022 Prereq v1.0.0.0",
-          "PRENUKE_DONE: Cronus28",
+          "PREREQ_CLEANUP_FOUND:2",
+          "PREREQ_CLEANUP_REMOVE:CG-AL-E001 v1.0.0.0",
+          "PREREQ_CLEANUP_REMOVE:CG-AL-H022 Prereq v1.0.0.0",
+          "PREREQ_CLEANUP_DONE",
         ].join("\n"),
         exitCode: 0,
       });
@@ -1958,28 +1963,33 @@ Deno.test({
     assertEquals(
       calledScripts.length,
       2,
-      "must spawn one cleanup script per container",
+      "must run one cleanup script per container",
     );
     for (const script of calledScripts) {
       assertStringIncludes(
         script,
         '$_.Publisher -eq "CentralGauge"',
-        "script must filter Get-BcContainerAppInfo by Publisher=CentralGauge",
+        "script must filter by Publisher=CentralGauge",
       );
       assertStringIncludes(
         script,
-        "Unpublish-BcContainerApp",
-        "script must invoke BCH unpublish",
+        "Invoke-ScriptInBcContainer",
+        "removal must run in-container (not the slow host-side BCH wrapper)",
       );
       assertStringIncludes(
         script,
         "Uninstall-NAVApp",
-        "script must include NST-level NAV cleanup as defensive fallback",
+        "script must uninstall via in-container NST cmdlet",
       );
       assertStringIncludes(
         script,
-        "$nonPrereq + $prereq",
-        "script must remove non-prereqs first, then prereqs (dependency order)",
+        "Unpublish-NAVApp",
+        "script must unpublish via in-container NST cmdlet",
+      );
+      assertStringIncludes(
+        script,
+        "$expectedNames = @()",
+        "prenuke passes an empty expected set so all prereqs are removed",
       );
     }
   },
@@ -1993,12 +2003,12 @@ Deno.test({
     const provider = new BcContainerProvider();
     let callIdx = 0;
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = () => {
+    (provider as any).runScriptThroughSession = () => {
       callIdx++;
       if (callIdx === 1) {
         return Promise.reject(new Error("simulated container down"));
       }
-      return Promise.resolve({ output: "PRENUKE_CLEAN: ok", exitCode: 0 });
+      return Promise.resolve({ output: "PREREQ_CLEANUP_NONE", exitCode: 0 });
     };
 
     // Must not throw — per-container failures are logged + swallowed.

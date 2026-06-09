@@ -394,43 +394,36 @@ export class BcContainerProvider implements ContainerProvider {
     if (!this.isWindows()) return;
     await Promise.all(
       containerNames.map(async (name) => {
-        const script = `
-          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-          $bcContainerHelperConfig.usePwshForBc24 = $false
-          $existing = @(Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Publisher -eq "CentralGauge" -and $_.Name -ne "${BcContainerProvider.HARNESS_APP_NAME}" })
-          if ($existing.Count -eq 0) {
-            Write-Output "PRENUKE_CLEAN: ${name}"
-            return
-          }
-          Write-Output "PRENUKE_FOUND: ${name} count=$($existing.Count)"
-          # Two passes: non-prereq first (they may depend on prereqs), then prereqs.
-          $nonPrereq = @($existing | Where-Object { $_.Name -notlike "*Prereq*" })
-          $prereq    = @($existing | Where-Object { $_.Name -like  "*Prereq*" })
-          foreach ($app in @($nonPrereq + $prereq)) {
-            try {
-              Write-Output "PRENUKE_REMOVE: $($app.Name) v$($app.Version)"
-              Unpublish-BcContainerApp -containerName "${name}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -doNotSaveData -doNotSaveSchema -force -ErrorAction SilentlyContinue
-              # Verify; if BCH lied, fall through to NST-level cleanup.
-              $stillThere = Get-BcContainerAppInfo -containerName "${name}" | Where-Object { $_.Name -eq $app.Name -and $_.Publisher -eq $app.Publisher -and $_.Version -eq $app.Version }
-              if ($stillThere) {
-                Invoke-ScriptInBcContainer -containerName "${name}" -scriptblock {
-                  param($n, $p, $v)
-                  try { Uninstall-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Force -ErrorAction SilentlyContinue } catch { }
-                  try { Unpublish-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -ErrorAction SilentlyContinue } catch { }
-                } -argumentList $app.Name, $app.Publisher, $app.Version
-              }
-            } catch {
-              Write-Output "PRENUKE_WARN: $($app.Name) - $($_.Exception.Message)"
-            }
-          }
-          Write-Output "PRENUKE_DONE: ${name}"
-        `;
+        // Reuse the in-container prereq-cleanup script with an EMPTY expected
+        // set: Phase 1 removes all CentralGauge non-prereq apps (except the
+        // harness), Phase 2 removes every prereq (none are "expected" to keep).
+        // That is exactly prenuke semantics — wipe all CentralGauge apps except
+        // the test harness, in dependency order, multi-pass.
+        //
+        // Routed through the persistent per-container session slot (NOT
+        // `executePowerShell`) so we don't pay the cold-pwsh + ~120 s BCH
+        // Windows-PowerShell bridge on a throwaway process. The slot pays it
+        // once and the actual bench reuses it. Removal runs inside the
+        // container via `Invoke-ScriptInBcContainer { Uninstall-NAVApp;
+        // Unpublish-NAVApp }` (~4 s) instead of the slow host-side
+        // `Unpublish-BcContainerApp` wrapper. Mirrors prepareCandidateApp /
+        // cleanupOrphanedPrereqs. Best-effort: incomplete sweeps are logged,
+        // not thrown (publishApp's own guard catches anything left behind).
+        const script = buildPrereqCleanupScript(
+          name,
+          [],
+          BcContainerProvider.HARNESS_APP_NAME,
+        );
         try {
-          const result = await this.executePowerShell(script);
-          if (result.output.includes("PRENUKE_FOUND")) {
+          const result = await this.runScriptThroughSession(
+            name,
+            script,
+            "prenuke",
+          );
+          if (result.output.includes("PREREQ_CLEANUP_FOUND")) {
             log.info(`Pre-nuked stale CentralGauge apps in ${name}`, {
               output: result.output.split("\n")
-                .filter((l) => l.startsWith("PRENUKE_"))
+                .filter((l) => l.startsWith("PREREQ_CLEANUP_"))
                 .join(" | "),
             });
           }
