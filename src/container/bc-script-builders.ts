@@ -171,7 +171,11 @@ export function buildCleanupStaleCandidatesScript(
           if ($stillThere) {
             Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
               param($n, $p, $v)
+              # Apps are published per-tenant; Unpublish-NAVApp without -Tenant
+              # silently no-ops on a tenant-scoped app. Tenant first, global fallback.
+              try { Uninstall-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Tenant default -Force -ErrorAction SilentlyContinue } catch { }
               try { Uninstall-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Force -ErrorAction SilentlyContinue } catch { }
+              try { Unpublish-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -Tenant default -ErrorAction SilentlyContinue } catch { }
               try { Unpublish-NAVApp -ServerInstance BC -Name $n -Publisher $p -Version $v -ErrorAction SilentlyContinue } catch { }
             } -argumentList $app.Name, $app.Publisher, $app.Version
           }
@@ -269,9 +273,17 @@ ${devCredentialSetup}
           foreach ($app in $stale) {
             try {
               Write-Output "PREPARE_CLEANUP_REMOVE:$($app.Name) v$($app.Version)"
+              # Apps are published per-tenant; Unpublish-NAVApp without -Tenant
+              # silently no-ops on a tenant-scoped app. Tenant first, global fallback.
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -Force -ErrorAction SilentlyContinue } catch { }
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Force -ErrorAction SilentlyContinue } catch { }
-              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop } catch {
-                Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
+              $done = $false
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -Tenant default -ErrorAction Stop; $done = $true } catch { }
+              if (-not $done) {
+                try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $app.Version -ErrorAction Stop; $done = $true } catch { }
+              }
+              if (-not $done) {
+                Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - unpublish failed (tenant+global)"
               }
             } catch {
               Write-Output "PREPARE_CLEANUP_WARN:$($app.Name) - $($_.Exception.Message)"
@@ -554,7 +566,10 @@ export function buildPostCleanupScript(containerName: string): string {
             foreach ($app in $apps) {
               $version = $app.Version.ToString()
               Write-Host "CLEANUP:Removing app $($app.Name) (Publisher=$($app.Publisher))"
+              # Tenant-scoped first (per-tenant install), then global fallback.
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Tenant default -Force -ErrorAction SilentlyContinue } catch {}
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Tenant default -ErrorAction SilentlyContinue } catch {}
               try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
