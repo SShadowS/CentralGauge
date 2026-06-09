@@ -22,10 +22,7 @@ import type {
 import { ensureDir } from "@std/fs";
 import { fromFileUrl } from "@std/path";
 import { Logger } from "../logger/mod.ts";
-import {
-  bcchUsePwshForBc24Line,
-  bcchUsePwshForBc24Sentinel,
-} from "./bcch-config.ts";
+import { bcchConfigInit, bcchUsePwshForBc24Sentinel } from "./bcch-config.ts";
 import {
   captureRawTail,
   classifyPublishFailure,
@@ -473,7 +470,7 @@ export class BcContainerProvider implements ContainerProvider {
     );
     const script = `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
           $out = @()
@@ -1210,7 +1207,7 @@ ${script}
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
           Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-          ${bcchUsePwshForBc24Line()}
+          ${bcchConfigInit()}
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
             -appProjectFolder "${escapedProject}" -appOutputFolder "${escapedOutput}" -ErrorAction Stop
@@ -1412,7 +1409,7 @@ ${script}
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
       # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
       # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
 
       # FAST PATH: prereqs and other apps with stable IDs (e.g. main app's
       # fixed BENCHMARK_APP_ID) are bytewise stable per (Name, Publisher,

@@ -4,10 +4,7 @@
  */
 
 import type { ContainerCredentials } from "./types.ts";
-import {
-  bcchUsePwshForBc24Line,
-  bcchUsePwshForBc24Sentinel,
-} from "./bcch-config.ts";
+import { bcchConfigInit, bcchUsePwshForBc24Sentinel } from "./bcch-config.ts";
 
 /**
  * PowerShell helper injected at the top of any BCH script when tracing is
@@ -147,7 +144,7 @@ export function buildCleanupStaleCandidatesScript(
 ): string {
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
       $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         $_.Publisher -eq "CentralGauge" -and
         $_.Name -notlike "*Prereq*" -and
@@ -248,7 +245,7 @@ export function buildPrepareCandidateScript(
     : "";
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
       ${buildPwshTraceHelper()}
 ${devCredentialSetup}
       # --- A-prime cleanup: direct in-container NAV cmdlets ---
@@ -379,7 +376,7 @@ export function buildPrereqCleanupScript(
       ")";
   return `
       Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
 
       $expectedNames = ${expectedNamesLit}
       try {
@@ -604,7 +601,7 @@ export function buildTestScript(
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
       # disappears and Publish-BcContainerApp fails. Reverified 6.1.14 (see
       # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
-      ${bcchUsePwshForBc24Line()}
+      ${bcchConfigInit()}
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)

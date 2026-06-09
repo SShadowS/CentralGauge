@@ -89,18 +89,28 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   `pwsh-session.ts` (bumped from 6.1.11 on 2026-05-15; the 6.1.12+ change that
   disables the Windows-PowerShell PSSession by default does NOT break
   Publish/Unpublish in 6.1.14 when the workaround below stays on).
-- **`usePwshForBc24` is now a scoped knob, not a hardcoded literal** (GH #12).
-  Single source of truth: `src/container/bcch-config.ts`
-  (`bcchUsePwshForBc24Line()`); every emit site in `bc-container-provider.ts` +
-  `bc-script-builders.ts` + `pwsh-session.ts` routes through it. **Default is
-  `$false`** (the verified workaround below — no run changes). Opt into fast
-  pwsh-7 mode with **`CENTRALGAUGE_BCCH_USE_PWSH_BC24=1`** ONLY on an image you
-  have verified does NOT hit the Get-NavServerInstance-after-Unpublish bug. We
-  deliberately do NOT auto-gate on BC version — the April failure was never
-  re-tested on BC28. The `[CG-PIN]` sentinels print the resolved value
-  (`usePwshForBc24=True/False`) so bench output proves the mode.
-- **Why the default stays `$false` (the workaround) is STILL REQUIRED on
-  unverified images.**
+- **Two BCH execution settings are pinned by our scripts** (GH #12), single
+  source of truth `src/container/bcch-config.ts` (`bcchConfigInit()`), emitted at
+  every BCH script site in `bc-container-provider.ts` + `bc-script-builders.ts` +
+  `pwsh-session.ts` — so behavior does NOT depend on the machine-level
+  `BcContainerHelper.config.json`:
+  - **`usePsSessionForBc28 = $false`** (default) — BCH's own default since
+    6.1.12: use `docker exec` instead of the PS7 remote PSSession. The PS7
+    session is what loses the .NET-Framework NAV admin module after an Unpublish
+    (→ `Get-NavServerInstance is not recognized` → next Publish fails). docker
+    exec avoids that class of bug entirely. The ROOT CAUSE of our slowness +
+    publish breakage was the machine config forcing this `$true`.
+  - **`usePwshForBc24 = $true`** (default) — fast in-container pwsh. SAFE under
+    docker exec (verified end-to-end: microbench full flow + chained-prereq nuke
+    + canary on BC28), and ~30-40x faster than the WinPS-5.1 workaround.
+  - **No env vars needed.** Escape hatches for diagnostics only:
+    `CENTRALGAUGE_BCCH_USE_PWSH_BC24=0` forces the slow WinPS workaround;
+    `CENTRALGAUGE_BCCH_USE_PSSESSION_BC28=1` re-enables the PS7 session (which
+    reintroduces the Unpublish bug on affected images). `[CG-PIN]` sentinels
+    print the resolved `usePwshForBc24` so bench output proves the mode.
+- **Historical note — why the WinPS workaround existed.** It was the pre-docker-exec
+  way to dodge the Get-NavServerInstance-after-Unpublish bug; the real fix is
+  keeping `usePsSessionForBc28=$false`.
   6.1.14 fixes the simple multi-cycle publish-then-unpublish flow
   (`scripts/bcch-pwsh-repro.ps1` Phase A passes 3 cycles) but does NOT fix
   the production flow where `Run-TestsInBcContainer` precedes
@@ -350,17 +360,17 @@ export { TaskExecutor } from "./executor.ts";
 
 Detailed pattern documentation lives in `.claude/rules/`:
 
-| Pattern           | Rule File                  | Key Concepts                                                           |
-| ----------------- | -------------------------- | ---------------------------------------------------------------------- |
-| Error Handling    | `error-handling.md`        | `CentralGaugeError` hierarchy, `isRetryableError()`, `getRetryDelay()` |
-| Registry Pattern  | `registry-pattern.md`      | LLM/container registries, pooling, auto-detection                      |
-| Testing Patterns  | `testing-patterns.md`      | Mock factories, `MockEnv`, `EventCollector`                            |
-| Async Generators  | `async-generators.md`      | Return value handling, manual iteration                                |
-| Prereq Apps       | `prereq-apps.md`           | Task dependencies, ID ranges                                           |
-| Docker Sandbox    | `docker-sandbox.md`        | Container isolation, MCP HTTP transport, workspace mapping             |
-| MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                |
-| Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures      |
-| SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner   |
+| Pattern           | Rule File                  | Key Concepts                                                              |
+| ----------------- | -------------------------- | ------------------------------------------------------------------------- |
+| Error Handling    | `error-handling.md`        | `CentralGaugeError` hierarchy, `isRetryableError()`, `getRetryDelay()`    |
+| Registry Pattern  | `registry-pattern.md`      | LLM/container registries, pooling, auto-detection                         |
+| Testing Patterns  | `testing-patterns.md`      | Mock factories, `MockEnv`, `EventCollector`                               |
+| Async Generators  | `async-generators.md`      | Return value handling, manual iteration                                   |
+| Prereq Apps       | `prereq-apps.md`           | Task dependencies, ID ranges                                              |
+| Docker Sandbox    | `docker-sandbox.md`        | Container isolation, MCP HTTP transport, workspace mapping                |
+| MCP Debug Logging | `mcp-debug-logging.md`     | `sandbox-debug.log` for diagnosing `al_verify` failures                   |
+| Detailed Errors   | `detailed-error-output.md` | `AgentExecutionResult.failureDetails` schema for sandbox failures         |
+| SOAP Test Harness | `soap-test-harness.md`     | Hybrid test execution, TestPage routing, headless web-service runner      |
 | Alert Drain       | `alert-drain-rebalance.md` | Container-alert drain + rebalance + quarantine wrap + free-requeue waiver |
 
 ### Configuration Hierarchy

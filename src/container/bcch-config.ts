@@ -1,49 +1,74 @@
 // src/container/bcch-config.ts
 //
-// Single source of truth for the bccontainerhelper `usePwshForBc24` pin.
+// Single source of truth for the two bccontainerhelper settings that govern how
+// scripts execute INSIDE a BC v28 container. Both are emitted by `bcchConfigInit`
+// at the top of every BCH script we run, so behavior does not depend on the
+// machine-level `BcContainerHelper.config.json`.
 //
 // Background (commit 449a5ae, GH issue #12):
-// - With the flag TRUE (BCH default), bccontainerhelper opens a pwsh 7 PSSession
-//   INSIDE the container. pwsh 7 is .NET Core; the BC NAV admin module
-//   (Microsoft.Dynamics.Nav.Management) is .NET Framework and doesn't auto-load
-//   there, so after any Unpublish the session drops the module bindings and the
-//   next `Get-NavServerInstance` (called internally by Publish-BcContainerApp)
-//   fails "is not recognized". Setting it FALSE uses Windows PowerShell 5.1
-//   in-container, where the module loads — fixing publish/test.
-// - BUT on BC28 / Windows Server 2025 / ltsc2025 the FALSE (WinPS 5.1) path
-//   costs ~380-440s per heavy op (~30-40x), dominating bench wall time and
-//   blowing the 300s session timeout (GH #12).
+// - `usePsSessionForBc28 = $false` (BCH default since 6.1.12) -> BCH uses
+//   `docker exec` instead of a PowerShell-7 remote PSSession. The PS7 remote
+//   session is the one that loses the .NET-Framework NAV admin module after an
+//   Unpublish, breaking the next Publish with "Get-NavServerInstance is not
+//   recognized". Forcing it `$false` avoids that class of bug entirely.
+// - `usePwshForBc24 = $true` -> fast in-container pwsh. Under docker exec this
+//   is SAFE (verified end-to-end: microbench + chained-prereq nuke + canary on
+//   BC28), and ~30-40x faster than the WinPS-5.1 workaround.
 //
-// So the value is image-dependent and must be configurable, NOT hardcoded.
-// Default stays FALSE — the verified-safe behavior — so no existing run changes.
-// Operators who have confirmed their image does NOT hit the
-// Get-NavServerInstance-after-Unpublish bug can opt into fast pwsh-7 mode:
+// So the safe-AND-fast config is: usePsSessionForBc28=$false + usePwshForBc24=$true.
+// Both are now the defaults here and are written by our scripts, so operators
+// need no env vars. The env knobs remain as escape hatches:
 //
-//   CENTRALGAUGE_BCCH_USE_PWSH_BC24=1   (or true / yes)
+//   CENTRALGAUGE_BCCH_USE_PWSH_BC24=0       -> force the slow WinPS workaround
+//   CENTRALGAUGE_BCCH_USE_PSSESSION_BC28=1  -> re-enable the PS7 remote session
 //
-// We deliberately do NOT auto-gate on BC version: the original April failure was
-// never re-tested on BC28, so a silent flip could reintroduce the publish break.
+// Only touch those for diagnostics. Re-enabling the PSSession reintroduces the
+// Get-NavServerInstance-after-Unpublish bug on affected images.
 
-/**
- * Resolve the `usePwshForBc24` value. Default `false` (the pinned, verified
- * workaround). Returns `true` only when the opt-in env knob is explicitly set.
- */
-export function bcchUsePwshForBc24(): boolean {
-  const raw = (Deno.env.get("CENTRALGAUGE_BCCH_USE_PWSH_BC24") ?? "")
-    .trim()
-    .toLowerCase();
-  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+function envFlag(name: string): "on" | "off" | "unset" {
+  const raw = (Deno.env.get(name) ?? "").trim().toLowerCase();
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") {
+    return "on";
+  }
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") {
+    return "off";
+  }
+  return "unset"; // empty or unrecognized -> fall to the default
 }
 
 /**
- * The PowerShell assignment line embedding the resolved value, e.g.
- * `$bcContainerHelperConfig.usePwshForBc24 = $false`. Use this everywhere the
- * pin is emitted into a BCH script so all sites honor the same knob.
+ * Resolve `usePwshForBc24`. Default `true` (fast in-container pwsh). Returns
+ * `false` only when `CENTRALGAUGE_BCCH_USE_PWSH_BC24` is explicitly set to a
+ * falsey value (force the slow WinPS workaround).
  */
-export function bcchUsePwshForBc24Line(): string {
-  return `$bcContainerHelperConfig.usePwshForBc24 = $${
-    bcchUsePwshForBc24() ? "true" : "false"
-  }`;
+export function bcchUsePwshForBc24(): boolean {
+  return envFlag("CENTRALGAUGE_BCCH_USE_PWSH_BC24") !== "off";
+}
+
+/**
+ * Resolve `usePsSessionForBc28`. Default `false` (docker exec — BCH's own
+ * default and what makes fast pwsh safe). Returns `true` only when
+ * `CENTRALGAUGE_BCCH_USE_PSSESSION_BC28` is explicitly truthy (diagnostics;
+ * reintroduces the PS7 Unpublish bug on affected images).
+ */
+export function bcchUsePsSessionForBc28(): boolean {
+  return envFlag("CENTRALGAUGE_BCCH_USE_PSSESSION_BC28") === "on";
+}
+
+/**
+ * The PowerShell lines that pin both BCH execution settings. Emit this at the
+ * top of every BCH script (after `Import-Module`) so behavior is independent of
+ * the machine-level config file. Two assignments, newline-separated.
+ */
+export function bcchConfigInit(): string {
+  return [
+    `$bcContainerHelperConfig.usePsSessionForBc28 = $${
+      bcchUsePsSessionForBc28() ? "true" : "false"
+    }`,
+    `$bcContainerHelperConfig.usePwshForBc24 = $${
+      bcchUsePwshForBc24() ? "true" : "false"
+    }`,
+  ].join("\n");
 }
 
 /** `"True"` / `"False"` — for `[CG-PIN]` sentinel lines so bench output proves the mode. */
