@@ -1,4 +1,6 @@
 export type {
+  AlertClearedListener,
+  AlertRaisedListener,
   ClassifyResult,
   ContainerHealth,
   ContainerHealthState,
@@ -9,6 +11,13 @@ export type {
   InfraSignature,
   TerminalState,
 } from "./types.ts";
+export type {
+  RecoveryEvent,
+  RecoveryEventType,
+  RecoveryProberConfig,
+  RecoveryProberDeps,
+} from "./recovery-prober.ts";
+export { ContainerRecoveryProber } from "./recovery-prober.ts";
 export type { PublishFailureClass } from "./classify-publish-failure.ts";
 
 export { classifyInfraError } from "./classify.ts";

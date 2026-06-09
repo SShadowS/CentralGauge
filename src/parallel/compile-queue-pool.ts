@@ -411,6 +411,69 @@ export class CompileQueuePool implements CompileWorkQueue {
     return outcome;
   }
 
+  /**
+   * Quiesce gate for recovery re-admission (plan R3). Returns true iff the
+   * named container's queue has NO pending and NO in-flight work
+   * (`load === queue.length + activeItems === 0`).
+   *
+   * The recovery prober MUST call this and get `true` BEFORE clearing the
+   * monitor alert. Otherwise a pre-alert task still running on the container
+   * can fail AFTER the alert is cleared and its dedupe keys are purged,
+   * instantly re-raising a fresh alert and flapping the container back out.
+   * Once `load === 0`, the drain is complete and no stale outcome remains in
+   * flight, so clearing + re-admitting is safe.
+   *
+   * `alertId` is accepted for symmetry/logging; the decision is load-based.
+   */
+  canReadmit(containerName: string, alertId?: string): boolean {
+    const q = this.queues.find((x) => x.containerName === containerName);
+    if (!q) return false;
+    const quiesced = q.load === 0;
+    if (!quiesced) {
+      log.info(`canReadmit(${containerName}) = false — not quiesced`, {
+        load: q.load,
+        ...(alertId !== undefined ? { alertId } : {}),
+      });
+    }
+    return quiesced;
+  }
+
+  /**
+   * Re-admit a recovered container (plan R4/R7). Call AFTER
+   * `monitor.clearAlert()` has succeeded — the monitor snapshot then no longer
+   * lists the container as alerted, so it re-enters the eligible set and
+   * future `enqueue()` routes there automatically. This method additionally
+   * flushes any parked backlog promptly instead of waiting for the next
+   * organic enqueue.
+   *
+   * Idempotent and safe: `flushParkedTo` is a no-op when nothing is parked,
+   * and distributes round-robin across ALL eligible queues (not just the
+   * recovered one). Actual concurrency on the recovered container is bounded
+   * by its own compile semaphore + test mutex, so admitting a backlog does not
+   * stampede it (plan R7 — the thundering-herd guard is the existing
+   * per-queue concurrency cap).
+   */
+  onContainerRecovered(containerName: string, alertId?: string): void {
+    const alerted = this.alertedContainerNames();
+    if (alerted.has(containerName)) {
+      // Monitor still flags it — alert was not actually cleared. Do nothing
+      // rather than re-admit a still-excluded container.
+      log.warn(
+        `onContainerRecovered(${containerName}) skipped — still alerted`,
+        { ...(alertId !== undefined ? { alertId } : {}) },
+      );
+      return;
+    }
+    const eligible = this.queues.filter((q) => !alerted.has(q.containerName));
+    if (this.parkedEntries.length > 0) {
+      this.flushParkedTo(eligible);
+    }
+    log.info(`Re-admitted recovered container ${containerName}`, {
+      ...(alertId !== undefined ? { alertId } : {}),
+      parkedRemaining: this.parkedEntries.length,
+    });
+  }
+
   /** Number of entries currently parked due to no-eligible-target. */
   get parkedDepth(): number {
     return this.parkedEntries.length;

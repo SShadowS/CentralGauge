@@ -502,3 +502,119 @@ describe({
     await Promise.all([p1, p2]);
   });
 });
+
+describe({
+  name:
+    "CompileQueuePool recovery re-admission (canReadmit / onContainerRecovered)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  let mockProvider: MockContainerProvider;
+
+  beforeEach(() => {
+    mockProvider = createMockContainerProvider();
+  });
+
+  afterEach(() => {
+    mockProvider.reset();
+  });
+
+  it("canReadmit: true when idle, false when busy, false for unknown", async () => {
+    mockProvider.setCompilationConfig({ delay: 200, success: true });
+    const pool = new CompileQueuePool(mockProvider, ["c1"], {
+      compileConcurrency: 1,
+    });
+    assertEquals(pool.canReadmit("c1"), true, "idle queue is quiesced");
+    assertEquals(pool.canReadmit("nope"), false, "unknown container");
+
+    const p = pool.enqueue(createMockCompileWorkItem({ id: "wi-a" }))
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 30)); // let it go in-flight
+    assertEquals(pool.canReadmit("c1"), false, "busy queue is not quiesced");
+    await p;
+    await new Promise((r) => setTimeout(r, 20)); // let activeItems settle to 0
+    assertEquals(pool.canReadmit("c1"), true, "quiesced again after drain");
+  });
+
+  it("onContainerRecovered flushes parked work after the alert is cleared", async () => {
+    const { ContainerHealthMonitor } = await import(
+      "../../../src/health/monitor.ts"
+    );
+    const mon = new ContainerHealthMonitor({ windowSize: 10 });
+    mockProvider.setCompilationConfig({ delay: 1000, success: true });
+    const pool = new CompileQueuePool(mockProvider, ["c1"], {
+      compileConcurrency: 1,
+      healthMonitor: mon,
+    });
+
+    const p1 = pool.enqueue(createMockCompileWorkItem({ id: "wi-a" }))
+      .catch(() => {});
+    const p2 = pool.enqueue(createMockCompileWorkItem({ id: "wi-b" }))
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 30));
+
+    const rec = mon.record({
+      containerName: "c1",
+      result: "infra_error",
+      fingerprint: "test:sql",
+      signatureId: "sql_service_down",
+      timestamp: 2000,
+    });
+    const alertId = rec.alert!.alertId;
+    const outcome = await pool.rebalanceFromContainer(
+      "c1",
+      alertId,
+      "test:sql",
+    );
+    assert(outcome.parked >= 1, "drained entries parked (sole container)");
+    assertEquals(pool.parkedDepth, outcome.parked);
+
+    // Operator/probe recovered c1 — clear the alert, then re-admit.
+    const cleared = mon.clearAlert("c1", alertId, "recovered_after_probe");
+    assert(cleared !== undefined, "alert cleared");
+    mockProvider.setCompilationConfig({ delay: 10, success: true }); // fast drain
+    pool.onContainerRecovered("c1", alertId);
+    assertEquals(pool.parkedDepth, 0, "parked work flushed back to c1");
+
+    await Promise.all([p1, p2]);
+  });
+
+  it("onContainerRecovered is a no-op while the container is still alerted", async () => {
+    const { ContainerHealthMonitor } = await import(
+      "../../../src/health/monitor.ts"
+    );
+    const mon = new ContainerHealthMonitor({ windowSize: 10 });
+    mockProvider.setCompilationConfig({ delay: 1000, success: true });
+    const pool = new CompileQueuePool(mockProvider, ["c1"], {
+      compileConcurrency: 1,
+      healthMonitor: mon,
+    });
+
+    const p1 = pool.enqueue(createMockCompileWorkItem({ id: "wi-a" }))
+      .catch(() => {});
+    const p2 = pool.enqueue(createMockCompileWorkItem({ id: "wi-b" }))
+      .catch(() => {});
+    await new Promise((r) => setTimeout(r, 30));
+
+    const rec = mon.record({
+      containerName: "c1",
+      result: "infra_error",
+      fingerprint: "test:sql",
+      signatureId: "sql_service_down",
+      timestamp: 2000,
+    });
+    const outcome = await pool.rebalanceFromContainer(
+      "c1",
+      rec.alert!.alertId,
+      "test:sql",
+    );
+    assert(outcome.parked >= 1);
+
+    // Alert NOT cleared — re-admit must refuse and leave parked work alone.
+    pool.onContainerRecovered("c1", rec.alert!.alertId);
+    assertEquals(pool.parkedDepth, outcome.parked, "parked work untouched");
+
+    pool.cancelParked("test cleanup");
+    await Promise.all([p1, p2]);
+  });
+});
