@@ -12,8 +12,12 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 - Don't hardcode model IDs in code. Use the catalog (`site/catalog/models.yml`) or
   `deno task start models -p <provider> --live` to discover current names.
   Verify availability with `deno task start models <slug> --check` before running benchmarks.
-- Container infra failures (SYSLIB0014, OOM, publish timeout, PSSession loss, container offline)
-  auto-classify via `src/health/`. The bench dashboard shows a sticky red banner naming the
+- Container infra failures (SYSLIB0014, OOM, publish timeout, PSSession loss, container offline,
+  zero-tests-after-publish)
+  auto-classify via `src/health/`. A candidate that compiled + published OK but ran ZERO tests
+  is infra (`zero_tests` signature, GH #13) — it throws `ContainerError("test")` and reroutes
+  via infra-retry instead of scoring `success=false` (that scoring once hid a broken BCH
+  version across an entire bench run). The bench dashboard shows a sticky red banner naming the
   signature + fix hint when a container hits the persistent-failure threshold (3-of-window same
   fingerprint). Phase A only — no auto-quarantine yet. After a fix, no `doctor containers`
   command exists; just restart the bench. Scores file gets a `# Container Health` block per run.
@@ -85,10 +89,16 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
 
 ## bccontainerhelper config quirks
 
-- Pinned to **6.1.14** in `bc-container-provider.ts` + `bc-script-builders.ts` +
-  `pwsh-session.ts` (bumped from 6.1.11 on 2026-05-15; the 6.1.12+ change that
-  disables the Windows-PowerShell PSSession by default does NOT break
-  Publish/Unpublish in 6.1.14 when the workaround below stays on).
+- Pinned to **6.1.14** via `BCCH_PINNED_VERSION` in `src/container/bcch-config.ts`
+  (single source of truth since GH #13; bumped from 6.1.11 on 2026-05-15; the
+  6.1.12+ change that disables the Windows-PowerShell PSSession by default does
+  NOT break Publish/Unpublish in 6.1.14 when the workaround below stays on).
+  Every script site emits `bcchImport()`, which imports the pinned version AND
+  **fails loudly** when the cmdlets would resolve to a different version
+  (`Get-Command Invoke-ScriptInBcContainer` check) — `Import-Module
+  -RequiredVersion` otherwise silently no-ops to an already-loaded version
+  (GH #13: a pin can appear validated while a different BCH runs underneath).
+  Never inline a version string at a script site.
 - **Two BCH execution settings are pinned by our scripts** (GH #12), single
   source of truth `src/container/bcch-config.ts` (`bcchConfigInit()`), emitted at
   every BCH script site in `bc-container-provider.ts` + `bc-script-builders.ts` +
@@ -154,6 +164,11 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   - Old `cleanupStaleCandidates` + `publishApp` methods stay for prereq
     publishing and the bench-startup prenuke. Only the per-task SOAP-fork
     hot path uses the combined `prepareCandidateApp`.
+  - The prenuke ALSO runs at end-of-run (`endOfRunNuke` in
+    `cli/commands/bench/container-setup.ts`, GH #13 footnote) — without it the
+    LAST task's candidate + prereq stayed published until the next bench, and
+    a stale candidate blocks ad-hoc publishes with "same App ID and Version"
+    (all candidates share one fixed app ID). Best-effort, never fails a run.
   - DO NOT split `prepareCandidateApp` back into separate
     `cleanupStaleCandidates` + `publishApp` calls on the hot path. BCH
     disposes its Windows-PowerShell sub-session at end-of-script under
