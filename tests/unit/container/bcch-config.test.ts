@@ -1,7 +1,9 @@
 // tests/unit/container/bcch-config.test.ts
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import {
+  BCCH_PINNED_VERSION,
   bcchConfigInit,
+  bcchImport,
   bcchUsePsSessionForBc28,
   bcchUsePwshForBc24,
   bcchUsePwshForBc24Sentinel,
@@ -76,6 +78,33 @@ Deno.test("usePsSessionForBc28 opt-in re-enables the PS7 remote session", () => 
   } finally {
     env.restore();
   }
+});
+
+// GH #13: `Import-Module -RequiredVersion X` silently resolves to whatever
+// version is already loaded when X isn't installed (or another version was
+// imported earlier in the session) — the pin can *appear* validated while a
+// different BCH runs underneath. bcchImport() must verify the version the
+// cmdlets actually resolve to and throw loudly on mismatch.
+Deno.test("bcchImport pins the module to BCCH_PINNED_VERSION", () => {
+  const script = bcchImport();
+  assertStringIncludes(
+    script,
+    `Import-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION}`,
+  );
+});
+
+Deno.test("bcchImport verifies the RESOLVED version, not the requested one", () => {
+  const script = bcchImport();
+  // Get-Command resolves to the module the cmdlets will actually dispatch to,
+  // which is the truth even when two versions are loaded side-by-side.
+  assertStringIncludes(script, "Get-Command Invoke-ScriptInBcContainer");
+});
+
+Deno.test("bcchImport throws loudly on version mismatch", () => {
+  const script = bcchImport();
+  assertStringIncludes(script, "throw");
+  assertStringIncludes(script, "version mismatch");
+  assertStringIncludes(script, BCCH_PINNED_VERSION);
 });
 
 Deno.test("bcchConfigInit emits both settings, newline-separated", () => {

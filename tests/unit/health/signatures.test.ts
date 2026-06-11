@@ -15,6 +15,7 @@ Deno.test("library defines all expected signatures", () => {
       "publish_timeout",
       "container_offline",
       "sql_service_down",
+      "zero_tests",
     ]
   ) {
     assertEquals(
@@ -91,6 +92,15 @@ Deno.test("matches sql_service_down on SQL wait-operation-timed-out (unresponsiv
   assertExists(sig);
   assertEquals(sig!.id, "sql_service_down");
   assertEquals(sig!.catastrophicSingleFailure, true);
+});
+
+Deno.test("matches zero_tests on the zero-tests-after-publish error (GH #13)", () => {
+  const sig = matchSignature(
+    "Zero tests detected after successful publish (infra)",
+  );
+  assertExists(sig);
+  assertEquals(sig!.id, "zero_tests");
+  assertEquals(sig!.scope, "container");
 });
 
 Deno.test("returns undefined on AL compile error fixture (not infra)", async () => {

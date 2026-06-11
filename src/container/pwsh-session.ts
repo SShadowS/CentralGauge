@@ -5,7 +5,7 @@
  */
 
 import { PwshSessionError } from "../errors.ts";
-import { bcchConfigInit } from "./bcch-config.ts";
+import { bcchConfigInit, bcchImport } from "./bcch-config.ts";
 
 export interface PwshSessionOptions {
   /** Recycle after this many execute() calls. Default 100. */
@@ -53,7 +53,7 @@ function defaultBootstrapScript(): string {
   return `
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
-Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+${bcchImport()}
 ${bcchConfigInit()}
 `.trim();
 }

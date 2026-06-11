@@ -4,7 +4,12 @@
  */
 
 import type { ContainerCredentials } from "./types.ts";
-import { bcchConfigInit, bcchUsePwshForBc24Sentinel } from "./bcch-config.ts";
+import {
+  BCCH_PINNED_VERSION,
+  bcchConfigInit,
+  bcchImport,
+  bcchUsePwshForBc24Sentinel,
+} from "./bcch-config.ts";
 
 /**
  * PowerShell helper injected at the top of any BCH script when tracing is
@@ -95,10 +100,10 @@ export function buildCompileScript(
   outputDir: string,
 ): string {
   return `
-      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@6.1.14 sentinel=2026-04-25-B"
+      Write-Output "[CG-PIN] buildCompileScript bccontainerhelper@${BCCH_PINNED_VERSION} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
 
       try {
         $result = Compile-AppWithBcCompilerFolder \`
@@ -143,7 +148,7 @@ export function buildCleanupStaleCandidatesScript(
   harnessAppName: string,
 ): string {
   return `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       ${bcchConfigInit()}
       $stale = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
         $_.Publisher -eq "CentralGauge" -and
@@ -244,7 +249,7 @@ export function buildPrepareCandidateScript(
     ? " -useDevEndpoint -credential $cgPubCredential"
     : "";
   return `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       ${bcchConfigInit()}
       ${buildPwshTraceHelper()}
 ${devCredentialSetup}
@@ -375,7 +380,7 @@ export function buildPrereqCleanupScript(
     : "@(" + expectedPrereqNames.map((n) => `'${escapeForPS(n)}'`).join(",") +
       ")";
   return `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       ${bcchConfigInit()}
 
       $expectedNames = ${expectedNamesLit}
@@ -592,10 +597,10 @@ export function buildTestScript(
   // Prereqs are already published by publishApp() - just publish main app and run tests
   // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
   return `
-      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@6.1.14 usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-04-25-B"
+      Write-Output "[CG-PIN] buildTestScript bccontainerhelper@${BCCH_PINNED_VERSION} usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-04-25-B"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance

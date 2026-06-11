@@ -104,6 +104,20 @@ Deno.test("buildTestScript composes publish (with harness exclusion) and run-tes
   );
 });
 
+// GH #13: every BCH script must carry the loud-fail version guard so a
+// silently-fallen-back module version can never run a bench step.
+Deno.test("buildTestScript embeds the loud-fail BCH version guard", () => {
+  const script = buildTestScript(
+    "Cronus28",
+    { username: "u", password: "p" },
+    "C:\\some\\app.app",
+    "00000000-cafe-0000-0000-be4c00decade",
+    80052,
+  );
+  assertStringIncludes(script, "Get-Command Invoke-ScriptInBcContainer");
+  assertStringIncludes(script, "version mismatch");
+});
+
 // buildPrepareCandidateScript: combined cleanup + publish, designed to pay
 // the BCH Windows-PowerShell bridge cost ONCE per task instead of twice.
 

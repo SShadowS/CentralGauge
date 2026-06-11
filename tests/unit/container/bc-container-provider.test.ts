@@ -1261,6 +1261,66 @@ Deno.test({
 });
 
 Deno.test({
+  name:
+    "BcContainerProvider - runTests throws ContainerError(test) on zero tests after successful publish",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+    const tempDir = await Deno.makeTempDir();
+
+    try {
+      mock.install();
+
+      await Deno.mkdir(`${tempDir}/output`, { recursive: true });
+      await Deno.writeTextFile(
+        `${tempDir}/output/TestApp.app`,
+        "mock app content",
+      );
+
+      // GH #13: publish succeeded, the test step ran without error, but ZERO
+      // testfunctions were found (no Testfunction lines, no ALL_TESTS_PASSED /
+      // SOME_TESTS_FAILED / TEST_ERROR markers). A compiled+published
+      // candidate that runs zero tests is an infrastructure condition (e.g. a
+      // broken BCH version or a stale-candidate publish collision), never a
+      // legitimate model failure — it must reroute via infra-retry, not score
+      // success=false.
+      mock.mockPowerShell(
+        [],
+        `PUBLISH_START:1\nApp successfully published\nPUBLISH_END:2\nTEST_START:3\nConnecting to http://localhost:80/BC/cs?tenant=default\nSetting test codeunit range ''\nTEST_END:4`,
+      );
+
+      const provider = new BcContainerProvider();
+
+      const { ContainerError } = await import("../../../src/errors.ts");
+
+      let thrown: unknown;
+      try {
+        await provider.runTests("TestContainer", {
+          path: tempDir,
+          appJson: {
+            name: "TestApp",
+            publisher: "TestPublisher",
+            version: "1.0.0.0",
+          },
+          sourceFiles: [],
+          testFiles: [],
+        });
+      } catch (e) {
+        thrown = e;
+      }
+      assertEquals(thrown instanceof ContainerError, true);
+      const err = thrown as InstanceType<typeof ContainerError>;
+      assertEquals(err.containerName, "TestContainer");
+      assertEquals(err.operation, "test");
+      assertStringIncludes(err.message, "Zero tests");
+    } finally {
+      mock.restore();
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  },
+});
+
+Deno.test({
   name: "BcContainerProvider - runTests returns failure when some tests fail",
   ignore: !isWindows,
   async fn() {
@@ -1277,13 +1337,14 @@ Deno.test({
         "mock app content",
       );
 
-      // Mock: publish succeeds
-      mock.mockPowerShell(["Publish-BcContainerApp"], "PUBLISH_SUCCESS");
-
-      // Mock: some tests fail
+      // Mock: publish succeeds, one testfunction fails. The legacy path runs
+      // publish + tests as ONE script, so a single mock carries the combined
+      // output — and it must contain an actual Testfunction line: an output
+      // with zero parsed tests is now the GH #13 zero-tests infra case and
+      // throws ContainerError instead of scoring success=false.
       mock.mockPowerShell(
-        ["Run-TestsInBcContainer"],
-        `TEST_START\nSOME_TESTS_FAILED\nTEST_END`,
+        [],
+        `PUBLISH_SUCCESS\nTEST_START\nTestfunction TestSomething Failure (0.1 seconds)\nSOME_TESTS_FAILED\nTEST_END`,
       );
 
       const provider = new BcContainerProvider();

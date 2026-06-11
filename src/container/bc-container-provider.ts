@@ -22,7 +22,12 @@ import type {
 import { ensureDir } from "@std/fs";
 import { fromFileUrl } from "@std/path";
 import { Logger } from "../logger/mod.ts";
-import { bcchConfigInit, bcchUsePwshForBc24Sentinel } from "./bcch-config.ts";
+import {
+  BCCH_PINNED_VERSION,
+  bcchConfigInit,
+  bcchImport,
+  bcchUsePwshForBc24Sentinel,
+} from "./bcch-config.ts";
 import {
   captureRawTail,
   classifyPublishFailure,
@@ -469,7 +474,7 @@ export class BcContainerProvider implements ContainerProvider {
       `Light NST maintenance on ${containerName} (every ${every} tasks): FREEPROCCACHE + stale-session sweep`,
     );
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       ${bcchConfigInit()}
       try {
         $report = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -556,7 +561,7 @@ export class BcContainerProvider implements ContainerProvider {
     // Drop stale sessions first so nothing tries to reuse the dying container.
     await this.disposeContainerSlot(name);
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       try {
         Restart-BcContainer -containerName "${name}" -ErrorAction Stop
         Write-Output "RESTART_OK:${name}"
@@ -883,8 +888,8 @@ ${script}
     if (isModuleMissing(checkModule.output)) {
       log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
-        Install-Module bccontainerhelper -RequiredVersion 6.1.14 -Force -AllowClobber -Scope CurrentUser
-        Import-Module bccontainerhelper -RequiredVersion 6.1.14
+        Install-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION} -Force -AllowClobber -Scope CurrentUser
+        ${bcchImport()}
         Write-Output "MODULE_INSTALLED"
       `);
 
@@ -901,7 +906,7 @@ ${script}
 
     // Remove existing container if it exists
     await this.executePowerShell(`
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       if (Get-BcContainer -containerName "${config.name}" -ErrorAction SilentlyContinue) {
         Write-Output "Removing existing container: ${config.name}"
         Remove-BcContainer -containerName "${config.name}"
@@ -910,7 +915,7 @@ ${script}
 
     // Create new container
     const setupScript = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
 
       Write-Output "Creating Business Central container: ${config.name}"
       New-BcContainer \`
@@ -946,7 +951,7 @@ ${script}
     log.info(`Starting container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       Start-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} started"
     `;
@@ -970,7 +975,7 @@ ${script}
     log.info(`Stopping container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       Stop-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} stopped"
     `;
@@ -994,7 +999,7 @@ ${script}
     log.info(`Removing container: ${containerName}`);
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       Remove-BcContainer -containerName "${containerName}"
       Write-Output "Container ${containerName} removed"
     `;
@@ -1016,7 +1021,7 @@ ${script}
 
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
 
       # Check if container exists using Get-BcContainers (plural)
       $containers = Get-BcContainers
@@ -1129,7 +1134,7 @@ ${script}
       : "";
 
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
       $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit${cacheParams}
@@ -1176,7 +1181,7 @@ ${script}
     for (const name of containerNames) {
       try {
         const installed = await this.executePowerShell(`
-          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+          ${bcchImport()}
           $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
             $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
             $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
@@ -1206,7 +1211,7 @@ ${script}
         const escapedProject = projectDir.replace(/\\/g, "\\\\");
         const escapedOutput = outputDir.replace(/\\/g, "\\\\");
         const result = await this.executePowerShell(`
-          Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+          ${bcchImport()}
           ${bcchConfigInit()}
           Get-ChildItem "${escapedOutput}" -Filter *.app -ErrorAction SilentlyContinue | Remove-Item -Force
           $app = Compile-AppWithBcCompilerFolder -compilerFolder "${escapedCompiler}" \`
@@ -1400,10 +1405,10 @@ ${script}
     const appVersion = fileNameParts[fileNameParts.length - 1] || "";
 
     const script = `
-      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@6.1.14 usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-05-03-A"
+      Write-Output "[CG-PIN] provider.publishApp bccontainerhelper@${BCCH_PINNED_VERSION} usePwshForBc24=${bcchUsePwshForBc24Sentinel()} sentinel=2026-05-03-A"
       Write-Output "[CG-PIN] shell=$($PSVersionTable.PSEdition)/$($PSVersionTable.PSVersion) host=$([Environment]::MachineName) user=$([Environment]::UserName) pid=$PID"
       Write-Output "[CG-PIN] modulepath=$(($env:PSModulePath -split ';' | Select-Object -First 3) -join '|')"
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+      ${bcchImport()}
       # Use Windows PowerShell inside the container — pwsh sessions don't auto-load
       # Microsoft.Dynamics.Nav.Management (it's a .NET Framework module), so after
       # any Unpublish-BcContainerApp on a cached pwsh session, Get-NavServerInstance
@@ -2008,10 +2013,27 @@ ${script}
 
     this.logTestResult(success, passedTests, totalTests, contextLog);
 
-    // Debug: Log raw output when no tests are found (helps diagnose parsing issues)
-    if (totalTests === 0) {
-      contextLog.warn("No tests detected");
+    // GH #13: a candidate that compiled + published successfully but ran ZERO
+    // tests is an infrastructure condition (broken BCH version, stale-candidate
+    // collision, test-tool wedge), never a legitimate model failure — scoring
+    // it success=false masked a BCH regression across an entire bench run.
+    // Throw ContainerError(test) so the inline infra-retry reroutes to a
+    // healthy container instead. Exempt outputs where the test step itself
+    // reported activity (SOME_TESTS_FAILED / TEST_ERROR): those carry real
+    // signal and keep their existing semantics.
+    if (
+      totalTests === 0 &&
+      !result.output.includes("SOME_TESTS_FAILED") &&
+      !result.output.includes("TEST_ERROR")
+    ) {
+      contextLog.warn("Zero tests detected after successful publish (infra)");
       contextLog.debug("Raw output", { output: result.output });
+      throw this.buildPwshError({
+        containerName,
+        operation: "test",
+        message: "Zero tests detected after successful publish (infra)",
+        output: result.output,
+      });
     }
 
     return {
@@ -2119,7 +2141,7 @@ ${script}
     containerPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       Copy-ToNavContainer -containerName "${containerName}" -localPath "${localPath}" -containerPath "${containerPath}"
       Write-Output "Copied ${localPath} to ${containerName}:${containerPath}"
     `;
@@ -2143,7 +2165,7 @@ ${script}
     localPath: string,
   ): Promise<void> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       Copy-FromNavContainer -containerName "${containerName}" -containerPath "${containerPath}" -localPath "${localPath}"
       Write-Output "Copied ${containerName}:${containerPath} to ${localPath}"
     `;
@@ -2166,7 +2188,7 @@ ${script}
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
     const script = `
-      Import-Module bccontainerhelper -RequiredVersion 6.1.14
+      ${bcchImport()}
       $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock { ${command} }
       Write-Output $result
     `;
@@ -2177,7 +2199,7 @@ ${script}
   async isHealthy(containerName: string): Promise<boolean> {
     try {
       const script = `
-        Import-Module bccontainerhelper -RequiredVersion 6.1.14 -WarningAction SilentlyContinue
+        ${bcchImport()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;

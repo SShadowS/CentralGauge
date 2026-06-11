@@ -84,6 +84,17 @@ export const INFRA_SIGNATURES: InfraSignature[] = [
       "SQL service is stopped inside the container. Run: docker exec {container} powershell -Command \"Start-Service 'MSSQL$SQLEXPRESS'; Start-Service 'MSSQLFDLauncher$SQLEXPRESS'; Restart-Service 'MicrosoftDynamicsNavServer$BC'\"",
     catastrophicSingleFailure: true,
   },
+  {
+    id: "zero_tests",
+    label: "Zero tests found after successful publish",
+    patterns: [
+      /Zero tests detected after successful publish/i,
+    ],
+    scope: "container",
+    severity: "warn",
+    fixHint:
+      "Candidate published but the test runner found no tests (GH #13). Check the resolved bccontainerhelper version ([CG-PIN] lines) and for stale-candidate publish collisions; restart the bench after fixing.",
+  },
 ];
 
 /**

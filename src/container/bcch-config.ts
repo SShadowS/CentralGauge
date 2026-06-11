@@ -25,6 +25,35 @@
 // Only touch those for diagnostics. Re-enabling the PSSession reintroduces the
 // Get-NavServerInstance-after-Unpublish bug on affected images.
 
+/**
+ * The single bccontainerhelper version every host-side script pins to.
+ * Bump here (and re-verify per the CLAUDE.md checklist) — never inline a
+ * version string at a script site.
+ */
+export const BCCH_PINNED_VERSION = "6.1.14";
+
+/**
+ * The PowerShell lines that import bccontainerhelper at the pinned version
+ * AND fail loudly when a different version would actually serve the cmdlets.
+ *
+ * Why (GH #13): `Import-Module -RequiredVersion X` silently resolves to an
+ * already-loaded version when X isn't installed or another version was
+ * imported earlier in the session — the pin can *appear* validated on one
+ * machine while a different BCH runs underneath on another. `Get-Command`
+ * reports the module the cmdlets will actually dispatch to, which stays
+ * truthful even with two versions loaded side-by-side.
+ *
+ * Emits no output on success so callers that parse script output
+ * (JSON/markers) are unaffected.
+ */
+export function bcchImport(): string {
+  return [
+    `Import-Module bccontainerhelper -RequiredVersion ${BCCH_PINNED_VERSION} -WarningAction SilentlyContinue -ErrorAction Stop`,
+    `$cgBcchResolved = (Get-Command Invoke-ScriptInBcContainer -ErrorAction Stop).Module.Version.ToString()`,
+    `if ($cgBcchResolved -ne '${BCCH_PINNED_VERSION}') { throw "[CG-PIN] bccontainerhelper version mismatch: requested ${BCCH_PINNED_VERSION}, resolved $cgBcchResolved" }`,
+  ].join("\n");
+}
+
 function envFlag(name: string): "on" | "off" | "unset" {
   const raw = (Deno.env.get(name) ?? "").trim().toLowerCase();
   if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") {
