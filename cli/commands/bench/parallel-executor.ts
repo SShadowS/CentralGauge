@@ -44,6 +44,7 @@ import {
 import {
   cleanupContainer,
   type ContainerAppConfig,
+  endOfRunNuke,
   setupContainer,
   setupContainers,
 } from "./container-setup.ts";
@@ -682,11 +683,20 @@ export async function executeParallelBenchmark(
 
     // Cleanup container(s)
     if (containerNames && containerNames.length > 1) {
+      // Sweep the last task's candidate + prereq off every container (GH #13
+      // footnote) — per-task cleanup only runs at NEXT-task prep, so the
+      // final task's apps otherwise stay published until the next bench.
+      await endOfRunNuke(containerProvider, containerNames);
       // Multi-container: only cleanup compiler folders, don't remove containers
       if (containerProvider.cleanupCompilerFolders) {
         await containerProvider.cleanupCompilerFolders();
       }
     } else {
+      if (wasExisting) {
+        // Container outlives the bench — sweep leftover CentralGauge apps.
+        // (A container we created is removed below; no sweep needed.)
+        await endOfRunNuke(containerProvider, [primaryContainerName]);
+      }
       await cleanupContainer(
         containerProvider,
         primaryContainerName,

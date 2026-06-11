@@ -248,6 +248,34 @@ export async function setupContainers(
 }
 
 /**
+ * End-of-run sweep of CentralGauge apps (GH #13 footnote): without this the
+ * LAST task's candidate + prereq stay published when the bench completes —
+ * cleanup otherwise only runs at next-task prep and at bench startup. A stale
+ * candidate then blocks the next ad-hoc publish with "same App ID and Version"
+ * (all candidates share one fixed app ID).
+ *
+ * Best-effort: a container that died mid-run must not fail an otherwise
+ * complete bench; the startup prenuke covers whatever this misses.
+ */
+export async function endOfRunNuke(
+  containerProvider: ContainerProvider,
+  containerNames: string[],
+): Promise<void> {
+  if (containerNames.length === 0) return;
+  if (!("prenukeCentralGaugeApps" in containerProvider)) return;
+  try {
+    await (containerProvider as BcContainerProvider)
+      .prenukeCentralGaugeApps(containerNames);
+  } catch (e) {
+    log.warn(
+      `End-of-run app cleanup failed (next bench's startup prenuke will cover it): ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
+}
+
+/**
  * Cleanup container after benchmark
  */
 export async function cleanupContainer(
