@@ -289,7 +289,7 @@ codeunit 80014 "CG-AL-M004 Test"
         SalesOrderWorkspace.GoToRecord(SalesHeader);
 
         // [THEN] We can edit the record (Card page behavior)
-        SalesOrderWorkspace."Posting Date".SetValue(WorkDate());
+        SalesOrderWorkspace."Posting Date".SetValue(LicenseSafeDate());
         SalesOrderWorkspace.Close();
 
         // Cleanup
@@ -321,5 +321,16 @@ codeunit 80014 "CG-AL-M004 Test"
     begin
         // Handle any MESSAGE calls from actions
         // MESSAGE is expected for CalculateTotals, ExportPDF, and SendEmail actions
+    end;
+
+    local procedure LicenseSafeDate(): Date
+    begin
+        // The Cronus demo license restricts dates entered through the client to
+        // the Nov-Feb window (filter '??11*|??12*|??01*|??02*'). A date set
+        // through a TestPage outside that window is rejected by the client-layer
+        // license check, so setting Posting Date through the page must use an
+        // in-window date to stay portable across container licenses (GH #13).
+        // 15 January of the work-date year is always in-window.
+        exit(DMY2Date(15, 1, Date2DMY(WorkDate(), 3)));
     end;
 }

@@ -24,20 +24,9 @@ codeunit 80034 "CG-AL-M034 Test"
         Parent.Description := 'Parent for SetAutoCalcFields test';
         Parent.Insert();
 
-        Child.Init();
-        Child."Parent No." := 'P1';
-        Child.Amount := 100;
-        Child.Insert(true);
-
-        Child.Init();
-        Child."Parent No." := 'P1';
-        Child.Amount := 200;
-        Child.Insert(true);
-
-        Child.Init();
-        Child."Parent No." := 'P1';
-        Child.Amount := 300;
-        Child.Insert(true);
+        AddChild('P1', 100);
+        AddChild('P1', 200);
+        AddChild('P1', 300);
 
         // Act: read through RecordRef with SetAutoCalcFields
         Total := Demo.GetParentTotalViaRef('P1');
@@ -70,5 +59,21 @@ codeunit 80034 "CG-AL-M034 Test"
         Assert.AreEqual(0, Total, 'Parent with no children should yield Total Amount = 0');
 
         Parent.DeleteAll();
+    end;
+
+    local procedure AddChild(ParentNo: Code[20]; Amount: Decimal)
+    var
+        Child: Record "CG SACF Child";
+    begin
+        // Use a fresh record variable per insert. "CG SACF Child" has an
+        // AutoIncrement primary key ("Entry No."), and Init() does NOT reset
+        // primary-key fields — so reusing one variable across inserts keeps the
+        // PK from the prior insert, making the second Insert collide regardless
+        // of the candidate's code. A local var is zero-initialized each call, so
+        // AutoIncrement assigns a fresh "Entry No." every time.
+        Child.Init();
+        Child."Parent No." := ParentNo;
+        Child.Amount := Amount;
+        Child.Insert(true);
     end;
 }

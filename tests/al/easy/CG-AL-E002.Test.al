@@ -117,7 +117,7 @@ codeunit 80002 "CG-AL-E002 Test"
         // [SCENARIO] Created Date field can be edited on the page
         // [GIVEN] A Product Category record
         CreateProductCategory(ProductCategory);
-        NewDate := CalcDate('<+1D>', WorkDate());
+        NewDate := LicenseSafeDate();
 
         // [WHEN] We change the Created Date
         ProductCategoryCard.OpenEdit();
@@ -144,7 +144,7 @@ codeunit 80002 "CG-AL-E002 Test"
         // [SCENARIO] New record can be created from page with all fields
         // [GIVEN] A new code and test data
         TestCode := CopyStr(LibraryRandom.RandText(10), 1, 20);
-        TestDate := WorkDate();
+        TestDate := LicenseSafeDate();
 
         // [WHEN] We create a new record via the page with all fields
         ProductCategoryCard.OpenNew();
@@ -172,5 +172,16 @@ codeunit 80002 "CG-AL-E002 Test"
         ProductCategory.Active := true;
         ProductCategory."Created Date" := WorkDate();
         ProductCategory.Insert(true);
+    end;
+
+    local procedure LicenseSafeDate(): Date
+    begin
+        // The Cronus demo license restricts dates entered through the client to
+        // the Nov-Feb window (filter '??11*|??12*|??01*|??02*'). A date set
+        // through a TestPage outside that window is rejected by the client-layer
+        // license check, so date-editing assertions must use an in-window date
+        // to stay portable across container licenses (GH #13). 15 January of the
+        // work-date year is always in-window.
+        exit(DMY2Date(15, 1, Date2DMY(WorkDate(), 3)));
     end;
 }
