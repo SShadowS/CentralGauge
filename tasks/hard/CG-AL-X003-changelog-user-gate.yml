@@ -3,21 +3,14 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create codeunit "CG X003 Audit Check" (ID 70920) with Access = Internal and a
-  single procedure:
-
-      procedure WouldLogUserChanges(): Boolean
-
-  It returns whether a modification to the standard Business Central "User"
-  table would be recorded by the standard Business Central Change Log. It
-  returns true only when BOTH of the following hold:
-    - the standard Change Log is globally activated, and
-    - the "User" table is configured to log field modifications.
-  In every other case it returns false.
+  Create codeunit "CG X003 Audit Check" (ID 70920) with Access = Internal and
+  a single procedure: `procedure WouldLogUserChanges(): Boolean`. It returns
+  whether a modification to a "User" record would be recorded by the standard
+  Business Central Change Log.
 domains: [codeunits]
 metadata:
   category: error-transactions
-  tags: [change-log, audit, base-app, user-table, always-logged]
+  tags: [change-log, audit, base-app, user-table]
   difficulty: hard
   cohort: ado-trap-2026
   source_pr: 50285
