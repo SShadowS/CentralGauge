@@ -119,6 +119,31 @@ expected:
       const target = await loadTaskTarget("CG-AL-X002", tempDir);
       assertEquals(target, "OnPrem");
     });
+
+    it("should resolve an X-prefixed id into medium when it only exists there", async () => {
+      // ado-trap-2026 is not pinned to "hard" -- CG-AL-X004 is a medium
+      // trap-task. Use a synthetic id (not a real committed task) placed
+      // ONLY under tasks/medium to prove resolveXTaskDifficulty finds it
+      // there rather than defaulting to "hard". Regression for the X004
+      // dispatch (harness previously hardcoded X -> hard, commit 4402da3).
+      const tasksDir = join(tempDir, "tasks", "medium");
+      await ensureDir(tasksDir);
+
+      const taskYaml = `id: CG-AL-X999
+description: Test task
+metadata:
+  target: Cloud
+expected:
+  compile: true
+`;
+      await Deno.writeTextFile(
+        join(tasksDir, "CG-AL-X999-synthetic-medium-trap.yml"),
+        taskYaml,
+      );
+
+      const target = await loadTaskTarget("CG-AL-X999", tempDir);
+      assertEquals(target, "Cloud");
+    });
   });
 
   describe("loadTestCodeunitId", () => {
@@ -166,6 +191,15 @@ expected:
       // task YAML. Regression for commit 4402da3.
       const id = await loadTestCodeunitId("CG-AL-X002", PROJECT_ROOT);
       assertEquals(id, 80291);
+    });
+
+    it("should return testCodeunitId for the medium-tier X-prefixed (trap-task) CG-AL-X004 using the real committed task files", async () => {
+      // CG-AL-X004 is committed under tasks/medium/ (ado-trap-2026 cohort,
+      // first medium-tier X-task). Uses the real project root to prove the
+      // X-prefix resolves into medium/ (not the hard/ default) against the
+      // actual task YAML.
+      const id = await loadTestCodeunitId("CG-AL-X004", PROJECT_ROOT);
+      assertEquals(id, 80293);
     });
   });
 });

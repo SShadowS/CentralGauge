@@ -921,6 +921,45 @@ interface VerifyResult {
 }
 
 /**
+ * Static difficulty-folder map for E/M/H task ID prefixes.
+ */
+const STATIC_DIFFICULTY_MAP: Record<"E" | "M" | "H", string> = {
+  E: "easy",
+  M: "medium",
+  H: "hard",
+};
+
+/**
+ * X-prefixed ids (the ado-trap-2026 trap-task cohort) are NOT pinned to a
+ * single difficulty tier -- CG-AL-X002/X003 are hard, CG-AL-X004 is medium --
+ * so unlike E/M/H, "X" cannot use a static map. Probe tasks/{hard,medium,easy}
+ * (in that order, for back-compat with commit 4402da3's original "X always
+ * hard" behavior) for the first folder that actually contains a matching
+ * `CG-AL-X###-*.yml`, defaulting to "hard" if none is found.
+ */
+async function resolveXTaskDifficulty(
+  taskId: string,
+  projectRoot: string,
+): Promise<string> {
+  for (const candidate of ["hard", "medium", "easy"]) {
+    const tasksDir = join(projectRoot, "tasks", candidate);
+    try {
+      for await (const entry of Deno.readDir(tasksDir)) {
+        if (
+          entry.isFile && entry.name.startsWith(taskId) &&
+          entry.name.endsWith(".yml")
+        ) {
+          return candidate;
+        }
+      }
+    } catch {
+      // Directory doesn't exist or read error; try next candidate.
+    }
+  }
+  return "hard";
+}
+
+/**
  * Load testCodeunitId from task YAML for targeted test execution.
  * Returns undefined if task YAML not found or doesn't have testCodeunitId.
  */
@@ -933,13 +972,9 @@ async function loadTestCodeunitId(
   if (!match) return undefined;
 
   const difficultyCode = match[1] as "E" | "M" | "H" | "X";
-  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
-    E: "easy",
-    M: "medium",
-    H: "hard",
-    X: "hard",
-  };
-  const difficulty = difficultyMap[difficultyCode];
+  const difficulty = difficultyCode === "X"
+    ? await resolveXTaskDifficulty(taskId, projectRoot)
+    : STATIC_DIFFICULTY_MAP[difficultyCode];
 
   // Find task YAML file (pattern: tasks/{difficulty}/CG-AL-{ID}-*.yml)
   const tasksDir = join(projectRoot, "tasks", difficulty);
@@ -976,13 +1011,9 @@ async function loadTaskTarget(
   if (!match) return undefined;
 
   const difficultyCode = match[1] as "E" | "M" | "H" | "X";
-  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
-    E: "easy",
-    M: "medium",
-    H: "hard",
-    X: "hard",
-  };
-  const difficulty = difficultyMap[difficultyCode];
+  const difficulty = difficultyCode === "X"
+    ? await resolveXTaskDifficulty(taskId, projectRoot)
+    : STATIC_DIFFICULTY_MAP[difficultyCode];
 
   // Find task YAML file (pattern: tasks/{difficulty}/CG-AL-{ID}-*.yml)
   const tasksDir = join(projectRoot, "tasks", difficulty);
@@ -1012,7 +1043,8 @@ async function loadTaskTarget(
  * - E = easy (e.g., CG-AL-E007 -> tests/al/easy/CG-AL-E007.Test.al)
  * - M = medium
  * - H = hard
- * - X = hard (trap-task cohort, e.g. CG-AL-X002 -> tests/al/hard/CG-AL-X002.Test.al)
+ * - X = trap-task cohort; resolved dynamically via resolveXTaskDifficulty
+ *   (e.g. CG-AL-X002 -> tests/al/hard/..., CG-AL-X004 -> tests/al/medium/...)
  */
 async function resolveTestFileFromTaskId(
   taskId: string,
@@ -1031,13 +1063,9 @@ async function resolveTestFileFromTaskId(
   }
 
   const difficultyCode = match[1] as "E" | "M" | "H" | "X";
-  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
-    E: "easy",
-    M: "medium",
-    H: "hard",
-    X: "hard",
-  };
-  const difficulty = difficultyMap[difficultyCode];
+  const difficulty = difficultyCode === "X"
+    ? await resolveXTaskDifficulty(taskId, projectRoot)
+    : STATIC_DIFFICULTY_MAP[difficultyCode];
 
   // Build the test file path
   const testFilePath = join(

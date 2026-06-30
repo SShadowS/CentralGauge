@@ -1,0 +1,32 @@
+id: CG-AL-X004
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Using the existing "CG X004 Item" table (ID 69630), which has fields
+  "Entry No." (Integer, primary key), "Category" (Code[1]), and "Tag" (Integer),
+  create codeunit "CG X004 Copier" (ID 70930) with Access = Internal and:
+
+      procedure CopyAToB(): Integer
+
+  For every "CG X004 Item" whose "Category" is 'A', create one new "CG X004 Item"
+  whose "Category" is 'B', whose "Tag" equals the source row's "Tag", and whose
+  "Entry No." equals the source row's "Tag" plus 1000. If a row with that
+  "Entry No." already exists, do not create or change it. The procedure returns
+  the number of new rows it created on that call. Running CopyAToB more than once
+  must never create duplicate 'B' rows and must never raise an error.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [list, find-set, idempotent, insert, iterate-safety]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50590
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X004.Test.al
+  testCodeunitId: 80293
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
