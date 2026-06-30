@@ -929,14 +929,15 @@ async function loadTestCodeunitId(
   projectRoot: string,
 ): Promise<number | undefined> {
   // Parse difficulty from task ID (e.g., CG-AL-E007 -> E -> easy)
-  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  const match = taskId.match(/^CG-AL-([EMHX])\d+$/);
   if (!match) return undefined;
 
-  const difficultyCode = match[1] as "E" | "M" | "H";
-  const difficultyMap: Record<"E" | "M" | "H", string> = {
+  const difficultyCode = match[1] as "E" | "M" | "H" | "X";
+  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
     E: "easy",
     M: "medium",
     H: "hard",
+    X: "hard",
   };
   const difficulty = difficultyMap[difficultyCode];
 
@@ -971,14 +972,15 @@ async function loadTaskTarget(
   projectRoot: string,
 ): Promise<"Cloud" | "OnPrem" | undefined> {
   // Parse difficulty from task ID (e.g., CG-AL-M022 -> M -> medium)
-  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  const match = taskId.match(/^CG-AL-([EMHX])\d+$/);
   if (!match) return undefined;
 
-  const difficultyCode = match[1] as "E" | "M" | "H";
-  const difficultyMap: Record<"E" | "M" | "H", string> = {
+  const difficultyCode = match[1] as "E" | "M" | "H" | "X";
+  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
     E: "easy",
     M: "medium",
     H: "hard",
+    X: "hard",
   };
   const difficulty = difficultyMap[difficultyCode];
 
@@ -1010,6 +1012,7 @@ async function loadTaskTarget(
  * - E = easy (e.g., CG-AL-E007 -> tests/al/easy/CG-AL-E007.Test.al)
  * - M = medium
  * - H = hard
+ * - X = hard (trap-task cohort, e.g. CG-AL-X002 -> tests/al/hard/CG-AL-X002.Test.al)
  */
 async function resolveTestFileFromTaskId(
   taskId: string,
@@ -1018,7 +1021,7 @@ async function resolveTestFileFromTaskId(
   { success: true; testFile: string } | { success: false; error: string }
 > {
   // Parse the difficulty from task ID (e.g., CG-AL-E007 -> E -> easy)
-  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  const match = taskId.match(/^CG-AL-([EMHX])\d+$/);
   if (!match) {
     return {
       success: false,
@@ -1027,11 +1030,12 @@ async function resolveTestFileFromTaskId(
     };
   }
 
-  const difficultyCode = match[1] as "E" | "M" | "H";
-  const difficultyMap: Record<"E" | "M" | "H", string> = {
+  const difficultyCode = match[1] as "E" | "M" | "H" | "X";
+  const difficultyMap: Record<"E" | "M" | "H" | "X", string> = {
     E: "easy",
     M: "medium",
     H: "hard",
+    X: "hard",
   };
   const difficulty = difficultyMap[difficultyCode];
 
