@@ -1063,7 +1063,7 @@ async function resolveTestFileFromTaskId(
  * Handle al_verify_task - compile and run tests using task ID to look up test file.
  * This prevents the agent from seeing or reading the test file directly.
  */
-async function handleAlVerifyTask(params: {
+export async function handleAlVerifyTask(params: {
   projectDir: string;
   taskId: string;
   containerName?: string;

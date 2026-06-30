@@ -107,6 +107,7 @@ scripts/*
 !scripts/verify-backfill-invariants.ts
 !scripts/weekly-cycle.ts
 !scripts/cycle-*.ps1
+!scripts/trap-probe.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
@@ -132,4 +133,7 @@ site/tests/e2e/__screenshots__/
 # WIP plans/specs from 2026-05-03 (kept untracked; commit individually when ready).
 docs/superpowers/plans/2026-05-03-*.md
 docs/superpowers/specs/2026-05-03-*.md
+
+# Dev-only reference solutions used by scripts/trap-probe.ts (never committed).
+scratch/
 .superpowers/
