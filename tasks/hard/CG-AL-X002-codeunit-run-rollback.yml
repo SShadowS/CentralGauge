@@ -1,0 +1,44 @@
+id: CG-AL-X002
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Implement an idempotent, all-or-nothing migration over the existing
+  "CG X002 Input" table (ID 69621), "CG X002 Result" table (ID 69622), and
+  "CG X002 State" table (ID 69620).
+
+  Create codeunit "CG X002 Migration" (ID 70910). It exposes:
+
+      procedure RunOnce(): Boolean
+      trigger OnRun()
+
+  Behavior of RunOnce:
+    - If the single "CG X002 State" record exists and its "Done" field is true,
+      return true without doing anything else.
+    - Otherwise process every "CG X002 Input" row in ascending "Entry No." order:
+      for each row, create a "CG X002 Result" row whose "Entry No." and "Value"
+      equal the input's "Entry No." and "Value". A "CG X002 Input" row whose
+      "Value" is negative must raise an error with the message 'poison'.
+    - When all inputs are processed without error, set the "CG X002 State"
+      record's "Done" field to true and persist it.
+    - If any input raises an error, RunOnce must return false, every "CG X002
+      Result" row written during this call must be rolled back, and the "Done"
+      field must remain false so a later call can retry. A failing call must not
+      propagate the error to its caller.
+    - A successful completion returns true.
+  Access = Internal.
+domains: [codeunits, error-handling]
+metadata:
+  category: error-transactions
+  tags: [codeunit-run, rollback, transaction-boundary, run-once-guard, idempotent]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 50590
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X002.Test.al
+  testCodeunitId: 80291
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
