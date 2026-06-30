@@ -5,6 +5,7 @@ import { ensureDir } from "@std/fs";
 import {
   loadTaskTarget,
   loadTestCodeunitId,
+  resolveTestFileFromTaskId,
 } from "../../../mcp/al-tools-server.ts";
 
 // Real project root, for tests that exercise the X-prefixed (trap-task)
@@ -200,6 +201,57 @@ expected:
       // actual task YAML.
       const id = await loadTestCodeunitId("CG-AL-X004", PROJECT_ROOT);
       assertEquals(id, 80293);
+    });
+  });
+
+  describe("resolveTestFileFromTaskId", () => {
+    it("should resolve the medium-tier X-prefixed (trap-task) CG-AL-X004 to tests/al/medium using the real committed task files", async () => {
+      // CG-AL-X004 is committed under tasks/medium/ (ado-trap-2026 cohort,
+      // first medium-tier X-task). This is a direct regression test for the
+      // function that actually blocked X004: before the resolveXTaskDifficulty
+      // fix, resolveTestFileFromTaskId hardcoded every X-prefixed id to
+      // tests/al/hard/, so al_verify_task could never find
+      // tests/al/medium/CG-AL-X004.Test.al even though the file exists.
+      const result = await resolveTestFileFromTaskId(
+        "CG-AL-X004",
+        PROJECT_ROOT,
+      );
+      assertEquals(result.success, true);
+      if (result.success) {
+        assertEquals(
+          result.testFile,
+          join(PROJECT_ROOT, "tests", "al", "medium", "CG-AL-X004.Test.al"),
+        );
+      }
+    });
+
+    it("should resolve an X-prefixed id into tests/al/medium when its task YAML only exists under tasks/medium", async () => {
+      // Synthetic fixture proving resolution is dynamic (probes
+      // tasks/{hard,medium,easy}) rather than hardcoded to "hard". Mirrors
+      // the loadTaskTarget/loadTestCodeunitId synthetic-medium regression
+      // tests above, but exercises resolveTestFileFromTaskId directly.
+      const tasksDir = join(tempDir, "tasks", "medium");
+      await ensureDir(tasksDir);
+      await Deno.writeTextFile(
+        join(tasksDir, "CG-AL-X998-synthetic-medium-trap.yml"),
+        `id: CG-AL-X998\ndescription: Test task\nexpected:\n  compile: true\n`,
+      );
+
+      const testDir = join(tempDir, "tests", "al", "medium");
+      await ensureDir(testDir);
+      const testFilePath = join(testDir, "CG-AL-X998.Test.al");
+      await Deno.writeTextFile(testFilePath, "codeunit 80998 Test { }\n");
+
+      const result = await resolveTestFileFromTaskId("CG-AL-X998", tempDir);
+      assertEquals(result.success, true);
+      if (result.success) {
+        assertEquals(result.testFile, testFilePath);
+      }
+    });
+
+    it("should return success:false for an invalid task ID format", async () => {
+      const result = await resolveTestFileFromTaskId("invalid-id", tempDir);
+      assertEquals(result.success, false);
     });
   });
 });

@@ -1904,4 +1904,4 @@ if (import.meta.main) {
 }
 
 // Export for testing
-export { loadTaskTarget, loadTestCodeunitId };
+export { loadTaskTarget, loadTestCodeunitId, resolveTestFileFromTaskId };
