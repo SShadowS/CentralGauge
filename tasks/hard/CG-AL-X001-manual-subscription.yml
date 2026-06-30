@@ -1,0 +1,31 @@
+id: CG-AL-X001
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Use the existing "CG X001 Publisher" codeunit (ID 69601), whose procedure
+  Raise() raises an integration event, and the existing "CG X001 Audit Sub"
+  codeunit (ID 69602), a manual event-subscriber to that event which
+  increments a counter each time it observes the event firing.
+
+  Create codeunit "CG X001 Worker" (ID 70900) with Access = Internal and:
+
+      procedure RunAudited()
+
+  When RunAudited is called, the "CG X001 Audit Sub" subscriber must observe
+  the event raised by "CG X001 Publisher".Raise() during that call.
+domains: [codeunits]
+metadata:
+  category: interfaces-events
+  tags: [events, manual-subscriber, bindsubscription, integration-event]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 50285
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X001.Test.al
+  testCodeunitId: 80290
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
