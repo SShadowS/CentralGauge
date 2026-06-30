@@ -2,11 +2,59 @@
 // Discrimination-probe driver. Runs a task's oracle against a provided AL
 // solution directory and asserts the pass/fail outcome.
 // Usage: deno run -A scripts/trap-probe.ts --task CG-AL-X002 --solution <dir> --expect pass|fail [--container Cronus28]
+//
+// This script is invoked directly via `deno run -A` (NOT `deno task`), so it
+// does NOT inherit the project's normal `.env` loading. Without it, BC
+// container credentials default to "admin"/"admin" (see
+// `BcContainerProvider.getCredentials`), which the local Cronus containers
+// reject (they use "sshadows"/"1234" per CLAUDE.md). `handleAlVerifyTask` is
+// therefore imported DYNAMICALLY inside `main()`, after credentials are
+// resolved, rather than statically at module scope: `mcp/al-tools-server.ts`
+// reads CENTRALGAUGE_CONTAINER_USERNAME/PASSWORD from `Deno.env` exactly once,
+// at module-evaluation time (top-level code, ~line 64), and ES module static
+// imports are fully evaluated before ANY of this file's own top-level code
+// runs — so a static import would always see the un-loaded env, no matter
+// where `EnvLoader.loadEnvironment()` was called afterwards. Confirmed
+// empirically: a dynamic `import()` is the only way to defer that module's
+// evaluation until after we've set the env vars it reads.
 import { parseArgs } from "@std/cli/parse-args";
 import { resolve } from "@std/path";
 import * as colors from "@std/fmt/colors";
-import { handleAlVerifyTask } from "../mcp/al-tools-server.ts";
 import { classifyInfraError } from "../src/health/classify.ts";
+import { EnvLoader } from "../src/utils/env-loader.ts";
+
+/** Local-only dev defaults for THIS machine's Cronus containers (CLAUDE.md
+ * "Local BC Container"). `.env` does not carry container credentials today
+ * (it only carries LLM API keys + benchmark settings), so trap-probe must be
+ * self-sufficient rather than relying on a `.env` entry that doesn't exist. */
+const LOCAL_CONTAINER_USERNAME = "sshadows";
+const LOCAL_CONTAINER_PASSWORD = "1234";
+
+/**
+ * Load `.env` exactly like the normal CLI entrypoint does
+ * (`cli/centralgauge.ts`'s `initializeApp` -> `EnvLoader.loadEnvironment()`),
+ * then default the BC container credentials to this machine's documented
+ * local values if neither `.env` nor the shell environment supplied them.
+ * Must run BEFORE the dynamic import of `mcp/al-tools-server.ts` below.
+ */
+async function resolveCredentialsEnv(): Promise<void> {
+  await EnvLoader.loadEnvironment();
+
+  if (!Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME")) {
+    Deno.env.set("CENTRALGAUGE_CONTAINER_USERNAME", LOCAL_CONTAINER_USERNAME);
+  }
+  if (!Deno.env.get("CENTRALGAUGE_CONTAINER_PASSWORD")) {
+    Deno.env.set("CENTRALGAUGE_CONTAINER_PASSWORD", LOCAL_CONTAINER_PASSWORD);
+  }
+  // Note: never log the password value itself.
+  console.error(
+    colors.gray(
+      `[trap-probe] container credentials resolved (user=${
+        Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME")
+      })`,
+    ),
+  );
+}
 
 // Exact return shape of handleAlVerifyTask / handleAlVerify, copied from
 // `interface VerifyResult` in mcp/al-tools-server.ts (~line 913). Note:
@@ -100,6 +148,11 @@ async function main() {
   // work from the invoker's shell) while the handler always sees an absolute
   // path.
   const solutionDir = resolve(a.solution);
+
+  // MUST happen before the dynamic import below — see the file-header note
+  // on why this can't be a static import + a later loadEnvironment() call.
+  await resolveCredentialsEnv();
+  const { handleAlVerifyTask } = await import("../mcp/al-tools-server.ts");
 
   const res: VerifyResult = await handleAlVerifyTask({
     projectDir: solutionDir,
