@@ -103,6 +103,7 @@ function getDifficulty(taskId: string): "Easy" | "Medium" | "Hard" | null {
   if (taskId.includes("-E")) return "Easy";
   if (taskId.includes("-M")) return "Medium";
   if (taskId.includes("-H")) return "Hard";
+  if (taskId.includes("-X")) return "Hard";
   return null;
 }
 

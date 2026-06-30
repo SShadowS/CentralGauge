@@ -10,7 +10,6 @@ description: >-
   Create codeunit "CG X002 Migration" (ID 70910). It exposes:
 
       procedure RunOnce(): Boolean
-      trigger OnRun()
 
   Behavior of RunOnce:
     - If the single "CG X002 State" record exists and its "Done" field is true,

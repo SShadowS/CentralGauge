@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
-import { join } from "@std/path";
+import { fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import {
   loadTaskTarget,
   loadTestCodeunitId,
 } from "../../../mcp/al-tools-server.ts";
+
+// Real project root, for tests that exercise the X-prefixed (trap-task)
+// resolution path against the actual committed CG-AL-X002 task files
+// rather than a synthetic fixture.
+const PROJECT_ROOT = fromFileUrl(new URL("../../../", import.meta.url));
 
 describe("al-tools-server", () => {
   let tempDir: string;
@@ -92,6 +97,28 @@ expected:
       const target = await loadTaskTarget("invalid-id", tempDir);
       assertEquals(target, undefined);
     });
+
+    it("should resolve an X-prefixed (trap-task) id to the hard tier", async () => {
+      // X-prefixed ids (ado-trap-2026 cohort) must resolve into tasks/hard,
+      // same as H-prefixed ids. Regression for commit 4402da3.
+      const tasksDir = join(tempDir, "tasks", "hard");
+      await ensureDir(tasksDir);
+
+      const taskYaml = `id: CG-AL-X002
+description: Test task
+metadata:
+  target: OnPrem
+expected:
+  compile: true
+`;
+      await Deno.writeTextFile(
+        join(tasksDir, "CG-AL-X002-codeunit-run-rollback.yml"),
+        taskYaml,
+      );
+
+      const target = await loadTaskTarget("CG-AL-X002", tempDir);
+      assertEquals(target, "OnPrem");
+    });
   });
 
   describe("loadTestCodeunitId", () => {
@@ -130,6 +157,15 @@ expected:
 
       const id = await loadTestCodeunitId("CG-AL-E001", tempDir);
       assertEquals(id, undefined);
+    });
+
+    it("should return testCodeunitId for an X-prefixed (trap-task) id using the real committed task files", async () => {
+      // CG-AL-X002 is committed under tasks/hard/ (ado-trap-2026 cohort).
+      // Uses the real project root (not a tempDir fixture) to prove the
+      // X-prefix is resolved into the hard/ folder against the actual
+      // task YAML. Regression for commit 4402da3.
+      const id = await loadTestCodeunitId("CG-AL-X002", PROJECT_ROOT);
+      assertEquals(id, 80291);
     });
   });
 });
