@@ -1,0 +1,39 @@
+id: CG-AL-X024
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create table 71130 "CG X024 Token" with Access = Internal and
+  DataClassification = SystemMetadata, with fields:
+
+      "Entry No." (Integer, primary key)
+      "External Ref" (sized to hold at least 50 characters)
+
+  Also create codeunit 71131 "CG X024 Registrar" with Access = Internal,
+  exposing:
+
+      procedure Register(EntryNo: Integer; Ref: Text)
+      procedure GetRef(EntryNo: Integer): Text
+
+  `Register` stores Ref as the "External Ref" of the token row identified by
+  EntryNo (inserting the row if it does not already exist, updating it if it
+  does). `GetRef` returns the "External Ref" currently stored for EntryNo.
+
+  Each external reference is an opaque token supplied by a caller and may be
+  mixed-case. `GetRef` must return it exactly as it was supplied to
+  `Register` -- character-for-character, with its original case preserved.
+domains: [tables, codeunits]
+metadata:
+  category: data-modeling
+  tags: [code-type, text-type, case-sensitivity, field-type]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50584
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X024.Test.al
+  testCodeunitId: 80313
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
