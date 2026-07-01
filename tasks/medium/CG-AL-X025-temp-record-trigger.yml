@@ -1,0 +1,37 @@
+id: CG-AL-X025
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create table 71140 "CG X025 Doc" (Access = Internal, DataClassification =
+  SystemMetadata) with fields:
+
+      "Entry No." (Integer, primary key)
+      "Name" (Text[50])
+
+  Create table 71141 "CG X025 Doc Log" (DataClassification = SystemMetadata)
+  with fields:
+
+      "Entry No." (Integer, an auto-assigned primary key)
+      "Doc Entry No." (Integer)
+
+  Table "CG X025 Doc" must record each of its insertions in "CG X025 Doc Log":
+  whenever a "CG X025 Doc" record is inserted, a single "CG X025 Doc Log" row
+  is created with "Doc Entry No." set to that record's "Entry No.". However,
+  in-memory (temporary) "CG X025 Doc" records must never produce a "CG X025 Doc
+  Log" row -- only documents that are actually stored are recorded.
+domains: [tables]
+metadata:
+  category: records-runtime
+  tags: [temporary-record, trigger, oninsert, istemporary]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50056
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X025.Test.al
+  testCodeunitId: 80314
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
