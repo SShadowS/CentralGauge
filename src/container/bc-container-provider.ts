@@ -295,7 +295,7 @@ export class BcContainerProvider implements ContainerProvider {
   private static readonly HARNESS_APP_NAME = "CG Test Harness";
   // Bump HARNESS_APP_VERSION (and infra/cg-test-harness/app.json) to force
   // redeployment after changing the harness source.
-  private static readonly HARNESS_APP_VERSION = "1.0.0.0";
+  private static readonly HARNESS_APP_VERSION = "1.0.1.0";
 
   // Per-container session slots. Each slot owns its own lock + session ref +
   // disposing/disposed flags + lifecycle metrics. See `ContainerSessionSlot`

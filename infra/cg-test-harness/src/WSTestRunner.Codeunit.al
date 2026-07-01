@@ -1,6 +1,7 @@
 namespace CentralGauge.TestHarness;
 
 using System.TestTools.TestRunner;
+using System.Reflection;
 
 /// <summary>
 /// Headless test runner. Builds a fresh AL Test Suite, runs the requested
@@ -15,7 +16,9 @@ codeunit 50500 "CG WS Test Runner"
         ALTestSuite: Record "AL Test Suite";
         TestMethodLine: Record "Test Method Line";
         CodeunitLine: Record "Test Method Line";
+        CodeunitMetadata: Record "CodeUnit Metadata";
         TestSuiteMgt: Codeunit "Test Suite Mgt.";
+        TestRunnerMgt: Codeunit "Test Runner - Mgt";
         ResultObj: JsonObject;
         CodeunitArr: JsonArray;
         CodeunitTok: JsonToken;
@@ -38,6 +41,18 @@ codeunit 50500 "CG WS Test Runner"
             TestSuiteMgt.SelectTestMethodsByRange(ALTestSuite, Format(TestCodeunitId))
         else
             TestSuiteMgt.SelectTestMethodsByExtension(ALTestSuite, ExtensionId);
+
+        // A test codeunit that declares `RequiredTestIsolation = Disabled;`
+        // (e.g. a background-session/StartSession trap task) cannot run under
+        // the default "Test Runner - Isol. Codeunit" (130450): the platform
+        // throws "Sessions can only be started in tests that are run by a
+        // TestRunner that has TestIsolation set to Disabled." Switch this
+        // suite's runner to "Test Runner - Isol. Disabled" (130451) whenever
+        // the requested test codeunit asks for it. Every other test codeunit
+        // (RequiredTestIsolation defaults to Codeunit) is unaffected.
+        if (TestCodeunitId > 0) and CodeunitMetadata.Get(TestCodeunitId) then
+            if CodeunitMetadata.RequiredTestIsolation = CodeunitMetadata.RequiredTestIsolation::Disabled then
+                TestSuiteMgt.ChangeTestRunner(ALTestSuite, TestRunnerMgt.GetIsolationDisabledTestRunner());
 
         // RunAllTests / CalcTestResults read the "Test Suite" FIELD value, not the
         // filter, so a record must actually be loaded before calling them.
