@@ -1,0 +1,30 @@
+id: CG-AL-X029
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit 71180 "CG X029 Reader" with Access = Internal, exposing:
+
+      procedure ReadTwice(var Source: Codeunit "Temp Blob"): Text
+
+  Source already has content written to it. ReadTwice must read the full text
+  content held by Source, then separately read the full text content held by
+  Source a second time, and return the two reads joined with a single '|'
+  character (first read, then '|', then second read). Both reads must return
+  the complete content that was written to Source; a caller comparing the
+  first read to the second read should find them identical.
+domains: [codeunits]
+metadata:
+  category: integration-serialization
+  tags: [instream, stream, resetposition, tempblob]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 51032
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X029.Test.al
+  testCodeunitId: 80318
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
