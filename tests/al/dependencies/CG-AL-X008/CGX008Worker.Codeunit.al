@@ -17,7 +17,9 @@ codeunit 69682 "CG X008 Worker"
             Signal."Primary Key" := '';
             Signal.Insert();
         end;
-        Signal.Result := Total;
+        // Opaque, non-sum formula: a model cannot pass by inlining a plain
+        // sum of the inputs without ever writing/committing/StartSession-ing.
+        Signal.Result := Total * 3 + Input.Count();
         Signal.Done := true;
         Signal.Modify();
     end;

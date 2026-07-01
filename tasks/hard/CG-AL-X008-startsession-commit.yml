@@ -12,14 +12,14 @@ description: >-
   the existing "CG X008 Input" table (ID 69680, fields "Entry No." (Integer,
   primary key) and "Value" (Integer)), then run the existing "CG X008 Worker"
   codeunit (ID 69682) in a separate background session, wait for that
-  background session to finish its work, and return the total sum it
-  computed. The background worker reads every row currently in "CG X008
-  Input", sums the "Value" field, and records the sum plus a completion flag
-  in the existing "CG X008 Signal" table (ID 69681, fields "Primary Key"
-  (Code[10], primary key), "Done" (Boolean), and "Result" (Integer), always
-  using the single row with "Primary Key" = ''). The procedure must wait for
-  "Done" to become true before returning "Result", using a bounded wait so it
-  can never hang forever.
+  background session to finish its work, and return the value the worker
+  computed and stored. The background worker reads every row currently in
+  "CG X008 Input" and records its result plus a completion flag in the
+  existing "CG X008 Signal" table (ID 69681, fields "Primary Key" (Code[10],
+  primary key), "Done" (Boolean), and "Result" (Integer), always using the
+  single row with "Primary Key" = ''). The procedure must wait for "Done" to
+  become true before returning "Result", using a bounded wait so it can never
+  hang forever.
 domains: [codeunits]
 metadata:
   category: error-transactions

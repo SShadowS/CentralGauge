@@ -2,7 +2,7 @@
     "id": "a1b2c3d4-0a08-0000-0000-000000000001",
     "name": "CG-AL-X008 Prereq",
     "publisher": "CentralGauge",
-    "version": "1.0.0.0",
+    "version": "1.0.1.0",
     "platform": "27.0.0.0",
     "application": "27.0.0.0",
     "idRanges": [{ "from": 69680, "to": 69689 }],
