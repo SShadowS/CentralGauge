@@ -1,0 +1,34 @@
+id: CG-AL-X011
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X011 Modifier" (ID 71000) with Access = Internal and:
+
+      procedure SetCViaUpdater(RecCode: Code[20]; NewC: Integer)
+
+  Given a code identifying a row in the existing "CG X011 Record" table (ID
+  69710, fields "Code" (Code[20], primary key), "A" (Integer), "B" (Integer),
+  and "C" (Integer)), the procedure must invoke the existing "CG X011
+  Updater" codeunit's Apply procedure (ID 69711, procedure Apply(RecCode:
+  Code[20])) for that row, which applies its own updates to that row's "A"
+  and "B" fields. After that call returns, the procedure must set that same
+  row's "C" field to NewC and persist the change. The row's final persisted
+  state must reflect BOTH whatever "A" and "B" values the Updater applied AND
+  this procedure's own "C" update -- none of the three fields may end up
+  reverted or lost.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [record-modify, snapshot, stale-record, re-read]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 10428
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X011.Test.al
+  testCodeunitId: 80300
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
