@@ -1,0 +1,32 @@
+id: CG-AL-X026
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X026 Filter" (ID 71150) with Access = Internal and:
+
+      procedure SumByCategory(CategoryFilter: Code[20]): Integer
+
+  The existing "CG X026 Item" table (ID 69820, fields "No." (Code[20],
+  primary key), "Category" (Code[20]), and "Amount" (Integer)) holds
+  individual items, each assigned to a category.
+
+  SumByCategory must return the sum of "Amount" across every item in "CG
+  X026 Item" whose "Category" equals CategoryFilter. When CategoryFilter is
+  blank, SumByCategory must return the sum of "Amount" across every item in
+  the table, regardless of category.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [setrange, blank-filter, conditional-filter, filter-reset]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50056
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X026.Test.al
+  testCodeunitId: 80315
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
