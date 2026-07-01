@@ -1,0 +1,37 @@
+id: CG-AL-X019
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X019 Processor" (ID 71080) with Access = Internal and:
+
+      procedure NormalizeAndGetAmount(RefID: Guid): Integer
+
+  The existing "CG X019 Doc" table (ID 69770, fields "No." (Code[20],
+  primary key), "Ref ID" (Guid), and "Amount" (Integer)) holds documents,
+  each identified by a "Ref ID" value.
+
+  The existing "CG X019 Normalizer" codeunit (ID 69771) provides:
+
+      procedure Normalize(RefID: Guid)
+
+  which normalizes the "CG X019 Doc" record identified by that RefID.
+
+  NormalizeAndGetAmount must read the "CG X019 Doc" record identified by
+  RefID, call Normalizer.Normalize(RefID), and then return that same
+  document's current "Amount" value.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [rename, stale-record, find, primary-key, relocate]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50941
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X019.Test.al
+  testCodeunitId: 80308
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
