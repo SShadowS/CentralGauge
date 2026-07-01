@@ -1,0 +1,28 @@
+id: CG-AL-X014
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X014 Finder" (ID 71030) with Access = Internal and:
+
+      procedure FindByCode(Target: Code[20]): Boolean
+
+  The procedure must return true if and only if an item exists in the
+  existing "CG X014 Item" table (ID 69740, fields "Code" (Code[20], primary
+  key) and "Name" (Text[50])) whose "Code" field is exactly equal to Target,
+  and false otherwise. Target may be any Code[20] value.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [setfilter, setrange, filter-substitution, special-characters]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 10230
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X014.Test.al
+  testCodeunitId: 80303
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
