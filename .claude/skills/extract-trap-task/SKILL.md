@@ -73,6 +73,9 @@ traps from the seed batch (BC 28.0.46665.50383):
   permission trap is untestable in the AL test harness here.
 - A caller-bound subscription DOES propagate into a `Codeunit.Run` frame, so the
   "bind must be inside OnRun" frame-isolation trap does not discriminate.
+- `StartSession` does NOT run under the default SOAP `TestIsolation = Codeunit`;
+  a background-session trap needs `RequiredTestIsolation = Disabled` on the test
+  codeunit + harness runner routing (see "Test isolation" below).
 If the premise fails, drop or retarget — never ship a non-discriminating task.
 
 ### 5. AUTHOR + DISCRIMINATION PROBE
@@ -140,6 +143,37 @@ Difficulty comes from the directory + `metadata.difficulty`, not the id letter.
   `Assert: Codeunit Assert` (base-app Assert, not "Library Assert").
 - Object-ID bands: prereq `69000-69999`, generated/model `70000-79999`, tests
   `80000-89999`. Collision-check before assigning.
+
+## Test isolation & shared-container hygiene (batch-2 learnings)
+
+The oracle runs in a container REUSED across tasks and candidates. Tasks that
+create persistent state must not poison later runs:
+
+- **No `[TestCleanup]` hook exists in BC 28 AL** — only rollback-based
+  `TestIsolation`/`RequiredTestIsolation`. Do teardown as **start-of-test
+  self-heal**: delete-before-insert all state the test touches, so a prior
+  candidate's failure (the EXPECTED outcome for a hard trap) can't leave state
+  that collides.
+- **`Commit()` defeats the runner's rollback.** A trap that needs `Commit`
+  (`ChangeCompany` cross-company reads, `StartSession` visibility) loses the
+  automatic per-test rollback, so committed rows persist on the shared container.
+  Without self-heal, the NEXT candidate hits a PK collision at its `[GIVEN]` seed
+  and is scored a FALSE FAILURE (not a recognized infra signature → no
+  auto-reroute). Make seeding idempotent; prove it by running naive-then-correct
+  consecutively (correct must still pass).
+- **`StartSession` needs `RequiredTestIsolation = Disabled` + harness routing.**
+  The default SOAP `TestIsolation = Codeunit` blocks it. Route opt-in codeunits
+  to the platform isolation-disabled runner (`infra/cg-test-harness/` +
+  `HARNESS_APP_VERSION` bump in `bc-container-provider.ts`), gated so only tasks
+  declaring the property are affected. `Disabled` also removes auto-rollback →
+  self-heal applies.
+- **The observable must REQUIRE the mechanism.** If a trap's observable is
+  trivially computable without the mechanism (e.g. "return the sum" when the trap
+  is how the sum is produced across sessions), a plausible model bypasses the
+  whole mechanism and passes. Make the expected value NON-derivable from the
+  visible inputs (an opaque worker formula, a per-run committed factor) and
+  assert proof-of-execution (the mechanism's own side effects), so passing
+  requires actually running it. Verify with a third "bypass" reference.
 
 ## Files
 
