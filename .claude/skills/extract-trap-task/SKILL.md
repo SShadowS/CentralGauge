@@ -76,7 +76,18 @@ traps from the seed batch (BC 28.0.46665.50383):
 - `StartSession` does NOT run under the default SOAP `TestIsolation = Codeunit`;
   a background-session trap needs `RequiredTestIsolation = Disabled` on the test
   codeunit + harness runner routing (see "Test isolation" below).
+- An AL **Query object's child DataItem defaults to `SqlJoinType = LeftOuterJoin`,
+  NOT InnerJoin** (BC 28). A "childless parents get dropped" trap does NOT
+  reproduce by omitting the property — the default already keeps them; only an
+  UNMOTIVATED explicit `SqlJoinType = InnerJoin` drops them, which a no-hints
+  model never writes. (Query objects DO run fine from a test codeunit via
+  `.Open`/`.Read`/`.Close`.)
 If the premise fails, drop or retarget — never ship a non-discriminating task.
+**A scout's "STRONG" rating is not a verified premise.** Triage scouts rank
+candidates from the PR diff without running them on the container; batch-4's
+Sustainability picks (rated STRONG) blocked 2-of-3 on premise (a backwards
+Query-join default, a forcing gap). ALWAYS premise-gate on Cronus28 before
+authoring, regardless of how confident the scout was.
 
 ### 5. AUTHOR + DISCRIMINATION PROBE
 Write the task YAML + oracle test + prereq app (if self-contained). At dev time
@@ -199,6 +210,14 @@ SELECT, or premise-gate hard:
   rarely reproduced by a model authoring fresh code — the natural single-procedure
   solution is correct. If the only failing variant is an unnatural structure a
   real model wouldn't write, the task doesn't discriminate a plausible model.
+- **Install→upgrade lifecycle is untestable.** `BcContainerProvider.prepareCandidateApp`
+  uninstalls + unpublishes any prior same-name app before every publish, then
+  publishes fresh with `-install`. `OnInstall` fires every task but `OnUpgrade`'s
+  precondition (a pre-existing older installed version) never exists — so
+  upgrade-cycle traps (Upgrade Tags re-running a migration, data-upgrade
+  clobbering) cannot be triggered. The `Codeunit "Upgrade Tag"` API is callable,
+  but a tag-guarded idempotent migration is just the idempotency lesson —
+  already covered by shipped `H039`/`H040`/`X004`.
 
 **Proactive anti-cheat pays off.** Apply the opaque-value + proof-of-execution
 guard UP FRONT (not just after a review catches it): make the expected value
