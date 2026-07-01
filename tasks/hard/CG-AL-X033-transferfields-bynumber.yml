@@ -19,7 +19,7 @@ metadata:
   tags: [transferfields, field-number, field-name, record-copy]
   difficulty: hard
   cohort: ado-trap-2026
-  source_pr: fable-designed
+  origin: fable-designed
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-X033.Test.al
