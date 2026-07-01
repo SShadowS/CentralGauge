@@ -1,0 +1,27 @@
+id: CG-AL-X027
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit 71160 "CG X027 Extractor" with Access = Internal, exposing:
+
+      procedure ExtractDigits(Value: Text): Integer
+
+  ExtractDigits returns the integer formed by concatenating every digit
+  character found in Value, in the order they appear, and converting the
+  result to an integer. For example, ExtractDigits('INV0042X') returns 42.
+domains: [codeunits]
+metadata:
+  category: business-logic
+  tags: [trimstart, trimend, delchr, string-parsing, digits]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 49982
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X027.Test.al
+  testCodeunitId: 80316
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
