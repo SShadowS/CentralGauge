@@ -1,0 +1,30 @@
+id: CG-AL-X022
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create table "CG X022 Account" (ID 71110) with Access = Internal and
+  DataClassification = SystemMetadata, with fields:
+
+      "No." (Code[20], primary key)
+      Balance (Integer)
+      "Last Delta" (Integer)
+
+  Whenever a record in this table is modified, "Last Delta" must be set to
+  the amount by which "Balance" changed as a result of that modification --
+  its new value minus its previous value.
+domains: [tables]
+metadata:
+  category: records-runtime
+  tags: [xrec, onmodify, trigger, previous-value]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 50329
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X022.Test.al
+  testCodeunitId: 80311
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
