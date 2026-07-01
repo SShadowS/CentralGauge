@@ -1,0 +1,38 @@
+id: CG-AL-X018
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X018 Roller" (ID 71070) with Access = Internal and:
+
+      procedure SumForGroup(GroupCode: Code[20]): Integer
+
+  The existing "CG X018 Group" table (ID 69760, fields "Code" (Code[20],
+  primary key) and "Totaling" (Text[100])) defines named groups of
+  accounts. Each group's "Totaling" value is written in Business Central
+  filter syntax and specifies which account numbers belong to that group.
+
+  The existing "CG X018 Entry" table (ID 69761, fields "Entry No."
+  (Integer, primary key), "Account No." (Code[20]), and "Amount"
+  (Integer)) holds individual entries, each posted against one account
+  number.
+
+  SumForGroup must look up the "CG X018 Group" record whose "Code" equals
+  GroupCode, apply that group's "Totaling" value to the "Account No."
+  field of "CG X018 Entry", and return the sum of "Amount" across every
+  entry whose account number belongs to the group.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [setfilter, setrange, totaling, filter-expression]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 32956
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X018.Test.al
+  testCodeunitId: 80307
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
