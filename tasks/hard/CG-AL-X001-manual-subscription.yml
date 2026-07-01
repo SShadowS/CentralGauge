@@ -14,7 +14,7 @@ description: >-
 
   When RunAudited is called, the "CG X001 Audit Sub" subscriber must observe
   the event raised by "CG X001 Publisher".Raise() during that call.
-domains: [codeunits]
+domains: [codeunits, events]
 metadata:
   category: interfaces-events
   tags: [events, manual-subscriber, bindsubscription, integration-event]
