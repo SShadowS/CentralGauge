@@ -1,0 +1,28 @@
+id: CG-AL-X010
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X010 Aggregator" (ID 70990) with Access = Internal and:
+
+      procedure SumOrEmpty(): Integer
+
+  The procedure must return the sum of the "Value" field across every row
+  in the existing "CG X010 Item" table (ID 69700, fields "Code" (Code[20],
+  primary key) and "Value" (Integer)). If the table currently has no rows
+  at all, the procedure must return -1 instead of a sum.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [find-set, empty-recordset, loop-guard, next]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 45454
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X010.Test.al
+  testCodeunitId: 80299
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
