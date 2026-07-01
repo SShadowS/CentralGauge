@@ -72,13 +72,29 @@ codeunit 80295 "CG-AL-X006 Test"
         // [THEN] exactly the three qualifying docs are reported
         Assert.AreEqual(3, Collected, 'Three docs should be collected');
 
-        // [THEN] each qualifying doc is present in the temporary result
+        // [THEN] each qualifying doc is present in the temporary result, and
+        // its other fields were actually carried over from the source doc
+        // (not just the primary key)
         Assert.IsTrue(
           Result.Get('DOC-OB'), 'Open doc with blocked customer must be collected');
+        Assert.AreEqual(
+          DocOB.Status::Open, Result.Status, 'DOC-OB Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustA."No.", Result."Customer No.", 'DOC-OB Customer No. field must be copied from source doc');
+
         Assert.IsTrue(
           Result.Get('DOC-OU'), 'Open doc with unblocked customer must be collected');
+        Assert.AreEqual(
+          DocOU.Status::Open, Result.Status, 'DOC-OU Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustB."No.", Result."Customer No.", 'DOC-OU Customer No. field must be copied from source doc');
+
         Assert.IsTrue(
           Result.Get('DOC-CB'), 'Closed doc with blocked customer must be collected');
+        Assert.AreEqual(
+          DocCB.Status::Closed, Result.Status, 'DOC-CB Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustA."No.", Result."Customer No.", 'DOC-CB Customer No. field must be copied from source doc');
 
         // [THEN] the closed doc with an unblocked customer is excluded
         Assert.IsFalse(
@@ -149,10 +165,24 @@ codeunit 80295 "CG-AL-X006 Test"
         Assert.AreEqual(3, Collected, 'Three docs should be collected');
         Assert.IsTrue(
           Result.Get('DOCA'), 'First closed doc of blocked customer must be collected');
+        Assert.AreEqual(
+          DocA.Status::Closed, Result.Status, 'DOCA Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustBlocked."No.", Result."Customer No.", 'DOCA Customer No. field must be copied from source doc');
+
         Assert.IsTrue(
           Result.Get('DOCB'), 'Second closed doc of blocked customer must be collected');
+        Assert.AreEqual(
+          DocB.Status::Closed, Result.Status, 'DOCB Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustBlocked."No.", Result."Customer No.", 'DOCB Customer No. field must be copied from source doc');
+
         Assert.IsTrue(
           Result.Get('DOCC'), 'Open doc of unblocked customer must be collected');
+        Assert.AreEqual(
+          DocC.Status::Open, Result.Status, 'DOCC Status field must be copied from source doc');
+        Assert.AreEqual(
+          CustClear."No.", Result."Customer No.", 'DOCC Customer No. field must be copied from source doc');
 
         // [THEN] the closed doc of the unblocked customer is excluded
         Assert.IsFalse(
