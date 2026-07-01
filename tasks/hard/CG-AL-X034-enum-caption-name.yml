@@ -1,0 +1,31 @@
+id: CG-AL-X034
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X034 Status Mapper" (ID 71230) with Access = Internal
+  and:
+
+      procedure StatusToken(Status: Enum "CG X034 Status"): Text
+
+  The enum "CG X034 Status" (ID 69860) already exists, with values Draft,
+  InProgress, and DoneOK. StatusToken must return, as text, the value's
+  stable programmatic identifier: a language-independent token suitable for
+  use as an external API value or a persisted key, never a localized display
+  label. For example, calling StatusToken with the Draft value must return
+  the text "Draft".
+domains: [codeunits]
+metadata:
+  category: reflection-datatransfer
+  tags: [enum, caption, name, reflection, format]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X034.Test.al
+  testCodeunitId: 80323
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
