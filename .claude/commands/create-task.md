@@ -137,6 +137,52 @@ Helper file naming: `CG-AL-XXXX.{HelperName}.al`
 
 ---
 
+## Step 7: Prove the Task Discriminates (discrimination probe)
+
+A benchmark task is only as good as its oracle. A test that PASSES for both a
+correct AND a naive-but-plausible solution measures nothing. Before shipping,
+prove the task separates them on a real container.
+
+### Premise-gate FIRST (base-app / version-specific behavior)
+
+If the trap depends on a specific BC platform behavior (a base-app codeunit's
+result, an always-logged table, a permission / test-framework interaction),
+VERIFY it reproduces on the target container BEFORE full authoring. Many
+behaviors are version-specific and silently do not reproduce — real BC-28
+examples: `IsAlwaysLoggedTable("Sales Invoice Header")` is FALSE (but `User` is
+TRUE); `TestPermissions = Restrictive` ignores indirect `Permissions`-property
+grants; `BindSubscription` DOES propagate into a `Codeunit.Run` frame. If the
+premise fails, retarget or drop — never ship a non-discriminating task.
+
+### Probe both references
+
+Write TWO throwaway reference solutions under `scratch/` (gitignored, never
+committed): a CORRECT one and a NAIVE-but-plausible one (the mistake a model that
+half-knows the topic would actually make). Run each through the harness:
+
+```bash
+deno run -A scripts/trap-probe.ts --task CG-AL-XXXX --solution <dir> --expect pass|fail --container Cronus28
+```
+
+Three outcomes: `pass` (exit 0), `fail` (exit 1), and **`inconclusive`** (exit 3
+= a thrown infra error — re-run, never treat as a result). **Ship ONLY when the
+correct reference PASSES and the naive reference GENUINELY FAILS** (a real
+test-assertion or compile failure, never `inconclusive`). Container credentials
+are wired only for `Cronus28` — do not switch containers.
+
+### Shallow-oracle guard
+
+A two-state oracle (empty vs full; inactive vs both-conditions-true) routinely
+leaves a hole a plausible wrong implementation slips through (a whole-table
+short-circuit; an "A AND B" detector where the test set both true). Add an
+INTERMEDIATE-state case that ONLY the genuinely-correct solution passes, and
+prove it with a third "wrong" reference that passes the other cases but fails the
+new one. Defend against plausible naives, not adversarial cheats.
+
+See the `extract-trap-task` skill for the full method and its containment policy.
+
+---
+
 ## Output Format
 
 Provide the complete files with clear headers:
@@ -215,6 +261,9 @@ Before finalizing, verify:
 - [ ] Helper files provided if interfaces or dependencies needed
 - [ ] Error messages match exactly between description and tests
 - [ ] `metadata.category` set to one of the 9 taxonomy groups; `metadata.tags` listed
+- [ ] Premise-gated: the trap's BC behavior reproduces on the target container
+- [ ] Probed: a correct reference PASSES and a naive-but-plausible reference GENUINELY FAILS via `scripts/trap-probe.ts` (naive fails on a real assertion/compile, not `inconclusive`)
+- [ ] No shallow-oracle hole: an intermediate-state case rejects plausible short-circuits
 - [ ] After creating: run the `refresh-task-taxonomy` skill so the task is
       findable in the `/tasks` filter (decoupled from the hash — no re-bench),
       and `sync-catalog --apply` before benching

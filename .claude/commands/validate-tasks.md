@@ -125,6 +125,32 @@ these as warnings so authors can improve discoverability.
 > changes, the **`refresh-task-taxonomy` skill** must be run to update the site
 > (no re-bench). See CLAUDE.md "Task taxonomy".
 
+## Discrimination & Premise Check
+
+A task's description quality is necessary but not sufficient — the ORACLE must
+actually separate a correct solution from a plausible wrong one. A test that
+would pass for BOTH a correct and a naive-but-plausible implementation measures
+nothing. Flag the following (these are quality signals, not schema failures):
+
+1. **Unproven oracle → WARN (UNPROVEN_DISCRIMINATION).** If there is no evidence
+   the task was run through the discrimination probe (`scripts/trap-probe.ts`,
+   with a correct reference PASSING and a naive-but-plausible reference GENUINELY
+   FAILING), recommend probing it before it is trusted.
+2. **Shallow oracle → flag.** If the tests exercise only two extreme states
+   (empty vs full; inactive vs both-conditions-true), name the plausible wrong
+   implementation that would pass both — a whole-table short-circuit
+   (`if not Target.IsEmpty() then exit`), or an "A AND B" detector where the
+   active case set both conditions — and recommend an intermediate-state case
+   that only the genuinely-correct solution passes.
+3. **Premise risk → flag.** If the trap depends on version-specific BC behavior
+   (base-app codeunit results, always-logged tables, `TestPermissions` /
+   permission interactions), note that it must be premise-gated on the target
+   container — several such traps silently do not reproduce (BC-28: posted sales
+   tables are NOT always-logged; `TestPermissions = Restrictive` ignores indirect
+   `Permissions` grants; `BindSubscription` crosses the `Codeunit.Run` frame).
+
+See the `extract-trap-task` skill for the full discrimination-probe method.
+
 ## Run Instructions
 
 1. Glob all task YAML files: `tasks/**/*.yml`
