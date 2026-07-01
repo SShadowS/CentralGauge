@@ -21,6 +21,7 @@ codeunit 80313 "CG-AL-X024 Test"
     procedure MixedCaseRefsAreReturnedExactly()
     var
         Registrar: Codeunit "CG X024 Registrar";
+        Token: Record "CG X024 Token";
     begin
         ClearState();
         Commit();
@@ -43,6 +44,24 @@ codeunit 80313 "CG-AL-X024 Test"
         Assert.AreEqual(
             'zzTOPz', Registrar.GetRef(3),
             'Entry 3 ref must be returned with its original casing preserved');
+
+        // [THEN] the ref must also be persisted verbatim in the underlying
+        // table -- an in-memory cache that GetRef reads from without ever
+        // writing through to the table would pass the assertions above
+        // while never actually proving the trap (Code-vs-Text field type)
+        // was exercised at all.
+        Token.Get(1);
+        Assert.AreEqual(
+            'aB3xY9', Token."External Ref",
+            'Entry 1 external ref should be exact and persisted in the table');
+        Token.Get(2);
+        Assert.AreEqual(
+            'Tok-9f2Kd', Token."External Ref",
+            'Entry 2 external ref should be exact and persisted in the table');
+        Token.Get(3);
+        Assert.AreEqual(
+            'zzTOPz', Token."External Ref",
+            'Entry 3 external ref should be exact and persisted in the table');
 
         ClearState();
     end;
@@ -73,6 +92,7 @@ codeunit 80313 "CG-AL-X024 Test"
     procedure OverwritingAnExistingEntryUpdatesTheStoredRefExactly()
     var
         Registrar: Codeunit "CG X024 Registrar";
+        Token: Record "CG X024 Token";
     begin
         ClearState();
         Commit();
@@ -92,6 +112,13 @@ codeunit 80313 "CG-AL-X024 Test"
         Assert.AreEqual(
             'SecondRefAbC', Registrar.GetRef(20),
             'Re-registering an entry must overwrite the stored ref exactly, casing preserved');
+
+        // [THEN] the overwrite must actually land in the table row -- not
+        // just in an in-memory cache that GetRef happens to read from.
+        Token.Get(20);
+        Assert.AreEqual(
+            'SecondRefAbC', Token."External Ref",
+            'stored external ref should be exact and persisted in the table');
 
         ClearState();
     end;
