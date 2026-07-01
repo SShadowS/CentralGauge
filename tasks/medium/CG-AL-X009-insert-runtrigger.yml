@@ -1,0 +1,30 @@
+id: CG-AL-X009
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X009 Creator" (ID 70980) with Access = Internal and:
+
+      procedure CreateDoc(NewCode: Code[20]; NewBase: Integer): Integer
+
+  Given a code and a base value, the procedure must add a new row to the
+  existing "CG X009 Doc" table (ID 69690, fields "Code" (Code[20], primary
+  key), "Base" (Integer), and "Computed" (Integer)) with "Code" set to
+  NewCode and "Base" set to NewBase, in a way that lets the table's own
+  logic for that record populate the "Computed" field. The procedure must
+  then return the "Computed" value the table assigned to that new row.
+domains: [codeunits, tables]
+metadata:
+  category: data-modeling
+  tags: [insert-runtrigger, oninsert, table-trigger]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 49066
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X009.Test.al
+  testCodeunitId: 80298
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
