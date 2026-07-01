@@ -1,0 +1,25 @@
+id: CG-AL-X013
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X013 Joiner" (ID 71020) with Access = Internal,
+  containing a public procedure with the signature
+  `Combine(Prefix: Code[10]; Suffix: Code[10])` that returns a single value
+  formed by appending Suffix to the end of Prefix. For example,
+  `Combine('AB', 'CD')` returns `'ABCD'`.
+domains: [codeunits]
+metadata:
+  category: business-logic
+  tags: [fixed-length, code-type, string-overflow, runtime]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 44803
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X013.Test.al
+  testCodeunitId: 80302
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
