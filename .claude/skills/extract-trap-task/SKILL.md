@@ -132,6 +132,18 @@ the new one. Defend against *plausible* naive implementations, not against
 adversarial cheats (a model that directly writes the observable table it was never
 told exists is not a realistic failure mode).
 
+**Codeunit-wraps-table bypass (batch-5, X024).** When the trap lives in a TABLE
+FIELD (a type/property choice) but the model exposes a `codeunit` CRUD API over
+that table, asserting ONLY through the API (`Register`/`GetRef`) lets a model that
+caches state in a codeunit variable / `Dictionary` (never round-tripping the
+table) pass regardless of the field — bypassing the whole trap. "Add an internal
+cache" is a plausible LLM habit, not an adversarial cheat, whenever there's an
+API indirection layer over the trapped field. The oracle must READ THE TABLE ROW
+DIRECTLY (`Rec.Get(pk); Assert.AreEqual(expected, Rec."Field")`) so the value must
+actually persist through the trapped field. Prove closure with a THIRD
+cache-bypass reference (Text field but codeunit-`Dictionary` storage) that now
+fails the direct-table assertion.
+
 ## Marking convention
 
 Every new task: id `CG-AL-X###` (the `X` cohort namespace, regex already allows
