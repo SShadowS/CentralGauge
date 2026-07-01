@@ -1,0 +1,11 @@
+{
+    "id": "a1b2c3d4-0a12-0000-0000-000000000001",
+    "name": "CG-AL-X012 Prereq",
+    "publisher": "CentralGauge",
+    "version": "1.0.0.0",
+    "platform": "27.0.0.0",
+    "application": "27.0.0.0",
+    "idRanges": [{ "from": 69720, "to": 69729 }],
+    "runtime": "16.0",
+    "features": ["NoImplicitWith"]
+}

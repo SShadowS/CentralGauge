@@ -1,0 +1,36 @@
+id: CG-AL-X012
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Use the existing "CG X012 Parent" table (ID 69720), which has a Code[20]
+  primary key "Code" and a Text[50] "Name" field.
+
+  Create table "CG X012 Child" (ID 71010) with Access = Internal and
+  DataClassification = SystemMetadata, containing:
+
+  - Field 1 "Entry No." of type Integer, the primary key.
+  - Field 2 "Parent Code" of type Code[20], which identifies the
+    "CG X012 Parent" record that the child belongs to.
+  - Field 3 "Data" of type Text[50].
+
+  Whenever a "CG X012 Parent" record's primary key is changed to a new
+  value, every "CG X012 Child" record whose "Parent Code" currently
+  identifies that Parent record must continue to identify the same Parent
+  record under its new primary key value. "CG X012 Child" records that
+  identify a different Parent record must not be affected.
+domains: [tables, table-relations]
+metadata:
+  category: data-modeling
+  tags: [tablerelation, rename-cascade, referential]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 47579
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X012.Test.al
+  testCodeunitId: 80301
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
