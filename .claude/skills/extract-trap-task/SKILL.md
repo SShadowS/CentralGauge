@@ -175,6 +175,37 @@ create persistent state must not poison later runs:
   assert proof-of-execution (the mechanism's own side effects), so passing
   requires actually running it. Verify with a third "bypass" reference.
 
+## What the harness can't test — scouting filters (batch-3 learnings)
+
+Some trap classes are structurally untestable in this harness. Skip them during
+SELECT, or premise-gate hard:
+
+- **External-caller / cross-module identity is untestable.** The harness bundles
+  the test codeunit AND the candidate into ONE fixed app
+  (`BENCHMARK_APP_ID` in `mcp/al-tools-server.ts`), so the test is never external
+  to the candidate's module. Traps that depend on `GetCallerModuleInfo`, caller
+  app-identity, or a genuinely external invoker (e.g. fail-open-guard bugs) have
+  no external caller to observe — both correct and naive return the same wrong
+  answer. Needs a companion-app-published-after-candidate mechanism the harness
+  doesn't have. Skip these.
+- **Mark/MarkedOnly and page-navigation-scope traps resist discrimination.** A
+  temp-record `Page.Run(0, TempItem)` (a `temporary` record backs a page fine) is
+  an idiomatic AL bypass that navigates the same set without `Mark`/`MarkedOnly` —
+  so the observable doesn't force the mechanism. Forcing it needs a write-back /
+  persistence oracle (edit via the page, verify the REAL table changed) on the
+  legacy TestPage path, which is fragile. Usually not worth it.
+- **Refactoring-shape bugs are hard to force in fresh code-gen.** A trap that only
+  manifests from a DRY refactor (e.g. hoisting a call one stack frame too deep) is
+  rarely reproduced by a model authoring fresh code — the natural single-procedure
+  solution is correct. If the only failing variant is an unnatural structure a
+  real model wouldn't write, the task doesn't discriminate a plausible model.
+
+**Proactive anti-cheat pays off.** Apply the opaque-value + proof-of-execution
+guard UP FRONT (not just after a review catches it): make the expected value
+non-derivable from the visible inputs (an opaque computed formula) and assert the
+mechanism's own side effects. Doing this from the first draft kept every
+self-contained task in the third batch clean on first review.
+
 ## Files
 
 | Path | Role |
