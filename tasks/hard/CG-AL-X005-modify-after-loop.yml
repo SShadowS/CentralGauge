@@ -1,0 +1,30 @@
+id: CG-AL-X005
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Using the existing "CG X005 Item" table (ID 69650), which has fields "Code"
+  (Code[10], primary key), "Value" (Integer), and "Flag" (Boolean), create
+  codeunit "CG X005 Flagger" (ID 70940) with Access = Internal and:
+
+      procedure FlagHighValues(Threshold: Integer): Integer
+
+  For every "CG X005 Item" whose "Value" is greater than Threshold, set its
+  "Flag" to true and save that change to the row. Items whose "Value" is not
+  greater than Threshold must be left completely unchanged. The procedure
+  returns the number of items whose "Flag" it set to true on that call.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [record-modify, loop, find-set, persistence]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 40241
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X005.Test.al
+  testCodeunitId: 80294
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
