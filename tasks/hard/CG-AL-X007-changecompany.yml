@@ -1,0 +1,34 @@
+id: CG-AL-X007
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  The existing "CG X007 Entry" table (ID 69670, fields "Code" (Code[20],
+  primary key) and "Amount" (Integer)) holds independent sets of rows in
+  different companies - the rows visible under one company name are not the
+  same rows visible under another. Create codeunit "CG X007 Summer" (ID
+  70960) with Access = Internal and:
+
+      procedure SumAcrossCompanies(Companies: List of [Text[30]]): Integer
+
+  Given a list of company names, the procedure must add up the "Amount" of
+  every "CG X007 Entry" row that exists in each of those companies and return
+  the combined total. A company name in the list whose "CG X007 Entry" table
+  currently holds no rows contributes zero to the total. Only rows belonging
+  to a company actually named in the list may be counted; rows belonging to
+  companies not in the list must not affect the result.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [changecompany, cross-company, record-requery, empty-table]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 38203
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X007.Test.al
+  testCodeunitId: 80296
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
