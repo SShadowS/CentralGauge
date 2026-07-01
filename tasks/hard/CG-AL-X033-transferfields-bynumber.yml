@@ -1,0 +1,30 @@
+id: CG-AL-X033
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X033 Archiver" (ID 71220) with Access = Internal and:
+
+      procedure ArchiveDoc(var Doc: Record "CG X033 Doc"; var Archive: Record "CG X033 Archive")
+
+  Both tables already exist: "CG X033 Doc" (ID 69850) and "CG X033 Archive"
+  (ID 69851), each with fields "No." (Code[20], primary key), "Net Amount"
+  (Decimal), "Freight Amount" (Decimal), and "Note" (Text[50]). The procedure
+  must copy the current Doc record into Archive so that each of Archive's
+  "No.", "Net Amount", "Freight Amount", and "Note" fields holds the value
+  from the Doc field of the same name, then insert the Archive record.
+domains: [codeunits, tables]
+metadata:
+  category: integration-serialization
+  tags: [transferfields, field-number, field-name, record-copy]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X033.Test.al
+  testCodeunitId: 80322
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
