@@ -1,0 +1,34 @@
+id: CG-AL-X017
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X017 Calculator" (ID 71060) with Access = Internal and
+  a procedure named ComputeInto that takes, in order, an Integer parameter
+  named Input and a second Integer parameter named Result, and returns a
+  Boolean.
+
+  ComputeInto computes a result from Input using a fixed internal formula
+  and delivers that computed value to the caller through Result, then
+  returns true. The contract is defined entirely by the caller's observable
+  state: immediately after a call to ComputeInto(Input, Result) returns, the
+  caller's own Result variable must hold the value ComputeInto computed for
+  that Input -- not whatever value Result held before the call. Calling
+  ComputeInto again with a different Input, reusing the same Result
+  variable, must overwrite that variable with the new call's computed
+  value.
+domains: [codeunits]
+metadata:
+  category: business-logic
+  tags: [var-parameter, by-reference, output-parameter, parameter-passing]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 26456
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X017.Test.al
+  testCodeunitId: 80306
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
