@@ -18,10 +18,6 @@ description: >-
   `Register` stores Ref as the "External Ref" of the token row identified by
   EntryNo (inserting the row if it does not already exist, updating it if it
   does). `GetRef` returns the "External Ref" currently stored for EntryNo.
-
-  Each external reference is an opaque token supplied by a caller and may be
-  mixed-case. `GetRef` must return it exactly as it was supplied to
-  `Register` -- character-for-character, with its original case preserved.
 domains: [tables, codeunits]
 metadata:
   category: data-modeling

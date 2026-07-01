@@ -10,9 +10,8 @@ description: >-
   Given a code and a base value, the procedure must add a new row to the
   existing "CG X009 Doc" table (ID 69690, fields "Code" (Code[20], primary
   key), "Base" (Integer), and "Computed" (Integer)) with "Code" set to
-  NewCode and "Base" set to NewBase, in a way that lets the table's own
-  logic for that record populate the "Computed" field. The procedure must
-  then return the "Computed" value the table assigned to that new row.
+  NewCode and "Base" set to NewBase. The procedure must then return the
+  "Computed" value the table assigned to that new row.
 domains: [codeunits, tables]
 metadata:
   category: data-modeling

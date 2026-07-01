@@ -11,8 +11,7 @@ description: >-
 
   For every "CG X004 Item" whose "Category" is 'A', create one new "CG X004 Item"
   whose "Category" is 'B', whose "Tag" equals the source row's "Tag", and whose
-  "Entry No." equals the source row's "Tag" plus 1000. If a row with that
-  "Entry No." already exists, do not create or change it. The procedure returns
+  "Entry No." equals the source row's "Tag" plus 1000. The procedure returns
   the number of new rows it created on that call. Running CopyAToB more than once
   must never create duplicate 'B' rows and must never raise an error.
 domains: [codeunits]

@@ -18,9 +18,8 @@ description: >-
   number.
 
   SumForGroup must look up the "CG X018 Group" record whose "Code" equals
-  GroupCode, apply that group's "Totaling" value to the "Account No."
-  field of "CG X018 Entry", and return the sum of "Amount" across every
-  entry whose account number belongs to the group.
+  GroupCode, and return the sum of "Amount" across every "CG X018 Entry"
+  whose account number belongs to that group.
 domains: [codeunits]
 metadata:
   category: records-runtime

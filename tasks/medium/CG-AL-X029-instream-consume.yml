@@ -10,9 +10,7 @@ description: >-
   Source already has content written to it. ReadTwice must read the full text
   content held by Source, then separately read the full text content held by
   Source a second time, and return the two reads joined with a single '|'
-  character (first read, then '|', then second read). Both reads must return
-  the complete content that was written to Source; a caller comparing the
-  first read to the second read should find them identical.
+  character (first read, then '|', then second read).
 domains: [codeunits]
 metadata:
   category: integration-serialization

@@ -13,10 +13,7 @@ description: >-
   Updater" codeunit's Apply procedure (ID 69711, procedure Apply(RecCode:
   Code[20])) for that row, which applies its own updates to that row's "A"
   and "B" fields. After that call returns, the procedure must set that same
-  row's "C" field to NewC and persist the change. The row's final persisted
-  state must reflect BOTH whatever "A" and "B" values the Updater applied AND
-  this procedure's own "C" update -- none of the three fields may end up
-  reverted or lost.
+  row's "C" field to NewC and persist the change.
 domains: [codeunits]
 metadata:
   category: records-runtime
