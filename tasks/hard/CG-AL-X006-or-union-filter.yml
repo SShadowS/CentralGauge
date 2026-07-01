@@ -1,0 +1,33 @@
+id: CG-AL-X006
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Using the existing "CG X006 Customer" table (ID 69660, fields "No."
+  (Code[20], primary key) and "Blocked" (Boolean)) and the existing "CG X006
+  Doc" table (ID 69661, fields "No." (Code[20], primary key), "Status"
+  (Option: Open, Closed), and "Customer No." (Code[20], holding the "No." of
+  a "CG X006 Customer")), create codeunit "CG X006 Selector" (ID 70950) with
+  Access = Internal and:
+
+      procedure CollectRelevant(var Result: Record "CG X006 Doc" temporary): Integer
+
+  Populate Result with every "CG X006 Doc" that either has "Status" = Open,
+  or whose "Customer No." refers to a "CG X006 Customer" whose "Blocked"
+  field is true. A doc that matches neither condition must not appear in
+  Result. The procedure returns the number of docs placed into Result.
+domains: [codeunits, table-relations]
+metadata:
+  category: business-logic
+  tags: [record-filtering, temporary-record, table-relation, union]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 44024
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X006.Test.al
+  testCodeunitId: 80295
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
