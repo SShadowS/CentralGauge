@@ -1,0 +1,28 @@
+id: CG-AL-X031
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X031 Pricer" (ID 71200) with Access = Internal and:
+
+      procedure TotalPrice(ItemNos: List of [Code[20]]): Integer
+
+  The procedure must return the sum of the "Price" field, read from the
+  existing "CG X031 Item" table (ID 69830, fields "No." (Code[20], primary
+  key) and "Price" (Integer)), for every item number in ItemNos. An item
+  number with no matching row in the table must contribute 0 to the sum.
+domains: [codeunits]
+metadata:
+  category: records-runtime
+  tags: [get, record-buffer, stale-fields, unchecked-return]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 49206
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X031.Test.al
+  testCodeunitId: 80320
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
