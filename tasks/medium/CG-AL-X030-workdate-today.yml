@@ -1,0 +1,26 @@
+id: CG-AL-X030
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit 71190 "CG X030 Deadline Calc" with Access = Internal, exposing:
+
+      procedure ComputeDeadline(LeadTimeDays: Integer): Date
+
+  ComputeDeadline must return the actual calendar date on which the code is
+  executing, advanced forward by LeadTimeDays days.
+domains: [codeunits]
+metadata:
+  category: business-logic
+  tags: [workdate, today, session-date, date]
+  difficulty: medium
+  cohort: ado-trap-2026
+  source_pr: 49678
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-X030.Test.al
+  testCodeunitId: 80319
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
