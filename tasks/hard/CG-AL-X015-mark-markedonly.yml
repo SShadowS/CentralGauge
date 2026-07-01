@@ -1,0 +1,37 @@
+id: CG-AL-X015
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X015 Navigator" (ID 71040) with Access = Internal,
+  containing a public procedure:
+
+      procedure OpenSelectedItems(var Item: Record "CG X015 Item"; SelectedCodes: List of [Code[20]])
+
+  `Item` arrives already positioned on one specific row of the existing
+  "CG X015 Item" table (ID 69750, fields "Code" (Code[20], primary key) and
+  "Description" (Text[50])). `SelectedCodes` is an arbitrary set of other item
+  codes that the user picked elsewhere (for example across several unrelated
+  filtered views).
+
+  The procedure must open the existing "CG X015 Item List" page (ID 69751) so
+  that the user can navigate forward and backward across every record whose
+  code is in `SelectedCodes`, plus the record `Item` was positioned on when the
+  procedure was called - even when that record's code is not itself in
+  `SelectedCodes`. No other record in the table may be reachable by navigating
+  the opened page.
+domains: [pages]
+metadata:
+  category: pages-ui
+  tags: [mark, markedonly, page-navigation, record-runtime, testability]
+  difficulty: hard
+  cohort: ado-trap-2026
+  source_pr: 50499
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X015.Test.al
+  testCodeunitId: 80304
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
