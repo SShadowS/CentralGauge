@@ -13,6 +13,14 @@ codeunit 80296 "CG-AL-X007 Test"
         Entry.DeleteAll();
     end;
 
+    local procedure ClearCompanyEntries(TargetCompany: Text[30])
+    var
+        Entry: Record "CG X007 Entry";
+    begin
+        Entry.ChangeCompany(TargetCompany);
+        Entry.DeleteAll();
+    end;
+
     local procedure CreateCompanyIfNeeded(TargetCompany: Text[30])
     var
         Company: Record Company;
@@ -29,6 +37,8 @@ codeunit 80296 "CG-AL-X007 Test"
         Entry: Record "CG X007 Entry";
     begin
         Entry.ChangeCompany(TargetCompany);
+        if Entry.Get(EntryCode) then
+            Entry.Delete();
         Entry.Init();
         Entry."Code" := EntryCode;
         Entry.Amount := Amount;
@@ -56,6 +66,19 @@ codeunit 80296 "CG-AL-X007 Test"
         SecondCompany: Text[30];
         EmptyCompany: Text[30];
     begin
+        // [GIVEN] self-heal: a prior run's trap-failure aborts the test
+        // procedure on assertion failure and never reaches end-of-test
+        // cleanup, which can leave companies + entries behind on the shared
+        // container. Wipe every company this test touches before seeding so
+        // SeedEntry can never hit a primary-key collision from stale state.
+        SecondCompany := 'CG X007 CO2';
+        EmptyCompany := 'CG X007 CO3';
+        CreateCompanyIfNeeded(SecondCompany);
+        CreateCompanyIfNeeded(EmptyCompany);
+        ClearCompanyEntries(SecondCompany);
+        ClearCompanyEntries(EmptyCompany);
+        Commit();
+
         // [GIVEN] the current company has entries summing to 100
         ClearCurrentCompanyEntries();
         Entry.Init();
@@ -68,13 +91,10 @@ codeunit 80296 "CG-AL-X007 Test"
         Entry.Insert();
 
         // [GIVEN] a second company with entries summing to 30
-        SecondCompany := 'CG X007 CO2';
-        CreateCompanyIfNeeded(SecondCompany);
         SeedEntry(SecondCompany, 'SEC1', 30);
 
         // [GIVEN] a third company that exists but has no entries at all
-        EmptyCompany := 'CG X007 CO3';
-        CreateCompanyIfNeeded(EmptyCompany);
+        // (already ensured + cleared during self-heal above)
         Commit();
 
         // [WHEN] summing across the current company, the empty company, and
@@ -103,6 +123,16 @@ codeunit 80296 "CG-AL-X007 Test"
         Total: Integer;
         EmptyCompany: Text[30];
     begin
+        // [GIVEN] self-heal: a prior run's trap-failure aborts the test
+        // procedure on assertion failure and never reaches end-of-test
+        // cleanup, which can leave entries behind on the shared container.
+        // Wipe this company's entries before the test relies on it being
+        // genuinely empty.
+        EmptyCompany := 'CG X007 CO3';
+        CreateCompanyIfNeeded(EmptyCompany);
+        ClearCompanyEntries(EmptyCompany);
+        Commit();
+
         // [GIVEN] the current company has entries that must NOT leak into a
         // result that only asks about a different, empty company
         ClearCurrentCompanyEntries();
@@ -111,8 +141,8 @@ codeunit 80296 "CG-AL-X007 Test"
         Entry.Amount := 999;
         Entry.Insert();
 
-        // [GIVEN] a company that exists but has no entries
-        EmptyCompany := 'CG X007 CO3';
+        // [GIVEN] a company that exists but has no entries (already ensured
+        // + cleared during self-heal above)
         CreateCompanyIfNeeded(EmptyCompany);
         Commit();
 
