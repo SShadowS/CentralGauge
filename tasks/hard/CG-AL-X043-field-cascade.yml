@@ -1,0 +1,33 @@
+id: CG-AL-X043
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Add a field named "CG Ref Code" (Code[20]) to the Purchase Header.
+
+  When a purchase invoice is posted, whatever value that field held on the
+  header at posting time must be present on the resulting posted Vendor
+  Ledger Entry and on the payables G/L Entry that the posting produces for
+  that vendor.
+domains: [tables, events, posting]
+metadata:
+  category: integration-serialization
+  tags:
+    [
+      tableextension,
+      posting,
+      event-subscriber,
+      ledger-entry,
+      field-cascade,
+    ]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: community-idea
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X043.Test.al
+  testCodeunitId: 80332
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
