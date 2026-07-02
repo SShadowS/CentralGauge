@@ -1,0 +1,42 @@
+id: CG-AL-X037
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X037 Poster" (ID 71260) with Access = Internal and:
+
+      procedure PostBatch(BatchId: Integer; Payload: Integer): Boolean
+
+  Given a batch id and a payload value, PostBatch must create a row in the
+  existing "CG X037 Journal" table (ID 69890, fields "Batch Id" (Integer),
+  "Step" (Integer), and "Amount" (Integer), primary key ("Batch Id", "Step"))
+  with "Batch Id" = BatchId, "Step" = 0, and "Amount" = Payload, then invoke
+  the existing "CG X037 Engine" codeunit (ID 69891) so it processes that
+  batch.
+
+  The Engine may complete successfully, or it may raise an error while
+  processing the batch; either outcome must not propagate out of PostBatch.
+  PostBatch returns true when the Engine successfully processed the batch,
+  and false otherwise.
+
+  When PostBatch returns true, every "CG X037 Journal" row the Engine wrote
+  for that batch must still be present in the table afterward. When
+  PostBatch returns false, no "CG X037 Journal" row belonging to that batch
+  may remain in the table afterward, and "CG X037 Journal" rows belonging to
+  any other batch must be completely unaffected, whatever state they were
+  already in.
+domains: [codeunits, error-handling]
+metadata:
+  category: error-transactions
+  tags: [commit, codeunit-run, compensating-transaction, rollback, filter]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X037.Test.al
+  testCodeunitId: 80326
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
