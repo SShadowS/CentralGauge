@@ -257,9 +257,21 @@ passes. Proven catchers:
   `Commit` → write-transaction error; Run-first → engine needs the row; only
   insert→`Commit`→`if Codeunit.Run` passes. **Failed Fable 0/2, caught Opus on
   attempt 1.**
+- **X037 "inner commit"** — a black-box engine `Commit`s internally before
+  erroring, so `if Codeunit.Run` returning false does NOT mean rollback cleaned
+  up; the model must run a FILTERED compensating purge (not a blanket `DeleteAll`,
+  which wipes a decoy row). **Failed Opus BOTH attempts (0/2), Fable attempt-1.**
 - **X019 "stale relocate"** — a hidden helper renames the PK (an innocuous verb
   hides the mutation) AND the obvious re-read (`Find('=')`/`Get`) uses the stale
   key. Caught Opus both attempts.
+
+**Premise-fragility of compositional traps:** the deepest layers often don't
+reproduce on the target build — the phantom-buffer premise (X036) collapsed
+(`Codeunit.Run(id, Rec)` copies the record out only on SUCCESS), and a mid-loop
+re-key hazard (X038) HUNG the SOAP runner (infinite revisit → inconclusive, not a
+clean fail → dropped: a naive must fail, never hang/timeout). Budget ~3
+compositional candidates per shippable frontier-catcher, and hard-gate every
+layer on-container before authoring.
 
 Recipe (Fable's meta-lesson, confirmed on the bench): a frontier-hard task needs
 BOTH (a) an innocuous verb HIDING a state mutation, AND (b) a boobytrapped
