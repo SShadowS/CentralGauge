@@ -1,0 +1,35 @@
+id: CG-AL-X044
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X044 Attach Mgt" (ID 71330) with Access = Internal and:
+
+      procedure AttachFile(Widget: Record "CG X044 Widget"; FileName: Text; var TempBlob: Codeunit "Temp Blob")
+
+  The existing "CG X044 Widget" table (ID 69950) has a primary key field
+  "No." (Code[20]). AttachFile must make the file held in TempBlob available
+  through Business Central's standard Document Attachment system (table 1173
+  "Document Attachment"), associated with the given Widget record.
+
+  Once a file has been attached to a Widget record through AttachFile, a
+  query against table 1173 for that specific Widget's record must return
+  exactly the file(s) attached to that Widget: no more, no fewer. A query
+  for a different Widget record must never include files attached to this
+  one, and files attached to Widget records must never appear when querying
+  for an unrelated table's records.
+domains: [tables, codeunits]
+metadata:
+  category: integration-serialization
+  tags: [document-attachment, custom-table, table-id, factbox]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: community-idea
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X044.Test.al
+  testCodeunitId: 80333
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
