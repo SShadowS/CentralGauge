@@ -237,6 +237,37 @@ non-derivable from the visible inputs (an opaque computed formula) and assert th
 mechanism's own side effects. Doing this from the first draft kept every
 self-contained task in the third batch clean on first review.
 
+## Making a task frontier-HARD (the dual-frontier finding)
+
+**Passing the discrimination probe does NOT mean the task catches a frontier
+model.** The probe only proves the task beats the naive YOU wrote. Frontier models
+(Opus/Fable-class) have every well-known AL gotcha memorized, so a SINGLE obscure
+semantic — however clever — they solve first-try. Proven on a dual-frontier bench
+(Opus 4.8 + Fable 5): `X033` (TransferFields matches by number) and `X034` (enum
+`Format` returns caption not name) were BOTH aced 100% first-try by BOTH models —
+as were all 22 medium X-tasks. A one-gotcha task ranks weaker models; it does not
+move a frontier.
+
+**The ONLY pattern that catches a frontier is COMPOSITIONAL / fix-has-its-own-trap:**
+several interacting traps where the naive fails AND each obvious fix a frontier
+reaches for ALSO fails, for a DIFFERENT reason — so only the deep-correct sequence
+passes. Proven catchers:
+- **X035 "poisoned rescue"** — insert a row → run a black-box engine
+  error-tolerantly. TryFunction → write blocked; `if Codeunit.Run` without
+  `Commit` → write-transaction error; Run-first → engine needs the row; only
+  insert→`Commit`→`if Codeunit.Run` passes. **Failed Fable 0/2, caught Opus on
+  attempt 1.**
+- **X019 "stale relocate"** — a hidden helper renames the PK (an innocuous verb
+  hides the mutation) AND the obvious re-read (`Find('=')`/`Get`) uses the stale
+  key. Caught Opus both attempts.
+
+Recipe (Fable's meta-lesson, confirmed on the bench): a frontier-hard task needs
+BOTH (a) an innocuous verb HIDING a state mutation, AND (b) a boobytrapped
+first-instinct fix. **To verify hardness you MUST dual-frontier bench** (Opus + a
+second frontier via `run-xbench.ps1 -Model "...,..."`) — the probe is necessary
+but not sufficient. Single-gotcha tasks are still worth shipping for field
+coverage; only compositional ones make a frontier fail.
+
 ## Files
 
 | Path | Role |
