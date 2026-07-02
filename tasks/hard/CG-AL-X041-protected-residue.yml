@@ -1,0 +1,50 @@
+id: CG-AL-X041
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X041 Clerk" (ID 71300) with Access = Internal and:
+
+      procedure PostDoc(BatchId: Integer; Payload: Integer): Boolean
+
+  Given a batch id and a payload value, PostDoc must create a row in the
+  existing "CG X041 Doc" table (ID 69930, fields "Batch Id" (Integer), "Line
+  No." (Integer), Status (Option: Open, Posted), and "Amount" (Integer),
+  primary key ("Batch Id", "Line No.")) with "Batch Id" = BatchId, "Line No."
+  = 0, Status = Open, and "Amount" = Payload, then invoke the existing
+  "CG X041 Engine" codeunit (ID 69931) so it processes that batch.
+
+  The Engine may complete successfully, or it may raise an error while
+  processing the batch; either outcome must not propagate out of PostDoc.
+  PostDoc returns true when the Engine successfully processed the batch, and
+  false otherwise.
+
+  When PostDoc returns true, every "CG X041 Doc" row the Engine wrote for
+  that batch must still be present in the table afterward, exactly as the
+  Engine left it. When PostDoc returns false, no "CG X041 Doc" row with
+  Status = Open belonging to that batch may remain in the table afterward,
+  while any row belonging to that batch with Status = Posted must remain
+  exactly as the Engine left it. "CG X041 Doc" rows belonging to any other
+  batch must be completely unaffected, whatever state they were already in.
+domains: [codeunits, error-handling]
+metadata:
+  category: error-transactions
+  tags:
+    [
+      commit,
+      ondelete-trigger,
+      deleteall,
+      protected-record,
+      compensating-transaction,
+    ]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X041.Test.al
+  testCodeunitId: 80330
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
