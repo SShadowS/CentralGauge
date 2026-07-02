@@ -1,0 +1,48 @@
+id: CG-AL-X040
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X040 Poster" (ID 71280) with Access = Internal and:
+
+      procedure PostBatch(BatchId: Integer; Payload: Integer): Boolean
+
+  Given a batch id and a payload value, PostBatch must create a row in the
+  existing "CG X040 Ledger" table (ID 69910, fields "Batch Id" (Integer),
+  "Step" (Integer), and "Amount" (Integer), primary key ("Batch Id", "Step"))
+  with "Batch Id" = BatchId, "Step" = 0, and "Amount" = Payload.
+
+  Before processing the batch, PostBatch must record a "STARTED" audit entry
+  for BatchId using the existing "CG X040 Audit Log" codeunit (ID 69912),
+  procedure Write(BatchId: Integer; Phase: Code[10]). After processing has
+  finished, whatever the outcome, PostBatch must record a "FINISHED" audit
+  entry for BatchId the same way.
+
+  Processing means invoking the existing "CG X040 Engine" codeunit (ID
+  69913) so it processes the batch. The Engine may complete successfully, or
+  it may raise an error while processing the batch; either outcome must not
+  propagate out of PostBatch. PostBatch returns true when the Engine
+  successfully processed the batch, and false otherwise.
+
+  When PostBatch returns true, every "CG X040 Ledger" row the Engine wrote
+  for that batch must still be present in the table afterward. When
+  PostBatch returns false, no "CG X040 Ledger" row belonging to that batch
+  may remain in the table afterward, and "CG X040 Ledger" rows belonging to
+  any other batch must be completely unaffected, whatever state they were
+  already in. Every "CG X040 Log" audit entry that was written must remain
+  in the table regardless of outcome.
+domains: [codeunits, error-handling]
+metadata:
+  category: error-transactions
+  tags: [commit, codeunit-run, audit-log, compensating-transaction, decoy]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X040.Test.al
+  testCodeunitId: 80328
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
