@@ -50,12 +50,14 @@ codeunit 80333 "CG-AL-X044 Test"
         OutStr.WriteText(Content);
     end;
 
-    local procedure CountFor(RecNo: Code[20]): Integer
+    local procedure CountFor(Widget: Record "CG X044 Widget"): Integer
     var
         DocAttach: Record "Document Attachment";
+        DocAttachMgmt: Codeunit "Document Attachment Mgmt";
+        RecRef: RecordRef;
     begin
-        DocAttach.SetRange("Table ID", Database::"CG X044 Widget");
-        DocAttach.SetRange("No.", RecNo);
+        RecRef.GetTable(Widget);
+        DocAttachMgmt.SetDocumentAttachmentFiltersForRecRef(DocAttach, RecRef);
         exit(DocAttach.Count());
     end;
 
@@ -89,8 +91,8 @@ codeunit 80333 "CG-AL-X044 Test"
         MakeBlob('content-a', TempBlob);
         AttachMgt.AttachFile(WidgetA, 'a.txt', TempBlob);
 
-        Assert.AreEqual(1, CountFor('WIDGET-A'), 'Widget A must have exactly one attachment after attaching one file');
-        Assert.AreEqual(0, CountFor('WIDGET-B'), 'Widget B must have no attachments when only Widget A received one');
+        Assert.AreEqual(1, CountFor(WidgetA), 'Widget A must have exactly one attachment after attaching one file');
+        Assert.AreEqual(0, CountFor(WidgetB), 'Widget B must have no attachments when only Widget A received one');
         AssertDecoyIntact();
     end;
 
@@ -119,8 +121,8 @@ codeunit 80333 "CG-AL-X044 Test"
         MakeBlob('content-a2', TempBlob);
         AttachMgt.AttachFile(WidgetA, 'a2.txt', TempBlob);
 
-        Assert.AreEqual(2, CountFor('WIDGET-A'), 'Widget A must accumulate exactly the two files attached to it');
-        Assert.AreEqual(1, CountFor('WIDGET-B'), 'Widget B must have exactly the one file attached to it, unaffected by Widget A''s second attachment');
+        Assert.AreEqual(2, CountFor(WidgetA), 'Widget A must accumulate exactly the two files attached to it');
+        Assert.AreEqual(1, CountFor(WidgetB), 'Widget B must have exactly the one file attached to it, unaffected by Widget A''s second attachment');
         AssertDecoyIntact();
     end;
 
@@ -129,9 +131,11 @@ codeunit 80333 "CG-AL-X044 Test"
     var
         Widget: Record "CG X044 Widget";
         DocAttach: Record "Document Attachment";
+        DocAttachMgmt: Codeunit "Document Attachment Mgmt";
         AttachMgt: Codeunit "CG X044 Attach Mgt";
         TempBlob: Codeunit "Temp Blob";
         ReadBlob: Codeunit "Temp Blob";
+        RecRef: RecordRef;
         InStr: InStream;
         ReadContent: Text;
     begin
@@ -144,8 +148,8 @@ codeunit 80333 "CG-AL-X044 Test"
         MakeBlob('opaque-payload-4471', TempBlob);
         AttachMgt.AttachFile(Widget, 'c.txt', TempBlob);
 
-        DocAttach.SetRange("Table ID", Database::"CG X044 Widget");
-        DocAttach.SetRange("No.", 'WIDGET-C');
+        RecRef.GetTable(Widget);
+        DocAttachMgmt.SetDocumentAttachmentFiltersForRecRef(DocAttach, RecRef);
         Assert.IsTrue(DocAttach.FindFirst(), 'Widget C must have a locatable attachment row');
         DocAttach.GetAsTempBlob(ReadBlob);
         ReadBlob.CreateInStream(InStr);
