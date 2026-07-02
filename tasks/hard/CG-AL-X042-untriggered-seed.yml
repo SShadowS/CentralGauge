@@ -1,0 +1,58 @@
+id: CG-AL-X042
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X042 Booker" (ID 71310) with Access = Internal and:
+
+      procedure Book(BatchId: Integer; Payload: Integer): Boolean
+
+  Given a batch id and a payload value, Book must create a row in the
+  existing "CG X042 Order" table (ID 69940, fields "Batch Id" (Integer),
+  "Step" (Integer), and "Amount" (Integer), primary key ("Batch Id",
+  "Step")) with "Batch Id" = BatchId, "Step" = 0, and "Amount" = Payload,
+  then invoke the existing "CG X042 Engine" codeunit (ID 69942) so it can
+  process that batch.
+
+  The Engine may complete successfully, or it may raise an error while
+  processing the batch; either outcome must not propagate out of Book.
+  Book returns true when the Engine successfully processed the batch, and
+  false otherwise.
+
+  When Book returns true, every "CG X042 Order" row the Engine wrote for
+  that batch must still be present in the table afterward, exactly as the
+  Engine left it. When Book returns false, no "CG X042 Order" row belonging
+  to that batch may remain in the table afterward. "CG X042 Order" rows
+  belonging to any other batch must be completely unaffected, whatever
+  state they were already in.
+
+  A separate table, "CG X042 Shadow" (ID 69941, fields "Batch Id"
+  (Integer), "Step" (Integer), and "Checksum" (Integer), primary key
+  ("Batch Id", "Step")), tracks companion data for "CG X042 Order" rows.
+  When Book returns true, the "CG X042 Shadow" rows the Engine's run
+  produced must still be present afterward. When Book returns false, no
+  "CG X042 Shadow" row belonging to that batch may remain in the table
+  afterward. "CG X042 Shadow" rows belonging to any other batch must be
+  completely unaffected, whatever state they were already in.
+domains: [codeunits, error-handling]
+metadata:
+  category: error-transactions
+  tags:
+    [
+      insert-trigger,
+      oninsert,
+      ondelete,
+      shadow-table,
+      compensating-transaction,
+    ]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X042.Test.al
+  testCodeunitId: 80331
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
