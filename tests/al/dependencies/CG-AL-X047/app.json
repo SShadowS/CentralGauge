@@ -1,0 +1,25 @@
+{
+    "id": "a1b2c3d4-0a47-0000-0000-000000000001",
+    "name": "CG-AL-X047 Prereq",
+    "publisher": "CentralGauge",
+    "version": "1.0.0.0",
+    "platform": "27.0.0.0",
+    "application": "27.0.0.0",
+    "idRanges": [{ "from": 69980, "to": 69989 }],
+    "runtime": "16.0",
+    "features": ["NoImplicitWith"],
+    "dependencies": [
+        {
+            "id": "437dbf0e-84ff-417a-965d-ed2bb9650972",
+            "name": "Base Application",
+            "publisher": "Microsoft",
+            "version": "28.0.0.0"
+        },
+        {
+            "id": "f3552374-a1f2-4356-848e-196002525837",
+            "name": "Business Foundation",
+            "publisher": "Microsoft",
+            "version": "28.0.0.0"
+        }
+    ]
+}

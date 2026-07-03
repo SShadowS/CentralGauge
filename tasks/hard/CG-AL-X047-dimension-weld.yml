@@ -1,0 +1,39 @@
+id: CG-AL-X047
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X047 Tagger" (ID 71360) with Access = Internal and:
+
+      procedure Tag(EntryNo: Integer; DimCode: Code[20]; DimValueCode: Code[20])
+
+  The table "CG X047 Ledger" (ID 69980, fields "Entry No." (Integer, primary
+  key) and "Dimension Set ID" (Integer)) already exists. The codeunit
+  "CG X047 Registrar" (ID 69981) already exists with:
+
+      procedure Register(EntryNo: Integer)
+
+  Tag must have the Registrar register the entry identified by EntryNo, then
+  ensure the entry ends up carrying the dimension value identified by DimCode
+  and DimValueCode IN ADDITION TO every dimension it already carries at that
+  point (after the Registrar has run).
+
+  Any other "CG X047 Ledger" row that shared the entry's Dimension Set ID
+  beforehand must be completely unaffected afterward: its own Dimension Set
+  ID must be unchanged, and that dimension set's contents must remain
+  exactly what they were.
+domains: [codeunits, tables]
+metadata:
+  category: records-runtime
+  tags: [dimension-set, shared-immutable, dimension-management, set-derivation]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X047.Test.al
+  testCodeunitId: 80336
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
