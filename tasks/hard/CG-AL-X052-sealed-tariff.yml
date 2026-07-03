@@ -1,0 +1,34 @@
+id: CG-AL-X052
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X052 Clerk" (ID 71410) with Access = Internal and:
+
+      procedure SetTerms(No: Code[20]; OfferedRate: Integer; NewQty: Integer)
+
+  The table "CG X052 Quote" (ID 69100) already exists, with fields "No."
+  (Code[20], primary key), Qty (Integer), Rate (Integer), Fee (Integer), and
+  Total (Integer). The table maintains itself: whenever the quantity is given
+  a new value, the table adjusts it under its own packaging rule, recomputes
+  the fee from the adjusted quantity, and refreshes the total. Whenever the
+  rate is given a new value, the table derives the effective rate from the
+  offered value and the quantity the quote carries at that moment, stores the
+  effective rate, and refreshes the total. SetTerms must leave the row
+  identified by No. persisted carrying the total the tariff produces for the
+  applied terms.
+domains: [codeunits, tables]
+metadata:
+  category: business-logic
+  tags: [onvalidate, validate-order, cascade, digest-oracle, ab-x045]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X052.Test.al
+  testCodeunitId: 80342
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
