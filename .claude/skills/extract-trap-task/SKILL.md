@@ -301,6 +301,27 @@ trap. So:
   the fix?" If the assert message names the field/mechanism that went wrong, a
   frontier will repair it on attempt 2.
 
+**Round-4 amendment (benched, honest): signature engineering is NOT the lever.**
+Round 4 built deliberate opacity (contract-only assert messages, digest oracles)
+and even byte-identical failure collisions across wrong shapes incl. the
+simulated attempt-2 repair (X050, X051) — and a controlled A/B (X052 = X045's
+exact trap with the oracle collapsed to one opaque Total). Result: the A/B came
+out IDENTICAL to legible X045 (Opus solved both first-try), and collisions did
+not stop attempt-2 repairs. Models don't gradient-follow failure output — they
+re-derive from scratch on attempt 2, so if the model KNOWS the domain, any
+failure signal at all triggers a successful rewrite. The Commit-family's
+attempt-2 resistance comes from KNOWLEDGE-GAP DEPTH (the entire repair space is
+semantically trapped — every alternative the model can think of also fails),
+not from what the failure output says. Design consequence: to resist attempt 2,
+make the CORRECT solution require knowledge the model lacks, with all
+plausible-looking alternatives wrong — opacity/digest oracles are fine hygiene
+but buy no measurable resistance on their own.
+
+**Bench-noise caveat:** "Model returned empty response" scores as a failed
+attempt-1 and pollutes PR1/AUC@2 (observed 3/6 Fable attempts in one run).
+Before reading a matrix, check failureReasons — empty-response attempts carry
+zero trap signal.
+
 ## Files
 
 | Path | Role |
