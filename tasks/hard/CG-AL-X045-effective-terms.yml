@@ -10,13 +10,13 @@ description: >-
   The table "CG X045 Line" (ID 69960) already exists, with fields "No."
   (Code[20], primary key), Quantity (Integer), Price (Integer), and Amount
   (Integer). The table maintains itself: whenever the quantity is given a new
-  value, the table normalizes it under its own packaging rule and refreshes
+  value, the table adjusts it under its own packaging rule and refreshes
   Amount from the row's current price. Whenever the price is given a new
   value, the table derives the effective price from the offered value and the
   quantity the row carries at that moment, stores the effective price, and
   refreshes Amount. ApplyTerms must leave the row identified by No. persisted
-  carrying the normalized new quantity, the effective price derived under
-  that normalized quantity, and the matching Amount.
+  carrying the adjusted new quantity, the effective price derived under
+  that adjusted quantity, and the matching Amount.
 domains: [codeunits, tables]
 metadata:
   category: business-logic
