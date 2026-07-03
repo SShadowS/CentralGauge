@@ -15,8 +15,9 @@ description: >-
   rate is given a new value, the table derives the effective rate from the
   offered value and the quantity the quote carries at that moment, stores the
   effective rate, and refreshes the total. SetTerms must leave the row
-  identified by No. persisted carrying the total the tariff produces for the
-  applied terms.
+  identified by No. persisted carrying the adjusted new quantity, the
+  effective rate derived under that adjusted quantity, the fee that follows
+  from them, and the matching total.
 domains: [codeunits, tables]
 metadata:
   category: business-logic
