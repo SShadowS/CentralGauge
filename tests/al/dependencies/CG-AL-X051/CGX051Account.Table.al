@@ -1,4 +1,4 @@
-table 69996 "CG X051 Account"
+table 69111 "CG X051 Account"
 {
     DataClassification = SystemMetadata;
 

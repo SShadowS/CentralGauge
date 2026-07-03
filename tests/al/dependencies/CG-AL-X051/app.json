@@ -5,7 +5,7 @@
     "version": "1.0.0.0",
     "platform": "27.0.0.0",
     "application": "27.0.0.0",
-    "idRanges": [{ "from": 69995, "to": 69999 }],
+    "idRanges": [{ "from": 69110, "to": 69119 }],
     "runtime": "16.0",
     "features": ["NoImplicitWith"]
 }

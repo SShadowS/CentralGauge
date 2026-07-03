@@ -1,4 +1,4 @@
-enum 69995 "CG X051 Kind"
+enum 69110 "CG X051 Kind"
 {
     Extensible = false;
 

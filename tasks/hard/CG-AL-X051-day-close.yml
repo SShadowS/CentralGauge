@@ -8,16 +8,16 @@ description: >-
       procedure CloseDay(): Integer
 
   Three accounts, 'A', 'B', and 'C', already exist in the existing "CG X051
-  Account" table (ID 69996), with fields "No." (Code[20], primary key),
+  Account" table (ID 69111), with fields "No." (Code[20], primary key),
   Weight (Integer), "Kind Filter" (the enum below, restricting which entries
   count toward Balance), and Balance (a total of the matching "CG X051
   Entry" rows' Amount for that account, restricted by "Kind Filter"). The
-  existing "CG X051 Entry" table (ID 69997) has fields "Entry No." (Integer,
+  existing "CG X051 Entry" table (ID 69112) has fields "Entry No." (Integer,
   primary key), "Account No." (Code[20]), Kind (an enum with values Normal
   and Adjustment), and Amount (Integer).
 
   Settling an account is done through the existing "CG X051 Engine" codeunit
-  (ID 69998), procedure Settle(AccountNo: Code[20]). Settling an account
+  (ID 69113), procedure Settle(AccountNo: Code[20]). Settling an account
   records the day's regular and adjustment entries for that account, and it
   may also record an additional regular entry for one of the other two
   accounts in the group, as the day's ledger requires.
