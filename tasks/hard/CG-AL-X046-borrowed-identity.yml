@@ -1,0 +1,36 @@
+id: CG-AL-X046
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X046 Archiver" (ID 71350) with Access = Internal and:
+
+      procedure Archive(No: Code[20])
+
+  The table "CG X046 Doc" (ID 69970) and the table "CG X046 Archive"
+  (ID 69971) already exist, each with fields "No." (Code[20], primary key),
+  Amount (Integer), and Note (Text[50]). The codeunit "CG X046 Vault"
+  (ID 69972) already exists with:
+
+      procedure Stash(No: Code[20])
+
+  Archive must have the Vault stash the document identified by No, then
+  insert one new "CG X046 Archive" row that carries the document row's
+  current Amount, current Note, and the same identity (SystemId) as the
+  document row. The document row itself must remain in the "CG X046 Doc"
+  table, exactly as the Vault left it.
+domains: [codeunits, tables]
+metadata:
+  category: integration-serialization
+  tags: [systemid, insert-overload, transferfields, record-copy, identity]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X046.Test.al
+  testCodeunitId: 80335
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
