@@ -22,7 +22,7 @@ description: >-
   beforehand must be completely unaffected afterward: its own Dimension Set
   ID must be unchanged, and that dimension set's contents must remain
   exactly what they were.
-domains: [codeunits, tables]
+domains: [codeunits, dimensions]
 metadata:
   category: records-runtime
   tags: [dimension-set, shared-immutable, dimension-management, set-derivation]
