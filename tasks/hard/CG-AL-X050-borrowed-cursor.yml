@@ -1,0 +1,38 @@
+id: CG-AL-X050
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X050 Teller" (ID 71390) with Access = Internal and:
+
+      procedure BatchDigest(BatchId: Integer): Integer
+
+  The enum "CG X050 Entry Kind" (ID 69990) already exists with values Normal
+  and Void. The table "CG X050 Entry" (ID 69991) already exists, with fields
+  "Entry No." (Integer, primary key), "Batch Id" (Integer), Kind (the enum
+  above), and Amount (Integer). The codeunit "CG X050 Gate" (ID 69992)
+  already exists with:
+
+      procedure Activate(BatchId: Integer; var Entry: Record "CG X050 Entry")
+
+  A batch must be activated through the Gate before it may be read; Activate
+  leaves Entry positioned on the batch's anchor entry. BatchDigest must
+  activate the batch, then return: the anchor entry's Amount times 1000,
+  plus the sum of Amount over every entry of the batch, plus the Amount of
+  the batch's newest entry (the entry with the highest "Entry No.") times
+  10.
+domains: [codeunits, tables]
+metadata:
+  category: records-runtime
+  tags: [var-parameter, filter-residue, setcurrentkey, calcsums, digest-oracle]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X050.Test.al
+  testCodeunitId: 80340
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
