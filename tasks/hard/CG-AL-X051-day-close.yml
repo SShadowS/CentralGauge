@@ -1,0 +1,44 @@
+id: CG-AL-X051
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create codeunit "CG X051 Closer" (ID 71400) with Access = Internal and:
+
+      procedure CloseDay(): Integer
+
+  Three accounts, 'A', 'B', and 'C', already exist in the existing "CG X051
+  Account" table (ID 69996), with fields "No." (Code[20], primary key),
+  Weight (Integer), "Kind Filter" (the enum below, restricting which entries
+  count toward Balance), and Balance (a total of the matching "CG X051
+  Entry" rows' Amount for that account, restricted by "Kind Filter"). The
+  existing "CG X051 Entry" table (ID 69997) has fields "Entry No." (Integer,
+  primary key), "Account No." (Code[20]), Kind (an enum with values Normal
+  and Adjustment), and Amount (Integer).
+
+  Settling an account is done through the existing "CG X051 Engine" codeunit
+  (ID 69998), procedure Settle(AccountNo: Code[20]). Settling an account
+  records the day's regular and adjustment entries for that account, and it
+  may also record an additional regular entry for one of the other two
+  accounts in the group, as the day's ledger requires.
+
+  CloseDay must have the Engine settle each of the three accounts, 'A', 'B',
+  and 'C', and then return the day's fingerprint: the sum, over the three
+  accounts, of the account's Weight times the account's Balance restricted
+  to its regular (Normal) entries, reflecting every entry recorded while
+  settling all three accounts.
+domains: [codeunits, flowfields]
+metadata:
+  category: data-modeling
+  tags: [flowfield, flowfilter, calcfields, staleness, ring-carry, digest-oracle]
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: fable-designed
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X051.Test.al
+  testCodeunitId: 80341
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
