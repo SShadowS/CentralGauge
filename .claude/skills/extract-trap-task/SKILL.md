@@ -280,6 +280,27 @@ second frontier via `run-xbench.ps1 -Model "...,..."`) — the probe is necessar
 but not sufficient. Single-gotcha tasks are still worth shipping for field
 coverage; only compositional ones make a frontier fail.
 
+### Repair-resistance tiers (round-3 finding, benched)
+
+Attempt-1 catch and attempt-2 catch are DIFFERENT properties. Round-3 tasks in
+new territory (X045 validate-order, X046 SystemId+staleness, X047 dimension
+sets) each caught a frontier on attempt-1 (X046 caught BOTH) — but ALL were
+repaired by attempt-2, because their failure messages are LEGIBLE (a SystemId
+mismatch or wrong tier value points straight at the mistake). The
+Commit/transaction family (X037/X040/X041) resisted BOTH attempts: its failure
+signatures don't reveal where the trap is, and the obvious repair has its own
+trap. So:
+
+- **Attempt-2-resistant (hardest tier):** make the failure signature OPAQUE —
+  wrong values with no hint of the mechanism, and boobytrap the natural repair.
+  Transaction-boundary semantics do this naturally.
+- **Attempt-1 discriminators:** still valuable — the leaderboard headline is
+  AUC@2 (second-attempt-only solve scores 0.5), so these genuinely de-saturate
+  the metric even though pass@2 stays 100%.
+- When designing for the hardest tier, ask: "does the test failure OUTPUT leak
+  the fix?" If the assert message names the field/mechanism that went wrong, a
+  frontier will repair it on attempt 2.
+
 ## Files
 
 | Path | Role |
