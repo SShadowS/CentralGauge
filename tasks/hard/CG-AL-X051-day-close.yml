@@ -24,7 +24,7 @@ description: >-
   accounts in the group, as the day's ledger requires.
 
   CloseDay must have the Engine settle each of the three accounts, 'A', 'B',
-  and 'C', and then return the day's fingerprint: the sum, over the three
+  and 'C', and then return the day's control total: the sum, over the three
   accounts, of the account's Weight times the account's Balance restricted
   to its regular (Normal) entries, reflecting every entry recorded while
   settling all three accounts.
