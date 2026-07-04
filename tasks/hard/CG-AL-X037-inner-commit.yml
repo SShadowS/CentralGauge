@@ -5,26 +5,20 @@ max_attempts: 2
 description: >-
   Create codeunit "CG X037 Poster" (ID 71260) with Access = Internal and:
 
-      procedure PostBatch(BatchId: Integer; Payload: Integer): Boolean
+      procedure PostBatch(BatchId: Integer; Value: Integer): Boolean
 
-  Given a batch id and a payload value, PostBatch must create a row in the
-  existing "CG X037 Journal" table (ID 69890, fields "Batch Id" (Integer),
-  "Step" (Integer), and "Amount" (Integer), primary key ("Batch Id", "Step"))
-  with "Batch Id" = BatchId, "Step" = 0, and "Amount" = Payload, then invoke
-  the existing "CG X037 Engine" codeunit (ID 69891) so it processes that
-  batch.
+  Given a batch id and a value, PostBatch must create a row in the existing
+  "CG X037 Ledger" table (ID 69890, fields "Batch Id" (Integer), "Step"
+  (Integer), and "Amount" (Integer), primary key ("Batch Id", "Step")) with
+  "Batch Id" = BatchId, "Step" = 0, and "Amount" = Value, and have the
+  existing "CG X037 Worker" codeunit (ID 69891) attempt to complete that
+  batch, reporting true when the Worker finished the batch and false when
+  it did not, without letting a Worker failure interrupt PostBatch.
 
-  The Engine may complete successfully, or it may raise an error while
-  processing the batch; either outcome must not propagate out of PostBatch.
-  PostBatch returns true when the Engine successfully processed the batch,
-  and false otherwise.
-
-  When PostBatch returns true, every "CG X037 Journal" row the Engine wrote
-  for that batch must still be present in the table afterward. When
-  PostBatch returns false, no "CG X037 Journal" row belonging to that batch
-  may remain in the table afterward, and "CG X037 Journal" rows belonging to
-  any other batch must be completely unaffected, whatever state they were
-  already in.
+  On a true result, every "CG X037 Ledger" row the Worker wrote for that
+  batch remains in the table. On a false result, the table must contain no
+  "CG X037 Ledger" row for that batch, while rows for any other batch stay
+  exactly as they were.
 domains: [codeunits, error-handling]
 metadata:
   category: error-transactions

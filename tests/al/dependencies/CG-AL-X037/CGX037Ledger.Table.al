@@ -1,4 +1,4 @@
-table 69890 "CG X037 Journal"
+table 69890 "CG X037 Ledger"
 {
     DataClassification = SystemMetadata;
     fields
