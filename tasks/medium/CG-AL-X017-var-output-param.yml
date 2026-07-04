@@ -8,9 +8,8 @@ description: >-
   named Input and a second Integer parameter named Result, and returns a
   Boolean.
 
-  ComputeInto computes a result from Input using a fixed internal formula
-  and delivers that computed value to the caller through Result, then
-  returns true.
+  ComputeInto computes a result from Input using a fixed internal formula,
+  sets Result to that value, and returns true.
 domains: [codeunits]
 metadata:
   category: business-logic
