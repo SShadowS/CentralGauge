@@ -16,7 +16,7 @@ description: >-
 
   Archive must have the Vault stash the document identified by No, then
   insert one new "CG X046 Archive" row that carries the document row's
-  current Amount, current Note, and the same identity (SystemId) as the
+  current Amount, current Note, and the same SystemId value as the
   document row. The document row itself must remain in the "CG X046 Doc"
   table, exactly as the Vault left it.
 domains: [codeunits, tables]
