@@ -18,7 +18,14 @@
  * Skipped when:
  *   - response content is non-empty (happy path)
  *   - `finishReason="length"` (truncation; continuation handles it)
- *   - `finishReason="content_filter"` (deterministic block; retry won't help)
+ *
+ * `finishReason="content_filter"` (Fable-5+ API safety refusals,
+ * stop_reason "refusal") IS retryable: live probing (2026-07-04) showed
+ * the classifier is stochastic AND time-varying — the same prompt flipped
+ * between 0/20 and 5/5 refusals across hours, and borderline prompts
+ * refuse at 40-60% within a single minute. A bounded retry recovers the
+ * borderline cases; hot-window prompts exhaust retries and surface as
+ * "API safety refusal" in the bench matrix.
  */
 
 import type { EmptyRetryConfig, LLMResponse } from "./types.ts";
@@ -50,7 +57,6 @@ export interface EmptyRetryOutcome<T> {
 export function isRetryableEmptyResponse(response: LLMResponse): boolean {
   if (response.content.trim().length > 0) return false;
   if (response.finishReason === "length") return false;
-  if (response.finishReason === "content_filter") return false;
   return true;
 }
 

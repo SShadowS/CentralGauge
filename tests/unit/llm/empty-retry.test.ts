@@ -57,10 +57,10 @@ describe("isRetryableEmptyResponse", () => {
     assertEquals(isRetryableEmptyResponse(makeResponse("", "length")), false);
   });
 
-  it("returns false when blocked by content filter", () => {
+  it("returns true when blocked by content filter (Fable-5 refusals are stochastic/time-varying)", () => {
     assertEquals(
       isRetryableEmptyResponse(makeResponse("", "content_filter")),
-      false,
+      true,
     );
   });
 
@@ -134,7 +134,7 @@ describe("withEmptyRetry", () => {
     assertEquals(outcome.retryCount, 0);
   });
 
-  it("does not retry when finishReason=content_filter", async () => {
+  it("retries finishReason=content_filter up to the budget (stochastic API refusals)", async () => {
     let calls = 0;
     const outcome = await withEmptyRetry(
       () => {
@@ -146,8 +146,8 @@ describe("withEmptyRetry", () => {
       (r) => isRetryableEmptyResponse(r.response),
       FAST_CFG,
     );
-    assertEquals(calls, 1);
-    assertEquals(outcome.retryCount, 0);
+    assertEquals(calls, 1 + FAST_CFG.maxRetries);
+    assertEquals(outcome.retryCount, FAST_CFG.maxRetries);
   });
 
   it("returns single attempt unchanged when disabled", async () => {
