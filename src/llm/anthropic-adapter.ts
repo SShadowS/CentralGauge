@@ -347,6 +347,15 @@ export class AnthropicAdapter extends BaseLLMAdapter
         return "stop";
       case "max_tokens":
         return "length";
+      // Fable-5+ safety classifiers decline some requests with HTTP 200 +
+      // stop_reason "refusal" (empty content, ~3 output tokens). Observed
+      // live: benchmark code-gen prompts misclassified as category "cyber"
+      // (X050/X051/X052 attempt-1, X041 both attempts). Deterministic per
+      // prompt — retrying the same model re-refuses. Map to content_filter
+      // so the work pool reports "API safety refusal" instead of the
+      // misleading "Model returned empty response".
+      case "refusal":
+        return "content_filter";
       default:
         return "error";
     }

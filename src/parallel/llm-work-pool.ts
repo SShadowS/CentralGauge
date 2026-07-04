@@ -269,7 +269,12 @@ export class LLMWorkPool {
 
       // Set error message for extraction failures (categorizes as model failure, not transient)
       if (!isReadyForCompile) {
-        if (cleanedCode.trim().length === 0) {
+        if (continuationResult.response.finishReason === "content_filter") {
+          // API safety-classifier refusal (stop_reason "refusal" on Fable-5+):
+          // HTTP 200, empty content, deterministic per prompt. Distinct label
+          // so bench matrices aren't misread as flaky-API noise.
+          result.error = "API safety refusal (stop_reason=refusal)";
+        } else if (cleanedCode.trim().length === 0) {
           result.error = "Model returned empty response";
         } else {
           result.error = `Insufficient code quality (confidence: ${
