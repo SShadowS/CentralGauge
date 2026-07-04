@@ -14,7 +14,7 @@ codeunit 80300 "CG-AL-X011 Test"
     end;
 
     [Test]
-    procedure SetCViaUpdaterPreservesUpdaterFields()
+    procedure SetCViaRefresherPreservesRefresherFields()
     var
         Rec: Record "CG X011 Record";
         Modifier: Codeunit "CG X011 Modifier";
@@ -35,20 +35,20 @@ codeunit 80300 "CG-AL-X011 Test"
         Rec.Insert();
 
         // [WHEN]
-        Modifier.SetCViaUpdater('R1', 5);
+        Modifier.SetCViaRefresher('R1', 5);
 
-        // [THEN] the persisted row must carry BOTH the updater's field
+        // [THEN] the persisted row must carry BOTH the refresher's field
         // updates AND this call's own update -- none may be lost
         Rec.Get('R1');
-        Assert.AreEqual(10, Rec.A, 'A must carry the value the Updater applied');
-        Assert.AreEqual(20, Rec.B, 'B must carry the value the Updater applied');
-        Assert.AreEqual(5, Rec.C, 'C must carry the value SetCViaUpdater applied');
+        Assert.AreEqual(10, Rec.A, 'A must carry the value the Refresher applied');
+        Assert.AreEqual(20, Rec.B, 'B must carry the value the Refresher applied');
+        Assert.AreEqual(5, Rec.C, 'C must carry the value SetCViaRefresher applied');
 
         ClearState();
     end;
 
     [Test]
-    procedure SetCViaUpdaterPreservesUpdaterFieldsFromNonZeroStart()
+    procedure SetCViaRefresherPreservesRefresherFieldsFromNonZeroStart()
     var
         Rec: Record "CG X011 Record";
         Modifier: Codeunit "CG X011 Modifier";
@@ -68,13 +68,13 @@ codeunit 80300 "CG-AL-X011 Test"
         Rec.Insert();
 
         // [WHEN]
-        Modifier.SetCViaUpdater('R2', 99);
+        Modifier.SetCViaRefresher('R2', 99);
 
         // [THEN]
         Rec.Get('R2');
-        Assert.AreEqual(10, Rec.A, 'A must carry the value the Updater applied');
-        Assert.AreEqual(20, Rec.B, 'B must carry the value the Updater applied');
-        Assert.AreEqual(99, Rec.C, 'C must carry the value SetCViaUpdater applied');
+        Assert.AreEqual(10, Rec.A, 'A must carry the value the Refresher applied');
+        Assert.AreEqual(20, Rec.B, 'B must carry the value the Refresher applied');
+        Assert.AreEqual(99, Rec.C, 'C must carry the value SetCViaRefresher applied');
 
         ClearState();
     end;

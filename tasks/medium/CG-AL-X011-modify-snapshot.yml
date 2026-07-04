@@ -5,15 +5,15 @@ max_attempts: 2
 description: >-
   Create codeunit "CG X011 Modifier" (ID 71000) with Access = Internal and:
 
-      procedure SetCViaUpdater(RecCode: Code[20]; NewC: Integer)
+      procedure SetCViaRefresher(RecCode: Code[20]; NewC: Integer)
 
   Given a code identifying a row in the existing "CG X011 Record" table (ID
   69710, fields "Code" (Code[20], primary key), "A" (Integer), "B" (Integer),
-  and "C" (Integer)), the procedure must invoke the existing "CG X011
-  Updater" codeunit's Apply procedure (ID 69711, procedure Apply(RecCode:
-  Code[20])) for that row, which applies its own updates to that row's "A"
-  and "B" fields. After that call returns, the procedure must set that same
-  row's "C" field to NewC and persist the change.
+  and "C" (Integer)), the procedure must call the existing "CG X011
+  Refresher" codeunit's Recalculate procedure (ID 69711, procedure
+  Recalculate(RecCode: Code[20])) for that row, which recalculates that
+  row's "A" and "B" fields. Once Recalculate finishes, the procedure must
+  set that same row's "C" field to NewC and save the row.
 domains: [codeunits]
 metadata:
   category: records-runtime
