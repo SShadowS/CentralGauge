@@ -51,16 +51,16 @@ codeunit 80330 "CG-AL-X041 Test"
         // [GIVEN] No prior rows for this batch, plus unrelated pre-existing rows
         Reset();
 
-        // [WHEN] PostDoc runs for a batch the engine will accept
+        // [WHEN] PostDoc runs for a batch the worker will accept
         Assert.IsTrue(Clerk.PostDoc(4, 10), 'An accepted batch should return true');
 
-        // [THEN] Both of the engine's own (opaque) computed rows persist —
+        // [THEN] Both of the worker's own (opaque) computed rows persist —
         // never derivable without really calling it.
         Assert.IsTrue(Doc.Get(4, 1), 'First doc line must persist after a clean run');
-        Assert.AreEqual(80, Doc.Amount, 'First doc line amount must match the engine formula');
+        Assert.AreEqual(80, Doc.Amount, 'First doc line amount must match the worker formula');
         Assert.AreEqual(Doc.Status::Posted, Doc.Status, 'First doc line must be posted');
         Assert.IsTrue(Doc.Get(4, 2), 'Second doc line must persist after a clean run');
-        Assert.AreEqual(93, Doc.Amount, 'Second doc line amount must match the engine formula');
+        Assert.AreEqual(93, Doc.Amount, 'Second doc line amount must match the worker formula');
         Assert.AreEqual(Doc.Status::Open, Doc.Status, 'Second doc line must remain open');
         Assert.IsFalse(Doc.Get(4, 0), 'The pending marker must be gone after a clean run');
 
@@ -76,13 +76,13 @@ codeunit 80330 "CG-AL-X041 Test"
         // [GIVEN] No prior rows for this batch, plus unrelated pre-existing rows
         Reset();
 
-        // [WHEN] PostDoc runs for a batch the engine will refuse
+        // [WHEN] PostDoc runs for a batch the worker will refuse
         Assert.IsFalse(Clerk.PostDoc(5, -1), 'A refused batch must return false, not throw');
 
-        // [THEN] The line the engine already finalized before refusing remains
-        // exactly as the engine left it — a refusal does not roll it back.
-        Assert.IsTrue(Doc.Get(5, 1), 'The posted line the engine finalized before refusing must remain');
-        Assert.AreEqual(99, Doc.Amount, 'The posted line amount must match the engine formula');
+        // [THEN] The line the worker already finalized before refusing remains
+        // exactly as the worker left it — a refusal does not roll it back.
+        Assert.IsTrue(Doc.Get(5, 1), 'The posted line the worker finalized before refusing must remain');
+        Assert.AreEqual(99, Doc.Amount, 'The posted line amount must match the worker formula');
         Assert.AreEqual(Doc.Status::Posted, Doc.Status, 'The finalized line must still be posted');
 
         // [THEN] No open row for this batch may remain: neither the pending
@@ -107,8 +107,8 @@ codeunit 80330 "CG-AL-X041 Test"
         Assert.IsFalse(Clerk.PostDoc(6, -7), 'A refused batch must return false, not throw');
 
         // [THEN] The finalized line remains, with its own distinct opaque amount
-        Assert.IsTrue(Doc.Get(6, 1), 'The posted line the engine finalized before refusing must remain');
-        Assert.AreEqual(118, Doc.Amount, 'The posted line amount must match the engine formula');
+        Assert.IsTrue(Doc.Get(6, 1), 'The posted line the worker finalized before refusing must remain');
+        Assert.AreEqual(118, Doc.Amount, 'The posted line amount must match the worker formula');
         Assert.AreEqual(Doc.Status::Posted, Doc.Status, 'The finalized line must still be posted');
 
         Doc.SetRange("Batch Id", 6);
@@ -134,7 +134,7 @@ codeunit 80330 "CG-AL-X041 Test"
         // [THEN] The refused batch's finalized line remains untouched by the
         // later, unrelated call
         Assert.IsTrue(Doc.Get(8, 1), 'The earlier refused batch''s posted line must still remain');
-        Assert.AreEqual(156, Doc.Amount, 'The earlier posted line amount must match the engine formula');
+        Assert.AreEqual(156, Doc.Amount, 'The earlier posted line amount must match the worker formula');
         Assert.AreEqual(Doc.Status::Posted, Doc.Status, 'The earlier posted line must still be posted');
         Doc.SetRange("Batch Id", 8);
         Doc.SetRange(Status, Doc.Status::Open);
@@ -142,9 +142,9 @@ codeunit 80330 "CG-AL-X041 Test"
 
         // [THEN] The later batch's own rows persist independently
         Assert.IsTrue(Doc.Get(9, 1), 'The later accepted batch''s first line must persist');
-        Assert.AreEqual(175, Doc.Amount, 'The later accepted batch''s first line amount must match the engine formula');
+        Assert.AreEqual(175, Doc.Amount, 'The later accepted batch''s first line amount must match the worker formula');
         Assert.IsTrue(Doc.Get(9, 2), 'The later accepted batch''s second line must persist');
-        Assert.AreEqual(208, Doc.Amount, 'The later accepted batch''s second line amount must match the engine formula');
+        Assert.AreEqual(208, Doc.Amount, 'The later accepted batch''s second line amount must match the worker formula');
 
         AssertDecoyIntact();
     end;
@@ -164,14 +164,14 @@ codeunit 80330 "CG-AL-X041 Test"
 
         // [THEN] Each batch's own rows persist independently with their own opaque values
         Assert.IsTrue(Doc.Get(2, 1), 'First batch, first line must persist');
-        Assert.AreEqual(42, Doc.Amount, 'First batch, first line amount must match the engine formula');
+        Assert.AreEqual(42, Doc.Amount, 'First batch, first line amount must match the worker formula');
         Assert.IsTrue(Doc.Get(2, 2), 'First batch, second line must persist');
-        Assert.AreEqual(47, Doc.Amount, 'First batch, second line amount must match the engine formula');
+        Assert.AreEqual(47, Doc.Amount, 'First batch, second line amount must match the worker formula');
 
         Assert.IsTrue(Doc.Get(7, 1), 'Second batch, first line must persist');
-        Assert.AreEqual(137, Doc.Amount, 'Second batch, first line amount must match the engine formula');
+        Assert.AreEqual(137, Doc.Amount, 'Second batch, first line amount must match the worker formula');
         Assert.IsTrue(Doc.Get(7, 2), 'Second batch, second line must persist');
-        Assert.AreEqual(162, Doc.Amount, 'Second batch, second line amount must match the engine formula');
+        Assert.AreEqual(162, Doc.Amount, 'Second batch, second line amount must match the worker formula');
 
         AssertDecoyIntact();
     end;

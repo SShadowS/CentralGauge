@@ -5,27 +5,22 @@ max_attempts: 2
 description: >-
   Create codeunit "CG X041 Clerk" (ID 71300) with Access = Internal and:
 
-      procedure PostDoc(BatchId: Integer; Payload: Integer): Boolean
+      procedure PostDoc(BatchId: Integer; Value: Integer): Boolean
 
-  Given a batch id and a payload value, PostDoc must create a row in the
-  existing "CG X041 Doc" table (ID 69930, fields "Batch Id" (Integer), "Line
-  No." (Integer), Status (Option: Open, Posted), and "Amount" (Integer),
-  primary key ("Batch Id", "Line No.")) with "Batch Id" = BatchId, "Line No."
-  = 0, Status = Open, and "Amount" = Payload, then invoke the existing
-  "CG X041 Engine" codeunit (ID 69931) so it processes that batch.
+  Given a batch id and a value, PostDoc must create a row in the existing
+  "CG X041 Doc" table (ID 69930, fields "Batch Id" (Integer), "Line No."
+  (Integer), Status (Option: Open, Posted), and "Amount" (Integer), primary
+  key ("Batch Id", "Line No.")) with "Batch Id" = BatchId, "Line No." = 0,
+  Status = Open, and "Amount" = Value, and have the existing "CG X041
+  Worker" codeunit (ID 69931) attempt to complete that batch, reporting true
+  when the Worker finished the batch and false when it did not, without
+  letting a Worker failure interrupt PostDoc.
 
-  The Engine may complete successfully, or it may raise an error while
-  processing the batch; either outcome must not propagate out of PostDoc.
-  PostDoc returns true when the Engine successfully processed the batch, and
-  false otherwise.
-
-  When PostDoc returns true, every "CG X041 Doc" row the Engine wrote for
-  that batch must still be present in the table afterward, exactly as the
-  Engine left it. When PostDoc returns false, no "CG X041 Doc" row with
-  Status = Open belonging to that batch may remain in the table afterward,
-  while any row belonging to that batch with Status = Posted must remain
-  exactly as the Engine left it. "CG X041 Doc" rows belonging to any other
-  batch must be completely unaffected, whatever state they were already in.
+  On a true result, every "CG X041 Doc" row the Worker wrote for that batch
+  remains in the table exactly as the Worker left it. On a false result,
+  the table must contain no Open "CG X041 Doc" row for that batch, while
+  any Posted row for that batch stays exactly as the Worker left it, and
+  rows for any other batch stay exactly as they were.
 domains: [codeunits, error-handling]
 metadata:
   category: error-transactions
