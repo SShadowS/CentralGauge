@@ -1,4 +1,4 @@
-codeunit 69992 "CG X050 Gate"
+codeunit 69992 "CG X050 Router"
 {
     // Positions Entry on the batch's anchor row (the lowest-Amount Normal
     // entry, via the secondary Amount key) filtered to the requested batch.
@@ -6,7 +6,7 @@ codeunit 69992 "CG X050 Gate"
     // the caller's handle when this procedure returns - Entry is a `var`
     // parameter, and filters/current key are record-INSTANCE state that
     // travels with it.
-    procedure Activate(BatchId: Integer; var Entry: Record "CG X050 Entry")
+    procedure Prepare(BatchId: Integer; var Entry: Record "CG X050 Entry")
     begin
         Entry.Reset();
         Entry.SetCurrentKey(Amount);

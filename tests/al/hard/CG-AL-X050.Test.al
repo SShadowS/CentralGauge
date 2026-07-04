@@ -38,18 +38,18 @@ codeunit 80340 "CG-AL-X050 Test"
     begin
         // [GIVEN] batch 7: anchor is the lowest-Amount Normal entry (E10=40);
         // the highest-Amount entry (E12=90) is a DIFFERENT row from the
-        // highest-Entry-No. entry (E13=55, a Void kind) - a wrong "newest"
+        // highest-Entry-No. entry (E13=55, a Cancelled kind) - a wrong "newest"
         // pick and an undercounted sum land on different rows/values, so a
         // wrong implementation can't accidentally cancel out.
         ClearState();
         SeedEntry(10, 7, "CG X050 Entry Kind"::Normal, 40);
-        SeedEntry(11, 7, "CG X050 Entry Kind"::Void, 25);
+        SeedEntry(11, 7, "CG X050 Entry Kind"::Cancelled, 25);
         SeedEntry(12, 7, "CG X050 Entry Kind"::Normal, 90);
-        SeedEntry(13, 7, "CG X050 Entry Kind"::Void, 55);
+        SeedEntry(13, 7, "CG X050 Entry Kind"::Cancelled, 55);
 
         // [GIVEN] a decoy batch that BatchDigest(7) must never read from
         SeedEntry(90, 99, "CG X050 Entry Kind"::Normal, 1000);
-        SeedEntry(91, 99, "CG X050 Entry Kind"::Void, 2000);
+        SeedEntry(91, 99, "CG X050 Entry Kind"::Cancelled, 2000);
 
         // [WHEN]
         Result := Teller.BatchDigest(7);
@@ -83,17 +83,17 @@ codeunit 80340 "CG-AL-X050 Test"
         // [GIVEN] batch 8: a differently-shaped, independently opaque seed
         // set (different anchor, amounts, and entry numbers than batch 7) so
         // the discrimination isn't tied to one coincidental delta - the true
-        // newest (E23) is again a Void entry, hidden from any Kind-filtered
+        // newest (E23) is again a Cancelled entry, hidden from any Kind-filtered
         // scan regardless of which key or iteration order reads it
         ClearState();
         SeedEntry(20, 8, "CG X050 Entry Kind"::Normal, 12);
-        SeedEntry(21, 8, "CG X050 Entry Kind"::Void, 7);
+        SeedEntry(21, 8, "CG X050 Entry Kind"::Cancelled, 7);
         SeedEntry(22, 8, "CG X050 Entry Kind"::Normal, 300);
-        SeedEntry(23, 8, "CG X050 Entry Kind"::Void, 45);
+        SeedEntry(23, 8, "CG X050 Entry Kind"::Cancelled, 45);
 
         // [GIVEN] a decoy batch that BatchDigest(8) must never read from
         SeedEntry(80, 97, "CG X050 Entry Kind"::Normal, 500);
-        SeedEntry(81, 97, "CG X050 Entry Kind"::Void, 600);
+        SeedEntry(81, 97, "CG X050 Entry Kind"::Cancelled, 600);
 
         // [WHEN]
         Result := Teller.BatchDigest(8);

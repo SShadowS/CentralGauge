@@ -6,8 +6,8 @@ enum 69990 "CG X050 Entry Kind"
     {
         Caption = 'Normal';
     }
-    value(1; Void)
+    value(1; Cancelled)
     {
-        Caption = 'Void';
+        Caption = 'Cancelled';
     }
 }
