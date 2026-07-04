@@ -1,6 +1,6 @@
-codeunit 69771 "CG X019 Normalizer"
+codeunit 69771 "CG X019 Refresher"
 {
-    procedure Normalize(RefID: Guid)
+    procedure Recalc(RefID: Guid)
     var
         Doc: Record "CG X019 Doc";
         OldAmount: Integer;

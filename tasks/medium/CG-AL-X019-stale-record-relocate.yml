@@ -5,21 +5,21 @@ max_attempts: 2
 description: >-
   Create codeunit "CG X019 Processor" (ID 71080) with Access = Internal and:
 
-      procedure NormalizeAndGetAmount(RefID: Guid): Integer
+      procedure RecalcAndGetAmount(RefID: Guid): Integer
 
   The existing "CG X019 Doc" table (ID 69770, fields "No." (Code[20],
   primary key), "Ref ID" (Guid), and "Amount" (Integer)) holds documents,
   each identified by a "Ref ID" value.
 
-  The existing "CG X019 Normalizer" codeunit (ID 69771) provides:
+  The existing "CG X019 Refresher" codeunit (ID 69771) provides:
 
-      procedure Normalize(RefID: Guid)
+      procedure Recalc(RefID: Guid)
 
-  which normalizes the "CG X019 Doc" record identified by that RefID.
+  which recalculates the "CG X019 Doc" record identified by that RefID.
 
-  NormalizeAndGetAmount must read the "CG X019 Doc" record identified by
-  RefID, call Normalizer.Normalize(RefID), and then return that same
-  document's current "Amount" value.
+  RecalcAndGetAmount must locate the "CG X019 Doc" record for RefID, run
+  Refresher.Recalc(RefID) on it, and then supply that document's current
+  "Amount" value.
 domains: [codeunits]
 metadata:
   category: records-runtime

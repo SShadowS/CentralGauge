@@ -21,7 +21,7 @@ codeunit 80308 "CG-AL-X019 Test"
         // procedure on assertion failure and never reaches ClearState() at
         // the end. Everything below runs under the default per-test
         // TestIsolation = Codeunit rollback (no Commit anywhere in this
-        // task's flow, including the Normalizer's Rename), so no explicit
+        // task's flow, including the Refresher's Rename), so no explicit
         // Commit is needed here either -- wipe-then-reseed is enough.
         ClearState();
 
@@ -42,7 +42,7 @@ codeunit 80308 "CG-AL-X019 Test"
     end;
 
     [Test]
-    procedure NormalizeAndGetAmountReturnsCurrentAmountForFirstDoc()
+    procedure RecalcAndGetAmountReturnsCurrentAmountForFirstDoc()
     var
         Doc: Record "CG X019 Doc";
         Processor: Codeunit "CG X019 Processor";
@@ -54,23 +54,23 @@ codeunit 80308 "CG-AL-X019 Test"
         // exists" or "the first row in the table".
         SeedData(RefId1, RefId2);
 
-        // [WHEN/THEN] the discriminator: the Normalizer renames the targeted
+        // [WHEN/THEN] the discriminator: the Refresher renames the targeted
         // doc's "No." (its primary key) to a value driven by its OLD Amount
         // (10*3+11 -> "DOC-41") and separately rewrites Amount to
         // 10*7+2 = 72. A caller that re-reads the same Record variable by its
         // now-stale primary key (Find('=') / Get on the old "No.") after the
-        // Normalize call does not observe that mutation and returns
+        // Recalc call does not observe that mutation and returns
         // something other than 72.
         Assert.AreEqual(
             72,
-            Processor.NormalizeAndGetAmount(RefId1),
-            'Must return the current amount of the normalized document');
+            Processor.RecalcAndGetAmount(RefId1),
+            'Must return the current amount of the recalculated document');
 
         // [THEN] the row is still reachable, but only by its stable Ref ID
         Doc.SetRange("Ref ID", RefId1);
-        Assert.IsTrue(Doc.FindFirst(), 'Normalized doc must still be locatable by its Ref ID');
-        Assert.AreEqual('DOC-41', Doc."No.", 'Doc must carry the Normalizer''s new primary key value');
-        Assert.AreEqual(72, Doc.Amount, 'Doc must carry the Normalizer''s new Amount');
+        Assert.IsTrue(Doc.FindFirst(), 'Refreshed doc must still be locatable by its Ref ID');
+        Assert.AreEqual('DOC-41', Doc."No.", 'Doc must carry the Refresher''s new primary key value');
+        Assert.AreEqual(72, Doc.Amount, 'Doc must carry the Refresher''s new Amount');
 
         // [THEN] the second, untouched document must be unaffected
         Doc.SetRange("Ref ID", RefId2);
@@ -82,7 +82,7 @@ codeunit 80308 "CG-AL-X019 Test"
     end;
 
     [Test]
-    procedure NormalizeAndGetAmountReturnsCurrentAmountForSecondDoc()
+    procedure RecalcAndGetAmountReturnsCurrentAmountForSecondDoc()
     var
         Doc: Record "CG X019 Doc";
         Processor: Codeunit "CG X019 Processor";
@@ -97,13 +97,13 @@ codeunit 80308 "CG-AL-X019 Test"
         // [WHEN/THEN] 20*3+11 -> "DOC-71"; 20*7+2 = 142
         Assert.AreEqual(
             142,
-            Processor.NormalizeAndGetAmount(RefId2),
-            'Must return the current amount of the normalized document');
+            Processor.RecalcAndGetAmount(RefId2),
+            'Must return the current amount of the recalculated document');
 
         Doc.SetRange("Ref ID", RefId2);
-        Assert.IsTrue(Doc.FindFirst(), 'Normalized doc must still be locatable by its Ref ID');
-        Assert.AreEqual('DOC-71', Doc."No.", 'Doc must carry the Normalizer''s new primary key value');
-        Assert.AreEqual(142, Doc.Amount, 'Doc must carry the Normalizer''s new Amount');
+        Assert.IsTrue(Doc.FindFirst(), 'Refreshed doc must still be locatable by its Ref ID');
+        Assert.AreEqual('DOC-71', Doc."No.", 'Doc must carry the Refresher''s new primary key value');
+        Assert.AreEqual(142, Doc.Amount, 'Doc must carry the Refresher''s new Amount');
 
         Doc.SetRange("Ref ID", RefId1);
         Assert.IsTrue(Doc.FindFirst(), 'First doc must be untouched and still locatable');
