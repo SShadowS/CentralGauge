@@ -34,7 +34,7 @@ codeunit 80342 "CG-AL-X052 Test"
     var
         Quote: Record "CG X052 Quote";
         Decoy: Record "CG X052 Quote";
-        Clerk: Codeunit "CG X052 Clerk";
+        Agent: Codeunit "CG X052 Agent";
     begin
         // [GIVEN] a decoy row SetTerms must never touch, and the target row
         // seeded at a LOW-tier quantity so a rate-first Validate order would
@@ -44,7 +44,7 @@ codeunit 80342 "CG-AL-X052 Test"
         SeedQuote('Q1', 6, 30, 0, 111);
 
         // [WHEN]
-        Clerk.SetTerms('Q1', 100, 17);
+        Agent.SetTerms('Q1', 100, 17);
 
         // [THEN] read back the persisted row directly, not an in-memory var,
         // so the assertion proves the row was actually re-persisted
@@ -65,7 +65,7 @@ codeunit 80342 "CG-AL-X052 Test"
     var
         Quote: Record "CG X052 Quote";
         Decoy: Record "CG X052 Quote";
-        Clerk: Codeunit "CG X052 Clerk";
+        Agent: Codeunit "CG X052 Agent";
     begin
         // [GIVEN] the target row seeded at a HIGH-tier quantity so a
         // rate-first Validate order would derive the tier from the WRONG
@@ -76,7 +76,7 @@ codeunit 80342 "CG-AL-X052 Test"
         SeedQuote('Q2', 18, 45, 0, 222);
 
         // [WHEN]
-        Clerk.SetTerms('Q2', 60, 8);
+        Agent.SetTerms('Q2', 60, 8);
 
         // [THEN]
         Assert.IsTrue(Quote.Get('Q2'), 'Q2 row must still exist');
@@ -96,7 +96,7 @@ codeunit 80342 "CG-AL-X052 Test"
     var
         Quote: Record "CG X052 Quote";
         Decoy: Record "CG X052 Quote";
-        Clerk: Codeunit "CG X052 Clerk";
+        Agent: Codeunit "CG X052 Agent";
     begin
         // [GIVEN] target row seeded so the seed quantity and the normalized
         // new quantity fall in the SAME tier - Validate order can't change
@@ -107,7 +107,7 @@ codeunit 80342 "CG-AL-X052 Test"
         SeedQuote('Q3', 17, 20, 0, 333);
 
         // [WHEN]
-        Clerk.SetTerms('Q3', 40, 25);
+        Agent.SetTerms('Q3', 40, 25);
 
         // [THEN]
         Assert.IsTrue(Quote.Get('Q3'), 'Q3 row must still exist');

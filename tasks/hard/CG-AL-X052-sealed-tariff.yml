@@ -3,21 +3,20 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create codeunit "CG X052 Clerk" (ID 71410) with Access = Internal and:
+  Create codeunit "CG X052 Agent" (ID 71410) with Access = Internal and:
 
       procedure SetTerms(No: Code[20]; OfferedRate: Integer; NewQty: Integer)
 
-  The table "CG X052 Quote" (ID 69100) already exists, with fields "No."
-  (Code[20], primary key), Qty (Integer), Rate (Integer), Fee (Integer), and
-  Total (Integer). The table maintains itself: whenever the quantity is given
-  a new value, the table adjusts it under its own packaging rule, recomputes
-  the fee from the adjusted quantity, and refreshes the total. Whenever the
-  rate is given a new value, the table derives the effective rate from the
-  offered value and the quantity the quote carries at that moment, stores the
-  effective rate, and refreshes the total. SetTerms must leave the row
-  identified by No. persisted carrying the adjusted new quantity, the
-  effective rate derived under that adjusted quantity, the fee that follows
-  from them, and the matching total.
+  The existing "CG X052 Quote" table (ID 69100) has fields "No." (Code[20],
+  primary key), Qty, Rate, Fee, and Total, all Integer except "No.". Two
+  rules already run on this table: setting Qty adjusts it under the table's
+  own packaging rule and updates Fee and Total from the adjusted Qty and
+  current Rate; setting Rate computes a new Rate from the given value and
+  the current Qty, then updates Total from the new Rate.
+
+  SetTerms applies NewQty and OfferedRate to the row for No., after which
+  its Rate, Fee, and Total must all be consistent with its final (adjusted)
+  Qty.
 domains: [codeunits, tables]
 metadata:
   category: business-logic
