@@ -8,15 +8,12 @@ description: >-
       procedure TryProcess(No: Integer): Boolean
 
   Given a whole number No, TryProcess must create a row in the existing
-  "CG X035 Attempt" table (ID 69870, fields "No." (Integer, primary key),
-  "Result" (Integer), and "Processed" (Boolean)) with that "No.", then invoke
-  the existing "CG X035 Engine" codeunit (ID 69871) so it processes that row.
-
-  The Engine may complete successfully, or it may raise an error while
-  processing the row; either outcome must not propagate out of TryProcess.
-  TryProcess returns true when the Engine successfully processed the row, and
-  false otherwise. Regardless of the outcome, the "CG X035 Attempt" row for
-  No must still be present in the table afterward.
+  "CG X035 Entry" table (ID 69870, fields "No." (Integer, primary key),
+  "Result" (Integer), and "Processed" (Boolean)) with that "No.", invoke the
+  existing "CG X035 Worker" codeunit (ID 69871) so it processes that row,
+  catching any error the Worker raises so it never leaves TryProcess,
+  returning true when the Worker finished the row and false when it errored,
+  while leaving the row in the table either way.
 domains: [codeunits, error-handling]
 metadata:
   category: error-transactions

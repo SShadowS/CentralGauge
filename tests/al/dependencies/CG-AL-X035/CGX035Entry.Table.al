@@ -1,4 +1,4 @@
-table 69870 "CG X035 Attempt"
+table 69870 "CG X035 Entry"
 {
     DataClassification = SystemMetadata;
     fields

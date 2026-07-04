@@ -8,9 +8,9 @@ codeunit 80324 "CG-AL-X035 Test"
 
     local procedure Reset()
     var
-        Attempt: Record "CG X035 Attempt";
+        Entry: Record "CG X035 Entry";
     begin
-        Attempt.DeleteAll();
+        Entry.DeleteAll();
         Commit();
     end;
 
@@ -18,47 +18,47 @@ codeunit 80324 "CG-AL-X035 Test"
     procedure SuccessfulRunPersistsOpaqueResult()
     var
         Runner: Codeunit "CG X035 Runner";
-        Attempt: Record "CG X035 Attempt";
+        Entry: Record "CG X035 Entry";
     begin
-        // [GIVEN] No prior Attempt rows
+        // [GIVEN] No prior Entry rows
         Reset();
 
-        // [WHEN] TryProcess runs for a row the engine will accept
+        // [WHEN] TryProcess runs for a row the worker will accept
         Assert.IsTrue(Runner.TryProcess(5), 'A clean run should return true');
 
-        // [THEN] The row persists, fully processed, with the engine's own
+        // [THEN] The row persists, fully processed, with the worker's own
         // (opaque) computed value — never derivable without really calling it.
-        Assert.IsTrue(Attempt.Get(5), 'Attempt row must persist after a clean run');
-        Assert.IsTrue(Attempt.Processed, 'Processed must be true after a clean run');
-        Assert.AreEqual(49, Attempt.Result, 'Result must equal the engine''s computed value');
+        Assert.IsTrue(Entry.Get(5), 'Entry row must persist after a clean run');
+        Assert.IsTrue(Entry.Processed, 'Processed must be true after a clean run');
+        Assert.AreEqual(49, Entry.Result, 'Result must equal the worker''s computed value');
     end;
 
     [Test]
-    procedure EngineFailureIsSwallowedButRowPersists()
+    procedure WorkerFailureIsSwallowedButRowPersists()
     var
         Runner: Codeunit "CG X035 Runner";
-        Attempt: Record "CG X035 Attempt";
+        Entry: Record "CG X035 Entry";
     begin
-        // [GIVEN] No prior Attempt rows
+        // [GIVEN] No prior Entry rows
         Reset();
 
-        // [WHEN] TryProcess runs for a row the engine will refuse to process
+        // [WHEN] TryProcess runs for a row the worker will refuse to process
         Assert.IsFalse(Runner.TryProcess(-3), 'A refused run must return false, not throw');
 
-        // [THEN] The Attempt row still exists (creation is unconditional) but
-        // was never marked processed, since the engine's own write rolled back.
-        Assert.IsTrue(Attempt.Get(-3), 'Attempt row must persist even when the engine refuses it');
-        Assert.IsFalse(Attempt.Processed, 'Processed must remain false when the engine refuses the row');
-        Assert.AreEqual(0, Attempt.Result, 'Result must remain unset when the engine refuses the row');
+        // [THEN] The Entry row still exists (creation is unconditional) but
+        // was never marked processed, since the worker's own write rolled back.
+        Assert.IsTrue(Entry.Get(-3), 'Entry row must persist even when the worker refuses it');
+        Assert.IsFalse(Entry.Processed, 'Processed must remain false when the worker refuses the row');
+        Assert.AreEqual(0, Entry.Result, 'Result must remain unset when the worker refuses the row');
     end;
 
     [Test]
     procedure TwoSuccessfulRunsBothPersist()
     var
         Runner: Codeunit "CG X035 Runner";
-        Attempt: Record "CG X035 Attempt";
+        Entry: Record "CG X035 Entry";
     begin
-        // [GIVEN] No prior Attempt rows
+        // [GIVEN] No prior Entry rows
         Reset();
 
         // [WHEN] TryProcess runs twice for two different accepted rows
@@ -66,12 +66,12 @@ codeunit 80324 "CG-AL-X035 Test"
         Assert.IsTrue(Runner.TryProcess(7), 'Second clean run should return true');
 
         // [THEN] Both rows persist with their own opaque computed values
-        Assert.IsTrue(Attempt.Get(2), 'First attempt row must persist');
-        Assert.IsTrue(Attempt.Processed, 'First attempt must be processed');
-        Assert.AreEqual(22, Attempt.Result, 'First attempt result must match the engine formula');
+        Assert.IsTrue(Entry.Get(2), 'First entry row must persist');
+        Assert.IsTrue(Entry.Processed, 'First entry must be processed');
+        Assert.AreEqual(22, Entry.Result, 'First entry result must match the worker formula');
 
-        Assert.IsTrue(Attempt.Get(7), 'Second attempt row must persist');
-        Assert.IsTrue(Attempt.Processed, 'Second attempt must be processed');
-        Assert.AreEqual(67, Attempt.Result, 'Second attempt result must match the engine formula');
+        Assert.IsTrue(Entry.Get(7), 'Second entry row must persist');
+        Assert.IsTrue(Entry.Processed, 'Second entry must be processed');
+        Assert.AreEqual(67, Entry.Result, 'Second entry result must match the worker formula');
     end;
 }
