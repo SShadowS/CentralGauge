@@ -33,7 +33,7 @@ codeunit 80334 "CG-AL-X045 Test"
     var
         Line: Record "CG X045 Line";
         Decoy: Record "CG X045 Line";
-        Clerk: Codeunit "CG X045 Clerk";
+        Agent: Codeunit "CG X045 Agent";
     begin
         // [GIVEN] a decoy row ApplyTerms must never touch, and the target
         // row seeded at a LOW-tier quantity so a price-first Validate order
@@ -43,7 +43,7 @@ codeunit 80334 "CG-AL-X045 Test"
         SeedLine('L1', 3, 999);
 
         // [WHEN]
-        Clerk.ApplyTerms('L1', 100, 14);
+        Agent.ApplyTerms('L1', 100, 14);
 
         // [THEN] read back the persisted row directly, not an in-memory var,
         // so the assertion proves the row was actually re-persisted
@@ -65,7 +65,7 @@ codeunit 80334 "CG-AL-X045 Test"
     var
         Line: Record "CG X045 Line";
         Decoy: Record "CG X045 Line";
-        Clerk: Codeunit "CG X045 Clerk";
+        Agent: Codeunit "CG X045 Agent";
     begin
         // [GIVEN] the target row seeded at a HIGH-tier quantity so a
         // price-first Validate order would derive the tier from the WRONG
@@ -76,7 +76,7 @@ codeunit 80334 "CG-AL-X045 Test"
         SeedLine('L2', 20, 700);
 
         // [WHEN]
-        Clerk.ApplyTerms('L2', 50, 5);
+        Agent.ApplyTerms('L2', 50, 5);
 
         // [THEN]
         Assert.IsTrue(Line.Get('L2'), 'L2 row must still exist');
@@ -97,7 +97,7 @@ codeunit 80334 "CG-AL-X045 Test"
     var
         Line: Record "CG X045 Line";
         Decoy: Record "CG X045 Line";
-        Clerk: Codeunit "CG X045 Clerk";
+        Agent: Codeunit "CG X045 Agent";
     begin
         // [GIVEN] target row seeded so the seed quantity and the normalized
         // new quantity fall in the SAME tier - Validate order can't change
@@ -108,7 +108,7 @@ codeunit 80334 "CG-AL-X045 Test"
         SeedLine('L3', 13, 300);
 
         // [WHEN]
-        Clerk.ApplyTerms('L3', 80, 21);
+        Agent.ApplyTerms('L3', 80, 21);
 
         // [THEN]
         Assert.IsTrue(Line.Get('L3'), 'L3 row must still exist');

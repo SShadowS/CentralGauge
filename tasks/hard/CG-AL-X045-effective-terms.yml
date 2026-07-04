@@ -3,7 +3,7 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create codeunit "CG X045 Clerk" (ID 71340) with Access = Internal and:
+  Create codeunit "CG X045 Agent" (ID 71340) with Access = Internal and:
 
       procedure ApplyTerms(No: Code[20]; OfferedPrice: Integer; NewQty: Integer)
 
