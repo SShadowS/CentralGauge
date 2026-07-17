@@ -27,6 +27,7 @@ export {
 } from "./classify-publish-failure.ts";
 export { fingerprintInfraError } from "./fingerprint.ts";
 export { isInfraError } from "./is-infra-error.ts";
+export { isInfraInvalidatedAttempt } from "./infra-invalidation.ts";
 export { ContainerHealthMonitor } from "./monitor.ts";
 export { captureRawTail, writeArtifact } from "./raw-output.ts";
 export { redactSensitive } from "./redact.ts";

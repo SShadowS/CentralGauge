@@ -829,18 +829,19 @@ async function ingestBenchResults(
   let attempted = 0;
   let succeeded = 0;
   let transient = 0;
+  let infraInvalidated = 0;
 
   for (const filePath of resultFilePaths) {
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         { pricingVersion };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
-      const br = await assembleBenchResultsForVariant(
+      const assembled = await assembleBenchResultsForVariant(
         filePath,
         variant,
         assembleOpts,
       );
-      if (!br) {
+      if (assembled.kind === "no_results") {
         console.warn(
           colors.yellow(
             `[WARN] No results for variant ${variant.variantId} in ${filePath}; skipping.`,
@@ -848,6 +849,27 @@ async function ingestBenchResults(
         );
         continue;
       }
+      if (assembled.kind === "all_infra") {
+        infraInvalidated++;
+        console.error(
+          colors.red(
+            `[FAIL] Ingest skipped for ${variant.variantId} in ${filePath}: ` +
+              `all ${assembled.infraExcludedAttempts} attempt(s) were ` +
+              `infra-invalidated — the run carries no valid model signal ` +
+              `and was NOT sent to the leaderboard. Fix infra and re-bench.`,
+          ),
+        );
+        continue;
+      }
+      if (assembled.infraExcludedAttempts > 0) {
+        console.warn(
+          colors.yellow(
+            `[WARN] Excluded ${assembled.infraExcludedAttempts} ` +
+              `infra-invalidated attempt(s) from ingest for ${variant.variantId}`,
+          ),
+        );
+      }
+      const br = assembled.benchResults;
 
       attempted++;
       const outcome = await ingestRun(br, {
@@ -902,12 +924,30 @@ async function ingestBenchResults(
     }
   }
 
+  if (infraInvalidated > 0) {
+    console.error(
+      colors.red(
+        `[FAIL] ${infraInvalidated} (file × variant) pair(s) were fully ` +
+          `infra-invalidated and NOT ingested — those runs need a re-bench ` +
+          `after the infra issue is fixed.`,
+      ),
+    );
+  }
+
   // If every attempted (file × variant) pair failed transiently, fail loud.
   // Per-pair transient is tolerable; 100% transient means the user thinks the
   // run was ingested when nothing landed.
   if (attempted > 0 && succeeded === 0 && transient === attempted) {
     throw new Error(
       `ingest failed: all ${attempted} (file × variant) pair(s) hit transient errors; replay required`,
+    );
+  }
+
+  // Same fail-loud rule when nothing was even attempted because EVERY pair
+  // was infra-invalidated: the user must not believe the run was ingested.
+  if (infraInvalidated > 0 && attempted === 0) {
+    throw new Error(
+      `ingest skipped: all ${infraInvalidated} (file × variant) pair(s) were infra-invalidated; nothing ingested — fix infra and re-bench`,
     );
   }
 }

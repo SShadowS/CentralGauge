@@ -988,7 +988,8 @@ DETAIL:test.al(10,5): error AL0118: The name 'InvalidFunction' does not exist
 });
 
 Deno.test({
-  name: "BcContainerProvider - compileProject handles system errors gracefully",
+  name:
+    "BcContainerProvider - compileProject RETHROWS infra errors from compiler-folder setup (C3)",
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
@@ -1003,7 +1004,11 @@ Deno.test({
         JSON.stringify({ name: "Test", publisher: "Test", version: "1.0.0" }),
       );
 
-      // Mock: compiler folder creation fails completely
+      // Mock: compiler folder creation fails completely. This is an INFRA
+      // fault (ContainerError from buildPwshError), so compileProject must
+      // PROPAGATE it for the inline infra-retry to reroute — pre-C3 it was
+      // swallowed into a synthetic SYSTEM compile failure and scored against
+      // the model.
       mock.mockPowerShellError(
         ["Get-BcContainerArtifactUrl"],
         "Container not running",
@@ -1011,20 +1016,22 @@ Deno.test({
       );
 
       const provider = new BcContainerProvider();
-      const result = await provider.compileProject("TestContainer", {
-        path: tempDir,
-        appJson: {
-          name: "TestApp",
-          publisher: "TestPublisher",
-          version: "1.0.0.0",
-        },
-        sourceFiles: [],
-        testFiles: [],
-      });
-
-      assertEquals(result.success, false);
-      assertEquals(result.errors.length, 1);
-      assertEquals(result.errors[0]!.code, "SYSTEM");
+      const err = await assertRejects(
+        () =>
+          provider.compileProject("TestContainer", {
+            path: tempDir,
+            appJson: {
+              name: "TestApp",
+              publisher: "TestPublisher",
+              version: "1.0.0.0",
+            },
+            sourceFiles: [],
+            testFiles: [],
+          }),
+        ContainerError,
+      );
+      assertEquals(err.operation, "compile");
+      assertStringIncludes(err.message, "Failed to create compiler folder");
     } finally {
       mock.restore();
       await Deno.remove(tempDir, { recursive: true });
@@ -1164,15 +1171,13 @@ Deno.test({
         JSON.stringify({ name: "Test", publisher: "Test", version: "1.0.0" }),
       );
 
-      // Mock: compiler folder creation
-      mock.mockPowerShell(
-        ["Get-BcContainerArtifactUrl"],
-        "ARTIFACT_URL:https://example.com",
-      );
-
+      // Mock: compiler folder creation (single script emits BOTH markers —
+      // splitting them across two mocks starves COMPILER_FOLDER and turns
+      // this into an infra failure, which compileProject now RETHROWS (C3)
+      // instead of swallowing into the model-level failure this test is about).
       mock.mockPowerShell(
         ["New-BcCompilerFolder"],
-        `COMPILER_FOLDER:C:\\CompilerFolder`,
+        `ARTIFACT_URL:https://example.com\nCOMPILER_FOLDER:C:\\CompilerFolder`,
       );
 
       // Mock: compilation fails

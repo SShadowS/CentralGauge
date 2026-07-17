@@ -4,7 +4,7 @@
 
 import { basename, dirname, join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
-import { ValidationError } from "../errors.ts";
+import { ContainerError, ValidationError } from "../errors.ts";
 import type {
   ExecutionAttempt,
   TaskExecutionContext,
@@ -586,7 +586,16 @@ export class TaskExecutorV2 {
           name: prereq.appJson["name"],
           errors: prereqCompileResult.errors.map((e) => e.message),
         });
-        // Continue without prereq - will likely fail later
+        // Prereqs are task fixtures, not model output — a broken prereq is a
+        // setup (infra) fault. Throw so the attempt is infra-classified
+        // instead of cascading into a scored model compile failure.
+        throw new ContainerError(
+          `Prereq compilation failed for ${prereq.appJson["name"]}: ${
+            prereqCompileResult.errors.map((e) => e.message).join("; ")
+          }`,
+          context.containerName,
+          "setup",
+        );
       } else {
         compiledPrereqs.push({
           ...prereq,

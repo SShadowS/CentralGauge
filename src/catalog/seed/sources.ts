@@ -138,5 +138,8 @@ export async function fetchOpenRouterMeta(
     maxInputTokens: entry.context_length,
     maxOutputTokens: entry.top_provider?.max_completion_tokens,
     capabilities: deriveOpenRouterCapabilities(entry),
+    // OpenRouter's explicit free-tier convention: the `:free` slug suffix.
+    // This is the ONLY automated source allowed to vouch for $0 pricing.
+    marksFree: orSlug.endsWith(":free"),
   };
 }

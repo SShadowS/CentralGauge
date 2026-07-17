@@ -356,6 +356,63 @@ describe("mergeMetadata", () => {
     assertEquals(result.pricing.input_per_mtoken, 0.05);
   });
 
+  it("D4: rejects zero pricing without an explicit free marker (LiteLLM)", () => {
+    let err: unknown = null;
+    try {
+      mergeMetadata({
+        slug: "openai/gpt-mystery",
+        litellm: { input: 0, output: 0 },
+        openrouter: null,
+      });
+    } catch (e) {
+      err = e;
+    }
+    assertEquals(err instanceof CatalogSeedError, true);
+    assertEquals((err as CatalogSeedError).code, "SEED_NO_PRICING");
+    // Remedy text points to the deliberate manual-override path.
+    assertEquals(
+      (err as CatalogSeedError).message.includes(
+        "pre-seed site/catalog/pricing.yml",
+      ),
+      true,
+    );
+  });
+
+  it("D4: rejects zero OpenRouter pricing when the source does not mark the model free", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/meta-llama/llama-3-8b",
+          litellm: null,
+          openrouter: {
+            pricing: { input: 0, output: 0 },
+            displayName: "Meta: Llama 3 8B",
+            vendor: "Meta",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4: accepts zero pricing for an OpenRouter ':free' slug (source marks free)", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/meta-llama/llama-3-8b:free",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 0, output: 0 },
+        displayName: "Meta: Llama 3 8B (free)",
+        vendor: "Meta",
+        releasedAt: null,
+        marksFree: true,
+      },
+    });
+    assertEquals(result.pricing.input_per_mtoken, 0);
+    assertEquals(result.pricing.output_per_mtoken, 0);
+    assertEquals(result.pricing.source, "openrouter");
+  });
+
   it("direct provider falls back to OR pricing when LiteLLM has none", () => {
     const result = mergeMetadata({
       slug: "anthropic/claude-haiku-4-5",

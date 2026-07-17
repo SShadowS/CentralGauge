@@ -26,8 +26,11 @@
  *
  * Invariants enforced (each verified by a dedicated test):
  *
- *  1. `maxRetries: 0` is identical to no helper — the operation runs once,
- *     any error propagates unchanged, NO retry events are emitted.
+ *  1. `maxRetries: 0` runs the operation once, propagates any error
+ *     unchanged, and emits NO retry events. `classifyResult` (an explicit
+ *     opt-in) is STILL consulted: a quarantined result throws a
+ *     ContainerError instead of being returned, so an alert-tagged outcome
+ *     can never leak into scoring just because retries are disabled.
  *  2. Original failing container is always added to `excludeContainers` for
  *     subsequent attempts.
  *  3. The trail is finalized BEFORE any throw — even non-infra mid-retry.
@@ -134,16 +137,31 @@ export async function withInfraRetry<T>(
 ): Promise<WithInfraRetryResult<T>> {
   // ---- Fast path: helper disabled ---------------------------------------
   //
-  // `maxRetries: 0` MUST be observationally identical to "no helper" —
-  // the operation runs exactly once, any error propagates UNCHANGED (not
-  // wrapped in `InfraRetriesExhaustedError`), and NO retry events are
-  // emitted. This is the contract relied on by the orchestrator's
+  // `maxRetries: 0` runs the operation exactly once, propagates any error
+  // UNCHANGED (not wrapped in `InfraRetriesExhaustedError`), and emits NO
+  // retry events. This is the contract relied on by the orchestrator's
   // "infra retry disabled" path.
+  //
+  // `classifyResult` is an explicit opt-in and is honored even here: a
+  // resolved-but-quarantined result must NEVER be returned to scoring —
+  // with retries disabled there is nothing to reroute to, so it becomes a
+  // thrown ContainerError and the caller's infra-failure synthesis takes
+  // over.
   if (options.maxRetries <= 0) {
     const result = await operation({
       excludeContainers: [],
       onRouted: () => {},
     });
+    const cls = options.classifyResult?.(result);
+    if (cls?.kind === "quarantined") {
+      throw new ContainerError(
+        `Result quarantined by alert ${
+          cls.alertId ?? "(unknown-alert)"
+        } with infra retries disabled`,
+        cls.originContainer ?? "unknown",
+        "test",
+      );
+    }
     return { result, retries: [] };
   }
 

@@ -202,6 +202,16 @@ export function mergeMetadata(input: MergeInput): MergeOutput {
   // mismatch. This is the gate that stops the 1000x corruption recurring.
   assertPlausiblePricing(input.slug, pricingValues, pricingSource, input);
 
+  // D4: zero pricing is only credible when the source EXPLICITLY marks the
+  // model free (OpenRouter `:free` slug). An unmarked $0 is a data gap that
+  // would zero every cost column for the model's runs.
+  assertZeroPricingIsMarkedFree(
+    input.slug,
+    pricingValues,
+    pricingSource,
+    input,
+  );
+
   const family = inferFamilySlug(
     parsed.provider,
     parsed.model,
@@ -318,6 +328,32 @@ function assertPlausiblePricing(
       );
     }
   }
+}
+
+/**
+ * Reject $0 pricing unless the source explicitly vouches for it. Today only
+ * OpenRouter can (`marksFree`, derived from its `:free` slug convention);
+ * LiteLLM zeros are always treated as missing data. Genuinely free models
+ * without the marker take the deliberate override path: a manual entry in
+ * site/catalog/pricing.yml.
+ */
+function assertZeroPricingIsMarkedFree(
+  slug: string,
+  values: { input: number; output: number },
+  source: string,
+  input: MergeInput,
+): void {
+  if (values.input !== 0 || values.output !== 0) return;
+  const sourceMarksFree = source === "openrouter" &&
+    input.openrouter?.marksFree === true;
+  if (sourceMarksFree) return;
+  throw new CatalogSeedError(
+    `zero pricing for ${slug} without an explicit free marker ` +
+      `(source=${source}) — refusing to seed $0 rates; ` +
+      `pre-seed site/catalog/pricing.yml manually for genuinely free models`,
+    "SEED_NO_PRICING",
+    { slug, source },
+  );
 }
 
 function capitalize(s: string): string {

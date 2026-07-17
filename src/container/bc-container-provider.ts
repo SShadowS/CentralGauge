@@ -223,6 +223,13 @@ export function decideSoapFailureAction(
 ): SoapFailureAction {
   const isPublish = error instanceof ContainerError &&
     error.operation === "publish";
+  // Infra precedence: a real infra blip during publish (SQL wait timeout,
+  // connection loss) must reroute even when the same output ALSO carries a
+  // collision phrasing — the collision may be a symptom of the blip, and
+  // falling back to legacy on the same container feeds the death spiral.
+  if (isPublish && classifyPublishFailure(publishOut) === "infra") {
+    return "reroute_infra";
+  }
   if (isPublish && isCollisionPublishFailure(publishOut)) {
     return "fallback_legacy";
   }
@@ -1382,6 +1389,12 @@ ${script}
         contextLog,
       );
     } catch (error) {
+      // Infra-classified failures (container/session/queue faults) must
+      // PROPAGATE so the compile-queue catch routes them through the inline
+      // infra-retry instead of scoring a synthesized SYSTEM compile failure
+      // against the model.
+      if (isInfraError(error)) throw error;
+
       const errorMessage = error instanceof Error
         ? error.message
         : String(error);
@@ -1839,6 +1852,23 @@ ${script}
               extensionId,
             ),
         );
+        // GH #13 (SOAP path): candidate published OK but the harness ran ZERO
+        // tests — an infrastructure condition (broken harness, stale-candidate
+        // collision, wedged NST), never a legitimate model failure. Mirror of
+        // the legacy-path guard below; message must keep matching the
+        // `zero_tests` signature in src/health/signatures.ts. The throw lands
+        // in the catch below → decideSoapFailureAction → reroute_infra.
+        if (soapResult.totalTests === 0) {
+          contextLog.warn(
+            "Zero tests detected after successful publish (infra, SOAP path)",
+          );
+          throw this.buildPwshError({
+            containerName,
+            operation: "test",
+            message: "Zero tests detected after successful publish (infra)",
+            output: JSON.stringify(soapResult),
+          });
+        }
         this.logTestResult(
           soapResult.success,
           soapResult.passedTests,

@@ -116,16 +116,17 @@ async function handleIngest(
     );
 
     let okCount = 0;
+    let infraSkipped = 0;
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         { pricingVersion };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
-      const br = await assembleBenchResultsForVariant(
+      const assembled = await assembleBenchResultsForVariant(
         path,
         variant,
         assembleOpts,
       );
-      if (!br) {
+      if (assembled.kind === "no_results") {
         console.warn(
           colors.gray(
             `       skipped ${variant.variantId} (no matching results)`,
@@ -133,6 +134,26 @@ async function handleIngest(
         );
         continue;
       }
+      if (assembled.kind === "all_infra") {
+        infraSkipped++;
+        console.error(
+          colors.red(
+            `[FAIL] ${variant.variantId}: all ${assembled.infraExcludedAttempts} ` +
+              `attempt(s) were infra-invalidated — NOT ingested. The run ` +
+              `carries no valid model signal; fix infra and re-bench.`,
+          ),
+        );
+        continue;
+      }
+      if (assembled.infraExcludedAttempts > 0) {
+        console.warn(
+          colors.yellow(
+            `[WARN] ${variant.variantId}: excluded ` +
+              `${assembled.infraExcludedAttempts} infra-invalidated attempt(s) from ingest`,
+          ),
+        );
+      }
+      const br = assembled.benchResults;
       const outcome = await ingestRun(br, {
         cwd,
         catalogDir: `${cwd}/site/catalog`,
@@ -184,6 +205,16 @@ async function handleIngest(
         `\nIngested ${okCount}/${variants.length} variant(s) from ${path}`,
       ),
     );
+    // Exit non-success when any variant was fully infra-invalidated: the
+    // operator must not mistake a skipped variant for an ingested one.
+    if (infraSkipped > 0) {
+      console.error(
+        colors.red(
+          `[FAIL] ${infraSkipped} variant(s) skipped as infra-invalidated; fix infra and re-bench before ingesting`,
+        ),
+      );
+      Deno.exit(1);
+    }
     return;
   }
 

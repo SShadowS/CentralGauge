@@ -10,6 +10,7 @@ import type {
   TaskExecutionResult,
 } from "../../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
+import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidation.ts";
 
 interface SavedResultsFile {
   results: TaskExecutionResult[];
@@ -20,27 +21,61 @@ export interface AssembleOptions {
   centralgaugeSha?: string;
 }
 
+/**
+ * Outcome of assembling one (results file × variant) ingest payload.
+ *
+ * - `assembled` — payload built; `infraExcludedAttempts` counts attempts
+ *   dropped because they were infra-invalidated (see
+ *   {@link isInfraInvalidatedAttempt}).
+ * - `no_results` — the file carries no results for this variant.
+ * - `all_infra` — EVERY attempt for this variant was infra-invalidated.
+ *   No payload is built: an empty run must never be POSTed to the
+ *   leaderboard. Callers must log loudly and treat the variant as
+ *   non-success (fix infra, re-bench).
+ */
+export type AssembleOutcome =
+  | {
+    kind: "assembled";
+    benchResults: BenchResults;
+    infraExcludedAttempts: number;
+  }
+  | { kind: "no_results" }
+  | { kind: "all_infra"; infraExcludedAttempts: number };
+
 export async function assembleBenchResultsForVariant(
   resultFilePath: string,
   variant: ModelVariant,
   opts: AssembleOptions,
-): Promise<BenchResults | null> {
+): Promise<AssembleOutcome> {
   const raw = await Deno.readTextFile(resultFilePath);
   const data = JSON.parse(raw) as SavedResultsFile;
 
   const variantResults = data.results.filter((r) =>
     (r.context?.variantId ?? r.context?.llmModel) === variant.variantId
   );
-  if (variantResults.length === 0) return null;
+  if (variantResults.length === 0) return { kind: "no_results" };
 
   const { startedAt, completedAt } = computeRunTimeRange(variantResults);
   const encoder = new TextEncoder();
 
   const items: BenchResultItem[] = [];
+  let infraExcludedAttempts = 0;
   for (const r of variantResults) {
     for (const a of r.attempts) {
+      // Infra-invalidated attempts (synthesized infra failures, exhausted
+      // retries, quarantined outcomes) never got a fair model attempt —
+      // exclude them from the leaderboard payload instead of ingesting
+      // `passed=false`.
+      if (isInfraInvalidatedAttempt(a)) {
+        infraExcludedAttempts++;
+        continue;
+      }
       items.push(attemptToItem(r.taskId, a, encoder));
     }
+  }
+
+  if (items.length === 0 && infraExcludedAttempts > 0) {
+    return { kind: "all_infra", infraExcludedAttempts };
   }
 
   const slug = `${variant.provider}/${variant.model}`;
@@ -66,7 +101,7 @@ export async function assembleBenchResultsForVariant(
     results: items,
   };
   if (opts.centralgaugeSha) br.centralgaugeSha = opts.centralgaugeSha;
-  return br;
+  return { kind: "assembled", benchResults: br, infraExcludedAttempts };
 }
 
 function attemptToItem(

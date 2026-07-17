@@ -60,7 +60,7 @@ export type {
 export { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 
 // Ingest assembly
-export type { AssembleOptions } from "./ingest-assembly.ts";
+export type { AssembleOptions, AssembleOutcome } from "./ingest-assembly.ts";
 export {
   assembleBenchResultsForVariant,
   readGitSha,

@@ -136,6 +136,33 @@ Deno.test("maxRetries: 0 returns result on success", async () => {
   assertEquals(result.result, { ok: true });
 });
 
+Deno.test("P9: maxRetries: 0 still consults classifyResult — a quarantined result THROWS instead of leaking to scoring", async () => {
+  const quarantinedResult = { ok: false, quarantined: true };
+  const err = await assertRejects(
+    () =>
+      withInfraRetry(
+        ({ onRouted }) => {
+          onRouted("Cronus28");
+          return Promise.resolve(quarantinedResult);
+        },
+        {
+          maxRetries: 0,
+          configuredContainers: ["Cronus28"],
+          context: { taskId: "t", variantId: "v", attemptNumber: 1 },
+          classifyResult: () => ({
+            kind: "quarantined",
+            alertId: "alert-7",
+            originContainer: "Cronus28",
+          }),
+        },
+      ),
+    ContainerError,
+  );
+  assertEquals(err.operation, "test");
+  assertEquals(err.containerName, "Cronus28");
+  assert(err.message.includes("alert-7"));
+});
+
 // ===========================================================================
 // 2. Non-infra error propagation
 // ===========================================================================

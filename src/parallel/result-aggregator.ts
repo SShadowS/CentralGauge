@@ -10,6 +10,7 @@ import type {
   TaskExecutionResult,
   TaskStats,
 } from "./types.ts";
+import { isInfraInvalidatedAttempt } from "../health/infra-invalidation.ts";
 
 /**
  * Aggregates results from parallel benchmark execution
@@ -383,11 +384,12 @@ export class ResultAggregator {
     const lastAttempt = result.attempts[result.attempts.length - 1];
     if (!lastAttempt) return;
 
-    const firstReason = lastAttempt.failureReasons[0] ?? "";
-    // Infra-synthesized results are tagged with "Infra error:" prefix by
-    // synthesizeInfraFailureResult — they must NOT count as compile/test
-    // failures because the (model, task) attempt never got a fair shake.
-    if (firstReason.startsWith("Infra error:")) {
+    // Infra-invalidated attempts (synthesized "Infra error:" records,
+    // exhausted infra retries, quarantined outcomes) must NOT count as
+    // compile/test failures because the (model, task) attempt never got a
+    // fair shake. Shared predicate keeps this in lockstep with the ingest
+    // assembly's leaderboard exclusion.
+    if (isInfraInvalidatedAttempt(lastAttempt)) {
       callbacks.onInfraInvalidated();
       return;
     }

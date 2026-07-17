@@ -590,9 +590,11 @@ export class ParallelBenchmarkOrchestrator {
         // carries the retry trail + exhaustion reason for the synthesizer.
         let trailingRetries: InfraRetryRecord[] = [];
         let exhaustionReason: InfraRetryExhaustionReason | undefined;
+        let wasInfraExhaustion = false;
         if (err instanceof InfraRetriesExhaustedError) {
           trailingRetries = err.retries;
           exhaustionReason = err.reason;
+          wasInfraExhaustion = true;
           err = err.cause;
         }
 
@@ -654,7 +656,12 @@ export class ParallelBenchmarkOrchestrator {
         // came via an exhausted inline retry, also forward the retry trail +
         // exhaustion reason so the synthesized attempt carries the full
         // diagnostic context.
-        if (isInfraError(err)) {
+        //
+        // Exhaustion is itself proof of infra handling: the quarantine path
+        // can exhaust with a synthetic non-classifiable cause (`Quarantined
+        // on X`), so `wasInfraExhaustion` must gate synthesis alongside the
+        // cause classification or those attempts vanish from `.results[]`.
+        if (wasInfraExhaustion || isInfraError(err)) {
           try {
             const context = await this.buildContext(manifest, variant, options);
             const synth = synthesizeInfraFailureResult({
