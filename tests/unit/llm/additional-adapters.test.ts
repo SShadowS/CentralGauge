@@ -14,14 +14,13 @@ import { LocalLLMAdapter } from "../../../src/llm/local-adapter.ts";
 import { OpenRouterAdapter } from "../../../src/llm/openrouter-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
-// Initialize PricingService before tests run
-await PricingService.initialize();
-
 // =============================================================================
 // Azure OpenAI Adapter Tests
 // =============================================================================
 
 Deno.test("AzureOpenAIAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "azure-openai"', () => {
     const adapter = new AzureOpenAIAdapter();
     assertEquals(adapter.name, "azure-openai");
@@ -29,6 +28,8 @@ Deno.test("AzureOpenAIAdapter - Provider Properties", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new AzureOpenAIAdapter();
 
@@ -42,6 +43,8 @@ Deno.test("AzureOpenAIAdapter - implements LLMAdapter interface", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new AzureOpenAIAdapter();
     const errors = adapter.validateConfig({
@@ -115,6 +118,8 @@ Deno.test("AzureOpenAIAdapter - validateConfig", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost for gpt-4o model", () => {
     const adapter = new AzureOpenAIAdapter();
     adapter.configure({
@@ -145,6 +150,8 @@ Deno.test("AzureOpenAIAdapter - estimateCost", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - streaming interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("supportsStreaming property is true", () => {
     const adapter = new AzureOpenAIAdapter();
     assertEquals(adapter.supportsStreaming, true);
@@ -162,6 +169,8 @@ Deno.test("AzureOpenAIAdapter - streaming interface", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - isHealthy", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns false when API call fails", async () => {
     const adapter = new AzureOpenAIAdapter();
     adapter.configure({
@@ -177,6 +186,8 @@ Deno.test("AzureOpenAIAdapter - isHealthy", async (t) => {
 });
 
 Deno.test("AzureOpenAIAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new AzureOpenAIAdapter();
     adapter.configure({
@@ -220,6 +231,8 @@ Deno.test("AzureOpenAIAdapter - configure", async (t) => {
 // =============================================================================
 
 Deno.test("LocalLLMAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "local"', () => {
     const adapter = new LocalLLMAdapter();
     assertEquals(adapter.name, "local");
@@ -227,6 +240,8 @@ Deno.test("LocalLLMAdapter - Provider Properties", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new LocalLLMAdapter();
 
@@ -240,6 +255,8 @@ Deno.test("LocalLLMAdapter - implements LLMAdapter interface", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns no error when no API key (local model)", () => {
     const adapter = new LocalLLMAdapter();
     const errors = adapter.validateConfig({
@@ -505,6 +522,8 @@ Deno.test("LocalLLMAdapter - validateConfig", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns zero cost for local models", () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -519,6 +538,8 @@ Deno.test("LocalLLMAdapter - estimateCost", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new LocalLLMAdapter();
 
@@ -636,6 +657,8 @@ function createErrorFetchMock(statusCode: number, errorMessage: string) {
 }
 
 Deno.test("LocalLLMAdapter - isHealthy with mocked fetch", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns true when Ollama endpoint responds", async () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -718,6 +741,8 @@ Deno.test("LocalLLMAdapter - isHealthy with mocked fetch", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - generateCode with mocked fetch", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("generates code from Ollama response", async () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -893,6 +918,8 @@ Deno.test("LocalLLMAdapter - generateCode with mocked fetch", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - generateFix with mocked fetch", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("generates fix from Ollama response", async () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -988,6 +1015,8 @@ Deno.test("LocalLLMAdapter - generateFix with mocked fetch", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - callLocalLLM endpoint detection", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("detects Ollama by port 11434", async () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -1249,6 +1278,8 @@ Deno.test("LocalLLMAdapter - callLocalLLM endpoint detection", async (t) => {
 });
 
 Deno.test("LocalLLMAdapter - response parsing", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("parses Ollama usage stats correctly", async () => {
     const adapter = new LocalLLMAdapter();
     adapter.configure({
@@ -1408,6 +1439,8 @@ Deno.test("LocalLLMAdapter - response parsing", async (t) => {
 // =============================================================================
 
 Deno.test("OpenRouterAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "openrouter"', () => {
     const adapter = new OpenRouterAdapter();
     assertEquals(adapter.name, "openrouter");
@@ -1415,6 +1448,8 @@ Deno.test("OpenRouterAdapter - Provider Properties", async (t) => {
 });
 
 Deno.test("OpenRouterAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new OpenRouterAdapter();
 
@@ -1428,6 +1463,8 @@ Deno.test("OpenRouterAdapter - implements LLMAdapter interface", async (t) => {
 });
 
 Deno.test("OpenRouterAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new OpenRouterAdapter();
     const errors = adapter.validateConfig({
@@ -1468,6 +1505,8 @@ Deno.test("OpenRouterAdapter - validateConfig", async (t) => {
 });
 
 Deno.test("OpenRouterAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost for openai/gpt-4o model", () => {
     const adapter = new OpenRouterAdapter();
     adapter.configure({
@@ -1495,6 +1534,8 @@ Deno.test("OpenRouterAdapter - estimateCost", async (t) => {
 });
 
 Deno.test("OpenRouterAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new OpenRouterAdapter();
 

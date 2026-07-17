@@ -2,13 +2,7 @@
  * Unit tests for Mock LLM Adapter
  */
 
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  it,
-} from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assert, assertEquals, assertExists } from "@std/assert";
 import { MockLLMAdapter } from "../../../src/llm/mock-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
@@ -24,21 +18,21 @@ describe("MockLLMAdapter", () => {
   let adapter: MockLLMAdapter;
   let config: ReturnType<typeof createMockLLMConfig>;
 
-  beforeAll(async () => {
-    await PricingService.initialize();
-  });
-
-  afterAll(() => {
+  beforeEach(async () => {
+    // Per-test reset (not one-time beforeAll/afterAll) so this suite's
+    // PricingService state never leaks into or out of adjacent test files.
     PricingService.reset();
-  });
-
-  beforeEach(() => {
+    await PricingService.initialize();
     adapter = new MockLLMAdapter();
     config = createMockLLMConfig({
       provider: "mock",
       model: "mock-gpt-4",
     });
     adapter.configure(config);
+  });
+
+  afterEach(() => {
+    PricingService.reset();
   });
 
   describe("Configuration", () => {

@@ -17,6 +17,8 @@ import {
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
 Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("completionTokens = candidates + thoughts", () => {
     const u = buildGeminiUsage(
       {
@@ -77,6 +79,8 @@ Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async
 });
 
 Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   const raw = {
     name: "models/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
@@ -111,14 +115,13 @@ Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
   });
 });
 
-// Initialize pricing service before any tests run
-await PricingService.initialize();
-
 // =============================================================================
 // Provider Properties Tests
 // =============================================================================
 
 Deno.test("GeminiAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "gemini"', () => {
     const adapter = new GeminiAdapter();
     assertEquals(adapter.name, "gemini");
@@ -130,6 +133,8 @@ Deno.test("GeminiAdapter - Provider Properties", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new GeminiAdapter();
 
@@ -153,6 +158,8 @@ Deno.test("GeminiAdapter - implements LLMAdapter interface", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new GeminiAdapter();
     const errors = adapter.validateConfig({
@@ -278,6 +285,8 @@ Deno.test("GeminiAdapter - validateConfig", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost based on token counts", () => {
     const adapter = new GeminiAdapter();
     adapter.configure({
@@ -376,6 +385,8 @@ Deno.test("GeminiAdapter - estimateCost", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new GeminiAdapter();
 
@@ -409,6 +420,8 @@ Deno.test("GeminiAdapter - configure", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - constructor", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("creates instance without errors", () => {
     const adapter = new GeminiAdapter();
     assertEquals(adapter instanceof GeminiAdapter, true);

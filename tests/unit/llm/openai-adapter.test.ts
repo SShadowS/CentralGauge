@@ -12,14 +12,13 @@ import { assertEquals } from "@std/assert";
 import { OpenAIAdapter } from "../../../src/llm/openai-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
-// Initialize pricing service before any tests run
-await PricingService.initialize();
-
 // =============================================================================
 // Provider Properties Tests
 // =============================================================================
 
 Deno.test("OpenAIAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "openai"', () => {
     const adapter = new OpenAIAdapter();
     assertEquals(adapter.name, "openai");
@@ -31,6 +30,8 @@ Deno.test("OpenAIAdapter - Provider Properties", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new OpenAIAdapter();
 
@@ -54,6 +55,8 @@ Deno.test("OpenAIAdapter - implements LLMAdapter interface", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new OpenAIAdapter();
     const errors = adapter.validateConfig({
@@ -197,6 +200,8 @@ Deno.test("OpenAIAdapter - validateConfig", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost based on token counts", () => {
     const adapter = new OpenAIAdapter();
     adapter.configure({
@@ -296,6 +301,8 @@ Deno.test("OpenAIAdapter - estimateCost", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new OpenAIAdapter();
 
@@ -328,6 +335,8 @@ Deno.test("OpenAIAdapter - configure", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - thinkingBudget configuration", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts thinkingBudget='low' without error", () => {
     const adapter = new OpenAIAdapter();
     adapter.configure({
@@ -405,6 +414,8 @@ Deno.test("OpenAIAdapter - thinkingBudget configuration", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - constructor", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("creates instance without errors", () => {
     const adapter = new OpenAIAdapter();
     assertEquals(adapter instanceof OpenAIAdapter, true);
@@ -439,6 +450,8 @@ Deno.test("OpenAIAdapter - constructor", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - Codex model detection", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts codex model configuration without error", () => {
     const adapter = new OpenAIAdapter();
     const errors = adapter.validateConfig({
@@ -528,6 +541,8 @@ Deno.test("OpenAIAdapter - Codex model detection", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - streaming interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("supportsStreaming property is true", () => {
     const adapter = new OpenAIAdapter();
     assertEquals(adapter.supportsStreaming, true);
@@ -549,6 +564,8 @@ Deno.test("OpenAIAdapter - streaming interface", async (t) => {
 // =============================================================================
 
 Deno.test("OpenAIAdapter - isHealthy", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns false when API call fails", async () => {
     const adapter = new OpenAIAdapter();
     adapter.configure({

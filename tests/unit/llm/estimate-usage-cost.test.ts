@@ -8,9 +8,9 @@ import type { TokenUsage } from "../../../src/llm/types.ts";
 import { MockLLMAdapter } from "../../../src/llm/mock-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
-await PricingService.initialize();
-
 Deno.test("estimateUsageCost is cache-aware", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   const adapter = new MockLLMAdapter();
 
   await t.step("equals estimateCost when there are no cache tokens", () => {
