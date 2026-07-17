@@ -14,6 +14,7 @@ import {
   type ParallelExecutionEvent,
 } from "../../../src/parallel/types.ts";
 import type { TaskManifest } from "../../../src/tasks/interfaces.ts";
+import type { RecoveryEvent } from "../../../src/health/recovery-prober.ts";
 import {
   createMockTaskManifest,
   EventCollector,
@@ -2881,4 +2882,79 @@ describe("orchestrator: inline infra retry wiring", () => {
       );
     },
   );
+});
+
+// =============================================================================
+// P12: recoveryEvents must not leak across a reused orchestrator's runs
+// =============================================================================
+
+describe("P12: recoveryEvents reset", () => {
+  it("reset() clears recoveryEvents", () => {
+    const orchestrator = new ParallelBenchmarkOrchestrator();
+
+    // The real path populates this via the recovery prober's `onEvent`
+    // callback inside runParallel (see ContainerRecoveryProber wiring).
+    // Poking the private field directly simulates "leftover state from a
+    // prior run" without standing up a full prober + container provider.
+    (orchestrator as unknown as { recoveryEvents: RecoveryEvent[] })
+      .recoveryEvents = [
+        {
+          type: "recovered",
+          containerName: "Cronus28",
+          alertId: "alert-1",
+          kind: "suspect_container",
+          at: 1,
+        },
+      ];
+    assertEquals(orchestrator.getRecoveryEvents().length, 1);
+
+    orchestrator.reset();
+
+    assertEquals(orchestrator.getRecoveryEvents(), []);
+  });
+
+  it("runParallel() clears a previous run's recoveryEvents on a reused orchestrator", async () => {
+    const mockLLMPool = new MockLLMWorkPool();
+    const mockCompileQueue = new MockCompileQueue();
+    const mockContainerProvider = createMockContainerProvider();
+    mockLLMPool.setDefaultResult({ success: true });
+    mockCompileQueue.setDefaultResult({
+      compilationSuccess: true,
+      testSuccess: true,
+    });
+
+    const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+      llmPool: mockLLMPool as unknown as LLMWorkPool,
+      containerProviderFactory: () => mockContainerProvider,
+      compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+    });
+
+    // Simulate the first run having recorded recovery events.
+    (orchestrator as unknown as { recoveryEvents: RecoveryEvent[] })
+      .recoveryEvents = [
+        {
+          type: "recovered",
+          containerName: "Cronus28",
+          alertId: "alert-1",
+          kind: "suspect_container",
+          at: 1,
+        },
+      ];
+    assertEquals(orchestrator.getRecoveryEvents().length, 1);
+
+    // Second run — the mocked deps don't wire a recovery prober, so if
+    // runParallel() correctly resets state at the top, the trail is empty
+    // after this call.
+    await orchestrator.runParallel(
+      [createMockManifest({ id: "second-run-task" })],
+      createTestVariants(),
+      createTestOptions(),
+    );
+
+    assertEquals(
+      orchestrator.getRecoveryEvents(),
+      [],
+      "second run must not carry over the first run's recovery events",
+    );
+  });
 });

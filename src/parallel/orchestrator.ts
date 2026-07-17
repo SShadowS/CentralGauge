@@ -261,6 +261,9 @@ export class ParallelBenchmarkOrchestrator {
     this.completedTasks = 0;
     this.errors = [];
     this.streamEnabled = options.stream ?? false;
+    // P12: a reused orchestrator must not report a previous run's recovery
+    // events alongside this run's (or none, if this run never wires a prober).
+    this.recoveryEvents = [];
 
     // Reset pool state from any previous run (enables retry after drain)
     this.llmPool.reset();
@@ -1354,6 +1357,9 @@ export class ParallelBenchmarkOrchestrator {
     this.totalTasks = 0;
     this.errors = [];
     this.startTime = null;
+    // P12: without this, a reused orchestrator's second run reports the
+    // first run's recovery events alongside its own.
+    this.recoveryEvents = [];
   }
 }
 

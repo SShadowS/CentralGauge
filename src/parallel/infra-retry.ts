@@ -564,6 +564,16 @@ export async function withInfraRetry<T>(
   // another non-waived quarantined result with no normal budget left.
   // Synthesize budget_exhausted with the trail's tail-end metadata.
   const lastRecord = retries[retries.length - 1];
+  // P10: a record can still carry the "(pending)" placeholder here. Repeated
+  // non-first-waiver quarantine hits against the same alertId never grow the
+  // dynamic loop bound (maxRetries + freeRetriesGranted), so a new "planned
+  // retry" record can be pushed and the loop can exit on its bound check
+  // before the next iteration's finalize step ever runs. Finalize it now so
+  // no record handed to InfraRetriesExhaustedError ever leaks the
+  // placeholder (see the `InfraRetryRecord.retryContainerName` doc).
+  if (lastRecord && lastRecord.retryContainerName === "(pending)") {
+    lastRecord.retryContainerName = lastRecord.originalContainerName;
+  }
   const finalContainerName = lastRecord?.originalContainerName ??
     lastRecord?.retryContainerName ?? "unknown";
   const fingerprint = lastRecord?.fingerprint ?? "(unknown)";
