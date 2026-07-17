@@ -467,6 +467,105 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
       expect(ma.pass_at_n, `sort=${sort}`).toBeCloseTo(1 / 10, 6);
     }
   });
+
+  // The tests above exercise the task-set clause with EITHER the specific
+  // hash alone (scopeIn params empty, no category/difficulty) OR — in the
+  // A.5 describe block below — category/difficulty alone (task-set params
+  // empty, q.set === 'current'). Neither covers the interleaving where
+  // BOTH taskSetParamsA1/A2/A2NotExists AND scopeInA1/A2/A2NotExists.params
+  // are simultaneously non-empty, which is exactly where a bind-order
+  // regression would hide (two consecutive bound `?`s per subquery site
+  // instead of one) — a mis-ordered pair could still bind successfully
+  // (same count) while silently swapping which value scopes which clause.
+
+  async function seedHashScopedCategoryFixture(
+    hash: string,
+    runId: string,
+  ): Promise<void> {
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
+    ).bind(hash, "2026-01-01T00:00:00Z").run();
+    // 5 easy + 5 hard tasks under THIS specific hash (not the 'aaaa'
+    // scaffold hash used elsewhere) so the category filter has something
+    // real to scope against.
+    const taskDefs: Array<[string, "easy" | "hard", number]> = [
+      ["e1", "easy", 1],
+      ["e2", "easy", 1],
+      ["e3", "easy", 1],
+      ["e4", "easy", 1],
+      ["e5", "easy", 1],
+      ["h1", "hard", 2],
+      ["h2", "hard", 2],
+      ["h3", "hard", 2],
+      ["h4", "hard", 2],
+      ["h5", "hard", 2],
+    ];
+    for (const [taskId, difficulty, categoryId] of taskDefs) {
+      await env.DB.prepare(
+        `INSERT INTO tasks(task_set_hash,task_id,content_hash,difficulty,category_id,manifest_json)
+         VALUES (?,?,?,?,?,'{}')`,
+      ).bind(hash, taskId, `hash-${taskId}`, difficulty, categoryId).run();
+    }
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+      .bind(
+        runId, hash, 1, "s", "rig",
+        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+        1, new Uint8Array([0]),
+      )
+      .run();
+  }
+
+  it("S7 x A.5: specific hash + category filter interleave — non-zero numerator on auc_2 sort", async () => {
+    const HASH = "e".repeat(64);
+    await seedHashScopedCategoryFixture(HASH, "r-hash-cat-auc2");
+    // Model M-A passes all 5 easy tasks on attempt 1; hard tasks untouched.
+    for (const taskId of ["e1", "e2", "e3", "e4", "e5"]) {
+      await insertResult("r-hash-cat-auc2", taskId, 1, 1);
+    }
+
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      set: HASH,
+      category: "easy",
+      sort: "auc_2",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    // denominator = 5 easy tasks under HASH (not 10 — the hard tasks are
+    // filtered out). A mis-bound task-set/category swap would either throw
+    // or silently return denominator=10 or numerator=0.
+    expect(ma.denominator).toBe(5);
+    expect(ma.tasks_passed_attempt_1).toBe(5);
+    expect(ma.pass_at_1).toBeCloseTo(1, 6);
+    expect(ma.auc_2).toBeCloseTo(1, 6);
+  });
+
+  it("S7 x A.5: specific hash + category filter interleave — correct partial numerator on pass_at_1 sort (different param-group shape than auc_2)", async () => {
+    const HASH = "f".repeat(64);
+    await seedHashScopedCategoryFixture(HASH, "r-hash-cat-p1");
+    // Partial pass (3 of 5 easy tasks) so a param mixup that zeroes or
+    // saturates the numerator is distinguishable from the correct value.
+    for (const taskId of ["e1", "e2", "e3"]) {
+      await insertResult("r-hash-cat-p1", taskId, 1, 1);
+    }
+    await insertResult("r-hash-cat-p1", "e4", 1, 0);
+
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      set: HASH,
+      category: "easy",
+      sort: "pass_at_1",
+    });
+    const ma = rows.find((r) => r.model.slug === "M-A")!;
+    expect(ma).toBeDefined();
+    expect(ma.denominator).toBe(5);
+    expect(ma.tasks_passed_attempt_1).toBe(3);
+    expect(ma.pass_at_1).toBeCloseTo(3 / 5, 6);
+  });
 });
 
 // ---------------------------------------------------------------------------
