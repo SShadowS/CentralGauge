@@ -9,8 +9,10 @@ import * as colors from "@std/fmt/colors";
 import type { IngestCliFlags } from "../../src/ingest/config.ts";
 import { readCatalog } from "../../src/ingest/catalog/read.ts";
 import { loadAdminConfig, readPrivateKey } from "../../src/ingest/config.ts";
-import { signPayload } from "../../src/ingest/sign.ts";
-import { postWithRetry } from "../../src/ingest/client.ts";
+import {
+  syncCatalogToAdmin,
+  type SyncItemResult,
+} from "../../src/ingest/catalog/sync.ts";
 
 interface SyncCatalogOptions {
   apply: boolean;
@@ -49,43 +51,32 @@ async function handleSyncCatalog(options: SyncCatalogOptions): Promise<void> {
     return;
   }
 
-  for (const f of cat.families) {
-    const payload = f as unknown as Record<string, unknown>;
-    const sig = await signPayload(payload, adminPriv, config.adminKeyId);
-    const resp = await postWithRetry(
-      `${config.url}/api/v1/admin/catalog/families`,
-      { version: 1, signature: sig, payload },
+  const printItem = (r: SyncItemResult) => {
+    const tag = r.ok ? colors.green(`[${r.status}]`) : colors.red(
+      `[${r.status}]`,
     );
-    const tag = resp.ok ? colors.green(`[${resp.status}]`) : colors.red(
-      `[${resp.status}]`,
-    );
-    console.log(`${tag} family ${f.slug}`);
-  }
+    console.log(`${tag} ${r.kind} ${r.key}`);
+  };
 
-  for (const m of cat.models) {
-    const payload = m as unknown as Record<string, unknown>;
-    const sig = await signPayload(payload, adminPriv, config.adminKeyId);
-    const resp = await postWithRetry(
-      `${config.url}/api/v1/admin/catalog/models`,
-      { version: 1, signature: sig, payload },
+  const result = await syncCatalogToAdmin(cat, config, adminPriv, {
+    onItem: printItem,
+  });
+  if (result.retried) {
+    console.log(
+      colors.yellow(
+        "[RETRY] some row(s) hit the admin API rate limit; retried once after honoring Retry-After",
+      ),
     );
-    const tag = resp.ok ? colors.green(`[${resp.status}]`) : colors.red(
-      `[${resp.status}]`,
-    );
-    console.log(`${tag} model ${m.slug}`);
   }
-
-  for (const p of cat.pricing) {
-    const payload = p as unknown as Record<string, unknown>;
-    const sig = await signPayload(payload, adminPriv, config.adminKeyId);
-    const resp = await postWithRetry(
-      `${config.url}/api/v1/admin/catalog/pricing`,
-      { version: 1, signature: sig, payload },
+  if (!result.ok) {
+    const failed = result.items.filter((r) => !r.ok);
+    console.log(
+      colors.red(
+        `[FAIL] ${failed.length}/${result.items.length} row(s) still failing: ${
+          failed.map((r) => `${r.kind}:${r.key}=${r.status}`).join(", ")
+        }`,
+      ),
     );
-    const tag = resp.ok ? colors.green(`[${resp.status}]`) : colors.red(
-      `[${resp.status}]`,
-    );
-    console.log(`${tag} pricing ${p.pricing_version} / ${p.model_slug}`);
   }
 }
 

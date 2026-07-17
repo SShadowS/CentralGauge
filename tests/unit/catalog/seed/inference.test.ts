@@ -8,6 +8,7 @@ import { assertEquals, assertThrows } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { CatalogSeedError } from "../../../../src/errors.ts";
 import {
+  familySlugForModelSlug,
   inferDisplayName,
   inferFamilySlug,
   inferGeneration,
@@ -117,6 +118,54 @@ describe("inferFamilySlug", () => {
     }
     assertEquals(err instanceof CatalogSeedError, true);
     assertEquals((err as CatalogSeedError).code, "SEED_INVALID_SLUG");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// familySlugForModelSlug (D3: single source of truth, also used by
+// cli/commands/bench-command.ts's doctor precheck probe)
+// ---------------------------------------------------------------------------
+
+describe("familySlugForModelSlug", () => {
+  it("matches inferFamilySlug for anthropic/openai/google slugs", () => {
+    assertEquals(
+      familySlugForModelSlug("anthropic/claude-opus-4-7"),
+      "claude",
+    );
+    assertEquals(familySlugForModelSlug("openai/gpt-5.4"), "gpt");
+    assertEquals(
+      familySlugForModelSlug("google/gemini-2.5-pro"),
+      "gemini",
+    );
+  });
+
+  it("derives the model-name family for openrouter slugs, not the raw sub-vendor segment", () => {
+    // Regression (D3): bench-command's old ternary used
+    // v.model.split("/")[0], which for openrouter is the sub-vendor
+    // ("qwen", "x-ai") — not the family slug ("qwen3.6", "grok") that
+    // site/catalog/model-families.yml actually keys on.
+    assertEquals(
+      familySlugForModelSlug("openrouter/qwen/qwen3.6-max-preview"),
+      "qwen3.6",
+    );
+    assertEquals(
+      familySlugForModelSlug("openrouter/qwen/qwen3.5-plus-20260420"),
+      "qwen3.5",
+    );
+    assertEquals(familySlugForModelSlug("openrouter/x-ai/grok-4.3"), "grok");
+    assertEquals(
+      familySlugForModelSlug("openrouter/deepseek/deepseek-v4-pro"),
+      "deepseek",
+    );
+  });
+
+  it("falls back to the provider name for slugs inferFamilySlug can't classify", () => {
+    assertEquals(familySlugForModelSlug("mock/some-model"), "mock");
+    assertEquals(familySlugForModelSlug("local/some-model"), "local");
+  });
+
+  it("falls back to the full input when it has no '/' (parseSlug rejects it)", () => {
+    assertEquals(familySlugForModelSlug("no-slash-here"), "no-slash-here");
   });
 });
 

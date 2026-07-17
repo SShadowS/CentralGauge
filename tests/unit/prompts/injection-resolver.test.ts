@@ -615,9 +615,10 @@ describe("PromptInjectionResolver", () => {
         },
       };
 
-      const errors = PromptInjectionResolver.validate(config);
+      const result = PromptInjectionResolver.validate(config);
 
-      assertEquals(errors.length, 0);
+      assertEquals(result.errors.length, 0);
+      assertEquals(result.warnings.length, 0);
     });
 
     it("should detect invalid stage names", () => {
@@ -632,11 +633,11 @@ describe("PromptInjectionResolver", () => {
         },
       };
 
-      const errors = PromptInjectionResolver.validate(config);
+      const result = PromptInjectionResolver.validate(config);
 
-      assertEquals(errors.length, 1);
+      assertEquals(result.errors.length, 1);
       assertEquals(
-        errors[0]?.includes("Invalid stage 'invalidStage'") ?? false,
+        result.errors[0]?.includes("Invalid stage 'invalidStage'") ?? false,
         true,
       );
     });
@@ -655,16 +656,17 @@ describe("PromptInjectionResolver", () => {
         },
       };
 
-      const errors = PromptInjectionResolver.validate(config);
+      const result = PromptInjectionResolver.validate(config);
 
-      assertEquals(errors.length, 1);
+      assertEquals(result.errors.length, 1);
       assertEquals(
-        errors[0]?.includes("Invalid injection key 'invalidKey'") ?? false,
+        result.errors[0]?.includes("Invalid injection key 'invalidKey'") ??
+          false,
         true,
       );
     });
 
-    it("should warn about empty system prompts", () => {
+    it("should warn (not error) about empty system prompts (D10)", () => {
       const config: PromptInjectionConfig = {
         enabled: true,
         injections: {
@@ -676,23 +678,27 @@ describe("PromptInjectionResolver", () => {
         },
       };
 
-      const errors = PromptInjectionResolver.validate(config);
+      const result = PromptInjectionResolver.validate(config);
 
-      assertEquals(errors.length, 1);
+      // Empty system prompt is suspicious but not structurally invalid — it
+      // must not block a caller that treats a non-empty errors[] as fatal.
+      assertEquals(result.errors.length, 0);
+      assertEquals(result.warnings.length, 1);
       assertEquals(
-        errors[0]?.includes("Empty system prompt") ?? false,
+        result.warnings[0]?.includes("Empty system prompt") ?? false,
         true,
       );
     });
 
-    it("should return empty array for config without injections", () => {
+    it("should return empty arrays for config without injections", () => {
       const config: PromptInjectionConfig = {
         enabled: true,
       };
 
-      const errors = PromptInjectionResolver.validate(config);
+      const result = PromptInjectionResolver.validate(config);
 
-      assertEquals(errors.length, 0);
+      assertEquals(result.errors.length, 0);
+      assertEquals(result.warnings.length, 0);
     });
   });
 });

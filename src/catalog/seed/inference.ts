@@ -90,6 +90,34 @@ export function inferFamilySlug(
   );
 }
 
+/**
+ * Family slug for a full model slug (`provider/model`, or
+ * `openrouter/subVendor/model`). Single source of truth for both the
+ * catalog seeder (via {@link mergeMetadata}) and the bench-time doctor
+ * precheck (`cli/commands/bench-command.ts`), so the two can never diverge
+ * again (D3: bench-command's own ternary used the OpenRouter sub-vendor
+ * segment — e.g. "qwen" or "x-ai" — instead of the model-name-derived
+ * family — e.g. "qwen3.6" or "grok" — that {@link inferFamilySlug} and
+ * `site/catalog/model-families.yml` actually use).
+ *
+ * Falls back to the bare provider name when the slug can't be classified
+ * (unrecognized provider, or a model name that matches no known prefix), so
+ * callers that just need a stable grouping key never throw.
+ */
+export function familySlugForModelSlug(fullSlug: string): string {
+  let parsed: ParsedSlug;
+  try {
+    parsed = parseSlug(fullSlug);
+  } catch {
+    return fullSlug;
+  }
+  try {
+    return inferFamilySlug(parsed.provider, parsed.model, parsed.subVendor);
+  } catch {
+    return parsed.provider;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // inferDisplayName
 // ---------------------------------------------------------------------------

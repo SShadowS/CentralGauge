@@ -243,10 +243,17 @@ export class PromptInjectionResolver {
   }
 
   /**
-   * Validate injection config structure
+   * Validate injection config structure. Returns `errors` (structurally
+   * invalid — unknown stage/key names) separately from `warnings`
+   * (structurally fine but suspicious, e.g. an empty system prompt) so a
+   * caller can fail on the former while merely surfacing the latter (D10:
+   * an empty-system warning used to be pushed into `errors[]` alongside
+   * real errors, so any caller treating a non-empty errors[] as fatal would
+   * reject a config that was actually valid).
    */
-  static validate(config: PromptInjectionConfig): string[] {
+  static validate(config: PromptInjectionConfig): InjectionValidationResult {
     const errors: string[] = [];
+    const warnings: string[] = [];
 
     if (config.injections) {
       for (
@@ -255,18 +262,24 @@ export class PromptInjectionResolver {
         )
       ) {
         if (stageInjections) {
-          this.validateStageInjections(providerKey, stageInjections, errors);
+          this.validateStageInjections(
+            providerKey,
+            stageInjections,
+            errors,
+            warnings,
+          );
         }
       }
     }
 
-    return errors;
+    return { errors, warnings };
   }
 
   private static validateStageInjections(
     provider: string,
     injections: StageInjections,
     errors: string[],
+    warnings: string[],
   ): void {
     const validStages = ["default", "generation", "fix"];
 
@@ -281,7 +294,7 @@ export class PromptInjectionResolver {
       }
 
       if (injection) {
-        this.validateInjection(provider, stageKey, injection, errors);
+        this.validateInjection(provider, stageKey, injection, errors, warnings);
       }
     }
   }
@@ -291,6 +304,7 @@ export class PromptInjectionResolver {
     stage: string,
     injection: PromptInjection,
     errors: string[],
+    warnings: string[],
   ): void {
     const validKeys = ["system", "prefix", "suffix"];
 
@@ -304,9 +318,15 @@ export class PromptInjectionResolver {
       }
     }
 
-    // Check for empty strings (warn, don't error)
+    // Suspicious but not structurally invalid — belongs in warnings, not errors.
     if (injection.system === "") {
-      errors.push(`Warning: Empty system prompt for ${provider}.${stage}`);
+      warnings.push(`Empty system prompt for ${provider}.${stage}`);
     }
   }
+}
+
+/** Return shape of {@link PromptInjectionResolver.validate}. */
+export interface InjectionValidationResult {
+  errors: string[];
+  warnings: string[];
 }

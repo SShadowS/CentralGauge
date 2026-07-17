@@ -1,13 +1,15 @@
 import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
+import * as ed from "npm:@noble/ed25519@3.1.0";
 import {
   applyRepairs,
   builtInRepairers,
   markTaskSetCurrentRepairer,
   type Repairer,
   seedCatalogRepairer,
+  syncCatalogRepairer,
 } from "../../../src/doctor/repair.ts";
-import type { DoctorReport } from "../../../src/doctor/types.ts";
+import type { CheckResult, DoctorReport } from "../../../src/doctor/types.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const reportWithRepairableFailure: DoctorReport = {
@@ -259,6 +261,131 @@ describe("seedCatalogRepairer.run", () => {
     } finally {
       (Deno as { cwd: () => string }).cwd = originalCwd;
       globalThis.fetch = originalFetch;
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe("syncCatalogRepairer.run", () => {
+  // syncCatalogRepairer.run ignores its `check` argument entirely (unlike
+  // seedCatalogRepairer, which reads missing_models/missing_pricing off it)
+  // — it always pushes the full local catalog. Any well-formed CheckResult
+  // satisfies the Repairer interface here.
+  const dummyCatalogBenchCheck: CheckResult = {
+    id: "catalog.bench",
+    level: "D",
+    status: "failed",
+    message: "",
+    remediation: { summary: "", autoRepairable: true },
+    details: {},
+    durationMs: 0,
+  };
+
+  async function withTempCatalog(
+    fn: (tempDir: string) => Promise<void>,
+  ): Promise<void> {
+    const tempDir = await createTempDir("sync-repair");
+    await Deno.mkdir(`${tempDir}/site/catalog`, { recursive: true });
+    await Deno.writeTextFile(`${tempDir}/site/catalog/models.yml`, "");
+    await Deno.writeTextFile(
+      `${tempDir}/site/catalog/model-families.yml`,
+      "- slug: grok\n  vendor: xAI\n  display_name: Grok\n",
+    );
+    await Deno.writeTextFile(`${tempDir}/site/catalog/pricing.yml`, "");
+
+    const keyPath = `${tempDir}/admin.key`;
+    await Deno.writeFile(keyPath, ed.utils.randomSecretKey());
+
+    const originalCwd = Deno.cwd;
+    (Deno as { cwd: () => string }).cwd = () => tempDir;
+    // Isolate from any real ~/.centralgauge.yml on the machine running the tests.
+    Deno.env.set("CENTRALGAUGE_TEST_HOME", tempDir);
+    Deno.env.set("CENTRALGAUGE_INGEST_URL", "https://cg.example");
+    Deno.env.set("CENTRALGAUGE_ADMIN_KEY_PATH", keyPath);
+    Deno.env.set("CENTRALGAUGE_ADMIN_KEY_ID", "1");
+
+    try {
+      await fn(tempDir);
+    } finally {
+      (Deno as { cwd: () => string }).cwd = originalCwd;
+      Deno.env.delete("CENTRALGAUGE_TEST_HOME");
+      Deno.env.delete("CENTRALGAUGE_INGEST_URL");
+      Deno.env.delete("CENTRALGAUGE_ADMIN_KEY_PATH");
+      Deno.env.delete("CENTRALGAUGE_ADMIN_KEY_ID");
+      await cleanupTempDir(tempDir);
+    }
+  }
+
+  it("returns ok=true with no retry when every row posts 200 (in-process, no subprocess)", async () => {
+    await withTempCatalog(async () => {
+      const originalFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (() => {
+        calls++;
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true }), { status: 200 }),
+        );
+      }) as typeof fetch;
+
+      try {
+        const result = await syncCatalogRepairer.run(dummyCatalogBenchCheck);
+        assertEquals(result.ok, true);
+        assertEquals(calls, 1); // only the one family row in this fixture
+        assertEquals(result.message?.includes("1 row"), true);
+        assertEquals(result.message?.includes("retry"), false);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it("reports a resumable per-row failure list, honoring Retry-After, when a row is still 429 after the bounded retry pass (D8)", async () => {
+    await withTempCatalog(async () => {
+      const originalFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (() => {
+        calls++;
+        // Small Retry-After so the test doesn't burn real wall-clock time —
+        // still exercises the header-honoring path end to end.
+        return Promise.resolve(
+          new Response("rate limited", {
+            status: 429,
+            headers: { "retry-after": "0.01" },
+          }),
+        );
+      }) as typeof fetch;
+
+      try {
+        const result = await syncCatalogRepairer.run(dummyCatalogBenchCheck);
+        assertEquals(result.ok, false);
+        assertEquals(calls, 2); // first pass + one bounded retry pass
+        assertEquals(result.message?.includes("1/1 row"), true);
+        assertEquals(result.message?.includes("retry"), true);
+        assertEquals(result.message?.includes("family:grok=429"), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
+  it("returns ok=false without any network call when admin config is missing", async () => {
+    const tempDir = await createTempDir("sync-repair-no-config");
+    const originalCwd = Deno.cwd;
+    (Deno as { cwd: () => string }).cwd = () => tempDir;
+    // Isolate from any real ~/.centralgauge.yml and ensure no admin env vars
+    // leak in from the outer test process.
+    Deno.env.set("CENTRALGAUGE_TEST_HOME", tempDir);
+    Deno.env.delete("CENTRALGAUGE_INGEST_URL");
+    Deno.env.delete("CENTRALGAUGE_ADMIN_KEY_PATH");
+    Deno.env.delete("CENTRALGAUGE_ADMIN_KEY_ID");
+
+    try {
+      const result = await syncCatalogRepairer.run(dummyCatalogBenchCheck);
+      assertEquals(result.ok, false);
+      assertEquals(result.message?.includes("admin config"), true);
+    } finally {
+      (Deno as { cwd: () => string }).cwd = originalCwd;
+      Deno.env.delete("CENTRALGAUGE_TEST_HOME");
       await cleanupTempDir(tempDir);
     }
   });

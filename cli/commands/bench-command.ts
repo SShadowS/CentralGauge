@@ -44,6 +44,7 @@ import {
   type VariantProbe,
 } from "../../src/doctor/mod.ts";
 import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
+import { familySlugForModelSlug } from "../../src/catalog/seed/inference.ts";
 import {
   closeTracer,
   getTracer,
@@ -567,15 +568,10 @@ export function registerBenchCommand(cli: Command): void {
           const probes: VariantProbe[] = variants.map((v) => ({
             slug: `${v.provider}/${v.model}`,
             api_model_id: v.model,
-            family_slug: v.provider === "anthropic"
-              ? "claude"
-              : v.provider === "openai"
-              ? "gpt"
-              : v.provider === "google" || v.provider === "gemini"
-              ? "gemini"
-              : v.provider === "openrouter"
-              ? v.model.split("/")[0] ?? v.provider
-              : v.provider,
+            // D3: derive via the single shared algorithm (inference.ts) so
+            // this precheck probe can never diverge from the catalog seeder
+            // again — see familySlugForModelSlug's docstring.
+            family_slug: familySlugForModelSlug(`${v.provider}/${v.model}`),
           }));
           const pricingVersion = todayPricingVersion();
 

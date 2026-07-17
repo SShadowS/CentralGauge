@@ -302,6 +302,80 @@ describe("appendPricingIfChanged", () => {
     }
   });
 
+  it("replaces the existing row (not a duplicate) when the same (slug, version) is seeded twice in one day with a changed price", async () => {
+    // D2 regression: appendPricingIfChanged used to accumulate a second row
+    // for the same (slug, version) instead of replacing the first.
+    const dir = await createTempDir("seed-pricing-replace");
+    const path = `${dir}/pricing.yml`;
+    await Deno.writeTextFile(path, "");
+
+    try {
+      const first = await appendPricingIfChanged(
+        path,
+        sampleRow({ input_per_mtoken: 1.25, output_per_mtoken: 2.5 }),
+      );
+      assertEquals(first.added, true);
+
+      const second = await appendPricingIfChanged(
+        path,
+        sampleRow({ input_per_mtoken: 1.5, output_per_mtoken: 3 }),
+      );
+      assertEquals(second.added, true);
+
+      const parsed = parseYaml(await Deno.readTextFile(path)) as PricingRow[];
+      const rowsForPair = parsed.filter(
+        (r) =>
+          r.model_slug === "openrouter/x-ai/grok-4.3" &&
+          r.pricing_version === "2026-05-03",
+      );
+      assertEquals(rowsForPair.length, 1);
+      assertEquals(rowsForPair[0]?.input_per_mtoken, 1.5);
+      assertEquals(rowsForPair[0]?.output_per_mtoken, 3);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("folds pre-existing duplicate rows for the same (slug, version) into one when a change forces a rewrite", async () => {
+    const dir = await createTempDir("seed-pricing-dedupe");
+    const path = `${dir}/pricing.yml`;
+    const dupA: PricingRow = {
+      ...sampleRow(),
+      input_per_mtoken: 1.25,
+      output_per_mtoken: 2.5,
+    };
+    const dupB: PricingRow = {
+      ...sampleRow(),
+      input_per_mtoken: 1.5,
+      output_per_mtoken: 3,
+    };
+    await Deno.writeTextFile(
+      path,
+      "# header\n" + stringify([dupA, dupB], { lineWidth: -1 }),
+    );
+
+    try {
+      const result = await appendPricingIfChanged(
+        path,
+        sampleRow({ input_per_mtoken: 1.75, output_per_mtoken: 3.5 }),
+      );
+      assertEquals(result.added, true);
+
+      const content = await Deno.readTextFile(path);
+      assertEquals(content.startsWith("# header"), true);
+      const parsed = parseYaml(content) as PricingRow[];
+      const rowsForPair = parsed.filter(
+        (r) =>
+          r.model_slug === "openrouter/x-ai/grok-4.3" &&
+          r.pricing_version === "2026-05-03",
+      );
+      assertEquals(rowsForPair.length, 1);
+      assertEquals(rowsForPair[0]?.input_per_mtoken, 1.75);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
   it("appendPricingIfChanged throws SEED_YAML_WRITE on filesystem failure", async () => {
     const dir = await createTempDir("seed-pricing-write-fail");
     const path = `${dir}/nonexistent-subdir/pricing.yml`;

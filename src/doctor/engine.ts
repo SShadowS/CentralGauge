@@ -31,18 +31,23 @@ export async function runDoctor(opts: RunDoctorOptions): Promise<DoctorReport> {
 
   const checks: CheckResult[] = [];
   for (const check of filteredChecks) {
-    const failedDep = (check.requires ?? []).find((depId) => {
+    // D7: a dependent of a SKIPPED dep must also be skipped, not run — a
+    // skip already means "couldn't establish whether this is OK" further up
+    // the chain, so downstream checks inherit that same unknown state
+    // instead of running against a gap.
+    const blockingDepId = (check.requires ?? []).find((depId) => {
       const dep = ctx.previousResults.get(depId);
-      return dep && dep.status === "failed";
+      return dep && (dep.status === "failed" || dep.status === "skipped");
     });
 
     let result: CheckResult;
-    if (failedDep) {
+    if (blockingDepId) {
+      const blockingDep = ctx.previousResults.get(blockingDepId)!;
       result = {
         id: check.id,
         level: check.level,
         status: "skipped",
-        message: `skipped: dependency '${failedDep}' failed`,
+        message: `skipped: dependency '${blockingDepId}' ${blockingDep.status}`,
         durationMs: 0,
       };
     } else {
