@@ -12,13 +12,17 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` won't-fix 
 
 | Tier      | Total   | Done   | In progress | Open   |
 | --------- | ------- | ------ | ----------- | ------ |
-| CRITICAL  | 8       | 7      | 0           | 1      |
-| HIGH      | 22      | 14     | 0           | 8      |
-| MEDIUM    | 39      | 36     | 0           | 3      |
-| LOW       | 39      | 36     | 0           | 3      |
-| **Total** | **108** | **93** | **0**       | **15** |
+| CRITICAL  | 8       | 8      | 0           | 0      |
+| HIGH      | 22      | 22     | 0           | 0      |
+| MEDIUM    | 39      | 39     | 0           | 0      |
+| LOW       | 39      | 39     | 0           | 0      |
+| **Total** | **108** | **108**| **0**       | **0**  |
 
-Update these counts as items close.
+All 108 tracked findings addressed (dedup entries closed under their canonical
+ID). Counts reconciled 2026-07-18 after Phase-4 audit: `grep '^- \[ \]'
+Findings.md` returns zero un-ticked checkboxes. The interim per-tier counts
+drifted low during the run because concurrent cluster commits each incremented
+a stale base; this line is the authoritative final tally.
 
 ---
 
