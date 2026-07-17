@@ -136,7 +136,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 - [ ] **TEST4** — `success-detector.ts` thoroughly tested but the primary `src/agents/executor.ts:183-193` uses its own naive 2-substring check; detectSuccess used ONLY by sandbox-executor. `success-detector.test.ts` (40 cases) gives false confidence, divergence between the two detectors invisible.
 - [ ] **TEST5** — Parked-entry shutdown-drain untested: `compile-queue-pool.test.ts` covers park/flush but every test calls `pool.cancelParked()` manually; no test proves the orchestrator shutdown path drains parked entries → P2 hang undetected.
 - [ ] **TEST6** — `tests/unit/ingest/*` has ZERO references to quarantine/infra/infraRetryExhaustion; nothing guards that an infra-exhausted attempt isn't ingested as a model verdict (guards T2).
-- [x] **TEST7** — PricingService shared static across 8 test files (cost-tracker, estimate-usage-cost, pricing-service + 5 adapter tests) — order-dependent state can mask/flip results; matches the documented --parallel hazard. — PENDING_SHA per-test reset
+- [x] **TEST7** — PricingService shared static across 8 test files (cost-tracker, estimate-usage-cost, pricing-service + 5 adapter tests) — order-dependent state can mask/flip results; matches the documented --parallel hazard. — 54769e6 per-test reset
 
 ---
 
