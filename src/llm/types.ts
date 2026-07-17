@@ -18,6 +18,14 @@ export interface LLMConfig {
   thinkingBudget?: number | string | undefined;
   // Continuation settings for handling truncated responses
   continuation?: ContinuationConfig | undefined;
+  // Mock adapter only: finishReason the mock should report, so tests can
+  // simulate truncation ("length") / safety blocks ("content_filter")
+  simulatedFinishReason?:
+    | "stop"
+    | "length"
+    | "content_filter"
+    | "error"
+    | undefined;
 }
 
 /**

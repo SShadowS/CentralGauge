@@ -302,11 +302,19 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         });
       }
 
+      let streamFinishReason: string | undefined;
       for await (const chunk of stream) {
         const content = chunk.choices[0]?.delta?.content || "";
 
         if (content) {
           yield createChunk(content, state, options);
+        }
+
+        // finish_reason arrives on the last content chunk; keep the last
+        // non-null value (the usage-only trailer chunk has empty choices)
+        const chunkFinishReason = chunk.choices[0]?.finish_reason;
+        if (chunkFinishReason != null) {
+          streamFinishReason = chunkFinishReason;
         }
 
         // Capture usage from final chunk (when stream_options.include_usage is true)
@@ -331,7 +339,10 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: "stop",
+        // "stop" only when the API never sent a finish_reason
+        finishReason: streamFinishReason == null
+          ? "stop"
+          : this.mapFinishReason(streamFinishReason),
         options,
       });
 

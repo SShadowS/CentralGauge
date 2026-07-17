@@ -69,16 +69,108 @@ export class CodeExtractor {
     };
   }
 
+  // Minimal AL-likeness check for untagged fenced blocks: keeps code blocks,
+  // rejects fenced JSON/shell/config examples so they are never concatenated
+  // into the candidate source.
+  private static readonly AL_LIKENESS_RE =
+    /\b(table|page|codeunit|report|query|xmlport|enum|interface|procedure|trigger)\b/i;
+
+  // Parse ALL fenced code blocks non-greedily, in document order.
+  private static parseFencedBlocks(
+    response: string,
+  ): Array<{ tag: string; content: string }> {
+    const blocks: Array<{ tag: string; content: string }> = [];
+    const pattern = /```([^\s`]*)[^\S\n]*\n([\s\S]*?)\n```/g;
+    for (const match of response.matchAll(pattern)) {
+      blocks.push({
+        tag: (match[1] ?? "").toLowerCase(),
+        content: (match[2] ?? "").trim(),
+      });
+    }
+    return blocks;
+  }
+
   // Extract from markdown code blocks
   private static extractFromCodeBlocks(
     response: string,
     expectedLanguage: "al" | "diff",
   ): ExtractionResult {
-    // Look for fenced code blocks with language hint
     const languagePatterns = expectedLanguage === "al"
       ? ["al", "csharp", "c#", "cs", "pascal"]
       : ["diff", "patch"];
 
+    // Fence-marker lines must pair up (one opener + one closer per block).
+    // An odd count means a rogue mid-code fence or an unclosed block; fall
+    // back to the legacy greedy span so a spurious ``` inside the code does
+    // not truncate the extraction (cleanCode strips backtick-only lines).
+    const fenceLineCount = (response.match(/^[^\S\n]*```/gm) ?? []).length;
+    if (fenceLineCount % 2 !== 0) {
+      return this.extractFromCodeBlocksGreedy(
+        response,
+        expectedLanguage,
+        languagePatterns,
+      );
+    }
+
+    const blocks = this.parseFencedBlocks(response);
+    if (blocks.length === 0) {
+      return {
+        code: "",
+        language: expectedLanguage,
+        extractedFromDelimiters: false,
+        confidence: 0,
+        originalResponse: response,
+      };
+    }
+
+    // Language-tagged blocks take priority over untagged/other fences.
+    // Concatenate ALL blocks of the first matching tag so multi-part
+    // responses (object per block, prose between) stay complete.
+    for (const lang of languagePatterns) {
+      const tagged = blocks.filter((block) => block.tag === lang);
+      if (tagged.length > 0) {
+        return {
+          code: tagged.map((block) => block.content).join("\n\n"),
+          language: expectedLanguage,
+          extractedFromDelimiters: true,
+          confidence: 0.9,
+          originalResponse: response,
+        };
+      }
+    }
+
+    // Untagged/other fences: a single block keeps the legacy behavior;
+    // multiple blocks concatenate only the AL-like ones.
+    let chosen = blocks;
+    if (blocks.length > 1) {
+      const alLike = expectedLanguage === "al"
+        ? blocks.filter((block) => this.AL_LIKENESS_RE.test(block.content))
+        : [];
+      chosen = alLike.length > 0 ? alLike : blocks.slice(0, 1);
+    }
+
+    const code = chosen.map((block) => block.content).join("\n\n");
+    const detectedLanguage = this.detectLanguage(code);
+
+    return {
+      code,
+      language: detectedLanguage === "unknown"
+        ? expectedLanguage
+        : detectedLanguage,
+      extractedFromDelimiters: true,
+      confidence: detectedLanguage === expectedLanguage ? 0.8 : 0.6,
+      originalResponse: response,
+    };
+  }
+
+  // Legacy greedy first-opener-to-last-closer extraction. Only used for
+  // malformed fencing (odd fence count), where block boundaries are
+  // ambiguous and truncating at the first closer would drop real code.
+  private static extractFromCodeBlocksGreedy(
+    response: string,
+    expectedLanguage: "al" | "diff",
+    languagePatterns: string[],
+  ): ExtractionResult {
     for (const lang of languagePatterns) {
       const pattern = new RegExp(
         `\`\`\`${lang}\\s*\\n([\\s\\S]*)\\n\`\`\``,

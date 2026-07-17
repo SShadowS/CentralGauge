@@ -290,4 +290,47 @@ describe("MockLLMAdapter", () => {
       assert(result.response.usage.totalTokens > 0);
     });
   });
+
+  describe("Simulated finish reason (TEST3)", () => {
+    const request: LLMRequest = {
+      prompt: "Create a simple AL table",
+      temperature: 0.1,
+      maxTokens: 1000,
+    };
+
+    const context: GenerationContext = {
+      taskId: "test-task",
+      attempt: 1,
+      description: "Create a simple AL table",
+      errors: [],
+    };
+
+    it('defaults to finishReason "stop"', async () => {
+      const result = await adapter.generateCode(request, context);
+      assertEquals(result.response.finishReason, "stop");
+    });
+
+    it('simulates finishReason "length" when configured', async () => {
+      adapter.configure({ ...config, simulatedFinishReason: "length" });
+      const result = await adapter.generateCode(request, context);
+      assertEquals(result.response.finishReason, "length");
+    });
+
+    it('simulates finishReason "content_filter" when configured', async () => {
+      adapter.configure({ ...config, simulatedFinishReason: "content_filter" });
+      const result = await adapter.generateCode(request, context);
+      assertEquals(result.response.finishReason, "content_filter");
+    });
+
+    it("applies the simulated finishReason to generateFix too", async () => {
+      adapter.configure({ ...config, simulatedFinishReason: "length" });
+      const result = await adapter.generateFix(
+        MockALCode.codeunit,
+        ["Missing semicolon"],
+        request,
+        context,
+      );
+      assertEquals(result.response.finishReason, "length");
+    });
+  });
 });

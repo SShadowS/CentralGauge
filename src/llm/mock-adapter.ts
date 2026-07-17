@@ -364,7 +364,7 @@ This code follows Business Central AL conventions and should compile successfull
       model: this.config.model,
       usage,
       duration: Math.floor(Math.random() * 2000) + 800, // 800-2800ms
-      finishReason: "stop",
+      finishReason: this.config.simulatedFinishReason ?? "stop",
     };
   }
 

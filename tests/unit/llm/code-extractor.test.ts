@@ -326,6 +326,40 @@ codeunit 70001 "Shipping Provider Impl"
         assert(result.code.includes("GenerateHash"));
       });
 
+      it("should concatenate ALL al-tagged blocks without prose between (T4)", () => {
+        const twoBlocks =
+          "intro\n```al\ntable 50100 A {}\n```\nprose between\n```al\ncodeunit 50101 B {}\n```\nafter";
+
+        const result = CodeExtractor.extract(twoBlocks, "al");
+
+        assertEquals(result.code, "table 50100 A {}\n\ncodeunit 50101 B {}");
+        assertEquals(result.language, "al");
+        assertEquals(result.extractedFromDelimiters, true);
+      });
+
+      it("should ignore a ```json block when an ```al block is present (T4)", () => {
+        const response = "Here is the config:\n```json\n" +
+          '{ "idRanges": [{ "from": 50100, "to": 50149 }] }\n' +
+          "```\nAnd the code:\n```al\ncodeunit 50100 X {}\n```";
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.code, "codeunit 50100 X {}");
+        assert(!result.code.includes("idRanges"));
+      });
+
+      it("should keep only AL-like blocks among multiple untagged fences (T4)", () => {
+        const response = "```\ncodeunit 50100 X {}\n```\n" +
+          "and the settings file:\n```\n" +
+          '{ "key": true }\n' +
+          "```";
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.code, "codeunit 50100 X {}");
+        assert(!result.code.includes('"key"'));
+      });
+
       it("should capture everything between first open and last close fence (multi-block greedy)", () => {
         const response = `\`\`\`al
 codeunit 70001 "First Part"

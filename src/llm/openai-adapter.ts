@@ -299,11 +299,12 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
       this.setupStreamAbortHandler(stream, options);
 
-      const finalUsage = yield* this.processStreamChunks(
-        stream,
-        state,
-        options,
-      );
+      const { usage: finalUsage, finishReason: streamFinishReason } =
+        yield* this.processStreamChunks(
+          stream,
+          state,
+          options,
+        );
 
       const usage: TokenUsage = finalUsage ??
         createFallbackUsage(request.prompt, state.accumulatedText);
@@ -312,7 +313,10 @@ export class OpenAIAdapter extends BaseLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: "stop",
+        // "stop" only when the API never sent a finish_reason
+        finishReason: streamFinishReason == null
+          ? "stop"
+          : this.mapFinishReason(streamFinishReason),
         options,
       });
 
@@ -349,6 +353,7 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
       let finalUsage: TokenUsage | undefined;
       let responseStatus: string | undefined;
+      let incompleteReason: string | undefined;
       for await (const event of stream) {
         if (
           event.type === "response.output_text.delta" &&
@@ -356,8 +361,13 @@ export class OpenAIAdapter extends BaseLLMAdapter
         ) {
           yield createChunk(event.delta as string, state, options);
         }
+        // A truncated response ends with response.incomplete (NOT
+        // response.completed) — status/usage must be read from every
+        // terminal event or truncation reports as "stop"
         if (
-          event.type === "response.completed" && "response" in event
+          (event.type === "response.completed" ||
+            event.type === "response.incomplete" ||
+            event.type === "response.failed") && "response" in event
         ) {
           const resp = event.response as {
             usage?: {
@@ -367,6 +377,9 @@ export class OpenAIAdapter extends BaseLLMAdapter
             };
           };
           responseStatus = (resp as { status?: string })?.status;
+          incompleteReason = (resp as {
+            incomplete_details?: { reason?: string };
+          })?.incomplete_details?.reason;
           if (resp?.usage) {
             const u = resp.usage;
             const reasoningTokens =
@@ -392,7 +405,8 @@ export class OpenAIAdapter extends BaseLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: responseStatus === "incomplete"
+        finishReason: responseStatus === "incomplete" ||
+            incompleteReason === "max_output_tokens"
           ? "length"
           : responseStatus === "failed"
           ? "error"
@@ -554,14 +568,19 @@ export class OpenAIAdapter extends BaseLLMAdapter
 
   /**
    * Processes stream chunks and yields text content.
-   * Returns the final usage if provided by the API.
+   * Returns the final usage and finish_reason if provided by the API.
    */
   private async *processStreamChunks(
     stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
     state: StreamState,
     options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, TokenUsage | undefined, undefined> {
+  ): AsyncGenerator<
+    StreamChunk,
+    { usage: TokenUsage | undefined; finishReason: string | undefined },
+    undefined
+  > {
     let finalUsage: TokenUsage | undefined;
+    let finishReason: string | undefined;
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content || "";
@@ -570,12 +589,19 @@ export class OpenAIAdapter extends BaseLLMAdapter
         yield createChunk(content, state, options);
       }
 
+      // finish_reason arrives on the last content chunk; keep the last
+      // non-null value (the usage-only trailer chunk has empty choices)
+      const chunkFinishReason = chunk.choices[0]?.finish_reason;
+      if (chunkFinishReason != null) {
+        finishReason = chunkFinishReason;
+      }
+
       // Capture usage from final chunk (when stream_options.include_usage is true)
       if (chunk.usage) {
         finalUsage = this.buildUsageFromCompletion(chunk.usage);
       }
     }
 
-    return finalUsage;
+    return { usage: finalUsage, finishReason };
   }
 }
