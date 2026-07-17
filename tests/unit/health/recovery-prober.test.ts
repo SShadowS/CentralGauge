@@ -1,5 +1,5 @@
 // tests/unit/health/recovery-prober.test.ts
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import {
   ContainerRecoveryProber,
   type RecoveryEvent,
@@ -368,6 +368,56 @@ Deno.test({
         Date.now() - t0
       }ms`,
     );
+  },
+});
+
+Deno.test({
+  name: "never-settling probe: tick completes bounded; prober not wedged (P8)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // isHealthy NEVER settles and ignores the abort signal. Pre-fix,
+    // probeOnce awaited it directly → tick never completed → `running`
+    // stayed true → every future tick hit the overlap guard → recovery
+    // silently dead for the rest of the run while canRecover stayed true.
+    const nowRef = { v: 0 };
+    let probeCalls = 0;
+    const { prober, events } = setup({
+      alert: mkAlert("persistent_container_failure", "alert-1"),
+      cfg: { probeTimeoutMs: 30, successesRequired: 1 },
+      isHealthy: () => {
+        probeCalls++;
+        return new Promise<boolean>(() => {});
+      },
+      nowRef,
+    });
+
+    const t0 = Date.now();
+    await Promise.race([
+      prober.tick(),
+      new Promise<never>((_, rej) =>
+        setTimeout(
+          () => rej(new Error("tick wedged by never-settling probe")),
+          2000,
+        )
+      ),
+    ]);
+    assert(
+      Date.now() - t0 < 1000,
+      "tick must complete around the probe timeout bound",
+    );
+    assertEquals(types(events).includes("probe_timeout"), true);
+
+    // A SUBSEQUENT tick must still run — the prober is not wedged.
+    nowRef.v += 100_000; // clear the post-timeout backoff window
+    await Promise.race([
+      prober.tick(),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("second tick wedged")), 2000)
+      ),
+    ]);
+    assertEquals(probeCalls, 2, "second tick must probe again");
+    assertEquals(types(events).filter((t) => t === "probe_timeout").length, 2);
   },
 });
 

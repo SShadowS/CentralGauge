@@ -342,8 +342,11 @@ export class CompileQueuePool implements CompileWorkQueue {
       }
       const target = allowed[this.drainRotor % allowed.length]!;
       this.drainRotor++;
-      target.admitRebalancedEntry(record.entry);
-      flushed++;
+      // admitRebalancedEntry returns false when it rejected the entry
+      // immediately (exhausted budget) — don't count that as flushed.
+      if (target.admitRebalancedEntry(record.entry)) {
+        flushed++;
+      }
     }
     this.parkedEntries.push(...stillParked);
     if (flushed > 0) {
@@ -510,10 +513,16 @@ export class CompileQueuePool implements CompileWorkQueue {
         // Round-robin across this entry's eligible queues.
         const target = entryEligible[this.drainRotor % entryEligible.length]!;
         this.drainRotor++;
-        target.admitRebalancedEntry(entry);
-        targetDistribution[target.containerName] =
-          (targetDistribution[target.containerName] ?? 0) + 1;
-        requeued++;
+        // admitRebalancedEntry returns false when it rejected the entry
+        // immediately (exhausted budget) — count that as rejected, not
+        // requeued, so drain telemetry reflects what actually happened.
+        if (target.admitRebalancedEntry(entry)) {
+          targetDistribution[target.containerName] =
+            (targetDistribution[target.containerName] ?? 0) + 1;
+          requeued++;
+        } else {
+          rejected++;
+        }
       }
       if (parked > 0) {
         log.warn(

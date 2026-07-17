@@ -416,17 +416,29 @@ export class ContainerRecoveryProber {
     const onMasterAbort = () => ctrl.abort();
     this.abort.signal.addEventListener("abort", onMasterAbort, { once: true });
     let timedOut = false;
+    let fireTimeout!: () => void;
+    const timeoutFired = new Promise<"timeout">((resolve) => {
+      fireTimeout = () => resolve("timeout");
+    });
     const timer = setTimeout(() => {
       timedOut = true;
       ctrl.abort();
+      fireTimeout();
     }, this.cfg.probeTimeoutMs);
     try {
-      const healthy = await this.deps.isHealthy(name, { signal: ctrl.signal });
+      // Race the probe against the timeout (P8): a probe that ignores the
+      // abort signal and NEVER settles must not wedge the tick — `running`
+      // would stay true and every future tick would hit the overlap guard,
+      // silently disabling recovery for the rest of the run.
+      const probe = this.deps.isHealthy(name, { signal: ctrl.signal });
+      // An abandoned probe that rejects after the timeout won the race must
+      // not surface as an unhandled rejection.
+      probe.catch(() => {});
+      const healthy = await Promise.race([probe, timeoutFired]);
       // P8: a probe whose timeout already fired is a TIMEOUT regardless of
-      // its late result — providers that ignore the abort signal can still
-      // resolve `true` long after the deadline, and a wedged-then-late
-      // Test-BcContainer is not proof of health.
-      if (timedOut) return "timeout";
+      // its (possibly late) result — a wedged-then-late Test-BcContainer is
+      // not proof of health.
+      if (healthy === "timeout" || timedOut) return "timeout";
       return healthy;
     } catch {
       if (this.abort.signal.aborted) return "error"; // master abort -> bail upstream

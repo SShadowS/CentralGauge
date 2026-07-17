@@ -421,10 +421,11 @@ export class CompileQueue implements CompileWorkQueue {
    * lives on `CompileQueuePool` (task #3); this internal entry-point
    * just plumbs the move-promise.
    */
-  admitRebalancedEntry(entry: QueueEntry): void {
+  admitRebalancedEntry(entry: QueueEntry): boolean {
     // P11: the entry keeps its ORIGINAL `enqueuedAt` — re-admission must not
     // reset the queue-wait budget. Arm the refreshed timer with exactly the
-    // REMAINING budget; an already-exhausted budget rejects immediately.
+    // REMAINING budget; an already-exhausted budget rejects immediately
+    // (returns false so pool telemetry doesn't count it as requeued).
     const remaining = this.timeout - (Date.now() - entry.enqueuedAt);
     if (remaining <= 0) {
       entry.reject(
@@ -433,7 +434,7 @@ export class CompileQueue implements CompileWorkQueue {
           Date.now() - entry.enqueuedAt,
         ),
       );
-      return;
+      return false;
     }
 
     // Refresh the timeout against the new queue (drain cancelled the old one).
@@ -464,6 +465,7 @@ export class CompileQueue implements CompileWorkQueue {
         error: String(error),
       });
     });
+    return true;
   }
 
   /**
