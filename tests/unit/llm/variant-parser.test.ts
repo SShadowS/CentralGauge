@@ -3,13 +3,14 @@
  */
 
 import { describe, it } from "@std/testing/bdd";
-import { assert, assertEquals, assertExists } from "@std/assert";
+import { assert, assertEquals, assertExists, assertThrows } from "@std/assert";
 import {
   getVariantDisplayName,
   parseVariantSpec,
   resolveWithVariants,
 } from "../../../src/llm/variant-parser.ts";
 import type { CentralGaugeConfig } from "../../../src/config/config.ts";
+import { ConfigurationError } from "../../../src/errors.ts";
 
 describe("parseVariantSpec", () => {
   describe("Basic model resolution", () => {
@@ -83,12 +84,60 @@ describe("parseVariantSpec", () => {
     });
 
     it("should parse system prompt name", () => {
-      const variants = parseVariantSpec("sonnet@prompt=coding");
+      const config = {
+        systemPrompts: {
+          coding: { content: "You are a coding assistant." },
+        },
+      };
+
+      const variants = parseVariantSpec(
+        "sonnet@prompt=coding",
+        config as CentralGaugeConfig,
+      );
 
       assertEquals(variants.length, 1);
       const variant = variants[0];
       assertExists(variant);
       assertEquals(variant.config.systemPromptName, "coding");
+    });
+
+    it("should throw ConfigurationError for unknown system prompt name", () => {
+      const config = {
+        systemPrompts: {
+          coding: { content: "You are a coding assistant." },
+          terse: { content: "Be terse." },
+        },
+      };
+
+      const error = assertThrows(
+        () =>
+          parseVariantSpec(
+            "sonnet@prompt=nonexistent",
+            config as CentralGaugeConfig,
+          ),
+        ConfigurationError,
+        'Unknown system prompt "nonexistent"',
+      );
+      // Error must name the available prompts so the miss is actionable
+      assert(error.message.includes("coding"));
+      assert(error.message.includes("terse"));
+    });
+
+    it("should throw ConfigurationError for @prompt with no prompts configured", () => {
+      assertThrows(
+        () => parseVariantSpec("sonnet@prompt=coding"),
+        ConfigurationError,
+        "(none)",
+      );
+    });
+
+    it("should not throw on unknown variant keys (forward-compat)", () => {
+      const variants = parseVariantSpec("sonnet@bogus=1;temp=0.5");
+
+      assertEquals(variants.length, 1);
+      const variant = variants[0];
+      assertExists(variant);
+      assertEquals(variant.config.temperature, 0.5);
     });
 
     it("should handle alias for temperature (temp)", () => {
@@ -147,6 +196,36 @@ describe("parseVariantSpec", () => {
       assertExists(variant);
       assertEquals(variant.config.systemPromptName, "coding");
       assertEquals(variant.config.systemPrompt, "You are a coding assistant.");
+    });
+
+    it("should throw ConfigurationError when profile references unknown system prompt", () => {
+      const config: Partial<CentralGaugeConfig> = {
+        variantProfiles: {
+          "prompted": {
+            description: "Profile with a stale prompt reference",
+            config: {
+              systemPromptName: "nonexistent",
+            },
+          },
+        },
+        systemPrompts: {
+          "coding": {
+            description: "Coding assistant",
+            content: "You are a coding assistant.",
+          },
+        },
+      };
+
+      const error = assertThrows(
+        () =>
+          parseVariantSpec(
+            "sonnet@profile=prompted",
+            config as CentralGaugeConfig,
+          ),
+        ConfigurationError,
+        'Unknown system prompt "nonexistent"',
+      );
+      assert(error.message.includes("coding"));
     });
   });
 
@@ -299,7 +378,16 @@ describe("getVariantDisplayName", () => {
   });
 
   it("should include prompt name in suffix", () => {
-    const variants = parseVariantSpec("sonnet@prompt=coding");
+    const config = {
+      systemPrompts: {
+        coding: { content: "You are a coding assistant." },
+      },
+    };
+
+    const variants = parseVariantSpec(
+      "sonnet@prompt=coding",
+      config as CentralGaugeConfig,
+    );
     const variant = variants[0];
     assertExists(variant);
 

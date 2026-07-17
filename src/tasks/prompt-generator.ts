@@ -146,6 +146,12 @@ export class PromptGenerator {
       result.systemPrompt = applied.systemPrompt;
     }
 
+    // Variant systemPrompt is the controlled A/B parameter - it takes
+    // precedence over task-level injection (`!== undefined`, not truthiness).
+    if (context.variantConfig?.systemPrompt !== undefined) {
+      result.systemPrompt = context.variantConfig.systemPrompt;
+    }
+
     return result;
   }
 }

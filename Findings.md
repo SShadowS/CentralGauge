@@ -12,11 +12,11 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` won't-fix 
 
 | Tier | Total | Done | In progress | Open |
 |---|---|---|---|---|
-| CRITICAL | 8 | 0 | 0 | 8 |
-| HIGH | 22 | 0 | 0 | 22 |
-| MEDIUM | 39 | 1 | 0 | 38 |
+| CRITICAL | 8 | 1 | 0 | 7 |
+| HIGH | 22 | 1 | 0 | 21 |
+| MEDIUM | 39 | 3 | 0 | 36 |
 | LOW | 39 | 0 | 0 | 39 |
-| **Total** | **108** | **1** | **0** | **107** |
+| **Total** | **108** | **5** | **0** | **103** |
 
 Update these counts as items close.
 
@@ -26,7 +26,7 @@ Update these counts as items close.
 
 Work top-down. Each cluster groups items that share a root cause or a file.
 
-- [ ] **Cluster 1 — Variant/config wiring (data validity, collected wrong NOW).** L1, D5, plus add seam test (TEST1). Silent-drop of thinkingBudget / systemPrompt / `@prompt=name`.
+- [x] **Cluster 1 — Variant/config wiring (data validity, collected wrong NOW).** L1, D5, plus add seam test (TEST1). Silent-drop of thinkingBudget / systemPrompt / `@prompt=name`. (L5 folded in.)
 - [ ] **Cluster 2 — Concurrency reliability (bench hangs/blackholes).** P1, P2, P3, P4.
 - [ ] **Cluster 3 — Infra-to-model score leakage (scoring validity).** C1, C3, T2, T11, P5, P9, D4 (zero-price), plus SOAP precedence C2.
 - [ ] **Cluster 4 — Ingest/admin security (prod exposure).** T1/S5/S6/D1 (sign run_id+signed_at — DEDUP), T10/S3 (finalize auth — DEDUP), S1 (admin SSR auth), S4 (SSE reset), T3 (replay dup UUID).
@@ -38,7 +38,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 
 ## CRITICAL (8)
 
-- [ ] **L1** — `src/parallel/llm-work-pool.ts:324-330` — Variant config (thinkingBudget/systemPrompt/reasoning) never reaches the adapter. getAdapter() forwards only `{provider,model,temperature,maxTokens,apiKey}`; `item.context.variantConfig` dropped. Serial path same (`src/tasks/executor-v2.ts:89-94`). *Scenario:* `opus@thinking=50000` runs as plain no-thinking call while ingest labels it a thinking run; `gpt-5@reasoning=high` runs at default; `@prompt=name` dropped. Wiring never existed (`git log -S thinkingBudget -- src/parallel/` empty). OpenRouter has no reasoning-param support even after wiring.
+- [x] **L1** — `src/parallel/llm-work-pool.ts:324-330` — Variant config (thinkingBudget/systemPrompt/reasoning) never reaches the adapter. getAdapter() forwards only `{provider,model,temperature,maxTokens,apiKey}`; `item.context.variantConfig` dropped. Serial path same (`src/tasks/executor-v2.ts:89-94`). *Scenario:* `opus@thinking=50000` runs as plain no-thinking call while ingest labels it a thinking run; `gpt-5@reasoning=high` runs at default; `@prompt=name` dropped. Wiring never existed (`git log -S thinkingBudget -- src/parallel/` empty). OpenRouter has no reasoning-param support even after wiring. — SHA-C1 getAdapter + executor-v2 spread thinkingBudget/timeout into LLMConfig (apiKey restored on serial path); variant systemPrompt precedence in buildRequest + prompt-generator.
 - [ ] **M1** — `src/agents/sandbox-executor.ts:221,236` — Sandbox success scored from model-controlled chat text (stdout+stderr of Claude Code `--print`), not verified tool results. *Scenario:* model printing "All tests passed" / "Task completed successfully" scores SUCCESS with no compile/test. Non-sandbox `executor.ts:140-193` path is sound (reads tool_result blocks). Sandbox-only gap.
 - [ ] **M2** — `src/agents/success-detector.ts:73,82,28-32` — detectTestSuccess heuristics yield false passes non-adversarially: `/\d+ tests passed/` matches "0 tests passed" (zero_tests infra signature → SUCCESS); `hasCompileSuccess && !includes("failed")` scores full pass when tests never ran; `hasCompileSuccess` matches substring "success: true" anywhere.
 - [ ] **P1** — `src/parallel/compile-queue.ts:592-599` — Compile-semaphore slot leaks when executeCompilePhase throws. releaseCompile() only on success path (599); catch (678)/finally (687) never release. compileProject throws ContainerError/PwshSessionError on the routine infra path. *Scenario:* 3 thrown compile errors exhaust compileSemaphore (default 3); processQueue blocks forever in acquire() with dispatching=true; activeItems already decremented in .finally so pool sees LOW load and keeps feeding work → progressive blackhole, every entry eats the 5-min timeout.
@@ -71,7 +71,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 - [ ] **V2** — `src/verify/schema.ts:36,61` / `analyzer.ts:327,343,375` vs `src/lifecycle/analyzer-schema.ts:36` / `confidence.ts:135` — Two incompatible "confidence" reps, no bridge. Analyzer emits string enum "high|medium|low"; lifecycle expects numeric 0..1. Numeric scorer `scoreEntry` called only from tests (dead in prod). If the string ever persisted, `analyze-step.ts:157` parse rejects → analysis.failed on every model.
 
 ### Test suite (why the criticals escaped) — see also TEST section
-- [ ] **TEST1** — Variant thinkingBudget seam has ZERO real coverage; `tests/integration/thinking-budget-tokens.test.ts` calls `adapter.configure()` directly and is `ignore:!hasAnthropicKey` (skipped in CI); `orchestrator.test.ts:1178` REIMPLEMENTS the merge inline + MockLLMWorkPool so getAdapter never runs. Guards L1.
+- [x] **TEST1** — Variant thinkingBudget seam has ZERO real coverage; `tests/integration/thinking-budget-tokens.test.ts` calls `adapter.configure()` directly and is `ignore:!hasAnthropicKey` (skipped in CI); `orchestrator.test.ts:1178` REIMPLEMENTS the merge inline + MockLLMWorkPool so getAdapter never runs. Guards L1. — SHA-C1 seam test `tests/unit/parallel/llm-work-pool-config-seam.test.ts` through the real registry (RED before L1 fix, GREEN after).
 - [ ] **TEST2** — Compile-semaphore-leak-on-throw untested (`compile-queue.test.ts` only uses success:false which returns, never throws). Guards P1.
 - [ ] **TEST3** — Streaming finishReason untested AND mock hides it (`mock-adapter.ts:367` also hardcodes "stop", never simulates length/content_filter). Guards L2.
 
@@ -92,7 +92,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 ### LLM / config
 - [ ] **L3** — `src/llm/continuation.ts:93-99` (streaming twin :372-378) — Continuation accumulation drops reasoningTokens/cacheCreationTokens/cacheReadTokens (sums only prompt/completion/total/estimatedCost; streaming path starts from zeros :263-267) → any continuation under-reports tokens_reasoning/cache (migration-0012 undercount class).
 - [ ] **L4** — `src/llm/gemini-adapter.ts:235-251,302-318,386` — Gemini generation has no request timeout or abort (client built with only {apiKey}; config.timeout used solely by discoverModels); LLMWorkPool.submit has no outer timeout → one hung Gemini request stalls that model attempt indefinitely; transient-retry never engages.
-- [ ] **L5** — `src/llm/registry.ts:85-96` — LLMAdapterRegistry.acquire() returns a pooled adapter without reconfiguring it (match = provider+model+!inUse). Two callers with different temperature/apiKey/thinkingBudget → second silently runs with the first's settings. Latent (current callers use constant config).
+- [x] **L5** — `src/llm/registry.ts:85-96` — LLMAdapterRegistry.acquire() returns a pooled adapter without reconfiguring it (match = provider+model+!inUse). Two callers with different temperature/apiKey/thinkingBudget → second silently runs with the first's settings. Latent (current callers use constant config). — SHA-C1 acquire() pool-hit now calls adapter.configure(config) before returning.
 - [ ] **L6** — `src/config/config.ts:459-481` — Malformed .centralgauge.yml silently ignored (empty catch on parseYaml for home + cwd). A YAML typo drops the whole file (creds, presets, emptyRetry tuning) with zero warning; run proceeds on defaults (container "mock"). Contradicts the repo's own "silent YAML failures wasted bench runs" rule.
 - [ ] **L7** — `src/llm/local-adapter.ts:387,851` — Local adapter misclassifies finish reasons: non-streaming hardcodes "stop" (ignores done_reason/finish_reason) so truncated local responses never continue; streaming maps "length"→"error" so truncation reports error and continuation never fires.
 
@@ -111,7 +111,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 - [ ] **D2** — `src/catalog/seed/writer.ts:123-146,105-121` — appendPricingIfChanged accumulates duplicate (model_slug, pricing_version) rows: same-day price change appends rather than replaces; findPricingAtVersion returns the FIRST match → each same-day seed re-compares stale first row and appends again → sync-catalog pushes ambiguous/last-wins price.
 - [ ] **D3** — `src/catalog/seed/inference.ts:78-83` vs `cli/commands/bench-command.ts:556-557` — Two divergent family-slug algorithms for openrouter slugs: seeder uses model-tail first segment (`openrouter/qwen/qwen3-coder`→"qwen3"); precheck probe uses sub-vendor (→"qwen") → probe and auto-seed never agree for any slug whose sub-vendor ≠ tail leading token → model stays "missing" post-seed.
 - [ ] **D4** — `src/catalog/seed/inference.ts:269,295` + `sources.ts:113-127` — A zero price from a provider API is accepted as authoritative "free" (floor is open interval (0,0.01); sources reject only MISSING, not 0). A placeholder-0 paid model seeds input/output=$0 without tripping SEED_NO_PRICING → silent cost undercount. NaN/undefined correctly blocked; only 0 slips.
-- [ ] **D5** — `src/llm/variant-parser.ts:171-177,144-149` — `@prompt=name`/systemPromptName lookup miss is silent: sets systemPromptName but resolves content only `if (config?.systemPrompts?.[value])`; a typo'd/absent name → NO system prompt, no error → run proceeds with zero injection, silently invalidating the comparison. (Same silent-drop class as L1; fix together in Cluster 1.)
+- [x] **D5** — `src/llm/variant-parser.ts:171-177,144-149` — `@prompt=name`/systemPromptName lookup miss is silent: sets systemPromptName but resolves content only `if (config?.systemPrompts?.[value])`; a typo'd/absent name → NO system prompt, no error → run proceeds with zero injection, silently invalidating the comparison. (Same silent-drop class as L1; fix together in Cluster 1.) — SHA-C1 `@prompt=` miss throws ConfigurationError naming available prompts on BOTH the inline and profile paths; unknown keys warn instead of silently skipping.
 
 ### cli / dashboard
 - [ ] **CLI3** — `cli/commands/bench/parallel-executor.ts:636` + `results-writer.ts:305-311` — scores-file health snapshot read via `dashboard?.getHealthSnapshot()`; on `--no-dashboard` (run-xbench.ps1) the `# Container Health` block + `infra_invalidated:` line vanish though the shared healthMonitor holds the data. Should read healthMonitor.getState(). infra_invalidated nested inside the containerHealth-present branch.

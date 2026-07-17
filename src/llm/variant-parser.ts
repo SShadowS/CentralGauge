@@ -4,6 +4,8 @@
  */
 
 import type { CentralGaugeConfig } from "../config/config.ts";
+import { ConfigurationError } from "../errors.ts";
+import { Logger } from "../logger/mod.ts";
 import {
   generateVariantId,
   type ModelVariant,
@@ -16,6 +18,8 @@ import {
   MODEL_GROUPS,
 } from "./model-presets.ts";
 import { LiteLLMService } from "./litellm-service.ts";
+
+const log = Logger.create("llm:variant-parser");
 
 /**
  * Parse a model spec with optional variant configuration
@@ -140,11 +144,19 @@ function applyProfileToResult(
   // Merge profile config into result
   Object.assign(result, profile.config);
 
-  // Resolve systemPromptName to actual content if needed
-  if (profile.config.systemPromptName && config?.systemPrompts) {
-    const promptDef = config.systemPrompts[profile.config.systemPromptName];
+  // Resolve systemPromptName to actual content - a miss must fail loud, or
+  // the bench would run unprompted while being labelled as prompted.
+  if (profile.config.systemPromptName) {
+    const promptDef = config?.systemPrompts?.[profile.config.systemPromptName];
     if (promptDef) {
       result.systemPrompt = promptDef.content;
+    } else {
+      const available = Object.keys(config?.systemPrompts ?? {});
+      throw new ConfigurationError(
+        `Unknown system prompt "${profile.config.systemPromptName}" in variant profile "${profileName}". Available: ${
+          available.join(", ") || "(none)"
+        }`,
+      );
     }
   }
 }
@@ -170,9 +182,17 @@ function parseAndSetVariantParam(
       break;
     case "systemPromptName":
       result.systemPromptName = value;
-      // Also resolve to actual content if config is available
+      // Resolve to actual content - a miss must fail loud, or the bench
+      // would run unprompted while being labelled as prompted.
       if (config?.systemPrompts?.[value]) {
         result.systemPrompt = config.systemPrompts[value].content;
+      } else {
+        const available = Object.keys(config?.systemPrompts ?? {});
+        throw new ConfigurationError(
+          `Unknown system prompt "${value}" in variant spec. Available: ${
+            available.join(", ") || "(none)"
+          }`,
+        );
       }
       break;
     case "thinkingBudget": {
@@ -214,9 +234,13 @@ function parseVariantConfig(
       continue;
     }
 
-    // Map alias to canonical key
+    // Map alias to canonical key. Unknown keys warn but do not throw so
+    // forward-compat profile keys stay usable across versions.
     const canonicalKey = VARIANT_PARAM_ALIASES[rawKey];
-    if (!canonicalKey) continue;
+    if (!canonicalKey) {
+      log.warn("Ignoring unknown variant parameter", { key: rawKey });
+      continue;
+    }
 
     // Parse and set value
     parseAndSetVariantParam(canonicalKey, value, config, result);

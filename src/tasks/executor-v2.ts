@@ -86,11 +86,16 @@ export class TaskExecutorV2 {
     }
 
     // Initialize providers
+    const vc = context.variantConfig;
     const llmAdapter = LLMAdapterRegistry.create(context.llmProvider, {
       provider: context.llmProvider,
       model: context.llmModel,
       temperature: context.temperature,
       maxTokens: context.maxTokens,
+      apiKey: LLMAdapterRegistry.getApiKeyForProvider(context.llmProvider),
+      ...(vc?.thinkingBudget !== undefined &&
+        { thinkingBudget: vc.thinkingBudget }),
+      ...(vc?.timeout !== undefined && { timeout: vc.timeout }),
     });
 
     const containerProvider = ContainerProviderRegistry.create(
