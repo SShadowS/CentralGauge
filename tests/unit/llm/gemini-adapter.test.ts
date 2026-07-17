@@ -86,6 +86,50 @@ Deno.test("GeminiAdapter - generate times out with retryable error", async (t) =
 });
 
 // =============================================================================
+// L4 follow-up - the STREAMING path is deadline-bounded too
+// =============================================================================
+
+Deno.test("GeminiAdapter - stream times out with retryable error", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
+
+  await t.step(
+    "never-resolving generateContentStream rejects within deadline",
+    async () => {
+      const adapter = new GeminiAdapter();
+      adapter.configure({
+        provider: "gemini",
+        model: "gemini-2.5-pro",
+        apiKey: "test-key",
+        timeout: 50, // injectable short deadline
+      });
+      injectClient(adapter, {
+        models: {
+          // The stream START hangs forever - the deadline must fire.
+          generateContentStream: () => new Promise(() => {}),
+        },
+      });
+
+      const gen = adapter.generateCodeStream({ prompt: "hi" }, testContext());
+      let err: unknown;
+      try {
+        let it = await gen.next();
+        while (!it.done) it = await gen.next();
+      } catch (e) {
+        err = e;
+      }
+      assertEquals(err instanceof LLMProviderError, true);
+      assertEquals((err as LLMProviderError).provider, "gemini");
+      assertEquals((err as LLMProviderError).isRetryable, true);
+      assertEquals(
+        (err as LLMProviderError).message.includes("timed out"),
+        true,
+      );
+    },
+  );
+});
+
+// =============================================================================
 // L8 - Gemini stream abort cancels the request and skips onComplete
 // =============================================================================
 

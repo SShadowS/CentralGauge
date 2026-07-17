@@ -9,8 +9,15 @@
 import { assertEquals } from "@std/assert";
 import {
   extractLocalFinishReason,
+  LocalLLMAdapter,
   mapLocalFinishReason,
 } from "../../../src/llm/local-adapter.ts";
+import type {
+  GenerationContext,
+  LLMRequest,
+  StreamChunk,
+  StreamResult,
+} from "../../../src/llm/types.ts";
 
 Deno.test("mapLocalFinishReason - canonical mapping", async (t) => {
   await t.step('"stop" -> stop', () => {
@@ -78,5 +85,68 @@ Deno.test("extractLocalFinishReason - reads the right field per variant", async 
   await t.step("no marker present -> stop", () => {
     assertEquals(extractLocalFinishReason({}, true), "stop");
     assertEquals(extractLocalFinishReason({}, false), "stop");
+  });
+});
+
+// =============================================================================
+// L7 follow-up - Ollama STREAMING finalize maps done_reason (was hardcoded)
+// =============================================================================
+
+Deno.test("LocalLLMAdapter Ollama stream - done_reason maps finishReason", async (t) => {
+  const context: GenerationContext = {
+    taskId: "t",
+    attempt: 1,
+    description: "d",
+  };
+  const request: LLMRequest = { prompt: "Create a codeunit", maxTokens: 100 };
+
+  async function drive(ndjsonLines: object[]): Promise<StreamResult> {
+    const body = ndjsonLines.map((l) => JSON.stringify(l)).join("\n") + "\n";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () =>
+      Promise.resolve(new Response(body, { status: 200 }));
+    try {
+      const adapter = new LocalLLMAdapter();
+      adapter.configure({
+        provider: "local",
+        model: "llama3",
+        baseUrl: "http://localhost:11434", // routes to the Ollama stream path
+      });
+      const gen: AsyncGenerator<StreamChunk, StreamResult, undefined> = adapter
+        .generateCodeStream(request, context);
+      let it = await gen.next();
+      while (!it.done) it = await gen.next();
+      return it.value;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  await t.step('done_reason "length" -> finishReason "length"', async () => {
+    const result = await drive([
+      { response: "codeunit 50100 ", done: false },
+      {
+        response: '"Trunc',
+        done: true,
+        done_reason: "length",
+        prompt_eval_count: 10,
+        eval_count: 20,
+      },
+    ]);
+    assertEquals(result.response.finishReason, "length");
+  });
+
+  await t.step('done_reason "stop" -> finishReason "stop"', async () => {
+    const result = await drive([
+      { response: "codeunit 50100 X {}", done: false },
+      {
+        response: "",
+        done: true,
+        done_reason: "stop",
+        prompt_eval_count: 10,
+        eval_count: 20,
+      },
+    ]);
+    assertEquals(result.response.finishReason, "stop");
   });
 });

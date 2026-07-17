@@ -617,12 +617,17 @@ export class LocalLLMAdapter
     options?: StreamOptions,
   ): AsyncGenerator<
     StreamChunk,
-    { promptTokens: number; completionTokens: number },
+    {
+      promptTokens: number;
+      completionTokens: number;
+      doneReason?: string | undefined;
+    },
     undefined
   > {
     const reader = getStreamReader(response);
     let promptTokens = 0;
     let completionTokens = 0;
+    let doneReason: string | undefined;
 
     for await (const data of parseNDJSONStream(reader)) {
       const content = (data["response"] as string) || "";
@@ -631,15 +636,16 @@ export class LocalLLMAdapter
         yield createChunk(content, state, options);
       }
 
-      // Capture token counts from final chunk
+      // Capture token counts + stop reason from final chunk
       if (data["done"] === true) {
         promptTokens = (data["prompt_eval_count"] as number) || 0;
         completionTokens = (data["eval_count"] as number) || 0;
+        doneReason = data["done_reason"] as string | undefined;
         break;
       }
     }
 
-    return { promptTokens, completionTokens };
+    return { promptTokens, completionTokens, doneReason };
   }
 
   /**
@@ -831,7 +837,7 @@ export class LocalLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: "stop",
+        finishReason: mapLocalFinishReason(tokenCounts.doneReason),
         options,
       });
 

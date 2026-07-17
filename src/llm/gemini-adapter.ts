@@ -339,25 +339,37 @@ export class GeminiAdapter extends BaseLLMAdapter
         ? this.config.thinkingBudget
         : undefined;
 
-      const stream = await ai.models.generateContentStream({
-        model: this.config.model,
-        contents: request.prompt,
-        config: {
-          ...(thinkingBudget !== undefined ? {} : {
-            temperature: request.temperature ?? this.config.temperature ?? 0.1,
-          }),
-          maxOutputTokens: this.resolveMaxTokens(request, 8192),
-          ...(request.stop ? { stopSequences: request.stop } : {}),
-          ...(request.systemPrompt
-            ? { systemInstruction: request.systemPrompt }
-            : {}),
-          ...(thinkingBudget !== undefined
-            ? { thinkingConfig: { thinkingBudget } }
-            : {}),
-          // Wire the caller's signal so an abort actually cancels the request
-          // (a bare loop `break` left it running server-side).
-          ...(abortSignal ? { abortSignal } : {}),
-        },
+      // Bound the (otherwise indefinite) stream START under the same deadline
+      // as the non-stream path — LLMWorkPool.submit has no outer timeout, so a
+      // hung generateContentStream would stall the model attempt forever. On
+      // expiry raceWithTimeout rejects with a retryable LLMProviderError. The
+      // deadline's own signal is merged with the caller's so a mid-stream abort
+      // (or a real server-side hang) also cancels the request.
+      const stream = await this.raceWithTimeout((deadlineSignal) => {
+        const combinedSignal = abortSignal
+          ? AbortSignal.any([abortSignal, deadlineSignal])
+          : deadlineSignal;
+        return ai.models.generateContentStream({
+          model: this.config.model,
+          contents: request.prompt,
+          config: {
+            ...(thinkingBudget !== undefined ? {} : {
+              temperature: request.temperature ?? this.config.temperature ??
+                0.1,
+            }),
+            maxOutputTokens: this.resolveMaxTokens(request, 8192),
+            ...(request.stop ? { stopSequences: request.stop } : {}),
+            ...(request.systemPrompt
+              ? { systemInstruction: request.systemPrompt }
+              : {}),
+            ...(thinkingBudget !== undefined
+              ? { thinkingConfig: { thinkingBudget } }
+              : {}),
+            // Wire the merged signal so an abort actually cancels the request
+            // (a bare loop `break` left it running server-side).
+            abortSignal: combinedSignal,
+          },
+        });
       });
 
       for await (const chunk of stream) {
