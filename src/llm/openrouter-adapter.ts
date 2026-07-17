@@ -92,6 +92,7 @@ import {
   createFallbackUsage,
   createStreamState,
   finalizeStream,
+  forwardAbort,
   handleStreamError,
 } from "./stream-handler.ts";
 
@@ -295,12 +296,8 @@ export class OpenRouterAdapter extends BaseLLMAdapter
         stream_options: { include_usage: true },
       });
 
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          stream.controller.abort();
-        });
-      }
+      // Handle abort signal (fires synchronously for a pre-aborted signal).
+      forwardAbort(options?.abortSignal, () => stream.controller.abort());
 
       let streamFinishReason: string | undefined;
       for await (const chunk of stream) {

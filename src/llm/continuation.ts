@@ -18,6 +18,42 @@ import {
 } from "./types.ts";
 
 /**
+ * Add two optional token counts. Returns `undefined` only when BOTH are
+ * undefined so a provider that never reports the field is not silently
+ * turned into a fabricated zero; otherwise sums treating a missing side as 0.
+ */
+function addOptionalTokens(
+  a: number | undefined,
+  b: number | undefined,
+): number | undefined {
+  if (a === undefined && b === undefined) return undefined;
+  return (a ?? 0) + (b ?? 0);
+}
+
+/**
+ * Fold one generation's usage into the running total for the optional
+ * reasoning/cache fields (the base prompt/completion/total are summed
+ * inline by callers). Kept nullish-safe so undefined stays undefined.
+ */
+function accumulateOptionalUsage(
+  total: TokenUsage,
+  next: TokenUsage,
+): void {
+  total.reasoningTokens = addOptionalTokens(
+    total.reasoningTokens,
+    next.reasoningTokens,
+  );
+  total.cacheCreationTokens = addOptionalTokens(
+    total.cacheCreationTokens,
+    next.cacheCreationTokens,
+  );
+  total.cacheReadTokens = addOptionalTokens(
+    total.cacheReadTokens,
+    next.cacheReadTokens,
+  );
+}
+
+/**
  * Result of a continuation-aware generation
  */
 export interface ContinuationResult extends CodeGenerationResult {
@@ -97,6 +133,7 @@ export async function generateWithContinuation(
       totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
         result.response.usage.estimatedCost;
     }
+    accumulateOptionalUsage(totalUsage, result.response.usage);
   }
 
   // Build final response
@@ -300,6 +337,7 @@ export async function* generateWithContinuationStream(
     totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
       lastResult.response.usage.estimatedCost;
   }
+  accumulateOptionalUsage(totalUsage, lastResult.response.usage);
 
   // Check if continuation is needed and enabled
   while (
@@ -376,6 +414,7 @@ export async function* generateWithContinuationStream(
       totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
         lastResult.response.usage.estimatedCost;
     }
+    accumulateOptionalUsage(totalUsage, lastResult.response.usage);
   }
 
   // Build final response

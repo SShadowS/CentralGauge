@@ -485,8 +485,10 @@ export class ConfigManager {
           config = this.mergeConfigs(config, homeConfig);
         }
       }
-    } catch {
-      // Ignore errors loading home config
+    } catch (error) {
+      // A malformed YAML must surface; only genuine I/O errors (missing/
+      // unreadable path) are ignored here.
+      if (error instanceof ConfigurationError) throw error;
     }
 
     // 3. Current directory config
@@ -496,8 +498,10 @@ export class ConfigManager {
         const localConfig = await this.loadConfigFile(localConfigPath);
         config = this.mergeConfigs(config, localConfig);
       }
-    } catch {
-      // Ignore errors loading local config
+    } catch (error) {
+      // A malformed YAML must surface; only genuine I/O errors (missing/
+      // unreadable path) are ignored here.
+      if (error instanceof ConfigurationError) throw error;
     }
 
     // 2. Environment variables
@@ -635,7 +639,19 @@ export class ConfigManager {
     path: string,
   ): Promise<CentralGaugeConfig> {
     const content = await Deno.readTextFile(path);
-    return parseYaml(content) as CentralGaugeConfig;
+    try {
+      return parseYaml(content) as CentralGaugeConfig;
+    } catch (error) {
+      // A YAML typo must fail loud, not silently drop the whole file (creds,
+      // presets, emptyRetry tuning) and proceed on defaults — repeatedly the
+      // cause of wasted bench runs.
+      throw new ConfigurationError(
+        `Failed to parse config file ${path}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        path,
+      );
+    }
   }
 
   /**
@@ -675,8 +691,24 @@ export class ConfigManager {
     }
 
     const result: NonNullable<CentralGaugeConfig["llm"]> = {};
-    if (temperature) result.temperature = parseFloat(temperature);
-    if (maxTokens) result.maxTokens = parseInt(maxTokens);
+    if (temperature) {
+      const t = parseFloat(temperature);
+      if (!Number.isFinite(t)) {
+        throw new ConfigurationError(
+          `Invalid CENTRALGAUGE_TEMPERATURE: "${temperature}" is not a finite number`,
+        );
+      }
+      result.temperature = t;
+    }
+    if (maxTokens) {
+      const m = parseInt(maxTokens, 10);
+      if (!Number.isFinite(m)) {
+        throw new ConfigurationError(
+          `Invalid CENTRALGAUGE_MAX_TOKENS: "${maxTokens}" is not a finite integer`,
+        );
+      }
+      result.maxTokens = m;
+    }
     return result;
   }
 

@@ -162,6 +162,25 @@ function applyProfileToResult(
 }
 
 /**
+ * Parse a numeric variant value, failing loud on a non-finite result. A
+ * silent `NaN` here flows straight into the provider request and returns a
+ * 400 mid-bench (`@temp=abc`, `@thinking=abc`).
+ */
+function parseFiniteNumber(
+  value: string,
+  parse: (v: string) => number,
+  paramName: string,
+): number {
+  const n = parse(value);
+  if (!Number.isFinite(n)) {
+    throw new ConfigurationError(
+      `Invalid variant ${paramName} value "${value}": not a finite number`,
+    );
+  }
+  return n;
+}
+
+/**
  * Parse and set a variant parameter value
  */
 function parseAndSetVariantParam(
@@ -172,13 +191,21 @@ function parseAndSetVariantParam(
 ): void {
   switch (canonicalKey) {
     case "temperature":
-      result.temperature = parseFloat(value);
+      result.temperature = parseFiniteNumber(value, parseFloat, "temperature");
       break;
     case "maxTokens":
-      result.maxTokens = parseInt(value, 10);
+      result.maxTokens = parseFiniteNumber(
+        value,
+        (v) => parseInt(v, 10),
+        "maxTokens",
+      );
       break;
     case "timeout":
-      result.timeout = parseInt(value, 10);
+      result.timeout = parseFiniteNumber(
+        value,
+        (v) => parseInt(v, 10),
+        "timeout",
+      );
       break;
     case "systemPromptName":
       result.systemPromptName = value;
@@ -202,7 +229,11 @@ function parseAndSetVariantParam(
       if (["low", "medium", "high"].includes(lowerValue)) {
         result.thinkingBudget = lowerValue;
       } else {
-        result.thinkingBudget = parseInt(value, 10);
+        result.thinkingBudget = parseFiniteNumber(
+          value,
+          (v) => parseInt(v, 10),
+          "thinkingBudget",
+        );
       }
       break;
     }

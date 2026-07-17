@@ -3,8 +3,9 @@
  */
 
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { assert, assertEquals, assertExists } from "@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { ConfigManager } from "../../../src/config/config.ts";
+import { ConfigurationError } from "../../../src/errors.ts";
 import {
   cleanupTempDir,
   createTempDir,
@@ -135,26 +136,82 @@ describe("ConfigManager", () => {
       assertEquals(config.benchmark?.outputDir, "custom-results");
     });
 
-    it("should handle malformed environment variables gracefully", async () => {
-      mockEnv.set("CENTRALGAUGE_TEMPERATURE", "invalid");
+    it("should throw on non-numeric CENTRALGAUGE_TEMPERATURE (L9)", async () => {
+      mockEnv.set("CENTRALGAUGE_TEMPERATURE", "abc");
+      ConfigManager.reset();
+      const err = await assertRejects(
+        () => ConfigManager.loadConfig(),
+        ConfigurationError,
+        "CENTRALGAUGE_TEMPERATURE",
+      );
+      assert(err.message.includes("abc"));
+    });
+
+    it("should throw on non-numeric CENTRALGAUGE_MAX_TOKENS (L9)", async () => {
       mockEnv.set("CENTRALGAUGE_MAX_TOKENS", "not-a-number");
-      mockEnv.set("CENTRALGAUGE_ATTEMPTS", "NaN");
+      ConfigManager.reset();
+      await assertRejects(
+        () => ConfigManager.loadConfig(),
+        ConfigurationError,
+        "CENTRALGAUGE_MAX_TOKENS",
+      );
+    });
 
+    it("should accept valid numeric LLM env values", async () => {
+      mockEnv.set("CENTRALGAUGE_TEMPERATURE", "0.3");
+      mockEnv.set("CENTRALGAUGE_MAX_TOKENS", "12000");
+      ConfigManager.reset();
       const config = await ConfigManager.loadConfig();
+      assertEquals(config.llm?.temperature, 0.3);
+      assertEquals(config.llm?.maxTokens, 12000);
+    });
 
-      // Should fall back to defaults for invalid values
-      assert(
-        isNaN(config.llm?.temperature as number) ||
-          config.llm?.temperature === 0.1,
-      );
-      assert(
-        isNaN(config.llm?.maxTokens as number) ||
-          config.llm?.maxTokens === 64000,
-      );
-      assert(
-        isNaN(config.benchmark?.attempts as number) ||
-          config.benchmark?.attempts === 2,
-      );
+    it("should throw ConfigurationError on malformed .centralgauge.yml (L6)", async () => {
+      const originalCwd = Deno.cwd();
+      const emptyHome = await createTempDir();
+      try {
+        for (const key of ALL_CONFIG_ENV_VARS) mockEnv.delete(key);
+        // Point HOME/USERPROFILE at an empty dir so only the cwd file is bad.
+        mockEnv.set("HOME", emptyHome);
+        mockEnv.set("USERPROFILE", emptyHome);
+        await Deno.writeTextFile(
+          `${tempDir}/.centralgauge.yml`,
+          "llm: [unterminated flow sequence",
+        );
+        Deno.chdir(tempDir);
+        ConfigManager.reset();
+
+        const err = await assertRejects(
+          () => ConfigManager.loadConfig(),
+          ConfigurationError,
+          ".centralgauge.yml",
+        );
+        // Names the file and includes the underlying parse error.
+        assert(err.message.length > 0);
+      } finally {
+        Deno.chdir(originalCwd);
+        await cleanupTempDir(emptyHome);
+      }
+    });
+
+    it("should still ignore a MISSING config file (L6 scope)", async () => {
+      const originalCwd = Deno.cwd();
+      const emptyHome = await createTempDir();
+      const emptyCwd = await createTempDir();
+      try {
+        for (const key of ALL_CONFIG_ENV_VARS) mockEnv.delete(key);
+        mockEnv.set("HOME", emptyHome);
+        mockEnv.set("USERPROFILE", emptyHome);
+        Deno.chdir(emptyCwd);
+        ConfigManager.reset();
+        // No file present anywhere -> loads defaults without throwing.
+        const config = await ConfigManager.loadConfig();
+        assertExists(config.llm);
+      } finally {
+        Deno.chdir(originalCwd);
+        await cleanupTempDir(emptyHome);
+        await cleanupTempDir(emptyCwd);
+      }
     });
 
     it("should load container settings from environment variables", async () => {

@@ -295,6 +295,45 @@ describe("parseVariantSpec", () => {
       assertEquals(variant.config.temperature, undefined);
     });
   });
+
+  describe("numeric NaN guards (L9)", () => {
+    it("should throw on non-numeric @temp", () => {
+      assertThrows(
+        () => parseVariantSpec("sonnet@temp=abc"),
+        ConfigurationError,
+        "temperature",
+      );
+    });
+
+    it("should throw on non-numeric @tokens", () => {
+      assertThrows(
+        () => parseVariantSpec("sonnet@tokens=lots"),
+        ConfigurationError,
+        "maxTokens",
+      );
+    });
+
+    it("should throw on non-numeric @timeout", () => {
+      assertThrows(
+        () => parseVariantSpec("sonnet@timeout=soon"),
+        ConfigurationError,
+        "timeout",
+      );
+    });
+
+    it("should throw on non-numeric @thinking", () => {
+      assertThrows(
+        () => parseVariantSpec("sonnet@thinking=abc"),
+        ConfigurationError,
+        "thinkingBudget",
+      );
+    });
+
+    it("should still accept named thinking budgets", () => {
+      const variants = parseVariantSpec("sonnet@thinking=high");
+      assertEquals(variants[0]?.config.thinkingBudget, "high");
+    });
+  });
 });
 
 describe("resolveWithVariants", () => {

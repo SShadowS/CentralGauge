@@ -27,6 +27,7 @@ import {
   createChunk,
   createStreamState,
   finalizeStream,
+  forwardAbort,
   handleStreamError,
   type StreamState,
 } from "./stream-handler.ts";
@@ -462,11 +463,9 @@ export class AnthropicAdapter extends BaseLLMAdapter
     stream: ReturnType<Anthropic["messages"]["stream"]>,
     options?: StreamOptions,
   ): void {
-    if (options?.abortSignal) {
-      options.abortSignal.addEventListener("abort", () => {
-        stream.abort();
-      });
-    }
+    // Fires synchronously for an already-aborted signal (a plain listener
+    // would never run) so a pre-cancelled request aborts instead of streaming.
+    forwardAbort(options?.abortSignal, () => stream.abort());
   }
 
   /**

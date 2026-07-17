@@ -7,6 +7,7 @@ import { describe, it } from "@std/testing/bdd";
 import {
   createTruncationWarning,
   generateWithContinuation,
+  generateWithContinuationStream,
   wasTruncated,
 } from "../../../src/llm/continuation.ts";
 import type {
@@ -14,6 +15,10 @@ import type {
   ContinuationConfig,
   GenerationContext,
   LLMRequest,
+  StreamChunk,
+  StreamOptions,
+  StreamResult,
+  TokenUsage,
 } from "../../../src/llm/types.ts";
 
 /**
@@ -315,6 +320,135 @@ describe("continuation", () => {
         req.prompt.includes("some generated code here"),
         true,
       );
+    });
+  });
+
+  describe("token field accumulation (L3)", () => {
+    function resultWithUsage(
+      content: string,
+      finishReason: "stop" | "length",
+      usage: TokenUsage,
+    ): CodeGenerationResult {
+      return {
+        code: content,
+        language: "al",
+        response: {
+          content,
+          model: "test-model",
+          usage,
+          duration: 1000,
+          finishReason,
+        },
+        extractedFromDelimiters: false,
+      };
+    }
+
+    it("non-stream: sums reasoning/cache tokens across continuations", async () => {
+      let call = 0;
+      const generateFn = () => {
+        call++;
+        const finishReason = call === 1 ? "length" : "stop";
+        return Promise.resolve(
+          resultWithUsage(`part${call}`, finishReason, {
+            promptTokens: 100,
+            completionTokens: 200,
+            totalTokens: 300,
+            reasoningTokens: 10,
+            cacheReadTokens: 5,
+            cacheCreationTokens: 3,
+          }),
+        );
+      };
+
+      const result = await generateWithContinuation(
+        generateFn,
+        createMockRequest(),
+        createMockContext(),
+      );
+
+      assertEquals(result.continuationCount, 1);
+      assertEquals(result.totalUsage.reasoningTokens, 20);
+      assertEquals(result.totalUsage.cacheReadTokens, 10);
+      assertEquals(result.totalUsage.cacheCreationTokens, 6);
+    });
+
+    it("non-stream: keeps optional fields undefined when both segments omit them", async () => {
+      let call = 0;
+      const generateFn = () => {
+        call++;
+        const finishReason = call === 1 ? "length" : "stop";
+        return Promise.resolve(
+          resultWithUsage(`part${call}`, finishReason, {
+            promptTokens: 100,
+            completionTokens: 200,
+            totalTokens: 300,
+          }),
+        );
+      };
+
+      const result = await generateWithContinuation(
+        generateFn,
+        createMockRequest(),
+        createMockContext(),
+      );
+
+      assertEquals(result.totalUsage.reasoningTokens, undefined);
+      assertEquals(result.totalUsage.cacheReadTokens, undefined);
+      assertEquals(result.totalUsage.cacheCreationTokens, undefined);
+    });
+
+    it("streaming: sums reasoning/cache tokens across continuations", async () => {
+      let call = 0;
+      const generateStreamFn = async function* (
+        _request: LLMRequest,
+        _context: GenerationContext,
+        _options?: StreamOptions,
+      ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+        call++;
+        const finishReason = call === 1 ? "length" : "stop";
+        const content = `part${call}`;
+        const usage: TokenUsage = {
+          promptTokens: 100,
+          completionTokens: 200,
+          totalTokens: 300,
+          reasoningTokens: 10,
+          cacheReadTokens: 5,
+          cacheCreationTokens: 3,
+        };
+        yield {
+          text: content,
+          accumulatedText: content,
+          done: false,
+          index: 0,
+        };
+        return {
+          content,
+          response: {
+            content,
+            model: "test-model",
+            usage,
+            duration: 1000,
+            finishReason,
+          },
+          chunkCount: 1,
+        };
+      };
+
+      const gen = generateWithContinuationStream(
+        generateStreamFn,
+        createMockRequest(),
+        createMockContext(),
+      );
+      let iter = await gen.next();
+      while (!iter.done) {
+        iter = await gen.next();
+      }
+      const result = iter.value;
+
+      assertEquals(result.continuationCount, 1);
+      assertEquals(result.totalUsage.reasoningTokens, 20);
+      assertEquals(result.totalUsage.cacheReadTokens, 10);
+      assertEquals(result.totalUsage.cacheCreationTokens, 6);
     });
   });
 

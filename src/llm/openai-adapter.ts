@@ -27,6 +27,7 @@ import {
   createFallbackUsage,
   createStreamState,
   finalizeStream,
+  forwardAbort,
   handleStreamError,
   type StreamState,
 } from "./stream-handler.ts";
@@ -351,6 +352,13 @@ export class OpenAIAdapter extends BaseLLMAdapter
         stream: true,
       });
 
+      // The Responses (Codex) stream previously had NO abort wiring at all.
+      if ("controller" in stream) {
+        const controller =
+          (stream as { controller: AbortController }).controller;
+        forwardAbort(options?.abortSignal, () => controller.abort());
+      }
+
       let finalUsage: TokenUsage | undefined;
       let responseStatus: string | undefined;
       let incompleteReason: string | undefined;
@@ -559,11 +567,10 @@ export class OpenAIAdapter extends BaseLLMAdapter
       : never,
     options?: StreamOptions,
   ): void {
-    if (options?.abortSignal && "controller" in stream) {
-      options.abortSignal.addEventListener("abort", () => {
-        (stream as { controller: AbortController }).controller.abort();
-      });
-    }
+    if (!("controller" in stream)) return;
+    const controller = (stream as { controller: AbortController }).controller;
+    // Fires synchronously for an already-aborted signal.
+    forwardAbort(options?.abortSignal, () => controller.abort());
   }
 
   /**
