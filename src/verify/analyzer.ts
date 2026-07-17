@@ -8,6 +8,7 @@ import { LLMAdapterRegistry } from "../llm/registry.ts";
 import type { LLMConfig, LLMRequest } from "../llm/types.ts";
 import type {
   AnalysisContext,
+  AnalysisFailedResult,
   AnalysisResult,
   FailingTask,
   FixableAnalysisResult,
@@ -299,12 +300,12 @@ export function parseAnalysisResponse(
   try {
     raw = JSON.parse(jsonStr);
   } catch {
-    return parseFallback(response, task);
+    return parseFallback(response, task, "json_parse_error");
   }
 
   const parsed = AnalysisOutputSchema.safeParse(raw);
   if (!parsed.success) {
-    return parseFallback(response, task);
+    return parseFallback(response, task, "schema_validation_error");
   }
 
   if (parsed.data.outcome === "fixable") {
@@ -350,32 +351,24 @@ export function parseAnalysisResponse(
 }
 
 /**
- * Fallback when JSON parsing or zod validation fails: emit a low-confidence
- * `parse-failure` shortcoming carrying the (truncated) raw response so the
- * operator can debug. The new D-prompt fields default to a `parse-failure`
- * slug + null match — the resolver auto-creates a fresh concept on the
- * server, which is fine for telemetry-only shortcomings.
+ * Fallback when JSON parsing or zod validation fails (finding V9): emit an
+ * `analysis_failed` result carrying the (truncated) raw response so the
+ * operator can debug. This is NOT a shortcoming — the tracker increments a
+ * `parse_failures` counter instead of inventing a fake `parse-failure`
+ * concept entry (which previously polluted the concept list and, via
+ * `?? 1`, auto-published).
  */
 function parseFallback(
   response: string,
   task: FailingTask,
-): ModelShortcomingResult {
+  reason: "json_parse_error" | "schema_validation_error",
+): AnalysisFailedResult {
   return {
-    outcome: "model_shortcoming",
+    outcome: "analysis_failed",
     taskId: task.taskId,
     model: task.model,
-    category: "model_knowledge_gap",
-    concept: "parse-failure",
-    alConcept: "unknown",
-    description: `Failed to parse LLM analysis response: ${
-      response.slice(0, 200)
-    }`,
-    generatedCode: "",
-    correctPattern: "",
-    confidence: "low",
-    concept_slug_proposed: "parse-failure",
-    concept_slug_existing_match: null,
-    similarity_score: null,
+    reason,
+    rawResponse: response.slice(0, 2000),
   };
 }
 

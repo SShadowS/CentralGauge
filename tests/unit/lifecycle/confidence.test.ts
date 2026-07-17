@@ -9,8 +9,10 @@ import { assert, assertEquals } from "@std/assert";
 import {
   type AnalyzerEntry,
   scoreEntry,
+  scorePersistedEntry,
   selectsForCrossLlmCheck,
 } from "../../../src/lifecycle/confidence.ts";
+import type { ModelShortcomingEntry } from "../../../src/verify/types.ts";
 
 // Canonical analyzer entry shape (matches `ModelShortcomingSchema` in
 // `src/verify/schema.ts`). The mixed snake/camel naming is the existing
@@ -156,8 +158,12 @@ Deno.test("scoreEntry — cross-LLM agreement", async (t) => {
   );
 
   await t.step(
-    "low-agreement runner result tags cross_llm:low_agreement",
+    "V3 veto: full disagreement on a cluster-matched entry yields 0.4 (< threshold)",
     async () => {
+      // Oracle correction (finding V3): before the fix, cross-LLM DISagreement
+      // (raw=0) contributed crossScore=0 → base 0.7 → auto-published. Now
+      // crossScore = (0-0.5)*0.6 = -0.3 → base = 0.5+0.2-0.3 = 0.4, below the
+      // 0.7 threshold, so the disagreed-upon entry is queued for review.
       const r = await scoreEntry(validEntry, {
         knownConceptSlugs: new Set([validEntry.concept_slug_proposed]),
         crossLlmSampleRate: 1.0,
@@ -165,7 +171,24 @@ Deno.test("scoreEntry — cross-LLM agreement", async (t) => {
         crossLlmAgreementRunner: () => Promise.resolve(0.0),
       });
       assertEquals(r.sampled_for_cross_llm, true);
+      assertEquals(r.breakdown.cross_llm_agreement, -0.3);
+      assertEquals(r.score, 0.4);
+      assertEquals(r.above_threshold, false);
       assert(r.failure_reasons.includes("cross_llm:low_agreement"));
+    },
+  );
+
+  await t.step(
+    "V3: partial (0.5) agreement is neutral (crossScore 0)",
+    async () => {
+      const r = await scoreEntry(validEntry, {
+        knownConceptSlugs: new Set([validEntry.concept_slug_proposed]),
+        crossLlmSampleRate: 1.0,
+        threshold: 0.7,
+        crossLlmAgreementRunner: () => Promise.resolve(0.5),
+      });
+      assertEquals(r.breakdown.cross_llm_agreement, 0);
+      assertEquals(r.score, 0.7);
     },
   );
 
@@ -239,6 +262,109 @@ Deno.test("selectsForCrossLlmCheck — determinism", async (t) => {
       const a = await selectsForCrossLlmCheck(validEntry, 0.2);
       const b = await selectsForCrossLlmCheck(reordered, 0.2);
       assertEquals(a, b);
+    },
+  );
+});
+
+// Canonical PERSISTED entry (the on-disk `ModelShortcomingEntry` shape, which
+// differs from the analyzer shape: errorCodes[] array, incorrectPattern, no
+// `outcome`). scorePersistedEntry validates THIS shape.
+const validPersisted: ModelShortcomingEntry = {
+  concept: "FlowField requires CalcFields",
+  alConcept: "FlowField",
+  description: "FlowFields require explicit CalcFields() before reading",
+  correctPattern: 'Rec.CalcFields("Amount");',
+  incorrectPattern: 'if Rec."Amount" > 0 then ...',
+  errorCodes: ["AL0606"],
+  affectedTasks: ["CG-AL-E001"],
+  firstSeen: "2026-04-29T00:00:00Z",
+  occurrences: 1,
+  confidence: 0.9,
+  concept_slug_proposed: "flowfield-calcfields-requirement",
+  concept_slug_existing_match: null,
+  similarity_score: null,
+};
+
+Deno.test("scorePersistedEntry — shape checks", async (t) => {
+  await t.step("well-formed + cluster match → 0.7 (auto-publish)", async () => {
+    const r = await scorePersistedEntry(validPersisted, {
+      knownConceptSlugs: new Set([validPersisted.concept_slug_proposed]),
+      crossLlmSampleRate: 0,
+      threshold: 0.7,
+    });
+    assertEquals(r.breakdown.schema_validity, 1);
+    assertEquals(r.breakdown.concept_cluster_consistency, 0.2);
+    assertEquals(r.score, 0.7);
+    assertEquals(r.above_threshold, true);
+  });
+
+  await t.step("empty correctPattern → shape 0 → score 0", async () => {
+    const r = await scorePersistedEntry(
+      { ...validPersisted, correctPattern: "  " },
+      {
+        knownConceptSlugs: new Set([validPersisted.concept_slug_proposed]),
+        crossLlmSampleRate: 0,
+        threshold: 0.7,
+      },
+    );
+    assertEquals(r.breakdown.schema_validity, 0);
+    assertEquals(r.score, 0);
+    assert(r.failure_reasons.includes("schema:correctPattern_empty"));
+  });
+
+  await t.step("empty incorrectPattern → shape 0 → score 0", async () => {
+    const r = await scorePersistedEntry(
+      { ...validPersisted, incorrectPattern: "" },
+      {
+        knownConceptSlugs: new Set([validPersisted.concept_slug_proposed]),
+        crossLlmSampleRate: 0,
+        threshold: 0.7,
+      },
+    );
+    assertEquals(r.breakdown.schema_validity, 0);
+    assertEquals(r.score, 0);
+    assert(r.failure_reasons.includes("schema:incorrectPattern_empty"));
+  });
+
+  await t.step("bad errorCode in errorCodes[] → shape 0", async () => {
+    const r = await scorePersistedEntry(
+      { ...validPersisted, errorCodes: ["AL0606", "E0606"] },
+      {
+        knownConceptSlugs: new Set([validPersisted.concept_slug_proposed]),
+        crossLlmSampleRate: 0,
+        threshold: 0.7,
+      },
+    );
+    assertEquals(r.breakdown.schema_validity, 0);
+    assertEquals(r.score, 0);
+    assert(
+      r.failure_reasons.some((x) => x.startsWith("schema:errorCode_invalid")),
+    );
+  });
+
+  await t.step("orphan slug → -0.1 penalty → 0.4", async () => {
+    const r = await scorePersistedEntry(validPersisted, {
+      knownConceptSlugs: new Set(["unrelated"]),
+      crossLlmSampleRate: 0,
+      threshold: 0.7,
+    });
+    assertEquals(r.breakdown.concept_cluster_consistency, -0.1);
+    assertEquals(r.score, 0.4);
+    assert(r.failure_reasons.includes("concept:orphan_slug"));
+  });
+
+  await t.step(
+    "V3 veto: cross-LLM disagreement on a cluster-matched persisted entry → 0.4",
+    async () => {
+      const r = await scorePersistedEntry(validPersisted, {
+        knownConceptSlugs: new Set([validPersisted.concept_slug_proposed]),
+        crossLlmSampleRate: 1.0,
+        threshold: 0.7,
+        crossLlmAgreementRunner: () => Promise.resolve(0.0),
+      });
+      assertEquals(r.breakdown.cross_llm_agreement, -0.3);
+      assertEquals(r.score, 0.4);
+      assertEquals(r.above_threshold, false);
     },
   );
 });

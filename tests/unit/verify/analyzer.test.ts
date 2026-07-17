@@ -6,6 +6,7 @@ import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import {
   buildSystemPrompt,
   type FailingTask,
+  isAnalysisFailedResult,
   isFixableResult,
   isModelShortcomingResult,
   parseAnalysisResponse,
@@ -191,7 +192,7 @@ Deno.test("parseAnalysisResponse: handles markdown-wrapped JSON", () => {
   }
 });
 
-Deno.test("parseAnalysisResponse: falls back to model_shortcoming on parse failure", () => {
+Deno.test("parseAnalysisResponse: falls back to analysis_failed on parse failure", () => {
   const task = createMockTask();
 
   // Invalid JSON response
@@ -199,10 +200,13 @@ Deno.test("parseAnalysisResponse: falls back to model_shortcoming on parse failu
 
   const result = parseAnalysisResponse(llmResponse, task);
 
-  assertEquals(isModelShortcomingResult(result), true);
-  if (isModelShortcomingResult(result)) {
-    assertEquals(result.concept, "parse-failure");
-    assertEquals(result.confidence, "low");
+  // V9: an unparseable analyzer response is now `analysis_failed`, NOT a
+  // fake `parse-failure` model_shortcoming.
+  assertEquals(isAnalysisFailedResult(result), true);
+  assertEquals(isModelShortcomingResult(result), false);
+  if (isAnalysisFailedResult(result)) {
+    assertEquals(result.reason, "json_parse_error");
+    assertEquals(result.rawResponse.length > 0, true);
   }
 });
 
@@ -310,16 +314,29 @@ Deno.test("parseAnalysisResponse: carries existing-match + similarity through", 
   assertEquals(result.similarity_score, 0.91);
 });
 
-Deno.test("parseAnalysisResponse: parse-failure fallback fills new fields", () => {
+Deno.test("parseAnalysisResponse: parse-failure yields analysis_failed (V9)", () => {
   const task = createMockTask();
   const result = parseAnalysisResponse("not json at all", task);
-  if (!isModelShortcomingResult(result)) {
-    throw new Error("expected shortcoming");
+  if (!isAnalysisFailedResult(result)) {
+    throw new Error("expected analysis_failed");
   }
-  assertEquals(result.concept, "parse-failure");
-  assertEquals(result.concept_slug_proposed, "parse-failure");
-  assertEquals(result.concept_slug_existing_match, null);
-  assertEquals(result.similarity_score, null);
+  assertEquals(result.outcome, "analysis_failed");
+  assertEquals(result.taskId, task.taskId);
+  assertEquals(result.model, task.model);
+  assertEquals(result.reason, "json_parse_error");
+});
+
+Deno.test("parseAnalysisResponse: schema-invalid JSON yields analysis_failed (V9)", () => {
+  const task = createMockTask();
+  // Valid JSON, but not a valid AnalysisOutput (unknown outcome).
+  const result = parseAnalysisResponse(
+    JSON.stringify({ outcome: "nonsense", foo: 1 }),
+    task,
+  );
+  if (!isAnalysisFailedResult(result)) {
+    throw new Error("expected analysis_failed");
+  }
+  assertEquals(result.reason, "schema_validation_error");
 });
 
 Deno.test("buildSystemPrompt: includes each concept slug + display name", () => {

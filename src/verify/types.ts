@@ -49,9 +49,17 @@ export interface FailingTask {
 }
 
 /**
- * Analysis outcome - whether the issue is fixable or a model knowledge gap
+ * Analysis outcome - whether the issue is fixable, a model knowledge gap, or
+ * an analyzer parse/validation failure (finding V9). `analysis_failed` is NOT
+ * a real shortcoming — it means the analyzer LLM produced output the parser
+ * could not turn into a structured result, so it must never become a
+ * `ModelShortcomingEntry` (that once landed a fake `parse-failure` concept in
+ * the tracker). It is counted separately via `parse_failures`.
  */
-export type AnalysisOutcome = "fixable" | "model_shortcoming";
+export type AnalysisOutcome =
+  | "fixable"
+  | "model_shortcoming"
+  | "analysis_failed";
 
 /**
  * Categories of fixable issues
@@ -160,9 +168,33 @@ export interface ModelShortcomingResult {
 }
 
 /**
+ * Analysis result for an analyzer parse/validation failure (finding V9).
+ *
+ * Emitted by `parseFallback` when the analyzer LLM's response cannot be parsed
+ * or fails schema validation. Carries the (truncated) raw response so an
+ * operator can debug, but is deliberately NOT a `ModelShortcomingResult` — the
+ * tracker increments its `parse_failures` counter instead of inventing a
+ * `parse-failure` concept entry.
+ */
+export interface AnalysisFailedResult {
+  outcome: "analysis_failed";
+  /** The task that was analyzed */
+  taskId: string;
+  /** Model that was tested */
+  model: string;
+  /** Why parsing failed (short human-readable label). */
+  reason: string;
+  /** Truncated raw LLM response for operator debugging. */
+  rawResponse: string;
+}
+
+/**
  * Union type for all analysis results
  */
-export type AnalysisResult = FixableAnalysisResult | ModelShortcomingResult;
+export type AnalysisResult =
+  | FixableAnalysisResult
+  | ModelShortcomingResult
+  | AnalysisFailedResult;
 
 /**
  * A single model shortcoming entry (deduplicated by concept)
@@ -186,6 +218,16 @@ export interface ModelShortcomingEntry {
   firstSeen: string;
   /** Number of occurrences */
   occurrences: number;
+  /**
+   * Numeric confidence 0..1 (finding V2). Mapped from the analyzer's coarse
+   * `ConfidenceLevel` enum at write time via `CONFIDENCE_LEVEL_TO_SCORE`.
+   * Optional because files written before V2 omit it — readers treat absence
+   * as legacy (default 1) but log + count it so an operator can force
+   * re-analysis. On merge the tracker keeps the MIN of existing/incoming so a
+   * later confident sighting can never silently raise a shaky entry over the
+   * review threshold.
+   */
+  confidence?: number;
   /**
    * D-prompt: registry-shaped concept slug the analyzer proposed for this
    * entry. Required for the batch endpoint to resolve to a concept_id.
@@ -213,6 +255,12 @@ export interface ModelShortcomingsFile {
   lastUpdated: string;
   /** List of shortcomings (deduplicated by concept) */
   shortcomings: ModelShortcomingEntry[];
+  /**
+   * Count of analyzer responses that could not be parsed into a structured
+   * result (finding V9). Incremented on every `analysis_failed` outcome; these
+   * are NOT added to `shortcomings`. Absent (treated as 0) in legacy files.
+   */
+  parse_failures?: number;
 }
 
 /**
@@ -274,6 +322,11 @@ export interface VerificationSummary {
   fixesSkipped: number;
   /** Model shortcomings logged, grouped by model */
   modelShortcomings: Map<string, number>;
+  /**
+   * Analyzer parse/validation failures (finding V9), grouped by model. These
+   * are NOT model shortcomings — the analyzer response could not be parsed.
+   */
+  parseFailures: Map<string, number>;
   /** Any errors during analysis */
   errors: string[];
 }
@@ -294,6 +347,12 @@ export type VerifyEvent =
     taskId: string;
     model: string;
     concept: string;
+  }
+  | {
+    type: "analysis_failed";
+    taskId: string;
+    model: string;
+    reason: string;
   }
   | { type: "error"; taskId: string; error: string }
   | { type: "complete"; summary: VerificationSummary };
@@ -335,4 +394,13 @@ export function isModelShortcomingResult(
   result: AnalysisResult,
 ): result is ModelShortcomingResult {
   return result.outcome === "model_shortcoming";
+}
+
+/**
+ * Type guard for analyzer parse/validation failures (finding V9).
+ */
+export function isAnalysisFailedResult(
+  result: AnalysisResult,
+): result is AnalysisFailedResult {
+  return result.outcome === "analysis_failed";
 }

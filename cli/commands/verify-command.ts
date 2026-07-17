@@ -114,6 +114,14 @@ async function handleVerify(
     }
   }
 
+  // V9: analyzer responses that couldn't be parsed — counted, not stored.
+  if (summary.parseFailures.size > 0) {
+    console.log(colors.yellow("Analyzer parse failures:"));
+    for (const [model, count] of summary.parseFailures) {
+      console.log(colors.yellow(`  - ${model}: ${count} unparseable`));
+    }
+  }
+
   if (summary.errors.length > 0) {
     console.log(colors.red(`\nErrors: ${summary.errors.length}`));
     for (const error of summary.errors.slice(0, 5)) {

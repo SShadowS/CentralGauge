@@ -20,6 +20,12 @@ import {
   type AnalyzerOutput,
   ModelShortcomingsFileSchema,
 } from "../analyzer-schema.ts";
+import {
+  DEFAULT_CONFIDENCE_THRESHOLD,
+  DEFAULT_CROSS_LLM_SAMPLE_RATE,
+  scoreShortcomingsFile,
+} from "../confidence-gate.ts";
+import type { ModelShortcomingEntry } from "../../verify/types.ts";
 import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
 function slugToFile(slug: string): string {
@@ -52,7 +58,7 @@ interface BatchPayload {
 }
 
 async function buildPayload(
-  file: AnalyzerOutput,
+  entries: readonly ModelShortcomingEntry[],
   modelSlug: string,
 ): Promise<BatchPayload> {
   // Always emit the vendor-prefixed slug from the cycle context. The JSON's
@@ -64,7 +70,7 @@ async function buildPayload(
     model_slug: modelSlug,
     shortcomings: [],
   };
-  for (const entry of file.shortcomings) {
+  for (const entry of entries) {
     if (!entry.correctPattern || !entry.incorrectPattern) continue;
     const sc: BatchPayload["shortcomings"][number] = {
       al_concept: entry.alConcept,
@@ -124,7 +130,32 @@ export async function runPublishStep(
     };
   }
 
-  const payload = await buildPayload(parsed, ctx.modelSlug);
+  // Confidence gate (finding V1). Entries whose finalConfidence is below the
+  // review threshold are HELD — they route to the human-review queue via the
+  // analyze step's enqueue and must NOT be auto-published here. The decide
+  // endpoint inserts an accepted entry server-side, so excluding held entries
+  // from the batch is also what keeps decide-accept + a later publish run from
+  // double-inserting the same shortcoming.
+  const threshold = ctx.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+  const crossLlmSampleRate = ctx.crossLlmSampleRate ??
+    DEFAULT_CROSS_LLM_SAMPLE_RATE;
+  const scored = await scoreShortcomingsFile(parsed.shortcomings, {
+    threshold,
+    crossLlmSampleRate,
+  });
+  const publishable = scored
+    .filter((s) => s.finalConfidence >= threshold)
+    .map((s) => s.entry);
+  const heldForReview = scored.length - publishable.length;
+  if (heldForReview > 0) {
+    console.log(
+      colors.yellow(
+        `[INFO] publish: ${heldForReview} shortcoming(s) held for review (confidence < ${threshold}) — excluded from batch`,
+      ),
+    );
+  }
+
+  const payload = await buildPayload(publishable, ctx.modelSlug);
   const canonical = canonicalJSON(
     payload as unknown as Record<string, unknown>,
   );

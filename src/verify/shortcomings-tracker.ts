@@ -9,6 +9,7 @@ import type {
   ModelShortcomingResult,
   ModelShortcomingsFile,
 } from "./types.ts";
+import { CONFIDENCE_LEVEL_TO_SCORE } from "./schema.ts";
 
 /**
  * Tracker for model shortcomings
@@ -65,6 +66,10 @@ export class ShortcomingsTracker {
   ): Promise<void> {
     const file = await this.load(model);
 
+    // Map the analyzer's coarse confidence enum to a numeric score (V2). The
+    // enum→number mapping lives once in `src/verify/schema.ts`.
+    const incomingConfidence = CONFIDENCE_LEVEL_TO_SCORE[result.confidence];
+
     // Find existing entry by alConcept
     const existing = file.shortcomings.find(
       (s) => s.alConcept === result.alConcept,
@@ -80,6 +85,12 @@ export class ShortcomingsTracker {
       if (result.errorCode && !existing.errorCodes.includes(result.errorCode)) {
         existing.errorCodes.push(result.errorCode);
       }
+      // Keep the MIN confidence (V2): a later confident sighting must never
+      // silently raise a previously-shaky entry over the review threshold.
+      existing.confidence = Math.min(
+        existing.confidence ?? 1,
+        incomingConfidence,
+      );
     } else {
       // Create new entry. The first analyzer call's slug wins — entries are
       // append-only-friendly (the slug never changes after the first write,
@@ -94,6 +105,7 @@ export class ShortcomingsTracker {
         affectedTasks: [result.taskId],
         firstSeen: new Date().toISOString(),
         occurrences: 1,
+        confidence: incomingConfidence,
         concept_slug_proposed: result.concept_slug_proposed,
         concept_slug_existing_match: result.concept_slug_existing_match,
         similarity_score: result.similarity_score,
@@ -111,6 +123,27 @@ export class ShortcomingsTracker {
   async getByModel(model: string): Promise<ModelShortcomingEntry[]> {
     const file = await this.load(model);
     return file.shortcomings;
+  }
+
+  /**
+   * Record an analyzer parse/validation failure for a model (finding V9).
+   * Increments the file-level `parse_failures` counter WITHOUT adding a
+   * shortcoming entry — a garbled analyzer response is not a real knowledge
+   * gap and must not pollute the concept list.
+   */
+  async incrementParseFailures(model: string): Promise<void> {
+    const file = await this.load(model);
+    file.parse_failures = (file.parse_failures ?? 0) + 1;
+    file.lastUpdated = new Date().toISOString();
+    this.modified.add(model);
+  }
+
+  /**
+   * Get the analyzer parse-failure count for a model (0 for legacy files).
+   */
+  async getParseFailures(model: string): Promise<number> {
+    const file = await this.load(model);
+    return file.parse_failures ?? 0;
   }
 
   /**

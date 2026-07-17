@@ -17,6 +17,11 @@ import {
   type AnalyzerOutput,
   ModelShortcomingsFileSchema,
 } from "../analyzer-schema.ts";
+import {
+  DEFAULT_CONFIDENCE_THRESHOLD,
+  DEFAULT_CROSS_LLM_SAMPLE_RATE,
+  scoreShortcomingsFile,
+} from "../confidence-gate.ts";
 import type { StepContext, StepResult } from "../orchestrator-types.ts";
 
 /** slug → filesystem-safe filename (matches verify's sanitisation rule: '/' → '_'). */
@@ -35,9 +40,6 @@ export interface AnalyzeOptions {
   /** Pre-write a fixture JSON instead of running verify; tests use this */
   fixtureJson?: AnalyzerOutput;
 }
-
-/** Below this confidence the analyzer entry is staged for human review. */
-const CONFIDENCE_THRESHOLD = 0.7;
 
 export async function runAnalyzeStep(
   ctx: StepContext,
@@ -170,15 +172,39 @@ export async function runAnalyzeStep(
     parsed as unknown as Record<string, unknown>,
   );
   const payloadHash = await sha256Hex(normalized);
-  const confidences = parsed.shortcomings
-    .map((s) => s.confidence ?? 1)
-    .filter((c) => Number.isFinite(c));
-  const minConfidence = confidences.length > 0 ? Math.min(...confidences) : 1;
 
-  // Identify below-threshold entries for pending_review (Phase F UI).
-  const pending = parsed.shortcomings.filter(
-    (s) => (s.confidence ?? 1) < CONFIDENCE_THRESHOLD,
-  );
+  // Confidence gate (finding V1). `finalConfidence = min(mappedAnalyzer
+  // confidence, persisted-entry score)` per entry. The threshold is read from
+  // ctx config (default 0.7) — the hardcoded const that floored the gate is
+  // gone. The persisted-entry scorer's cluster check uses the file's own
+  // proposed slugs as the "known" set (this analysis batch is internally
+  // consistent); no cross-LLM runner is wired here, so its vote stays neutral.
+  const threshold = ctx.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
+  const crossLlmSampleRate = ctx.crossLlmSampleRate ??
+    DEFAULT_CROSS_LLM_SAMPLE_RATE;
+  const scored = await scoreShortcomingsFile(parsed.shortcomings, {
+    threshold,
+    crossLlmSampleRate,
+  });
+
+  // Legacy files predating finding V2 omit numeric confidence. We keep the
+  // `?? 1` auto-publish behavior (so a re-run doesn't suddenly hold every old
+  // entry for review) but LOG + COUNT them so an operator can force
+  // re-analysis.
+  const legacyNoConfidenceCount = scored.filter((s) => s.isLegacy).length;
+  if (legacyNoConfidenceCount > 0) {
+    console.warn(
+      colors.yellow(
+        `[WARN] analyze: ${legacyNoConfidenceCount} shortcoming(s) have no numeric confidence (legacy pre-V2 file) — treated as auto-publish (1.0). Force re-analysis to gate them.`,
+      ),
+    );
+  }
+
+  const minConfidence = scored.length > 0
+    ? Math.min(...scored.map((s) => s.finalConfidence))
+    : 1;
+  const pending = scored.filter((s) => s.finalConfidence < threshold);
+  const parseFailures = parsed.parse_failures ?? 0;
 
   return {
     success: true,
@@ -187,12 +213,19 @@ export async function runAnalyzeStep(
       analyzer_model: ctx.analyzerModel,
       entries_count: parsed.shortcomings.length,
       min_confidence: minConfidence,
+      confidence_threshold: threshold,
+      parse_failures: parseFailures,
+      legacy_no_confidence_count: legacyNoConfidenceCount,
       payload_hash: payloadHash,
       pending_review_count: pending.length,
+      // Canonical pending-review payload shape (`{ entry, confidence }`, see
+      // src/lifecycle/pending-review.ts) so the orchestrator can forward each
+      // verbatim to the enqueue endpoint — and re-read + re-POST them on a
+      // resume where analyze is skipped.
       pending_review_entries: pending.map((p) => ({
-        concept_slug_proposed: p.concept_slug_proposed ?? p.concept,
-        confidence: p.confidence ?? 1,
-        payload: p,
+        concept_slug_proposed: p.entry.concept_slug_proposed,
+        confidence: p.confidenceResult,
+        entry: p.entry,
       })),
     },
   };

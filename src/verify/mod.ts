@@ -12,6 +12,7 @@
 export type {
   AffectedFileType,
   AnalysisContext,
+  AnalysisFailedResult,
   AnalysisOutcome,
   AnalysisResult,
   ConfidenceLevel,
@@ -33,7 +34,11 @@ export type {
   VerifyOptions,
 } from "./types.ts";
 
-export { isFixableResult, isModelShortcomingResult } from "./types.ts";
+export {
+  isAnalysisFailedResult,
+  isFixableResult,
+  isModelShortcomingResult,
+} from "./types.ts";
 
 // Debug parser
 export type { SessionInfo } from "./debug-parser.ts";
@@ -67,6 +72,7 @@ export type {
 export {
   AnalysisOutputSchema,
   AnalyzerEntrySchema,
+  CONFIDENCE_LEVEL_TO_SCORE,
   ConfidenceLevelSchema,
   FixableAnalysisSchema,
   ModelShortcomingSchema,

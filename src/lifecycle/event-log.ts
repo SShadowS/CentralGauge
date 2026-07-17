@@ -125,6 +125,28 @@ export interface EventStoreBackend {
     filter: QueryEventsFilter,
     opts: AppendOptions,
   ) => Promise<LifecycleEvent[]>;
+  /**
+   * Optional — cluster-7's review-queue enqueue. Present only in the
+   * integration mock so orchestrator tests can assert enqueue calls without a
+   * live worker. Production uses the real signed HTTP path.
+   */
+  enqueuePendingReview?: (
+    input: EnqueuePendingReviewInput,
+    opts: AppendOptions,
+  ) => Promise<{ id: number }>;
+}
+
+/**
+ * Wire body for `POST /api/v1/admin/lifecycle/review/enqueue` (finding V1).
+ * Canonical = the `enqueue()` signature (src/lifecycle/pending-review.ts): the
+ * server derives `concept_slug_proposed` from `entry` itself.
+ */
+export interface EnqueuePendingReviewInput {
+  analysis_event_id: number;
+  model_slug: string;
+  entry: Record<string, unknown>;
+  /** ConfidenceResult; its `.score` is the finalConfidence. */
+  confidence: unknown;
 }
 
 let backend: EventStoreBackend | null = null;
@@ -159,6 +181,46 @@ export async function appendEvent(
   if (!resp.ok) {
     const text = await resp.text();
     throw new Error(`appendEvent failed (${resp.status}): ${text}`);
+  }
+  return await resp.json() as { id: number };
+}
+
+/**
+ * Enqueue one pending-review entry via the signed admin endpoint (finding V1).
+ *
+ * The request body is header-signed: `signLifecycleHeaders` hashes the exact
+ * body bytes into `body_sha256` and folds a fresh `X-CG-Nonce` (V7) into the
+ * signature. The SAME bytes are sent as the request body so the worker's
+ * `verifyLifecycleAdminRequest` recomputes an identical hash. Upsert /
+ * return-existing on the `UNIQUE(analysis_event_id, concept_slug_proposed)`
+ * index makes a retry after a partial failure idempotent.
+ */
+export async function enqueuePendingReview(
+  input: EnqueuePendingReviewInput,
+  opts: AppendOptions,
+): Promise<{ id: number }> {
+  if (backend?.enqueuePendingReview) {
+    return backend.enqueuePendingReview(input, opts);
+  }
+  const path = "/api/v1/admin/lifecycle/review/enqueue";
+  const bodyBytes = new TextEncoder().encode(JSON.stringify(input));
+  const headers = await signLifecycleHeaders(opts.privateKey, opts.keyId, {
+    method: "POST",
+    path,
+    body: bodyBytes,
+  });
+  const resp = await fetch(`${opts.url}${path}`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "content-type": "application/json",
+      ...cfAccessHeaders(),
+    },
+    body: bodyBytes,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`enqueuePendingReview failed (${resp.status}): ${text}`);
   }
   return await resp.json() as { id: number };
 }

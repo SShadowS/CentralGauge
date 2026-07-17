@@ -17,10 +17,14 @@
  *                                 -0.1 when orphan.
  *   (c) Cross-LLM agreement    — sampled by `crossLlmSampleRate`,
  *                                 deterministic selection (sha256(payload)
- *                                 mod (1/rate)). +0.3 boost when sampled
- *                                 AND the second model agrees on
- *                                 concept_slug_proposed + correctPattern
- *                                 wording.
+ *                                 mod (1/rate)). Finding V3: the second
+ *                                 model's agreement is a SIGNED vote, not a
+ *                                 one-way boost — `crossScore =
+ *                                 (agreement - 0.5) * 0.6`, range −0.3..+0.3.
+ *                                 Full agreement (1.0) → +0.3; full
+ *                                 disagreement (0.0) → −0.3 (a veto that can
+ *                                 push a 0.7 entry down to 0.4); neutral
+ *                                 (0.5) → 0. Unsampled / no-runner stays 0.
  *
  * Composite formula:
  *   base   = schemaScore * (0.5 + clusterScore + (crossScore ?? 0))
@@ -41,6 +45,7 @@ import {
   AnalyzerEntrySchema,
   type ModelShortcomingParsed as AnalyzerEntry,
 } from "../verify/schema.ts";
+import type { ModelShortcomingEntry } from "../verify/types.ts";
 
 export { AnalyzerEntrySchema };
 export type { AnalyzerEntry };
@@ -84,7 +89,10 @@ export interface ConfidenceResult {
     schema_validity: number;
     /** -0.1 (orphan) or +0.2 (matches a known cluster). */
     concept_cluster_consistency: number;
-    /** null when not sampled; otherwise 0..0.3 (raw agreement * 0.3). */
+    /**
+     * null when not sampled (or no runner); otherwise a SIGNED vote in
+     * −0.3..+0.3 = (agreement − 0.5) * 0.6 (finding V3).
+     */
     cross_llm_agreement: number | null;
   };
   /** True iff the deterministic sampler selected this entry. */
@@ -106,10 +114,18 @@ export interface ConfidenceResult {
  * run consistently triggers — or consistently doesn't trigger — the
  * cross-LLM check).
  */
-export async function selectsForCrossLlmCheck(
+export function selectsForCrossLlmCheck(
   entry: AnalyzerEntry,
   rate: number,
 ): Promise<boolean> {
+  return sampleByHash(entry, rate);
+}
+
+/**
+ * Deterministic hash-bucket sampler, generic over any object shape so both
+ * the analyzer-entry and persisted-entry scorers share ONE selection rule.
+ */
+async function sampleByHash(entry: object, rate: number): Promise<boolean> {
   if (rate <= 0) return false;
   if (rate >= 1) return true;
   const canonical = JSON.stringify(
@@ -125,6 +141,50 @@ export async function selectsForCrossLlmCheck(
 }
 
 const ERROR_CODE_PATTERN = /^AL\d{4}$/;
+
+/**
+ * Clamp to [0,1] and round to 6 decimals. Rounding tames IEEE-754 drift
+ * (e.g. `0.5 + 0.2 - 0.3 = 0.39999999999999997`) so the composite lands on
+ * clean gate values AND a boundary score doesn't fall the wrong side of the
+ * threshold by an ulp.
+ */
+function clampScore(base: number): number {
+  const clamped = Math.max(0, Math.min(1, base));
+  return Math.round(clamped * 1e6) / 1e6;
+}
+
+/**
+ * Concept-cluster sub-scorer (shared). +0.2 when the proposed slug matches a
+ * known cluster, -0.1 (orphan) otherwise.
+ */
+function scoreCluster(
+  slug: string | undefined,
+  known: Set<string>,
+): { score: number; reason?: string } {
+  if (slug && known.has(slug)) return { score: 0.2 };
+  return { score: -0.1, reason: "concept:orphan_slug" };
+}
+
+/**
+ * Cross-LLM sub-scorer (shared, finding V3). Returns a SIGNED vote in
+ * −0.3..+0.3 when the entry is sampled AND a runner is supplied; otherwise
+ * `crossScore` is null (neutral). `low_agreement` is flagged on a net
+ * disagreement (crossScore < 0).
+ */
+async function computeCrossScore<E extends object>(
+  entry: E,
+  rate: number,
+  runner: ((e: E) => Promise<number>) | undefined,
+): Promise<{ sampled: boolean; crossScore: number | null; reason?: string }> {
+  const sampled = await sampleByHash(entry, rate);
+  if (!(sampled && runner)) return { sampled, crossScore: null };
+  const raw = await runner(entry);
+  const clamped = Math.max(0, Math.min(1, raw));
+  const crossScore = (clamped - 0.5) * 0.6; // V3: signed, range −0.3..+0.3
+  return crossScore < 0
+    ? { sampled, crossScore, reason: "cross_llm:low_agreement" }
+    : { sampled, crossScore };
+}
 
 /**
  * Score a single analyzer entry. Throws nothing; returns a `ConfidenceResult`
@@ -178,32 +238,109 @@ export async function scoreEntry(
 
   // (b) Concept-cluster consistency. Uses the snake_case field name from
   // the canonical schema (`concept_slug_proposed`).
-  let clusterScore = 0;
-  if (ctx.knownConceptSlugs.has(e.concept_slug_proposed)) {
-    clusterScore = 0.2; // matches existing cluster
-  } else {
-    clusterScore = -0.1; // orphan — penalised but not blocking
-    reasons.push("concept:orphan_slug");
-  }
+  const cluster = scoreCluster(e.concept_slug_proposed, ctx.knownConceptSlugs);
+  const clusterScore = cluster.score;
+  if (cluster.reason) reasons.push(cluster.reason);
 
-  // (c) Cross-LLM agreement. Sampled.
-  const sampled = await selectsForCrossLlmCheck(e, ctx.crossLlmSampleRate);
-  let crossScore: number | null = null;
-  if (sampled && ctx.crossLlmAgreementRunner) {
-    const raw = await ctx.crossLlmAgreementRunner(e);
-    const clamped = Math.max(0, Math.min(1, raw));
-    crossScore = clamped * 0.3; // cap boost at +0.3
-    if (crossScore < 0.15) reasons.push("cross_llm:low_agreement");
-  }
+  // (c) Cross-LLM agreement. Sampled (finding V3: signed vote).
+  const { sampled, crossScore, reason: crossReason } = await computeCrossScore(
+    e,
+    ctx.crossLlmSampleRate,
+    ctx.crossLlmAgreementRunner,
+  );
+  if (crossReason) reasons.push(crossReason);
 
   // Composite. Schema is the dominant gate (0 → score floored at 0).
   const base = schemaScore * (0.5 + clusterScore + (crossScore ?? 0));
-  const score = Math.max(0, Math.min(1, base));
+  const score = clampScore(base);
 
   return {
     score,
     breakdown: {
       schema_validity: schemaScore,
+      concept_cluster_consistency: clusterScore,
+      cross_llm_agreement: crossScore,
+    },
+    sampled_for_cross_llm: sampled,
+    above_threshold: score >= ctx.threshold,
+    failure_reasons: reasons,
+  };
+}
+
+/**
+ * Context for `scorePersistedEntry`. Same knobs as `ConfidenceContext`, but
+ * the optional cross-LLM runner is typed for the PERSISTED entry shape
+ * (`ModelShortcomingEntry`) rather than the analyzer wire shape.
+ */
+export interface PersistedConfidenceContext {
+  knownConceptSlugs: Set<string>;
+  crossLlmSampleRate: number;
+  threshold: number;
+  crossLlmAgreementRunner?: (entry: ModelShortcomingEntry) => Promise<number>;
+}
+
+/**
+ * Score a PERSISTED shortcoming entry (the on-disk `ModelShortcomingEntry`
+ * shape written by the tracker) — the review point in the lifecycle where
+ * `scoreEntry`'s analyzer-wire schema no longer applies (persisted entries
+ * carry `incorrectPattern` + `errorCodes[]` and no `outcome`, so they FAIL
+ * `AnalyzerEntrySchema` and would always score 0). Review-corrected design
+ * for finding V1.
+ *
+ * Same composite as `scoreEntry`, but the schema-validity component is
+ * replaced by PERSISTED-shape checks:
+ *   - `correctPattern` AND `incorrectPattern` both non-empty (trimmed);
+ *   - every `errorCodes[i]` matches `/^AL\d{4}$/` (empty strings ignored);
+ * else the component is 0 (hard-zero — a malformed persisted entry always
+ * routes to review). The cluster-consistency and cross-LLM (V3 signed-vote)
+ * sub-scorers are reused verbatim.
+ */
+export async function scorePersistedEntry(
+  entry: ModelShortcomingEntry,
+  ctx: PersistedConfidenceContext,
+): Promise<ConfidenceResult> {
+  const reasons: string[] = [];
+
+  // (a) Persisted-shape validity (replaces zod schema check).
+  let shapeScore = 1;
+  if (entry.correctPattern.trim().length === 0) {
+    shapeScore = 0;
+    reasons.push("schema:correctPattern_empty");
+  }
+  if (entry.incorrectPattern.trim().length === 0) {
+    shapeScore = 0;
+    reasons.push("schema:incorrectPattern_empty");
+  }
+  for (const code of entry.errorCodes) {
+    if (code.trim().length > 0 && !ERROR_CODE_PATTERN.test(code)) {
+      shapeScore = 0;
+      reasons.push(`schema:errorCode_invalid:${code}`);
+    }
+  }
+
+  // (b) Concept-cluster consistency.
+  const cluster = scoreCluster(
+    entry.concept_slug_proposed,
+    ctx.knownConceptSlugs,
+  );
+  const clusterScore = cluster.score;
+  if (cluster.reason) reasons.push(cluster.reason);
+
+  // (c) Cross-LLM agreement (V3 signed vote).
+  const { sampled, crossScore, reason: crossReason } = await computeCrossScore(
+    entry,
+    ctx.crossLlmSampleRate,
+    ctx.crossLlmAgreementRunner,
+  );
+  if (crossReason) reasons.push(crossReason);
+
+  const base = shapeScore * (0.5 + clusterScore + (crossScore ?? 0));
+  const score = clampScore(base);
+
+  return {
+    score,
+    breakdown: {
+      schema_validity: shapeScore,
       concept_cluster_consistency: clusterScore,
       cross_llm_agreement: crossScore,
     },
