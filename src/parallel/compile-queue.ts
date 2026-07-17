@@ -862,6 +862,18 @@ export class CompileQueue implements CompileWorkQueue {
           name: prereq.appJson["name"],
           errors: prereqCompileResult.errors.map((e) => e.message),
         });
+        // Prereqs are task fixtures, not model output — a broken prereq is a
+        // setup (infra) fault. Throw so runPipeline rejects the entry and
+        // withInfraRetry reroutes (isInfraError), instead of cascading into
+        // a scored model compile failure on missing symbols. The compile
+        // permit is safe: runPipeline's release-once covers this throw (P1).
+        throw new ContainerError(
+          `Prereq compilation failed for ${prereq.appJson["name"]}: ${
+            prereqCompileResult.errors.map((e) => e.message).join("; ")
+          }`,
+          this.containerName,
+          "setup",
+        );
       } else {
         compiledPrereqs.push({
           ...prereq,

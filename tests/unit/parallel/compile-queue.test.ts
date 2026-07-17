@@ -1257,3 +1257,50 @@ describe({
     await filler;
   });
 });
+
+// ---------------------------------------------------------------------------
+// T11 follow-up: prereq compile failure is infra on the PARALLEL path too
+// ---------------------------------------------------------------------------
+
+describe({
+  name: "CompileQueue prereq-compile infra classification (T11 follow-up)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  it("rejects with ContainerError(setup) when a PREREQ fails to compile, instead of scoring a model failure", async () => {
+    const provider = createMockContainerProvider();
+    provider.setCompilationConfig({
+      success: false,
+      errors: [{
+        file: "ProductCategory.Table.al",
+        line: 1,
+        column: 1,
+        code: "AL0001",
+        message: "forced prereq compile failure",
+        severity: "error",
+      }],
+    });
+    const queue = new CompileQueue(provider, "test-container");
+
+    // CG-AL-E002 has a real prereq app at tests/al/dependencies/CG-AL-E002,
+    // discovered from the repo-root cwd — its compile fails via the mock.
+    const item = createMockCompileWorkItem({
+      context: createMockTaskExecutionContext({
+        manifest: createMockTaskManifest({ id: "CG-AL-E002" }),
+      }),
+    });
+
+    const err = await assertRejects(() => queue.enqueue(item), ContainerError);
+    assertEquals(err.operation, "setup");
+    assert(err.message.includes("Prereq compilation failed"));
+    assert(err.message.includes("forced prereq compile failure"));
+
+    // P1 release-once: the throw must not leak the compile permit — a
+    // follow-up prereq-free item still gets processed (resolves normally,
+    // as a model-level compile failure).
+    const followUp = await queue.enqueue(createMockCompileWorkItem({
+      id: "after-throw",
+    }));
+    assertEquals(followUp.compilationResult.success, false);
+  });
+});
