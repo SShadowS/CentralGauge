@@ -53,7 +53,12 @@ export interface SettingsInput {
 }
 
 export interface SignedRunPayload {
-  version: 1;
+  /**
+   * Envelope version. v1 signs canonical(payload) only; v2 signs
+   * canonicalJSON({ payload, run_id, signed_at }) so run_id + signed_at are
+   * tamper-evident (S5). v1 is tolerated until FLAG_REQUIRE_ENVELOPE_V2=on.
+   */
+  version: 1 | 2;
   run_id: string;
   signature: {
     alg: "Ed25519";

@@ -15,17 +15,22 @@ import { ApiError, errorResponse } from "$lib/server/errors";
 //   to fail in the same shell. Going through `SELF.fetch` keeps the test
 //   on the public route surface, where everything is already wired.
 //
-// Gating: requires `x-test-only: 1` header. A 403 on missing header is
-// sufficient — no production caller would ever set this header, and the
-// route returns nothing privileged besides the in-memory event buffer.
+// Gating (S4): double-gated like `__test_only__/broadcast` —
+// `env.ALLOW_TEST_BROADCAST === 'on'` (CI / test bindings only, never in
+// production [vars]) AND the `x-test-only: 1` header. Either missing → 403.
+// The DO's `/recent` handler applies the same two gates.
 export const GET: RequestHandler = async ({ request, url, platform }) => {
-  if (request.headers.get("x-test-only") !== "1") {
-    return errorResponse(new ApiError(403, "forbidden", "test-only endpoint"));
-  }
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
     );
+  }
+  const gateEnv = platform.env as unknown as { ALLOW_TEST_BROADCAST?: string };
+  if (gateEnv.ALLOW_TEST_BROADCAST !== "on") {
+    return errorResponse(new ApiError(403, "forbidden", "test-only endpoint"));
+  }
+  if (request.headers.get("x-test-only") !== "1") {
+    return errorResponse(new ApiError(403, "forbidden", "test-only endpoint"));
   }
   const env = platform.env;
   const id = env.LEADERBOARD_BROADCASTER.idFromName("leaderboard");
@@ -33,5 +38,6 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   const limit = url.searchParams.get("limit") ?? "20";
   return stub.fetch(`https://do/recent?limit=${encodeURIComponent(limit)}`, {
     method: "GET",
+    headers: { "x-test-only": "1" },
   });
 };

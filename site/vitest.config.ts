@@ -66,6 +66,12 @@ export default defineConfig(async () => {
             FLAG_OG_DYNAMIC: "on",
             FLAG_RUM_BEACON: "on",
             CF_WEB_ANALYTICS_TOKEN: "test-token",
+            // S4: the __test__/events reset/recent proxy routes (used by the
+            // SSE-drain hooks in runs-finalize / full-ingest / etc.) are
+            // double-gated on this env flag. Production NEVER sets it in
+            // wrangler.toml [vars]; the blocked-in-prod regression tests
+            // delete/restore it per test.
+            ALLOW_TEST_BROADCAST: "on",
           },
           durableObjects: {
             LEADERBOARD_BROADCASTER: {
@@ -80,6 +86,9 @@ export default defineConfig(async () => {
               script: hooksScript,
               compatibilityDate: "2026-04-17",
               compatibilityFlags: ["nodejs_compat"],
+              // The DO reads ALLOW_TEST_BROADCAST from ITS hosting worker's
+              // env (this sidecar), not the main worker's bindings above.
+              bindings: { ALLOW_TEST_BROADCAST: "on" },
             },
           ],
         },

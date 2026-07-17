@@ -142,20 +142,49 @@ export async function verifyLifecycleAdminRequest(
   }
 
   const bodyHash = input.body ? await sha256Hex(input.body) : "";
-  // Helper-controlled keys: `signed_at` and `body_sha256`. The endpoint
-  // doesn't get to override these — they ALWAYS come from the trusted
-  // header / hashed body bytes. If the caller passed them in `signedFields`
-  // by accident, drop them silently (they'll be reset).
+  // Helper-controlled keys: `signed_at`, `body_sha256`, and (when the
+  // header is present) `nonce`. The endpoint doesn't get to override these
+  // — they ALWAYS come from the trusted header / hashed body bytes. If the
+  // caller passed them in `signedFields` by accident, drop them silently
+  // (they'll be reset).
+  //
+  // V7 — nonce replay prevention, staged. When the client sends X-CG-Nonce
+  // the nonce is folded into the signed bytes (so it can't be stripped or
+  // swapped without breaking the signature) and recorded in
+  // `lifecycle_nonces` after verification; a repeat is rejected with 409
+  // even inside the signed_at skew window. Nonce-less requests stay
+  // accepted while old CLIs are in the field.
+  const nonce = request.headers.get("X-CG-Nonce");
   const fields = {
     ...input.signedFields,
     body_sha256: bodyHash,
     signed_at: signedAt,
+    ...(nonce ? { nonce } : {}),
   };
   const canonical = canonicalJSON(fields);
   const msg = new TextEncoder().encode(canonical);
   const sig = b64ToBytes(sigB64);
   const ok = await verify(sig, msg, new Uint8Array(keyRow.public_key));
   if (!ok) throw new ApiError(401, "bad_signature", "Ed25519 verify failed");
+
+  if (nonce) {
+    // Opportunistic sweep keeps the table bounded: anything older than 2x
+    // the skew window can never collide with a verifiable request again.
+    try {
+      await db.prepare(`DELETE FROM lifecycle_nonces WHERE seen_at < ?`)
+        .bind(Date.now() - 2 * SKEW_LIMIT_MS).run();
+    } catch { /* sweep is best-effort */ }
+    const inserted = await db
+      .prepare(`INSERT OR IGNORE INTO lifecycle_nonces(nonce, seen_at) VALUES (?, ?)`)
+      .bind(nonce, Date.now()).run();
+    if ((inserted.meta?.changes ?? 0) === 0) {
+      throw new ApiError(
+        409,
+        "nonce_replayed",
+        "nonce already used — request replayed",
+      );
+    }
+  }
 
   // Best-effort telemetry; never fail an authenticated request because of it.
   try {
@@ -177,11 +206,12 @@ export async function verifyLifecycleAdminRequest(
 
 /**
  * Build the `signedFields` shape for header-signed lifecycle endpoints
- * (events GET, state GET, r2 GET, r2 PUT). Keys present in `query` with
+ * (events GET, state GET, r2 GET, r2 PUT; POST supported for cluster-7
+ * body-signed-by-header endpoints). Keys present in `query` with
  * `null` / `undefined` values are dropped (signer must do the same).
  */
 export function buildHeaderSignedFields(args: {
-  method: "GET" | "PUT";
+  method: "GET" | "PUT" | "POST";
   path: string;
   query?: Record<string, string | number | null | undefined>;
 }): Record<string, unknown> {

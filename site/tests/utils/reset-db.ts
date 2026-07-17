@@ -29,6 +29,8 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM concept_aliases`),
     env.DB.prepare(`DELETE FROM concepts`),
     env.DB.prepare(`DELETE FROM lifecycle_events`),
+    // 0014_lifecycle_nonce.sql (V7 replay prevention)
+    env.DB.prepare(`DELETE FROM lifecycle_nonces`),
   ]);
 
   const blobs = await env.BLOBS.list();

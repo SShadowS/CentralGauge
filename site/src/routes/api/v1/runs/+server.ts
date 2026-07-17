@@ -1,5 +1,10 @@
 import type { RequestHandler } from "./$types";
-import { verifySignedRequest } from "$lib/server/signature";
+import {
+  assertSupportedEnvelopeVersion,
+  envelopeSignedMessage,
+  type SignedRunEnvelope,
+  verifySignedRequest,
+} from "$lib/server/signature";
 import {
   findMissingBlobs,
   payloadBlobHashes,
@@ -181,27 +186,40 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   try {
     const signed = await request.json() as SignedRunPayload;
-    if (signed.version !== 1) {
-      throw new ApiError(400, "bad_version", "only version 1 supported");
-    }
+    const requireV2 = (platform.env as { FLAG_REQUIRE_ENVELOPE_V2?: string })
+      .FLAG_REQUIRE_ENVELOPE_V2 === "on";
+    assertSupportedEnvelopeVersion(signed.version, requireV2);
     if (!signed.run_id) {
       throw new ApiError(400, "missing_run_id", "run_id required");
     }
 
+    const envelope = signed as unknown as SignedRunEnvelope;
     const verified = await verifySignedRequest(
       db,
-      signed as unknown as {
-        signature: {
-          alg: "Ed25519";
-          key_id: number;
-          signed_at: string;
-          value: string;
-        };
-        payload: Record<string, unknown>;
-      },
+      envelope,
       "ingest",
+      envelopeSignedMessage(envelope),
     );
+    if (signed.version === 1) {
+      // Traffic telemetry for the staged v2 cutover: once no v1 lines appear
+      // in the logs, the operator flips FLAG_REQUIRE_ENVELOPE_V2=on.
+      console.warn(
+        `[ingest] v1 envelope from key ${verified.key_id} (machine ${verified.machine_id}) — upgrade CLI before FLAG_REQUIRE_ENVELOPE_V2 is enforced`,
+      );
+    }
     const payload = signed.payload;
+
+    // T13: bind the payload's claimed machine_id to the verified key's
+    // machine_id — any valid ingest key could otherwise attribute runs to
+    // another machine. Precheck already exposes machine_id_match so
+    // operators see a mismatch before enforcement bites.
+    if (payload.machine_id !== verified.machine_id) {
+      throw new ApiError(
+        400,
+        "machine_id_mismatch",
+        `payload machine_id "${payload.machine_id}" does not match the verified key's machine_id "${verified.machine_id}"`,
+      );
+    }
 
     // Validate task_set_hash exists
     const taskSet = await db.prepare(

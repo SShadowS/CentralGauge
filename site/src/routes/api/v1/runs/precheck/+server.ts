@@ -1,5 +1,10 @@
 import type { RequestHandler } from "./$types";
-import { verifySignedRequest } from "$lib/server/signature";
+import {
+  assertSupportedEnvelopeVersion,
+  envelopeSignedMessage,
+  type SignedRunEnvelope,
+  verifySignedRequest,
+} from "$lib/server/signature";
 import { findMissingBlobs, payloadBlobHashes } from "$lib/server/ingest";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import type { SignedRunPayload } from "$lib/shared/types";
@@ -15,26 +20,25 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
   try {
     const signed = await request.json() as SignedRunPayload;
-    if (signed.version !== 1) {
-      throw new ApiError(400, "bad_version", "only version 1 supported");
-    }
+    const requireV2 = (platform.env as { FLAG_REQUIRE_ENVELOPE_V2?: string })
+      .FLAG_REQUIRE_ENVELOPE_V2 === "on";
+    assertSupportedEnvelopeVersion(signed.version, requireV2);
     if (!signed.run_id) {
       throw new ApiError(400, "missing_run_id", "run_id required");
     }
 
-    await verifySignedRequest(
+    const envelope = signed as unknown as SignedRunEnvelope;
+    const verified = await verifySignedRequest(
       db,
-      signed as unknown as {
-        signature: {
-          alg: "Ed25519";
-          key_id: number;
-          signed_at: string;
-          value: string;
-        };
-        payload: Record<string, unknown>;
-      },
+      envelope,
       "ingest",
+      envelopeSignedMessage(envelope),
     );
+    if (signed.version === 1) {
+      console.warn(
+        `[ingest] v1 envelope from key ${verified.key_id} (machine ${verified.machine_id}) — upgrade CLI before FLAG_REQUIRE_ENVELOPE_V2 is enforced`,
+      );
+    }
 
     const missing = await findMissingBlobs(
       blobs,

@@ -17,13 +17,18 @@ interface ClientEntry {
 
 export class LeaderboardBroadcaster {
   private state: DurableObjectState;
+  private env: { ALLOW_TEST_BROADCAST?: string } | undefined;
   private clients: Set<ClientEntry>;
   private recent: BroadcastEvent[];
   private encoder: TextEncoder;
   private restorePromise: Promise<void>;
 
-  constructor(state: DurableObjectState) {
+  constructor(
+    state: DurableObjectState,
+    env?: { ALLOW_TEST_BROADCAST?: string },
+  ) {
     this.state = state;
+    this.env = env;
     this.clients = new Set();
     this.recent = [];
     this.encoder = new TextEncoder();
@@ -70,6 +75,12 @@ export class LeaderboardBroadcaster {
     }
 
     if (path === "/recent" && request.method === "GET") {
+      // TEST-ONLY (S4): /recent has no production caller — only the gated
+      // `__test__/events/recent` proxy route. Double gate (env flag set via
+      // the hosting worker's bindings + static header), same as /reset.
+      if (!this.testOnlyAllowed(request)) {
+        return new Response("Forbidden", { status: 403 });
+      }
       const limitParam = url.searchParams.get("limit");
       const limit = Math.min(
         limitParam ? parseInt(limitParam, 10) || 20 : 20,
@@ -150,7 +161,7 @@ export class LeaderboardBroadcaster {
     // miniflare's response-buffering hang on infinite TransformStream bodies
     // while still exercising parseRoutesParam + matchesClient end-to-end.
     if (path === "/test-match" && request.method === "GET") {
-      if (request.headers.get("x-test-only") !== "1") {
+      if (!this.testOnlyAllowed(request)) {
         return new Response("Forbidden", { status: 403 });
       }
       const routesParam = url.searchParams.get("routes");
@@ -172,7 +183,7 @@ export class LeaderboardBroadcaster {
     // behind the `x-test-only: 1` header so it can never be invoked in
     // production via the public route surface.
     if (path === "/reset" && request.method === "POST") {
-      if (request.headers.get("x-test-only") !== "1") {
+      if (!this.testOnlyAllowed(request)) {
         return new Response("Forbidden", { status: 403 });
       }
       await this.closeAllClients();
@@ -182,6 +193,19 @@ export class LeaderboardBroadcaster {
     }
 
     return new Response("Not Found", { status: 404 });
+  }
+
+  /**
+   * S4 double gate for the test-only endpoints (/recent, /test-match,
+   * /reset): the hosting worker's env must set ALLOW_TEST_BROADCAST=on
+   * (CI / test bindings only — never production [vars]) AND the request
+   * must carry `x-test-only: 1`. Either missing → deny. Enforced here in
+   * the DO as well as the proxy routes so a mis-deployed route surface
+   * cannot reach the operations.
+   */
+  private testOnlyAllowed(request: Request): boolean {
+    return this.env?.ALLOW_TEST_BROADCAST === "on" &&
+      request.headers.get("x-test-only") === "1";
   }
 
   // TEST-ONLY helper: invoked by /reset to drain in-memory state so the DO
