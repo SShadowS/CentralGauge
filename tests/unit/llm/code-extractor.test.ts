@@ -391,6 +391,27 @@ some code here
         assert(result.extractedFromDelimiters);
         assert(result.confidence <= 0.8);
       });
+
+      it("should extract cleanly when the closing fence is indented", () => {
+        // The fence-line counter (:106) treats an indented ``` as a fence,
+        // so this response passes the even-count check and routes to the
+        // non-greedy parser. The parser's closer must accept the same
+        // indented fence — otherwise the non-greedy match overruns the
+        // block and swallows the trailing prose.
+        const response = [
+          "Here is the code:",
+          "```al",
+          "codeunit 50100 X { }",
+          "    ```",
+          "Some prose after the block.",
+        ].join("\n");
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.code, "codeunit 50100 X { }");
+        assert(!result.code.includes("Some prose"));
+        assert(!result.code.includes("Here is the code"));
+      });
     });
   });
 

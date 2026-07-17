@@ -181,6 +181,9 @@ async function handleIngest(
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
       const persistedRunId = ingestMeta?.run_ids[variant.variantId];
       if (persistedRunId) assembleOpts.runId = persistedRunId;
+      if (ingestMeta?.task_set_hash) {
+        assembleOpts.taskSetHash = ingestMeta.task_set_hash;
+      }
       const assembled = await assembleBenchResultsForVariant(
         path,
         variant,

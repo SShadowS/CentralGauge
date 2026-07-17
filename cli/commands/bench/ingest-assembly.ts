@@ -28,6 +28,13 @@ export interface AssembleOptions {
    * double-count unless the persisted id is supplied.
    */
   runId?: string;
+  /**
+   * Persisted bench-time task_set hash from the results file's `ingest` key.
+   * Threaded onto {@link BenchResults.taskSetHash} so ingest files the run
+   * under the hash it was benched against instead of recomputing from the
+   * (possibly-drifted) working tree. Absent on legacy schema-1 files.
+   */
+  taskSetHash?: string;
 }
 
 /**
@@ -172,6 +179,7 @@ export async function assembleBenchResultsForVariant(
     results: items,
   };
   if (opts.centralgaugeSha) br.centralgaugeSha = opts.centralgaugeSha;
+  if (opts.taskSetHash) br.taskSetHash = opts.taskSetHash;
   return { kind: "assembled", benchResults: br, infraExcludedAttempts };
 }
 

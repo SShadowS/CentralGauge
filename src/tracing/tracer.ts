@@ -66,6 +66,37 @@ export interface SpanHandle {
 }
 
 /**
+ * Close a caller-owned span reflecting the real outcome of `body`:
+ * `ok: true` on success, `ok: false` + `errorType`/`errorMessage` args on
+ * throw (same shape as {@link TracerAPI.span}). The error is re-thrown after
+ * the span is closed.
+ *
+ * Unlike `tracer.span()`, the caller already started the span — use this when
+ * a span is started far from where its body runs and must be closed in a
+ * `finally` (e.g. a long-lived bench root span). Passing a hard-coded
+ * `end({ ok: true })` there would tag a failed run as successful.
+ */
+export async function endSpanWithOutcome<T>(
+  handle: SpanHandle,
+  body: () => T | Promise<T>,
+): Promise<T> {
+  try {
+    const result = await body();
+    handle.end({ ok: true });
+    return result;
+  } catch (e) {
+    handle.end({
+      args: {
+        errorType: e instanceof Error ? e.constructor.name : "unknown",
+        errorMessage: e instanceof Error ? e.message : String(e),
+      },
+      ok: false,
+    });
+    throw e;
+  }
+}
+
+/**
  * Public tracer surface. Both the real implementation and the disabled stub
  * conform to this so call sites can treat them identically.
  */

@@ -47,6 +47,7 @@ import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
 import { familySlugForModelSlug } from "../../src/catalog/seed/inference.ts";
 import {
   closeTracer,
+  endSpanWithOutcome,
   getTracer,
   initTracer,
   resolveTracePath,
@@ -643,78 +644,83 @@ export function registerBenchCommand(cli: Command): void {
       const outputFormat = (options.format || "verbose") as OutputFormat;
       let result: Awaited<ReturnType<typeof executeParallelBenchmark>>;
       try {
-        result = await executeParallelBenchmark(
-          benchOptions,
-          options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
-          options.containerProvider,
-          outputFormat,
-          options.jsonEvents ?? false,
-          options.tui ?? false,
-        );
+        // CLI8: run the bench+ingest body inside the root span so the span
+        // records the REAL outcome — endSpanWithOutcome tags ok:false + error
+        // when this body throws, instead of the old hard-coded ok:true that
+        // labeled a failed run (e.g. an ingest that threw) as successful.
+        result = await endSpanWithOutcome(benchRootSpan, async () => {
+          result = await executeParallelBenchmark(
+            benchOptions,
+            options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
+            options.containerProvider,
+            outputFormat,
+            options.jsonEvents ?? false,
+            options.tui ?? false,
+          );
 
-        // Ingest to scoreboard unless --no-ingest
-        if (options.ingest !== false) {
-          const hasResults = result.resultFilePaths &&
-            result.resultFilePaths.length > 0 &&
-            result.variants && result.variants.length > 0;
+          // Ingest to scoreboard unless --no-ingest
+          if (options.ingest !== false) {
+            const hasResults = result.resultFilePaths &&
+              result.resultFilePaths.length > 0 &&
+              result.variants && result.variants.length > 0;
 
-          if (!hasResults) {
-            // Empty-gate previously silently dropped; user invariant requires loud signal.
-            log.warn(
-              "ingest enabled but no result files produced; nothing to ingest.",
-            );
-          } else {
-            // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
-            // Per user invariant: if ingest was requested and prereq is unmet, fail loudly with non-zero exit.
-            if (benchPrecheckEnabled) {
-              const recheck = await runDoctor({
-                section: ingestSection,
-                levels: ["B", "C"],
-              });
-              if (!recheck.ok) {
-                console.error(formatReportToTerminal(recheck));
-                console.error(
-                  colors.red(
-                    "\n[FAIL] pre-ingest re-check failed — auto-ingest aborted.",
-                  ),
-                );
-                console.error(
-                  colors.gray(
-                    `       Results saved to ${
-                      (result.resultFilePaths ?? []).join(", ")
-                    }.`,
-                  ),
-                );
-                console.error(
-                  colors.gray(
-                    "       Fix above and replay: deno task start ingest <path> --yes",
-                  ),
-                );
-                console.error(
-                  colors.gray(
-                    "       Or pass --no-ingest to skip ingest entirely.",
-                  ),
-                );
-                Deno.exit(1);
+            if (!hasResults) {
+              // Empty-gate previously silently dropped; user invariant requires loud signal.
+              log.warn(
+                "ingest enabled but no result files produced; nothing to ingest.",
+              );
+            } else {
+              // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
+              // Per user invariant: if ingest was requested and prereq is unmet, fail loudly with non-zero exit.
+              if (benchPrecheckEnabled) {
+                const recheck = await runDoctor({
+                  section: ingestSection,
+                  levels: ["B", "C"],
+                });
+                if (!recheck.ok) {
+                  console.error(formatReportToTerminal(recheck));
+                  console.error(
+                    colors.red(
+                      "\n[FAIL] pre-ingest re-check failed — auto-ingest aborted.",
+                    ),
+                  );
+                  console.error(
+                    colors.gray(
+                      `       Results saved to ${
+                        (result.resultFilePaths ?? []).join(", ")
+                      }.`,
+                    ),
+                  );
+                  console.error(
+                    colors.gray(
+                      "       Fix above and replay: deno task start ingest <path> --yes",
+                    ),
+                  );
+                  console.error(
+                    colors.gray(
+                      "       Or pass --no-ingest to skip ingest entirely.",
+                    ),
+                  );
+                  Deno.exit(1);
+                }
               }
-            }
 
-            await ingestBenchResults(
-              result.resultFilePaths!,
-              result.variants!,
-              options.yes ?? false,
-            );
+              await ingestBenchResults(
+                result.resultFilePaths!,
+                result.variants!,
+                options.yes ?? false,
+              );
+            }
           }
-        }
+          return result;
+        });
       } finally {
-        // CLI8: close the bench root span + flush the trace on EVERY exit
-        // path from this block, including when the dashboard stays alive
-        // below (the trace for a completed run must not be dropped just
-        // because the process itself keeps running for dashboard review)
-        // and when executeParallelBenchmark/ingestBenchResults throws
-        // (previously only the no-dashboard happy-path branch closed the
-        // tracer at all).
-        benchRootSpan.end({ ok: true });
+        // CLI8: flush the trace on EVERY exit path from this block, including
+        // when the dashboard stays alive below (the trace for a completed run
+        // must not be dropped just because the process itself keeps running
+        // for dashboard review) and when executeParallelBenchmark /
+        // ingestBenchResults throws. The bench root span itself is closed by
+        // endSpanWithOutcome above, with the real ok/error outcome.
         await closeTracer();
       }
 
@@ -914,6 +920,9 @@ async function ingestBenchResults(
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
       const persistedRunId = ingestMeta?.run_ids[variant.variantId];
       if (persistedRunId) assembleOpts.runId = persistedRunId;
+      if (ingestMeta?.task_set_hash) {
+        assembleOpts.taskSetHash = ingestMeta.task_set_hash;
+      }
       const assembled = await assembleBenchResultsForVariant(
         filePath,
         variant,

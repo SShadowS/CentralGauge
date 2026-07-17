@@ -56,6 +56,7 @@ import {
 } from "./container-setup.ts";
 import { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 import { buildIngestMeta } from "./ingest-meta.ts";
+import { computeTaskSetHash } from "../../../src/ingest/catalog/task-set-hash.ts";
 import {
   displayBenchmarkSummary,
   displayFormattedOutput,
@@ -687,7 +688,25 @@ export async function executeParallelBenchmark(
         // in the results file — both immediate ingest and replay read it
         // back so a transient-failure replay hits server idempotency
         // instead of creating a duplicate run.
-        const ingestMeta = buildIngestMeta(variants);
+        //
+        // Also persist the bench-time task_set hash (schema 2) so a replay
+        // records the run under the hash it was ACTUALLY benched against, not
+        // whatever the working tree hashes to at replay time (which drifts
+        // after any tasks/tests edit or a merge CRLF normalization). Compute
+        // it via the same function ingest uses so the persisted value matches
+        // exactly. Best-effort: a hashing failure must not lose the results
+        // file — fall back to a schema-1 meta (ingest then recomputes+warns).
+        let benchTaskSetHash: string | undefined;
+        try {
+          benchTaskSetHash = await computeTaskSetHash(Deno.cwd());
+        } catch (err) {
+          log.warn(
+            `Could not compute task_set hash for persistence (${
+              err instanceof Error ? err.message : String(err)
+            }); results file will use legacy schema-1 ingest meta.`,
+          );
+        }
+        const ingestMeta = buildIngestMeta(variants, benchTaskSetHash);
         await saveResultsJson(
           resultsFile,
           finalResults,

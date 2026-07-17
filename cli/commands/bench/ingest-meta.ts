@@ -14,11 +14,25 @@
  */
 
 export interface IngestMeta {
-  schema: 1;
+  /**
+   * `1` = legacy files predating the persisted task-set hash.
+   * `2` = carries `task_set_hash` (see below). New saves are schema 2.
+   */
+  schema: 1 | 2;
   /** UTC YYYY-MM-DD, minted at save time. */
   pricing_version: string;
   /** variantId -> run UUID, minted ONCE per bench run. */
   run_ids: Record<string, string>;
+  /**
+   * The task_set content hash computed at BENCH time (schema 2+). Persisted
+   * so a replay records the run under the hash it was actually benched
+   * against, NOT whatever the working tree hashes to at replay time — the
+   * latter drifts after any `tasks/**` or `tests/al/**` edit (or a CRLF
+   * normalization on merge), silently misattributing the run to a different
+   * leaderboard row. Absent on legacy schema-1 files → ingest recomputes
+   * from the current tree with a loud warning.
+   */
+  task_set_hash?: string;
 }
 
 /** Today's pricing version stamp (UTC date). */
@@ -30,17 +44,27 @@ export function todayPricingVersion(): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-/** Mint the per-variant run identity for one results file. */
+/**
+ * Mint the per-variant run identity for one results file.
+ *
+ * Pass the bench-time `taskSetHash` to stamp a schema-2 meta that persists it
+ * for faithful replay. Omit it (or pass `undefined`, e.g. when hashing failed
+ * at save time) to fall back to a schema-1 meta — run identity is still
+ * persisted; ingest just recomputes the hash from the working tree + warns.
+ */
 export function buildIngestMeta(
   variants: ReadonlyArray<{ variantId: string }>,
+  taskSetHash?: string,
 ): IngestMeta {
-  return {
-    schema: 1,
+  const meta: IngestMeta = {
+    schema: taskSetHash ? 2 : 1,
     pricing_version: todayPricingVersion(),
     run_ids: Object.fromEntries(
       variants.map((v) => [v.variantId, crypto.randomUUID()]),
     ),
   };
+  if (taskSetHash) meta.task_set_hash = taskSetHash;
+  return meta;
 }
 
 /**
@@ -53,7 +77,8 @@ export function parseIngestMeta(parsed: unknown): IngestMeta | undefined {
   const ingest = (parsed as Record<string, unknown>)["ingest"];
   if (!ingest || typeof ingest !== "object") return undefined;
   const m = ingest as Record<string, unknown>;
-  if (m["schema"] !== 1) return undefined;
+  const schema = m["schema"];
+  if (schema !== 1 && schema !== 2) return undefined;
   if (typeof m["pricing_version"] !== "string") return undefined;
   const runIds = m["run_ids"];
   if (!runIds || typeof runIds !== "object" || Array.isArray(runIds)) {
@@ -62,11 +87,19 @@ export function parseIngestMeta(parsed: unknown): IngestMeta | undefined {
   for (const v of Object.values(runIds as Record<string, unknown>)) {
     if (typeof v !== "string") return undefined;
   }
-  return {
-    schema: 1,
+  const meta: IngestMeta = {
+    schema,
     pricing_version: m["pricing_version"],
     run_ids: runIds as Record<string, string>,
   };
+  // task_set_hash is read whenever present + well-formed, regardless of the
+  // declared schema — a schema-1 file never carries it (legacy), and a
+  // schema-2 file missing it degrades gracefully to recompute+warn rather
+  // than losing the (still-valid) run identity.
+  if (typeof m["task_set_hash"] === "string") {
+    meta.task_set_hash = m["task_set_hash"];
+  }
+  return meta;
 }
 
 /**

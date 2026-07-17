@@ -81,7 +81,8 @@ export interface EnqueueArgs {
 
 /**
  * Minimal D1-binding shim. The CLI ingests via signed POST to
- * `/api/v1/admin/lifecycle/review/enqueue` (TODO if/when added); the
+ * `/api/v1/admin/lifecycle/review/enqueue` (implemented in
+ * `site/src/routes/api/v1/admin/lifecycle/review/enqueue/+server.ts`); the
  * worker exec-path uses this module directly with the env.DB binding.
  *
  * Tests use `MemoryDb` (defined alongside the unit test) which mirrors

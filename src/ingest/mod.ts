@@ -1,3 +1,4 @@
+import * as colors from "@std/fmt/colors";
 import { readCatalog } from "./catalog/read.ts";
 import { computeTaskSetHash } from "./catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "./config.ts";
@@ -53,8 +54,43 @@ export interface BenchResults {
   completedAt: string;
   pricingVersion: string;
   centralgaugeSha?: string;
+  /**
+   * The task_set hash the run was BENCHED against, persisted in the results
+   * file's `ingest` key. When present it is used verbatim so the run lands on
+   * the correct leaderboard row regardless of later working-tree edits; when
+   * absent (legacy files) ingest recomputes from the current tree + warns.
+   * See {@link resolveIngestTaskSetHash}.
+   */
+  taskSetHash?: string;
   results: BenchResultItem[];
   reproduction_bundle_bytes?: Uint8Array;
+}
+
+/**
+ * Decide which task_set hash an ingest/replay records the run under.
+ *
+ * Persisted (bench-time) hash wins: replaying a saved run — after tasks/tests
+ * changed, or a merge normalized CRLF — must not silently re-file it under the
+ * current tree's hash. Only legacy files lacking a persisted hash fall back to
+ * recomputing from `cwd`, and that fallback warns loudly that the hash is
+ * derived from the CURRENT tree, not the bench-time tree.
+ */
+export async function resolveIngestTaskSetHash(
+  persisted: string | undefined,
+  cwd: string,
+): Promise<string> {
+  if (persisted) return persisted;
+  const recomputed = await computeTaskSetHash(cwd);
+  console.warn(
+    colors.yellow(
+      `[WARN] results file carries no persisted task_set_hash (legacy) — ` +
+        `deriving it from the CURRENT working tree (${
+          recomputed.slice(0, 12)
+        }…), NOT the bench-time tree. If tasks/** or tests/al/** changed ` +
+        `since the bench, this run may be misattributed on the leaderboard.`,
+    ),
+  );
+  return recomputed;
 }
 
 export async function ingestRun(
@@ -115,7 +151,7 @@ export async function ingestRun(
     blobTable.set(reproductionBundleSha, br.reproduction_bundle_bytes);
   }
 
-  const taskSetHash = await computeTaskSetHash(opts.cwd);
+  const taskSetHash = await resolveIngestTaskSetHash(br.taskSetHash, opts.cwd);
   if (config.adminKeyId != null && config.adminKeyPath) {
     const adminPriv = await readPrivateKey(config.adminKeyPath);
     const deps = {

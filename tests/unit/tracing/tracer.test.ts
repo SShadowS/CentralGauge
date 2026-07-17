@@ -6,9 +6,10 @@ import {
   assertGreaterOrEqual,
   assertRejects,
 } from "@std/assert";
-import type { TraceEvent } from "../../../src/tracing/tracer.ts";
+import type { SpanHandle, TraceEvent } from "../../../src/tracing/tracer.ts";
 import {
   closeTracer,
+  endSpanWithOutcome,
   getTracer,
   getUnixOriginMicros,
   initTracer,
@@ -329,4 +330,40 @@ Deno.test("trace file is valid JSON after close, no .tmp leftover", async () => 
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+// endSpanWithOutcome — closes a caller-owned span reflecting the real
+// outcome of its body. Used by bench-command's root span, which is started
+// far from where the bench+ingest body runs and closed in a `finally`; the
+// span must record ok:false when that body (e.g. ingest) throws, not the
+// hard-coded ok:true it used before.
+Deno.test("endSpanWithOutcome: body succeeds → span ends ok:true, no error args", async () => {
+  const ends: Array<{ args?: Record<string, unknown>; ok?: boolean }> = [];
+  const handle: SpanHandle = { end: (extra) => ends.push(extra ?? {}) };
+
+  const result = await endSpanWithOutcome(handle, () => Promise.resolve(42));
+
+  assertEquals(result, 42);
+  assertEquals(ends.length, 1);
+  assertEquals(ends[0]!.ok, true);
+  assertEquals(ends[0]!.args, undefined);
+});
+
+Deno.test("endSpanWithOutcome: body throws → span ends ok:false + error, and rethrows", async () => {
+  const ends: Array<{ args?: Record<string, unknown>; ok?: boolean }> = [];
+  const handle: SpanHandle = { end: (extra) => ends.push(extra ?? {}) };
+
+  await assertRejects(
+    () =>
+      endSpanWithOutcome(handle, () => {
+        throw new Error("ingest boom");
+      }),
+    Error,
+    "ingest boom",
+  );
+
+  assertEquals(ends.length, 1);
+  assertEquals(ends[0]!.ok, false);
+  assertEquals(ends[0]!.args?.["errorType"], "Error");
+  assertEquals(ends[0]!.args?.["errorMessage"], "ingest boom");
 });

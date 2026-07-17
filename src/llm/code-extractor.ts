@@ -76,11 +76,18 @@ export class CodeExtractor {
     /\b(table|page|codeunit|report|query|xmlport|enum|interface|procedure|trigger)\b/i;
 
   // Parse ALL fenced code blocks non-greedily, in document order.
+  //
+  // The closing fence allows leading horizontal whitespace (`\n[^\S\n]*```)
+  // so it agrees with the fence-line counter in extractFromCodeBlocks
+  // (`/^[^\S\n]*```/gm`), which also counts an indented ```. If the closer
+  // were anchored to column 0, an indented closing fence would pass the
+  // even-count check but never match here, and the non-greedy body would
+  // overrun to the next column-0 fence — swallowing prose into the block.
   private static parseFencedBlocks(
     response: string,
   ): Array<{ tag: string; content: string }> {
     const blocks: Array<{ tag: string; content: string }> = [];
-    const pattern = /```([^\s`]*)[^\S\n]*\n([\s\S]*?)\n```/g;
+    const pattern = /```([^\s`]*)[^\S\n]*\n([\s\S]*?)\n[^\S\n]*```/g;
     for (const match of response.matchAll(pattern)) {
       blocks.push({
         tag: (match[1] ?? "").toLowerCase(),

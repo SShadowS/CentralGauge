@@ -8,8 +8,8 @@ import { hasScope } from "./signature";
 
 /**
  * Lifecycle-admin auth helper. Centralizes the header-signing contract used by
- * the 5 admin lifecycle endpoints so URL params + (on PUT) the request body
- * are bound INTO the signed message.
+ * the admin lifecycle endpoints so URL params + (on PUT and body-signed POST)
+ * the request body are bound INTO the signed message.
  *
  * Pre-fix the GET / PUT endpoints constructed a synthetic `fakeBody` with
  * only `{ key }` or `{ model }` and signed THAT — so an attacker capturing a
@@ -27,7 +27,8 @@ import { hasScope } from "./signature";
  *   - method:      "GET" | "PUT" | "POST"
  *   - path:        url.pathname
  *   - query:       Record<string, string> of URL params that affect the response
- *   - body_sha256: hex sha256 of the raw request body (PUT only; "" otherwise)
+ *   - body_sha256: hex sha256 of the raw request body (PUT and body-signed
+ *                  POST endpoints; "" for bodyless GET requests)
  *
  * which mirrors `blob-auth.ts` (the existing per-endpoint pattern). Callers
  * pass the raw body bytes via `body:` and the helper auto-injects
