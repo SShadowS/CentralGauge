@@ -5,7 +5,7 @@
 import { join } from "@std/path";
 import type { StatsImporter, StatsStorage } from "./interfaces.ts";
 import type { ImportResult, ResultRecord, RunRecord } from "./types.ts";
-import { generateTaskSetHash } from "./hasher.ts";
+import { resolveCurrentTaskSetHash } from "../ingest/catalog/task-set-hash.ts";
 
 /**
  * Structure of benchmark result JSON files
@@ -84,6 +84,14 @@ interface AggregateStats {
  * JSON file importer for benchmark results
  */
 export class JsonImporter implements StatsImporter {
+  /**
+   * @param projectRoot Root used to resolve the CURRENT on-disk task-set
+   * hash for imported runs (V5). Defaults to `Deno.cwd()` — the same
+   * default `resolveCurrentTaskSetHash` and the lifecycle orchestrator use.
+   * Overridable for tests so they don't have to `Deno.chdir()`.
+   */
+  constructor(private readonly projectRoot: string = Deno.cwd()) {}
+
   /**
    * Import a single JSON result file
    */
@@ -198,20 +206,24 @@ export class JsonImporter implements StatsImporter {
       tasks.add(r.taskId);
     }
 
-    // Build task manifest hash (simplified - just task IDs)
-    const taskHashes = Array.from(tasks).map((id) => ({
-      id,
-      contentHash: id, // Simplified - use task ID as hash
-    }));
-    const taskSetHash = await generateTaskSetHash(taskHashes);
+    // V5: taskSetHash must be derived from actual task content (via the
+    // canonical ingest hasher), never fabricated from bare task IDs — the
+    // old `contentHash: id` here meant an imported run's taskSetHash could
+    // NEVER match the real hash `centralgauge ingest`/bench compute for the
+    // same checkout, silently breaking `factory.ts`'s `taskSetHash` grouping
+    // filter. `tasks`/`models` above are still used for totalTasks/totalModels.
+    const taskSetHash = await resolveCurrentTaskSetHash(this.projectRoot);
 
     // Derive execution date from run ID (timestamp)
     const executedAt = new Date(parseInt(runId, 10));
 
-    // Calculate pass rates from results if not in stats
+    // Calculate pass rates from results if not in stats. V10: nullish, not
+    // falsy — a genuinely-computed 0 (e.g. a real 0% first-try pass rate)
+    // must be trusted as-is, not silently overwritten by a recompute that
+    // may disagree with the persisted aggregate.
     let passRate1 = stats.passRate1 ?? 0;
     let passRate2 = stats.passRate2 ?? 0;
-    if (!stats.passRate1 && !stats.passRate2) {
+    if (stats.passRate1 === undefined && stats.passRate2 === undefined) {
       let pass1 = 0;
       let pass2 = 0;
       for (const r of results) {
@@ -292,7 +304,8 @@ export class JsonImporter implements StatsImporter {
 
 /**
  * Create a new importer instance
+ * @param projectRoot Passed through to `JsonImporter` — see its constructor.
  */
-export function createImporter(): StatsImporter {
-  return new JsonImporter();
+export function createImporter(projectRoot?: string): StatsImporter {
+  return new JsonImporter(projectRoot);
 }

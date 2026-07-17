@@ -83,12 +83,48 @@ export async function resolveCurrentTaskSetHash(
 interface FileEntry {
   /** POSIX-normalised path relative to projectRoot. */
   rel: string;
-  /** SHA-256 of file content (32 bytes). */
+  /** SHA-256 of file content (32 bytes), after text normalization if applicable. */
   digest: Uint8Array;
 }
 
 const SKIP_DIR_RE = /(^|[\\/])(\.alpackages|output)([\\/]|$)/;
 const SKIP_FILE_RE = /(\.app|^cache_.*\.json)$/;
+
+/**
+ * File extensions whose content is CRLF/LF-normalized before hashing.
+ * Restricted to genuinely text formats — a Windows vs. Unix checkout of the
+ * same logical content must hash identically for these. Binary formats
+ * (.app, .docx, etc.) are hashed RAW: normalizing arbitrary bytes based on a
+ * `\r\n` substring match would corrupt binary-safe framing and could even
+ * make two DIFFERENT binaries collide.
+ */
+export const TEXT_EXTENSIONS: readonly string[] = [
+  ".yml",
+  ".yaml",
+  ".al",
+  ".json",
+  ".xml",
+  ".rdlc",
+  ".md",
+  ".txt",
+];
+
+function isTextExtension(basename: string): boolean {
+  const dot = basename.lastIndexOf(".");
+  if (dot === -1) return false;
+  return TEXT_EXTENSIONS.includes(basename.slice(dot).toLowerCase());
+}
+
+/** Normalize CRLF -> LF for text extensions only; binary content passes through untouched. */
+function normalizeForHash(
+  basename: string,
+  bytes: Uint8Array<ArrayBuffer>,
+): Uint8Array<ArrayBuffer> {
+  if (!isTextExtension(basename)) return bytes;
+  const text = new TextDecoder().decode(bytes);
+  if (!text.includes("\r\n")) return bytes;
+  return new TextEncoder().encode(text.replaceAll("\r\n", "\n"));
+}
 
 async function collectFiles(
   projectRoot: string,
@@ -99,9 +135,14 @@ async function collectFiles(
   const out: FileEntry[] = [];
   let it: AsyncIterableIterator<{ path: string; isFile: boolean }> | undefined;
   try {
+    // No `skip` option here: @std/fs walk tests skip regexes against each
+    // entry's full (root-inclusive) path. If the checkout itself sits under
+    // a directory literally named "output" (e.g. `C:\tmp\output\repo`), that
+    // would make every entry match and skip the ENTIRE walk. Instead we
+    // filter below using paths relative to `dir`, so only actual
+    // `.alpackages`/`output` segments INSIDE the task tree are excluded.
     it = walk(dir, {
       includeDirs: false,
-      skip: [SKIP_DIR_RE],
     }) as AsyncIterableIterator<{ path: string; isFile: boolean }>;
   } catch (err) {
     if (err instanceof Deno.errors.NotFound) return out;
@@ -111,12 +152,14 @@ async function collectFiles(
     for await (const e of it) {
       const relFromRoot = relative(projectRoot, e.path).replaceAll("\\", "/");
       const relUnderSubdir = relative(dir, e.path).replaceAll("\\", "/");
+      if (SKIP_DIR_RE.test(relUnderSubdir)) continue;
       const basename = relUnderSubdir.split("/").pop() ?? "";
       if (SKIP_FILE_RE.test(basename)) continue;
       if (!includeFile(relUnderSubdir)) continue;
       const bytes = await Deno.readFile(e.path);
+      const normalized = normalizeForHash(basename, bytes);
       const digest = new Uint8Array(
-        await crypto.subtle.digest("SHA-256", bytes),
+        await crypto.subtle.digest("SHA-256", normalized),
       );
       out.push({ rel: relFromRoot, digest });
     }

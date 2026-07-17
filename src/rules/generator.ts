@@ -8,6 +8,7 @@ import type {
   ModelShortcomingsFile,
 } from "../verify/types.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
+import { resolveAnalyzerModelDefault } from "../config/mod.ts";
 
 /**
  * Options for generating rules markdown
@@ -21,9 +22,9 @@ export interface RulesGeneratorOptions {
  * Options for generating optimized rules via LLM summarization
  */
 export interface OptimizedRulesOptions extends RulesGeneratorOptions {
-  /** LLM provider for summarization (default: anthropic) */
+  /** LLM provider for summarization (default: derived from lifecycle.analyzer_model) */
   llmProvider?: string;
-  /** LLM model for summarization (default: claude-sonnet-4-5-20250929) */
+  /** LLM model for summarization (default: `lifecycle.analyzer_model` config chain) */
   llmModel?: string;
 }
 
@@ -274,6 +275,34 @@ ${jsonData}`;
 }
 
 /**
+ * Resolve the (provider, model) pair to use for the summarization LLM call.
+ * Caller-supplied values always win; anything left unset falls back to the
+ * `lifecycle.analyzer_model` config chain (`.centralgauge.yml` -> built-in
+ * default `anthropic/claude-opus-4-6`), vendor-prefixed like every other
+ * model slug in this repo (see CLAUDE.md "Slug rule"). Exported standalone
+ * so the fallback logic is unit-testable without invoking an LLM adapter.
+ */
+export async function resolveGeneratorModel(
+  options: Pick<OptimizedRulesOptions, "llmProvider" | "llmModel">,
+): Promise<{ provider: string; model: string }> {
+  let llmProvider = options.llmProvider;
+  let llmModel = options.llmModel;
+  if (llmProvider === undefined || llmModel === undefined) {
+    const defaultSlug = await resolveAnalyzerModelDefault();
+    const slash = defaultSlug.indexOf("/");
+    const defaultProvider = slash === -1
+      ? "anthropic"
+      : defaultSlug.slice(0, slash);
+    const defaultModel = slash === -1 ? defaultSlug : defaultSlug.slice(
+      slash + 1,
+    );
+    llmProvider ??= defaultProvider;
+    llmModel ??= defaultModel;
+  }
+  return { provider: llmProvider, model: llmModel };
+}
+
+/**
  * Generate optimized rules via LLM summarization
  * Produces concise, actionable rules suitable for system prompt injection
  */
@@ -281,11 +310,7 @@ export async function generateOptimizedRules(
   data: ModelShortcomingsFile,
   options: OptimizedRulesOptions = {},
 ): Promise<string> {
-  const {
-    minOccurrences = 1,
-    llmProvider = "anthropic",
-    llmModel = "claude-sonnet-4-5-20250929",
-  } = options;
+  const { minOccurrences = 1 } = options;
 
   // Filter by minimum occurrences and actionability
   const filtered = data.shortcomings
@@ -295,6 +320,9 @@ export async function generateOptimizedRules(
   if (filtered.length === 0) {
     return `# AL Rules for ${data.model}\n\nNo actionable shortcomings found.\n`;
   }
+
+  const { provider: llmProvider, model: llmModel } =
+    await resolveGeneratorModel(options);
 
   // Build the prompt
   const prompt = buildOptimizationPrompt(filtered);

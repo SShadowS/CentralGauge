@@ -1,17 +1,24 @@
 /**
- * Config hash generation for identifying comparable benchmark runs
+ * Per-task granular content hashing for benchmark result bookkeeping.
  *
- * The config hash uniquely identifies a benchmark configuration, allowing:
- * - Grouping runs with identical configs for trend analysis
- * - Detecting when configs change
- * - Comparing apples-to-apples across runs
+ * NOTE: the CANONICAL task-set content hash (what gates leaderboard
+ * `task_sets.hash` grouping, see `RunRecord.taskSetHash`) lives in
+ * `src/ingest/catalog/task-set-hash.ts::computeTaskSetHash` /
+ * `resolveCurrentTaskSetHash` — that is what `JsonImporter` uses (V5). The
+ * functions below serve a different, still-active purpose: per-task
+ * manifest+testfile hash breakdowns with warnings, consumed by
+ * `cli/commands/report-db-command.ts` and `cli/helpers/task-loader.ts` for
+ * diagnostics that need task-level granularity the single combined corpus
+ * hash doesn't expose. `generateConfigHash`/`generateTaskSetHash` (the old
+ * "hash a bare list of {id, contentHash} pairs" combinators) were removed
+ * as dead code once V5 stopped routing through them — the canonical hasher
+ * above is now the only combined-hash entry point.
  */
 
 import { expandGlob } from "@std/fs";
 import { basename, join, relative } from "@std/path";
 import { ValidationError } from "../errors.ts";
 import type {
-  ConfigHashInput,
   HashedFileInfo,
   TaskContentHashInfo,
   TaskSetHashResult,
@@ -29,64 +36,6 @@ async function sha256(data: string): Promise<string> {
 }
 
 /**
- * Generate a deterministic config hash from benchmark configuration
- *
- * The hash includes:
- * - Task manifests (IDs and content hashes)
- * - Model variants and their configurations
- * - Execution parameters (attempt limit, defaults)
- *
- * @param input The config hash input
- * @returns SHA-256 hash (64 hex characters)
- */
-export async function generateConfigHash(
-  input: ConfigHashInput,
-): Promise<string> {
-  // Sort for determinism
-  const normalized = {
-    tasks: [...input.taskManifests]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .map((t) => ({ id: t.id, hash: t.contentHash })),
-    variants: [...input.variants]
-      .sort((a, b) => a.variantId.localeCompare(b.variantId))
-      .map((v) => ({
-        id: v.variantId,
-        config: sortObjectKeys(v.config as unknown as Record<string, unknown>),
-      })),
-    execution: {
-      attemptLimit: input.execution.attemptLimit,
-      temperature: input.execution.defaultTemperature,
-      maxTokens: input.execution.defaultMaxTokens,
-    },
-  };
-
-  const serialized = JSON.stringify(normalized);
-  return await sha256(serialized);
-}
-
-/**
- * Generate a task set hash from task manifests only
- *
- * This is useful for grouping runs that tested the same tasks,
- * regardless of which models were used.
- *
- * @param tasks Array of task IDs and their content hashes
- * @returns SHA-256 hash (first 16 hex characters for brevity)
- */
-export async function generateTaskSetHash(
-  tasks: Array<{ id: string; contentHash: string }>,
-): Promise<string> {
-  const sorted = [...tasks]
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((t) => ({ id: t.id, hash: t.contentHash }));
-
-  const serialized = JSON.stringify(sorted);
-  const fullHash = await sha256(serialized);
-  // Return shorter hash for readability (still unique enough)
-  return fullHash.slice(0, 16);
-}
-
-/**
  * Generate a content hash for a task manifest
  *
  * @param manifestContent The YAML content of the manifest
@@ -99,34 +48,6 @@ export async function generateManifestHash(
   const normalized = manifestContent.trim();
   const fullHash = await sha256(normalized);
   return fullHash.slice(0, 16);
-}
-
-/**
- * Sort object keys recursively for deterministic serialization
- */
-function sortObjectKeys<T extends Record<string, unknown>>(
-  obj: T,
-): Record<string, unknown> {
-  if (obj === null || typeof obj !== "object") {
-    return obj;
-  }
-
-  if (Array.isArray(obj)) {
-    return obj.map((item) =>
-      typeof item === "object" && item !== null
-        ? sortObjectKeys(item as Record<string, unknown>)
-        : item
-    ) as unknown as Record<string, unknown>;
-  }
-
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(obj).sort()) {
-    const value = obj[key];
-    sorted[key] = typeof value === "object" && value !== null
-      ? sortObjectKeys(value as Record<string, unknown>)
-      : value;
-  }
-  return sorted;
 }
 
 /**
@@ -147,23 +68,29 @@ export function shortenHash(fullHash: string, length = 8): string {
 /**
  * Hash a single file's content
  * @param filePath Absolute path to file
- * @returns Hash info or null if file doesn't exist
+ * @returns Hash info, or null ONLY if the file doesn't exist (V6). Any other
+ *   read error (permissions, I/O failure, encoding) is NOT a "file absent"
+ *   condition and must propagate — silently mapping it to null previously
+ *   made `hashTaskContent`'s glob loop just skip the file with no warning,
+ *   indistinguishable from a task that legitimately has no test files.
  */
 export async function hashFile(
   filePath: string,
 ): Promise<HashedFileInfo | null> {
+  let content: string;
   try {
-    const content = await Deno.readTextFile(filePath);
-    const hash = await sha256(content.trim());
-    const stat = await Deno.stat(filePath);
-    return {
-      path: filePath,
-      hash: hash.slice(0, 16),
-      size: stat.size,
-    };
-  } catch {
-    return null;
+    content = await Deno.readTextFile(filePath);
+  } catch (err) {
+    if (err instanceof Deno.errors.NotFound) return null;
+    throw err;
   }
+  const hash = await sha256(content.trim());
+  const stat = await Deno.stat(filePath);
+  return {
+    path: filePath,
+    hash: hash.slice(0, 16),
+    size: stat.size,
+  };
 }
 
 /**

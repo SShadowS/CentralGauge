@@ -2273,6 +2273,79 @@ describe("runParallel() with mocked dependencies", () => {
     });
   });
 
+  describe("T8: testApp success semantics", () => {
+    it("should NOT mark a testApp task as passed when no testResult is produced", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({
+        compilationSuccess: true,
+        runTests: false, // simulates a missing testResult
+      });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+        llmPool: mockLLMPool as unknown as LLMWorkPool,
+        containerProviderFactory: () => mockContainerProvider,
+        compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+      });
+
+      const manifest = createMockManifest({
+        id: "t8-missing-testresult",
+        expected: { compile: true, testApp: "SomeTestApp" },
+      });
+
+      const result = await orchestrator.runParallel(
+        [manifest],
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      const taskResult = result.taskResults[0]!;
+      const modelResult = taskResult.modelResults.get("mock/mock-gpt-4");
+      assertExists(modelResult);
+      assertEquals(
+        modelResult.success,
+        false,
+        "a testApp task with no testResult must not be scored as passed",
+      );
+      const lastAttempt = modelResult
+        .attempts[modelResult.attempts.length - 1]!;
+      assertEquals(lastAttempt.success, false);
+    });
+
+    it("should still pass a compile-only task (no testApp) with no testResult", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({
+        compilationSuccess: true,
+        runTests: false,
+      });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+        llmPool: mockLLMPool as unknown as LLMWorkPool,
+        containerProviderFactory: () => mockContainerProvider,
+        compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+      });
+
+      const manifest = createMockManifest({
+        id: "t8-compile-only",
+        expected: { compile: true, testApp: "" },
+      });
+
+      const result = await orchestrator.runParallel(
+        [manifest],
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      const taskResult = result.taskResults[0]!;
+      const modelResult = taskResult.modelResults.get("mock/mock-gpt-4");
+      assertExists(modelResult);
+      assertEquals(
+        modelResult.success,
+        true,
+        "a compile-only task (no testApp) must still pass without a testResult",
+      );
+    });
+  });
+
   describe("cleanup", () => {
     it("should drain queues after completion", async () => {
       mockLLMPool.setDefaultResult({ success: true });

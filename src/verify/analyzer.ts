@@ -5,6 +5,7 @@
 
 import { exists } from "@std/fs";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
+import { resolveAnalyzerModelDefault } from "../config/config.ts";
 import type { LLMConfig, LLMRequest } from "../llm/types.ts";
 import type {
   AnalysisContext,
@@ -23,8 +24,12 @@ import { type ConceptSummary, fetchRecentConcepts } from "./concept-fetcher.ts";
 export interface AnalyzerConfig {
   /** LLM provider to use (e.g., "anthropic", "openai") */
   provider: string;
-  /** Model to use for analysis */
-  model: string;
+  /**
+   * Model to use for analysis. Leave unset to resolve lazily from the
+   * `lifecycle.analyzer_model` config chain (T14/V11) on first use — see
+   * `FailureAnalyzer.ensureModelResolved`.
+   */
+  model?: string;
   /** Temperature for LLM calls */
   temperature: number;
   /** Max tokens for response */
@@ -38,14 +43,17 @@ export interface AnalyzerConfig {
 }
 
 /**
- * Default analyzer configuration
+ * Default analyzer configuration. `model` is intentionally omitted — a
+ * hardcoded literal here would go stale (T14/V11 finding); the effective
+ * default is resolved from `lifecycle.analyzer_model` lazily, see
+ * `FailureAnalyzer.ensureModelResolved`.
  */
 export const DEFAULT_ANALYZER_CONFIG: AnalyzerConfig = {
   provider: "anthropic",
-  model: "claude-sonnet-4-5-20250929",
   temperature: 0.1,
   maxTokens: 4000,
-  registryBaseUrl: "https://centralgauge.sshadows.workers.dev",
+  // Canonical site URL — workers.dev is internal-only, never a public default.
+  registryBaseUrl: "https://ai.sshadows.dk",
   recentConceptCount: 20,
 };
 
@@ -373,25 +381,68 @@ function parseFallback(
 }
 
 /**
+ * Split a vendor-prefixed model slug (e.g. `anthropic/claude-opus-4-6`,
+ * `openrouter/x-ai/grok-4.3`) into `{ provider, model }`. Adapters expect a
+ * bare API model id and the provider as separate fields — POSTing the full
+ * slug verbatim gets a 404 `not_found_error` from most providers. A slug
+ * with no `/` is returned as-is under `fallbackProvider`. Exported
+ * standalone so the T14/V11 fallback-chain splitting is unit-testable
+ * without instantiating a `FailureAnalyzer`.
+ */
+export function splitVendorSlug(
+  slug: string,
+  fallbackProvider = "anthropic",
+): { provider: string; model: string } {
+  const slash = slug.indexOf("/");
+  return slash === -1
+    ? { provider: fallbackProvider, model: slug }
+    : { provider: slug.slice(0, slash), model: slug.slice(slash + 1) };
+}
+
+/**
  * Failure analyzer class
  */
 export class FailureAnalyzer {
   private config: AnalyzerConfig;
+  private modelResolved = false;
 
   constructor(config?: Partial<AnalyzerConfig>) {
     const merged: AnalyzerConfig = { ...DEFAULT_ANALYZER_CONFIG, ...config };
-    // The CLI accepts a vendor-prefixed slug (e.g. `anthropic/claude-opus-4-6`,
-    // `openrouter/x-ai/grok-4.3`) for `--model`. Adapters expect a bare API
-    // model id and the provider as separate fields, so split the first segment
-    // off the slug and use it as the provider when present. Without this,
-    // the full slug gets POSTed verbatim to Anthropic and the API returns
-    // 404 not_found_error with `model: anthropic/claude-opus-4-6`.
     if (merged.model && merged.model.includes("/")) {
-      const slash = merged.model.indexOf("/");
-      merged.provider = merged.model.slice(0, slash);
-      merged.model = merged.model.slice(slash + 1);
+      const split = splitVendorSlug(merged.model, merged.provider);
+      merged.provider = split.provider;
+      merged.model = split.model;
     }
     this.config = merged;
+  }
+
+  /**
+   * Resolve `this.config.model`/`provider` from the `lifecycle.analyzer_model`
+   * config chain (T14/V11) when the caller never supplied an explicit model.
+   * Memoized — hits `ConfigManager` at most once per instance. Must run
+   * before any LLM call; constructor stays sync so this can't happen there.
+   */
+  private async ensureModelResolved(): Promise<void> {
+    if (this.config.model || this.modelResolved) return;
+    this.modelResolved = true;
+    const defaultSlug = await resolveAnalyzerModelDefault();
+    const split = splitVendorSlug(defaultSlug, this.config.provider);
+    this.config.provider = split.provider;
+    this.config.model = split.model;
+  }
+
+  /**
+   * `this.config.model`, narrowed to `string`. Callers MUST have already
+   * awaited `ensureModelResolved()` this call; the guard is defensive
+   * (never expected to fire) rather than a silent `!` assertion.
+   */
+  private resolvedModel(): string {
+    if (!this.config.model) {
+      throw new Error(
+        "FailureAnalyzer: model not resolved — ensureModelResolved() must run first",
+      );
+    }
+    return this.config.model;
   }
 
   /**
@@ -402,8 +453,7 @@ export class FailureAnalyzer {
   private async loadConcepts(): Promise<ConceptSummary[]> {
     return await fetchRecentConcepts({
       recent: this.config.recentConceptCount ?? 20,
-      baseUrl: this.config.registryBaseUrl ??
-        "https://centralgauge.sshadows.workers.dev",
+      baseUrl: this.config.registryBaseUrl ?? "https://ai.sshadows.dk",
     });
   }
 
@@ -411,6 +461,8 @@ export class FailureAnalyzer {
    * Analyze a single failing task
    */
   async analyzeTask(task: FailingTask): Promise<AnalysisResult> {
+    await this.ensureModelResolved();
+
     // Load context files
     const context = await loadAnalysisContext(task);
 
@@ -425,7 +477,7 @@ export class FailureAnalyzer {
     // Get LLM adapter
     const llmConfig: LLMConfig = {
       provider: this.config.provider,
-      model: this.config.model,
+      model: this.resolvedModel(),
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       apiKey: this.config.apiKey,
@@ -468,6 +520,8 @@ export class FailureAnalyzer {
     task: FailingTask,
     context: AnalysisContext,
   ): Promise<AnalysisResult> {
+    await this.ensureModelResolved();
+
     const prompt = buildAnalysisPrompt(task, context);
 
     const concepts = await this.loadConcepts();
@@ -475,7 +529,7 @@ export class FailureAnalyzer {
 
     const llmConfig: LLMConfig = {
       provider: this.config.provider,
-      model: this.config.model,
+      model: this.resolvedModel(),
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
       apiKey: this.config.apiKey,

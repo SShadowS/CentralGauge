@@ -81,6 +81,19 @@ export function reduceCurrentState(events: LifecycleEvent[]): CurrentStateMap {
   for (const ev of events) {
     const step = stepFor(ev.event_type);
     if (!step) continue;
+    if (!Number.isFinite(ev.ts)) {
+      // A non-finite ts (NaN/Infinity) breaks every subsequent comparison:
+      // `anything > NaN` and `anything === NaN` are both always false, so if
+      // this corrupted event were adopted as `cur` (which the old `!cur`
+      // branch did unconditionally for the first event of a step), no later
+      // — even valid — event could ever replace it. Skip it instead so a
+      // valid event can still win.
+      console.error(
+        `[lifecycle] reduceCurrentState: skipping event with non-finite ts ` +
+          `(id=${ev.id ?? "?"}, event_type=${ev.event_type}, ts=${ev.ts})`,
+      );
+      continue;
+    }
     const cur = out[step];
     if (
       !cur ||

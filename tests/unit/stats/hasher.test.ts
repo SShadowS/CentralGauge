@@ -1,5 +1,10 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertExists, assertThrows } from "@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertRejects,
+  assertThrows,
+} from "@std/assert";
 import {
   extractDifficulty,
   extractTaskId,
@@ -115,6 +120,17 @@ describe("hasher", () => {
     it("should return null for non-existent file", async () => {
       const result = await hashFile("/non/existent/file.txt");
       assertEquals(result, null);
+    });
+
+    it("should THROW (not silently return null) for a real read error (V6)", async () => {
+      // Reading a directory as a file is a genuine read error, distinct
+      // from "file doesn't exist" — must propagate, not be swallowed.
+      const dir = await Deno.makeTempDir();
+      try {
+        await assertRejects(() => hashFile(dir));
+      } finally {
+        await Deno.remove(dir, { recursive: true });
+      }
     });
   });
 

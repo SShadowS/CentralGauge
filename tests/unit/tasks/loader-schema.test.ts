@@ -170,4 +170,75 @@ metrics:
       assertStringIncludes(err.message, "max_attempts");
     });
   });
+
+  // T9: passthrough previously swallowed typos silently — a typo'd
+  // `expected.mustContian` (missing the 'a') would just be ignored, and the
+  // task would run with mustContain unset, no error, no signal to the
+  // author. .strict() must now name the offending key.
+  it("rejects a manifest with a typo'd key inside expected (T9)", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Typo'd expected key should fail loudly.
+domains: [codeunits]
+expected:
+  compile: true
+  mustContian:
+    - procedure Foo
+metrics:
+  - compile_pass
+`;
+    await withTempManifest(yaml, async (p) => {
+      const err = await assertRejects(() => loadTaskManifest(p), Error);
+      assertStringIncludes(err.message, "mustContian");
+    });
+  });
+
+  it("rejects a manifest with an unknown top-level key (T9)", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: Unknown top-level key should fail loudly.
+domains: [codeunits]
+expected:
+  compile: true
+metrics:
+  - compile_pass
+autor: someone
+`;
+    await withTempManifest(yaml, async (p) => {
+      const err = await assertRejects(() => loadTaskManifest(p), Error);
+      assertStringIncludes(err.message, "autor");
+    });
+  });
+
+  it("still accepts metadata with unlisted passthrough keys (T9)", async () => {
+    const yaml = `
+id: CG-AL-H999
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: metadata stays passthrough per T9.
+domains: [codeunits]
+expected:
+  compile: true
+metrics:
+  - compile_pass
+metadata:
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: pr-mined
+`;
+    await withTempManifest(yaml, async (p) => {
+      const m = await loadTaskManifest(p);
+      assertEquals(
+        (m.metadata as unknown as Record<string, unknown>)["cohort"],
+        "ado-trap-2026",
+      );
+    });
+  });
 });

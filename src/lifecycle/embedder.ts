@@ -31,6 +31,35 @@ export interface OpenAIEmbeddingsLike {
   };
 }
 
+/**
+ * Reject a degenerate embedding vector (empty, or all-zero) at the source
+ * (V8). Silently accepting one would let `cosineSimilarity` fall through its
+ * own "zero vector -> 0" NaN guard on every downstream comparison, which
+ * `decideCluster` reads as "not similar to anything" and routes to
+ * auto-create — silently minting an orphan concept from what was actually
+ * an embedding-API failure, not genuine novelty. Failing loudly here means
+ * the caller's own error handling (e.g. the backfill script's unhandled
+ * embed() call) surfaces the failure instead of polluting the registry.
+ */
+function assertValidEmbedding(
+  vec: number[],
+  label: string,
+): Float32Array {
+  if (vec.length === 0) {
+    throw new Error(
+      `Embedder: received an empty embedding vector for '${label}'`,
+    );
+  }
+  if (vec.every((v) => v === 0)) {
+    throw new Error(
+      `Embedder: received an all-zero embedding vector for '${label}' — ` +
+        `refusing to use it (would silently score cosine=0 against every ` +
+        `candidate and misroute to auto-create)`,
+    );
+  }
+  return Float32Array.from(vec);
+}
+
 export class Embedder {
   private cache: EmbeddingCache;
   private model: string;
@@ -57,7 +86,7 @@ export class Embedder {
       model: this.model,
       input: [text],
     });
-    const arr = Float32Array.from(resp.data[0]!.embedding);
+    const arr = assertValidEmbedding(resp.data[0]!.embedding, text);
     await this.cache.put(text, arr, this.model);
     return arr;
   }
@@ -80,7 +109,10 @@ export class Embedder {
           input: chunk,
         });
         for (const item of resp.data) {
-          const arr = Float32Array.from(item.embedding);
+          const arr = assertValidEmbedding(
+            item.embedding,
+            chunk[item.index]!,
+          );
           await this.cache.put(chunk[item.index]!, arr, this.model);
           out.set(chunk[item.index]!, arr);
         }

@@ -56,6 +56,7 @@ export {
   DEFAULT_ANALYZER_CONFIG,
   FailureAnalyzer,
   parseAnalysisResponse,
+  splitVendorSlug,
 } from "./analyzer.ts";
 
 // Concept fetcher (analyzer prompt seed)

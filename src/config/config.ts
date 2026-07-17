@@ -418,6 +418,26 @@ export function mergeLifecycleDefaults(
   };
 }
 
+/**
+ * Resolve the effective `lifecycle.analyzer_model` for callers outside the
+ * `cycle`/lifecycle orchestrator (e.g. `src/verify/analyzer.ts`,
+ * `src/rules/generator.ts`) that just need a sensible default model without
+ * threading full `LifecycleConfig` plumbing through their own options.
+ *
+ * Reads `.centralgauge.yml` via `ConfigManager.loadConfig()`; falls back to
+ * `LIFECYCLE_DEFAULTS.analyzer_model` on any load failure (e.g. no project
+ * config present) so callers never throw just because config resolution
+ * had a hiccup — matches `resolveCurrentTaskSetHash`'s fallback pattern.
+ */
+export async function resolveAnalyzerModelDefault(): Promise<string> {
+  try {
+    const config = await ConfigManager.loadConfig();
+    return mergeLifecycleDefaults(config.lifecycle).analyzer_model;
+  } catch {
+    return LIFECYCLE_DEFAULTS.analyzer_model;
+  }
+}
+
 export class ConfigManager {
   private static config: CentralGaugeConfig = {};
   private static configLoaded = false;

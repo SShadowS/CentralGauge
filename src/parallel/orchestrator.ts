@@ -1084,8 +1084,30 @@ export class ParallelBenchmarkOrchestrator {
 
     // Evaluate success
     const compilationSuccess = compileResult.compilationResult.success;
-    const testSuccess = compileResult.testResult?.success ?? true;
-    const success = compilationSuccess && testSuccess;
+    // A task that expects tests (expected.testApp set) but came back with no
+    // testResult (tests never ran) must NOT default to "passed" — that would
+    // silently score infra gaps as model successes. Compile-only tasks keep
+    // the old "no tests configured, no test result" => true default.
+    const testSuccess = context.manifest.expected?.testApp
+      ? (compileResult.testResult?.success ?? false)
+      : (compileResult.testResult?.success ?? true);
+
+    // Mirror executor-v2's evaluateAttempt (src/tasks/executor-v2.ts) pattern
+    // pass/fail semantics exactly (benchmark-consistency rule): mustContain/
+    // mustNotContain must gate `success`, not just contribute to `score`.
+    const code = llmResult.code || "";
+    const requiredPatterns = context.manifest.expected.mustContain ?? [];
+    const missingPatterns = requiredPatterns.filter((pattern) =>
+      !code.includes(pattern)
+    );
+    const forbiddenPatterns = context.manifest.expected.mustNotContain ?? [];
+    const foundForbidden = forbiddenPatterns.filter((pattern) =>
+      code.includes(pattern)
+    );
+    const patternsSuccess = missingPatterns.length === 0 &&
+      foundForbidden.length === 0;
+
+    const success = compilationSuccess && testSuccess && patternsSuccess;
 
     // Calculate score
     const score = this.calculateScore(
@@ -1110,6 +1132,22 @@ export class ParallelBenchmarkOrchestrator {
       ) {
         failureReasons.push(`  ${test.name}: ${test.error}`);
       }
+    } else if (
+      context.manifest.expected?.testApp && !compileResult.testResult
+    ) {
+      failureReasons.push(
+        "Tests expected but no test result was produced",
+      );
+    }
+    if (missingPatterns.length > 0) {
+      failureReasons.push(
+        `Missing required patterns: ${missingPatterns.join(", ")}`,
+      );
+    }
+    if (foundForbidden.length > 0) {
+      failureReasons.push(
+        `Contains forbidden patterns: ${foundForbidden.join(", ")}`,
+      );
     }
 
     const attempt: ExecutionAttempt = {

@@ -25,7 +25,7 @@ const CACHE_MS = 5 * 60 * 1000;
 
 export interface FetchOptions {
   recent: number;
-  /** Site URL, e.g. "https://centralgauge.sshadows.workers.dev". */
+  /** Site URL, e.g. "https://ai.sshadows.dk" (workers.dev is internal-only). */
   baseUrl: string;
   signal?: AbortSignal;
 }

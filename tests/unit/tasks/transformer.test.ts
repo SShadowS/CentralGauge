@@ -177,6 +177,64 @@ describe("TaskTransformer", () => {
       );
     });
 
+    it("should use manifest expected.mustContain/mustNotContain when present (T7)", async () => {
+      const manifest: TaskManifest = {
+        id: "manifest-first-test",
+        description:
+          'Create procedure ScrapedProc and table 50100 "Scraped Table"',
+        prompt_template: "prompt.md",
+        fix_template: "fix.md",
+        max_attempts: 1,
+        expected: {
+          compile: true,
+          mustContain: ["procedure ExplicitProc"],
+          mustNotContain: ["ForbiddenPattern"],
+        },
+        metrics: [],
+        domains: ["codeunits"],
+      };
+
+      const request: TaskExecutionRequest = { taskManifest: manifest };
+      const context = await TaskTransformer.createExecutionContext(request);
+
+      // The explicit manifest patterns are used exactly as given...
+      assertEquals(context.expectedOutput.validation.mustContain, [
+        "procedure ExplicitProc",
+      ]);
+      assertEquals(context.expectedOutput.validation.mustNotContain, [
+        "ForbiddenPattern",
+      ]);
+      // ...and the description-scrape fallback must NOT have contributed.
+      assert(
+        !context.expectedOutput.validation.mustContain?.includes(
+          "procedure ScrapedProc",
+        ),
+      );
+    });
+
+    it("should fall back to description-scrape when manifest omits expected patterns (T7)", async () => {
+      const manifest: TaskManifest = {
+        id: "fallback-scrape-test",
+        description:
+          'Create procedure CalculateTotal and table 50100 "Sales Summary"',
+        prompt_template: "prompt.md",
+        fix_template: "fix.md",
+        max_attempts: 1,
+        expected: { compile: true },
+        metrics: [],
+        domains: ["codeunits"],
+      };
+
+      const request: TaskExecutionRequest = { taskManifest: manifest };
+      const context = await TaskTransformer.createExecutionContext(request);
+
+      assert(
+        context.expectedOutput.validation.mustContain?.includes(
+          "procedure CalculateTotal",
+        ),
+      );
+    });
+
     it("should apply configuration defaults", async () => {
       const manifest: TaskManifest = {
         id: "defaults-test",
