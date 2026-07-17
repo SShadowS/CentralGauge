@@ -71,6 +71,25 @@ export interface SandboxExecutionContext {
 }
 
 /**
+ * Write the per-run secrets to the read-only mount dir (M6 + M1/M4 follow-up).
+ *
+ * Both the Anthropic API key AND the MCP bearer token go here so neither is
+ * passed via docker `-e` (which is visible on the argv and in `docker inspect`).
+ * entrypoint.ps1 reads them from C:\cg-secrets\{api-key,mcp-auth-token}. The
+ * mount dir lives OUTSIDE the workspace and is deleted in execute()'s finally.
+ */
+export async function writeSandboxSecrets(
+  secretsDir: string,
+  secrets: { apiKey: string; mcpAuthToken: string },
+): Promise<void> {
+  await Deno.writeTextFile(join(secretsDir, "api-key"), secrets.apiKey);
+  await Deno.writeTextFile(
+    join(secretsDir, "mcp-auth-token"),
+    secrets.mcpAuthToken,
+  );
+}
+
+/**
  * Check if sandbox mode should be used for this execution.
  */
 export function shouldUseSandbox(
@@ -183,11 +202,15 @@ export class SandboxExecutor {
         length: apiKey.length,
       });
 
-      // M6: pass the API key via a per-run read-only secrets mount instead
-      // of a docker -e argument (visible in `docker inspect` and the argv).
-      // The dir lives OUTSIDE the workspace and is deleted in the finally.
+      // M6 + M1/M4 follow-up: pass BOTH the API key and the MCP bearer token
+      // via a per-run read-only secrets mount instead of docker -e arguments
+      // (visible in `docker inspect` and on the argv). The dir lives OUTSIDE
+      // the workspace and is deleted in the finally.
       secretsDir = await Deno.makeTempDir({ prefix: "cg-secrets-" });
-      await Deno.writeTextFile(join(secretsDir, "api-key"), apiKey);
+      await writeSandboxSecrets(secretsDir, {
+        apiKey,
+        mcpAuthToken: mcpHandle.authToken,
+      });
 
       // Create sandbox container
       // Note: Prompt is read from file instead of env var for reliability
@@ -201,8 +224,10 @@ export class SandboxExecutor {
           AGENT_MAX_TURNS: agentConfig.maxTurns.toString(),
           AGENT_TIMEOUT_MS: (agentConfig.limits?.timeoutMs ?? 300000)
             .toString(),
-          // Per-run MCP auth token (M3) — .mcp.json gets it as a bearer header
-          MCP_AUTH_TOKEN: mcpHandle.authToken,
+          // MCP_AUTH_TOKEN is NOT passed here — it goes on the read-only
+          // secrets mount (C:\cg-secrets\mcp-auth-token) so it stays off the
+          // docker argv / `docker inspect`. entrypoint.ps1 loads it before
+          // writing .mcp.json's bearer header.
           // Claude Code requires backslashes for Windows paths at runtime
           // (Dockerfile ENV escapes backslashes incorrectly)
           CLAUDE_CODE_GIT_BASH_PATH: "C:\\Git\\bin\\bash.exe",

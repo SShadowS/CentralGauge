@@ -40,6 +40,15 @@ if (Test-Path $secretsKeyFile) {
     Write-Host "[Sandbox] Loaded API key from secrets mount" -ForegroundColor Gray
 }
 
+# Load the MCP bearer token from the same secrets mount (M1/M4 follow-up).
+# It is no longer passed via docker -e for the same argv/`docker inspect`
+# exposure reason. Used below to build .mcp.json's Authorization header.
+$secretsMcpTokenFile = "C:\cg-secrets\mcp-auth-token"
+if (Test-Path $secretsMcpTokenFile) {
+    $env:MCP_AUTH_TOKEN = (Get-Content -Path $secretsMcpTokenFile -Raw).Trim()
+    Write-Host "[Sandbox] Loaded MCP auth token from secrets mount" -ForegroundColor Gray
+}
+
 # Check for required environment variables
 if (-not $env:ANTHROPIC_API_KEY) {
     Write-Host "[Sandbox] ERROR: ANTHROPIC_API_KEY is required (secrets mount C:\cg-secrets\api-key or environment variable)" -ForegroundColor Red

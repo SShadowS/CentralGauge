@@ -188,17 +188,19 @@ deno run --allow-all mcp/al-tools-server.ts \
   --auth-token "$MCP_TOKEN" \
   --workspace-map "C:\\workspace=U:\\Git\\CentralGauge\\results\\test-workspace"
 
-# 3. Create workspace, prompt, and secrets dir (API key file — M6)
+# 3. Create workspace, prompt, and secrets dir (API key + MCP token files —
+#    M6 + M1/M4 follow-up; NEITHER goes via docker -e)
 mkdir -p results/test-workspace
 echo "Your prompt here" > results/test-workspace/.agent-prompt.txt
 mkdir -p results/test-secrets
 printf '%s' "$ANTHROPIC_API_KEY" > results/test-secrets/api-key
+printf '%s' "$MCP_TOKEN" > results/test-secrets/mcp-auth-token
 
-# 4. Create container (key via read-only secrets mount, NOT -e; M6/M11)
+# 4. Create container (key + MCP token via read-only secrets mount, NOT -e;
+#    M6/M11 + M1/M4 follow-up)
 docker run -d --name test-container \
   -e "AGENT_PROMPT_FILE=C:\\workspace\\.agent-prompt.txt" \
   -e "MCP_SERVER_URL=http://host.docker.internal:3100" \
-  -e "MCP_AUTH_TOKEN=$MCP_TOKEN" \
   -e "AGENT_MAX_TURNS=10" \
   -e "CLAUDE_CODE_GIT_BASH_PATH=C:\\Git\\bin\\bash.exe" \
   --mount "type=bind,src=U:\\Git\\CentralGauge\\results\\test-workspace,dst=C:\\workspace" \

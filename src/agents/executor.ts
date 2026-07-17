@@ -43,6 +43,7 @@ import {
   formatTaskResult,
 } from "./result-parser.ts";
 import { detectToolResultSuccess } from "./success-detector.ts";
+import { matchToolName } from "./tool-schemas.ts";
 import {
   type SandboxExecutionContext,
   SandboxExecutor,
@@ -62,6 +63,28 @@ interface ExecutionPrepResult {
   tracker: CostTracker;
   executionId: string;
   staged: StagedWorkspace;
+}
+
+/**
+ * Tools whose result is an authoritative pass/fail verdict, and therefore the
+ * ONLY tool_result blocks that count toward scoring. A model controls the prose
+ * of general tools (e.g. Bash `echo "all tests passed"`, or a Read of a file it
+ * wrote), so treating those as scoring inputs lets it forge a passing score
+ * (M4 follow-up). al_verify_task / al_verify carry the test verdict; al_compile
+ * carries the compile-only verdict (genuine compiler output — compile-only
+ * tasks are scored from it, and it cannot satisfy a test task because
+ * detectToolResultSuccess still requires test evidence when requiresTests).
+ */
+const SCORING_TOOL_NAMES = new Set([
+  "al_verify_task",
+  "al_verify",
+  "al_compile",
+]);
+
+function isScoringToolResult(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  const generic = matchToolName(toolName);
+  return generic !== null && SCORING_TOOL_NAMES.has(generic);
 }
 
 export class AgentTaskExecutor {
@@ -163,6 +186,15 @@ export class AgentTaskExecutor {
               duration: `${durationSec}s`,
             });
           }
+        }
+
+        // Only AL verdict tools (al_verify_task / al_verify / al_compile) are
+        // scoring inputs. The model controls the prose of general tools (Bash,
+        // Read, ...), so extracting counts or detecting success from those
+        // would let it forge a passing score (M4 follow-up). Telemetry above
+        // still runs for every tool; scoring below does not.
+        if (!isScoringToolResult(pending?.name)) {
+          continue;
         }
 
         // Extract structured data from tool result

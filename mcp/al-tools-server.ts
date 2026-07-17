@@ -1174,6 +1174,22 @@ export async function handleAlVerifyTask(params: {
 }
 
 /**
+ * Create the isolated al_verify staging directory on the HOST, in the system
+ * temp location OUTSIDE any agent-writable workspace mount.
+ *
+ * The MCP server runs host-side; only `C:\workspace` is mounted into the agent
+ * container. Placing the staging dir under that mount (its previous home,
+ * `join(projectDir, ".cg-verify-*")`) opened a TOCTOU window: a container-side
+ * watcher could overwrite the copied benchmark test or the compiled `.app`
+ * mid-verify to mint an authoritative passing verdict, or read the hidden
+ * benchmark test. The path is server-chosen (never derived from a model
+ * argument), so path-containment (translatePath, M4) semantics are unaffected.
+ */
+export async function createVerifyStagingDir(): Promise<string> {
+  return await Deno.makeTempDir({ prefix: "cg-verify-" });
+}
+
+/**
  * Verify agent code by running tests in an isolated directory.
  * This prevents the agent from seeing or modifying test files.
  */
@@ -1307,18 +1323,15 @@ async function handleAlVerify(params: {
     }
     logTiming("Prereq resolution", prereqStart);
 
-    // 2. Create isolated verification directory and copy files.
-    // The dir lives INSIDE the project (never join(projectDir, "..") — that
-    // escapes the workspace containment guaranteed by translatePath, M4).
-    // The .cg- prefix is excluded from findProjectDir's subdirectory scan;
-    // buildALProject/copyAlFilesToDir only read top-level files so they never
-    // pick up its contents. Removed in the finally below so the benchmark
-    // test file it contains is not left readable in the agent workspace.
+    // 2. Create isolated verification directory (host temp, OUTSIDE any
+    // agent-writable workspace mount — closes the TOCTOU window where a
+    // container-side watcher could overwrite the copied benchmark test or the
+    // compiled .app mid-verify, or read the hidden benchmark test) and copy
+    // files. Belt-and-braces: the .cg- source-collection exclusion in
+    // findProjectDir/copyAlFilesToDir stays, and the dir is removed in the
+    // finally below.
     const setupStart = Date.now();
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 8);
-    verifyDir = join(projectDir, `.cg-verify-${timestamp}-${random}`);
-    await ensureDir(verifyDir);
+    verifyDir = await createVerifyStagingDir();
     debugLog("al_verify", "Verify directory created", { verifyDir });
 
     // Prepare app.json with test dependencies (and prereq dependencies if exist)
@@ -1511,8 +1524,9 @@ async function handleAlVerify(params: {
     debugLog("al_verify", "EXCEPTION", { error: errorMessage });
     return { success: false, message: `Verification error: ${errorMessage}` };
   } finally {
-    // Best-effort removal: the verify dir sits inside the (agent-writable)
-    // workspace and contains the copied benchmark test file.
+    // Best-effort removal of the host-side staging dir (belt-and-braces: it
+    // lives in system temp outside any mount, but still holds the copied
+    // benchmark test + compiled artifacts).
     if (verifyDir) {
       try {
         await Deno.remove(verifyDir, { recursive: true });
