@@ -15,8 +15,8 @@ Status legend: `[ ]` open · `[x]` done · `[~]` in progress · `[-]` won't-fix 
 | CRITICAL  | 8       | 7      | 0           | 1      |
 | HIGH      | 22      | 14     | 0           | 8      |
 | MEDIUM    | 39      | 29     | 0           | 10     |
-| LOW       | 39      | 23     | 0           | 16     |
-| **Total** | **108** | **73** | **0**       | **35** |
+| LOW       | 39      | 26     | 0           | 13     |
+| **Total** | **108** | **76** | **0**       | **32** |
 
 Update these counts as items close.
 
@@ -32,7 +32,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 - [x] **Cluster 4 — Ingest/admin security (prod exposure).** T1/S5/S6/D1 (sign run_id+signed_at — DEDUP), T10/S3 (finalize auth — DEDUP), S1 (admin SSR auth), S4 (SSE reset), T3 (replay dup UUID). (Delivered staged: server 968b988 tolerant [flags off], CLI in the fix(ingest) companion commit; T5, T13, V7, T6b folded in. Stage C = user flips FLAG_REQUIRE_ENVELOPE_V2 / FLAG_REQUIRE_SIGNED_FINALIZE post-deploy.)
 - [x] **Cluster 5 — Sandbox integrity (before any agent-bench publish).** M1, M2, M3, M4. (Delivered as M4+M5+M7 → M3 → M1 → M2+TEST4 → M6 → M8–M13 in the fix(sandbox,mcp) commit; sandbox image REBUILD required before the next agent bench — entrypoint.ps1 changed.)
 - [x] **Cluster 6 — Confidence review gate (restore human review).** V1, V2, V3, V9. (Delivered as V2 tracker numeric bridge → V9 analysis_failed outcome → V3 cross-LLM signed-vote veto → scorePersistedEntry → V1 end-to-end wiring [analyze pending-list + orchestrator signed enqueue + publish skip gate + new site enqueue endpoint] in 1e740c4.)
-- [ ] **Cluster 7 — Test seams (stop the next escape).** TEST1–TEST8.
+- [x] **Cluster 7 — Test seams (stop the next escape).** TEST1–TEST8. (TEST1-TEST7 delivered incrementally alongside their guarded findings; TEST8 in b0a1d4b.)
 - [x] **Cluster 8 — CLI correctness.** CLI1-CLI12: preset merge, full-set retry stats, zero-task guard, no-dashboard health block, replay exit codes, container-cleanup-in-finally, tracer-close-in-finally, SSE cancel/replay-gate, isTransientFailure pattern tightening, concurrency-hint/TUI-total fixes, esc() quote parity. (Delivered in 5eb43e6.)
 
 ---
@@ -159,9 +159,9 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 ### Concurrency / health
 
 - [x] **P9** — `src/parallel/infra-retry.ts:142-148` — maxRetries<=0 fast path skips classifyResult → with infra retry disabled but monitor wired, a quarantined non-success result is returned as-is and SCORED as a model failure. Marker prevents monitor pollution but not scoring. — 1f06177 fast path now consults classifyResult; quarantined → throw ContainerError("test") so upstream synthesizes infra; module contract comment updated (classifyResult = explicit opt-in).
-- [ ] **P10** — `src/parallel/infra-retry.ts:271-301,548-565` — A quarantine-reroute record pushed on the final allowed iteration is never finalized; the thrown trail's last record carries retryContainerName "(pending)" (violates the module's no-placeholder comment). Telemetry only.
+- [x] **P10** — `src/parallel/infra-retry.ts:271-301,548-565` — A quarantine-reroute record pushed on the final allowed iteration is never finalized; the thrown trail's last record carries retryContainerName "(pending)" (violates the module's no-placeholder comment). Telemetry only. — ab30dee post-loop exhaustion path now finalizes any still-"(pending)" record (retryContainerName ← originalContainerName) before throwing InfraRetriesExhaustedError; repro required repeated non-first-waiver quarantine hits against the same alertId so the dynamic loop bound never grows.
 - [x] **P11** — `src/parallel/compile-queue.ts:402-417` — Each re-admission arms a FRESH full queue-wait timeout → an entry repeatedly drained/re-admitted has no cumulative wait bound (each hop resets 5-min; parked hops have no timer). — b7ba127 admitRebalancedEntry + park timer re-arm with the REMAINING budget (min 1 ms; exhausted → immediate reject); original enqueuedAt preserved.
-- [ ] **P12** — `src/parallel/orchestrator.ts:145,1289-1296` — recoveryEvents never cleared by reset() or at runParallel start → a reused orchestrator's second run reports the first run's recovery events.
+- [x] **P12** — `src/parallel/orchestrator.ts:145,1289-1296` — recoveryEvents never cleared by reset() or at runParallel start → a reused orchestrator's second run reports the first run's recovery events. — ab30dee both reset() and runParallel() start now clear recoveryEvents.
 
 ### container
 
@@ -219,7 +219,7 @@ Work top-down. Each cluster groups items that share a root cause or a file.
 
 ### tests
 
-- [ ] **TEST8** — `tests/unit/utils/clipboard.test.ts:253` `assertEquals(true,true)` inside a swallowing catch{} passes regardless; `tests/unit/example.test.ts:12 assert(true)` scaffolding.
+- [x] **TEST8** — `tests/unit/utils/clipboard.test.ts:253` `assertEquals(true,true)` inside a swallowing catch{} passes regardless; `tests/unit/example.test.ts:12 assert(true)` scaffolding. — b0a1d4b clipboard test now asserts the real, verified behavior (`cmd.output()` throws `Deno.errors.NotFound` synchronously for a nonexistent binary); example.test.ts deleted (zero coverage of any src/ module).
 
 ---
 
