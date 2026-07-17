@@ -109,6 +109,16 @@ export async function computeLeaderboard(
   let taskSetClauseSubA1 = "";
   let taskSetClauseSubA2 = "";
   let taskSetClauseSubA2NotExists = "";
+  // S7: bind params for the `?` placeholders in the three slots above.
+  // q.set is already regex-validated (isValidTaskSetHash) before the
+  // specific-hash branch below runs, so the prior string interpolation was
+  // not exploitable — but it was a footgun inconsistent with the sibling
+  // outer WHERE (`runs.task_set_hash = ?` two lines below), which DOES
+  // bind. Empty when q.set === "current" (that branch uses a subselect,
+  // not a literal value, so it needs no param).
+  let taskSetParamsA1: string[] = [];
+  let taskSetParamsA2: string[] = [];
+  let taskSetParamsA2NotExists: string[] = [];
 
   if (q.set === "current") {
     wheres.push(
@@ -123,9 +133,12 @@ export async function computeLeaderboard(
     // best-attempt aggregations (CR-5 invariant).
     wheres.push(`runs.task_set_hash = ?`);
     params.push(q.set);
-    taskSetClauseSubA1 = `AND ru1.task_set_hash = '${q.set}'`;
-    taskSetClauseSubA2 = `AND ru2.task_set_hash = '${q.set}'`;
-    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = '${q.set}'`;
+    taskSetClauseSubA1 = `AND ru1.task_set_hash = ?`;
+    taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
+    taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash = ?`;
+    taskSetParamsA1 = [q.set];
+    taskSetParamsA2 = [q.set];
+    taskSetParamsA2NotExists = [q.set];
   }
 
   // A.5: Scope-aware IN-clause for numerator correlated subqueries.
@@ -219,20 +232,24 @@ export async function computeLeaderboard(
   // to q.limit. Direction is honoured in the TS sort.
   //
   // Bind order for the ORDER BY expressions that contain ? placeholders:
-  //   1. scopeInA1.params  (pass_at_1 / pass_at_n numerator SELECT subqueries)
-  //   2. scopeInA2NotExists.params
-  //   3. scopeInA2.params
+  //   1. taskSetParamsA1 + scopeInA1.params  (pass_at_1 / pass_at_n numerator
+  //                                           SELECT subqueries)
+  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params
+  //   3. taskSetParamsA2 + scopeInA2.params
   //   4. params[]          (outer WHERE: task_set, tier, family, since,
   //                         difficulty JOIN, category WHERE)
-  //   5. orderBy.extraParams  (scope-IN params for ORDER BY subquery
-  //                            expressions + denominator for /N)
+  //   5. orderBy.extraParams  (task-set + scope-IN params for ORDER BY
+  //                            subquery expressions + denominator for /N)
   //   6. sqlLimit          (LIMIT clause)
   //
   // The ORDER BY expressions for pass_at_n / pass_at_1 / cost_per_pass_usd are
   // correlated subqueries that reference m.id from the outer GROUP BY. They
-  // duplicate the same scope-IN params used in the SELECT list (those params
-  // appear at positions 1-3 above). SQLite textually evaluates ORDER BY after
-  // GROUP BY, so the ORDER BY ?s come AFTER the WHERE ?s in bind order.
+  // duplicate the same task-set + scope-IN params used in the SELECT list
+  // (those params appear at positions 1-3 above). SQLite textually evaluates
+  // ORDER BY after GROUP BY, so the ORDER BY ?s come AFTER the WHERE ?s in
+  // bind order. Within each P1_EXPR/P2_ONLY_EXPR occurrence, taskSetClauseSub*
+  // textually precedes scopeIn*.clause (S7), so its param(s) must be spread
+  // first.
   // ---------------------------------------------------------------------------
 
   const LATENCY_WIDE_FETCH = 200;
@@ -287,12 +304,16 @@ export async function computeLeaderboard(
           clause: `ORDER BY (2 * (${P1_EXPR}) + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(2 * ?, 0) ${dir}, (${P1_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
           extraParams: [
             // Primary: (2*p1 + p2_only) / (2*denominator)
+            ...taskSetParamsA1,
             ...scopeInA1.params,
+            ...taskSetParamsA2NotExists,
             ...scopeInA2NotExists.params,
+            ...taskSetParamsA2,
             ...scopeInA2.params,
             denominator,
             // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
-            // scope-IN params again).
+            // task-set + scope-IN params again).
+            ...taskSetParamsA1,
             ...scopeInA1.params,
             denominator,
           ],
@@ -309,12 +330,16 @@ export async function computeLeaderboard(
           clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}, ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
           extraParams: [
             // Primary: (p1 + p2_only) / denominator
+            ...taskSetParamsA1,
             ...scopeInA1.params,
+            ...taskSetParamsA2NotExists,
             ...scopeInA2NotExists.params,
+            ...taskSetParamsA2,
             ...scopeInA2.params,
             denominator,
             // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
-            // scope-IN params again).
+            // task-set + scope-IN params again).
+            ...taskSetParamsA1,
             ...scopeInA1.params,
             denominator,
           ],
@@ -325,7 +350,7 @@ export async function computeLeaderboard(
         // Strict first-try rate: p1 / denominator.
         return {
           clause: `ORDER BY ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
-          extraParams: [...scopeInA1.params, denominator],
+          extraParams: [...taskSetParamsA1, ...scopeInA1.params, denominator],
           sqlLimit: q.limit,
         };
 
@@ -353,8 +378,11 @@ export async function computeLeaderboard(
         return {
           clause: `ORDER BY (SUM(${rowCostUsd()}) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
           extraParams: [
+            ...taskSetParamsA1,
             ...scopeInA1.params,
+            ...taskSetParamsA2NotExists,
             ...scopeInA2NotExists.params,
+            ...taskSetParamsA2,
             ...scopeInA2.params,
           ],
           sqlLimit: q.limit,
@@ -454,20 +482,27 @@ export async function computeLeaderboard(
   };
 
   // Bind order MUST follow textual `?` position in the SQL string, not
-  // execution order. The three scope-IN subqueries appear in the SELECT list
-  // (lines for tasks_passed_attempt_1 and tasks_passed_attempt_2_only) which
-  // is BEFORE the FROM/JOIN/WHERE clauses, so their `?`s bind first.
-  //   1. scopeInA1.params  – task_id IN (...) inside tasks_passed_attempt_1
-  //   2. scopeInA2NotExists.params – task_id IN (...) inside the NOT EXISTS
-  //   3. scopeInA2.params  – task_id IN (...) for tasks_passed_attempt_2_only
+  // execution order. The three task-set + scope-IN subquery pairs appear in
+  // the SELECT list (lines for tasks_passed_attempt_1 and
+  // tasks_passed_attempt_2_only) which is BEFORE the FROM/JOIN/WHERE
+  // clauses, so their `?`s bind first. Within each pair, taskSetClauseSub*
+  // (S7: bound task_set_hash) textually precedes scopeIn*.clause.
+  //   1. taskSetParamsA1 + scopeInA1.params  – inside tasks_passed_attempt_1
+  //   2. taskSetParamsA2NotExists + scopeInA2NotExists.params – inside the
+  //      NOT EXISTS
+  //   3. taskSetParamsA2 + scopeInA2.params  – for tasks_passed_attempt_2_only
   //   4. params[]          – outer WHERE (task_set, tier, family, since,
   //                          difficulty JOIN, category WHERE)
-  //   5. orderBy.extraParams – ORDER BY subquery scope-IN params + denominator
-  //                            (A.6: one set per ORDER BY expression)
+  //   5. orderBy.extraParams – ORDER BY subquery task-set + scope-IN params
+  //                            + denominator (A.6: one set per ORDER BY
+  //                            expression)
   //   6. orderBy.sqlLimit  – LIMIT clause
   const allParams = [
+    ...taskSetParamsA1,
     ...scopeInA1.params,
+    ...taskSetParamsA2NotExists,
     ...scopeInA2NotExists.params,
+    ...taskSetParamsA2,
     ...scopeInA2.params,
     ...params,
     ...orderBy.extraParams,

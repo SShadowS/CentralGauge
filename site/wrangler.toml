@@ -43,6 +43,14 @@ FLAG_REQUIRE_SIGNED_FINALIZE = "off"
 # is implementation-defined). See docs/site/operations.md for the runbook.
 CF_ACCESS_TEAM_DOMAIN = "sshadows.cloudflareaccess.com"
 
+# Optional (S2 defense-in-depth): comma-separated email allowlist enforced
+# IN ADDITION TO the CF Access edge policy, which remains the primary
+# authorization control. Unset = current behavior (no extra enforcement).
+# Same rationale as CF_ACCESS_AUD above — secret, NOT a [vars] entry:
+#   wrangler secret put CF_ACCESS_ALLOWED_EMAILS
+# DO NOT add `CF_ACCESS_ALLOWED_EMAILS = ""` here for the same shadowing
+# reason as CF_ACCESS_AUD.
+
 [assets]
 directory = ".svelte-kit/cloudflare"
 binding = "ASSETS"

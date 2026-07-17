@@ -145,12 +145,37 @@ function b64UrlDecode(s: string): Uint8Array {
 export interface CfAccessEnv {
   CF_ACCESS_AUD?: string;
   CF_ACCESS_TEAM_DOMAIN?: string;
+  /**
+   * S2 defense-in-depth: optional comma-separated allowlist of emails
+   * permitted through CF Access verification. Unset (default) preserves
+   * prior behavior — authorization is fully delegated to the CF Access
+   * edge policy. When set, `claims.email` must be a member or
+   * verification fails closed with 403 `cf_access_email_not_allowed`.
+   * Secret-style var — set via `wrangler secret put CF_ACCESS_ALLOWED_EMAILS`,
+   * NOT a `[vars]` entry (see CF_ACCESS_AUD doc above for why).
+   */
+  CF_ACCESS_ALLOWED_EMAILS?: string;
 }
 
 /**
- * Verify a CF Access JWT. Throws ApiError(401) on every failure path so
- * the calling endpoint's `errorResponse` wrapper handles all edges
- * uniformly. Returns the verified user identity.
+ * Parse the comma-separated `CF_ACCESS_ALLOWED_EMAILS` env var into a
+ * lowercase Set. Returns `null` when unset/empty so callers can skip the
+ * allowlist check entirely — that's the default/current behavior where
+ * the CF Access edge policy is the sole authorization gate.
+ */
+function parseAllowedEmails(raw: string | undefined): Set<string> | null {
+  if (!raw) return null;
+  const emails = raw
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return emails.length > 0 ? new Set(emails) : null;
+}
+
+/**
+ * Verify a CF Access JWT. Throws ApiError(401) on every failure path (403
+ * for the S2 allowlist rejection) so the calling endpoint's `errorResponse`
+ * wrapper handles all edges uniformly. Returns the verified user identity.
  *
  * Required env vars:
  *   - CF_ACCESS_AUD: the audience tag from the CF Access application
@@ -160,6 +185,13 @@ export interface CfAccessEnv {
  *                    shadow the secret).
  *   - CF_ACCESS_TEAM_DOMAIN: e.g. `centralgauge.cloudflareaccess.com`
  *                            (committed in [vars]; non-secret).
+ *
+ * Optional env var:
+ *   - CF_ACCESS_ALLOWED_EMAILS: comma-separated email allowlist (S2
+ *                               defense-in-depth). See `CfAccessEnv` doc.
+ *
+ * The JWT itself MUST carry an `exp` claim — a token with no `exp` is
+ * rejected (401 `cf_access_missing_exp`), it does not skip expiry checking.
  */
 export async function verifyCfAccessJwt(
   request: Request,
@@ -305,7 +337,18 @@ export async function verifyCfAccessJwt(
       `expected aud=${env.CF_ACCESS_AUD}, got ${JSON.stringify(auds)}`,
     );
   }
-  if (claims.exp && claims.exp * 1000 < Date.now()) {
+  // S2 — exp is REQUIRED, not merely checked when present. The prior
+  // `claims.exp && ...` guard treated a JWT with no exp claim at all the
+  // same as "not yet expired", silently skipping expiry validation for
+  // that token.
+  if (!claims.exp) {
+    throw new ApiError(
+      401,
+      "cf_access_missing_exp",
+      "JWT exp claim required",
+    );
+  }
+  if (claims.exp * 1000 < Date.now()) {
     throw new ApiError(401, "cf_access_expired", "JWT exp passed");
   }
   if (!claims.email || !claims.sub) {
@@ -313,6 +356,20 @@ export async function verifyCfAccessJwt(
       401,
       "cf_access_missing_claims",
       "email and sub required",
+    );
+  }
+
+  // S2 — optional configurable email allowlist (defense-in-depth). CF
+  // Access policy remains the PRIMARY authorization control (who can reach
+  // this app at the edge at all); this is a secondary in-code check for
+  // deployments that want an explicit roster. Unset (default) = current
+  // behavior, authorization fully delegated to the CF Access policy.
+  const allowlist = parseAllowedEmails(env.CF_ACCESS_ALLOWED_EMAILS);
+  if (allowlist && !allowlist.has(claims.email.toLowerCase())) {
+    throw new ApiError(
+      403,
+      "cf_access_email_not_allowed",
+      "email not in CF_ACCESS_ALLOWED_EMAILS allowlist",
     );
   }
 

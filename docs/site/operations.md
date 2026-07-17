@@ -976,6 +976,23 @@ wrangler secret list                   # should include CF_ACCESS_AUD
 wrangler deploy --dry-run | grep AUD   # should NOT print the AUD tag
 ```
 
+**Optional: `CF_ACCESS_ALLOWED_EMAILS` (S2 defense-in-depth).** A
+comma-separated email allowlist enforced by the verifier IN ADDITION to
+the CF Access policy above (which stays primary — this is a secondary
+in-code check, not a replacement). Same secret pattern as `CF_ACCESS_AUD`:
+
+```bash
+wrangler secret put CF_ACCESS_ALLOWED_EMAILS
+# paste e.g. "op1@example.com,op2@example.com" when prompted
+```
+
+Unset (default) = no additional enforcement, matching prior behavior.
+When set, a verified JWT whose email is not in the list is rejected with
+403 `cf_access_email_not_allowed` even though CF Access itself accepted
+it — useful if the CF Access policy is broader than the app-level roster
+should be. Do NOT add `CF_ACCESS_ALLOWED_EMAILS = ""` under `[vars]`, for
+the same shadowing reason as `CF_ACCESS_AUD`.
+
 ### Revoking access
 
 Cloudflare dashboard → **Access** → **Applications** → **CentralGauge
@@ -1017,6 +1034,14 @@ deploy is required — the verifier reads `env.CF_ACCESS_AUD` per request.
 - **503 `cf_access_jwks_unreachable`** — CF Access JWKs endpoint is
   down or the `CF_ACCESS_TEAM_DOMAIN` is wrong. Verify with
   `curl https://<team>.cloudflareaccess.com/cdn-cgi/access/certs`.
+- **401 `cf_access_missing_exp`** — the JWT carries no `exp` claim. CF
+  Access always issues `exp`; this indicates a non-CF-Access token was
+  sent to the `cf-access-jwt-assertion` header, or a hand-crafted JWT in
+  a test/dev tool that forgot `exp`.
+- **403 `cf_access_email_not_allowed`** — `CF_ACCESS_ALLOWED_EMAILS` is
+  set and the verified email is not a member. Either add the email to
+  the secret (`wrangler secret put CF_ACCESS_ALLOWED_EMAILS`) or confirm
+  the operator should not have access.
 
 ## Lifecycle runbooks
 

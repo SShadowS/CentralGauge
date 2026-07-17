@@ -381,6 +381,92 @@ describe("computeLeaderboard strict denominator (whole-set, A.4)", () => {
     expect(ma.denominator).toBe(10);
     expect(ma.pass_at_n).toBeCloseTo(1 / 10, 6);
   });
+
+  // -------------------------------------------------------------------------
+  // S7: task_set_hash subquery clauses (taskSetClauseSubA1/A2/A2NotExists)
+  // must bind q.set via a `?` placeholder, matching the sibling outer WHERE
+  // (`runs.task_set_hash = ?`), instead of string-interpolating it directly
+  // into the SQL text. Not exploitable pre-fix (q.set is regex-validated by
+  // isValidTaskSetHash before either code path runs) but a footgun.
+  // -------------------------------------------------------------------------
+
+  it("S7: specific-hash query binds the task_set_hash subquery clauses via placeholder, not an inlined literal", async () => {
+    // vi.spyOn does not intercept calls against the native D1Database
+    // binding provided by @cloudflare/vitest-pool-workers (it's a workerd
+    // RPC stub, not a plain object vi.spyOn's defineProperty approach can
+    // wrap) — so capture SQL text with a thin manual pass-through wrapper
+    // instead. Only `.prepare()` is used anywhere in computeLeaderboard's
+    // call graph (leaderboard.ts, denominator.ts, model-aggregates.ts all
+    // go through db.prepare(sql).bind(...) — no db.batch/exec/dump).
+    const HASH = "c".repeat(64);
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
+    ).bind(HASH, "2026-01-01T00:00:00Z").run();
+
+    const capturedSql: string[] = [];
+    const capturingDb = {
+      prepare: (sql: string) => {
+        capturedSql.push(sql);
+        return env.DB.prepare(sql);
+      },
+    } as unknown as D1Database;
+
+    await computeLeaderboard(capturingDb, { ...baseQuery, set: HASH });
+
+    const mainQuerySql = capturedSql.find((sql) =>
+      sql.includes("tasks_passed_attempt_1")
+    );
+    expect(mainQuerySql).toBeDefined();
+    // The hash must NOT be string-interpolated into the SQL text.
+    expect(mainQuerySql).not.toContain(HASH);
+    // It must be bound via `?` on each of the three subquery aliases.
+    expect(mainQuerySql).toMatch(/ru1\.task_set_hash = \?/);
+    expect(mainQuerySql).toMatch(/ru2\.task_set_hash = \?/);
+    expect(mainQuerySql).toMatch(/ru1b\.task_set_hash = \?/);
+  });
+
+  it("S7: specific-hash query works for every ORDER BY sort that duplicates the task-set clause (bind-order/count regression)", async () => {
+    // auc_2 / pass_at_n / pass_at_1 / cost_per_pass_usd all reuse P1_EXPR /
+    // P2_ONLY_EXPR (which embed the task-set clause) inside buildOrderBy().
+    // If the bound param order/count there ever drifts from the `?`
+    // placeholders' textual position, D1's bind() throws — so a clean
+    // resolve across all four is a meaningful regression guard.
+    const HASH = "d".repeat(64);
+    await env.DB.prepare(
+      `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,?,10,0)`,
+    ).bind(HASH, "2026-01-01T00:00:00Z").run();
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+      .bind(
+        "r-hash-order", HASH, 1, "s", "rig",
+        "2026-04-01T00:00:00Z", "2026-04-01T01:00:00Z",
+        "completed", "claimed", "v1", "sig", "2026-04-01T00:00:00Z",
+        1, new Uint8Array([0]),
+      )
+      .run();
+    await insertResult("r-hash-order", "t1", 1, 1);
+
+    for (
+      const sort of [
+        "auc_2",
+        "pass_at_n",
+        "pass_at_1",
+        "cost_per_pass_usd",
+      ] as const
+    ) {
+      const rows = await computeLeaderboard(env.DB, {
+        ...baseQuery,
+        set: HASH,
+        sort,
+      });
+      const ma = rows.find((r) => r.model.slug === "M-A")!;
+      expect(ma, `sort=${sort}`).toBeDefined();
+      expect(ma.denominator, `sort=${sort}`).toBe(10);
+      expect(ma.pass_at_n, `sort=${sort}`).toBeCloseTo(1 / 10, 6);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
