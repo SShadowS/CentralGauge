@@ -194,6 +194,129 @@ Deno.test("syncCatalogToAdmin: still-429-after-retry reports a resumable failure
   assertEquals(failed.map((f) => f.status), [429, 429, 429]);
 });
 
+Deno.test("syncCatalogToAdmin: a 500 response retries then succeeds (D8 follow-up: transient 5xx resilience restored)", async () => {
+  let modelCalls = 0;
+  const result = await syncCatalogToAdmin(
+    oneModelCatalog(),
+    config,
+    adminPriv,
+    {
+      sleepFn: () => Promise.resolve(),
+      fetchFn: (input) => {
+        const url = String(input);
+        if (url.includes("/models")) {
+          modelCalls++;
+          if (modelCalls === 1) {
+            return Promise.resolve(
+              new Response("internal error", { status: 500 }),
+            );
+          }
+          return Promise.resolve(ok200());
+        }
+        return Promise.resolve(ok200());
+      },
+    },
+  );
+
+  assertEquals(modelCalls, 2); // first pass 500, retried once, succeeds
+  assertEquals(result.retried, true);
+  assertEquals(result.ok, true);
+  const model = result.items.find((i) => i.kind === "model")!;
+  assertEquals(model.ok, true);
+  assertEquals(model.status, 200);
+});
+
+Deno.test("syncCatalogToAdmin: a thrown fetch/network exception on the first attempt is reported as a resumable item, not an uncaught rejection, and is retried (D8 follow-up)", async () => {
+  let pricingCalls = 0;
+  const result = await syncCatalogToAdmin(
+    oneModelCatalog(),
+    config,
+    adminPriv,
+    {
+      sleepFn: () => Promise.resolve(),
+      fetchFn: (input) => {
+        const url = String(input);
+        if (url.includes("/pricing")) {
+          pricingCalls++;
+          if (pricingCalls === 1) {
+            return Promise.reject(new TypeError("network error: fetch failed"));
+          }
+          return Promise.resolve(ok200());
+        }
+        return Promise.resolve(ok200());
+      },
+    },
+  );
+
+  // The function must never reject — the network error is caught inside
+  // runPass and folded into the same bounded retry pass as 429/5xx.
+  assertEquals(pricingCalls, 2);
+  assertEquals(result.retried, true);
+  assertEquals(result.ok, true);
+  const pricing = result.items.find((i) => i.kind === "pricing")!;
+  assertEquals(pricing.ok, true);
+  assertEquals(pricing.status, 200);
+});
+
+Deno.test("syncCatalogToAdmin: a thrown network exception that never recovers ends as a resumable failed item with status 0 (not an uncaught rejection)", async () => {
+  let result: Awaited<ReturnType<typeof syncCatalogToAdmin>> | undefined;
+  let threw = false;
+  try {
+    result = await syncCatalogToAdmin(oneModelCatalog(), config, adminPriv, {
+      sleepFn: () => Promise.resolve(),
+      fetchFn: () => Promise.reject(new Error("econnreset")),
+    });
+  } catch {
+    threw = true;
+  }
+
+  assertEquals(threw, false);
+  assertEquals(result?.ok, false);
+  assertEquals(result?.retried, true);
+  const failed = result?.items.filter((i) => !i.ok) ?? [];
+  assertEquals(failed.length, 3);
+  assertEquals(failed.every((f) => f.status === 0), true);
+});
+
+Deno.test("syncCatalogToAdmin: 429 Retry-After behavior is unchanged by the 5xx/network retry broadening (D8 follow-up regression check)", async () => {
+  const sleeps: number[] = [];
+  let pricingCalls = 0;
+  const result = await syncCatalogToAdmin(
+    oneModelCatalog(),
+    config,
+    adminPriv,
+    {
+      sleepFn: (ms) => {
+        sleeps.push(ms);
+        return Promise.resolve();
+      },
+      fetchFn: (input) => {
+        const url = String(input);
+        if (url.includes("/pricing")) {
+          pricingCalls++;
+          if (pricingCalls === 1) {
+            return Promise.resolve(
+              new Response("rate limited", {
+                status: 429,
+                headers: { "retry-after": "5" },
+              }),
+            );
+          }
+          return Promise.resolve(ok200());
+        }
+        return Promise.resolve(ok200());
+      },
+    },
+  );
+
+  assertEquals(result.retried, true);
+  assertEquals(result.ok, true);
+  assertEquals(sleeps, [5000]); // still honors the Retry-After: 5 header exactly
+  const pricingResult = result.items.find((i) => i.kind === "pricing")!;
+  assertEquals(pricingResult.ok, true);
+  assertEquals(pricingResult.status, 200);
+});
+
 Deno.test("syncCatalogToAdmin: a permanent (non-429) failure is reported but NOT retried", async () => {
   let calls = 0;
   const result = await syncCatalogToAdmin(

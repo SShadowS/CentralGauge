@@ -6,12 +6,22 @@
  * combined stdout/stderr text, which can't carry a `Retry-After` header or
  * a structured per-row result back to the repairer.
  *
- * `postWithRetry` already retries an individual POST on 429, honoring
- * `Retry-After` when present. This module adds ONE further bounded retry
- * pass over whatever is still 429'd after that — e.g. the admin API's
- * ~10 req/min budget exhausted mid-batch for a 7+ row catalog — and reports
- * a resumable, per-item result so a caller always knows exactly which rows
- * still need syncing instead of a truncated tail of raw process output.
+ * `syncCatalogToAdmin` is the SOLE retry authority: each POST goes through
+ * `postWithRetry` with `maxAttempts: 1`, so `postWithRetry`'s own internal
+ * per-request retry (real `setTimeout`-based exponential backoff) never
+ * fires — it would otherwise stack on top of (and fight) the bounded retry
+ * pass below. Instead, the first pass posts every row; any row that comes
+ * back 429, comes back 5xx, or throws (network error — caught and reported
+ * as a resumable item, never an uncaught rejection) triggers ONE further
+ * pass over just those rows, waiting once for the largest `Retry-After`
+ * hint seen among the 429s (capped, and falling back to a short bounded
+ * default when no such header was present) — never a blanket 60s sleep.
+ * Permanent 4xx failures (bad signature, etc.) are not retried; waiting
+ * can't fix them, and they are reported as-is. This restores the
+ * transient-error resilience both callers had before D8's rewrite (a
+ * single 5xx or network blip is no longer a hard, unretried failure) while
+ * keeping the retry logic deterministic and unit-testable (no real timers
+ * hidden inside a dependency).
  * @module ingest/catalog/sync
  */
 import type { AdminConfig } from "../types.ts";
@@ -32,7 +42,7 @@ export interface SyncItemResult {
 export interface SyncCatalogResult {
   /** One entry per catalog row, in family → model → pricing order. Resumable: filter on `!ok` to see exactly what's still outstanding. */
   items: SyncItemResult[];
-  /** True when the bounded retry pass ran (i.e. at least one item came back 429 on the first pass). */
+  /** True when the bounded retry pass ran (i.e. at least one item was 429/5xx/thrown on the first pass). */
   retried: boolean;
   ok: boolean;
 }
@@ -96,12 +106,13 @@ function defaultSleep(ms: number): Promise<void> {
 
 /**
  * Sync a catalog to the admin API. Two-pass: the first pass posts every
- * row; any row still 429'd after `postWithRetry`'s own internal retries
- * triggers ONE further pass over just the 429'd rows, waiting once for the
- * largest `Retry-After` hint seen (capped, and falling back to a short
- * bounded default when the header is absent) — never a blanket 60s sleep.
- * Non-429 failures (bad signature, 5xx exhaustion, etc.) are not retried;
- * they are unrecoverable by waiting and are reported as-is.
+ * row (one attempt each — see module doc); any row that came back 429,
+ * came back 5xx, or threw (network error) triggers ONE further pass over
+ * just those rows, waiting once for the largest `Retry-After` hint seen
+ * among the 429s (capped, falling back to a short bounded default when no
+ * such header was present) — never a blanket 60s sleep. Permanent 4xx
+ * failures (bad signature, etc.) are not retried; they are unrecoverable
+ * by waiting and are reported as-is.
  */
 export async function syncCatalogToAdmin(
   cat: Catalog,
@@ -119,50 +130,72 @@ export async function syncCatalogToAdmin(
     const results: SyncItemResult[] = [];
     let retryAfterMs: number | null = null;
     for (const item of pending) {
-      const sig = await signPayload(
-        item.payload,
-        adminPrivateKey,
-        config.adminKeyId,
-      );
-      // maxAttempts: 1 — postWithRetry's own internal 429/5xx retry uses
-      // real exponential backoff, which would stack on top of (and fight)
-      // this function's own explicit two-pass, Retry-After-honoring retry.
-      // syncCatalogToAdmin is the sole retry authority here.
-      const resp = await postWithRetry(
-        item.url,
-        { version: 1, signature: sig, payload: item.payload },
-        { ...(opts.fetchFn ? { fetchFn: opts.fetchFn } : {}), maxAttempts: 1 },
-      );
-      if (resp.status === 429) {
-        const header = resp.headers.get("retry-after");
-        const hint = header ? Number(header) * 1000 : NaN;
-        if (Number.isFinite(hint) && hint > 0) {
-          retryAfterMs = retryAfterMs === null
-            ? hint
-            : Math.max(retryAfterMs, hint);
+      let result: SyncItemResult;
+      try {
+        const sig = await signPayload(
+          item.payload,
+          adminPrivateKey,
+          config.adminKeyId,
+        );
+        // maxAttempts: 1 — postWithRetry's own internal 429/5xx retry uses
+        // real exponential backoff, which would stack on top of (and
+        // fight) this function's own explicit two-pass, Retry-After-aware
+        // retry below. syncCatalogToAdmin is the sole retry authority; a
+        // thrown network error is caught below and folded into that same
+        // bounded pass instead of escaping as an uncaught rejection.
+        const resp = await postWithRetry(
+          item.url,
+          { version: 1, signature: sig, payload: item.payload },
+          {
+            ...(opts.fetchFn ? { fetchFn: opts.fetchFn } : {}),
+            maxAttempts: 1,
+          },
+        );
+        if (resp.status === 429) {
+          const header = resp.headers.get("retry-after");
+          const hint = header ? Number(header) * 1000 : NaN;
+          if (Number.isFinite(hint) && hint > 0) {
+            retryAfterMs = retryAfterMs === null
+              ? hint
+              : Math.max(retryAfterMs, hint);
+          }
         }
+        result = {
+          kind: item.kind,
+          key: item.key,
+          status: resp.status,
+          ok: resp.ok,
+        };
+      } catch {
+        // A thrown fetch/network error never produced a Response. Report
+        // it as a resumable item (status 0 — a sentinel no real HTTP
+        // status uses) instead of letting the rejection propagate out of
+        // runPass uncaught; it's picked up by the retryable-status check
+        // below just like a 429 or 5xx.
+        result = { kind: item.kind, key: item.key, status: 0, ok: false };
       }
-      const result: SyncItemResult = {
-        kind: item.kind,
-        key: item.key,
-        status: resp.status,
-        ok: resp.ok,
-      };
       results.push(result);
       opts.onItem?.(result);
     }
     return { results, retryAfterMs };
   }
 
+  // Retryable: 429 (rate-limited), 5xx (transient server error), and 0
+  // (thrown/network error sentinel — see runPass). A permanent 4xx (e.g.
+  // bad signature) is unrecoverable by waiting and is excluded.
+  function isRetryableStatus(status: number): boolean {
+    return status === 429 || status === 0 || status >= 500;
+  }
+
   const items = buildItems(cat, config.url.replace(/\/+$/, ""));
   const first = await runPass(items);
 
-  const retryable429Keys = new Set(
-    first.results.filter((r) => r.status === 429).map((r) =>
+  const retryableKeys = new Set(
+    first.results.filter((r) => isRetryableStatus(r.status)).map((r) =>
       `${r.kind}:${r.key}`
     ),
   );
-  if (retryable429Keys.size === 0) {
+  if (retryableKeys.size === 0) {
     return {
       items: first.results,
       retried: false,
@@ -177,7 +210,7 @@ export async function syncCatalogToAdmin(
   if (wait > 0) await sleep(wait);
 
   const retryItems = items.filter((it) =>
-    retryable429Keys.has(`${it.kind}:${it.key}`)
+    retryableKeys.has(`${it.kind}:${it.key}`)
   );
   const second = await runPass(retryItems);
   const secondByKey = new Map(

@@ -339,6 +339,34 @@ describe("syncCatalogRepairer.run", () => {
     });
   });
 
+  it("recovers from a transient network error on the first attempt without throwing (D8 follow-up)", async () => {
+    await withTempCatalog(async () => {
+      const originalFetch = globalThis.fetch;
+      let calls = 0;
+      globalThis.fetch = (() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(new TypeError("network error: fetch failed"));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true }), { status: 200 }),
+        );
+      }) as typeof fetch;
+
+      try {
+        // Regression: syncCatalogRepairer.run has no try/catch around
+        // syncCatalogToAdmin — a thrown network error used to propagate
+        // uncaught out of this call on the very first hiccup. It must not.
+        const result = await syncCatalogRepairer.run(dummyCatalogBenchCheck);
+        assertEquals(result.ok, true);
+        assertEquals(calls, 2); // first attempt threw, retry pass succeeded
+        assertEquals(result.message?.includes("retry"), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+
   it("reports a resumable per-row failure list, honoring Retry-After, when a row is still 429 after the bounded retry pass (D8)", async () => {
     await withTempCatalog(async () => {
       const originalFetch = globalThis.fetch;
