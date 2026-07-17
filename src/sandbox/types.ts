@@ -15,6 +15,14 @@ export interface SandboxConfig {
   /** Host directory to mount as workspace */
   workspaceDir: string;
 
+  /**
+   * Optional host directory mounted READ-ONLY at C:\cg-secrets.
+   * Used to pass secrets (e.g. the API key file) without exposing them on
+   * the docker argv / `docker inspect` env output. Must live OUTSIDE the
+   * workspace — the workspace is agent-writable.
+   */
+  secretsDir?: string;
+
   /** Environment variables to set in the sandbox */
   env: Record<string, string>;
 

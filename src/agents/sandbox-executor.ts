@@ -13,7 +13,7 @@ import type { TaskManifest } from "../tasks/interfaces.ts";
 import type { TestResult } from "../container/types.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import { WindowsSandboxProvider } from "../sandbox/windows-provider.ts";
-import { McpServerManager } from "./mcp-manager.ts";
+import { McpServerManager, type McpStartOptions } from "./mcp-manager.ts";
 import { CostTracker } from "./cost-tracker.ts";
 import {
   analyzeSandboxOutput,
@@ -25,6 +25,7 @@ import {
   extractResultFromToolResult,
   formatTaskResult,
 } from "./result-parser.ts";
+import { evaluateVerdicts, readVerdicts } from "./verdict.ts";
 import type {
   AgentExecutionOptions,
   AgentExecutionResult,
@@ -109,12 +110,11 @@ export class SandboxExecutor {
     const executionId = context.generateExecutionId();
     const tracker = new CostTracker(agentConfig.model);
 
-    const mcpPort = options.mcpHttpPort ?? 3100;
-    const mcpServerUrl = `http://host.docker.internal:${mcpPort}`;
     const sandboxImage = agentConfig.sandbox?.image ??
       "centralgauge/agent-sandbox:windows-latest";
 
     let sandbox: Sandbox | undefined;
+    let secretsDir: string | undefined;
 
     // Prepare workspace directory first (needed for MCP server workspace mapping)
     const baseWorkingDir = agentConfig.workingDir || options.projectDir;
@@ -127,10 +127,17 @@ export class SandboxExecutor {
     try {
       await ensureDir(taskWorkingDir);
 
-      // Start MCP HTTP server with workspace mapping for path translation
-      // Maps container path C:\workspace to host path taskWorkingDir
-      const workspaceMap = `C:\\workspace=${taskWorkingDir}`;
-      await this.mcpManager.start(mcpPort, workspaceMap);
+      // Start a FRESH per-run MCP HTTP server with workspace mapping for
+      // path translation (maps container path C:\workspace to taskWorkingDir).
+      // The manager allocates a free port unless one was forced via options.
+      const startOptions: McpStartOptions = {
+        workspaceMap: `C:\\workspace=${taskWorkingDir}`,
+      };
+      if (options.mcpHttpPort !== undefined) {
+        startOptions.port = options.mcpHttpPort;
+      }
+      const mcpHandle = await this.mcpManager.start(startOptions);
+      const mcpServerUrl = `http://host.docker.internal:${mcpHandle.port}`;
 
       // Initialize sandbox provider
       if (!this.sandboxProvider) {
@@ -176,18 +183,26 @@ export class SandboxExecutor {
         length: apiKey.length,
       });
 
+      // M6: pass the API key via a per-run read-only secrets mount instead
+      // of a docker -e argument (visible in `docker inspect` and the argv).
+      // The dir lives OUTSIDE the workspace and is deleted in the finally.
+      secretsDir = await Deno.makeTempDir({ prefix: "cg-secrets-" });
+      await Deno.writeTextFile(join(secretsDir, "api-key"), apiKey);
+
       // Create sandbox container
       // Note: Prompt is read from file instead of env var for reliability
       sandbox = await this.sandboxProvider.create({
         image: sandboxImage,
         workspaceDir: taskWorkingDir,
+        secretsDir,
         mcpServerUrl,
         env: {
-          ANTHROPIC_API_KEY: Deno.env.get("ANTHROPIC_API_KEY") || "",
           AGENT_PROMPT_FILE: "C:\\workspace\\.agent-prompt.txt",
           AGENT_MAX_TURNS: agentConfig.maxTurns.toString(),
           AGENT_TIMEOUT_MS: (agentConfig.limits?.timeoutMs ?? 300000)
             .toString(),
+          // Per-run MCP auth token (M3) — .mcp.json gets it as a bearer header
+          MCP_AUTH_TOKEN: mcpHandle.authToken,
           // Claude Code requires backslashes for Windows paths at runtime
           // (Dockerfile ENV escapes backslashes incorrectly)
           CLAUDE_CODE_GIT_BASH_PATH: "C:\\Git\\bin\\bash.exe",
@@ -213,11 +228,8 @@ export class SandboxExecutor {
         { timeout: agentConfig.limits?.timeoutMs ?? 300000 },
       );
 
-      // Determine success from output
-      // Agent may report success in various formats:
-      // - MCP tool result: "all tests passed", "compilation successful"
-      // - Agent summary: "7/7 PASSED", "Compilation: **SUCCESS**", "Task Completed Successfully"
-      // Note: Claude Code outputs to stderr, not stdout, so we check both streams
+      // Note: Claude Code outputs to stderr, not stdout, so we keep both
+      // streams for diagnostics
       const combinedOutput = result.stdout + result.stderr;
 
       // Debug: Log output for failed tasks to help diagnose issues
@@ -230,47 +242,65 @@ export class SandboxExecutor {
         log.debug("Container stderr", { output: result.stderr || "(empty)" });
       }
       const requiresTests = !!task.expected?.testApp;
-      let terminationReason: TerminationReason = "error";
 
-      // Use consolidated success detection
+      // M1: success comes EXCLUSIVELY from the trusted verdict channel —
+      // verdicts.jsonl written by the MCP server into a host dir the
+      // container cannot reach. Model-controlled prose can never pass.
+      const verdicts = await readVerdicts(mcpHandle.verdictDir);
+      const verdictEval = evaluateVerdicts(verdicts, {
+        taskId: task.id,
+        nonce: mcpHandle.runNonce,
+        requiresTests,
+      });
+      const success = verdictEval.success;
+
+      // Prose-based detection is diagnostic only (demoted by M1)
       const detection = detectSuccess(combinedOutput, requiresTests);
-      const success = detection.success;
-      if (success) {
-        terminationReason = "success";
+      if (detection.success && !success) {
+        log.warn(
+          "Output prose claimed success but no qualifying al_verify_task verdict — scoring failure",
+          {
+            taskId: task.id,
+            detectionMethod: detection.detectionMethod,
+            verdictReason: verdictEval.reason,
+          },
+        );
       }
 
+      let terminationReason: TerminationReason = success ? "success" : "error";
       if (result.timedOut) {
         terminationReason = "timeout";
-      } else if (result.exitCode !== 0 && !success) {
-        terminationReason = "error";
       }
 
-      // Log output when no success pattern matched (helps debug why task failed)
+      // Log output when the run failed with a clean exit (helps debugging)
       if (!success && result.exitCode === 0) {
-        log.warn("No success pattern found in output (exit code 0)");
+        log.warn(`Task failed verification: ${verdictEval.reason}`);
         const lastOutput = combinedOutput.slice(-2000);
         log.debug("Container output (last 2000 chars)", {
           output: lastOutput || "(empty)",
         });
       }
 
-      // Extract structured result from output
+      // Build the result summary from the verdict when available, falling
+      // back to structured output parsing for diagnostics
       const parsedFromOutput = extractResultFromToolResult(combinedOutput);
-      const compileSuccess = parsedFromOutput.compileSuccess ?? success;
+      const reportVerdict = verdictEval.authoritative ??
+        verdictEval.lastMatching;
+      const compileSuccess = reportVerdict?.compileSuccess ??
+        parsedFromOutput.compileSuccess ?? false;
+      const testsPassed = reportVerdict?.passed ?? parsedFromOutput.testsPassed;
+      const testsTotal = reportVerdict?.totalTests ??
+        parsedFromOutput.testsTotal;
       const resultSummary: ParsedTaskResult = {
         compileSuccess,
         result: success ? "pass" : "fail",
-        formatted: formatTaskResult(
-          compileSuccess,
-          parsedFromOutput.testsPassed,
-          parsedFromOutput.testsTotal,
-        ),
+        formatted: formatTaskResult(compileSuccess, testsPassed, testsTotal),
       };
-      if (parsedFromOutput.testsPassed !== undefined) {
-        resultSummary.testsPassed = parsedFromOutput.testsPassed;
+      if (testsPassed !== undefined) {
+        resultSummary.testsPassed = testsPassed;
       }
-      if (parsedFromOutput.testsTotal !== undefined) {
-        resultSummary.testsTotal = parsedFromOutput.testsTotal;
+      if (testsTotal !== undefined) {
+        resultSummary.testsTotal = testsTotal;
       }
 
       // Log formatted result for easy parsing
@@ -281,35 +311,53 @@ export class SandboxExecutor {
       // Analyze sandbox output for detailed failure information
       let failureDetails: DetailedFailureReason | undefined;
       if (!success) {
-        const analysis = analyzeSandboxOutput(
-          result.stdout,
-          result.stderr,
-          result.exitCode,
-          result.timedOut,
-        );
-        const analysisOptions: {
-          exitCode?: number;
-          containerName?: string;
-          timeoutMs?: number;
-          elapsedMs?: number;
-        } = {
-          exitCode: result.exitCode,
-          elapsedMs: Date.now() - startTime,
-        };
-        if (sandbox?.name) {
-          analysisOptions.containerName = sandbox.name;
-        }
-        if (agentConfig.limits?.timeoutMs) {
-          analysisOptions.timeoutMs = agentConfig.limits.timeoutMs;
-        }
-        failureDetails = buildFailureReasonFromAnalysis(
-          analysis,
-          analysisOptions,
-        );
+        if (verdictEval.lastMatching === null && !result.timedOut) {
+          // No verified al_verify_task result at all (M1)
+          const failureOptions: { exitCode?: number; containerName?: string } =
+            { exitCode: result.exitCode };
+          if (sandbox?.name) {
+            failureOptions.containerName = sandbox.name;
+          }
+          const proseNote = detection.success
+            ? " (output prose claimed success — ignored)"
+            : "";
+          failureDetails = buildFailureReason(
+            "error",
+            "agent_execution",
+            `No verified tool result: ${verdictEval.reason}${proseNote}`,
+            failureOptions,
+          );
+        } else {
+          const analysis = analyzeSandboxOutput(
+            result.stdout,
+            result.stderr,
+            result.exitCode,
+            result.timedOut,
+          );
+          const analysisOptions: {
+            exitCode?: number;
+            containerName?: string;
+            timeoutMs?: number;
+            elapsedMs?: number;
+          } = {
+            exitCode: result.exitCode,
+            elapsedMs: Date.now() - startTime,
+          };
+          if (sandbox?.name) {
+            analysisOptions.containerName = sandbox.name;
+          }
+          if (agentConfig.limits?.timeoutMs) {
+            analysisOptions.timeoutMs = agentConfig.limits.timeoutMs;
+          }
+          failureDetails = buildFailureReasonFromAnalysis(
+            analysis,
+            analysisOptions,
+          );
 
-        // Update termination reason from analysis if more specific
-        if (analysis.terminationReason !== "error") {
-          terminationReason = analysis.terminationReason;
+          // Update termination reason from analysis if more specific
+          if (analysis.terminationReason !== "error") {
+            terminationReason = analysis.terminationReason;
+          }
         }
       }
 
@@ -386,8 +434,18 @@ export class SandboxExecutor {
         }
       }
 
-      // Stop MCP server - must stop since workspace mapping is per-task
-      this.mcpManager.stop();
+      // Remove the per-run secrets dir (M6) — the key must not outlive the run
+      if (secretsDir) {
+        try {
+          await Deno.remove(secretsDir, { recursive: true });
+        } catch (error) {
+          log.warn(`Failed to remove secrets dir: ${error}`);
+        }
+      }
+
+      // Stop MCP server - must stop since workspace mapping is per-task.
+      // Reaps the child and removes the per-run verdict dir (M7).
+      await this.mcpManager.stop();
     }
   }
 }

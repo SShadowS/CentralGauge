@@ -31,9 +31,18 @@ $ErrorActionPreference = "Stop"
 Write-Host "[Sandbox] CentralGauge Agent Sandbox starting..." -ForegroundColor Cyan
 Write-Host "[Sandbox] Working directory: $(Get-Location)" -ForegroundColor Gray
 
+# Load the API key from the read-only secrets mount when present (M6).
+# The key is no longer passed via docker -e, which exposed it on the docker
+# argv and in `docker inspect` output.
+$secretsKeyFile = "C:\cg-secrets\api-key"
+if (Test-Path $secretsKeyFile) {
+    $env:ANTHROPIC_API_KEY = (Get-Content -Path $secretsKeyFile -Raw).Trim()
+    Write-Host "[Sandbox] Loaded API key from secrets mount" -ForegroundColor Gray
+}
+
 # Check for required environment variables
 if (-not $env:ANTHROPIC_API_KEY) {
-    Write-Host "[Sandbox] ERROR: ANTHROPIC_API_KEY environment variable is required" -ForegroundColor Red
+    Write-Host "[Sandbox] ERROR: ANTHROPIC_API_KEY is required (secrets mount C:\cg-secrets\api-key or environment variable)" -ForegroundColor Red
     exit 1
 }
 
@@ -76,12 +85,20 @@ while ($retryCount -lt $maxRetries) {
 # Create .mcp.json in workspace directory (project scope)
 # URL must include the /mcp endpoint for JSON-RPC
 $mcpUrl = "$($env:MCP_SERVER_URL)/mcp"
+$alToolsServer = @{
+    "type" = "http"
+    "url" = $mcpUrl
+}
+# Per-run bearer token (M3) — the MCP server 401s every non-/health request
+# without it
+if ($env:MCP_AUTH_TOKEN) {
+    $alToolsServer["headers"] = @{
+        "Authorization" = "Bearer $($env:MCP_AUTH_TOKEN)"
+    }
+}
 $mcpConfig = @{
     "mcpServers" = @{
-        "al-tools" = @{
-            "type" = "http"
-            "url" = $mcpUrl
-        }
+        "al-tools" = $alToolsServer
     }
 }
 

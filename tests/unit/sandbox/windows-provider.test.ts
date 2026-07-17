@@ -5,8 +5,11 @@
  * Uses mocked Docker commands to avoid requiring actual Docker runtime.
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
-import { WindowsSandboxProvider } from "../../../src/sandbox/windows-provider.ts";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  buildBindMountArg,
+  WindowsSandboxProvider,
+} from "../../../src/sandbox/windows-provider.ts";
 import type { SandboxConfig } from "../../../src/sandbox/types.ts";
 
 // =============================================================================
@@ -389,6 +392,64 @@ Deno.test("WindowsSandboxProvider", async (t) => {
       }
     });
 
+    await t.step("uses --mount bind form for the workspace (M11)", async () => {
+      mock.install();
+      mock.setResponse("run -d", {
+        code: 0,
+        stdout: "mnt123container\n",
+        stderr: "",
+      });
+
+      try {
+        const provider = new WindowsSandboxProvider();
+        const config = createTestConfig({ name: "mount-sandbox" });
+        await provider.create(config);
+
+        assertEquals(
+          mock.wasCalledWith([
+            "--mount",
+            "type=bind,src=C:\\test\\workspace,dst=C:\\workspace",
+          ]),
+          true,
+        );
+      } finally {
+        mock.restore();
+        mock.clear();
+      }
+    });
+
+    await t.step(
+      "mounts secretsDir read-only outside the workspace (M6)",
+      async () => {
+        mock.install();
+        mock.setResponse("run -d", {
+          code: 0,
+          stdout: "sec123container\n",
+          stderr: "",
+        });
+
+        try {
+          const provider = new WindowsSandboxProvider();
+          const config = createTestConfig({
+            name: "secrets-sandbox",
+            secretsDir: "C:\\temp\\cg-secrets-abc",
+          });
+          await provider.create(config);
+
+          assertEquals(
+            mock.wasCalledWith([
+              "--mount",
+              "type=bind,src=C:\\temp\\cg-secrets-abc,dst=C:\\cg-secrets,readonly",
+            ]),
+            true,
+          );
+        } finally {
+          mock.restore();
+          mock.clear();
+        }
+      },
+    );
+
     await t.step(
       "sets timeout environment variable when specified",
       async () => {
@@ -546,6 +607,43 @@ Deno.test("WindowsSandboxProvider", async (t) => {
   });
 });
 
+Deno.test("buildBindMountArg (M11)", async (t) => {
+  await t.step("builds the basic bind mount", () => {
+    assertEquals(
+      buildBindMountArg("U:\\Git\\ws", "C:\\workspace"),
+      "type=bind,src=U:\\Git\\ws,dst=C:\\workspace",
+    );
+  });
+
+  await t.step("appends readonly when requested", () => {
+    assertEquals(
+      buildBindMountArg("U:\\secrets", "C:\\cg-secrets", true),
+      "type=bind,src=U:\\secrets,dst=C:\\cg-secrets,readonly",
+    );
+  });
+
+  await t.step("spaces are VALID in Windows paths", () => {
+    const arg = buildBindMountArg("U:\\My Folder\\ws", "C:\\workspace");
+    assert(arg.includes("src=U:\\My Folder\\ws"));
+  });
+
+  await t.step("rejects commas (break docker --mount CSV parsing)", () => {
+    assertThrows(() => buildBindMountArg("U:\\bad,path", "C:\\workspace"));
+  });
+
+  await t.step("rejects genuinely illegal Windows path chars", () => {
+    assertThrows(() => buildBindMountArg('U:\\bad"path', "C:\\workspace"));
+    assertThrows(() => buildBindMountArg("U:\\bad|path", "C:\\workspace"));
+    assertThrows(() => buildBindMountArg("U:\\bad?path", "C:\\workspace"));
+    assertThrows(() => buildBindMountArg("U:\\bad*path", "C:\\workspace"));
+    assertThrows(() => buildBindMountArg("U:\\bad<path>", "C:\\workspace"));
+  });
+
+  await t.step("rejects stray colons beyond the drive letter", () => {
+    assertThrows(() => buildBindMountArg("U:\\bad:path", "C:\\workspace"));
+  });
+});
+
 Deno.test("WindowsSandbox", async (t) => {
   const mock = new DockerCommandMock();
 
@@ -608,6 +706,38 @@ Deno.test("WindowsSandbox", async (t) => {
       }
     });
   });
+
+  await t.step(
+    "exec timedOut only when the timer actually fired (M12)",
+    async () => {
+      mock.install();
+      mock.setResponse("run -d", {
+        code: 0,
+        stdout: "sandbox-t0\n",
+        stderr: "",
+      });
+      mock.setResponse("exec sandbox-t0", {
+        code: 0,
+        stdout: "done",
+        stderr: "",
+      });
+
+      try {
+        const provider = new WindowsSandboxProvider();
+        const config = createTestConfig({ name: "sandbox-t0" });
+        const sandbox = await provider.create(config);
+
+        // With the old duration>=timeout heuristic, timeout 0 marked EVERY
+        // completed command as timed out
+        const result = await sandbox.exec(["echo", "hi"], { timeout: 0 });
+        assertEquals(result.exitCode, 0);
+        assertEquals(result.timedOut, false);
+      } finally {
+        mock.restore();
+        mock.clear();
+      }
+    },
+  );
 
   await t.step("execStream", async (t) => {
     await t.step("streams output to callback", async () => {

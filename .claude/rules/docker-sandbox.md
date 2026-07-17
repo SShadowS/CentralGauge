@@ -42,7 +42,10 @@ Located in `mcp/al-tools-server.ts`. Provides AL tools via HTTP JSON-RPC:
 deno run --allow-all mcp/al-tools-server.ts \
   --http \
   --port 3100 \
-  --workspace-map "C:\\workspace=/host/path/to/workspace"
+  --auth-token "<per-run-token>" \
+  --workspace-map "C:\\workspace=/host/path/to/workspace" \
+  --verdict-dir "<host-temp-dir>" \
+  --run-nonce "<per-run-uuid>"
 ```
 
 **Critical: Workspace Mapping**
@@ -50,6 +53,27 @@ deno run --allow-all mcp/al-tools-server.ts \
 The `--workspace-map` argument translates container paths to host paths. Without this, MCP tool calls fail with "pipe is being closed (os error 232)".
 
 Format: `CONTAINER_PATH=HOST_PATH`
+
+With a mapping configured, any tool path OUTSIDE the mapped workspace
+(traversal via `..`, prefix confusion, host-absolute paths) is rejected (M4).
+
+**Auth, binding, and body cap (M3)**
+
+- With `--auth-token`, every request except `GET /health` requires
+  `Authorization: Bearer <token>` (401 otherwise) and the server binds
+  `0.0.0.0` so the container can reach it via `host.docker.internal`.
+- Without a token the server binds `127.0.0.1` only.
+- Request bodies are capped at 10 MB. No CORS headers are emitted.
+- In production `McpServerManager.start()` handles all of this per run:
+  fresh free port, fresh token, fresh verdict dir + nonce.
+
+**Trusted verdict channel (M1)**
+
+With `--verdict-dir` + `--run-nonce`, every `al_verify`/`al_verify_task`
+completion appends a JSON record to `<verdict-dir>/verdicts.jsonl`. The
+sandbox executor scores success ONLY from a passing `al_verify_task`
+verdict matching the task id and nonce — output prose like "All tests
+passed" is diagnostic only and can never grant success.
 
 ### 2. Windows Container Image
 
@@ -137,18 +161,17 @@ The entrypoint creates this file automatically based on `MCP_SERVER_URL`.
 
 ## Success Detection
 
-The executor detects success from container output patterns:
+Success is scored EXCLUSIVELY from the trusted verdict channel (M1):
+the MCP server appends a record to `verdicts.jsonl` (in a host temp dir the
+container cannot reach) after every `al_verify`/`al_verify_task` call, and
+the executor requires a passing `al_verify_task` verdict matching the task
+id and per-run nonce (and, for test tasks, `totalTests > 0`).
 
-**For tasks requiring tests:**
-- `"all tests passed"`
-- `"tests passed!"`
-- `"X/X passed"` (where both numbers match)
-- `"task completed successfully"`
-
-**For compile-only tasks:**
-- `"compilation successful"`
-- `"compilation: **success**"`
-- `"task completed successfully"`
+Container output patterns ("all tests passed", "compilation successful",
+...) are DIAGNOSTIC ONLY — model prose can never grant success. A run with
+no qualifying verdict fails with
+`failureDetails.phase = "agent_execution"`, reason "no verified tool
+result".
 
 ## Manual Testing Setup
 
@@ -158,23 +181,28 @@ When debugging outside the executor:
 # 1. Source environment
 source .env
 
-# 2. Start MCP server with workspace mapping
+# 2. Start MCP server with workspace mapping + auth token
+export MCP_TOKEN=$(uuidgen)
 deno run --allow-all mcp/al-tools-server.ts \
   --http --port 3100 \
+  --auth-token "$MCP_TOKEN" \
   --workspace-map "C:\\workspace=U:\\Git\\CentralGauge\\results\\test-workspace"
 
-# 3. Create workspace and prompt
+# 3. Create workspace, prompt, and secrets dir (API key file — M6)
 mkdir -p results/test-workspace
 echo "Your prompt here" > results/test-workspace/.agent-prompt.txt
+mkdir -p results/test-secrets
+printf '%s' "$ANTHROPIC_API_KEY" > results/test-secrets/api-key
 
-# 4. Create container
+# 4. Create container (key via read-only secrets mount, NOT -e; M6/M11)
 docker run -d --name test-container \
-  -e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   -e "AGENT_PROMPT_FILE=C:\\workspace\\.agent-prompt.txt" \
   -e "MCP_SERVER_URL=http://host.docker.internal:3100" \
+  -e "MCP_AUTH_TOKEN=$MCP_TOKEN" \
   -e "AGENT_MAX_TURNS=10" \
   -e "CLAUDE_CODE_GIT_BASH_PATH=C:\\Git\\bin\\bash.exe" \
-  -v "U:/Git/CentralGauge/results/test-workspace:C:/workspace" \
+  --mount "type=bind,src=U:\\Git\\CentralGauge\\results\\test-workspace,dst=C:\\workspace" \
+  --mount "type=bind,src=U:\\Git\\CentralGauge\\results\\test-secrets,dst=C:\\cg-secrets,readonly" \
   centralgauge/agent-sandbox:windows-latest \
   powershell -Command "while (\$true) { Start-Sleep -Seconds 60 }"
 

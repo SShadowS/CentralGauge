@@ -42,6 +42,7 @@ import {
   extractResultFromToolResult,
   formatTaskResult,
 } from "./result-parser.ts";
+import { detectToolResultSuccess } from "./success-detector.ts";
 import {
   type SandboxExecutionContext,
   SandboxExecutor,
@@ -180,16 +181,10 @@ export class AgentTaskExecutor {
           testsTotal = parsed.testsTotal;
         }
 
-        // Determine success based on task type
-        const resultLower = resultText.toLowerCase();
-        if (requiresTests) {
-          if (resultLower.includes("all tests passed")) {
-            success = true;
-          }
-        } else {
-          if (resultLower.includes("compilation successful")) {
-            success = true;
-          }
+        // Determine success per tool_result block (TEST4) — hardened
+        // detection replaces the old 2-substring check
+        if (detectToolResultSuccess(resultText, requiresTests)) {
+          success = true;
         }
       }
     }

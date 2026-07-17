@@ -15,6 +15,20 @@ import { basename, dirname, fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
 import { TEST_TOOLKIT_DEPENDENCIES } from "../src/constants.ts";
+import {
+  translatePath as translateWithMapping,
+  type WorkspaceMapping,
+} from "./path-translation.ts";
+import {
+  appendTextWithRotation,
+  authorize,
+  buildParseErrorResponse,
+  MAX_BODY_BYTES,
+  readBodyCapped,
+  validateRequiredStringParams,
+  validateToolCallEnvelope,
+} from "./server-utils.ts";
+import { appendVerdict, type VerifyVerdict } from "../src/agents/verdict.ts";
 
 /** Get the CentralGauge project root from the script location */
 function getProjectRoot(): string {
@@ -38,7 +52,8 @@ interface JsonRpcRequest {
 
 interface JsonRpcResponse {
   jsonrpc: "2.0";
-  id: number | string;
+  // null only for parse errors where the request id is unknowable (spec)
+  id: number | string | null;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
 }
@@ -81,31 +96,24 @@ if (containerUsername && containerPassword) {
  * Workspace path mapping for sandbox mode.
  * Maps container paths (e.g., C:\workspace) to host paths.
  */
-let workspaceMapping: { containerPath: string; hostPath: string } | null = null;
+let workspaceMapping: WorkspaceMapping | null = null;
 
 /**
  * Translate a path from container format to host format.
- * Used in sandbox mode where the container uses C:\workspace but the host
- * needs the actual path to access files.
+ * Delegates to the contained translation in path-translation.ts: with a
+ * mapping configured, any path outside the workspace THROWS instead of
+ * passing through (finding M4).
  */
 function translatePath(inputPath: string): string {
-  if (!workspaceMapping) return inputPath;
-
-  // Handle various path formats from container (forward/back slashes)
-  const normalized = inputPath.replace(/\//g, "\\");
-  const containerNormalized = workspaceMapping.containerPath.replace(
-    /\//g,
-    "\\",
-  );
-
-  if (normalized.toLowerCase().startsWith(containerNormalized.toLowerCase())) {
-    const relativePart = normalized.substring(containerNormalized.length);
-    const translated = workspaceMapping.hostPath + relativePart;
+  const translated = translateWithMapping(inputPath, workspaceMapping);
+  if (translated !== inputPath) {
     console.error(`[MCP] Path translation: ${inputPath} → ${translated}`);
-    return translated;
   }
-  return inputPath;
+  return translated;
 }
+
+/** Cap for the debug/timing log files before rotation to `.1` (M8). */
+const LOG_ROTATION_BYTES = 10 * 1024 * 1024;
 
 /** Log timing for performance analysis - writes to both stderr and a log file */
 function logTiming(label: string, startTime: number): void {
@@ -114,7 +122,7 @@ function logTiming(label: string, startTime: number): void {
   console.error(message);
   // Also append to timing log file for visibility
   try {
-    Deno.writeTextFileSync("timing.log", message + "\n", { append: true });
+    appendTextWithRotation("timing.log", message + "\n", LOG_ROTATION_BYTES);
   } catch {
     // Ignore file write errors
   }
@@ -136,7 +144,7 @@ function debugLog(context: string, message: string, data?: unknown): void {
 
   console.error(logEntry.trim()); // Also to stderr
   try {
-    Deno.writeTextFileSync(DEBUG_LOG_FILE, logEntry, { append: true });
+    appendTextWithRotation(DEBUG_LOG_FILE, logEntry, LOG_ROTATION_BYTES);
   } catch {
     // Ignore file write errors
   }
@@ -157,10 +165,13 @@ const prereqCache = new Map<
 
 /**
  * Cache for published prereq apps to avoid republishing on every al_verify_task call.
- * Key: "containerName:appId", Value: true (published)
- * Prereqs never change during a run, so once published they stay published.
+ * Key: "containerName:appId", Value: the in-flight (or settled) publish
+ * promise — single-flight, so concurrent verify calls for the same prereq
+ * share ONE publish instead of racing (M10). Failed publishes are evicted
+ * so the next call retries. Prereqs never change during a run, so once
+ * published they stay published.
  */
-const publishedPrereqCache = new Set<string>();
+const publishedPrereqCache = new Map<string, Promise<void>>();
 
 // =============================================================================
 // Tool Definitions
@@ -714,10 +725,11 @@ async function findProjectDir(baseDir: string): Promise<string | null> {
     // Not in root, search subdirectories
   }
 
-  // Search immediate subdirectories
+  // Search immediate subdirectories (skip .cg-* work dirs — verify dirs
+  // carry their own app.json and must never be mistaken for the project)
   try {
     for await (const entry of Deno.readDir(baseDir)) {
-      if (entry.isDirectory) {
+      if (entry.isDirectory && !entry.name.startsWith(".cg-")) {
         const subPath = join(baseDir, entry.name, "app.json");
         try {
           await Deno.stat(subPath);
@@ -1183,6 +1195,7 @@ async function handleAlVerify(params: {
   // Translate path for sandbox mode (e.g., C:\workspace → host path)
   // Note: handleAlVerifyTask already translates, but this handles direct calls
   const inputDir = translatePath(params.projectDir);
+  let verifyDir: string | undefined;
 
   try {
     // Find project directory (checks subdirectories if needed)
@@ -1294,15 +1307,17 @@ async function handleAlVerify(params: {
     }
     logTiming("Prereq resolution", prereqStart);
 
-    // 2. Create isolated verification directory and copy files
+    // 2. Create isolated verification directory and copy files.
+    // The dir lives INSIDE the project (never join(projectDir, "..") — that
+    // escapes the workspace containment guaranteed by translatePath, M4).
+    // The .cg- prefix is excluded from findProjectDir's subdirectory scan;
+    // buildALProject/copyAlFilesToDir only read top-level files so they never
+    // pick up its contents. Removed in the finally below so the benchmark
+    // test file it contains is not left readable in the agent workspace.
     const setupStart = Date.now();
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
-    const verifyDir = join(
-      projectDir,
-      "..",
-      `verify-${timestamp}-${random}`,
-    );
+    verifyDir = join(projectDir, `.cg-verify-${timestamp}-${random}`);
     await ensureDir(verifyDir);
     debugLog("al_verify", "Verify directory created", { verifyDir });
 
@@ -1411,18 +1426,24 @@ async function handleAlVerify(params: {
       if (prereqApp.compiledAppPath) {
         const appId = prereqApp.appJson["id"] as string;
         const cacheKey = `${containerName}:${appId}`;
-        if (!publishedPrereqCache.has(cacheKey)) {
+        let publishPromise = publishedPrereqCache.get(cacheKey);
+        if (!publishPromise) {
           console.error(
             `[DEBUG] Publishing prereq ${appId} to ${containerName}`,
           );
-          await containerProvider.publishApp(
+          publishPromise = containerProvider.publishApp(
             containerName,
             prereqApp.compiledAppPath,
           );
-          publishedPrereqCache.add(cacheKey);
+          publishedPrereqCache.set(cacheKey, publishPromise);
+          // Evict failed publishes so a later call can retry
+          publishPromise.catch(() => publishedPrereqCache.delete(cacheKey));
         } else {
-          console.error(`[DEBUG] Prereq ${appId} already published, skipping`);
+          console.error(
+            `[DEBUG] Prereq ${appId} publish already in flight or done, awaiting`,
+          );
         }
+        await publishPromise;
       }
     }
     logTiming("Publish prereqs", publishStart);
@@ -1489,6 +1510,16 @@ async function handleAlVerify(params: {
     const errorMessage = error instanceof Error ? error.message : String(error);
     debugLog("al_verify", "EXCEPTION", { error: errorMessage });
     return { success: false, message: `Verification error: ${errorMessage}` };
+  } finally {
+    // Best-effort removal: the verify dir sits inside the (agent-writable)
+    // workspace and contains the copied benchmark test file.
+    if (verifyDir) {
+      try {
+        await Deno.remove(verifyDir, { recursive: true });
+      } catch {
+        // Already gone or locked — never fail verification over cleanup
+      }
+    }
   }
 }
 
@@ -1551,21 +1582,89 @@ const TOOL_HANDLERS: Record<
     ),
 };
 
+/**
+ * Trusted verdict channel config (M1). Set from --verdict-dir/--run-nonce.
+ * When configured, every verify-tool completion appends a verdict record to
+ * <dir>/verdicts.jsonl — the ONLY evidence the sandbox executor accepts.
+ */
+let verdictConfig: { dir: string; runNonce: string } | null = null;
+
+/**
+ * Append a verdict record after a verify-tool completion (M1).
+ * Write failures are logged but never alter the tool result — a missing
+ * verdict simply scores as failure on the executor side (fail closed).
+ */
+async function maybeWriteVerdict(
+  toolName: string,
+  toolArgs: Record<string, unknown>,
+  result: unknown,
+): Promise<void> {
+  if (!verdictConfig) return;
+  if (toolName !== "al_verify_task" && toolName !== "al_verify") return;
+
+  const verifyResult = result as VerifyResult;
+  // al_verify_task carries the trusted task id; al_verify only has the
+  // model-chosen testFile (diagnostic — never authoritative)
+  const taskId = toolName === "al_verify_task"
+    ? String(toolArgs["taskId"] ?? "") || null
+    : extractTaskIdFromTestPath(String(toolArgs["testFile"] ?? ""));
+
+  const verdict: VerifyVerdict = {
+    nonce: verdictConfig.runNonce,
+    tool: toolName,
+    taskId,
+    success: verifyResult.success === true,
+    // If tests ran at all, compilation necessarily succeeded
+    compileSuccess: verifyResult.success === true ||
+      verifyResult.totalTests !== undefined,
+    timestamp: new Date().toISOString(),
+  };
+  if (verifyResult.totalTests !== undefined) {
+    verdict.totalTests = verifyResult.totalTests;
+  }
+  if (verifyResult.passed !== undefined) verdict.passed = verifyResult.passed;
+  if (verifyResult.failed !== undefined) verdict.failed = verifyResult.failed;
+
+  try {
+    await appendVerdict(verdictConfig.dir, verdict);
+  } catch (error) {
+    console.error(
+      `[MCP] ERROR: failed to write verdict record: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 async function dispatchToolCall(
   id: string | number,
   params: unknown,
 ): Promise<JsonRpcResponse> {
-  const { name: toolName, arguments: toolArgs } = params as {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
+  // Validate params shape before touching handlers (M13)
+  const envelope = validateToolCallEnvelope(params);
+  if (!envelope.ok) {
+    return buildErrorResponse(id, -32602, envelope.message);
+  }
+  const { name: toolName, args: toolArgs } = envelope;
 
   const handler = TOOL_HANDLERS[toolName];
   if (!handler) {
     return buildErrorResponse(id, -32601, `Unknown tool: ${toolName}`);
   }
 
+  const toolDef = TOOLS.find((tool) => tool.name === toolName);
+  if (toolDef?.inputSchema.required) {
+    const check = validateRequiredStringParams(
+      toolArgs,
+      toolDef.inputSchema.required,
+    );
+    if (!check.ok) {
+      return buildErrorResponse(id, -32602, check.message);
+    }
+  }
+
   const result = await handler(toolArgs);
+  await maybeWriteVerdict(toolName, toolArgs, result);
   return wrapToolResult(id, result);
 }
 
@@ -1641,17 +1740,10 @@ async function runStdioTransport() {
           await Deno.stdout.write(encoder.encode(responseJson));
         }
       } catch (error) {
-        // Parse error
-        const errorResponse: JsonRpcResponse = {
-          jsonrpc: "2.0",
-          id: 0,
-          error: {
-            code: -32700,
-            message: `Parse error: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        };
+        // Parse error — id is null because the request id is unknowable (M9)
+        const errorResponse: JsonRpcResponse = buildParseErrorResponse(
+          error instanceof Error ? error.message : String(error),
+        );
         await Deno.stdout.write(
           encoder.encode(JSON.stringify(errorResponse) + "\n"),
         );
@@ -1667,13 +1759,10 @@ async function runStdioTransport() {
 const DEFAULT_HTTP_PORT = 3100;
 
 /**
- * Handle CORS preflight and add CORS headers to responses.
+ * Per-run bearer token required on every non-/health request (M3).
+ * Null in non-sandbox local mode, where the server binds 127.0.0.1.
  */
-function addCorsHeaders(headers: Headers): void {
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type");
-}
+let serverAuthToken: string | null = null;
 
 /**
  * Run MCP server with HTTP/SSE transport.
@@ -1681,133 +1770,156 @@ function addCorsHeaders(headers: Headers): void {
  * - POST /rpc - JSON-RPC requests
  * - GET /health - Health check
  * - GET /tools - List available tools
+ *
+ * No CORS headers: the only intended client is the sandbox container's MCP
+ * client, and a wildcard CORS policy would let any browser page reach the
+ * server (M3).
  */
-function runHttpTransport(port: number): void {
-  console.error(`[MCP HTTP] Starting HTTP server on port ${port}`);
+function runHttpTransport(port: number, hostname: string): void {
+  console.error(`[MCP HTTP] Starting HTTP server on ${hostname}:${port}`);
 
-  Deno.serve({ port }, async (request: Request): Promise<Response> => {
-    const url = new URL(request.url);
-    const headers = new Headers();
-    addCorsHeaders(headers);
+  Deno.serve(
+    { port, hostname },
+    async (request: Request): Promise<Response> => {
+      const url = new URL(request.url);
+      const headers = new Headers();
 
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers });
-    }
+      // Health check endpoint (open — used for readiness probes)
+      if (url.pathname === "/health" && request.method === "GET") {
+        headers.set("Content-Type", "application/json");
+        return new Response(
+          JSON.stringify({
+            status: "ok",
+            server: "al-tools-server",
+            version: "1.0.0",
+            transport: "http",
+          }),
+          { status: 200, headers },
+        );
+      }
 
-    // Health check endpoint
-    if (url.pathname === "/health" && request.method === "GET") {
-      headers.set("Content-Type", "application/json");
-      return new Response(
-        JSON.stringify({
-          status: "ok",
-          server: "al-tools-server",
-          version: "1.0.0",
-          transport: "http",
-        }),
-        { status: 200, headers },
-      );
-    }
-
-    // List tools endpoint (convenience)
-    if (url.pathname === "/tools" && request.method === "GET") {
-      headers.set("Content-Type", "application/json");
-      return new Response(JSON.stringify({ tools: TOOLS }, null, 2), {
-        status: 200,
-        headers,
-      });
-    }
-
-    // JSON-RPC endpoint (supports both /mcp and /rpc for compatibility)
-    if (
-      (url.pathname === "/mcp" || url.pathname === "/rpc") &&
-      request.method === "POST"
-    ) {
-      headers.set("Content-Type", "application/json");
-
-      try {
-        const body = await request.text();
-        const jsonRpcRequest = JSON.parse(body) as JsonRpcRequest;
-
-        const response = await handleRequest(jsonRpcRequest);
-
-        if (response === null) {
-          // Notification - no response expected
-          return new Response(null, { status: 204, headers });
-        }
-
-        return new Response(JSON.stringify(response), {
-          status: 200,
-          headers,
-        });
-      } catch (error) {
-        const errorResponse: JsonRpcResponse = {
-          jsonrpc: "2.0",
-          id: 0,
-          error: {
-            code: -32700,
-            message: `Parse error: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        };
-        return new Response(JSON.stringify(errorResponse), {
-          status: 400,
+      // Everything except /health requires the per-run bearer token (M3)
+      if (!authorize(request, serverAuthToken)) {
+        headers.set("Content-Type", "application/json");
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
           headers,
         });
       }
-    }
 
-    // SSE endpoint for streaming (future use)
-    if (url.pathname === "/sse" && request.method === "GET") {
-      headers.set("Content-Type", "text/event-stream");
-      headers.set("Cache-Control", "no-cache");
-      headers.set("Connection", "keep-alive");
+      // List tools endpoint (convenience)
+      if (url.pathname === "/tools" && request.method === "GET") {
+        headers.set("Content-Type", "application/json");
+        return new Response(JSON.stringify({ tools: TOOLS }, null, 2), {
+          status: 200,
+          headers,
+        });
+      }
 
-      // For now, just send a heartbeat stream
-      // Tool results will be sent via this channel when streaming is implemented
-      const stream = new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "connected" })}\n\n`,
-            ),
-          );
+      // JSON-RPC endpoint (supports both /mcp and /rpc for compatibility)
+      if (
+        (url.pathname === "/mcp" || url.pathname === "/rpc") &&
+        request.method === "POST"
+      ) {
+        headers.set("Content-Type", "application/json");
 
-          // Send heartbeat every 30 seconds
-          const interval = setInterval(() => {
-            try {
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${
-                    JSON.stringify({ type: "heartbeat", timestamp: Date.now() })
-                  }\n\n`,
-                ),
-              );
-            } catch {
-              clearInterval(interval);
-            }
-          }, 30000);
-
-          // Clean up on close (handled by request abort)
-          request.signal.addEventListener("abort", () => {
-            clearInterval(interval);
-            controller.close();
+        // Cap request bodies (M3) — Content-Length plus a capped read
+        const bodyResult = await readBodyCapped(request, MAX_BODY_BYTES);
+        if (!bodyResult.ok) {
+          const errorResponse: JsonRpcResponse = {
+            jsonrpc: "2.0",
+            id: null,
+            error: {
+              code: -32600,
+              message: `Request body exceeds ${MAX_BODY_BYTES} bytes`,
+            },
+          };
+          return new Response(JSON.stringify(errorResponse), {
+            status: 413,
+            headers,
           });
-        },
-      });
+        }
 
-      return new Response(stream, { headers });
-    }
+        try {
+          const jsonRpcRequest = JSON.parse(bodyResult.body) as JsonRpcRequest;
 
-    // 404 for unknown paths
-    headers.set("Content-Type", "application/json");
-    return new Response(
-      JSON.stringify({ error: "Not found", path: url.pathname }),
-      { status: 404, headers },
-    );
-  });
+          const response = await handleRequest(jsonRpcRequest);
+
+          if (response === null) {
+            // Notification - no response expected
+            return new Response(null, { status: 204, headers });
+          }
+
+          return new Response(JSON.stringify(response), {
+            status: 200,
+            headers,
+          });
+        } catch (error) {
+          // Parse error — id null because the request id is unknowable (M9)
+          const errorResponse: JsonRpcResponse = buildParseErrorResponse(
+            error instanceof Error ? error.message : String(error),
+          );
+          return new Response(JSON.stringify(errorResponse), {
+            status: 400,
+            headers,
+          });
+        }
+      }
+
+      // SSE endpoint for streaming (future use)
+      if (url.pathname === "/sse" && request.method === "GET") {
+        headers.set("Content-Type", "text/event-stream");
+        headers.set("Cache-Control", "no-cache");
+        headers.set("Connection", "keep-alive");
+
+        // For now, just send a heartbeat stream
+        // Tool results will be sent via this channel when streaming is implemented
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "connected" })}\n\n`,
+              ),
+            );
+
+            // Send heartbeat every 30 seconds
+            const interval = setInterval(() => {
+              try {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${
+                      JSON.stringify({
+                        type: "heartbeat",
+                        timestamp: Date.now(),
+                      })
+                    }\n\n`,
+                  ),
+                );
+              } catch {
+                clearInterval(interval);
+              }
+            }, 30000);
+
+            // Clean up on close (handled by request abort)
+            request.signal.addEventListener("abort", () => {
+              clearInterval(interval);
+              controller.close();
+            });
+          },
+        });
+
+        return new Response(stream, { headers });
+      }
+
+      // 404 for unknown paths
+      headers.set("Content-Type", "application/json");
+      return new Response(
+        JSON.stringify({ error: "Not found", path: url.pathname }),
+        { status: 404, headers },
+      );
+    },
+  );
 
   console.error(`[MCP HTTP] Server listening at http://localhost:${port}`);
   console.error(`[MCP HTTP] Endpoints:`);
@@ -1829,12 +1941,21 @@ Usage:
   al-tools-server.ts [options]
 
 Options:
-  --http         Run HTTP transport instead of stdio
-  --port <port>  HTTP port (default: ${DEFAULT_HTTP_PORT}, env: MCP_HTTP_PORT)
-  --help         Show this help message
+  --http                Run HTTP transport instead of stdio
+  --port <port>         HTTP port (default: ${DEFAULT_HTTP_PORT}, env: MCP_HTTP_PORT)
+  --hostname <host>     Bind address (default: 0.0.0.0 with --auth-token,
+                        127.0.0.1 without)
+  --auth-token <token>  Require "Authorization: Bearer <token>" on every
+                        request except /health
+  --workspace-map <m>   Sandbox path mapping "C:\\workspace=<host path>"
+  --verdict-dir <dir>   Host dir receiving verdicts.jsonl (trusted verdict
+                        channel; requires --run-nonce)
+  --run-nonce <nonce>   Per-run nonce stamped into verdict records
+  --help                Show this help message
 
 Environment Variables:
-  MCP_HTTP_PORT  HTTP server port (default: ${DEFAULT_HTTP_PORT})
+  MCP_HTTP_PORT   HTTP server port (default: ${DEFAULT_HTTP_PORT})
+  MCP_AUTH_TOKEN  Fallback for --auth-token
 
 Examples:
   # Run with stdio transport (default, for MCP clients)
@@ -1859,10 +1980,33 @@ if (import.meta.main) {
 
   const useHttp = args.includes("--http");
 
+  const getFlag = (name: string): string | undefined => {
+    const index = args.indexOf(name);
+    return index !== -1 ? args[index + 1] : undefined;
+  };
+
+  // Per-run auth token (M3). With a token the server may bind 0.0.0.0 (the
+  // sandbox container connects via host.docker.internal); without one it
+  // stays loopback-only.
+  serverAuthToken = getFlag("--auth-token") ?? Deno.env.get("MCP_AUTH_TOKEN") ??
+    null;
+
+  // Trusted verdict channel (M1) — both flags required together
+  const verdictDirArg = getFlag("--verdict-dir");
+  const runNonceArg = getFlag("--run-nonce");
+  if (verdictDirArg && runNonceArg) {
+    verdictConfig = { dir: verdictDirArg, runNonce: runNonceArg };
+    console.error(`[MCP] Verdict channel enabled: ${verdictDirArg}`);
+  } else if (verdictDirArg || runNonceArg) {
+    console.error(
+      `[ERROR] --verdict-dir and --run-nonce must be provided together`,
+    );
+    Deno.exit(1);
+  }
+
   // Parse --workspace-map for sandbox mode path translation
   // Format: --workspace-map "C:\workspace=U:\Git\CentralGauge\results\..."
-  const mapIndex = args.indexOf("--workspace-map");
-  const mapArg = mapIndex !== -1 ? args[mapIndex + 1] : undefined;
+  const mapArg = getFlag("--workspace-map");
   if (mapArg) {
     const separatorIndex = mapArg.indexOf("=");
     if (separatorIndex > 0) {
@@ -1881,8 +2025,7 @@ if (import.meta.main) {
   if (useHttp) {
     // Determine port from args or environment
     let port = DEFAULT_HTTP_PORT;
-    const portIndex = args.indexOf("--port");
-    const portArg = portIndex !== -1 ? args[portIndex + 1] : undefined;
+    const portArg = getFlag("--port");
     if (portArg) {
       port = parseInt(portArg, 10);
     } else {
@@ -1897,7 +2040,11 @@ if (import.meta.main) {
       Deno.exit(1);
     }
 
-    runHttpTransport(port);
+    // Without an auth token, never expose the server beyond loopback (M3)
+    const hostname = getFlag("--hostname") ??
+      (serverAuthToken ? "0.0.0.0" : "127.0.0.1");
+
+    runHttpTransport(port, hostname);
   } else {
     runStdioTransport();
   }
