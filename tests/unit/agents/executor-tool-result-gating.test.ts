@@ -130,6 +130,44 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
   );
 
   await t.step(
+    "al_verify passing structured verdict → NOT success for a test-required task (model-chosen testFile is diagnostic-only)",
+    () => {
+      const ex = internals();
+      ex.pendingToolCalls.set("t-av", {
+        name: "al_verify",
+        startTime: Date.now(),
+      });
+      const result = ex.processUserMessage(
+        makeUserMsg(
+          "t-av",
+          '{"success": true, "message": "All tests passed! (3/3)", "totalTests": 3, "passed": 3, "failed": 0}',
+        ),
+        true,
+      );
+      assertEquals(result.success, false);
+    },
+  );
+
+  await t.step(
+    "al_verify passing structured verdict (mcp name) → NOT success for a test-required task",
+    () => {
+      const ex = internals();
+      ex.pendingToolCalls.set("t-av", {
+        name: "mcp__al-tools__al_verify",
+        startTime: Date.now(),
+      });
+      const result = ex.processUserMessage(
+        makeUserMsg(
+          "t-av",
+          '{"success": true, "message": "All tests passed! (3/3)", "totalTests": 3, "passed": 3, "failed": 0}',
+        ),
+        true,
+      );
+      assertEquals(result.success, false);
+    },
+  );
+
+  await t.step(
     "al_verify_task FAILING verdict whose failures[] says 'all tests passed' → NOT success",
     () => {
       const ex = internals();

@@ -62,25 +62,40 @@ interface ExecutionPrepResult {
 }
 
 /**
- * Tools whose result is an authoritative pass/fail verdict, and therefore the
- * ONLY tool_result blocks that count toward scoring. A model controls the prose
- * of general tools (e.g. Bash `echo "all tests passed"`, or a Read of a file it
- * wrote), so treating those as scoring inputs lets it forge a passing score
- * (M4 follow-up). al_verify_task / al_verify carry the test verdict; al_compile
- * carries the compile-only verdict (genuine compiler output — compile-only
- * tasks are scored from it, and it cannot satisfy a test task because
- * scoreVerdictToolResult still requires test evidence when requiresTests).
+ * Resolved (generic) AL tool names whose result is an authoritative pass/fail
+ * verdict, and therefore the ONLY tool_result blocks that count toward scoring.
+ *
+ * A model controls the prose of general tools (Bash `echo "all tests passed"`,
+ * a Read of a file it wrote), so treating those as scoring inputs lets it forge
+ * a passing score (M4 follow-up). Only:
+ *  - `al_verify_task` — resolves the REAL benchmark test from the task YAML, so
+ *    the model can neither see nor substitute it. This is the test verdict.
+ *  - `al_compile` — a server-run compile verdict (compile-only tasks are scored
+ *    from it; it cannot satisfy a test task because scoreVerdictToolResult still
+ *    requires test evidence when requiresTests).
+ *
+ * `al_verify` is deliberately EXCLUDED (M1/M2 follow-up): its testFile is
+ * model-chosen, so an agent could stage a trivial always-pass test and call
+ * al_verify instead of al_verify_task — structured-only scoring can't tell that
+ * forged pass from a genuine one. Sandbox M1 made al_verify diagnostic-only for
+ * exactly this reason. (al_verify is not in AL_TOOL_SCHEMAS today, so
+ * matchToolName already returns null for it; excluding it from this set makes
+ * the exclusion explicit and robust if that ever changes.)
  */
 const SCORING_TOOL_NAMES = new Set([
   "al_verify_task",
-  "al_verify",
   "al_compile",
 ]);
+
+/** Whether a RESOLVED generic AL tool name is an authoritative scoring input. */
+export function isScoringGenericTool(generic: string): boolean {
+  return SCORING_TOOL_NAMES.has(generic);
+}
 
 function isScoringToolResult(toolName: string | undefined): boolean {
   if (!toolName) return false;
   const generic = matchToolName(toolName);
-  return generic !== null && SCORING_TOOL_NAMES.has(generic);
+  return generic !== null && isScoringGenericTool(generic);
 }
 
 export class AgentTaskExecutor {
@@ -184,11 +199,12 @@ export class AgentTaskExecutor {
           }
         }
 
-        // Only AL verdict tools (al_verify_task / al_verify / al_compile) are
-        // scoring inputs. The model controls the prose of general tools (Bash,
-        // Read, ...), so extracting counts or detecting success from those
-        // would let it forge a passing score (M4 follow-up). Telemetry above
-        // still runs for every tool; scoring below does not.
+        // Only authoritative AL verdict tools (al_verify_task / al_compile,
+        // per SCORING_TOOL_NAMES) are scoring inputs. General tools' prose is
+        // model-controlled (Bash `echo`, a Read of a self-written file), and
+        // al_verify's testFile is model-chosen — scoring either would let the
+        // model forge a pass (M4 + M1/M2 follow-up). Telemetry above still runs
+        // for every tool; scoring below does not.
         if (!isScoringToolResult(pending?.name)) {
           continue;
         }
