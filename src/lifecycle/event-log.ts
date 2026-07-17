@@ -180,16 +180,26 @@ export interface QueryEventsFilter {
  * AppendOptions).
  */
 /**
- * Sign a lifecycle-admin GET/PUT request — matches the canonical scheme in
- * `site/src/lib/server/lifecycle-auth.ts`. Body-hash binding closes the
- * pre-fix C1 attack where a captured signed envelope could be replayed
- * against a different URL or with arbitrary body bytes.
+ * Sign a lifecycle-admin GET/PUT/POST request — matches the canonical
+ * scheme in `site/src/lib/server/lifecycle-auth.ts`. Body-hash binding
+ * closes the pre-fix C1 attack where a captured signed envelope could be
+ * replayed against a different URL or with arbitrary body bytes.
+ *
+ * V7: every request carries a fresh `X-CG-Nonce` folded INTO the signed
+ * bytes — the server records it (`lifecycle_nonces`) and rejects a repeat
+ * with 409, closing the replay-within-skew-window gap. Requires a worker
+ * that folds the nonce when the header is present (deploy the worker
+ * BEFORE running lifecycle commands with this CLI — an old worker fails
+ * signature verification because the signed bytes changed).
+ *
+ * POST support exists for cluster 7's body-signed-by-header endpoints;
+ * this module builds the capability, cluster 7 wires its endpoint.
  */
 export async function signLifecycleHeaders(
   privateKey: Uint8Array,
   keyId: number,
   args: {
-    method: "GET" | "PUT";
+    method: "GET" | "PUT" | "POST";
     path: string;
     query?: Record<string, string | number | null | undefined>;
     body?: Uint8Array;
@@ -212,12 +222,14 @@ export async function signLifecycleHeaders(
       q[k] = String(v);
     }
   }
+  const nonce = crypto.randomUUID();
   const canonical = canonicalJSON({
     method: args.method,
     path: args.path,
     query: q,
     body_sha256,
     signed_at: signedAt,
+    nonce,
   });
   const sig = await ed.signAsync(
     new TextEncoder().encode(canonical),
@@ -227,6 +239,7 @@ export async function signLifecycleHeaders(
     "X-CG-Signature": encodeBase64(sig),
     "X-CG-Key-Id": String(keyId),
     "X-CG-Signed-At": signedAt,
+    "X-CG-Nonce": nonce,
   };
 }
 

@@ -11,6 +11,8 @@ import type {
 } from "../../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import { isInfraInvalidatedAttempt } from "../../../src/health/infra-invalidation.ts";
+import { ValidationError } from "../../../src/errors.ts";
+import * as colors from "@std/fmt/colors";
 
 interface SavedResultsFile {
   results: TaskExecutionResult[];
@@ -19,6 +21,13 @@ interface SavedResultsFile {
 export interface AssembleOptions {
   pricingVersion: string;
   centralgaugeSha?: string;
+  /**
+   * Persisted run identity from the results file's `ingest` key (T3).
+   * When absent, a fresh UUID is minted WITH a loud warning — the server
+   * will see a NEW run, so a replay after a transient failure would
+   * double-count unless the persisted id is supplied.
+   */
+  runId?: string;
 }
 
 /**
@@ -104,6 +113,16 @@ export async function assembleBenchResultsForVariant(
         infraExcludedAttempts++;
         continue;
       }
+      // T5: the leaderboard schema caps attempts at 2 (D1 CHECK attempt IN
+      // (1,2) + UNIQUE(run_id,task_id,attempt)). Collapsing 3+ to attempt=2
+      // would produce duplicate rows and kill the whole batch insert —
+      // refuse loudly instead.
+      if (a.attemptNumber > 2) {
+        throw new ValidationError(
+          `leaderboard schema supports max 2 attempts; run used ${a.attemptNumber} (task ${r.taskId}) — bench with --attempts <=2 for ingested runs`,
+          [`task ${r.taskId}: attemptNumber ${a.attemptNumber} exceeds 2`],
+        );
+      }
       items.push(attemptToItem(r.taskId, a, encoder));
     }
   }
@@ -130,8 +149,21 @@ export async function assembleBenchResultsForVariant(
     settings["thinking_budget"] = variant.config.thinkingBudget;
   }
 
+  // T3: reuse the run identity persisted in the results file so replays
+  // are idempotent server-side. Minting here means the server will create
+  // a NEW run — legitimate only for legacy files predating the `ingest` key.
+  let runId = opts.runId;
+  if (!runId) {
+    runId = crypto.randomUUID();
+    console.warn(
+      colors.yellow(
+        `[WARN] no persisted run_id for variant ${variant.variantId} — this ingest will create a NEW run (replay of this file will NOT be idempotent)`,
+      ),
+    );
+  }
+
   const br: BenchResults = {
-    runId: crypto.randomUUID(),
+    runId,
     model: { slug, api_model_id: variant.model, family_slug },
     settings,
     startedAt,

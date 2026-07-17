@@ -31,6 +31,11 @@ import {
   executeParallelBenchmark,
   readGitSha,
 } from "./bench/mod.ts";
+import {
+  parseIngestMeta,
+  todayPricingVersion,
+  validateAttemptsForIngest,
+} from "./bench/ingest-meta.ts";
 import { ingestRun } from "../../src/ingest/mod.ts";
 import {
   formatReportToTerminal,
@@ -492,6 +497,20 @@ export function registerBenchCommand(cli: Command): void {
             ? options.taskConcurrency
             : parseInt(String(options.taskConcurrency), 10);
       }
+      // T5: leaderboard schema caps attempts at 2 — hard startup error when
+      // ingest is enabled, BEFORE any container/LLM work. --no-ingest keeps
+      // 3+ attempts available for local experiments.
+      {
+        const attemptsError = validateAttemptsForIngest(
+          benchOptions.attempts,
+          options.ingest !== false,
+        );
+        if (attemptsError) {
+          console.error(colors.red(`[FAIL] ${attemptsError}`));
+          Deno.exit(1);
+        }
+      }
+
       if (options.containers) {
         benchOptions.containers = options.containers;
       }
@@ -558,10 +577,7 @@ export function registerBenchCommand(cli: Command): void {
               ? v.model.split("/")[0] ?? v.provider
               : v.provider,
           }));
-          const today = new Date();
-          const pricingVersion = `${today.getUTCFullYear()}-${
-            String(today.getUTCMonth() + 1).padStart(2, "0")
-          }-${String(today.getUTCDate()).padStart(2, "0")}`;
+          const pricingVersion = todayPricingVersion();
 
           const report = await runDoctor({
             section: ingestSection,
@@ -818,7 +834,6 @@ async function ingestBenchResults(
   yes: boolean,
 ): Promise<void> {
   const cwd = Deno.cwd();
-  const pricingVersion = todayPricingVersion();
   const centralgaugeSha = await readGitSha(cwd);
 
   console.log(
@@ -833,10 +848,30 @@ async function ingestBenchResults(
   let infraInvalidated = 0;
 
   for (const filePath of resultFilePaths) {
+    // T3: the saved file's `ingest` key is the single source of truth for
+    // run identity — same read path as `centralgauge ingest <path>` replay.
+    let ingestMeta: ReturnType<typeof parseIngestMeta>;
+    try {
+      ingestMeta = parseIngestMeta(
+        JSON.parse(await Deno.readTextFile(filePath)),
+      );
+    } catch {
+      ingestMeta = undefined;
+    }
+    if (!ingestMeta) {
+      console.warn(
+        colors.yellow(
+          `[WARN] ${filePath} carries no persisted ingest identity — run_ids will be minted fresh (replay will NOT be idempotent)`,
+        ),
+      );
+    }
+    const pricingVersion = ingestMeta?.pricing_version ?? todayPricingVersion();
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         { pricingVersion };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
+      const persistedRunId = ingestMeta?.run_ids[variant.variantId];
+      if (persistedRunId) assembleOpts.runId = persistedRunId;
       const assembled = await assembleBenchResultsForVariant(
         filePath,
         variant,
@@ -947,12 +982,4 @@ async function ingestBenchResults(
     infraInvalidated,
   });
   if (failure) throw new Error(failure);
-}
-
-function todayPricingVersion(): string {
-  const d = new Date();
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }

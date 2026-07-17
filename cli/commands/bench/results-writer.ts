@@ -58,12 +58,18 @@ export async function saveResultsJson(
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
   recoveryEvents?:
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
+  ingestMeta?: import("./ingest-meta.ts").IngestMeta,
 ): Promise<void> {
   await Deno.writeTextFile(
     resultsFile,
     JSON.stringify(
       {
         results,
+        // Persisted run identity (T3): one run UUID per variant, minted at
+        // save time. Immediate ingest AND `centralgauge ingest <path>`
+        // replay both read this key so replays reuse the same run_id
+        // (server idempotency) and the original pricing_version.
+        ...(ingestMeta !== undefined ? { ingest: ingestMeta } : {}),
         stats: {
           totalTokens: stats.totalTokens,
           totalCost: stats.totalCost,

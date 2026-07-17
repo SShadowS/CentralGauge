@@ -13,6 +13,7 @@ import {
   assembleBenchResultsForVariant,
   readGitSha,
 } from "./bench/ingest-assembly.ts";
+import { parseIngestMeta, todayPricingVersion } from "./bench/ingest-meta.ts";
 
 interface IngestCommandOptions {
   url?: string;
@@ -64,13 +65,6 @@ function variantsFromResults(
   return Array.from(seen.values());
 }
 
-function todayPricingVersion(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${
-    String(d.getUTCMonth() + 1).padStart(2, "0")
-  }-${String(d.getUTCDate()).padStart(2, "0")}`;
-}
-
 async function handleIngest(
   options: IngestCommandOptions,
   path: string,
@@ -96,7 +90,19 @@ async function handleIngest(
       console.error(colors.red("[FAIL] No variants discovered in results"));
       Deno.exit(1);
     }
-    const pricingVersion = todayPricingVersion();
+    // T3: identical read path to bench-command's immediate ingest — the
+    // saved file's `ingest` key carries the run identity so a replay after
+    // a transient failure reuses the same run_id (server answers "exists")
+    // and the pricing_version the run was actually benched under.
+    const ingestMeta = parseIngestMeta(parsed);
+    if (!ingestMeta) {
+      console.warn(
+        colors.yellow(
+          `[WARN] ${path} carries no persisted ingest identity (legacy file) — run_ids will be minted fresh (replay will NOT be idempotent)`,
+        ),
+      );
+    }
+    const pricingVersion = ingestMeta?.pricing_version ?? todayPricingVersion();
     const centralgaugeSha = await readGitSha(cwd);
 
     if (options.dryRun) {
@@ -121,6 +127,8 @@ async function handleIngest(
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         { pricingVersion };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
+      const persistedRunId = ingestMeta?.run_ids[variant.variantId];
+      if (persistedRunId) assembleOpts.runId = persistedRunId;
       const assembled = await assembleBenchResultsForVariant(
         path,
         variant,

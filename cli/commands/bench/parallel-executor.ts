@@ -49,6 +49,7 @@ import {
   setupContainers,
 } from "./container-setup.ts";
 import { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
+import { buildIngestMeta } from "./ingest-meta.ts";
 import {
   displayBenchmarkSummary,
   displayFormattedOutput,
@@ -613,6 +614,11 @@ export async function executeParallelBenchmark(
         const drainEvents = orchestrator.getDrainEvents();
         // Recovery-prober events (empty when recovery disabled / never fired).
         const recoveryEvents = orchestrator.getRecoveryEvents();
+        // T3: mint the per-variant run identity ONCE, here, and persist it
+        // in the results file — both immediate ingest and replay read it
+        // back so a transient-failure replay hits server idempotency
+        // instead of creating a duplicate run.
+        const ingestMeta = buildIngestMeta(variants);
         await saveResultsJson(
           resultsFile,
           finalResults,
@@ -621,6 +627,7 @@ export async function executeParallelBenchmark(
           toHashResult(hashResult),
           drainEvents,
           recoveryEvents,
+          ingestMeta,
         );
         resultFilePaths.push(resultsFile);
 
