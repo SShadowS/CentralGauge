@@ -63,5 +63,6 @@ export { computeConcurrencyDefaults } from "./concurrency-defaults.ts";
 export type { AssembleOptions, AssembleOutcome } from "./ingest-assembly.ts";
 export {
   assembleBenchResultsForVariant,
+  decideIngestRunFailure,
   readGitSha,
 } from "./ingest-assembly.ts";

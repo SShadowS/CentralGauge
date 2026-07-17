@@ -336,6 +336,10 @@ function assertPlausiblePricing(
  * LiteLLM zeros are always treated as missing data. Genuinely free models
  * without the marker take the deliberate override path: a manual entry in
  * site/catalog/pricing.yml.
+ *
+ * PER-FIELD: a single zero side (e.g. input $0, output paid) is just as
+ * much a data gap as both-zero — it silently zeroes that cost column for
+ * every run of the model.
  */
 function assertZeroPricingIsMarkedFree(
   slug: string,
@@ -343,16 +347,19 @@ function assertZeroPricingIsMarkedFree(
   source: string,
   input: MergeInput,
 ): void {
-  if (values.input !== 0 || values.output !== 0) return;
+  const zeroFields = (["input", "output"] as const).filter(
+    (f) => values[f] === 0,
+  );
+  if (zeroFields.length === 0) return;
   const sourceMarksFree = source === "openrouter" &&
     input.openrouter?.marksFree === true;
   if (sourceMarksFree) return;
   throw new CatalogSeedError(
-    `zero pricing for ${slug} without an explicit free marker ` +
-      `(source=${source}) — refusing to seed $0 rates; ` +
+    `zero ${zeroFields.join(" + ")} pricing for ${slug} without an ` +
+      `explicit free marker (source=${source}) — refusing to seed $0 rates; ` +
       `pre-seed site/catalog/pricing.yml manually for genuinely free models`,
     "SEED_NO_PRICING",
-    { slug, source },
+    { slug, source, zeroFields: [...zeroFields] },
   );
 }
 

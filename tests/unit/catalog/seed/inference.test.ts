@@ -396,6 +396,53 @@ describe("mergeMetadata", () => {
     );
   });
 
+  it("D4 follow-up: rejects a single zero-priced FIELD without a free marker (input 0, output paid)", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openai/gpt-half-zero",
+          litellm: { input: 0, output: 5 },
+          openrouter: null,
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4 follow-up: rejects a single zero-priced FIELD without a free marker (input paid, output 0)", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/meta-llama/llama-3-8b",
+          litellm: null,
+          openrouter: {
+            pricing: { input: 1.25, output: 0 },
+            displayName: "Meta: Llama 3 8B",
+            vendor: "Meta",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4 follow-up: ':free' marker also covers a partially-zero price", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/meta-llama/llama-3-8b:free",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 0, output: 0.1 },
+        displayName: "Meta: Llama 3 8B (free)",
+        vendor: "Meta",
+        releasedAt: null,
+        marksFree: true,
+      },
+    });
+    assertEquals(result.pricing.input_per_mtoken, 0);
+    assertEquals(result.pricing.output_per_mtoken, 0.1);
+  });
+
   it("D4: accepts zero pricing for an OpenRouter ':free' slug (source marks free)", () => {
     const result = mergeMetadata({
       slug: "openrouter/meta-llama/llama-3-8b:free",

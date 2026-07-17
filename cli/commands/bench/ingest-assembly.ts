@@ -26,8 +26,11 @@ export interface AssembleOptions {
  *
  * - `assembled` — payload built; `infraExcludedAttempts` counts attempts
  *   dropped because they were infra-invalidated (see
- *   {@link isInfraInvalidatedAttempt}).
+ *   {@link isInfraInvalidatedAttempt}). Guaranteed non-empty `results[]`.
  * - `no_results` — the file carries no results for this variant.
+ * - `no_items` — results exist for the variant but produced zero attempts
+ *   (empty `attempts[]` arrays). No payload is built: an empty run must
+ *   never be POSTed.
  * - `all_infra` — EVERY attempt for this variant was infra-invalidated.
  *   No payload is built: an empty run must never be POSTed to the
  *   leaderboard. Callers must log loudly and treat the variant as
@@ -40,7 +43,38 @@ export type AssembleOutcome =
     infraExcludedAttempts: number;
   }
   | { kind: "no_results" }
+  | { kind: "no_items" }
   | { kind: "all_infra"; infraExcludedAttempts: number };
+
+/**
+ * Decide whether an immediate-ingest run must be reported as NON-SUCCESS.
+ * Returns the failure message to throw, or undefined for a clean run.
+ * Pure + exported for testing.
+ *
+ * Rules:
+ * - 100% transient with nothing landed → the user must not believe the run
+ *   was ingested; replay required.
+ * - ANY (file × variant) pair fully infra-invalidated → non-success, even
+ *   when other pairs ingested fine (T2: "log loudly + non-success" —
+ *   a partially-poisoned run still needs operator action + re-bench).
+ */
+export function decideIngestRunFailure(counts: {
+  attempted: number;
+  succeeded: number;
+  transient: number;
+  infraInvalidated: number;
+}): string | undefined {
+  if (
+    counts.attempted > 0 && counts.succeeded === 0 &&
+    counts.transient === counts.attempted
+  ) {
+    return `ingest failed: all ${counts.attempted} (file × variant) pair(s) hit transient errors; replay required`;
+  }
+  if (counts.infraInvalidated > 0) {
+    return `ingest incomplete: ${counts.infraInvalidated} (file × variant) pair(s) were fully infra-invalidated and NOT ingested — fix infra and re-bench`;
+  }
+  return undefined;
+}
 
 export async function assembleBenchResultsForVariant(
   resultFilePath: string,
@@ -74,8 +108,13 @@ export async function assembleBenchResultsForVariant(
     }
   }
 
-  if (items.length === 0 && infraExcludedAttempts > 0) {
-    return { kind: "all_infra", infraExcludedAttempts };
+  // Never build an empty payload. All-infra gets its dedicated loud
+  // sentinel; a variant whose results carry zero attempts (e.g. aborted
+  // before any attempt persisted) is skipped as no_items.
+  if (items.length === 0) {
+    return infraExcludedAttempts > 0
+      ? { kind: "all_infra", infraExcludedAttempts }
+      : { kind: "no_items" };
   }
 
   const slug = `${variant.provider}/${variant.model}`;

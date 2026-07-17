@@ -26,6 +26,7 @@ import type { ModelVariant } from "../../src/llm/variant-types.ts";
 import { ModelPresetRegistry } from "../../src/llm/model-presets.ts";
 import {
   assembleBenchResultsForVariant,
+  decideIngestRunFailure,
   executeAgentBenchmark,
   executeParallelBenchmark,
   readGitSha,
@@ -841,10 +842,12 @@ async function ingestBenchResults(
         variant,
         assembleOpts,
       );
-      if (assembled.kind === "no_results") {
+      if (assembled.kind === "no_results" || assembled.kind === "no_items") {
         console.warn(
           colors.yellow(
-            `[WARN] No results for variant ${variant.variantId} in ${filePath}; skipping.`,
+            assembled.kind === "no_results"
+              ? `[WARN] No results for variant ${variant.variantId} in ${filePath}; skipping.`
+              : `[WARN] No attempts recorded for variant ${variant.variantId} in ${filePath}; skipping (empty payloads are never POSTed).`,
           ),
         );
         continue;
@@ -934,22 +937,16 @@ async function ingestBenchResults(
     );
   }
 
-  // If every attempted (file × variant) pair failed transiently, fail loud.
-  // Per-pair transient is tolerable; 100% transient means the user thinks the
-  // run was ingested when nothing landed.
-  if (attempted > 0 && succeeded === 0 && transient === attempted) {
-    throw new Error(
-      `ingest failed: all ${attempted} (file × variant) pair(s) hit transient errors; replay required`,
-    );
-  }
-
-  // Same fail-loud rule when nothing was even attempted because EVERY pair
-  // was infra-invalidated: the user must not believe the run was ingested.
-  if (infraInvalidated > 0 && attempted === 0) {
-    throw new Error(
-      `ingest skipped: all ${infraInvalidated} (file × variant) pair(s) were infra-invalidated; nothing ingested — fix infra and re-bench`,
-    );
-  }
+  // Non-success rules (shared, pure, tested): 100% transient, or ANY pair
+  // fully infra-invalidated — a partially-poisoned run still needs operator
+  // action + re-bench, so it must not exit 0.
+  const failure = decideIngestRunFailure({
+    attempted,
+    succeeded,
+    transient,
+    infraInvalidated,
+  });
+  if (failure) throw new Error(failure);
 }
 
 function todayPricingVersion(): string {

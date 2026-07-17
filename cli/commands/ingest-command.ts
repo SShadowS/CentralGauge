@@ -126,10 +126,12 @@ async function handleIngest(
         variant,
         assembleOpts,
       );
-      if (assembled.kind === "no_results") {
+      if (assembled.kind === "no_results" || assembled.kind === "no_items") {
         console.warn(
           colors.gray(
-            `       skipped ${variant.variantId} (no matching results)`,
+            assembled.kind === "no_results"
+              ? `       skipped ${variant.variantId} (no matching results)`
+              : `       skipped ${variant.variantId} (results carry no attempts; empty payloads are never POSTed)`,
           ),
         );
         continue;

@@ -13,7 +13,10 @@ import { assert, assertEquals } from "@std/assert";
 import { join } from "@std/path";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import type { ExecutionAttempt } from "../../../src/tasks/interfaces.ts";
-import { assembleBenchResultsForVariant } from "../../../cli/commands/bench/ingest-assembly.ts";
+import {
+  assembleBenchResultsForVariant,
+  decideIngestRunFailure,
+} from "../../../cli/commands/bench/ingest-assembly.ts";
 import {
   createMockExecutionAttempt,
   createMockTaskExecutionContext,
@@ -191,6 +194,93 @@ Deno.test("TEST6d: ALL attempts infra-invalidated → all_infra sentinel, no pay
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
+});
+
+Deno.test("T2 follow-up: variant whose results all have EMPTY attempts arrays → no_items sentinel, no empty payload", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-test6f-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-E007", []),
+      makeResult("CG-AL-E008", []),
+    ]);
+
+    const outcome = await assembleBenchResultsForVariant(
+      path,
+      VARIANT,
+      ASSEMBLE_OPTS,
+    );
+    assertEquals(outcome.kind, "no_items");
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("T2 follow-up: decideIngestRunFailure marks the run non-success", async (t) => {
+  await t.step(
+    "PARTIAL infra-invalidation fails the run even when other pairs succeeded",
+    () => {
+      const msg = decideIngestRunFailure({
+        attempted: 2,
+        succeeded: 2,
+        transient: 0,
+        infraInvalidated: 1,
+      });
+      assert(
+        msg !== undefined,
+        "partial infra-invalidation must be non-success",
+      );
+      assert(msg.includes("infra-invalidated"));
+    },
+  );
+
+  await t.step("all-infra with nothing attempted fails the run", () => {
+    const msg = decideIngestRunFailure({
+      attempted: 0,
+      succeeded: 0,
+      transient: 0,
+      infraInvalidated: 2,
+    });
+    assert(msg !== undefined);
+    assert(msg.includes("infra-invalidated"));
+  });
+
+  await t.step("100% transient still fails the run (existing rule)", () => {
+    const msg = decideIngestRunFailure({
+      attempted: 3,
+      succeeded: 0,
+      transient: 3,
+      infraInvalidated: 0,
+    });
+    assert(msg !== undefined);
+    assert(msg.includes("transient"));
+  });
+
+  await t.step("clean run returns undefined", () => {
+    assertEquals(
+      decideIngestRunFailure({
+        attempted: 2,
+        succeeded: 2,
+        transient: 0,
+        infraInvalidated: 0,
+      }),
+      undefined,
+    );
+  });
+
+  await t.step(
+    "partial transient with some successes returns undefined",
+    () => {
+      assertEquals(
+        decideIngestRunFailure({
+          attempted: 3,
+          succeeded: 2,
+          transient: 1,
+          infraInvalidated: 0,
+        }),
+        undefined,
+      );
+    },
+  );
 });
 
 Deno.test("TEST6: variant with no matching results → no_results sentinel", async () => {
