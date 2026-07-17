@@ -300,8 +300,12 @@ export interface VerifyOptions {
   dryRun: boolean;
   /** Maximum parallel subagents */
   parallel: number;
-  /** LLM model to use for analysis */
-  model: string;
+  /**
+   * LLM model to use for analysis (vendor-prefixed slug). Optional — when
+   * omitted, `FailureAnalyzer.ensureModelResolved` resolves it lazily from
+   * the `lifecycle.analyzer_model` config chain (T14/V11).
+   */
+  model?: string | undefined;
   /** Directory for model shortcomings files */
   shortcomingsDir: string;
   /** Mode: run both, shortcomings only, or fixes only */

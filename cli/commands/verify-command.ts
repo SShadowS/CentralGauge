@@ -24,7 +24,7 @@ async function handleVerify(
     filter: string;
     dryRun: boolean;
     parallel: number;
-    model: string;
+    model?: string;
     shortcomingsDir: string;
     shortcomingsOnly: boolean;
     fixesOnly: boolean;
@@ -151,10 +151,7 @@ export function registerVerifyCommand(cli: Command): void {
     )
     .option(
       "--model <model:string>",
-      "LLM for analysis (vendor-prefixed prod slug)",
-      {
-        default: "anthropic/claude-opus-4-6",
-      },
+      "LLM for analysis, vendor-prefixed prod slug (default: lifecycle.analyzer_model config chain)",
     )
     .option(
       "--shortcomings-dir <dir:string>",

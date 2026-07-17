@@ -29,7 +29,7 @@ export interface AnalyzerConfig {
    * `lifecycle.analyzer_model` config chain (T14/V11) on first use — see
    * `FailureAnalyzer.ensureModelResolved`.
    */
-  model?: string;
+  model?: string | undefined;
   /** Temperature for LLM calls */
   temperature: number;
   /** Max tokens for response */

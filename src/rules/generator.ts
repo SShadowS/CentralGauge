@@ -23,9 +23,9 @@ export interface RulesGeneratorOptions {
  */
 export interface OptimizedRulesOptions extends RulesGeneratorOptions {
   /** LLM provider for summarization (default: derived from lifecycle.analyzer_model) */
-  llmProvider?: string;
+  llmProvider?: string | undefined;
   /** LLM model for summarization (default: `lifecycle.analyzer_model` config chain) */
-  llmModel?: string;
+  llmModel?: string | undefined;
 }
 
 /**
@@ -276,30 +276,45 @@ ${jsonData}`;
 
 /**
  * Resolve the (provider, model) pair to use for the summarization LLM call.
- * Caller-supplied values always win; anything left unset falls back to the
- * `lifecycle.analyzer_model` config chain (`.centralgauge.yml` -> built-in
- * default `anthropic/claude-opus-4-6`), vendor-prefixed like every other
- * model slug in this repo (see CLAUDE.md "Slug rule"). Exported standalone
- * so the fallback logic is unit-testable without invoking an LLM adapter.
+ *
+ * - Both supplied: used verbatim, no config lookup.
+ * - `llmModel` supplied but `llmProvider` isn't: the model is already
+ *   decided, so `llmProvider` just defaults to `"anthropic"` (matching this
+ *   CLI's historical bare-model-id convention, e.g. `--llm gpt-5-codex`) —
+ *   NOT resolved from the config chain. Resolving provider from
+ *   `lifecycle.analyzer_model` here would silently pair an explicit model
+ *   with an unrelated provider (e.g. an openrouter default provider next to
+ *   an OpenAI model id) whenever the config's provider differs.
+ * - `llmModel` unset (regardless of `llmProvider`): BOTH are resolved
+ *   together from the `lifecycle.analyzer_model` config chain
+ *   (`.centralgauge.yml` -> built-in default `anthropic/claude-opus-4-6`),
+ *   vendor-prefixed like every other model slug in this repo (see
+ *   CLAUDE.md "Slug rule").
+ *
+ * Exported standalone so the fallback logic is unit-testable without
+ * invoking an LLM adapter.
  */
 export async function resolveGeneratorModel(
   options: Pick<OptimizedRulesOptions, "llmProvider" | "llmModel">,
 ): Promise<{ provider: string; model: string }> {
-  let llmProvider = options.llmProvider;
-  let llmModel = options.llmModel;
-  if (llmProvider === undefined || llmModel === undefined) {
-    const defaultSlug = await resolveAnalyzerModelDefault();
-    const slash = defaultSlug.indexOf("/");
-    const defaultProvider = slash === -1
-      ? "anthropic"
-      : defaultSlug.slice(0, slash);
-    const defaultModel = slash === -1 ? defaultSlug : defaultSlug.slice(
-      slash + 1,
-    );
-    llmProvider ??= defaultProvider;
-    llmModel ??= defaultModel;
+  if (options.llmModel !== undefined) {
+    return {
+      provider: options.llmProvider ?? "anthropic",
+      model: options.llmModel,
+    };
   }
-  return { provider: llmProvider, model: llmModel };
+  const defaultSlug = await resolveAnalyzerModelDefault();
+  const slash = defaultSlug.indexOf("/");
+  const defaultProvider = slash === -1
+    ? "anthropic"
+    : defaultSlug.slice(0, slash);
+  const defaultModel = slash === -1
+    ? defaultSlug
+    : defaultSlug.slice(slash + 1);
+  return {
+    provider: options.llmProvider ?? defaultProvider,
+    model: defaultModel,
+  };
 }
 
 /**

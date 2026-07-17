@@ -10,14 +10,19 @@ import {
   getDefaultOutputPath,
   isActionableShortcoming,
   loadShortcomingsFile,
+  resolveGeneratorModel,
 } from "../../src/rules/mod.ts";
 
 /**
  * Handle the rules generation command
  */
-async function handleRulesGenerate(
+export async function handleRulesGenerate(
   inputPath: string,
-  options: { output?: string | undefined; minOccurrences: number; llm: string },
+  options: {
+    output?: string | undefined;
+    minOccurrences: number;
+    llm?: string | undefined;
+  },
 ): Promise<void> {
   try {
     // Load the shortcomings file
@@ -35,15 +40,24 @@ async function handleRulesGenerate(
       return;
     }
 
+    // Resolve the model up front (T14/V11): --llm wins when given, else the
+    // lifecycle.analyzer_model config chain applies. Resolving explicitly
+    // here (rather than leaving it to generateOptimizedRules's own internal
+    // fallback) lets the log line below show the model actually used
+    // instead of "undefined" when --llm was omitted.
+    const { provider: llmProvider, model: llmModel } =
+      await resolveGeneratorModel({ llmModel: options.llm });
+
     // Generate optimized rules via LLM
     console.log(
       colors.dim(
-        `Summarizing ${filteredCount} shortcomings with ${options.llm}...`,
+        `Summarizing ${filteredCount} shortcomings with ${llmModel}...`,
       ),
     );
     const markdown = await generateOptimizedRules(data, {
       minOccurrences: options.minOccurrences,
-      llmModel: options.llm,
+      llmProvider,
+      llmModel,
     });
 
     // Determine output path
@@ -88,8 +102,7 @@ export function registerRulesCommand(cli: Command): void {
     )
     .option(
       "--llm <model:string>",
-      "LLM model for summarization",
-      { default: "claude-sonnet-4-5-20250929" },
+      "LLM model for summarization (default: lifecycle.analyzer_model config chain)",
     )
     .option(
       "--min-occurrences <n:number>",
