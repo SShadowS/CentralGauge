@@ -38,11 +38,7 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from "./sdk-types.ts";
-import {
-  extractResultFromToolResult,
-  formatTaskResult,
-} from "./result-parser.ts";
-import { detectToolResultSuccess } from "./success-detector.ts";
+import { formatTaskResult, scoreVerdictToolResult } from "./result-parser.ts";
 import { matchToolName } from "./tool-schemas.ts";
 import {
   type SandboxExecutionContext,
@@ -73,7 +69,7 @@ interface ExecutionPrepResult {
  * (M4 follow-up). al_verify_task / al_verify carry the test verdict; al_compile
  * carries the compile-only verdict (genuine compiler output — compile-only
  * tasks are scored from it, and it cannot satisfy a test task because
- * detectToolResultSuccess still requires test evidence when requiresTests).
+ * scoreVerdictToolResult still requires test evidence when requiresTests).
  */
 const SCORING_TOOL_NAMES = new Set([
   "al_verify_task",
@@ -197,25 +193,27 @@ export class AgentTaskExecutor {
           continue;
         }
 
-        // Extract structured data from tool result
-        const resultText = typeof resultBlock.content === "string"
-          ? resultBlock.content
-          : JSON.stringify(resultBlock.content);
-
-        const parsed = extractResultFromToolResult(resultText);
-        if (parsed.compileSuccess !== undefined) {
-          compileSuccess = parsed.compileSuccess;
+        // Score from STRUCTURED verdict fields only (M2 follow-up). Even a
+        // gated verdict tool's output embeds model-controlled strings —
+        // al_verify_task.failures[] carries each failing test's error message,
+        // al_compile diagnostics quote model-chosen object names — so prose
+        // matching over it could forge success on a FAILING run. scoreVerdict
+        // ToolResult reads the boolean `success` field only and fails closed
+        // on non-JSON.
+        const score = scoreVerdictToolResult(
+          resultBlock.content,
+          requiresTests,
+        );
+        if (score.compileSuccess !== undefined) {
+          compileSuccess = score.compileSuccess;
         }
-        if (parsed.testsPassed !== undefined) {
-          testsPassed = parsed.testsPassed;
+        if (score.testsPassed !== undefined) {
+          testsPassed = score.testsPassed;
         }
-        if (parsed.testsTotal !== undefined) {
-          testsTotal = parsed.testsTotal;
+        if (score.testsTotal !== undefined) {
+          testsTotal = score.testsTotal;
         }
-
-        // Determine success per tool_result block (TEST4) — hardened
-        // detection replaces the old 2-substring check
-        if (detectToolResultSuccess(resultText, requiresTests)) {
+        if (score.success) {
           success = true;
         }
       }

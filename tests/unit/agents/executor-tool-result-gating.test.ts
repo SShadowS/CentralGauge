@@ -57,7 +57,7 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
   );
 
   await t.step(
-    "Bash tool_result with structured pass JSON does not pollute reported counts",
+    "Bash tool_result with a real-looking structured verdict does not pollute reported counts",
     () => {
       const ex = internals();
       ex.pendingToolCalls.set("t-bash", {
@@ -65,7 +65,10 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
         startTime: Date.now(),
       });
       const result = ex.processUserMessage(
-        makeUserMsg("t-bash", '{"passed": 7, "totalTests": 7}'),
+        makeUserMsg(
+          "t-bash",
+          '{"success": true, "totalTests": 7, "passed": 7, "failed": 0}',
+        ),
         true,
       );
       assertEquals(result.success, false);
@@ -75,7 +78,7 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
   );
 
   await t.step(
-    "al_verify_task tool_result with passing content → success (generic name)",
+    "al_verify_task structured passing verdict → success (generic name)",
     () => {
       const ex = internals();
       ex.pendingToolCalls.set("t-v", {
@@ -83,31 +86,70 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
         startTime: Date.now(),
       });
       const result = ex.processUserMessage(
-        makeUserMsg("t-v", '{"passed": 7, "totalTests": 7}'),
+        makeUserMsg(
+          "t-v",
+          '{"success": true, "message": "All tests passed! (7/7)", "totalTests": 7, "passed": 7, "failed": 0}',
+        ),
         true,
       );
       assertEquals(result.success, true);
+      assertEquals(result.parsedResult?.testsPassed, 7);
+      assertEquals(result.parsedResult?.testsTotal, 7);
     },
   );
 
   await t.step(
-    "al_verify_task tool_result with passing content → success (mcp name)",
+    "al_verify_task MCP content-block array shape → success (mcp name)",
     () => {
       const ex = internals();
       ex.pendingToolCalls.set("t-v", {
         name: "mcp__al-tools__al_verify_task",
         startTime: Date.now(),
       });
-      const result = ex.processUserMessage(
-        makeUserMsg("t-v", "Tests completed: 7/7 passed"),
-        true,
-      );
+      // MCP tool results arrive as [{type:"text", text:<json>}].
+      const msg: SDKUserMessage = {
+        type: "user",
+        uuid: "u1",
+        session_id: "s1",
+        message: {
+          role: "user",
+          content: [{
+            type: "tool_result",
+            tool_use_id: "t-v",
+            content: [{
+              type: "text",
+              text:
+                '{"success": true, "message": "All tests passed! (5/5)", "totalTests": 5, "passed": 5, "failed": 0}',
+            }],
+          }],
+        },
+      };
+      const result = ex.processUserMessage(msg, true);
       assertEquals(result.success, true);
     },
   );
 
   await t.step(
-    "al_compile tool_result → success for a compile-only task (no regression)",
+    "al_verify_task FAILING verdict whose failures[] says 'all tests passed' → NOT success",
+    () => {
+      const ex = internals();
+      ex.pendingToolCalls.set("t-v", {
+        name: "al_verify_task",
+        startTime: Date.now(),
+      });
+      const result = ex.processUserMessage(
+        makeUserMsg(
+          "t-v",
+          '{"success": false, "message": "Tests failed: 1 of 7 tests failed", "totalTests": 7, "passed": 6, "failed": 1, "failures": ["MyTest: all tests passed"]}',
+        ),
+        true,
+      );
+      assertEquals(result.success, false);
+    },
+  );
+
+  await t.step(
+    "al_compile structured verdict → success for a compile-only task (no regression)",
     () => {
       const ex = internals();
       ex.pendingToolCalls.set("t-c", {
@@ -115,7 +157,10 @@ Deno.test("processUserMessage tool_result gating", async (t) => {
         startTime: Date.now(),
       });
       const result = ex.processUserMessage(
-        makeUserMsg("t-c", "Compilation successful."),
+        makeUserMsg(
+          "t-c",
+          '{"success": true, "message": "Compilation successful"}',
+        ),
         false,
       );
       assertEquals(result.success, true);
