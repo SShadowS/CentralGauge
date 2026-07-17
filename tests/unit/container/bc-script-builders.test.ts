@@ -1,10 +1,11 @@
-import { assert, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 import {
   buildCleanupStaleCandidatesScript,
   buildPrepareCandidateScript,
   buildPrereqCleanupScript,
   buildPublishScript,
   buildTestScript,
+  escapeForPS,
 } from "../../../src/container/bc-script-builders.ts";
 
 // Pre-publish cleanup must NOT unpublish the CG Test Harness. The harness has
@@ -104,6 +105,58 @@ Deno.test("buildTestScript composes publish (with harness exclusion) and run-tes
   );
 });
 
+// C7: credentials were previously interpolated into a double-quoted PS
+// string (`"${credentials.password}"`), where `$(...)`/backticks execute and
+// an unescaped `"` breaks out of the literal. Single-quoted + escapeForPS
+// closes both: single-quoted PS strings never interpolate `$(...)`, and the
+// only special character left is `'`, which escapeForPS doubles.
+Deno.test("escapeForPS doubles embedded single quotes", () => {
+  assertEquals(escapeForPS("plain"), "plain");
+  assertEquals(escapeForPS("O'Brien"), "O''Brien");
+  assertEquals(escapeForPS("a'b'c"), "a''b''c");
+});
+
+Deno.test("buildTestScript embeds credentials as escaped single-quoted PS literals", () => {
+  const script = buildTestScript(
+    "Cronus28",
+    { username: "u'ser", password: `p'$(Remove-Item C:\\ -Recurse -Force)` },
+    "C:\\some\\app.app",
+    "00000000-cafe-0000-0000-be4c00decade",
+    80052,
+  );
+  assertStringIncludes(
+    script,
+    `ConvertTo-SecureString 'p''$(Remove-Item C:\\ -Recurse -Force)' -AsPlainText -Force`,
+  );
+  assertStringIncludes(script, `New-Object PSCredential('u''ser', $password)`);
+  // Must NOT contain the old, injectable double-quoted interpolation form.
+  assert(
+    !/ConvertTo-SecureString "/.test(script),
+    "password must not be embedded in a double-quoted PS string",
+  );
+});
+
+Deno.test("buildPrepareCandidateScript embeds dev-endpoint credentials as escaped single-quoted PS literals", () => {
+  const script = buildPrepareCandidateScript(
+    "Cronus28",
+    "C:\\\\some\\\\app.app",
+    "CG Test Harness",
+    { username: "u'ser", password: `p'$(Remove-Item C:\\ -Recurse -Force)` },
+  );
+  assertStringIncludes(
+    script,
+    `ConvertTo-SecureString 'p''$(Remove-Item C:\\ -Recurse -Force)' -AsPlainText -Force`,
+  );
+  assertStringIncludes(
+    script,
+    `New-Object PSCredential('u''ser', $cgPubPassword)`,
+  );
+  assert(
+    !/ConvertTo-SecureString "/.test(script),
+    "password must not be embedded in a double-quoted PS string",
+  );
+});
+
 // GH #13: every BCH script must carry the loud-fail version guard so a
 // silently-fallen-back module version can never run a bench step.
 Deno.test("buildTestScript embeds the loud-fail BCH version guard", () => {
@@ -191,7 +244,7 @@ Deno.test("buildPrepareCandidateScript uses -useDevEndpoint by default", () => {
         .test(script),
       "dev-endpoint publish must be on by default with a credential",
     );
-    assertStringIncludes(script, `New-Object PSCredential("u"`);
+    assertStringIncludes(script, `New-Object PSCredential('u'`);
   } finally {
     if (prev === undefined) {
       Deno.env.delete("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH");

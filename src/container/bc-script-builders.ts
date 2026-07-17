@@ -12,6 +12,19 @@ import {
 } from "./bcch-config.ts";
 
 /**
+ * Escape a value for embedding inside a PowerShell *single-quoted* string
+ * literal (doubling embedded `'`). Single-quoted strings do not interpolate
+ * `$variables`/`$(subexpressions)` or interpret backtick escapes, so wrapping
+ * a value in `'...'` after this escape is the safe way to splice untrusted or
+ * config-sourced data (credentials, names) into a generated script — unlike
+ * double-quoted interpolation (`"${value}"`), which lets a value containing
+ * `$(...)` execute arbitrary PowerShell.
+ */
+export function escapeForPS(s: string): string {
+  return s.replace(/'/g, "''");
+}
+
+/**
  * PowerShell helper injected at the top of any BCH script when tracing is
  * enabled (caller passes a non-zero `traceTid`). When tracing is disabled,
  * the helper is omitted entirely so scripts are byte-identical to the
@@ -241,8 +254,12 @@ export function buildPrepareCandidateScript(
   const useDevEndpoint =
     Deno.env.get("CENTRALGAUGE_DEV_ENDPOINT_PUBLISH") !== "0";
   const devCredentialSetup = useDevEndpoint
-    ? `      $cgPubPassword = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
-      $cgPubCredential = New-Object PSCredential("${credentials.username}", $cgPubPassword)
+    ? `      $cgPubPassword = ConvertTo-SecureString '${
+      escapeForPS(credentials.password)
+    }' -AsPlainText -Force
+      $cgPubCredential = New-Object PSCredential('${
+      escapeForPS(credentials.username)
+    }', $cgPubPassword)
 `
     : "";
   const devEndpointFlag = useDevEndpoint
@@ -374,7 +391,6 @@ export function buildPrereqCleanupScript(
   expectedPrereqNames: string[],
   harnessAppName: string,
 ): string {
-  const escapeForPS = (s: string) => s.replace(/'/g, "''");
   const expectedNamesLit = expectedPrereqNames.length === 0
     ? "@()"
     : "@(" + expectedPrereqNames.map((n) => `'${escapeForPS(n)}'`).join(",") +
@@ -608,8 +624,12 @@ export function buildTestScript(
       # scripts/microbench-soap.ts log + scripts/bcch-pwsh-repro.ps1).
       ${bcchConfigInit()}
 
-      $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
-      $credential = New-Object PSCredential("${credentials.username}", $password)
+      $password = ConvertTo-SecureString '${
+    escapeForPS(credentials.password)
+  }' -AsPlainText -Force
+      $credential = New-Object PSCredential('${
+    escapeForPS(credentials.username)
+  }', $password)
 
       ${buildPublishScript(containerName, escapedAppFile)}
       ${buildRunTestsScript(containerName, extensionId, testCodeunitId)}

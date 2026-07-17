@@ -881,6 +881,92 @@ Deno.test({
   },
 });
 
+// C5: bcchConfigInit() was omitted at the executeCommand/isHealthy fresh-spawn
+// sites, so behavior silently depended on the machine-level
+// BcContainerHelper.config.json instead of our pinned usePsSessionForBc28
+// /usePwshForBc24 settings (GH #12 class). Every other BCH script site emits
+// both bcchImport() AND bcchConfigInit(); these two were the last holdouts.
+Deno.test({
+  name: "BcContainerProvider - isHealthy emits bcchConfigInit pin lines",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(["Test-BcContainer"], "HEALTHY:True");
+
+      const provider = new BcContainerProvider();
+      await provider.isHealthy("TestContainer");
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "usePsSessionForBc28");
+      assertStringIncludes(script, "usePwshForBc24");
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
+Deno.test({
+  name: "BcContainerProvider - executeCommand emits bcchConfigInit pin lines",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(
+        ["Invoke-ScriptInBcContainer"],
+        "Command output here",
+      );
+
+      const provider = new BcContainerProvider();
+      await provider.executeCommand("TestContainer", "Get-Service");
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "usePsSessionForBc28");
+      assertStringIncludes(script, "usePwshForBc24");
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
+// C5: `command` used to be spliced raw into `-scriptblock { ${command} }` —
+// any character in it (unbalanced braces, quotes) could corrupt the outer
+// script's syntax or let injected text execute outside the intended
+// scriptblock (injection-by-construction; callers today are integration
+// tests only, but the site itself was unsafe by design). The fix passes
+// `command` as a single-quoted, escaped PS literal via -argumentList instead
+// of splicing it directly into the script body.
+Deno.test({
+  name:
+    "BcContainerProvider - executeCommand parameterizes the raw command via -argumentList instead of splicing it into the scriptblock body",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(["Invoke-ScriptInBcContainer"], "ok");
+
+      const provider = new BcContainerProvider();
+      const maliciousCommand = `Get-Service"; Write-Output "INJECTED`;
+      await provider.executeCommand("TestContainer", maliciousCommand);
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "-argumentList");
+      assert(
+        !script.includes(`-scriptblock { ${maliciousCommand} }`),
+        "command must not be spliced raw into the scriptblock body",
+      );
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
 // =============================================================================
 // Compilation Tests (Windows only, with mocking)
 // =============================================================================

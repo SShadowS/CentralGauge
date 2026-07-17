@@ -61,6 +61,7 @@ import {
   buildPrepareCandidateScript,
   buildPrereqCleanupScript,
   buildTestScript,
+  escapeForPS,
 } from "./bc-script-builders.ts";
 import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
@@ -2241,9 +2242,23 @@ ${script}
     containerName: string,
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
+    // C5: `command` used to be spliced raw into `-scriptblock { ${command} }`
+    // — any character in it (unbalanced braces, quotes, backticks) could
+    // corrupt this OUTER (host-side) script's syntax or splice extra
+    // statements outside the intended scriptblock. Passing it as a
+    // single-quoted, escapeForPS-escaped literal via -argumentList decouples
+    // the command's content from the script's structure: whatever the value
+    // is, it can only ever arrive as one string argument, then Invoke-
+    // Expression runs it AS INTENDED inside the container (this method's
+    // whole purpose is executing a caller-supplied command there).
     const script = `
       ${bcchImport()}
-      $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock { ${command} }
+      ${bcchConfigInit()}
+      $cgExecCommand = '${escapeForPS(command)}'
+      $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+        param($cgCmd)
+        Invoke-Expression $cgCmd
+      } -argumentList $cgExecCommand
       Write-Output $result
     `;
 
@@ -2261,6 +2276,7 @@ ${script}
       if (opts?.signal?.aborted) return false;
       const script = `
         ${bcchImport()}
+        ${bcchConfigInit()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;
