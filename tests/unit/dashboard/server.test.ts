@@ -124,4 +124,45 @@ Deno.test("DashboardServer", async (t) => {
       await server.stop();
     }
   });
+
+  // CLI9: cancel() must actively remove the controller from `clients`
+  // instead of relying on the next broadcast's lazy dead-client sweep.
+  await t.step(
+    "SSE cancel() actively removes the client without needing a broadcast",
+    async () => {
+      const server = await DashboardServer.start(createConfig());
+
+      try {
+        assertEquals(server.getClientCount(), 0);
+
+        const controller = new AbortController();
+        const ssePromise = fetch(`${server.url}/events`, {
+          signal: controller.signal,
+        });
+
+        // Give the SSE connection + replay-on-connect time to register.
+        await new Promise((r) => setTimeout(r, 500));
+        assertEquals(server.getClientCount(), 1);
+
+        // Disconnect without ever triggering a broadcast.
+        controller.abort();
+        try {
+          const res = await ssePromise;
+          await res.body?.cancel();
+        } catch {
+          // AbortError is expected.
+        }
+
+        // Give the stream's cancel() callback time to fire.
+        await new Promise((r) => setTimeout(r, 150));
+        assertEquals(
+          server.getClientCount(),
+          0,
+          "cancel() must remove the client immediately, not wait for a broadcast",
+        );
+      } finally {
+        await server.stop();
+      }
+    },
+  );
 });

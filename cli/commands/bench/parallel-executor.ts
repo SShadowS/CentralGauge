@@ -25,11 +25,17 @@ import type {
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
 import {
+  buildTaskComparison,
   createDefaultConfig,
   CriticalError,
   ParallelBenchmarkOrchestrator,
+  ResultAggregator,
 } from "../../../src/parallel/mod.ts";
-import type { ParallelExecutionEvent } from "../../../src/parallel/mod.ts";
+import type {
+  AggregateStats,
+  ParallelExecutionEvent,
+  TaskComparison,
+} from "../../../src/parallel/mod.ts";
 import type { OutputFormat } from "../../../src/utils/formatters.ts";
 import type { TaskSetHashResult } from "../../../src/stats/types.ts";
 import { getModelColor, log, statusText } from "../../helpers/mod.ts";
@@ -60,6 +66,54 @@ import {
 } from "./results-writer.ts";
 import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
 import type { DashboardServer } from "../../dashboard/mod.ts";
+
+/**
+ * Recompute aggregate stats + comparisons from the FULL accumulated result
+ * set (CLI2). The interactive retry loop in `executeParallelBenchmark` only
+ * re-runs the transiently-failed subset of (task, model) pairs; the
+ * orchestrator's own `summary` from that last `runParallel()` call therefore
+ * only covers the retried subset (e.g. 2 of 10 results), not the merged
+ * `allResults` array actually written to the results file and displayed to
+ * the user. Using `lastSummary` verbatim under-reported pass/fail counts,
+ * cost, and comparisons for every run that went through at least one retry.
+ *
+ * Rebuilds one `ParallelTaskResult` per task (grouping `allResults` by
+ * `taskId`) so `ResultAggregator.finalize()` produces both the aggregate
+ * stats AND the task comparisons, mirroring what the orchestrator does
+ * internally, just over the merged set instead of a single run's results.
+ */
+export function computeFinalSummary(allResults: TaskExecutionResult[]): {
+  results: TaskExecutionResult[];
+  stats: AggregateStats;
+  comparisons: TaskComparison[];
+} {
+  const aggregator = new ResultAggregator();
+
+  const byTask = new Map<string, Map<string, TaskExecutionResult>>();
+  for (const result of allResults) {
+    const variantKey = result.context.variantId || result.context.llmModel;
+    let modelResults = byTask.get(result.taskId);
+    if (!modelResults) {
+      modelResults = new Map();
+      byTask.set(result.taskId, modelResults);
+    }
+    modelResults.set(variantKey, result);
+  }
+
+  for (const [taskId, modelResults] of byTask) {
+    const comparison = buildTaskComparison(taskId, modelResults);
+    aggregator.addParallelTaskResult({
+      taskId,
+      modelResults,
+      failures: new Map(),
+      partialSuccess: comparison.passingModels.length > 0,
+      comparison,
+      duration: 0,
+    });
+  }
+
+  return aggregator.finalize();
+}
 
 /**
  * Convert TaskSetHashResult to HashResult for results serialization
@@ -148,21 +202,29 @@ export async function executeParallelBenchmark(
   let containerProvider:
     | import("../../../src/container/interface.ts").ContainerProvider
     | undefined;
+  // CLI7: also lifted out of the try block (same reasoning as
+  // containerProvider above) so the finally below can run container
+  // cleanup + endOfRunNuke on EVERY exit path, including a throw that
+  // happens after setup completes but before the happy-path cleanup code
+  // used to run.
+  let primaryContainerName: string | undefined;
+  let wasExisting = false;
+  let containerNames: string[] | undefined;
 
   try {
     await Deno.mkdir(options.outputDir, { recursive: true });
 
-    // Load task manifests with comprehensive hashing
+    // Load task manifests with comprehensive hashing. CLI4: a zero-match
+    // glob now throws ValidationError at the loader choke point instead of
+    // returning an empty array, so the bench run aborts loudly (non-zero
+    // exit) instead of this branch silently returning `{}` and the process
+    // exiting 0 on a misconfigured --tasks pattern.
     let { manifests: taskManifests, hashResult } =
       await loadTaskManifestsWithHashes(
         options.tasks,
         options.outputDir,
         !quiet,
       );
-
-    if (taskManifests.length === 0) {
-      return {};
-    }
 
     // Load config
     const appConfig = await ConfigManager.loadConfig();
@@ -200,12 +262,10 @@ export async function executeParallelBenchmark(
       variants = retryResult.variants;
     }
 
-    // Setup container(s) — assign to the outer-scoped `containerProvider`
-    // so the function's finally block can dispose it on any exit path.
-    let primaryContainerName: string;
-    let wasExisting: boolean;
-    let containerNames: string[] | undefined;
-
+    // Setup container(s): assigns the outer-scoped `containerProvider`,
+    // `primaryContainerName`, `wasExisting`, `containerNames` (declared
+    // above the try) so the function's finally block can clean up /
+    // dispose on any exit path.
     const setupOpts = options.noCompilerCache
       ? { noCompilerCache: true as const }
       : {};
@@ -257,7 +317,12 @@ export async function executeParallelBenchmark(
     });
 
     const taskHint = concurrency.autoTaskConcurrency
-      ? ` (auto: ${containerCount} container(s) × 2 ÷ ${variants.length} variant(s), floor 3)`
+      // CLI11: the formula's floor is `containers × 2` (see
+      // concurrency-defaults.ts). This hint previously said "floor 3",
+      // a stale literal left over from the formula's earlier design.
+      ? ` (auto: ${containerCount} container(s) × 2 ÷ ${variants.length} variant(s), floor ${
+        containerCount * 2
+      } [containers × 2])`
       : " (user-specified)";
     const maxHint = concurrency.autoMaxConcurrency
       ? ` (auto: ${concurrency.taskConcurrency} × ${variants.length} × 2, floor 10)`
@@ -444,7 +509,11 @@ export async function executeParallelBenchmark(
       try {
         // Initialize TUI if enabled and supported
         if (tuiMode) {
-          const totalTasks = taskManifests.length * options.llms.length;
+          // CLI11: use the RESOLVED variant count, not the raw --llms spec
+          // count. Variant-expansion syntax (e.g. one --llms entry
+          // producing multiple temperature/config variants) makes these
+          // diverge, which skewed the TUI's total/percent-complete display.
+          const totalTasks = taskManifests.length * variants.length;
           tuiSetup = BenchTui.setup({
             totalTasks,
             startTime: new Date(),
@@ -515,18 +584,14 @@ export async function executeParallelBenchmark(
         let allResults = [...previousResults];
         let tasksToRun = taskManifests;
         let variantsToRun = variants;
-        let lastSummary: Awaited<
-          ReturnType<typeof orchestrator.runParallel>
-        >["summary"];
         let retryCount = 0;
 
         while (true) {
-          const { results, summary } = await orchestrator.runParallel(
+          const { results } = await orchestrator.runParallel(
             tasksToRun,
             variantsToRun,
             parallelOptions,
           );
-          lastSummary = summary;
 
           // Merge results: remove any old results for task+model pairs we just re-ran
           const newResultKeys = new Set(
@@ -599,9 +664,13 @@ export async function executeParallelBenchmark(
           tuiSetup = null;
         }
 
-        // Use all accumulated results
+        // Use all accumulated results. Stats/comparisons are recomputed from
+        // the FULL merged set (CLI2): the orchestrator's own summary from
+        // the loop's last runParallel() call only covers whichever subset
+        // was retried, which under-reported totals for any run that hit a
+        // transient-failure retry.
         const finalResults = allResults;
-        const summary = lastSummary!;
+        const summary = computeFinalSummary(finalResults);
         lastRunStats = summary.stats;
 
         // Save results
@@ -631,7 +700,12 @@ export async function executeParallelBenchmark(
         );
         resultFilePaths.push(resultsFile);
 
-        // Save score file (with container-health snapshot when dashboard ran)
+        // Save score file with a container-health snapshot. CLI3: the
+        // monitor is built unconditionally (see above) regardless of
+        // --no-dashboard, so fall back to reading it directly when there's
+        // no dashboard to ask. Previously `dashboard?.getHealthSnapshot()`
+        // resolved to `undefined` on every --no-dashboard run and the
+        // `# Container Health` block silently vanished.
         const scoreFile = `${options.outputDir}/scores-${timestamp}.txt`;
         await saveScoresFile(
           scoreFile,
@@ -640,7 +714,7 @@ export async function executeParallelBenchmark(
           variants,
           options.attempts,
           finalResults.length,
-          dashboard?.getHealthSnapshot(),
+          dashboard?.getHealthSnapshot() ?? healthMonitor?.getState(),
           finalResults,
           drainEvents,
           recoveryEvents,
@@ -688,32 +762,9 @@ export async function executeParallelBenchmark(
       }
     }
 
-    // Cleanup container(s)
-    if (containerNames && containerNames.length > 1) {
-      // Sweep the last task's candidate + prereq off every container (GH #13
-      // footnote) — per-task cleanup only runs at NEXT-task prep, so the
-      // final task's apps otherwise stay published until the next bench.
-      await endOfRunNuke(containerProvider, containerNames);
-      // Multi-container: only cleanup compiler folders, don't remove containers
-      if (containerProvider.cleanupCompilerFolders) {
-        await containerProvider.cleanupCompilerFolders();
-      }
-    } else {
-      if (wasExisting) {
-        // Container outlives the bench — sweep leftover CentralGauge apps.
-        // (A container we created is removed below; no sweep needed.)
-        await endOfRunNuke(containerProvider, [primaryContainerName]);
-      }
-      await cleanupContainer(
-        containerProvider,
-        primaryContainerName,
-        wasExisting,
-      );
-    }
-
-    // Persistent per-container pwsh sessions are torn down in the function's
-    // outer `finally` (below) so they survive both normal completion and any
-    // throw escape path. Slot.dispose is idempotent so this is safe.
+    // Container cleanup + persistent-pwsh-session disposal both run in the
+    // function's outer `finally` (below) so they happen on EVERY exit path,
+    // including a throw (CLI7), not just this happy-path return.
 
     // Send notification if configured (once after all runs)
     if (!options.noNotify && lastRunStats) {
@@ -782,6 +833,49 @@ export async function executeParallelBenchmark(
 
     throw error;
   } finally {
+    // Container cleanup on every exit path (CLI7): previously this ran
+    // only in the try body's happy path, so a throw ANYWHERE earlier in
+    // setup/execution (container setup itself, task loading, model
+    // validation, the run loop) skipped straight to the catch+rethrow
+    // above and left containers unstopped + candidate/prereq apps stale
+    // until the next bench's startup prenuke. `containerProvider` /
+    // `primaryContainerName` / `containerNames` are declared above the
+    // try specifically so they survive into this block even when the
+    // throw happened mid-setup.
+    if (containerProvider) {
+      if (containerNames && containerNames.length > 1) {
+        // Sweep the last task's candidate + prereq off every container
+        // (GH #13 footnote) — per-task cleanup only runs at NEXT-task prep,
+        // so the final task's apps otherwise stay published until the next
+        // bench. Both endOfRunNuke and cleanupContainer are best-effort
+        // internally and never throw.
+        await endOfRunNuke(containerProvider, containerNames);
+        // Multi-container: only cleanup compiler folders, don't remove containers
+        if (containerProvider.cleanupCompilerFolders) {
+          try {
+            await containerProvider.cleanupCompilerFolders();
+          } catch (e) {
+            log.warn(
+              `cleanupCompilerFolders threw (best-effort): ${
+                e instanceof Error ? e.message : String(e)
+              }`,
+            );
+          }
+        }
+      } else if (primaryContainerName !== undefined) {
+        if (wasExisting) {
+          // Container outlives the bench — sweep leftover CentralGauge apps.
+          // (A container we created is removed below; no sweep needed.)
+          await endOfRunNuke(containerProvider, [primaryContainerName]);
+        }
+        await cleanupContainer(
+          containerProvider,
+          primaryContainerName,
+          wasExisting,
+        );
+      }
+    }
+
     // Tear down persistent per-container pwsh sessions on every exit path
     // (normal return + thrown error). Without this, an early throw inside
     // runParallel / result-writing / cleanupContainer would leave child

@@ -276,7 +276,13 @@ export async function endOfRunNuke(
 }
 
 /**
- * Cleanup container after benchmark
+ * Cleanup container after benchmark.
+ *
+ * CLI7: each step is individually try/caught (best-effort). A container
+ * that's already gone or unresponsive must not stop `remove` or
+ * `cleanupCompilerFolders` from running, and must never throw out of the
+ * caller's `finally` block (which is often the last thing standing between
+ * a bench run and process exit).
  */
 export async function cleanupContainer(
   containerProvider: ContainerProvider,
@@ -286,12 +292,36 @@ export async function cleanupContainer(
   // Only cleanup container if we created it
   if (!wasExisting) {
     log.container("Cleaning up...");
-    await containerProvider.stop(containerName);
-    await containerProvider.remove(containerName);
+    try {
+      await containerProvider.stop(containerName);
+    } catch (e) {
+      log.warn(
+        `Container stop failed for ${containerName} (best-effort, continuing cleanup): ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+    try {
+      await containerProvider.remove(containerName);
+    } catch (e) {
+      log.warn(
+        `Container remove failed for ${containerName} (best-effort): ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
   }
 
   // Cleanup compiler folders to free disk space
   if (containerProvider.cleanupCompilerFolders) {
-    await containerProvider.cleanupCompilerFolders();
+    try {
+      await containerProvider.cleanupCompilerFolders();
+    } catch (e) {
+      log.warn(
+        `cleanupCompilerFolders failed (best-effort): ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
   }
 }

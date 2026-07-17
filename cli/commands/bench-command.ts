@@ -645,68 +645,81 @@ export function registerBenchCommand(cli: Command): void {
 
       // Execute parallel benchmark
       const outputFormat = (options.format || "verbose") as OutputFormat;
-      const result = await executeParallelBenchmark(
-        benchOptions,
-        options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
-        options.containerProvider,
-        outputFormat,
-        options.jsonEvents ?? false,
-        options.tui ?? false,
-      );
+      let result: Awaited<ReturnType<typeof executeParallelBenchmark>>;
+      try {
+        result = await executeParallelBenchmark(
+          benchOptions,
+          options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
+          options.containerProvider,
+          outputFormat,
+          options.jsonEvents ?? false,
+          options.tui ?? false,
+        );
 
-      // Ingest to scoreboard unless --no-ingest
-      if (options.ingest !== false) {
-        const hasResults = result.resultFilePaths &&
-          result.resultFilePaths.length > 0 &&
-          result.variants && result.variants.length > 0;
+        // Ingest to scoreboard unless --no-ingest
+        if (options.ingest !== false) {
+          const hasResults = result.resultFilePaths &&
+            result.resultFilePaths.length > 0 &&
+            result.variants && result.variants.length > 0;
 
-        if (!hasResults) {
-          // Empty-gate previously silently dropped; user invariant requires loud signal.
-          log.warn(
-            "ingest enabled but no result files produced; nothing to ingest.",
-          );
-        } else {
-          // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
-          // Per user invariant: if ingest was requested and prereq is unmet, fail loudly with non-zero exit.
-          if (benchPrecheckEnabled) {
-            const recheck = await runDoctor({
-              section: ingestSection,
-              levels: ["B", "C"],
-            });
-            if (!recheck.ok) {
-              console.error(formatReportToTerminal(recheck));
-              console.error(
-                colors.red(
-                  "\n[FAIL] pre-ingest re-check failed — auto-ingest aborted.",
-                ),
-              );
-              console.error(
-                colors.gray(
-                  `       Results saved to ${
-                    (result.resultFilePaths ?? []).join(", ")
-                  }.`,
-                ),
-              );
-              console.error(
-                colors.gray(
-                  "       Fix above and replay: deno task start ingest <path> --yes",
-                ),
-              );
-              console.error(
-                colors.gray(
-                  "       Or pass --no-ingest to skip ingest entirely.",
-                ),
-              );
-              Deno.exit(1);
+          if (!hasResults) {
+            // Empty-gate previously silently dropped; user invariant requires loud signal.
+            log.warn(
+              "ingest enabled but no result files produced; nothing to ingest.",
+            );
+          } else {
+            // Pre-ingest re-check: levels B+C only (static + catalog already validated at startup).
+            // Per user invariant: if ingest was requested and prereq is unmet, fail loudly with non-zero exit.
+            if (benchPrecheckEnabled) {
+              const recheck = await runDoctor({
+                section: ingestSection,
+                levels: ["B", "C"],
+              });
+              if (!recheck.ok) {
+                console.error(formatReportToTerminal(recheck));
+                console.error(
+                  colors.red(
+                    "\n[FAIL] pre-ingest re-check failed — auto-ingest aborted.",
+                  ),
+                );
+                console.error(
+                  colors.gray(
+                    `       Results saved to ${
+                      (result.resultFilePaths ?? []).join(", ")
+                    }.`,
+                  ),
+                );
+                console.error(
+                  colors.gray(
+                    "       Fix above and replay: deno task start ingest <path> --yes",
+                  ),
+                );
+                console.error(
+                  colors.gray(
+                    "       Or pass --no-ingest to skip ingest entirely.",
+                  ),
+                );
+                Deno.exit(1);
+              }
             }
-          }
 
-          await ingestBenchResults(
-            result.resultFilePaths!,
-            result.variants!,
-            options.yes ?? false,
-          );
+            await ingestBenchResults(
+              result.resultFilePaths!,
+              result.variants!,
+              options.yes ?? false,
+            );
+          }
         }
+      } finally {
+        // CLI8: close the bench root span + flush the trace on EVERY exit
+        // path from this block, including when the dashboard stays alive
+        // below (the trace for a completed run must not be dropped just
+        // because the process itself keeps running for dashboard review)
+        // and when executeParallelBenchmark/ingestBenchResults throws
+        // (previously only the no-dashboard happy-path branch closed the
+        // tracer at all).
+        benchRootSpan.end({ ok: true });
+        await closeTracer();
       }
 
       // If dashboard is running, keep process alive for result review
@@ -718,10 +731,6 @@ export function registerBenchCommand(cli: Command): void {
         );
         // Don't call Deno.exit - the HTTP server keeps the event loop alive
       } else {
-        // Close the bench root span and flush trace before exit so the very
-        // last events aren't lost.
-        benchRootSpan.end({ ok: true });
-        await closeTracer();
         // Explicitly exit to close any lingering connections
         Deno.exit(0);
       }
@@ -729,15 +738,56 @@ export function registerBenchCommand(cli: Command): void {
 }
 
 /**
+ * Cliffy flag names (including short aliases) for every preset-mergeable
+ * field. Used to detect whether the user actually typed the flag, since
+ * `cliOptions[key]` alone can't tell (see {@link mergePresetWithOptions}).
+ */
+const PRESET_FIELD_FLAGS: Record<string, string[]> = {
+  llms: ["-l", "--llms"],
+  agents: ["--agents"],
+  containers: ["--containers"],
+  attempts: ["-a", "--attempts"],
+  temperature: ["--temperature"],
+  maxTokens: ["--max-tokens"],
+  runs: ["--runs"],
+  stream: ["--stream"],
+  debug: ["--debug"],
+  format: ["-f", "--format"],
+  output: ["-o", "--output"],
+  container: ["--container"],
+  maxConcurrency: ["--max-concurrency"],
+  taskConcurrency: ["--task-concurrency"],
+};
+
+/**
  * Merge preset values with CLI options.
  * CLI options take precedence over preset values.
  * Returns the merged options object (mutates in place).
+ *
+ * `argv` defaults to `Deno.args` and is only overridable for tests. CLI1:
+ * Cliffy fills in each option's `{ default: ... }` value BEFORE this action
+ * ever runs, so `cliOptions.attempts` (etc.) is never `undefined` even when
+ * the user never typed `--attempts`, so the preset value could never win.
+ * Inspecting the raw argv is the only reliable way to tell "flag was typed"
+ * from "flag carries its Cliffy default".
  */
-// deno-lint-ignore no-explicit-any
-function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
-  // Helper to check if a CLI option was explicitly provided
-  // (not just default value)
+export function mergePresetWithOptions(
+  preset: BenchmarkPreset,
+  // deno-lint-ignore no-explicit-any
+  cliOptions: any,
+  argv: string[] = Deno.args,
+  // deno-lint-ignore no-explicit-any
+): any {
+  const argvHasFlag = (flags: string[]): boolean =>
+    argv.some((arg) => flags.includes(arg.split("=")[0]!));
+
+  // Helper to check if a CLI option was explicitly provided on the command
+  // line (not just carrying a Cliffy default value). Fields with a known
+  // flag mapping are resolved via argv inspection; anything else (e.g.
+  // options with no CLI default) falls back to the old value-based check.
   const cliHasValue = (key: string): boolean => {
+    const flags = PRESET_FIELD_FLAGS[key];
+    if (flags) return argvHasFlag(flags);
     const val = cliOptions[key];
     if (val === undefined || val === null) return false;
     if (Array.isArray(val) && val.length === 0) return false;
@@ -763,38 +813,34 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
   }
 
   // Numbers: use preset if CLI wasn't provided
-  if (cliOptions.attempts === undefined && preset.attempts !== undefined) {
+  if (!cliHasValue("attempts") && preset.attempts !== undefined) {
     cliOptions.attempts = preset.attempts;
   }
-  if (
-    cliOptions.temperature === undefined && preset.temperature !== undefined
-  ) {
+  if (!cliHasValue("temperature") && preset.temperature !== undefined) {
     cliOptions.temperature = preset.temperature;
   }
-  if (cliOptions.maxTokens === undefined && preset.maxTokens !== undefined) {
+  if (!cliHasValue("maxTokens") && preset.maxTokens !== undefined) {
     cliOptions.maxTokens = preset.maxTokens;
   }
   if (
-    cliOptions.maxConcurrency === undefined &&
-    preset.maxConcurrency !== undefined
+    !cliHasValue("maxConcurrency") && preset.maxConcurrency !== undefined
   ) {
     cliOptions.maxConcurrency = preset.maxConcurrency;
   }
   if (
-    cliOptions.taskConcurrency === undefined &&
-    preset.taskConcurrency !== undefined
+    !cliHasValue("taskConcurrency") && preset.taskConcurrency !== undefined
   ) {
     cliOptions.taskConcurrency = preset.taskConcurrency;
   }
-  if (cliOptions.runs === undefined && preset.runs !== undefined) {
+  if (!cliHasValue("runs") && preset.runs !== undefined) {
     cliOptions.runs = preset.runs;
   }
 
   // Booleans: use preset if CLI wasn't provided
-  if (cliOptions.stream === undefined && preset.stream !== undefined) {
+  if (!cliHasValue("stream") && preset.stream !== undefined) {
     cliOptions.stream = preset.stream;
   }
-  if (cliOptions.debug === undefined && preset.debug !== undefined) {
+  if (!cliHasValue("debug") && preset.debug !== undefined) {
     cliOptions.debug = preset.debug;
   }
   if (cliOptions.sandbox === undefined && preset.sandbox !== undefined) {
@@ -802,13 +848,13 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
   }
 
   // Strings: use preset if CLI wasn't provided
-  if (!cliOptions.format && preset.format) {
+  if (!cliHasValue("format") && preset.format) {
     cliOptions.format = preset.format;
   }
-  if (!cliOptions.output && preset.output) {
+  if (!cliHasValue("output") && preset.output) {
     cliOptions.output = preset.output;
   }
-  if (!cliOptions.container && preset.container) {
+  if (!cliHasValue("container") && preset.container) {
     cliOptions.container = preset.container;
   }
   if (!cliHasValue("containers") && preset.containers) {

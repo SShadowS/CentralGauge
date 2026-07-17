@@ -133,24 +133,34 @@ export function isTransientFailure(result: TaskExecutionResult): boolean {
     return false;
   }
 
-  // Transient failures - worth retrying
+  // Transient failures - worth retrying. Patterns must look like actual
+  // provider/infra error shapes, not generic prose (CLI10): the old bare
+  // "failed to" pattern misclassified model-side extraction/parsing
+  // failures like "Failed to extract code from response" as retryable, and
+  // bare "500" could match inside unrelated numbers. "failed to connect"
+  // replaces the bare "failed to" for the one legitimate connection-shaped
+  // phrasing it needs to keep matching.
   const transientPatterns = [
     "llm call failed",
     "timeout",
     "rate limit",
     "429",
-    "503",
-    "502",
-    "500",
     "connection",
     "network",
     "econnreset",
     "enotfound",
     "container error",
-    "failed to",
+    "failed to connect",
   ];
 
-  return transientPatterns.some((pattern) => reasons.includes(pattern));
+  if (transientPatterns.some((pattern) => reasons.includes(pattern))) {
+    return true;
+  }
+
+  // HTTP 5xx-family status codes, matched as whole numbers via word
+  // boundaries so a bare "500" doesn't misclassify prose that just happens
+  // to contain that number.
+  return /\b50[023]\b/.test(reasons);
 }
 
 /**

@@ -308,12 +308,18 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
         `${c.containerName}: pass=${c.passCount} fail=${c.failCount} err=${c.errorCount}${flag}`,
       );
     }
-    if (stats.infraInvalidated > 0) {
-      lines.push(
-        `infra_invalidated: ${stats.infraInvalidated}/${input.resultCount}` +
-          ` (valid_attempts=${stats.validAttempts})`,
-      );
-    }
+  }
+  // CLI3: infra_invalidated must be visible regardless of whether a
+  // container-health snapshot was available (e.g. --no-dashboard runs
+  // before the monitor-state fallback was wired up, or a snapshot with zero
+  // tracked containers). It was previously nested inside the
+  // containerHealth-present branch above and vanished along with it.
+  if (stats.infraInvalidated > 0) {
+    lines.push(``);
+    lines.push(
+      `infra_invalidated: ${stats.infraInvalidated}/${input.resultCount}` +
+        ` (valid_attempts=${stats.validAttempts})`,
+    );
   }
 
   // # Infra Retries block — operator-facing summary of inline infra-retry

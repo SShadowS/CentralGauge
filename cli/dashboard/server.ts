@@ -61,6 +61,15 @@ export class DashboardServer {
   }
 
   /**
+   * Number of currently connected SSE clients. Test/observability hook:
+   * exercises the active removal in `cancel()` (CLI9) without needing a
+   * broadcast to trigger the lazy dead-client sweep.
+   */
+  getClientCount(): number {
+    return this.clients.size;
+  }
+
+  /**
    * Start the dashboard server on an auto-selected port.
    *
    * `sharedMonitor` lets the caller (typically `parallel-executor`) inject
@@ -210,18 +219,28 @@ export class DashboardServer {
     const clients = this.clients;
     const stateManager = this.stateManager;
     const bridge = this._bridge;
+    // `cancel()` doesn't receive the controller as a parameter (only the
+    // cancel reason) — captured here from `start()` so cancel() can remove
+    // the right entry from `clients` (CLI9).
+    let sseController: ReadableStreamDefaultController | undefined;
 
     const stream = new ReadableStream({
       start(controller) {
+        sseController = controller;
         // Replay current state immediately so newly-connected tabs aren't blank
         const enc = new TextEncoder();
+        let replayOk = true;
         const send = (event: SSEEvent) => {
+          if (!replayOk) return;
           try {
             controller.enqueue(
               enc.encode(`data: ${JSON.stringify(event)}\n\n`),
             );
           } catch {
-            // Stream already closed — fall through; client won't be added
+            // Stream already closed before the replay finished. Don't
+            // register a controller that can never receive a live
+            // broadcast (CLI9).
+            replayOk = false;
           }
         };
 
@@ -235,10 +254,21 @@ export class DashboardServer {
           send({ type: "pool-snapshot", snapshot: latestPool });
         }
 
-        clients.add(controller);
+        // Only register the controller once the replay actually landed
+        // (CLI9): a controller added despite a failed enqueue would sit
+        // dead in `clients` until the next broadcast's lazy sweep found it.
+        if (replayOk) {
+          clients.add(controller);
+        }
       },
       cancel() {
-        // Client disconnected - cleaned up on next broadcast
+        // Actively remove on disconnect (CLI9) instead of waiting for the
+        // next broadcast's lazy dead-client sweep: a client that
+        // disconnects between broadcasts would otherwise sit in `clients`
+        // indefinitely.
+        if (sseController) {
+          clients.delete(sseController);
+        }
       },
     });
 
