@@ -26,7 +26,7 @@
  */
 
 import { Mutex } from "../parallel/semaphore.ts";
-import { PwshSessionError } from "../errors.ts";
+import { ContainerError, PwshSessionError } from "../errors.ts";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("container:session-slot");
@@ -54,6 +54,16 @@ export interface SessionSlotOptions {
   factory: () => SessionLike;
   /** Spawn-per-call escape hatch. Used when persistent is disabled, init fails, or non-crash session error. */
   fallback: (script: string) => Promise<{ output: string; exitCode: number }>;
+}
+
+export interface RunScriptOptions {
+  /**
+   * The container operation this script performs (compile / publish / test /
+   * health, ...). Stamped onto the `ContainerError` thrown on a session
+   * TIMEOUT (C4) so infra classification and rerouting see the real op —
+   * the slot itself never hardcodes one.
+   */
+  operation?: ContainerError["operation"];
 }
 
 export interface SessionSlotMetrics {
@@ -102,9 +112,17 @@ export class ContainerSessionSlot {
    * else through the spawn-per-call fallback.
    *
    * Throws if the slot is disposed or in the process of disposing.
+   *
+   * On a session TIMEOUT (`session_timeout`) this throws a `ContainerError`
+   * carrying the caller-supplied `opts.operation` and NEVER falls back:
+   * killing the host pwsh does not cancel the in-container operation, so
+   * re-running the same mutating script would execute it CONCURRENTLY with
+   * the still-running original (the SQL death-spiral class, C4). The caller
+   * (compile queue) taints itself and reroutes via infra-retry instead.
    */
   async runScript(
     script: string,
+    opts?: RunScriptOptions,
   ): Promise<{ output: string; exitCode: number }> {
     if (this._disposed || this._disposing) {
       throw new Error(
@@ -139,6 +157,12 @@ export class ContainerSessionSlot {
           const r = await session.execute(script);
           return { output: r.output, exitCode: r.exitCode };
         } catch (e) {
+          if (e instanceof PwshSessionError && e.code === "session_timeout") {
+            // C4: never fallback, never retry — the in-container op is
+            // still running. Surface a classifiable ContainerError.
+            this.recordError(e);
+            throw this.sessionTimeoutError(e, opts);
+          }
           if (
             e instanceof PwshSessionError && e.code === "session_crashed"
           ) {
@@ -154,6 +178,15 @@ export class ContainerSessionSlot {
                 const r2 = await fresh.execute(script);
                 return { output: r2.output, exitCode: r2.exitCode };
               } catch (e2) {
+                if (
+                  e2 instanceof PwshSessionError &&
+                  e2.code === "session_timeout"
+                ) {
+                  // C4: the retry's op is now running in-container too —
+                  // same no-fallback rule as the first attempt.
+                  this.recordError(e2);
+                  throw this.sessionTimeoutError(e2, opts);
+                }
                 if (e2 instanceof PwshSessionError) {
                   // Retry attempt also crashed/errored. Don't retry-of-retry —
                   // fall through to spawn-per-call. Symmetric with first
@@ -312,6 +345,25 @@ export class ContainerSessionSlot {
     } finally {
       release();
     }
+  }
+
+  /**
+   * Build the ContainerError thrown on a session timeout (C4). Carries the
+   * caller-supplied operation (never hardcoded by the slot; "test" only as
+   * the conservative default for legacy callers that pass no options) and
+   * the `sessionTimeout` context marker `isSessionTimeoutContainerError()`
+   * keys off.
+   */
+  private sessionTimeoutError(
+    e: PwshSessionError,
+    opts: RunScriptOptions | undefined,
+  ): ContainerError {
+    return new ContainerError(
+      `pwsh session timeout on ${this.containerName}: ${e.message}`,
+      this.containerName,
+      opts?.operation ?? "test",
+      { sessionTimeout: true, sessionErrorCode: e.code },
+    );
   }
 
   private recordError(e: unknown): void {

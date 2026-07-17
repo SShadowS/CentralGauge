@@ -2,13 +2,17 @@
  * Unit tests for ContainerSessionSlot — encapsulates per-container persistent
  * session lifecycle (lock + session ref + disposal state).
  */
-import { assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import {
   ContainerSessionSlot,
   type SessionLike,
 } from "../../../src/container/session-slot.ts";
-import { PwshSessionError } from "../../../src/errors.ts";
+import {
+  ContainerError,
+  isSessionTimeoutContainerError,
+  PwshSessionError,
+} from "../../../src/errors.ts";
 
 interface StubFactoryOptions {
   /** Delay (ms) before init resolves — lets concurrent callers race. */
@@ -450,6 +454,80 @@ describe("ContainerSessionSlot - metrics", () => {
     assertEquals(slot.metrics.recycleCount, 1);
     assertEquals(slot.metrics.fallbackCount, 0);
     void fbCalls;
+    await slot.dispose();
+  });
+});
+
+// C4: a session TIMEOUT means the in-container op is still running — the
+// slot must NOT re-run the same mutating script (fallback), it must throw a
+// classifiable ContainerError so the caller taints the queue and reroutes.
+describe("ContainerSessionSlot - session_timeout (C4)", () => {
+  it("timeout throws ContainerError with caller operation; fallback NOT called", async () => {
+    const stub = createStubSession();
+    let fallbackCalls = 0;
+    const slot = new ContainerSessionSlot("Cronus28", {
+      persistentEnabled: true,
+      factory: () => stub,
+      fallback: () => {
+        fallbackCalls++;
+        return Promise.resolve({ output: "fb", exitCode: 0 });
+      },
+    });
+    // Warm the session, then arm a timeout on the next execute.
+    await slot.runScript("warmup", { operation: "publish" });
+    stub.throwOnNextExecute(
+      new PwshSessionError(
+        "execute timeout after 300000ms",
+        "session_timeout",
+        { container: "Cronus28" },
+      ),
+    );
+
+    let err: unknown;
+    try {
+      await slot.runScript("publish-op", { operation: "publish" });
+    } catch (e) {
+      err = e;
+    }
+    assert(
+      err instanceof ContainerError,
+      `expected ContainerError, got ${String(err)}`,
+    );
+    assertEquals((err as ContainerError).operation, "publish");
+    assertEquals((err as ContainerError).containerName, "Cronus28");
+    assertEquals(
+      isSessionTimeoutContainerError(err),
+      true,
+      "must be detectable as a session-timeout error (queue taint keys off it)",
+    );
+    assertEquals(
+      fallbackCalls,
+      0,
+      "fallback would re-run the still-running mutating script — forbidden",
+    );
+    await slot.dispose();
+  });
+
+  it("session_crashed still gets its one fresh-session retry (unchanged)", async () => {
+    const stub = createStubSession();
+    let fallbackCalls = 0;
+    const slot = new ContainerSessionSlot("Cronus28", {
+      persistentEnabled: true,
+      factory: () => stub,
+      fallback: () => {
+        fallbackCalls++;
+        return Promise.resolve({ output: "fb", exitCode: 0 });
+      },
+    });
+    await slot.runScript("warmup", { operation: "test" });
+    stub.throwOnNextExecute(
+      new PwshSessionError("boom", "session_crashed", {
+        container: "Cronus28",
+      }),
+    );
+    const r = await slot.runScript("retry-me", { operation: "test" });
+    assertEquals(r.exitCode, 0, "crash retry must still succeed");
+    assertEquals(fallbackCalls, 0);
     await slot.dispose();
   });
 });

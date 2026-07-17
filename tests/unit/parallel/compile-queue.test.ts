@@ -5,7 +5,7 @@
  * and serial test execution (mutex).
  */
 
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 
 import {
@@ -13,6 +13,7 @@ import {
   QueueFullError,
   QueueTimeoutError,
 } from "../../../src/parallel/compile-queue.ts";
+import { ContainerError } from "../../../src/errors.ts";
 import { NoEligibleContainersError } from "../../../src/parallel/errors.ts";
 import {
   createMockContainerProvider,
@@ -798,6 +799,176 @@ Deno.test({
       createMockCompileWorkItem({ id: "wi-1" }),
     );
     assertEquals(result.containerName, "Cronus282");
+  },
+});
+
+// TEST2 (guards P1): a thrown compile error must not leak the compile-
+// semaphore permit. Pre-fix, three throwing entries exhaust the default
+// concurrency (3) and every subsequent enqueue starves forever at acquire().
+Deno.test({
+  name: "compile slot released when compileProject throws",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const provider = createMockContainerProvider();
+    provider.setCompilationConfig({
+      throwError: new ContainerError("boom", "c1", "compile"),
+    });
+    const queue = new CompileQueue(provider, "c1", { compileConcurrency: 3 });
+
+    // Race against a deadline: pre-fix an entry can hang at acquire(), so a
+    // bare allSettled would never return.
+    const settled = await Promise.race([
+      Promise.allSettled([
+        queue.enqueue(createMockCompileWorkItem({ id: "a" })),
+        queue.enqueue(createMockCompileWorkItem({ id: "b" })),
+        queue.enqueue(createMockCompileWorkItem({ id: "c" })),
+      ]),
+      new Promise<never>((_, rej) =>
+        setTimeout(
+          () => rej(new Error("throwing entries never settled: permit leaked")),
+          5000,
+        )
+      ),
+    ]);
+    assertEquals(
+      (settled as PromiseSettledResult<unknown>[]).every(
+        (r) => r.status === "rejected",
+      ),
+      true,
+      "all three throwing entries must reject",
+    );
+
+    // All three permits must be back: a healthy follow-up item completes.
+    provider.setCompilationConfig({ success: true });
+    const ok = await Promise.race([
+      queue.enqueue(createMockCompileWorkItem({ id: "d" })),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("starved: semaphore leaked")), 5000)
+      ),
+    ]);
+    assertExists(ok);
+  },
+});
+
+// C4: a session-timeout ContainerError from the test phase means the
+// in-container op is STILL RUNNING. The queue must taint itself BEFORE
+// releasing the test mutex so the next waiter reroutes instead of running
+// a second concurrent mutating op on the same container.
+Deno.test({
+  name: "session timeout taints the queue: next test waiter reroutes",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const provider = createMockContainerProvider();
+    provider.setCompilationConfig({ success: true });
+    provider.setTestConfig({
+      delay: 50,
+      throwError: new ContainerError(
+        "pwsh session timeout on c1",
+        "c1",
+        "test",
+        { sessionTimeout: true },
+      ),
+    });
+    const queue = new CompileQueue(provider, "c1", { compileConcurrency: 3 });
+
+    const mkTestItem = (id: string) =>
+      createMockCompileWorkItem({
+        id,
+        context: createMockTaskExecutionContext({
+          manifest: createMockTaskManifest({
+            expected: { compile: true, testApp: "tests/fixtures/TestApp.al" },
+          }),
+        }),
+      });
+
+    const p1 = queue.enqueue(mkTestItem("wi-1"));
+    const p2 = queue.enqueue(mkTestItem("wi-2"));
+    const [r1, r2] = await Promise.allSettled([p1, p2]);
+
+    assertEquals(r1.status, "rejected");
+    assertEquals(r2.status, "rejected");
+    // Only ONE of the two ever ran tests — the other was blocked by taint.
+    assertEquals(
+      provider.getCallCount("runTests"),
+      1,
+      "the tainted queue must NOT run the second test on this container",
+    );
+    // One rejection is the session timeout itself; the other names the taint.
+    const messages = [r1, r2]
+      .map((r) => (r as PromiseRejectedResult).reason as Error)
+      .map((e) => e.message);
+    assert(
+      messages.some((m) => m.includes("tainted")),
+      `one rejection must be the taint barrier, got: ${messages.join(" | ")}`,
+    );
+    assert(
+      messages.some((m) => m.includes("session timeout")),
+      "the original timeout error must surface on the first entry",
+    );
+  },
+});
+
+// P11: repeated drain/re-admit hops must NOT reset the queue-wait budget.
+// The entry keeps its original enqueuedAt; every re-arm uses the REMAINING
+// budget, so total wall-clock to QueueTimeoutError ≈ one budget, not one
+// per hop.
+Deno.test({
+  name: "re-admission preserves the original wait budget",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    const provider = createMockContainerProvider();
+    provider.setCompilationConfig({ delay: 700, success: true });
+    const timeoutMs = 300;
+    const mk = (name: string) =>
+      new CompileQueue(provider, name, {
+        compileConcurrency: 1,
+        timeout: timeoutMs,
+      });
+    const q1 = mk("c1");
+    const q2 = mk("c2");
+    const q3 = mk("c3");
+
+    // Busy every queue with a slow filler so the probe entry stays pending.
+    const fillers = [q1, q2, q3].map((q, i) =>
+      q.enqueue(createMockCompileWorkItem({ id: `filler-${i}` }))
+        .catch(() => {})
+    );
+    await new Promise((r) => setTimeout(r, 20));
+
+    const t0 = Date.now();
+    const probe = q1.enqueue(createMockCompileWorkItem({ id: "probe" }));
+
+    await new Promise((r) => setTimeout(r, 120));
+    const d1 = q1.drainPending();
+    assertEquals(d1.length, 1);
+    q2.admitRebalancedEntry(d1[0]!);
+
+    await new Promise((r) => setTimeout(r, 120));
+    const d2 = q2.drainPending();
+    assertEquals(d2.length, 1);
+    q3.admitRebalancedEntry(d2[0]!);
+
+    let err: unknown;
+    try {
+      await probe;
+    } catch (e) {
+      err = e;
+    }
+    const elapsed = Date.now() - t0;
+    assert(
+      err instanceof QueueTimeoutError,
+      `expected QueueTimeoutError, got ${String(err)}`,
+    );
+    assert(
+      elapsed >= 250 && elapsed <= 450,
+      `timed out after ${elapsed}ms — must be ≈ ONE budget (${timeoutMs}ms), ` +
+        `not a fresh budget per hop`,
+    );
+
+    await Promise.all(fillers);
   },
 });
 

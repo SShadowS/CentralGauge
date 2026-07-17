@@ -662,21 +662,44 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Map a `runScriptThroughSession` script label to the ContainerError
+   * operation stamped on a session-timeout throw (C4). The label describes
+   * WHAT the script does; the operation is the infra-classification bucket.
+   */
+  private static readonly SCRIPT_LABEL_OPERATION: Record<
+    string,
+    ContainerError["operation"]
+  > = {
+    "publish": "publish",
+    "prepare-candidate": "publish",
+    "cleanup": "publish",
+    "prenuke": "publish",
+    "prereq-cleanup": "publish",
+    "nst-maintain": "health",
+    "test-legacy": "test",
+  };
+
+  /**
    * Execute a script via the per-container session slot.
    * Slot handles: lock, session reuse, init, retry-on-crash, fallback.
    *
-   * `scriptLabel` is used purely for tracing — pass "cleanup" / "publish" /
-   * "test" / "compile" so the Perfetto trace can distinguish call types on
-   * the same container slot lane. Optional; defaults to "unknown".
+   * `scriptLabel` is used for tracing (Perfetto lane naming) AND to derive
+   * the operation stamped on a session-timeout ContainerError — pass
+   * "cleanup" / "publish" / "test-legacy" / etc. Optional; defaults to
+   * "unknown".
    */
   private async runScriptThroughSession(
     containerName: string,
     script: string,
     scriptLabel = "unknown",
   ): Promise<{ output: string; exitCode: number }> {
+    const operation = BcContainerProvider.SCRIPT_LABEL_OPERATION[scriptLabel] ??
+      "test";
     const tracer = getTracer();
     if (!tracer.enabled) {
-      return await this.getOrCreateSlot(containerName).runScript(script);
+      return await this.getOrCreateSlot(containerName).runScript(script, {
+        operation,
+      });
     }
     // When tracing is enabled, prepend env-var assignments so the pwsh
     // `CG-Trace` helper inside the script can emit bench-relative
@@ -730,7 +753,8 @@ ${script}
         cat: ["pwsh", "slot"],
         args: { scriptLabel, scriptBytes: script.length },
       },
-      () => this.getOrCreateSlot(containerName).runScript(script2),
+      () =>
+        this.getOrCreateSlot(containerName).runScript(script2, { operation }),
     );
     // Parse + forward [TRACE] lines into the tracer; return filtered stdout.
     const filtered = mergeIntoTracer(result.output, pwshLaneName);
@@ -2196,14 +2220,22 @@ ${script}
     return await this.executePowerShell(script);
   }
 
-  async isHealthy(containerName: string): Promise<boolean> {
+  async isHealthy(
+    containerName: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<boolean> {
     try {
+      // Best-effort cancellation (P8): check the signal between phases. A
+      // running Test-BcContainer cannot be cancelled mid-flight, but an
+      // aborted probe must never be reported healthy.
+      if (opts?.signal?.aborted) return false;
       const script = `
         ${bcchImport()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;
       const result = await this.executePowerShell(script);
+      if (opts?.signal?.aborted) return false;
       return result.output.includes("HEALTHY:True");
     } catch {
       return false;

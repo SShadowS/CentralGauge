@@ -369,13 +369,9 @@ describe({
       timestamp: 2000,
     });
     assertEquals(rec.alertRaised, true);
-    const alertId = rec.alert!.alertId;
+    const alert = rec.alert!;
 
-    const outcome = await pool.rebalanceFromContainer(
-      "c1",
-      alertId,
-      "test:sql",
-    );
+    const outcome = await pool.rebalanceFromContainer("c1", alert);
 
     assert(
       outcome.drained >= 1,
@@ -390,14 +386,96 @@ describe({
     assert(!targets.includes("c1"));
 
     // Idempotent — second call for same alertId is a no-op.
-    const second = await pool.rebalanceFromContainer(
-      "c1",
-      alertId,
-      "test:sql",
-    );
+    const second = await pool.rebalanceFromContainer("c1", alert);
     assertEquals(second.drained, 0);
     assertEquals(second.requeued, 0);
 
+    await Promise.all(promises);
+  });
+
+  it("global outage: per-container drains of ONE alert all execute (P4b)", async () => {
+    const { ContainerHealthMonitor } = await import(
+      "../../../src/health/monitor.ts"
+    );
+    const mon = new ContainerHealthMonitor({
+      windowSize: 10,
+      expectedContainers: 4,
+      expectedContainerNames: ["c1", "c2", "c3", "c4"],
+    });
+
+    mockProvider.setCompilationConfig({ delay: 400, success: true });
+    const pool = new CompileQueuePool(
+      mockProvider,
+      ["c1", "c2", "c3", "c4"],
+      { compileConcurrency: 1, timeout: 1000, healthMonitor: mon },
+    );
+
+    // Pin 2 items to each of c1..c3 (1 in-flight + 1 pending per container)
+    // via full exclusion lists so routing is deterministic.
+    const all = ["c1", "c2", "c3", "c4"];
+    const promises: Promise<unknown>[] = [];
+    for (const name of ["c1", "c2", "c3"]) {
+      const exclude = all.filter((n) => n !== name);
+      for (let i = 0; i < 2; i++) {
+        promises.push(
+          pool.enqueue(
+            createMockCompileWorkItem({ id: `${name}-wi-${i}` }),
+            { excludeContainers: exclude },
+          ).catch(() => {}),
+        );
+      }
+    }
+    await new Promise((r) => setTimeout(r, 30));
+
+    // Same catastrophic fingerprint on 3 of 4 containers → global_outage.
+    let globalAlert:
+      | import("../../../src/health/types.ts").HealthAlert
+      | undefined;
+    for (const [i, name] of ["c1", "c2", "c3"].entries()) {
+      const rec = mon.record({
+        containerName: name,
+        result: "infra_error",
+        fingerprint: "test:sql",
+        signatureId: "sql_service_down",
+        timestamp: 1000 + i,
+      });
+      if (rec.alert?.kind === "global_outage") globalAlert = rec.alert;
+    }
+    assert(globalAlert !== undefined, "global outage must have raised");
+
+    // Fan-out drains — one per affected member (what the orchestrator's
+    // alert listener now does). Pre-fix the bare-alertId dedupe no-opped
+    // every call after the first.
+    const outcomes = [];
+    for (const name of globalAlert.affectedContainers!) {
+      outcomes.push(await pool.rebalanceFromContainer(name, globalAlert));
+    }
+    assertEquals(outcomes.length, 3);
+    for (const o of outcomes) {
+      assertEquals(
+        o.drained,
+        1,
+        `drain for ${o.containerName} must actually execute, not no-op`,
+      );
+      // The drained entries' own exclusion lists rule out c4, so they park
+      // (bounded by the 1000ms budget) rather than requeue.
+      assertEquals(o.parked, 1);
+    }
+
+    // True duplicate (same alertId AND same container) still no-ops.
+    const dup = await pool.rebalanceFromContainer("c1", globalAlert);
+    assertEquals(dup.drained, 0);
+
+    // The unaffected 4th container is still eligible for new work.
+    let routed: string | undefined;
+    promises.push(
+      pool.enqueue(createMockCompileWorkItem({ id: "post-outage" }), {
+        onRouted: (c) => (routed = c),
+      }).catch(() => {}),
+    );
+    assertEquals(routed, "c4");
+
+    pool.cancelParked("test cleanup");
     await Promise.all(promises);
   });
 
@@ -430,11 +508,7 @@ describe({
     });
     assertEquals(rec.alertRaised, true);
 
-    const outcome = await pool.rebalanceFromContainer(
-      "c1",
-      rec.alert!.alertId,
-      "test:sql",
-    );
+    const outcome = await pool.rebalanceFromContainer("c1", rec.alert!);
     assertEquals(outcome.requeued, 0);
     assert(outcome.parked >= 1, "all drained entries must be parked");
     assertEquals(pool.parkedDepth, outcome.parked);
@@ -483,11 +557,7 @@ describe({
       timestamp: 2000,
     });
 
-    const outcome = await pool.rebalanceFromContainer(
-      "c1",
-      rec.alert!.alertId,
-      "test:sql-c1",
-    );
+    const outcome = await pool.rebalanceFromContainer("c1", rec.alert!);
     // Both c1 and c2 are alerted now → must park.
     assert(outcome.parked >= 1);
     assertEquals(pool.parkedDepth, outcome.parked);
@@ -561,11 +631,7 @@ describe({
       timestamp: 2000,
     });
     const alertId = rec.alert!.alertId;
-    const outcome = await pool.rebalanceFromContainer(
-      "c1",
-      alertId,
-      "test:sql",
-    );
+    const outcome = await pool.rebalanceFromContainer("c1", rec.alert!);
     assert(outcome.parked >= 1, "drained entries parked (sole container)");
     assertEquals(pool.parkedDepth, outcome.parked);
 
@@ -603,11 +669,7 @@ describe({
       signatureId: "sql_service_down",
       timestamp: 2000,
     });
-    const outcome = await pool.rebalanceFromContainer(
-      "c1",
-      rec.alert!.alertId,
-      "test:sql",
-    );
+    const outcome = await pool.rebalanceFromContainer("c1", rec.alert!);
     assert(outcome.parked >= 1);
 
     // Alert NOT cleared — re-admit must refuse and leave parked work alone.

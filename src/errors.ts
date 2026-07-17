@@ -376,6 +376,17 @@ export class PwshSessionError extends CentralGaugeError {
 }
 
 /**
+ * True iff `error` is the ContainerError a session slot throws when the
+ * persistent pwsh session TIMED OUT (C4). Distinct from other container
+ * errors because the in-container operation is still running — callers
+ * must taint the queue and reroute, never re-run on the same container.
+ */
+export function isSessionTimeoutContainerError(error: unknown): boolean {
+  return error instanceof ContainerError &&
+    error.context?.["sessionTimeout"] === true;
+}
+
+/**
  * Check if an error is retryable (rate limits, transient network issues)
  */
 export function isRetryableError(error: unknown): boolean {

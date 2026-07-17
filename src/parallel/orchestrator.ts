@@ -287,12 +287,19 @@ export class ParallelBenchmarkOrchestrator {
         queueOptions,
       );
     } else if (containerNames && containerNames.length > 1) {
+      // P2 recovery predicate: parking drained work only makes sense when
+      // the recovery prober can bring an excluded container back. With the
+      // prober disabled (default) — or for global_outage alerts, which the
+      // prober skips by design — the pool fails fast instead of parking.
+      const recoveryEnabled = (options.recoveryProbeIntervalMs ?? 0) > 0;
       this.compileQueue = new CompileQueuePool(
         this.containerProvider,
         containerNames,
         {
           ...queueOptions,
           ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
+          canRecover: (alert) =>
+            recoveryEnabled && alert.kind !== "global_outage",
         },
       );
     } else {
@@ -316,23 +323,31 @@ export class ParallelBenchmarkOrchestrator {
         (alert) => {
           // Fire-and-forget. The state machine is sync, but we don't want
           // the listener path to block the monitor.
-          pool.rebalanceFromContainer(
-            alert.containerName,
-            alert.alertId,
-            alert.fingerprint,
-          ).then((outcome) => {
-            log.info(`Alert drain rebalanced ${outcome.requeued} entries`, {
-              alertId: alert.alertId,
-              containerName: alert.containerName,
-              drained: outcome.drained,
-              parked: outcome.parked,
+          //
+          // P4b: a global_outage alert covers MANY containers but fires
+          // ONE listener call — drain every affected container, not just
+          // the trigger. Pool idempotency is per (alertId, container), so
+          // each member's drain executes exactly once.
+          const targets =
+            alert.kind === "global_outage" && alert.affectedContainers?.length
+              ? alert.affectedContainers
+              : [alert.containerName];
+          for (const target of targets) {
+            pool.rebalanceFromContainer(target, alert).then((outcome) => {
+              log.info(`Alert drain rebalanced ${outcome.requeued} entries`, {
+                alertId: alert.alertId,
+                containerName: target,
+                drained: outcome.drained,
+                parked: outcome.parked,
+              });
+            }).catch((err) => {
+              log.error("Alert drain rebalance failed", {
+                alertId: alert.alertId,
+                containerName: target,
+                error: err instanceof Error ? err.message : String(err),
+              });
             });
-          }).catch((err) => {
-            log.error("Alert drain rebalance failed", {
-              alertId: alert.alertId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
+          }
         },
       );
 
@@ -355,10 +370,11 @@ export class ParallelBenchmarkOrchestrator {
           {
             monitor,
             pool,
-            // isHealthy on the interface takes (name); signal isn't propagated
-            // to the underlying pwsh, but Test-BcContainer self-terminates so
-            // the per-probe timeout still bounds the tick.
-            isHealthy: (name) => provider.isHealthy(name),
+            // Forward the abort signal (P8): the provider checks it between
+            // phases (best-effort — a running Test-BcContainer cannot be
+            // cancelled mid-flight, but an aborted probe returns early and
+            // is never reported healthy).
+            isHealthy: (name, o) => provider.isHealthy(name, o),
             now: () => Date.now(),
             onEvent: (ev) => this.recoveryEvents.push(ev),
             ...(hasDispose
