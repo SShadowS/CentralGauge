@@ -23,7 +23,12 @@ export default defineConfig(async () => {
         miniflare: {
           compatibilityDate: "2026-04-17",
           compatibilityFlags: ["nodejs_compat"],
-          bindings: { TEST_MIGRATIONS: migrations },
+          // S4: DO test-only endpoints (/recent, /test-match, /reset) are
+          // double-gated on this env flag + the x-test-only header.
+          bindings: {
+            TEST_MIGRATIONS: migrations,
+            ALLOW_TEST_BROADCAST: "on",
+          },
         },
       }),
     ],

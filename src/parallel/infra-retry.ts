@@ -26,8 +26,11 @@
  *
  * Invariants enforced (each verified by a dedicated test):
  *
- *  1. `maxRetries: 0` is identical to no helper — the operation runs once,
- *     any error propagates unchanged, NO retry events are emitted.
+ *  1. `maxRetries: 0` runs the operation once, propagates any error
+ *     unchanged, and emits NO retry events. `classifyResult` (an explicit
+ *     opt-in) is STILL consulted: a quarantined result throws a
+ *     ContainerError instead of being returned, so an alert-tagged outcome
+ *     can never leak into scoring just because retries are disabled.
  *  2. Original failing container is always added to `excludeContainers` for
  *     subsequent attempts.
  *  3. The trail is finalized BEFORE any throw — even non-infra mid-retry.
@@ -134,16 +137,31 @@ export async function withInfraRetry<T>(
 ): Promise<WithInfraRetryResult<T>> {
   // ---- Fast path: helper disabled ---------------------------------------
   //
-  // `maxRetries: 0` MUST be observationally identical to "no helper" —
-  // the operation runs exactly once, any error propagates UNCHANGED (not
-  // wrapped in `InfraRetriesExhaustedError`), and NO retry events are
-  // emitted. This is the contract relied on by the orchestrator's
+  // `maxRetries: 0` runs the operation exactly once, propagates any error
+  // UNCHANGED (not wrapped in `InfraRetriesExhaustedError`), and emits NO
+  // retry events. This is the contract relied on by the orchestrator's
   // "infra retry disabled" path.
+  //
+  // `classifyResult` is an explicit opt-in and is honored even here: a
+  // resolved-but-quarantined result must NEVER be returned to scoring —
+  // with retries disabled there is nothing to reroute to, so it becomes a
+  // thrown ContainerError and the caller's infra-failure synthesis takes
+  // over.
   if (options.maxRetries <= 0) {
     const result = await operation({
       excludeContainers: [],
       onRouted: () => {},
     });
+    const cls = options.classifyResult?.(result);
+    if (cls?.kind === "quarantined") {
+      throw new ContainerError(
+        `Result quarantined by alert ${
+          cls.alertId ?? "(unknown-alert)"
+        } with infra retries disabled`,
+        cls.originContainer ?? "unknown",
+        "test",
+      );
+    }
     return { result, retries: [] };
   }
 
@@ -546,6 +564,16 @@ export async function withInfraRetry<T>(
   // another non-waived quarantined result with no normal budget left.
   // Synthesize budget_exhausted with the trail's tail-end metadata.
   const lastRecord = retries[retries.length - 1];
+  // P10: a record can still carry the "(pending)" placeholder here. Repeated
+  // non-first-waiver quarantine hits against the same alertId never grow the
+  // dynamic loop bound (maxRetries + freeRetriesGranted), so a new "planned
+  // retry" record can be pushed and the loop can exit on its bound check
+  // before the next iteration's finalize step ever runs. Finalize it now so
+  // no record handed to InfraRetriesExhaustedError ever leaks the
+  // placeholder (see the `InfraRetryRecord.retryContainerName` doc).
+  if (lastRecord && lastRecord.retryContainerName === "(pending)") {
+    lastRecord.retryContainerName = lastRecord.originalContainerName;
+  }
   const finalContainerName = lastRecord?.originalContainerName ??
     lastRecord?.retryContainerName ?? "unknown";
   const fingerprint = lastRecord?.fingerprint ?? "(unknown)";

@@ -284,6 +284,33 @@ operations runbook.
 Pricing: at 20% cross-LLM sample rate, the second-pass adds about $3 to a
 typical 150-entry release. Cranking to 1.0 raises this to ~$15.
 
+## Deploy ordering for the signed-request upgrades (S5 / S3 / V7)
+
+The CLI and the worker were upgraded together to close three signing gaps:
+ingest envelopes now sign `run_id` + `signed_at` (v2 envelope), finalize is
+header-signed with run ownership, and header-signed lifecycle requests carry
+a replay-preventing `X-CG-Nonce` folded into the signed bytes.
+
+**Deploy the worker (and apply migration `0014_lifecycle_nonce.sql`) BEFORE
+running the next ingest-bearing bench or lifecycle command with an upgraded
+CLI.** The new server tolerates old clients (v1 envelopes, unsigned
+finalize, and nonce-less lifecycle calls are accepted and logged while
+`FLAG_REQUIRE_ENVELOPE_V2` / `FLAG_REQUIRE_SIGNED_FINALIZE` stay `"off"`),
+but an upgraded CLI against an old worker fails at precheck with
+`bad_version` (v2 envelope) and lifecycle calls fail signature verification
+(the nonce changes the signed bytes).
+
+Cutover, in order:
+
+1. `wrangler d1 migrations apply centralgauge --remote` (adds
+   `lifecycle_nonces` + the pending_review unique index).
+2. `cd site && npm run deploy`.
+3. Run benches/lifecycle with the upgraded CLI; watch worker logs for
+   `v1 envelope from key ...` and `unsigned finalize ...` warnings.
+4. Once no legacy traffic appears, flip `FLAG_REQUIRE_ENVELOPE_V2 = "on"`
+   and `FLAG_REQUIRE_SIGNED_FINALIZE = "on"` in `wrangler.toml [vars]` and
+   redeploy. (Nonce-required enforcement is a later, separate flip.)
+
 ## Recipes
 
 ### Onboarding a new model

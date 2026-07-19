@@ -14,6 +14,7 @@ import {
   type ParallelExecutionEvent,
 } from "../../../src/parallel/types.ts";
 import type { TaskManifest } from "../../../src/tasks/interfaces.ts";
+import type { RecoveryEvent } from "../../../src/health/recovery-prober.ts";
 import {
   createMockTaskManifest,
   EventCollector,
@@ -2273,6 +2274,79 @@ describe("runParallel() with mocked dependencies", () => {
     });
   });
 
+  describe("T8: testApp success semantics", () => {
+    it("should NOT mark a testApp task as passed when no testResult is produced", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({
+        compilationSuccess: true,
+        runTests: false, // simulates a missing testResult
+      });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+        llmPool: mockLLMPool as unknown as LLMWorkPool,
+        containerProviderFactory: () => mockContainerProvider,
+        compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+      });
+
+      const manifest = createMockManifest({
+        id: "t8-missing-testresult",
+        expected: { compile: true, testApp: "SomeTestApp" },
+      });
+
+      const result = await orchestrator.runParallel(
+        [manifest],
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      const taskResult = result.taskResults[0]!;
+      const modelResult = taskResult.modelResults.get("mock/mock-gpt-4");
+      assertExists(modelResult);
+      assertEquals(
+        modelResult.success,
+        false,
+        "a testApp task with no testResult must not be scored as passed",
+      );
+      const lastAttempt = modelResult
+        .attempts[modelResult.attempts.length - 1]!;
+      assertEquals(lastAttempt.success, false);
+    });
+
+    it("should still pass a compile-only task (no testApp) with no testResult", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({
+        compilationSuccess: true,
+        runTests: false,
+      });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+        llmPool: mockLLMPool as unknown as LLMWorkPool,
+        containerProviderFactory: () => mockContainerProvider,
+        compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+      });
+
+      const manifest = createMockManifest({
+        id: "t8-compile-only",
+        expected: { compile: true, testApp: "" },
+      });
+
+      const result = await orchestrator.runParallel(
+        [manifest],
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      const taskResult = result.taskResults[0]!;
+      const modelResult = taskResult.modelResults.get("mock/mock-gpt-4");
+      assertExists(modelResult);
+      assertEquals(
+        modelResult.success,
+        true,
+        "a compile-only task (no testApp) must still pass without a testResult",
+      );
+    });
+  });
+
   describe("cleanup", () => {
     it("should drain queues after completion", async () => {
       mockLLMPool.setDefaultResult({ success: true });
@@ -2808,4 +2882,79 @@ describe("orchestrator: inline infra retry wiring", () => {
       );
     },
   );
+});
+
+// =============================================================================
+// P12: recoveryEvents must not leak across a reused orchestrator's runs
+// =============================================================================
+
+describe("P12: recoveryEvents reset", () => {
+  it("reset() clears recoveryEvents", () => {
+    const orchestrator = new ParallelBenchmarkOrchestrator();
+
+    // The real path populates this via the recovery prober's `onEvent`
+    // callback inside runParallel (see ContainerRecoveryProber wiring).
+    // Poking the private field directly simulates "leftover state from a
+    // prior run" without standing up a full prober + container provider.
+    (orchestrator as unknown as { recoveryEvents: RecoveryEvent[] })
+      .recoveryEvents = [
+        {
+          type: "recovered",
+          containerName: "Cronus28",
+          alertId: "alert-1",
+          kind: "suspect_container",
+          at: 1,
+        },
+      ];
+    assertEquals(orchestrator.getRecoveryEvents().length, 1);
+
+    orchestrator.reset();
+
+    assertEquals(orchestrator.getRecoveryEvents(), []);
+  });
+
+  it("runParallel() clears a previous run's recoveryEvents on a reused orchestrator", async () => {
+    const mockLLMPool = new MockLLMWorkPool();
+    const mockCompileQueue = new MockCompileQueue();
+    const mockContainerProvider = createMockContainerProvider();
+    mockLLMPool.setDefaultResult({ success: true });
+    mockCompileQueue.setDefaultResult({
+      compilationSuccess: true,
+      testSuccess: true,
+    });
+
+    const orchestrator = new ParallelBenchmarkOrchestrator(undefined, {
+      llmPool: mockLLMPool as unknown as LLMWorkPool,
+      containerProviderFactory: () => mockContainerProvider,
+      compileQueueFactory: () => mockCompileQueue as unknown as CompileQueue,
+    });
+
+    // Simulate the first run having recorded recovery events.
+    (orchestrator as unknown as { recoveryEvents: RecoveryEvent[] })
+      .recoveryEvents = [
+        {
+          type: "recovered",
+          containerName: "Cronus28",
+          alertId: "alert-1",
+          kind: "suspect_container",
+          at: 1,
+        },
+      ];
+    assertEquals(orchestrator.getRecoveryEvents().length, 1);
+
+    // Second run — the mocked deps don't wire a recovery prober, so if
+    // runParallel() correctly resets state at the top, the trail is empty
+    // after this call.
+    await orchestrator.runParallel(
+      [createMockManifest({ id: "second-run-task" })],
+      createTestVariants(),
+      createTestOptions(),
+    );
+
+    assertEquals(
+      orchestrator.getRecoveryEvents(),
+      [],
+      "second run must not carry over the first run's recovery events",
+    );
+  });
 });

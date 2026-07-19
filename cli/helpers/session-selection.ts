@@ -8,6 +8,7 @@ import * as colors from "@std/fmt/colors";
 import {
   findSessions,
   isFixableResult,
+  isModelShortcomingResult,
   type SessionInfo,
   type VerifyEvent,
 } from "../../src/verify/mod.ts";
@@ -134,13 +135,18 @@ export function formatEventForConsole(
           ),
         );
         console.log(`  ${event.result.description}`);
-      } else {
+      } else if (isModelShortcomingResult(event.result)) {
         console.log(
           colors.blue(
             `[MODEL GAP] ${event.result.concept}`,
           ),
         );
         console.log(`  ${event.result.description.slice(0, 100)}...`);
+      } else {
+        // analysis_failed (V9): analyzer output couldn't be parsed.
+        console.log(
+          colors.red(`[ANALYSIS FAILED] ${event.result.reason}`),
+        );
       }
       break;
 
@@ -162,6 +168,14 @@ export function formatEventForConsole(
       console.log(
         colors.gray(
           `  Logged to: ${shortcomingsDir}/${event.model}.json`,
+        ),
+      );
+      break;
+
+    case "analysis_failed":
+      console.error(
+        colors.red(
+          `[ANALYSIS FAILED] ${event.taskId} (${event.model}): ${event.reason}`,
         ),
       );
       break;

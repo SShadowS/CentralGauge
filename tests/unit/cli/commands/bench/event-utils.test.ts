@@ -169,6 +169,36 @@ Deno.test("isTransientFailure", async (t) => {
     assertEquals(isTransientFailure(result), false);
   });
 
+  // CLI10: the bare "failed to" pattern misclassified model-side
+  // extraction/parsing failures as transient/retryable.
+  await t.step(
+    "CLI10: returns false for a model-side extraction failure phrased as 'Failed to ...'",
+    () => {
+      const result = createMockResult([
+        "Failed to extract code from response",
+      ]);
+      assertEquals(isTransientFailure(result), false);
+    },
+  );
+
+  await t.step(
+    "CLI10: returns false for a bare number that happens to contain 500",
+    () => {
+      const result = createMockResult([
+        "Processed 1500 tokens before truncation",
+      ]);
+      assertEquals(isTransientFailure(result), false);
+    },
+  );
+
+  await t.step(
+    "CLI10: still returns true for a genuine HTTP 500 status code",
+    () => {
+      const result = createMockResult(["HTTP 500: Internal server error"]);
+      assertEquals(isTransientFailure(result), true);
+    },
+  );
+
   await t.step("uses last attempt for determination", () => {
     const result: TaskExecutionResult = {
       taskId: "CG-AL-E001",

@@ -2,6 +2,8 @@ import type { Handle } from "@sveltejs/kit";
 import { isRateLimited, type RateLimitBinding } from "$lib/server/rate-limit";
 import { resetIdCounter } from "$lib/client/use-id";
 import { isCanary } from "$lib/server/canary";
+import { gateAdminRequest } from "$lib/server/admin-gate";
+import type { CfAccessEnv } from "$lib/server/cf-access";
 import { runNightlyBackup } from "./cron/nightly-backup";
 import { runDailyDriftProbe } from "./cron/catalog-drift";
 
@@ -80,6 +82,17 @@ export const handle: Handle = async ({ event, resolve }) => {
   const method = event.request.method;
   const path = event.url.pathname;
   const ip = event.request.headers.get("cf-connecting-ip") || "unknown";
+
+  // S1 — /admin* SSR pages are gated on a verified CF Access JWT, fail
+  // closed ALWAYS. This runs BEFORE the missing-platform short-circuit
+  // below on purpose: a binding misconfiguration must never open /admin.
+  if (path.startsWith("/admin")) {
+    const gate = await gateAdminRequest(
+      event.request,
+      event.platform?.env as CfAccessEnv | undefined,
+    );
+    if (gate) return gate;
+  }
 
   // Graceful degradation: if the platform bindings are somehow missing
   // (misconfiguration, local dev without --experimental-platform-proxy),

@@ -110,11 +110,15 @@ export interface RecoveryProberDeps {
   onEvent?: (ev: RecoveryEvent) => void;
 }
 
-/** Per-container recovery state, keyed by containerName. */
+/**
+ * Per-EPISODE recovery state, keyed by containerName. Reset whenever the
+ * alertId changes (new episode). The flap-cap counter deliberately does NOT
+ * live here — it is prober-lifetime (`lifetimeRecoveries`), P3: a per-episode
+ * counter reset on every new alertId, so the cap could never trip.
+ */
 interface ContainerRecoveryState {
   alertId: string;
   successStreak: number;
-  recoveriesCompleted: number;
   restartAttempts: number;
   restarted: boolean;
   failures: number;
@@ -129,6 +133,14 @@ const CATASTROPHIC_KINDS: ReadonlySet<HealthAlertKind> = new Set([
 
 export class ContainerRecoveryProber {
   private readonly state = new Map<string, ContainerRecoveryState>();
+  /**
+   * Prober-LIFETIME successful-recovery count per container (P3). Never
+   * cleared on episode transitions — only on prober construction. The flap
+   * cap reads THIS map, so a container that recovers and re-dies past the
+   * cap stays excluded for the rest of the run (documented design; see
+   * `.claude/rules/alert-drain-rebalance.md`).
+   */
+  private readonly lifetimeRecoveries = new Map<string, number>();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly abort = new AbortController();
   private running = false; // a tick is currently executing (single-flight)
@@ -149,7 +161,11 @@ export class ContainerRecoveryProber {
   /**
    * Stop the loop. Aborts in-flight probes, cancels the timer, and awaits the
    * current tick so callers can guarantee no clear/re-admit fires afterward.
-   * Idempotent.
+   *
+   * The wait is BOUNDED at 2x the per-probe timeout (P8): a provider that
+   * ignores the abort signal can wedge its probe forever, and the `stopped`
+   * flag already guarantees no clear/re-admit fires after this point even
+   * if the wedged tick eventually resumes. Idempotent.
    */
   async stop(): Promise<void> {
     this.stopped = true;
@@ -159,10 +175,18 @@ export class ContainerRecoveryProber {
       this.timer = undefined;
     }
     if (this.tickInFlight) {
+      let bound: ReturnType<typeof setTimeout> | undefined;
       try {
-        await this.tickInFlight;
+        await Promise.race([
+          this.tickInFlight,
+          new Promise<void>((resolve) => {
+            bound = setTimeout(resolve, 2 * this.cfg.probeTimeoutMs);
+          }),
+        ]);
       } catch {
         // tick swallows its own errors; nothing to surface here
+      } finally {
+        if (bound !== undefined) clearTimeout(bound);
       }
     }
   }
@@ -215,12 +239,12 @@ export class ContainerRecoveryProber {
   private async processContainer(alert: HealthAlert): Promise<void> {
     const name = alert.containerName;
     let st = this.state.get(name);
-    // New alert episode -> reset debounce/restart state (streak keyed by alertId).
+    // New alert episode -> reset debounce/restart state (streak keyed by
+    // alertId). The lifetime recovery counter survives this reset (P3).
     if (!st || st.alertId !== alert.alertId) {
       st = {
         alertId: alert.alertId,
         successStreak: 0,
-        recoveriesCompleted: 0,
         restartAttempts: 0,
         restarted: false,
         failures: 0,
@@ -231,10 +255,11 @@ export class ContainerRecoveryProber {
 
     if (st.disabledReason) return; // already gave up on this container/episode
 
-    if (st.recoveriesCompleted >= this.cfg.maxRecoveriesPerContainer) {
+    const lifetime = this.lifetimeRecoveries.get(name) ?? 0;
+    if (lifetime >= this.cfg.maxRecoveriesPerContainer) {
       st.disabledReason = "flap_cap";
       this.deps.monitor.setRecoveryState?.(name, {
-        attempts: st.recoveriesCompleted,
+        attempts: lifetime,
         max: this.cfg.maxRecoveriesPerContainer,
         exhausted: true,
       });
@@ -263,7 +288,7 @@ export class ContainerRecoveryProber {
       if (st.restartAttempts >= this.cfg.maxRestartAttempts) {
         st.disabledReason = "flap_cap";
         this.deps.monitor.setRecoveryState?.(name, {
-          attempts: st.recoveriesCompleted,
+          attempts: lifetime,
           max: this.cfg.maxRecoveriesPerContainer,
           exhausted: true,
         });
@@ -341,12 +366,16 @@ export class ContainerRecoveryProber {
       this.emit("clear_skipped_id_mismatch", alert);
       return;
     }
+    // Count the recovery IMMEDIATELY after the successful clear and BEFORE
+    // re-admission (P3): if onContainerRecovered throws, the recovery still
+    // happened and must count against the lifetime cap.
+    const newLifetime = (this.lifetimeRecoveries.get(name) ?? 0) + 1;
+    this.lifetimeRecoveries.set(name, newLifetime);
     this.deps.pool.onContainerRecovered(name, alert.alertId);
-    st.recoveriesCompleted++;
     st.successStreak = 0;
     st.restarted = false;
     this.deps.monitor.setRecoveryState?.(name, {
-      attempts: st.recoveriesCompleted,
+      attempts: newLifetime,
       max: this.cfg.maxRecoveriesPerContainer,
       exhausted: false,
     });
@@ -387,12 +416,29 @@ export class ContainerRecoveryProber {
     const onMasterAbort = () => ctrl.abort();
     this.abort.signal.addEventListener("abort", onMasterAbort, { once: true });
     let timedOut = false;
+    let fireTimeout!: () => void;
+    const timeoutFired = new Promise<"timeout">((resolve) => {
+      fireTimeout = () => resolve("timeout");
+    });
     const timer = setTimeout(() => {
       timedOut = true;
       ctrl.abort();
+      fireTimeout();
     }, this.cfg.probeTimeoutMs);
     try {
-      const healthy = await this.deps.isHealthy(name, { signal: ctrl.signal });
+      // Race the probe against the timeout (P8): a probe that ignores the
+      // abort signal and NEVER settles must not wedge the tick — `running`
+      // would stay true and every future tick would hit the overlap guard,
+      // silently disabling recovery for the rest of the run.
+      const probe = this.deps.isHealthy(name, { signal: ctrl.signal });
+      // An abandoned probe that rejects after the timeout won the race must
+      // not surface as an unhandled rejection.
+      probe.catch(() => {});
+      const healthy = await Promise.race([probe, timeoutFired]);
+      // P8: a probe whose timeout already fired is a TIMEOUT regardless of
+      // its (possibly late) result — a wedged-then-late Test-BcContainer is
+      // not proof of health.
+      if (healthy === "timeout" || timedOut) return "timeout";
       return healthy;
     } catch {
       if (this.abort.signal.aborted) return "error"; // master abort -> bail upstream

@@ -8,15 +8,183 @@
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertRejects } from "@std/assert";
 import {
+  buildGeminiModelsRequest,
   buildGeminiUsage,
   GeminiAdapter,
   mapGeminiModelEntry,
 } from "../../../src/llm/gemini-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
+import { LLMProviderError } from "../../../src/errors.ts";
+import type {
+  GenerationContext,
+  LLMRequest,
+  StreamResult,
+} from "../../../src/llm/types.ts";
+
+function testContext(): GenerationContext {
+  return { taskId: "t", attempt: 1, description: "d" };
+}
+
+// Inject a fake @google/genai client so no real import / network happens.
+function injectClient(adapter: GeminiAdapter, client: unknown): void {
+  (adapter as unknown as { ai: unknown }).ai = client;
+}
+
+// =============================================================================
+// L11 - API key travels in a header, never the URL query string
+// =============================================================================
+
+Deno.test("buildGeminiModelsRequest - key in header, not URL", async (t) => {
+  await t.step("URL has no key query param", () => {
+    const { url } = buildGeminiModelsRequest("secret-key-123");
+    assertEquals(url.includes("key="), false);
+    assertEquals(url.includes("secret-key-123"), false);
+  });
+
+  await t.step("x-goog-api-key header carries the key", () => {
+    const { headers } = buildGeminiModelsRequest("secret-key-123");
+    assertEquals(headers["x-goog-api-key"], "secret-key-123");
+  });
+});
+
+// =============================================================================
+// L4 - Gemini generation is deadline-bounded and rejects retryably on timeout
+// =============================================================================
+
+Deno.test("GeminiAdapter - generate times out with retryable error", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
+
+  await t.step(
+    "never-resolving generateContent rejects within deadline",
+    async () => {
+      const adapter = new GeminiAdapter();
+      adapter.configure({
+        provider: "gemini",
+        model: "gemini-2.5-pro",
+        apiKey: "test-key",
+        timeout: 50, // injectable short deadline
+      });
+      injectClient(adapter, {
+        models: {
+          // Hang forever - the adapter's own deadline must fire.
+          generateContent: () => new Promise(() => {}),
+        },
+      });
+
+      const err = await assertRejects(
+        () => adapter.generateCode({ prompt: "hi" }, testContext()),
+        LLMProviderError,
+        "timed out",
+      );
+      assertEquals(err.provider, "gemini");
+      assertEquals(err.isRetryable, true);
+    },
+  );
+});
+
+// =============================================================================
+// L4 follow-up - the STREAMING path is deadline-bounded too
+// =============================================================================
+
+Deno.test("GeminiAdapter - stream times out with retryable error", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
+
+  await t.step(
+    "never-resolving generateContentStream rejects within deadline",
+    async () => {
+      const adapter = new GeminiAdapter();
+      adapter.configure({
+        provider: "gemini",
+        model: "gemini-2.5-pro",
+        apiKey: "test-key",
+        timeout: 50, // injectable short deadline
+      });
+      injectClient(adapter, {
+        models: {
+          // The stream START hangs forever - the deadline must fire.
+          generateContentStream: () => new Promise(() => {}),
+        },
+      });
+
+      const gen = adapter.generateCodeStream({ prompt: "hi" }, testContext());
+      let err: unknown;
+      try {
+        let it = await gen.next();
+        while (!it.done) it = await gen.next();
+      } catch (e) {
+        err = e;
+      }
+      assertEquals(err instanceof LLMProviderError, true);
+      assertEquals((err as LLMProviderError).provider, "gemini");
+      assertEquals((err as LLMProviderError).isRetryable, true);
+      assertEquals(
+        (err as LLMProviderError).message.includes("timed out"),
+        true,
+      );
+    },
+  );
+});
+
+// =============================================================================
+// L8 - Gemini stream abort cancels the request and skips onComplete
+// =============================================================================
+
+Deno.test("GeminiAdapter - pre-aborted stream skips onComplete", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
+
+  await t.step("aborted signal -> throws, onComplete never fires", async () => {
+    const adapter = new GeminiAdapter();
+    adapter.configure({
+      provider: "gemini",
+      model: "gemini-2.5-pro",
+      apiKey: "test-key",
+    });
+    let streamStarted = false;
+    injectClient(adapter, {
+      models: {
+        generateContentStream: () => {
+          streamStarted = true;
+          return (async function* () {})();
+        },
+      },
+    });
+
+    const controller = new AbortController();
+    controller.abort();
+
+    let completed = false;
+    const onComplete = (_r: StreamResult) => {
+      completed = true;
+    };
+
+    const req: LLMRequest = { prompt: "hi" };
+    const gen = adapter.generateCodeStream(req, testContext(), {
+      abortSignal: controller.signal,
+      onComplete,
+    });
+
+    let threw = false;
+    try {
+      let it = await gen.next();
+      while (!it.done) it = await gen.next();
+    } catch {
+      threw = true;
+    }
+
+    assertEquals(threw, true);
+    assertEquals(completed, false);
+    assertEquals(streamStarted, false); // never issued the request
+  });
+});
 
 Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("completionTokens = candidates + thoughts", () => {
     const u = buildGeminiUsage(
       {
@@ -77,6 +245,8 @@ Deno.test("buildGeminiUsage - folds thinking tokens into billable output", async
 });
 
 Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   const raw = {
     name: "models/gemini-3.5-flash",
     displayName: "Gemini 3.5 Flash",
@@ -111,14 +281,13 @@ Deno.test("mapGeminiModelEntry - adopts token limits", async (t) => {
   });
 });
 
-// Initialize pricing service before any tests run
-await PricingService.initialize();
-
 // =============================================================================
 // Provider Properties Tests
 // =============================================================================
 
 Deno.test("GeminiAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "gemini"', () => {
     const adapter = new GeminiAdapter();
     assertEquals(adapter.name, "gemini");
@@ -130,6 +299,8 @@ Deno.test("GeminiAdapter - Provider Properties", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new GeminiAdapter();
 
@@ -153,6 +324,8 @@ Deno.test("GeminiAdapter - implements LLMAdapter interface", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new GeminiAdapter();
     const errors = adapter.validateConfig({
@@ -278,6 +451,8 @@ Deno.test("GeminiAdapter - validateConfig", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost based on token counts", () => {
     const adapter = new GeminiAdapter();
     adapter.configure({
@@ -376,6 +551,8 @@ Deno.test("GeminiAdapter - estimateCost", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new GeminiAdapter();
 
@@ -409,6 +586,8 @@ Deno.test("GeminiAdapter - configure", async (t) => {
 // =============================================================================
 
 Deno.test("GeminiAdapter - constructor", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("creates instance without errors", () => {
     const adapter = new GeminiAdapter();
     assertEquals(adapter instanceof GeminiAdapter, true);

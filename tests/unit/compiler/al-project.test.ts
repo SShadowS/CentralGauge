@@ -7,6 +7,7 @@ import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { ALProjectManager } from "../../../src/compiler/al-project.ts";
 import type { ALProject } from "../../../src/container/types.ts";
+import { ResourceNotFoundError } from "../../../src/errors.ts";
 import {
   cleanupTempDir,
   createTempDir,
@@ -142,6 +143,30 @@ describe("ALProjectManager", () => {
         Error,
         "No app.json found",
       );
+    });
+
+    it("should throw a structured ResourceNotFoundError (not a raw SyntaxError) when app.json is malformed", async () => {
+      const projectPath = join(tempDir, "malformed-app-json");
+      await Deno.mkdir(projectPath, { recursive: true });
+      await Deno.writeTextFile(
+        join(projectPath, "app.json"),
+        "{ this is not valid json",
+      );
+
+      let caught: unknown = null;
+      try {
+        await ALProjectManager.loadProject(projectPath);
+      } catch (e) {
+        caught = e;
+      }
+      assertExists(caught);
+      assert(!(caught instanceof SyntaxError));
+      assert(caught instanceof ResourceNotFoundError);
+      assertEquals(
+        (caught as ResourceNotFoundError).code,
+        "RESOURCE_NOT_FOUND",
+      );
+      assertEquals((caught as ResourceNotFoundError).resourceId, "app.json");
     });
 
     it("should separate source files from test files", async () => {

@@ -8,6 +8,7 @@ import { assertEquals, assertThrows } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import { CatalogSeedError } from "../../../../src/errors.ts";
 import {
+  familySlugForModelSlug,
   inferDisplayName,
   inferFamilySlug,
   inferGeneration,
@@ -117,6 +118,54 @@ describe("inferFamilySlug", () => {
     }
     assertEquals(err instanceof CatalogSeedError, true);
     assertEquals((err as CatalogSeedError).code, "SEED_INVALID_SLUG");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// familySlugForModelSlug (D3: single source of truth, also used by
+// cli/commands/bench-command.ts's doctor precheck probe)
+// ---------------------------------------------------------------------------
+
+describe("familySlugForModelSlug", () => {
+  it("matches inferFamilySlug for anthropic/openai/google slugs", () => {
+    assertEquals(
+      familySlugForModelSlug("anthropic/claude-opus-4-7"),
+      "claude",
+    );
+    assertEquals(familySlugForModelSlug("openai/gpt-5.4"), "gpt");
+    assertEquals(
+      familySlugForModelSlug("google/gemini-2.5-pro"),
+      "gemini",
+    );
+  });
+
+  it("derives the model-name family for openrouter slugs, not the raw sub-vendor segment", () => {
+    // Regression (D3): bench-command's old ternary used
+    // v.model.split("/")[0], which for openrouter is the sub-vendor
+    // ("qwen", "x-ai") — not the family slug ("qwen3.6", "grok") that
+    // site/catalog/model-families.yml actually keys on.
+    assertEquals(
+      familySlugForModelSlug("openrouter/qwen/qwen3.6-max-preview"),
+      "qwen3.6",
+    );
+    assertEquals(
+      familySlugForModelSlug("openrouter/qwen/qwen3.5-plus-20260420"),
+      "qwen3.5",
+    );
+    assertEquals(familySlugForModelSlug("openrouter/x-ai/grok-4.3"), "grok");
+    assertEquals(
+      familySlugForModelSlug("openrouter/deepseek/deepseek-v4-pro"),
+      "deepseek",
+    );
+  });
+
+  it("falls back to the provider name for slugs inferFamilySlug can't classify", () => {
+    assertEquals(familySlugForModelSlug("mock/some-model"), "mock");
+    assertEquals(familySlugForModelSlug("local/some-model"), "local");
+  });
+
+  it("falls back to the full input when it has no '/' (parseSlug rejects it)", () => {
+    assertEquals(familySlugForModelSlug("no-slash-here"), "no-slash-here");
   });
 });
 
@@ -354,6 +403,110 @@ describe("mergeMetadata", () => {
       },
     });
     assertEquals(result.pricing.input_per_mtoken, 0.05);
+  });
+
+  it("D4: rejects zero pricing without an explicit free marker (LiteLLM)", () => {
+    let err: unknown = null;
+    try {
+      mergeMetadata({
+        slug: "openai/gpt-mystery",
+        litellm: { input: 0, output: 0 },
+        openrouter: null,
+      });
+    } catch (e) {
+      err = e;
+    }
+    assertEquals(err instanceof CatalogSeedError, true);
+    assertEquals((err as CatalogSeedError).code, "SEED_NO_PRICING");
+    // Remedy text points to the deliberate manual-override path.
+    assertEquals(
+      (err as CatalogSeedError).message.includes(
+        "pre-seed site/catalog/pricing.yml",
+      ),
+      true,
+    );
+  });
+
+  it("D4: rejects zero OpenRouter pricing when the source does not mark the model free", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/meta-llama/llama-3-8b",
+          litellm: null,
+          openrouter: {
+            pricing: { input: 0, output: 0 },
+            displayName: "Meta: Llama 3 8B",
+            vendor: "Meta",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4 follow-up: rejects a single zero-priced FIELD without a free marker (input 0, output paid)", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openai/gpt-half-zero",
+          litellm: { input: 0, output: 5 },
+          openrouter: null,
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4 follow-up: rejects a single zero-priced FIELD without a free marker (input paid, output 0)", () => {
+    assertThrows(
+      () =>
+        mergeMetadata({
+          slug: "openrouter/meta-llama/llama-3-8b",
+          litellm: null,
+          openrouter: {
+            pricing: { input: 1.25, output: 0 },
+            displayName: "Meta: Llama 3 8B",
+            vendor: "Meta",
+            releasedAt: null,
+          },
+        }),
+      CatalogSeedError,
+      "free marker",
+    );
+  });
+
+  it("D4 follow-up: ':free' marker also covers a partially-zero price", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/meta-llama/llama-3-8b:free",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 0, output: 0.1 },
+        displayName: "Meta: Llama 3 8B (free)",
+        vendor: "Meta",
+        releasedAt: null,
+        marksFree: true,
+      },
+    });
+    assertEquals(result.pricing.input_per_mtoken, 0);
+    assertEquals(result.pricing.output_per_mtoken, 0.1);
+  });
+
+  it("D4: accepts zero pricing for an OpenRouter ':free' slug (source marks free)", () => {
+    const result = mergeMetadata({
+      slug: "openrouter/meta-llama/llama-3-8b:free",
+      litellm: null,
+      openrouter: {
+        pricing: { input: 0, output: 0 },
+        displayName: "Meta: Llama 3 8B (free)",
+        vendor: "Meta",
+        releasedAt: null,
+        marksFree: true,
+      },
+    });
+    assertEquals(result.pricing.input_per_mtoken, 0);
+    assertEquals(result.pricing.output_per_mtoken, 0);
+    assertEquals(result.pricing.source, "openrouter");
   });
 
   it("direct provider falls back to OR pricing when LiteLLM has none", () => {

@@ -18,11 +18,44 @@ const DEFAULT_IMAGE = "centralgauge/agent-sandbox:windows-latest";
 const CONTAINER_PREFIX = "cg-sandbox-";
 
 /**
+ * Build a `docker run --mount` argument in the comma/equals-safe bind form
+ * (M11). Spaces are VALID in Windows paths and pass through — the whole
+ * argument is a single argv element, no shell involved. Rejected instead:
+ * commas (they break docker's CSV parsing of --mount), characters that are
+ * genuinely illegal in Windows paths, and colons beyond the drive letter.
+ */
+export function buildBindMountArg(
+  src: string,
+  dst: string,
+  readonly = false,
+): string {
+  for (const [label, path] of [["source", src], ["destination", dst]]) {
+    // deno-lint-ignore no-control-regex -- control chars are illegal in Windows paths by design
+    if (/[<>"|?*\x00-\x1f]/.test(path!)) {
+      throw new Error(
+        `Invalid mount ${label} path (illegal character): ${path}`,
+      );
+    }
+    if (path!.includes(",")) {
+      throw new Error(
+        `Invalid mount ${label} path (commas break docker --mount): ${path}`,
+      );
+    }
+    if (path!.replace(/^[A-Za-z]:/, "").includes(":")) {
+      throw new Error(
+        `Invalid mount ${label} path (stray colon): ${path}`,
+      );
+    }
+  }
+  return `type=bind,src=${src},dst=${dst}${readonly ? ",readonly" : ""}`;
+}
+
+/**
  * Execute a Docker command and return the result.
  */
 async function runDocker(
   args: string[],
-  options?: { timeout?: number },
+  options?: { timeout?: number; onTimeout?: () => void },
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const command = new Deno.Command("docker", {
     args,
@@ -36,6 +69,7 @@ async function runDocker(
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   if (options?.timeout) {
     timeoutId = setTimeout(() => {
+      options.onTimeout?.();
       try {
         process.kill("SIGTERM");
       } catch {
@@ -80,13 +114,15 @@ class WindowsSandbox implements Sandbox {
     const startTime = Date.now();
     const timeout = options?.timeout ?? this.config.timeout ?? 300000;
 
+    // timedOut must come from the timer actually firing (M12) — the old
+    // duration >= timeout heuristic misflagged completed commands
+    let timedOut = false;
     const result = await runDocker(
       ["exec", this.name, ...command],
-      { timeout },
+      { timeout, onTimeout: () => (timedOut = true) },
     );
 
     const duration = Date.now() - startTime;
-    const timedOut = duration >= timeout;
 
     return {
       exitCode: result.code,
@@ -319,10 +355,20 @@ export class WindowsSandboxProvider implements SandboxProvider {
       name,
     ];
 
-    // Mount workspace
+    // Mount workspace via --mount (comma/equals-safe form, M11)
     // Windows paths need to use backslashes in the container
     const hostPath = config.workspaceDir.replace(/\//g, "\\");
-    args.push("-v", `${hostPath}:C:\\workspace`);
+    args.push("--mount", buildBindMountArg(hostPath, "C:\\workspace"));
+
+    // Optional read-only secrets mount (M6) — the entrypoint reads the API
+    // key from C:\cg-secrets\api-key instead of a docker -e argument
+    if (config.secretsDir) {
+      const secretsPath = config.secretsDir.replace(/\//g, "\\");
+      args.push(
+        "--mount",
+        buildBindMountArg(secretsPath, "C:\\cg-secrets", true),
+      );
+    }
 
     // Set environment variables
     for (const [key, value] of Object.entries(config.env)) {

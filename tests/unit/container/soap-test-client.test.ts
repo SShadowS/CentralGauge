@@ -94,6 +94,22 @@ Deno.test("parseRunTestsResponse throws on a SOAP fault", () => {
   );
 });
 
+// C8: `Math.max(0, NaN)` evaluates to `NaN`, not `0` — Math.max propagates any
+// NaN operand. An unparseable start/finish timestamp (missing, malformed, or
+// absent in a degenerate harness response) must not poison the per-test
+// duration; only the summary counts are authoritative, but callers may still
+// read/sum per-method `duration`.
+Deno.test("parseRunTestsResponse guards against NaN duration from unparseable timestamps", () => {
+  const soap = `<Soap:Envelope><Soap:Body><RunTests_Result><return_value>` +
+    `{"passed":1,"failed":0,"skipped":0,"notExecuted":0,"durationMs":10,"codeunits":[` +
+    `{"codeUnit":80052,"codeunitName":"CG Test","testResults":[` +
+    `{"method":"TestBadTs","startTime":"not-a-date","finishTime":"also-not-a-date","result":2}]}]}` +
+    `</return_value></RunTests_Result></Soap:Body></Soap:Envelope>`;
+  const r = parseRunTestsResponse(soap);
+  assertEquals(r.results[0]!.duration, 0);
+  assertEquals(Number.isNaN(r.results[0]!.duration), false);
+});
+
 Deno.test("parseRunTestsResponse throws when the harness reports no test methods", () => {
   const soap = `<Soap:Envelope><Soap:Body><RunTests_Result><return_value>` +
     `{"error":"no test methods found for the given filter"}` +

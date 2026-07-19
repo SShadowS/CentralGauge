@@ -140,6 +140,31 @@ export function finalizeStream(params: FinalizeParams): FinalizeResult {
 }
 
 /**
+ * Forward an abort from `source` to `onAbort`, firing IMMEDIATELY when the
+ * source signal is ALREADY aborted.
+ *
+ * `addEventListener("abort", …)` never fires for a signal that is aborted
+ * before the listener is attached, so a stream started with an
+ * already-cancelled signal would otherwise run to completion instead of
+ * aborting. The up-front `aborted` check closes that gap. No-op when `source`
+ * is undefined.
+ *
+ * @param source  Caller-supplied abort signal (may be undefined).
+ * @param onAbort Callback that cancels the in-flight request.
+ */
+export function forwardAbort(
+  source: AbortSignal | undefined,
+  onAbort: () => void,
+): void {
+  if (!source) return;
+  if (source.aborted) {
+    onAbort();
+    return;
+  }
+  source.addEventListener("abort", onAbort, { once: true });
+}
+
+/**
  * Handle stream errors by calling the error callback and re-throwing.
  * Use this in the catch block of streaming functions.
  *

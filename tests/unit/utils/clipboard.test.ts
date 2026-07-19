@@ -3,7 +3,7 @@
  */
 
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals, assertExists, assertThrows } from "@std/assert";
 
 describe("clipboard utility", () => {
   describe("copyToClipboard", () => {
@@ -237,21 +237,20 @@ describe("commandExists utility logic", () => {
   });
 
   describe("error handling", () => {
-    it("should return false on command not found", async () => {
-      // Test that looking for a non-existent command returns false
-      try {
-        const cmd = new Deno.Command("nonexistent-command-12345", {
-          args: [],
-          stdout: "null",
-          stderr: "null",
-        });
-        const result = await cmd.output();
-        // If it somehow succeeds, result.success should be false
-        assertEquals(result.success, false);
-      } catch {
-        // Command not found - this is expected
-        assertEquals(true, true);
-      }
+    it("should throw Deno.errors.NotFound when spawning a non-existent command", () => {
+      // cmd.output() throws Deno.errors.NotFound synchronously (spawn fails
+      // before a promise is even returned) rather than resolving with
+      // success:false - assert that real behavior instead of swallowing
+      // whatever happens in a catch{}.
+      const cmd = new Deno.Command("nonexistent-command-12345", {
+        args: [],
+        stdout: "null",
+        stderr: "null",
+      });
+      assertThrows(
+        () => cmd.output(),
+        Deno.errors.NotFound,
+      );
     });
   });
 });

@@ -68,8 +68,13 @@ export interface ContainerProvider {
     command: string,
   ): Promise<{ output: string; exitCode: number }>;
 
-  // Health checks
-  isHealthy(containerName: string): Promise<boolean>;
+  // Health checks. `opts.signal` is a best-effort cancellation hint (P8):
+  // providers should check `signal.aborted` between phases and return early;
+  // full cancellation of an in-flight Test-BcContainer is not attainable.
+  isHealthy(
+    containerName: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<boolean>;
 
   // Cleanup operations (optional - not all providers need this)
   cleanupCompilerFolders?(): Promise<void>;

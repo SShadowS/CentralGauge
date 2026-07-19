@@ -12,15 +12,17 @@ import { afterEach, describe, expect, it } from "vitest";
  * as a tight diff.
  *
  * We mutate `env.ALLOW_TEST_BROADCAST` per test and restore in afterEach.
- * The vitest bindings (vitest.config.ts) intentionally do NOT set this
- * key, mirroring production.
+ * Since S4 the vitest bindings set ALLOW_TEST_BROADCAST=on (the SSE-drain
+ * hooks in other suites depend on the gated reset/recent proxy routes), so
+ * afterEach restores "on" rather than deleting; each prod-path test deletes
+ * the key explicitly before asserting.
  */
 
 type MutableEnv = { ALLOW_TEST_BROADCAST?: string };
 
 describe("__test_only__ broadcast endpoint security", () => {
   afterEach(() => {
-    delete (env as unknown as MutableEnv).ALLOW_TEST_BROADCAST;
+    (env as unknown as MutableEnv).ALLOW_TEST_BROADCAST = "on";
   });
 
   it("returns 403 when ALLOW_TEST_BROADCAST env is absent (prod path)", async () => {

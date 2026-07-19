@@ -2,10 +2,17 @@
  * Success Detection for Agent Output
  *
  * Consolidates all success pattern detection logic for sandbox/agent output.
- * Used to determine if an agent completed a task successfully based on its output.
+ *
+ * NOTE (M1/M2): in sandbox mode these pattern detectors are DIAGNOSTIC
+ * ONLY — authoritative success comes from the trusted verdict channel
+ * (src/agents/verdict.ts). The non-sandbox executor applies
+ * detectToolResultSuccess per tool_result block, where the text is genuine
+ * tool output rather than model prose.
  *
  * @module src/agents/success-detector
  */
+
+import { extractResultFromToolResult } from "./result-parser.ts";
 
 // =============================================================================
 // Compile Success Detection
@@ -14,6 +21,10 @@
 /**
  * Checks for common compile success patterns.
  * Used in both test tasks and compile-only task detection.
+ *
+ * Bare `"success": true` / `success: true` fragments are deliberately NOT
+ * matched (M2): they are trivially forgeable prose. Real al_compile JSON
+ * still matches via its "Compilation successful" message.
  */
 export function hasCompileSuccess(output: string): boolean {
   const outputLower = output.toLowerCase();
@@ -22,14 +33,7 @@ export function hasCompileSuccess(output: string): boolean {
     outputLower.includes("compilation: success") ||
     outputLower.includes("compilation: **success**") ||
     outputLower.includes("compilation status**: ✅") ||
-    outputLower.includes("✅ compilation") ||
-    outputLower.includes("✅ success") ||
-    // JSON patterns from al_compile tool response
-    outputLower.includes('"success":true') ||
-    outputLower.includes('"success": true') ||
-    // Agent summary patterns like "al_compile returning success: true"
-    outputLower.includes("success: true") ||
-    outputLower.includes("returning success: true")
+    outputLower.includes("✅ compilation")
   );
 }
 
@@ -58,28 +62,45 @@ export function detectStructuredResult(output: string): boolean | null {
 /**
  * Detects success for tasks that require tests to pass.
  * Checks for various test success patterns in the output.
+ *
+ * M2 hardening: an explicit zero-test claim ("0 tests passed", "0/0
+ * passed", "all 0 tests passed") can never be success, and pure compile
+ * success no longer satisfies a test task.
  */
 export function detectTestSuccess(output: string): boolean {
   const outputLower = output.toLowerCase();
 
+  // Explicit zero-test claims veto every other pattern (\b keeps "10 tests
+  // passed" unaffected — no word boundary splits "10")
+  if (
+    /\b0 tests passed\b/.test(outputLower) ||
+    /\b0\/0 passed\b/.test(outputLower)
+  ) {
+    return false;
+  }
+
   // Check for various success patterns
   // Must verify ALL tests passed, not partial passes like "1/7 passed"
   const allPassedMatch = outputLower.match(/(\d+)\/\1 passed/); // "7/7 passed" (same number)
-  const allTestsPassedPattern = /all \d+ (?:verification )?tests passed/; // "all 7 tests passed"
+  const allPassedCount = allPassedMatch?.[1]
+    ? parseInt(allPassedMatch[1], 10)
+    : 0;
+  const countMatch = outputLower.match(/(\d+) tests passed/); // "6 tests passed"
+  const countedPass = countMatch?.[1] ? parseInt(countMatch[1], 10) > 0 : false;
+  // "all 7 tests passed" — count must be non-zero
+  const allTestsPassedPattern = /all [1-9]\d* (?:verification )?tests passed/;
 
   return (
     outputLower.includes("all tests passed") ||
     outputLower.includes("tests passed!") ||
-    /\d+ tests passed/.test(outputLower) || // "6 tests passed"
-    allPassedMatch !== null || // "7/7 passed" where both numbers match
+    countedPass ||
+    (allPassedMatch !== null && allPassedCount > 0) || // "7/7 passed"
     allTestsPassedPattern.test(outputLower) ||
     outputLower.includes("task completed successfully") ||
     outputLower.includes("task is now complete") ||
     // Test verification patterns
     outputLower.includes("ran successfully (0 failures)") ||
-    outputLower.includes("verification: completed") ||
-    // If compilation succeeded AND no test failures mentioned, consider it success
-    (hasCompileSuccess(output) && !outputLower.includes("failed"))
+    outputLower.includes("verification: completed")
   );
 }
 
@@ -160,4 +181,36 @@ export function detectSuccess(
       compileSuccess: success,
     };
   }
+}
+
+// =============================================================================
+// Per-Tool-Result Detection (non-sandbox executor, TEST4)
+// =============================================================================
+
+/**
+ * Detect success from a SINGLE tool_result block.
+ *
+ * Applied per block by the non-sandbox executor — the text is genuine tool
+ * output, which is what makes this path sound. Combines the pattern
+ * detectors with structured result parsing so al_verify_task JSON counts
+ * even without prose: for test tasks all tests must pass with a non-zero
+ * total; for compile-only tasks a parsed compile success suffices.
+ */
+export function detectToolResultSuccess(
+  resultText: string,
+  requiresTests: boolean,
+): boolean {
+  if (detectSuccess(resultText, requiresTests).success) {
+    return true;
+  }
+
+  const parsed = extractResultFromToolResult(resultText);
+  if (requiresTests) {
+    return (
+      parsed.testsTotal !== undefined &&
+      parsed.testsTotal > 0 &&
+      parsed.testsPassed === parsed.testsTotal
+    );
+  }
+  return parsed.compileSuccess === true;
 }

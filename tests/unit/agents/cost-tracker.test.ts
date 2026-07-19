@@ -2,13 +2,7 @@
  * Unit tests for Agent Cost Tracker
  */
 
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  it,
-} from "@std/testing/bdd";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assertEquals, assertExists } from "@std/assert";
 import { CostTracker } from "../../../src/agents/cost-tracker.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
@@ -16,16 +10,16 @@ import { PricingService } from "../../../src/llm/pricing-service.ts";
 describe("CostTracker", () => {
   let tracker: CostTracker;
 
-  beforeAll(async () => {
-    await PricingService.initialize();
-  });
-
-  afterAll(() => {
+  beforeEach(async () => {
+    // Per-test reset (not one-time beforeAll/afterAll) so this suite's
+    // PricingService state never leaks into or out of adjacent test files.
     PricingService.reset();
+    await PricingService.initialize();
+    tracker = new CostTracker();
   });
 
-  beforeEach(() => {
-    tracker = new CostTracker();
+  afterEach(() => {
+    PricingService.reset();
   });
 
   describe("constructor", () => {

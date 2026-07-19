@@ -78,6 +78,45 @@ export async function signedBlobPut(
   });
 }
 
+/**
+ * Header-sign a request blob-auth-style (S3): canonicalJSON of
+ * { method, path, body_sha256, signed_at }. Used for the finalize endpoint
+ * (POST, empty body → body_sha256 = ""). Mirrors src/ingest/sign.ts
+ * signHeaderRequest on the CLI side.
+ */
+export async function signedRequestHeaders(
+  method: string,
+  path: string,
+  body: Uint8Array | null,
+  keyId: number,
+  keypair: Keypair,
+  signedAt: string = new Date().toISOString(),
+): Promise<Record<string, string>> {
+  let bodySha256 = "";
+  if (body && body.length > 0) {
+    bodySha256 = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", body as BufferSource),
+      ),
+    ).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  const canonical = canonicalJSON({
+    method,
+    path,
+    body_sha256: bodySha256,
+    signed_at: signedAt,
+  });
+  const sig = await ed.signAsync(
+    new TextEncoder().encode(canonical),
+    keypair.privateKey,
+  );
+  return {
+    "X-CG-Signature": btoa(String.fromCharCode(...sig)),
+    "X-CG-Key-Id": String(keyId),
+    "X-CG-Signed-At": signedAt,
+  };
+}
+
 export function makeRunPayload(
   overrides: Partial<SignedRunPayload["payload"]> = {},
 ): SignedRunPayload["payload"] {

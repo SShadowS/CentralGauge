@@ -11,6 +11,8 @@ import type {
 } from "./types.ts";
 import type { ContainerProvider } from "../container/interface.ts";
 import type { ContainerHealthMonitor } from "../health/monitor.ts";
+import type { HealthAlert } from "../health/types.ts";
+import { ContainerError, QueueTimeoutError } from "../errors.ts";
 import { NoEligibleContainersError } from "./errors.ts";
 import {
   CircularBuffer,
@@ -60,6 +62,17 @@ export interface CompileEnqueueOptions {
 const ROUTING_LOG_CAPACITY = 20;
 
 /**
+ * One parked entry plus its settlement timer (P2 state machine). All
+ * transitions (flush / timeout / cancel) locate the EXACT record by object
+ * identity, remove it from `parkedEntries` FIRST, then act — so double
+ * settlement is structurally impossible.
+ */
+interface ParkedRecord {
+  entry: QueueEntry;
+  parkTimer?: ReturnType<typeof setTimeout>;
+}
+
+/**
  * Common interface for single-queue and pool-of-queues.
  * Covers the CompileQueue methods the orchestrator actually uses.
  *
@@ -101,17 +114,30 @@ export class CompileQueuePool implements CompileWorkQueue {
    */
   private readonly healthMonitor: ContainerHealthMonitor | undefined;
   /**
-   * AlertIds we have already drained for. Prevents double-drain when an
-   * alert listener retries or the orchestrator calls
-   * rebalanceFromContainer() twice for the same transition.
+   * `${alertId}:${containerName}` keys we have already drained for.
+   * Container-scoped (P4b) so the per-container drains of ONE shared
+   * global-outage alert all execute, while true duplicates still no-op.
    */
   private readonly drainedAlerts = new Set<string>();
   /**
    * Entries with no eligible target at rebalance time. Held FIFO until
-   * a healthy container reappears (dispatch gate clears). Operators see
-   * this via the bench_paused_no_eligible drain event in telemetry.
+   * a healthy container reappears (dispatch gate clears) OR the entry's
+   * remaining queue-wait budget elapses (each record carries a settlement
+   * timer — a parked promise ALWAYS settles in bounded time, P2).
    */
-  private parkedEntries: QueueEntry[] = [];
+  private parkedEntries: ParkedRecord[] = [];
+  /** Queue-wait budget (ms) shared with the sub-queues; bounds park time. */
+  private readonly queueTimeoutMs: number;
+  /**
+   * Recovery predicate (P2 fail-fast). Consulted when a drain finds ZERO
+   * eligible targets: `true` → park with a bounded timer (recovery may
+   * re-admit before the budget runs out); `false` → recovery is
+   * structurally impossible (prober disabled, or a `global_outage` alert
+   * the prober skips by design) → reject immediately instead of parking.
+   * Default `true` preserves the parking behavior for callers that do not
+   * wire recovery semantics (tests, ad-hoc pools).
+   */
+  private readonly canRecover: (alert: HealthAlert) => boolean;
   /** Lifetime count of entries parked due to no-eligible-target. */
   private parkedTotal = 0;
   /** Round-robin rotor for drain distribution (separate from dispatch rotor). */
@@ -133,6 +159,12 @@ export class CompileQueuePool implements CompileWorkQueue {
        * `rebalanceFromContainer()` becomes wireable.
        */
       healthMonitor?: ContainerHealthMonitor;
+      /**
+       * Recovery predicate (P2). See `CompileQueuePool.canRecover`.
+       * The orchestrator supplies one returning `false` when the recovery
+       * prober is disabled and `false` for `global_outage` alerts.
+       */
+      canRecover?: (alert: HealthAlert) => boolean;
     },
   ) {
     if (containerNames.length === 0) {
@@ -142,6 +174,8 @@ export class CompileQueuePool implements CompileWorkQueue {
       (name) => new CompileQueue(containerProvider, name, options),
     );
     this.healthMonitor = options?.healthMonitor;
+    this.queueTimeoutMs = options?.timeout ?? 300000;
+    this.canRecover = options?.canRecover ?? (() => true);
   }
 
   /**
@@ -278,27 +312,91 @@ export class CompileQueuePool implements CompileWorkQueue {
   }
 
   /**
-   * Admit any parked entries FIFO onto the supplied eligible queues. Uses
+   * Admit parked entries FIFO onto the supplied eligible queues. Uses
    * round-robin distribution so a single healthy container does not absorb
    * the entire parked backlog when many are unparked at once. Mutates
    * `this.parkedEntries` in place.
+   *
+   * Per-record transition (P2): remove the record from the array, cancel
+   * its park timer, THEN re-admit — so the timer can never fire for an
+   * entry that already moved. Records whose entry-level exclusion list
+   * (P7) rules out every eligible target stay parked (their timer still
+   * bounds them).
    */
   private flushParkedTo(eligible: CompileQueue[]): void {
     if (eligible.length === 0 || this.parkedEntries.length === 0) return;
-    const flushed: QueueEntry[] = [];
-    while (this.parkedEntries.length > 0) {
-      const target = eligible[this.drainRotor % eligible.length]!;
+    const records = this.parkedEntries.splice(0, this.parkedEntries.length);
+    const stillParked: ParkedRecord[] = [];
+    let flushed = 0;
+    for (const record of records) {
+      const allowed = eligible.filter(
+        (q) => !record.entry.excludeContainers?.includes(q.containerName),
+      );
+      if (allowed.length === 0) {
+        stillParked.push(record);
+        continue;
+      }
+      if (record.parkTimer !== undefined) {
+        clearTimeout(record.parkTimer);
+        delete record.parkTimer;
+      }
+      const target = allowed[this.drainRotor % allowed.length]!;
       this.drainRotor++;
-      const entry = this.parkedEntries.shift();
-      if (!entry) break;
-      target.admitRebalancedEntry(entry);
-      flushed.push(entry);
+      // admitRebalancedEntry returns false when it rejected the entry
+      // immediately (exhausted budget) — don't count that as flushed.
+      if (target.admitRebalancedEntry(record.entry)) {
+        flushed++;
+      }
     }
-    if (flushed.length > 0) {
-      log.info(`Flushed ${flushed.length} parked entries`, {
+    this.parkedEntries.push(...stillParked);
+    if (flushed > 0) {
+      log.info(`Flushed ${flushed} parked entries`, {
         eligibleCount: eligible.length,
+        stillParked: stillParked.length,
       });
     }
+  }
+
+  /**
+   * Park one drained entry with a settlement timer (P2 state machine).
+   * Timer duration is EXACTLY the entry's REMAINING queue-wait budget
+   * (original `enqueuedAt` preserved — no per-hop budget reset, P11); an
+   * already-exhausted budget rejects immediately without parking.
+   *
+   * Returns true when the entry was parked, false when it was rejected.
+   */
+  private parkEntry(entry: QueueEntry): boolean {
+    const remaining = this.queueTimeoutMs - (Date.now() - entry.enqueuedAt);
+    if (remaining <= 0) {
+      entry.reject(
+        new QueueTimeoutError(
+          `parked with no eligible container: queue-wait budget ` +
+            `(${this.queueTimeoutMs}ms) already exhausted`,
+          "compile-queue-pool",
+          Date.now() - entry.enqueuedAt,
+        ),
+      );
+      return false;
+    }
+    const record: ParkedRecord = { entry };
+    record.parkTimer = setTimeout(() => {
+      // Locate by object identity; remove BEFORE rejecting. A record that
+      // was already flushed or cancelled is simply absent — no-op.
+      const idx = this.parkedEntries.indexOf(record);
+      if (idx === -1) return;
+      this.parkedEntries.splice(idx, 1);
+      entry.reject(
+        new QueueTimeoutError(
+          `parked with no eligible container for the remaining queue-wait ` +
+            `budget (${this.queueTimeoutMs}ms total)`,
+          "compile-queue-pool",
+          Date.now() - entry.enqueuedAt,
+        ),
+      );
+    }, Math.max(1, remaining));
+    this.parkedEntries.push(record);
+    this.parkedTotal++;
+    return true;
   }
 
   /**
@@ -307,16 +405,26 @@ export class CompileQueuePool implements CompileWorkQueue {
    * with `forcedByAlertId` so a non-success result there gets wrapped as a
    * quarantined retry (task #5) instead of scored as a model gap.
    *
-   * Idempotent by `alertId`: a second call for the same id is a no-op so
-   * the orchestrator's async alert listener can safely retry on failure.
+   * Takes the full `HealthAlert` (P2/P4b): the recovery predicate needs
+   * the alert object, and `alertId`/`fingerprint` read off it.
+   *
+   * Idempotent by `${alertId}:${containerName}` (P4b): the per-container
+   * drains of ONE shared global-outage alert all execute; a second call
+   * for the same (alert, container) pair is a no-op so the orchestrator's
+   * async alert listener can safely retry on failure.
    *
    * Drain target selection is ROUND-ROBIN across the eligible pool (not
    * least-pending). Least-pending would herd many drained tasks onto
-   * whichever queue happened to be lightest at the snapshot moment.
+   * whichever queue happened to be lightest at the snapshot moment. Each
+   * entry's own `excludeContainers` (P7) further narrows its targets.
    *
-   * No-eligible-target behavior: park entries in `parkedEntries` and emit
-   * an `outcome.parked` count. They are flushed automatically on the next
-   * `enqueue()` once a healthy container reappears.
+   * No-eligible-target behavior (P2 state machine):
+   * - `canRecover(alert)` false → recovery is structurally impossible;
+   *   reject the drained entries immediately (never park work that can
+   *   only die by timeout).
+   * - otherwise park with a settlement timer bounded by the entry's
+   *   REMAINING queue-wait budget; flushed early on the next `enqueue()` /
+   *   `onContainerRecovered()` once a healthy container reappears.
    *
    * Returns a Promise so callers can `await` uniformly with the rest of
    * the pool's async surface; the body is synchronous today.
@@ -324,11 +432,14 @@ export class CompileQueuePool implements CompileWorkQueue {
   // deno-lint-ignore require-await
   async rebalanceFromContainer(
     containerName: string,
-    alertId: string,
-    fingerprint?: string,
+    alert: HealthAlert,
   ): Promise<RebalanceOutcome> {
-    // Idempotent — second call for the same alertId returns a no-op outcome.
-    if (this.drainedAlerts.has(alertId)) {
+    const alertId = alert.alertId;
+    const fingerprint = alert.fingerprint;
+
+    // Idempotent — second call for the same (alertId, container) is a no-op.
+    const drainKey = `${alertId}:${containerName}`;
+    if (this.drainedAlerts.has(drainKey)) {
       const noop: RebalanceOutcome = {
         alertId,
         containerName,
@@ -337,11 +448,11 @@ export class CompileQueuePool implements CompileWorkQueue {
         parked: 0,
         targetDistribution: {},
         raisedAt: Date.now(),
-        ...(fingerprint !== undefined ? { fingerprint } : {}),
+        fingerprint,
       };
       return noop;
     }
-    this.drainedAlerts.add(alertId);
+    this.drainedAlerts.add(drainKey);
 
     const source = this.queues.find((q) => q.containerName === containerName);
     if (!source) {
@@ -365,27 +476,59 @@ export class CompileQueuePool implements CompileWorkQueue {
     const targetDistribution: Record<string, number> = {};
     let requeued = 0;
     let parked = 0;
+    let rejected = 0;
 
-    if (eligible.length === 0) {
-      // Park all drained entries.
+    if (eligible.length === 0 && !this.canRecover(alert)) {
+      // Fail fast (P2): no target, and recovery cannot bring one back.
       for (const entry of drained) {
-        this.parkedEntries.push(entry);
-        this.parkedTotal++;
-        parked++;
+        entry.reject(
+          new ContainerError(
+            "all containers alerted and recovery unavailable",
+            containerName,
+            "test",
+            { alertId, fingerprint },
+          ),
+        );
+        rejected++;
       }
       log.warn(
-        `Rebalance: no eligible targets, ${parked} entries parked`,
+        `Rebalance: no eligible targets and recovery unavailable — ` +
+          `${rejected} entries rejected`,
         { containerName, alertId },
       );
     } else {
-      // Round-robin across eligible queues.
       for (const entry of drained) {
-        const target = eligible[this.drainRotor % eligible.length]!;
+        // P7: honor the entry's original per-call exclusion list.
+        const entryEligible = eligible.filter(
+          (q) => !entry.excludeContainers?.includes(q.containerName),
+        );
+        if (entryEligible.length === 0) {
+          if (this.parkEntry(entry)) {
+            parked++;
+          } else {
+            rejected++;
+          }
+          continue;
+        }
+        // Round-robin across this entry's eligible queues.
+        const target = entryEligible[this.drainRotor % entryEligible.length]!;
         this.drainRotor++;
-        target.admitRebalancedEntry(entry);
-        targetDistribution[target.containerName] =
-          (targetDistribution[target.containerName] ?? 0) + 1;
-        requeued++;
+        // admitRebalancedEntry returns false when it rejected the entry
+        // immediately (exhausted budget) — count that as rejected, not
+        // requeued, so drain telemetry reflects what actually happened.
+        if (target.admitRebalancedEntry(entry)) {
+          targetDistribution[target.containerName] =
+            (targetDistribution[target.containerName] ?? 0) + 1;
+          requeued++;
+        } else {
+          rejected++;
+        }
+      }
+      if (parked > 0) {
+        log.warn(
+          `Rebalance: ${parked} entries parked (no eligible target)`,
+          { containerName, alertId },
+        );
       }
     }
 
@@ -397,7 +540,7 @@ export class CompileQueuePool implements CompileWorkQueue {
       parked,
       targetDistribution,
       raisedAt: Date.now(),
-      ...(fingerprint !== undefined ? { fingerprint } : {}),
+      fingerprint,
     };
     this.rebalanceLog.push(outcome);
     log.info(
@@ -405,6 +548,7 @@ export class CompileQueuePool implements CompileWorkQueue {
       {
         alertId,
         parked,
+        rejected,
         targets: Object.keys(targetDistribution).join(","),
       },
     );
@@ -464,6 +608,10 @@ export class CompileQueuePool implements CompileWorkQueue {
       );
       return;
     }
+    // Recovery is the sanctioned C4 taint-clear path: the prober disposed
+    // the session slot and proved the container healthy + quiesced, so the
+    // orphaned in-container op is gone.
+    this.queues.find((q) => q.containerName === containerName)?.clearTaint();
     const eligible = this.queues.filter((q) => !alerted.has(q.containerName));
     if (this.parkedEntries.length > 0) {
       this.flushParkedTo(eligible);
@@ -500,9 +648,15 @@ export class CompileQueuePool implements CompileWorkQueue {
     const err = new Error(reason);
     let n = 0;
     while (this.parkedEntries.length > 0) {
-      const entry = this.parkedEntries.shift();
-      if (!entry) break;
-      entry.reject(err);
+      const record = this.parkedEntries.shift();
+      if (!record) break;
+      // Clear the settlement timer FIRST so it cannot race the rejection
+      // (the timer's identity lookup would no-op anyway — belt & braces).
+      if (record.parkTimer !== undefined) {
+        clearTimeout(record.parkTimer);
+        delete record.parkTimer;
+      }
+      record.entry.reject(err);
       n++;
     }
     return n;

@@ -27,7 +27,6 @@
 // Types
 export type {
   AttemptRecord,
-  ConfigHashInput,
   CostBreakdown,
   CostOptions,
   GetResultsOptions,
@@ -52,12 +51,7 @@ export type {
 export { DEFAULT_STORAGE_CONFIG } from "./interfaces.ts";
 
 // Hash generation
-export {
-  generateConfigHash,
-  generateManifestHash,
-  generateTaskSetHash,
-  shortenHash,
-} from "./hasher.ts";
+export { generateManifestHash, shortenHash } from "./hasher.ts";
 
 // Storage implementations
 export { SqliteStorage } from "./sqlite-storage.ts";

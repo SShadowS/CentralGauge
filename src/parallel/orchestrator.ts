@@ -261,6 +261,9 @@ export class ParallelBenchmarkOrchestrator {
     this.completedTasks = 0;
     this.errors = [];
     this.streamEnabled = options.stream ?? false;
+    // P12: a reused orchestrator must not report a previous run's recovery
+    // events alongside this run's (or none, if this run never wires a prober).
+    this.recoveryEvents = [];
 
     // Reset pool state from any previous run (enables retry after drain)
     this.llmPool.reset();
@@ -287,12 +290,19 @@ export class ParallelBenchmarkOrchestrator {
         queueOptions,
       );
     } else if (containerNames && containerNames.length > 1) {
+      // P2 recovery predicate: parking drained work only makes sense when
+      // the recovery prober can bring an excluded container back. With the
+      // prober disabled (default) — or for global_outage alerts, which the
+      // prober skips by design — the pool fails fast instead of parking.
+      const recoveryEnabled = (options.recoveryProbeIntervalMs ?? 0) > 0;
       this.compileQueue = new CompileQueuePool(
         this.containerProvider,
         containerNames,
         {
           ...queueOptions,
           ...(this.healthMonitor ? { healthMonitor: this.healthMonitor } : {}),
+          canRecover: (alert) =>
+            recoveryEnabled && alert.kind !== "global_outage",
         },
       );
     } else {
@@ -316,23 +326,31 @@ export class ParallelBenchmarkOrchestrator {
         (alert) => {
           // Fire-and-forget. The state machine is sync, but we don't want
           // the listener path to block the monitor.
-          pool.rebalanceFromContainer(
-            alert.containerName,
-            alert.alertId,
-            alert.fingerprint,
-          ).then((outcome) => {
-            log.info(`Alert drain rebalanced ${outcome.requeued} entries`, {
-              alertId: alert.alertId,
-              containerName: alert.containerName,
-              drained: outcome.drained,
-              parked: outcome.parked,
+          //
+          // P4b: a global_outage alert covers MANY containers but fires
+          // ONE listener call — drain every affected container, not just
+          // the trigger. Pool idempotency is per (alertId, container), so
+          // each member's drain executes exactly once.
+          const targets =
+            alert.kind === "global_outage" && alert.affectedContainers?.length
+              ? alert.affectedContainers
+              : [alert.containerName];
+          for (const target of targets) {
+            pool.rebalanceFromContainer(target, alert).then((outcome) => {
+              log.info(`Alert drain rebalanced ${outcome.requeued} entries`, {
+                alertId: alert.alertId,
+                containerName: target,
+                drained: outcome.drained,
+                parked: outcome.parked,
+              });
+            }).catch((err) => {
+              log.error("Alert drain rebalance failed", {
+                alertId: alert.alertId,
+                containerName: target,
+                error: err instanceof Error ? err.message : String(err),
+              });
             });
-          }).catch((err) => {
-            log.error("Alert drain rebalance failed", {
-              alertId: alert.alertId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
+          }
         },
       );
 
@@ -355,10 +373,11 @@ export class ParallelBenchmarkOrchestrator {
           {
             monitor,
             pool,
-            // isHealthy on the interface takes (name); signal isn't propagated
-            // to the underlying pwsh, but Test-BcContainer self-terminates so
-            // the per-probe timeout still bounds the tick.
-            isHealthy: (name) => provider.isHealthy(name),
+            // Forward the abort signal (P8): the provider checks it between
+            // phases (best-effort — a running Test-BcContainer cannot be
+            // cancelled mid-flight, but an aborted probe returns early and
+            // is never reported healthy).
+            isHealthy: (name, o) => provider.isHealthy(name, o),
             now: () => Date.now(),
             onEvent: (ev) => this.recoveryEvents.push(ev),
             ...(hasDispose
@@ -574,9 +593,11 @@ export class ParallelBenchmarkOrchestrator {
         // carries the retry trail + exhaustion reason for the synthesizer.
         let trailingRetries: InfraRetryRecord[] = [];
         let exhaustionReason: InfraRetryExhaustionReason | undefined;
+        let wasInfraExhaustion = false;
         if (err instanceof InfraRetriesExhaustedError) {
           trailingRetries = err.retries;
           exhaustionReason = err.reason;
+          wasInfraExhaustion = true;
           err = err.cause;
         }
 
@@ -638,7 +659,12 @@ export class ParallelBenchmarkOrchestrator {
         // came via an exhausted inline retry, also forward the retry trail +
         // exhaustion reason so the synthesized attempt carries the full
         // diagnostic context.
-        if (isInfraError(err)) {
+        //
+        // Exhaustion is itself proof of infra handling: the quarantine path
+        // can exhaust with a synthetic non-classifiable cause (`Quarantined
+        // on X`), so `wasInfraExhaustion` must gate synthesis alongside the
+        // cause classification or those attempts vanish from `.results[]`.
+        if (wasInfraExhaustion || isInfraError(err)) {
           try {
             const context = await this.buildContext(manifest, variant, options);
             const synth = synthesizeInfraFailureResult({
@@ -1061,8 +1087,30 @@ export class ParallelBenchmarkOrchestrator {
 
     // Evaluate success
     const compilationSuccess = compileResult.compilationResult.success;
-    const testSuccess = compileResult.testResult?.success ?? true;
-    const success = compilationSuccess && testSuccess;
+    // A task that expects tests (expected.testApp set) but came back with no
+    // testResult (tests never ran) must NOT default to "passed" — that would
+    // silently score infra gaps as model successes. Compile-only tasks keep
+    // the old "no tests configured, no test result" => true default.
+    const testSuccess = context.manifest.expected?.testApp
+      ? (compileResult.testResult?.success ?? false)
+      : (compileResult.testResult?.success ?? true);
+
+    // Mirror executor-v2's evaluateAttempt (src/tasks/executor-v2.ts) pattern
+    // pass/fail semantics exactly (benchmark-consistency rule): mustContain/
+    // mustNotContain must gate `success`, not just contribute to `score`.
+    const code = llmResult.code || "";
+    const requiredPatterns = context.manifest.expected.mustContain ?? [];
+    const missingPatterns = requiredPatterns.filter((pattern) =>
+      !code.includes(pattern)
+    );
+    const forbiddenPatterns = context.manifest.expected.mustNotContain ?? [];
+    const foundForbidden = forbiddenPatterns.filter((pattern) =>
+      code.includes(pattern)
+    );
+    const patternsSuccess = missingPatterns.length === 0 &&
+      foundForbidden.length === 0;
+
+    const success = compilationSuccess && testSuccess && patternsSuccess;
 
     // Calculate score
     const score = this.calculateScore(
@@ -1087,6 +1135,22 @@ export class ParallelBenchmarkOrchestrator {
       ) {
         failureReasons.push(`  ${test.name}: ${test.error}`);
       }
+    } else if (
+      context.manifest.expected?.testApp && !compileResult.testResult
+    ) {
+      failureReasons.push(
+        "Tests expected but no test result was produced",
+      );
+    }
+    if (missingPatterns.length > 0) {
+      failureReasons.push(
+        `Missing required patterns: ${missingPatterns.join(", ")}`,
+      );
+    }
+    if (foundForbidden.length > 0) {
+      failureReasons.push(
+        `Contains forbidden patterns: ${foundForbidden.join(", ")}`,
+      );
     }
 
     const attempt: ExecutionAttempt = {
@@ -1293,6 +1357,9 @@ export class ParallelBenchmarkOrchestrator {
     this.totalTasks = 0;
     this.errors = [];
     this.startTime = null;
+    // P12: without this, a reused orchestrator's second run reports the
+    // first run's recovery events alongside its own.
+    this.recoveryEvents = [];
   }
 }
 

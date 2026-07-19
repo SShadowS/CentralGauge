@@ -15,7 +15,11 @@ import type {
   VerifyMode,
   VerifyOptions,
 } from "./types.ts";
-import { isFixableResult, isModelShortcomingResult } from "./types.ts";
+import {
+  isAnalysisFailedResult,
+  isFixableResult,
+  isModelShortcomingResult,
+} from "./types.ts";
 import { type AnalyzerConfig, FailureAnalyzer } from "./analyzer.ts";
 import { ShortcomingsTracker } from "./shortcomings-tracker.ts";
 import { applyFix, generateDiffPreview } from "./fix-applicator.ts";
@@ -177,6 +181,7 @@ export class VerifyOrchestrator {
       fixesApplied: 0,
       fixesSkipped: 0,
       modelShortcomings: new Map(),
+      parseFailures: new Map(),
       errors: [],
     };
 
@@ -317,6 +322,12 @@ export class VerifyOrchestrator {
         if (this.config.mode !== "fixes-only") {
           await this.handleShortcoming(result, summary);
         }
+      } else if (isAnalysisFailedResult(result)) {
+        // V9: unparseable analyzer output — count it, never store a fake
+        // shortcoming. Tracked in both modes (it is neither a fix nor a gap).
+        if (this.config.mode !== "fixes-only") {
+          await this.handleAnalysisFailed(result, summary);
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -412,6 +423,29 @@ export class VerifyOrchestrator {
       taskId: result.taskId,
       model: result.model,
       concept: result.concept,
+    });
+  }
+
+  /**
+   * Handle an analyzer parse/validation failure (finding V9). Increments the
+   * model's `parse_failures` counter in the shortcomings file — NEVER adds a
+   * shortcoming entry.
+   */
+  private async handleAnalysisFailed(
+    result: AnalysisResult & { outcome: "analysis_failed" },
+    summary: VerificationSummary,
+  ): Promise<void> {
+    await this.shortcomingsTracker.incrementParseFailures(result.model);
+    await this.shortcomingsTracker.saveModel(result.model);
+
+    const current = summary.parseFailures.get(result.model) || 0;
+    summary.parseFailures.set(result.model, current + 1);
+
+    this.emit({
+      type: "analysis_failed",
+      taskId: result.taskId,
+      model: result.model,
+      reason: result.reason,
     });
   }
 

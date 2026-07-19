@@ -81,6 +81,19 @@ export function reduceCurrentState(events: LifecycleEvent[]): CurrentStateMap {
   for (const ev of events) {
     const step = stepFor(ev.event_type);
     if (!step) continue;
+    if (!Number.isFinite(ev.ts)) {
+      // A non-finite ts (NaN/Infinity) breaks every subsequent comparison:
+      // `anything > NaN` and `anything === NaN` are both always false, so if
+      // this corrupted event were adopted as `cur` (which the old `!cur`
+      // branch did unconditionally for the first event of a step), no later
+      // — even valid — event could ever replace it. Skip it instead so a
+      // valid event can still win.
+      console.error(
+        `[lifecycle] reduceCurrentState: skipping event with non-finite ts ` +
+          `(id=${ev.id ?? "?"}, event_type=${ev.event_type}, ts=${ev.ts})`,
+      );
+      continue;
+    }
     const cur = out[step];
     if (
       !cur ||
@@ -125,6 +138,28 @@ export interface EventStoreBackend {
     filter: QueryEventsFilter,
     opts: AppendOptions,
   ) => Promise<LifecycleEvent[]>;
+  /**
+   * Optional — cluster-7's review-queue enqueue. Present only in the
+   * integration mock so orchestrator tests can assert enqueue calls without a
+   * live worker. Production uses the real signed HTTP path.
+   */
+  enqueuePendingReview?: (
+    input: EnqueuePendingReviewInput,
+    opts: AppendOptions,
+  ) => Promise<{ id: number }>;
+}
+
+/**
+ * Wire body for `POST /api/v1/admin/lifecycle/review/enqueue` (finding V1).
+ * Canonical = the `enqueue()` signature (src/lifecycle/pending-review.ts): the
+ * server derives `concept_slug_proposed` from `entry` itself.
+ */
+export interface EnqueuePendingReviewInput {
+  analysis_event_id: number;
+  model_slug: string;
+  entry: Record<string, unknown>;
+  /** ConfidenceResult; its `.score` is the finalConfidence. */
+  confidence: unknown;
 }
 
 let backend: EventStoreBackend | null = null;
@@ -163,6 +198,46 @@ export async function appendEvent(
   return await resp.json() as { id: number };
 }
 
+/**
+ * Enqueue one pending-review entry via the signed admin endpoint (finding V1).
+ *
+ * The request body is header-signed: `signLifecycleHeaders` hashes the exact
+ * body bytes into `body_sha256` and folds a fresh `X-CG-Nonce` (V7) into the
+ * signature. The SAME bytes are sent as the request body so the worker's
+ * `verifyLifecycleAdminRequest` recomputes an identical hash. Upsert /
+ * return-existing on the `UNIQUE(analysis_event_id, concept_slug_proposed)`
+ * index makes a retry after a partial failure idempotent.
+ */
+export async function enqueuePendingReview(
+  input: EnqueuePendingReviewInput,
+  opts: AppendOptions,
+): Promise<{ id: number }> {
+  if (backend?.enqueuePendingReview) {
+    return backend.enqueuePendingReview(input, opts);
+  }
+  const path = "/api/v1/admin/lifecycle/review/enqueue";
+  const bodyBytes = new TextEncoder().encode(JSON.stringify(input));
+  const headers = await signLifecycleHeaders(opts.privateKey, opts.keyId, {
+    method: "POST",
+    path,
+    body: bodyBytes,
+  });
+  const resp = await fetch(`${opts.url}${path}`, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "content-type": "application/json",
+      ...cfAccessHeaders(),
+    },
+    body: bodyBytes,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`enqueuePendingReview failed (${resp.status}): ${text}`);
+  }
+  return await resp.json() as { id: number };
+}
+
 export interface QueryEventsFilter {
   model_slug: string;
   task_set_hash?: string;
@@ -180,16 +255,26 @@ export interface QueryEventsFilter {
  * AppendOptions).
  */
 /**
- * Sign a lifecycle-admin GET/PUT request — matches the canonical scheme in
- * `site/src/lib/server/lifecycle-auth.ts`. Body-hash binding closes the
- * pre-fix C1 attack where a captured signed envelope could be replayed
- * against a different URL or with arbitrary body bytes.
+ * Sign a lifecycle-admin GET/PUT/POST request — matches the canonical
+ * scheme in `site/src/lib/server/lifecycle-auth.ts`. Body-hash binding
+ * closes the pre-fix C1 attack where a captured signed envelope could be
+ * replayed against a different URL or with arbitrary body bytes.
+ *
+ * V7: every request carries a fresh `X-CG-Nonce` folded INTO the signed
+ * bytes — the server records it (`lifecycle_nonces`) and rejects a repeat
+ * with 409, closing the replay-within-skew-window gap. Requires a worker
+ * that folds the nonce when the header is present (deploy the worker
+ * BEFORE running lifecycle commands with this CLI — an old worker fails
+ * signature verification because the signed bytes changed).
+ *
+ * POST support exists for cluster 7's body-signed-by-header endpoints;
+ * this module builds the capability, cluster 7 wires its endpoint.
  */
 export async function signLifecycleHeaders(
   privateKey: Uint8Array,
   keyId: number,
   args: {
-    method: "GET" | "PUT";
+    method: "GET" | "PUT" | "POST";
     path: string;
     query?: Record<string, string | number | null | undefined>;
     body?: Uint8Array;
@@ -212,12 +297,14 @@ export async function signLifecycleHeaders(
       q[k] = String(v);
     }
   }
+  const nonce = crypto.randomUUID();
   const canonical = canonicalJSON({
     method: args.method,
     path: args.path,
     query: q,
     body_sha256,
     signed_at: signedAt,
+    nonce,
   });
   const sig = await ed.signAsync(
     new TextEncoder().encode(canonical),
@@ -227,6 +314,7 @@ export async function signLifecycleHeaders(
     "X-CG-Signature": encodeBase64(sig),
     "X-CG-Key-Id": String(keyId),
     "X-CG-Signed-At": signedAt,
+    "X-CG-Nonce": nonce,
   };
 }
 

@@ -27,6 +27,7 @@ import {
   createFallbackUsage,
   createStreamState,
   finalizeStream,
+  forwardAbort,
   handleStreamError,
   type StreamState,
 } from "./stream-handler.ts";
@@ -414,11 +415,9 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter
    */
   private createAbortController(options?: StreamOptions): AbortController {
     const controller = new AbortController();
-    if (options?.abortSignal) {
-      options.abortSignal.addEventListener("abort", () => {
-        controller.abort();
-      });
-    }
+    // Fires synchronously for a pre-aborted signal, so the fetch below starts
+    // already-aborted instead of never learning about the cancellation.
+    forwardAbort(options?.abortSignal, () => controller.abort());
     return controller;
   }
 

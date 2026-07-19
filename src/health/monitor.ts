@@ -152,9 +152,7 @@ export class ContainerHealthMonitor {
     delete ch.alert;
     // Re-derive and purge BOTH per-container dedupe keys for this fingerprint
     // so either alert kind can re-raise after a re-death. Leave global keys.
-    const fp = alert.fingerprint;
-    this.raisedAlerts.delete(`suspect:${containerName}:${fp}`);
-    this.raisedAlerts.delete(`persistent:${containerName}:${fp}`);
+    this.purgeAlertDedupeKeys(containerName, alert.fingerprint);
     // Bump eventId so SSE / dashboard consumers observe the state change.
     this.eventId++;
     this.fireAlertClearedListeners(alert, reason);
@@ -274,6 +272,32 @@ export class ContainerHealthMonitor {
   }
 
   /**
+   * Purge BOTH per-container dedupe keys for one (container, fingerprint)
+   * pair so a future outcome with that fingerprint can raise a fresh alert.
+   * Called on `clearAlert()` AND whenever an active alert is REPLACED by a
+   * new alert for a different fingerprint (P6) — otherwise the replaced
+   * alert's keys are orphaned and its fingerprint can never re-alert for
+   * the rest of the run. Global keys are never touched here.
+   */
+  private purgeAlertDedupeKeys(containerName: string, fp: string): void {
+    this.raisedAlerts.delete(`suspect:${containerName}:${fp}`);
+    this.raisedAlerts.delete(`persistent:${containerName}:${fp}`);
+  }
+
+  /**
+   * Attach `alert` as the container's active alert, purging the dedupe keys
+   * of any DIFFERENT-fingerprint alert it replaces (P6).
+   */
+  private attachAlert(containerName: string, alert: HealthAlert): void {
+    const ch = this.containers.get(containerName);
+    if (!ch) return;
+    if (ch.alert && ch.alert.fingerprint !== alert.fingerprint) {
+      this.purgeAlertDedupeKeys(containerName, ch.alert.fingerprint);
+    }
+    ch.alert = alert;
+  }
+
+  /**
    * Returns the newly-raised alert if (and only if) this outcome caused an
    * inactive→active transition. Returns undefined when no threshold was
    * crossed or the alert was already active.
@@ -310,27 +334,6 @@ export class ContainerHealthMonitor {
       if (!this.raisedAlerts.has(key)) {
         this.raisedAlerts.add(key);
 
-        // Retract any per-container alerts already raised for this fingerprint
-        // so that getState().alerts contains only the global_outage alert.
-        // Covers BOTH suspect_container (catastrophic single-failure) and
-        // persistent_container_failure (threshold) keys.
-        for (const containerName of containersWithThisFp) {
-          for (
-            const perKey of [
-              `suspect:${containerName}:${fingerprint}`,
-              `persistent:${containerName}:${fingerprint}`,
-            ]
-          ) {
-            if (this.raisedAlerts.has(perKey)) {
-              this.raisedAlerts.delete(perKey);
-              const ch = this.containers.get(containerName);
-              if (ch && ch.alert?.fingerprint === fingerprint) {
-                delete ch.alert;
-              }
-            }
-          }
-        }
-
         const sig = INFRA_SIGNATURES.find((s) => s.id === o.signatureId);
         const alert: HealthAlert = {
           alertId: this.nextAlertId(),
@@ -339,14 +342,25 @@ export class ContainerHealthMonitor {
           fingerprint,
           count: containersWithThisFp.length,
           raisedAt: o.timestamp,
+          affectedContainers: [...containersWithThisFp],
           ...(o.signatureId !== undefined
             ? { signatureId: o.signatureId }
             : {}),
           ...(sig?.label !== undefined ? { signatureLabel: sig.label } : {}),
           ...(sig?.fixHint !== undefined ? { fixHint: sig.fixHint } : {}),
         };
-        const ch = this.containers.get(o.containerName);
-        if (ch) ch.alert = alert;
+
+        // P4b: attach the global alert to EVERY affected container — the
+        // dispatch gate reads per-container `ch.alert`, so tagging only the
+        // trigger would re-open dispatch to N-1 known-sick containers at
+        // the fleet's sickest moment. Retract the per-container dedupe keys
+        // for this fingerprint (the global alert supersedes them);
+        // attachAlert purges any DIFFERENT-fingerprint alert it replaces
+        // (P6) so that fingerprint can re-raise after recovery.
+        for (const containerName of containersWithThisFp) {
+          this.purgeAlertDedupeKeys(containerName, fingerprint);
+          this.attachAlert(containerName, alert);
+        }
         return alert;
       }
       // Suppress per-container alert for this fingerprint
@@ -383,8 +397,9 @@ export class ContainerHealthMonitor {
           ...(sig.label !== undefined ? { signatureLabel: sig.label } : {}),
           ...(sig.fixHint !== undefined ? { fixHint: sig.fixHint } : {}),
         };
-        const ch = this.containers.get(o.containerName);
-        if (ch) ch.alert = alert;
+        // attachAlert purges the dedupe keys of any different-fingerprint
+        // alert this raise replaces (P6).
+        this.attachAlert(o.containerName, alert);
         return alert;
       }
       // Suspect already active — do not double-raise, do not upgrade to
@@ -419,8 +434,9 @@ export class ContainerHealthMonitor {
           ...(sig?.label !== undefined ? { signatureLabel: sig.label } : {}),
           ...(sig?.fixHint !== undefined ? { fixHint: sig.fixHint } : {}),
         };
-        const ch = this.containers.get(o.containerName);
-        if (ch) ch.alert = alert;
+        // attachAlert purges the dedupe keys of any different-fingerprint
+        // alert this raise replaces (P6).
+        this.attachAlert(o.containerName, alert);
         return alert;
       }
     }

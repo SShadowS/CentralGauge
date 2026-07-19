@@ -14,6 +14,7 @@ import type {
 } from "./types.ts";
 import type { ContainerProvider } from "../container/interface.ts";
 import type { TestResult } from "../container/types.ts";
+import { ContainerError, isSessionTimeoutContainerError } from "../errors.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
@@ -216,6 +217,14 @@ export interface QueueEntry {
    * ordinary failure. Absent = normal scoring.
    */
   forcedByAlertId?: string;
+  /**
+   * The per-call `excludeContainers` this entry was enqueued with (P7).
+   * Rebalance and park-flush union this into their target filtering so a
+   * drained entry is never re-admitted onto a container its caller
+   * explicitly excluded (e.g. the container that just infra-failed this
+   * exact work item).
+   */
+  excludeContainers?: string[];
 }
 
 /**
@@ -234,6 +243,16 @@ export class CompileQueue implements CompileWorkQueue {
   private testMutex = new Mutex();
   private activeItems = 0;
   private dispatching = false;
+  /**
+   * C4 taint flag. Set when the test phase throws a session-timeout
+   * ContainerError — the in-container op is STILL RUNNING, so no further
+   * test work may run on this container until it recovers. Every waiter
+   * re-checks this immediately after acquiring the test mutex; tainted →
+   * throw ContainerError so withInfraRetry reroutes. Cleared only via
+   * container recovery (`clearTaint()` from the pool's
+   * `onContainerRecovered`) or queue disposal (`clear()`).
+   */
+  private tainted = false;
   /** Counter for drainPending() telemetry — number of entries drained over the queue's lifetime. */
   private drainedCount = 0;
   /**
@@ -351,6 +370,11 @@ export class CompileQueue implements CompileWorkQueue {
         resolve,
         reject,
         enqueuedAt,
+        // Capture the caller's exclusion list so rebalance/park-flush (P7)
+        // can honor it when re-admitting on another queue.
+        ...(excluded && excluded.length > 0
+          ? { excludeContainers: [...excluded] }
+          : {}),
       };
 
       // Add to queue
@@ -397,7 +421,22 @@ export class CompileQueue implements CompileWorkQueue {
    * lives on `CompileQueuePool` (task #3); this internal entry-point
    * just plumbs the move-promise.
    */
-  admitRebalancedEntry(entry: QueueEntry): void {
+  admitRebalancedEntry(entry: QueueEntry): boolean {
+    // P11: the entry keeps its ORIGINAL `enqueuedAt` — re-admission must not
+    // reset the queue-wait budget. Arm the refreshed timer with exactly the
+    // REMAINING budget; an already-exhausted budget rejects immediately
+    // (returns false so pool telemetry doesn't count it as requeued).
+    const remaining = this.timeout - (Date.now() - entry.enqueuedAt);
+    if (remaining <= 0) {
+      entry.reject(
+        new QueueTimeoutError(
+          `Compile queue timeout after ${this.timeout}ms`,
+          Date.now() - entry.enqueuedAt,
+        ),
+      );
+      return false;
+    }
+
     // Refresh the timeout against the new queue (drain cancelled the old one).
     entry.timeoutHandle = setTimeout(() => {
       const idx = this.queue.findIndex(
@@ -414,7 +453,7 @@ export class CompileQueue implements CompileWorkQueue {
           );
         }
       }
-    }, this.timeout);
+    }, Math.max(1, remaining));
 
     this.queue.push(entry);
     this.rebalancedInCount++;
@@ -426,6 +465,7 @@ export class CompileQueue implements CompileWorkQueue {
         error: String(error),
       });
     });
+    return true;
   }
 
   /**
@@ -474,6 +514,23 @@ export class CompileQueue implements CompileWorkQueue {
       }
     }
     return count;
+  }
+
+  /** C4: whether the container is tainted by a session timeout. */
+  get isTainted(): boolean {
+    return this.tainted;
+  }
+
+  /**
+   * Clear the C4 taint. Called from the pool's `onContainerRecovered` once
+   * the container has provably recovered (probe streak + quiesce gate +
+   * fresh session slot) — the orphaned in-container op is gone by then.
+   */
+  clearTaint(): void {
+    if (this.tainted) {
+      this.tainted = false;
+      log.info(`taint cleared on ${this.containerName} (recovered)`);
+    }
   }
 
   /** Number of entries this queue has drained over its lifetime. */
@@ -568,12 +625,24 @@ export class CompileQueue implements CompileWorkQueue {
     let testDurationMs: number | undefined;
     let succeeded = false;
 
+    // P1: the compile permit must be released EXACTLY once on every exit
+    // path (success, temp-project throw, compile-phase throw, cleanup
+    // throw). The flag flip is synchronous JS, so there is no interleaving
+    // hazard between check and set.
+    let released = false;
+    const releaseOnce = () => {
+      if (!released) {
+        released = true;
+        releaseCompile();
+      }
+    };
+
     // Create temporary project
     let projectDir: string | undefined;
     try {
       projectDir = await this.createTempProject(entry.item);
     } catch (error) {
-      releaseCompile();
+      releaseOnce();
       this.recordCompleted(
         workItemId,
         taskId,
@@ -596,7 +665,7 @@ export class CompileQueue implements CompileWorkQueue {
         startTime,
       );
       compileDurationMs = Date.now() - compileStart;
-      releaseCompile(); // Free compile slot immediately
+      releaseOnce(); // Free compile slot immediately
 
       // --- Phase 2: Test (serial, under test mutex) ---
       if (
@@ -604,6 +673,18 @@ export class CompileQueue implements CompileWorkQueue {
         entry.item.context.manifest.expected.testApp
       ) {
         const releaseTest = await this.testMutex.acquire();
+        // C4 taint barrier: re-check AFTER acquiring the mutex — a pipeline
+        // that was already blocked on the mutex when the taint landed must
+        // not run a second concurrent op against the still-running one.
+        if (this.tainted) {
+          releaseTest();
+          throw new ContainerError(
+            `container ${this.containerName} tainted by session timeout — ` +
+              `test work must reroute`,
+            this.containerName,
+            "test",
+          );
+        }
         // Transition to test phase for snapshot visibility
         this.activeWorkItems.set(workItemId, {
           workItemId,
@@ -621,6 +702,17 @@ export class CompileQueue implements CompileWorkQueue {
           compilePhaseResult.testResult = testPhase.testResult;
           compilePhaseResult.testDuration = testPhase.testDuration;
           testDurationMs = testPhase.testDuration;
+        } catch (e) {
+          // C4: set the taint BEFORE the finally releases the test mutex,
+          // so the next waiter observes it the instant it acquires.
+          if (isSessionTimeoutContainerError(e)) {
+            this.tainted = true;
+            log.warn(
+              `session timeout on ${this.containerName} — queue tainted, ` +
+                `waiting test work will reroute`,
+            );
+          }
+          throw e;
         } finally {
           releaseTest();
         }
@@ -685,6 +777,9 @@ export class CompileQueue implements CompileWorkQueue {
       // original error and let task #6's withInfraRetry wrap it.
       entry.reject(error instanceof Error ? error : new Error(String(error)));
     } finally {
+      // Release BEFORE any awaited cleanup so a cleanup throw cannot leak
+      // the permit. Idempotent — the success path already released.
+      releaseOnce();
       this.recordCompleted(
         workItemId,
         taskId,
@@ -767,6 +862,18 @@ export class CompileQueue implements CompileWorkQueue {
           name: prereq.appJson["name"],
           errors: prereqCompileResult.errors.map((e) => e.message),
         });
+        // Prereqs are task fixtures, not model output — a broken prereq is a
+        // setup (infra) fault. Throw so runPipeline rejects the entry and
+        // withInfraRetry reroutes (isInfraError), instead of cascading into
+        // a scored model compile failure on missing symbols. The compile
+        // permit is safe: runPipeline's release-once covers this throw (P1).
+        throw new ContainerError(
+          `Prereq compilation failed for ${prereq.appJson["name"]}: ${
+            prereqCompileResult.errors.map((e) => e.message).join("; ")
+          }`,
+          this.containerName,
+          "setup",
+        );
       } else {
         compiledPrereqs.push({
           ...prereq,
@@ -1135,6 +1242,8 @@ export class CompileQueue implements CompileWorkQueue {
       entry.reject(error);
     }
     this.queue = [];
+    // Queue disposal is the other sanctioned taint-clear path (C4).
+    this.tainted = false;
   }
 
   /**

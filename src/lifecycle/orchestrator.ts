@@ -17,10 +17,16 @@
  */
 
 import * as colors from "@std/fmt/colors";
-import { appendEvent, queryEvents } from "./event-log.ts";
+import {
+  appendEvent,
+  enqueuePendingReview,
+  type EnqueuePendingReviewInput,
+  queryEvents,
+} from "./event-log.ts";
 import { collectEnvelope, collectToolVersions } from "./envelope.ts";
 import { resolveCurrentTaskSetHash } from "../ingest/catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "../ingest/config.ts";
+import { ConfigManager, mergeLifecycleDefaults } from "../config/config.ts";
 import { runBenchStep } from "./steps/bench-step.ts";
 import { runDebugCaptureStep } from "./steps/debug-capture-step.ts";
 import { runAnalyzeStep } from "./steps/analyze-step.ts";
@@ -435,6 +441,72 @@ async function detectAndEmitTimeout(
   return true;
 }
 
+/**
+ * Shape of each element in `analysis.completed.payload.pending_review_entries`
+ * (written by the analyze step). `confidence` is a full ConfidenceResult whose
+ * `.score` is the finalConfidence; `entry` is the persisted shortcoming.
+ */
+interface PendingReviewEntryPayload {
+  concept_slug_proposed: string;
+  confidence: unknown;
+  entry: Record<string, unknown>;
+}
+
+/** Extract `pending_review_entries` from an analysis.completed payload. */
+function readPendingEntries(
+  payload: Record<string, unknown> | undefined,
+): PendingReviewEntryPayload[] {
+  const raw = payload?.["pending_review_entries"];
+  return Array.isArray(raw) ? raw as PendingReviewEntryPayload[] : [];
+}
+
+/**
+ * POST each pending-review entry to the signed enqueue endpoint (finding V1).
+ *
+ * Best-effort per entry: a failure is logged, not fatal — the endpoint is
+ * idempotent (`UNIQUE(analysis_event_id, concept_slug_proposed)` + upsert), so
+ * a partial failure is safely re-driven by the resume reconciliation, which
+ * re-reads the prior `analysis.completed` payload and re-POSTs. Returns the
+ * count successfully enqueued.
+ */
+async function enqueuePendingReviewEntries(
+  entries: PendingReviewEntryPayload[],
+  analysisEventId: number,
+  modelSlug: string,
+  ingestOpts: AppendOptions,
+): Promise<number> {
+  let ok = 0;
+  for (const p of entries) {
+    if (!p?.entry || !p.confidence) continue;
+    const input: EnqueuePendingReviewInput = {
+      analysis_event_id: analysisEventId,
+      model_slug: modelSlug,
+      entry: p.entry,
+      confidence: p.confidence,
+    };
+    try {
+      await enqueuePendingReview(input, ingestOpts);
+      ok += 1;
+    } catch (e) {
+      console.error(
+        colors.red(
+          `[WARN] enqueue pending_review (${p.concept_slug_proposed}) failed: ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        ),
+      );
+    }
+  }
+  if (entries.length > 0) {
+    console.log(
+      colors.gray(
+        `[INFO] enqueued ${ok}/${entries.length} pending_review entries (analysis_event_id=${analysisEventId})`,
+      ),
+    );
+  }
+  return ok;
+}
+
 export async function runCycle(opts: CycleOptions): Promise<void> {
   const cwd = Deno.cwd();
   const envelope = await collectEnvelope({}) as Record<string, unknown>;
@@ -461,6 +533,14 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
     keyId: config.adminKeyId,
   };
   const actorId = config.machineId ?? null;
+
+  // Resolve the confidence review gate (finding V1) from
+  // `.centralgauge.yml lifecycle.*` once — plumbed into every step's ctx so
+  // the analyze step's pending-list computation and the publish step's skip
+  // gate read the same threshold.
+  const lifecycleCfg = mergeLifecycleDefaults(
+    (await ConfigManager.loadConfig()).lifecycle,
+  );
 
   for (const modelSlug of opts.llms) {
     const taskSetHash = opts.taskSet === "current"
@@ -546,6 +626,8 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
       analyzerModel: opts.analyzerModel,
       dryRun: opts.dryRun,
       cwd,
+      confidenceThreshold: lifecycleCfg.confidence_threshold,
+      crossLlmSampleRate: lifecycleCfg.cross_llm_sample_rate,
       ...(opts.debugDir !== undefined ? { debugDir: opts.debugDir } : {}),
       ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
     };
@@ -636,6 +718,20 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
             const ph = (prior.completed.payload as { payload_hash?: string })
               .payload_hash;
             if (typeof ph === "string") priorAnalysisPayloadHash = ph;
+            // Reconciliation (finding V1): a prior analyze run may have
+            // computed the pending list but failed to enqueue some/all rows
+            // (network blip after the event landed). Re-POST them from the
+            // prior payload — idempotent under UNIQUE + upsert, so already-
+            // queued rows are no-ops.
+            const pending = readPendingEntries(prior.completed.payload);
+            if (pending.length > 0 && prior.completed.id != null) {
+              await enqueuePendingReviewEntries(
+                pending,
+                prior.completed.id,
+                modelSlug,
+                ingestOpts,
+              );
+            }
           }
           continue;
         }
@@ -700,8 +796,9 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
         // outcome" — the orchestrator records the failure via `cycle.failed`
         // only. After this guard `result.eventType` narrows to
         // `LifecycleEventType` (the strict union), so no cast is needed.
+        let appendedEventId: number | undefined;
         if (result.eventType !== "") {
-          await appendEvent({
+          const appended = await appendEvent({
             ts: Date.now(),
             model_slug: modelSlug,
             task_set_hash: taskSetHash,
@@ -712,6 +809,27 @@ export async function runCycle(opts: CycleOptions): Promise<void> {
             actor: "operator",
             actor_id: actorId,
           }, ingestOpts);
+          appendedEventId = appended.id;
+        }
+        // Confidence review gate (finding V1): enqueue each below-threshold
+        // entry to the review queue. MUST run AFTER the analysis.completed
+        // event is appended so the returned event id satisfies
+        // `pending_review.analysis_event_id`'s NOT NULL FK.
+        if (
+          step === "analyze" &&
+          result.success &&
+          result.eventType === "analysis.completed" &&
+          appendedEventId != null
+        ) {
+          const pending = readPendingEntries(result.payload);
+          if (pending.length > 0) {
+            await enqueuePendingReviewEntries(
+              pending,
+              appendedEventId,
+              modelSlug,
+              ingestOpts,
+            );
+          }
         }
         // Cache analyze hash for downstream publish idempotency.
         if (

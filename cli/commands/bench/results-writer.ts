@@ -58,12 +58,18 @@ export async function saveResultsJson(
     import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
   recoveryEvents?:
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
+  ingestMeta?: import("./ingest-meta.ts").IngestMeta,
 ): Promise<void> {
   await Deno.writeTextFile(
     resultsFile,
     JSON.stringify(
       {
         results,
+        // Persisted run identity (T3): one run UUID per variant, minted at
+        // save time. Immediate ingest AND `centralgauge ingest <path>`
+        // replay both read this key so replays reuse the same run_id
+        // (server idempotency) and the original pricing_version.
+        ...(ingestMeta !== undefined ? { ingest: ingestMeta } : {}),
         stats: {
           totalTokens: stats.totalTokens,
           totalCost: stats.totalCost,
@@ -302,12 +308,18 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
         `${c.containerName}: pass=${c.passCount} fail=${c.failCount} err=${c.errorCount}${flag}`,
       );
     }
-    if (stats.infraInvalidated > 0) {
-      lines.push(
-        `infra_invalidated: ${stats.infraInvalidated}/${input.resultCount}` +
-          ` (valid_attempts=${stats.validAttempts})`,
-      );
-    }
+  }
+  // CLI3: infra_invalidated must be visible regardless of whether a
+  // container-health snapshot was available (e.g. --no-dashboard runs
+  // before the monitor-state fallback was wired up, or a snapshot with zero
+  // tracked containers). It was previously nested inside the
+  // containerHealth-present branch above and vanished along with it.
+  if (stats.infraInvalidated > 0) {
+    lines.push(``);
+    lines.push(
+      `infra_invalidated: ${stats.infraInvalidated}/${input.resultCount}` +
+        ` (valid_attempts=${stats.validAttempts})`,
+    );
   }
 
   // # Infra Retries block — operator-facing summary of inline infra-retry

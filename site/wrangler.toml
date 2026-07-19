@@ -22,6 +22,16 @@ FLAG_DENSITY_TOGGLE = "on"          # P5.4
 FLAG_RUM_BEACON = "on"              # P5.4
 CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTICS_TOKEN` runs
 
+# Staged ingest-security rollout (S5 + S3). Both default "off" = tolerant:
+# v1 envelopes and unsigned finalize calls are accepted AND logged
+# (console.warn) so the operator can watch for legacy traffic. Flip each to
+# "on" only after (1) this worker is deployed, (2) the v2-emitting CLI has
+# fully replaced v1 traffic in the logs. Deploy order matters: the worker
+# must ship BEFORE the next ingest-bearing bench, or the new CLI's v2
+# envelopes fail precheck with bad_version on the old worker.
+FLAG_REQUIRE_ENVELOPE_V2 = "off"
+FLAG_REQUIRE_SIGNED_FINALIZE = "off"
+
 # Cloudflare Access — admin lifecycle UI dual-auth (Plan F / F5).
 # CF_ACCESS_TEAM_DOMAIN is non-secret (the cloudflareaccess.com hostname is
 # public). CF_ACCESS_AUD is per-application and operator-rotates when the
@@ -32,6 +42,14 @@ CF_WEB_ANALYTICS_TOKEN = ""    # empty until `wrangler secret put CF_WEB_ANALYTI
 # baked-in empty var would shadow the secret at runtime (resolution order
 # is implementation-defined). See docs/site/operations.md for the runbook.
 CF_ACCESS_TEAM_DOMAIN = "sshadows.cloudflareaccess.com"
+
+# Optional (S2 defense-in-depth): comma-separated email allowlist enforced
+# IN ADDITION TO the CF Access edge policy, which remains the primary
+# authorization control. Unset = current behavior (no extra enforcement).
+# Same rationale as CF_ACCESS_AUD above — secret, NOT a [vars] entry:
+#   wrangler secret put CF_ACCESS_ALLOWED_EMAILS
+# DO NOT add `CF_ACCESS_ALLOWED_EMAILS = ""` here for the same shadowing
+# reason as CF_ACCESS_AUD.
 
 [assets]
 directory = ".svelte-kit/cloudflare"

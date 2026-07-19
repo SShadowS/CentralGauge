@@ -13,4 +13,5 @@ export {
   getDefaultOutputPath,
   isActionableShortcoming,
   loadShortcomingsFile,
+  resolveGeneratorModel,
 } from "./generator.ts";

@@ -881,6 +881,92 @@ Deno.test({
   },
 });
 
+// C5: bcchConfigInit() was omitted at the executeCommand/isHealthy fresh-spawn
+// sites, so behavior silently depended on the machine-level
+// BcContainerHelper.config.json instead of our pinned usePsSessionForBc28
+// /usePwshForBc24 settings (GH #12 class). Every other BCH script site emits
+// both bcchImport() AND bcchConfigInit(); these two were the last holdouts.
+Deno.test({
+  name: "BcContainerProvider - isHealthy emits bcchConfigInit pin lines",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(["Test-BcContainer"], "HEALTHY:True");
+
+      const provider = new BcContainerProvider();
+      await provider.isHealthy("TestContainer");
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "usePsSessionForBc28");
+      assertStringIncludes(script, "usePwshForBc24");
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
+Deno.test({
+  name: "BcContainerProvider - executeCommand emits bcchConfigInit pin lines",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(
+        ["Invoke-ScriptInBcContainer"],
+        "Command output here",
+      );
+
+      const provider = new BcContainerProvider();
+      await provider.executeCommand("TestContainer", "Get-Service");
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "usePsSessionForBc28");
+      assertStringIncludes(script, "usePwshForBc24");
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
+// C5: `command` used to be spliced raw into `-scriptblock { ${command} }` —
+// any character in it (unbalanced braces, quotes) could corrupt the outer
+// script's syntax or let injected text execute outside the intended
+// scriptblock (injection-by-construction; callers today are integration
+// tests only, but the site itself was unsafe by design). The fix passes
+// `command` as a single-quoted, escaped PS literal via -argumentList instead
+// of splicing it directly into the script body.
+Deno.test({
+  name:
+    "BcContainerProvider - executeCommand parameterizes the raw command via -argumentList instead of splicing it into the scriptblock body",
+  ignore: !isWindows,
+  async fn() {
+    const mock = createCommandMock();
+
+    try {
+      mock.install();
+      mock.mockPowerShell(["Invoke-ScriptInBcContainer"], "ok");
+
+      const provider = new BcContainerProvider();
+      const maliciousCommand = `Get-Service"; Write-Output "INJECTED`;
+      await provider.executeCommand("TestContainer", maliciousCommand);
+
+      const script = mock.getLastCall()!.args[2] as string;
+      assertStringIncludes(script, "-argumentList");
+      assert(
+        !script.includes(`-scriptblock { ${maliciousCommand} }`),
+        "command must not be spliced raw into the scriptblock body",
+      );
+    } finally {
+      mock.restore();
+    }
+  },
+});
+
 // =============================================================================
 // Compilation Tests (Windows only, with mocking)
 // =============================================================================
@@ -988,7 +1074,8 @@ DETAIL:test.al(10,5): error AL0118: The name 'InvalidFunction' does not exist
 });
 
 Deno.test({
-  name: "BcContainerProvider - compileProject handles system errors gracefully",
+  name:
+    "BcContainerProvider - compileProject RETHROWS infra errors from compiler-folder setup (C3)",
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
@@ -1003,7 +1090,11 @@ Deno.test({
         JSON.stringify({ name: "Test", publisher: "Test", version: "1.0.0" }),
       );
 
-      // Mock: compiler folder creation fails completely
+      // Mock: compiler folder creation fails completely. This is an INFRA
+      // fault (ContainerError from buildPwshError), so compileProject must
+      // PROPAGATE it for the inline infra-retry to reroute — pre-C3 it was
+      // swallowed into a synthetic SYSTEM compile failure and scored against
+      // the model.
       mock.mockPowerShellError(
         ["Get-BcContainerArtifactUrl"],
         "Container not running",
@@ -1011,20 +1102,22 @@ Deno.test({
       );
 
       const provider = new BcContainerProvider();
-      const result = await provider.compileProject("TestContainer", {
-        path: tempDir,
-        appJson: {
-          name: "TestApp",
-          publisher: "TestPublisher",
-          version: "1.0.0.0",
-        },
-        sourceFiles: [],
-        testFiles: [],
-      });
-
-      assertEquals(result.success, false);
-      assertEquals(result.errors.length, 1);
-      assertEquals(result.errors[0]!.code, "SYSTEM");
+      const err = await assertRejects(
+        () =>
+          provider.compileProject("TestContainer", {
+            path: tempDir,
+            appJson: {
+              name: "TestApp",
+              publisher: "TestPublisher",
+              version: "1.0.0.0",
+            },
+            sourceFiles: [],
+            testFiles: [],
+          }),
+        ContainerError,
+      );
+      assertEquals(err.operation, "compile");
+      assertStringIncludes(err.message, "Failed to create compiler folder");
     } finally {
       mock.restore();
       await Deno.remove(tempDir, { recursive: true });
@@ -1164,15 +1257,13 @@ Deno.test({
         JSON.stringify({ name: "Test", publisher: "Test", version: "1.0.0" }),
       );
 
-      // Mock: compiler folder creation
-      mock.mockPowerShell(
-        ["Get-BcContainerArtifactUrl"],
-        "ARTIFACT_URL:https://example.com",
-      );
-
+      // Mock: compiler folder creation (single script emits BOTH markers —
+      // splitting them across two mocks starves COMPILER_FOLDER and turns
+      // this into an infra failure, which compileProject now RETHROWS (C3)
+      // instead of swallowing into the model-level failure this test is about).
       mock.mockPowerShell(
         ["New-BcCompilerFolder"],
-        `COMPILER_FOLDER:C:\\CompilerFolder`,
+        `ARTIFACT_URL:https://example.com\nCOMPILER_FOLDER:C:\\CompilerFolder`,
       );
 
       // Mock: compilation fails

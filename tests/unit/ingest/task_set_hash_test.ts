@@ -1,4 +1,5 @@
 import { assert, assertEquals, assertNotEquals } from "@std/assert";
+import { join } from "@std/path";
 import {
   computeTaskSetHash,
   resolveCurrentTaskSetHash,
@@ -240,6 +241,176 @@ Deno.test("resolveCurrentTaskSetHash returns real hash when project exists", asy
     await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
     const out = await resolveCurrentTaskSetHash(root);
     assertEquals(out.length, 64);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+// --- T6: CRLF-sensitivity ---------------------------------------------
+
+Deno.test("hash normalizes CRLF to LF for a .yml manifest", async () => {
+  const root1 = await makeProjectRoot();
+  const root2 = await makeProjectRoot();
+  try {
+    await Deno.writeFile(
+      `${root1}/tasks/easy/a.yml`,
+      new TextEncoder().encode("id: A\r\ndescription: hi\r\n"),
+    );
+    await Deno.writeFile(
+      `${root2}/tasks/easy/a.yml`,
+      new TextEncoder().encode("id: A\ndescription: hi\n"),
+    );
+    assertEquals(
+      await computeTaskSetHash(root1),
+      await computeTaskSetHash(root2),
+      "CRLF vs LF content in a .yml manifest must hash identically",
+    );
+  } finally {
+    await Deno.remove(root1, { recursive: true });
+    await Deno.remove(root2, { recursive: true });
+  }
+});
+
+Deno.test("hash normalizes CRLF to LF for an .al test file", async () => {
+  const root1 = await makeProjectRoot();
+  const root2 = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root1}/tasks/easy/a.yml`, "id: A");
+    await Deno.writeTextFile(`${root2}/tasks/easy/a.yml`, "id: A");
+    await Deno.writeFile(
+      `${root1}/tests/al/easy/CG-AL-E001.Test.al`,
+      new TextEncoder().encode(
+        "codeunit 80001 Test\r\n{\r\n    procedure P()\r\n    begin\r\n    end;\r\n}\r\n",
+      ),
+    );
+    await Deno.writeFile(
+      `${root2}/tests/al/easy/CG-AL-E001.Test.al`,
+      new TextEncoder().encode(
+        "codeunit 80001 Test\n{\n    procedure P()\n    begin\n    end;\n}\n",
+      ),
+    );
+    assertEquals(
+      await computeTaskSetHash(root1),
+      await computeTaskSetHash(root2),
+      "CRLF vs LF content in an .al file must hash identically",
+    );
+  } finally {
+    await Deno.remove(root1, { recursive: true });
+    await Deno.remove(root2, { recursive: true });
+  }
+});
+
+Deno.test("hash treats binary (non-text-extension) content raw, never CRLF-normalized", async () => {
+  const root1 = await makeProjectRoot();
+  const root2 = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root1}/tasks/easy/a.yml`, "id: A");
+    await Deno.writeTextFile(`${root2}/tasks/easy/a.yml`, "id: A");
+    // Same "logical" byte sequence except for 0x0D bytes that would be
+    // stripped by CRLF normalization if (incorrectly) applied to binaries.
+    const withCR = new Uint8Array([
+      0x50,
+      0x4b,
+      0x03,
+      0x04, // fake zip/docx magic
+      ...new TextEncoder().encode("payload"),
+      0x0d,
+      0x0a,
+      ...new TextEncoder().encode("more"),
+      0x0d,
+      0x0a,
+    ]);
+    const withoutCR = new Uint8Array([
+      0x50,
+      0x4b,
+      0x03,
+      0x04,
+      ...new TextEncoder().encode("payload"),
+      0x0a,
+      ...new TextEncoder().encode("more"),
+      0x0a,
+    ]);
+    await Deno.writeFile(
+      `${root1}/tests/al/support-files/CG-AL-E001/Layout.docx`,
+      withCR,
+    );
+    await Deno.writeFile(
+      `${root2}/tests/al/support-files/CG-AL-E001/Layout.docx`,
+      withoutCR,
+    );
+    assertNotEquals(
+      await computeTaskSetHash(root1),
+      await computeTaskSetHash(root2),
+      ".docx content must be hashed raw — CRLF/LF variants must NOT collide",
+    );
+  } finally {
+    await Deno.remove(root1, { recursive: true });
+    await Deno.remove(root2, { recursive: true });
+  }
+});
+
+// --- T12: absolute-path skip false positive -----------------------------
+
+Deno.test("hash does not skip files when the checkout path itself contains an 'output' segment", async () => {
+  const parent = await Deno.makeTempDir();
+  const nestedRoot = join(parent, "output", "repo");
+  const plainRoot = await makeProjectRoot();
+  try {
+    await Deno.mkdir(join(nestedRoot, "tasks", "easy"), { recursive: true });
+    await Deno.mkdir(join(nestedRoot, "tests", "al", "easy"), {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      join(nestedRoot, "tasks", "easy", "a.yml"),
+      "id: A",
+    );
+    await Deno.writeTextFile(
+      join(nestedRoot, "tests", "al", "easy", "CG-AL-E001.Test.al"),
+      "codeunit 80001 Test { }",
+    );
+
+    await Deno.writeTextFile(`${plainRoot}/tasks/easy/a.yml`, "id: A");
+    await Deno.writeTextFile(
+      `${plainRoot}/tests/al/easy/CG-AL-E001.Test.al`,
+      "codeunit 80001 Test { }",
+    );
+
+    const nestedHash = await computeTaskSetHash(nestedRoot);
+    const plainHash = await computeTaskSetHash(plainRoot);
+    assertEquals(
+      nestedHash,
+      plainHash,
+      "a checkout path containing an 'output' path segment (e.g. C:\\tmp\\output\\repo) " +
+        "must not cause real task/test files to be skipped",
+    );
+  } finally {
+    await Deno.remove(parent, { recursive: true });
+    await Deno.remove(plainRoot, { recursive: true });
+  }
+});
+
+Deno.test("hash still skips a real .alpackages/output dir inside the task tree", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const baseline = await computeTaskSetHash(root);
+
+    await Deno.mkdir(`${root}/tests/al/easy/output`, { recursive: true });
+    await Deno.writeTextFile(
+      `${root}/tests/al/easy/output/built.app`,
+      "compiled",
+    );
+    await Deno.writeTextFile(
+      `${root}/tests/al/easy/output/notes.txt`,
+      "should still be skipped as it is under an output/ dir",
+    );
+
+    const after = await computeTaskSetHash(root);
+    assertEquals(
+      after,
+      baseline,
+      "an actual output/ directory inside the walked tree must still be skipped",
+    );
   } finally {
     await Deno.remove(root, { recursive: true });
   }

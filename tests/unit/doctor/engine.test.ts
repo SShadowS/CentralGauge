@@ -150,6 +150,50 @@ describe("runDoctor — dependency skip", () => {
     assertEquals(childRan, true);
   });
 
+  it("skips a check whose dependency was itself skipped (transitive skip, D7)", async () => {
+    const failingRoot: Check = {
+      id: "root",
+      level: "A",
+      run: () =>
+        Promise.resolve({
+          id: "root",
+          level: "A",
+          status: "failed",
+          message: "broken",
+          durationMs: 0,
+        }),
+    };
+    const middle: Check = {
+      id: "middle",
+      level: "B",
+      requires: ["root"],
+      run: () => {
+        throw new Error("should not be called — root failed");
+      },
+    };
+    const leaf: Check = {
+      id: "leaf",
+      level: "C",
+      requires: ["middle"],
+      run: () => {
+        throw new Error("should not be called — middle was skipped");
+      },
+    };
+    const report = await runDoctor({
+      section: { id: "ingest", checks: [failingRoot, middle, leaf] },
+    });
+
+    const middleResult = report.checks.find((c) => c.id === "middle")!;
+    const leafResult = report.checks.find((c) => c.id === "leaf")!;
+    assertEquals(middleResult.status, "skipped");
+    assertEquals(leafResult.status, "skipped");
+    assertEquals(leafResult.message, "skipped: dependency 'middle' skipped");
+
+    assertEquals(report.summary.failed, 1);
+    assertEquals(report.summary.skipped, 2);
+    assertEquals(report.ok, false);
+  });
+
   it("treats 'warning' as not-failed for dependency purposes", async () => {
     const warned: Check = {
       id: "parent3",

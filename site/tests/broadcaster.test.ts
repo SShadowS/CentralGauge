@@ -54,7 +54,9 @@ describe("LeaderboardBroadcaster", () => {
         ts: new Date().toISOString(),
       }),
     });
-    const res = await stub.fetch("https://do/recent?limit=10");
+    const res = await stub.fetch("https://do/recent?limit=10", {
+      headers: { "x-test-only": "1" },
+    });
     const body = (await res.json()) as { events: Array<{ run_id?: string }> };
     expect(body.events.some((e) => e.run_id === "r-recent")).toBe(true);
   });

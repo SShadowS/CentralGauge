@@ -1,5 +1,5 @@
 // tests/unit/health/recovery-prober.test.ts
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import {
   ContainerRecoveryProber,
   type RecoveryEvent,
@@ -261,20 +261,33 @@ Deno.test("setRecoveryState pushed on recovery (attempts, exhausted=false)", asy
   assertEquals(last.exhausted, false);
 });
 
-Deno.test("flap cap: stops recovering after maxRecoveriesPerContainer", async () => {
+Deno.test("flap cap is LIFETIME: no recovery past maxRecoveriesPerContainer across episodes", async () => {
+  // P3: the cap must survive alert-episode transitions. The old per-episode
+  // state reset on every new alertId, so the cap could never trip and a
+  // flapping container recovered/re-died forever — contradicting the rule
+  // doc ("left excluded (flap_cap_reached)").
   const { prober, monitor, events } = setup({
     alert: mkAlert("persistent_container_failure", "alert-1"),
     cfg: { successesRequired: 1, maxRecoveriesPerContainer: 1 },
   });
-  await prober.tick(); // recovery #1
+  await prober.tick(); // recovery #1 — allowed (lifetime count 0 -> 1)
   assertEquals(monitor.current(), undefined);
   // Container dies again with a NEW alert episode.
   monitor.setAlert(mkAlert("persistent_container_failure", "alert-2"));
-  // New alertId resets state, so recovery #1 of the NEW episode is allowed...
   await prober.tick();
-  // ...which clears it again. Cap is per-episode by design (alertId-keyed).
-  assertEquals(monitor.current(), undefined);
-  assertEquals(types(events).filter((t) => t === "recovered").length, 2);
+  // Lifetime cap (1) already consumed — NO second recovery; the container
+  // stays excluded for the rest of the run.
+  assertEquals(
+    monitor.current() !== undefined,
+    true,
+    "container must stay alerted/excluded past the lifetime cap",
+  );
+  assertEquals(types(events).filter((t) => t === "recovered").length, 1);
+  assertEquals(types(events).includes("flap_cap_reached"), true);
+  // Dashboard badge shows exhausted.
+  const last = monitor.recoveryStates[monitor.recoveryStates.length - 1]!;
+  assertEquals(last.exhausted, true);
+  assertEquals(last.attempts, 1);
 });
 
 Deno.test("global_outage is skipped (never probed/cleared)", async () => {
@@ -303,6 +316,109 @@ Deno.test("probe timeout -> streak reset + probe_timeout event", async () => {
   });
   await prober.tick();
   assertEquals(types(events).includes("probe_timeout"), true);
+});
+
+Deno.test("late probe result after timeout is probe_timeout, NOT probe_success (P8)", async () => {
+  // isHealthy IGNORES the abort signal and resolves true AFTER the
+  // per-probe timeout fired. The probe must still be recorded as a
+  // timeout — a wedged-then-late Test-BcContainer is not proof of health.
+  const { prober, monitor, events } = setup({
+    alert: mkAlert("persistent_container_failure", "alert-1"),
+    cfg: { probeTimeoutMs: 20, successesRequired: 1 },
+    isHealthy: () =>
+      new Promise((resolve) => setTimeout(() => resolve(true), 100)),
+  });
+  await prober.tick();
+  assertEquals(types(events).includes("probe_timeout"), true);
+  assertEquals(
+    types(events).includes("probe_success"),
+    false,
+    "late true must not count as success",
+  );
+  assertEquals(
+    monitor.current() !== undefined,
+    true,
+    "alert must not clear off a timed-out probe",
+  );
+});
+
+Deno.test({
+  name: "stop() returns bounded even with a wedged probe (P8)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // isHealthy never settles and ignores the abort signal entirely.
+    const wedged = setup({
+      alert: mkAlert("persistent_container_failure", "alert-1"),
+      cfg: { probeIntervalMs: 10, probeTimeoutMs: 50, successesRequired: 1 },
+      isHealthy: () => new Promise<boolean>(() => {}),
+    });
+    wedged.prober.start();
+    // Let the interval fire and the tick enter the wedged probe.
+    await new Promise((r) => setTimeout(r, 40));
+    const t0 = Date.now();
+    const stopped = await Promise.race([
+      wedged.prober.stop().then(() => true),
+      new Promise<boolean>((r) => setTimeout(() => r(false), 2000)),
+    ]);
+    assertEquals(
+      stopped,
+      true,
+      `stop() must return within ~2x probeTimeout, still hanging after ${
+        Date.now() - t0
+      }ms`,
+    );
+  },
+});
+
+Deno.test({
+  name: "never-settling probe: tick completes bounded; prober not wedged (P8)",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  async fn() {
+    // isHealthy NEVER settles and ignores the abort signal. Pre-fix,
+    // probeOnce awaited it directly → tick never completed → `running`
+    // stayed true → every future tick hit the overlap guard → recovery
+    // silently dead for the rest of the run while canRecover stayed true.
+    const nowRef = { v: 0 };
+    let probeCalls = 0;
+    const { prober, events } = setup({
+      alert: mkAlert("persistent_container_failure", "alert-1"),
+      cfg: { probeTimeoutMs: 30, successesRequired: 1 },
+      isHealthy: () => {
+        probeCalls++;
+        return new Promise<boolean>(() => {});
+      },
+      nowRef,
+    });
+
+    const t0 = Date.now();
+    await Promise.race([
+      prober.tick(),
+      new Promise<never>((_, rej) =>
+        setTimeout(
+          () => rej(new Error("tick wedged by never-settling probe")),
+          2000,
+        )
+      ),
+    ]);
+    assert(
+      Date.now() - t0 < 1000,
+      "tick must complete around the probe timeout bound",
+    );
+    assertEquals(types(events).includes("probe_timeout"), true);
+
+    // A SUBSEQUENT tick must still run — the prober is not wedged.
+    nowRef.v += 100_000; // clear the post-timeout backoff window
+    await Promise.race([
+      prober.tick(),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("second tick wedged")), 2000)
+      ),
+    ]);
+    assertEquals(probeCalls, 2, "second tick must probe again");
+    assertEquals(types(events).filter((t) => t === "probe_timeout").length, 2);
+  },
 });
 
 Deno.test("after stop(), tick() is a no-op (no probe)", async () => {

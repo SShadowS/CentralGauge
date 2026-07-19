@@ -1,9 +1,10 @@
+import * as colors from "@std/fmt/colors";
 import { readCatalog } from "./catalog/read.ts";
 import { computeTaskSetHash } from "./catalog/task-set-hash.ts";
 import { loadIngestConfig, readPrivateKey } from "./config.ts";
 import { ensureModel, ensurePricing, ensureTaskSet } from "./register.ts";
 import { buildPayload } from "./envelope.ts";
-import { signPayload } from "./sign.ts";
+import { signEnvelopeV2, signHeaderRequest } from "./sign.ts";
 import { uploadMissing } from "./blobs.ts";
 import { postWithRetry } from "./client.ts";
 import type { IngestCliFlags } from "./config.ts";
@@ -53,8 +54,43 @@ export interface BenchResults {
   completedAt: string;
   pricingVersion: string;
   centralgaugeSha?: string;
+  /**
+   * The task_set hash the run was BENCHED against, persisted in the results
+   * file's `ingest` key. When present it is used verbatim so the run lands on
+   * the correct leaderboard row regardless of later working-tree edits; when
+   * absent (legacy files) ingest recomputes from the current tree + warns.
+   * See {@link resolveIngestTaskSetHash}.
+   */
+  taskSetHash?: string;
   results: BenchResultItem[];
   reproduction_bundle_bytes?: Uint8Array;
+}
+
+/**
+ * Decide which task_set hash an ingest/replay records the run under.
+ *
+ * Persisted (bench-time) hash wins: replaying a saved run — after tasks/tests
+ * changed, or a merge normalized CRLF — must not silently re-file it under the
+ * current tree's hash. Only legacy files lacking a persisted hash fall back to
+ * recomputing from `cwd`, and that fallback warns loudly that the hash is
+ * derived from the CURRENT tree, not the bench-time tree.
+ */
+export async function resolveIngestTaskSetHash(
+  persisted: string | undefined,
+  cwd: string,
+): Promise<string> {
+  if (persisted) return persisted;
+  const recomputed = await computeTaskSetHash(cwd);
+  console.warn(
+    colors.yellow(
+      `[WARN] results file carries no persisted task_set_hash (legacy) — ` +
+        `deriving it from the CURRENT working tree (${
+          recomputed.slice(0, 12)
+        }…), NOT the bench-time tree. If tasks/** or tests/al/** changed ` +
+        `since the bench, this run may be misattributed on the leaderboard.`,
+    ),
+  );
+  return recomputed;
 }
 
 export async function ingestRun(
@@ -115,7 +151,7 @@ export async function ingestRun(
     blobTable.set(reproductionBundleSha, br.reproduction_bundle_bytes);
   }
 
-  const taskSetHash = await computeTaskSetHash(opts.cwd);
+  const taskSetHash = await resolveIngestTaskSetHash(br.taskSetHash, opts.cwd);
   if (config.adminKeyId != null && config.adminKeyPath) {
     const adminPriv = await readPrivateKey(config.adminKeyPath);
     const deps = {
@@ -154,7 +190,7 @@ export async function ingestRun(
   }
   const payload = buildPayload(payloadInput);
 
-  const precheckBody = await buildSigned(
+  const precheckBody = await buildSignedEnvelope(
     br.runId,
     payload,
     privKey,
@@ -178,7 +214,12 @@ export async function ingestRun(
   let referencedBytes = 0;
   for (const body of blobTable.values()) referencedBytes += body.length;
 
-  const finalBody = await buildSigned(br.runId, payload, privKey, config.keyId);
+  const finalBody = await buildSignedEnvelope(
+    br.runId,
+    payload,
+    privKey,
+    config.keyId,
+  );
   const runResp = await postWithRetry(
     `${config.url}/api/v1/runs`,
     finalBody,
@@ -189,9 +230,28 @@ export async function ingestRun(
     // a separate /finalize endpoint to flip to status='completed' once all
     // referenced blobs are present in R2. Without this call the run shows
     // up as "running" forever in the leaderboard.
-    const finalizeResp = await fetch(
-      `${config.url}/api/v1/runs/${br.runId}/finalize`,
-      { method: "POST" },
+    //
+    // S3: the call is header-signed (method + path + body_sha256 +
+    // signed_at, empty body → "") so the server can verify ownership
+    // against the key that ingested the run, and goes through postWithRetry
+    // (T6b) instead of a bare one-shot fetch.
+    const finalizePath = `/api/v1/runs/${br.runId}/finalize`;
+    const finalizeAuth = await signHeaderRequest(
+      "POST",
+      finalizePath,
+      "",
+      privKey,
+      config.keyId,
+    );
+    const finalizeResp = await postWithRetry(
+      `${config.url}${finalizePath}`,
+      undefined,
+      {},
+      {
+        "X-CG-Signature": finalizeAuth.signature,
+        "X-CG-Key-Id": String(finalizeAuth.key_id),
+        "X-CG-Signed-At": finalizeAuth.signed_at,
+      },
     );
     if (finalizeResp.status !== 200) {
       const body = await finalizeResp.text().catch(() => "");
@@ -222,14 +282,22 @@ export async function ingestRun(
   return fatalFrom(runResp);
 }
 
-async function buildSigned(
+/**
+ * Build the v2 signed run envelope used by BOTH precheck and POST /runs
+ * (S5): signature covers canonicalJSON({ payload, run_id, signed_at }).
+ * Requires a worker deployed with v2 support — old workers reject with
+ * bad_version at precheck (deploy the worker before the next
+ * ingest-bearing bench; see docs/site/lifecycle.md "Deploy ordering").
+ * Exported for tests.
+ */
+export async function buildSignedEnvelope(
   runId: string,
   payload: Record<string, unknown>,
   privKey: Uint8Array,
   keyId: number,
 ): Promise<Record<string, unknown>> {
-  const sig = await signPayload(payload, privKey, keyId);
-  return { version: 1, run_id: runId, signature: sig, payload };
+  const sig = await signEnvelopeV2(payload, runId, privKey, keyId);
+  return { version: 2, run_id: runId, signature: sig, payload };
 }
 
 async function hashHex(bytes: Uint8Array): Promise<string> {

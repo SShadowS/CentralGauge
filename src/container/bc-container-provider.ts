@@ -61,6 +61,7 @@ import {
   buildPrepareCandidateScript,
   buildPrereqCleanupScript,
   buildTestScript,
+  escapeForPS,
 } from "./bc-script-builders.ts";
 import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
@@ -223,6 +224,13 @@ export function decideSoapFailureAction(
 ): SoapFailureAction {
   const isPublish = error instanceof ContainerError &&
     error.operation === "publish";
+  // Infra precedence: a real infra blip during publish (SQL wait timeout,
+  // connection loss) must reroute even when the same output ALSO carries a
+  // collision phrasing — the collision may be a symptom of the blip, and
+  // falling back to legacy on the same container feeds the death spiral.
+  if (isPublish && classifyPublishFailure(publishOut) === "infra") {
+    return "reroute_infra";
+  }
   if (isPublish && isCollisionPublishFailure(publishOut)) {
     return "fallback_legacy";
   }
@@ -662,21 +670,44 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
+   * Map a `runScriptThroughSession` script label to the ContainerError
+   * operation stamped on a session-timeout throw (C4). The label describes
+   * WHAT the script does; the operation is the infra-classification bucket.
+   */
+  private static readonly SCRIPT_LABEL_OPERATION: Record<
+    string,
+    ContainerError["operation"]
+  > = {
+    "publish": "publish",
+    "prepare-candidate": "publish",
+    "cleanup": "publish",
+    "prenuke": "publish",
+    "prereq-cleanup": "publish",
+    "nst-maintain": "health",
+    "test-legacy": "test",
+  };
+
+  /**
    * Execute a script via the per-container session slot.
    * Slot handles: lock, session reuse, init, retry-on-crash, fallback.
    *
-   * `scriptLabel` is used purely for tracing — pass "cleanup" / "publish" /
-   * "test" / "compile" so the Perfetto trace can distinguish call types on
-   * the same container slot lane. Optional; defaults to "unknown".
+   * `scriptLabel` is used for tracing (Perfetto lane naming) AND to derive
+   * the operation stamped on a session-timeout ContainerError — pass
+   * "cleanup" / "publish" / "test-legacy" / etc. Optional; defaults to
+   * "unknown".
    */
   private async runScriptThroughSession(
     containerName: string,
     script: string,
     scriptLabel = "unknown",
   ): Promise<{ output: string; exitCode: number }> {
+    const operation = BcContainerProvider.SCRIPT_LABEL_OPERATION[scriptLabel] ??
+      "test";
     const tracer = getTracer();
     if (!tracer.enabled) {
-      return await this.getOrCreateSlot(containerName).runScript(script);
+      return await this.getOrCreateSlot(containerName).runScript(script, {
+        operation,
+      });
     }
     // When tracing is enabled, prepend env-var assignments so the pwsh
     // `CG-Trace` helper inside the script can emit bench-relative
@@ -730,7 +761,8 @@ ${script}
         cat: ["pwsh", "slot"],
         args: { scriptLabel, scriptBytes: script.length },
       },
-      () => this.getOrCreateSlot(containerName).runScript(script2),
+      () =>
+        this.getOrCreateSlot(containerName).runScript(script2, { operation }),
     );
     // Parse + forward [TRACE] lines into the tracer; return filtered stdout.
     const filtered = mergeIntoTracer(result.output, pwshLaneName);
@@ -1358,6 +1390,12 @@ ${script}
         contextLog,
       );
     } catch (error) {
+      // Infra-classified failures (container/session/queue faults) must
+      // PROPAGATE so the compile-queue catch routes them through the inline
+      // infra-retry instead of scoring a synthesized SYSTEM compile failure
+      // against the model.
+      if (isInfraError(error)) throw error;
+
       const errorMessage = error instanceof Error
         ? error.message
         : String(error);
@@ -1815,6 +1853,23 @@ ${script}
               extensionId,
             ),
         );
+        // GH #13 (SOAP path): candidate published OK but the harness ran ZERO
+        // tests — an infrastructure condition (broken harness, stale-candidate
+        // collision, wedged NST), never a legitimate model failure. Mirror of
+        // the legacy-path guard below; message must keep matching the
+        // `zero_tests` signature in src/health/signatures.ts. The throw lands
+        // in the catch below → decideSoapFailureAction → reroute_infra.
+        if (soapResult.totalTests === 0) {
+          contextLog.warn(
+            "Zero tests detected after successful publish (infra, SOAP path)",
+          );
+          throw this.buildPwshError({
+            containerName,
+            operation: "test",
+            message: "Zero tests detected after successful publish (infra)",
+            output: JSON.stringify(soapResult),
+          });
+        }
         this.logTestResult(
           soapResult.success,
           soapResult.passedTests,
@@ -2187,23 +2242,46 @@ ${script}
     containerName: string,
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
+    // C5: `command` used to be spliced raw into `-scriptblock { ${command} }`
+    // — any character in it (unbalanced braces, quotes, backticks) could
+    // corrupt this OUTER (host-side) script's syntax or splice extra
+    // statements outside the intended scriptblock. Passing it as a
+    // single-quoted, escapeForPS-escaped literal via -argumentList decouples
+    // the command's content from the script's structure: whatever the value
+    // is, it can only ever arrive as one string argument, then Invoke-
+    // Expression runs it AS INTENDED inside the container (this method's
+    // whole purpose is executing a caller-supplied command there).
     const script = `
       ${bcchImport()}
-      $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock { ${command} }
+      ${bcchConfigInit()}
+      $cgExecCommand = '${escapeForPS(command)}'
+      $result = Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+        param($cgCmd)
+        Invoke-Expression $cgCmd
+      } -argumentList $cgExecCommand
       Write-Output $result
     `;
 
     return await this.executePowerShell(script);
   }
 
-  async isHealthy(containerName: string): Promise<boolean> {
+  async isHealthy(
+    containerName: string,
+    opts?: { signal?: AbortSignal },
+  ): Promise<boolean> {
     try {
+      // Best-effort cancellation (P8): check the signal between phases. A
+      // running Test-BcContainer cannot be cancelled mid-flight, but an
+      // aborted probe must never be reported healthy.
+      if (opts?.signal?.aborted) return false;
       const script = `
         ${bcchImport()}
+        ${bcchConfigInit()}
         $result = Test-BcContainer -containerName "${containerName}"
         Write-Output "HEALTHY:$result"
       `;
       const result = await this.executePowerShell(script);
+      if (opts?.signal?.aborted) return false;
       return result.output.includes("HEALTHY:True");
     } catch {
       return false;

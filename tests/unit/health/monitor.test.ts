@@ -652,3 +652,107 @@ Deno.test("on('alert_cleared'): listener exception is isolated", () => {
   assertEquals(good.length, 1, "second listener must still be called");
   assertEquals(mon.getState().alerts.length, 0, "state must still update");
 });
+
+// ---------------------------------------------------------------------------
+// P4b: global outage must attach the alert to EVERY affected container so
+// the dispatch gate excludes them all — retracting per-container alerts and
+// tagging only the trigger re-opened dispatch to N-1 known-sick containers.
+// ---------------------------------------------------------------------------
+
+Deno.test("global outage attaches the alert to ALL affected containers", () => {
+  const mon = new ContainerHealthMonitor({
+    windowSize: 10,
+    expectedContainers: 4,
+    expectedContainerNames: ["c1", "c2", "c3", "c4"],
+  });
+  // Same catastrophic fingerprint on 3 of 4 containers (absolute minimum
+  // for global is 3; ratio 3/4 >= 0.5). The first two raise per-container
+  // SUSPECT alerts; the third trips global_outage.
+  mon.record({
+    containerName: "c1",
+    result: "infra_error",
+    fingerprint: "test:sql",
+    signatureId: "sql_service_down",
+    timestamp: 1000,
+  });
+  mon.record({
+    containerName: "c2",
+    result: "infra_error",
+    fingerprint: "test:sql",
+    signatureId: "sql_service_down",
+    timestamp: 1001,
+  });
+  const rec3 = mon.record({
+    containerName: "c3",
+    result: "infra_error",
+    fingerprint: "test:sql",
+    signatureId: "sql_service_down",
+    timestamp: 1002,
+  });
+  assertEquals(rec3.alertRaised, true);
+  assertEquals(rec3.alert?.kind, "global_outage");
+  assertEquals(
+    new Set(rec3.alert?.affectedContainers),
+    new Set(["c1", "c2", "c3"]),
+    "alert must carry the affected-container list",
+  );
+
+  const state = mon.getState();
+  for (const name of ["c1", "c2", "c3"]) {
+    const ch = state.containers.find((c) => c.containerName === name);
+    assertExists(ch, `container ${name} missing from state`);
+    assertEquals(
+      ch!.alert?.kind,
+      "global_outage",
+      `${name} must carry the global alert (dispatch gate reads ch.alert)`,
+    );
+    assertEquals(ch!.alert?.alertId, rec3.alert?.alertId);
+  }
+  // The unaffected 4th container stays eligible.
+  const c4 = state.containers.find((c) => c.containerName === "c4");
+  assertExists(c4);
+  assertEquals(c4!.alert, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// P6: overwriting an active alert (fp2 replaces fp1 on the same container)
+// must purge fp1's dedupe keys — otherwise a later fp1 recurrence can never
+// re-raise for the rest of the run.
+// ---------------------------------------------------------------------------
+
+Deno.test("overwritten alert's dedupe keys are purged (fp1 can re-raise)", () => {
+  const mon = new ContainerHealthMonitor({ windowSize: 10 });
+  // fp1 catastrophic -> SUSPECT alert.
+  const r1 = mon.record({
+    containerName: "c1",
+    result: "infra_error",
+    fingerprint: "test:fp1",
+    signatureId: "sql_service_down",
+    timestamp: 1000,
+  });
+  assertEquals(r1.alert?.kind, "suspect_container");
+  // fp2 catastrophic on the SAME container -> overwrites ch.alert.
+  const r2 = mon.record({
+    containerName: "c1",
+    result: "infra_error",
+    fingerprint: "test:fp2",
+    signatureId: "container_offline",
+    timestamp: 1001,
+  });
+  assertEquals(r2.alert?.kind, "suspect_container");
+  assertEquals(r2.alert?.fingerprint, "test:fp2");
+  // Clear the ACTIVE (fp2) alert — purges fp2 keys only by itself.
+  const cleared = mon.clearAlert("c1", r2.alert!.alertId, "test-recovery");
+  assertExists(cleared);
+  // fp1 recurrence MUST raise a fresh alert. Pre-fix the orphaned
+  // `suspect:c1:test:fp1` dedupe key silently swallowed it forever.
+  const r3 = mon.record({
+    containerName: "c1",
+    result: "infra_error",
+    fingerprint: "test:fp1",
+    signatureId: "sql_service_down",
+    timestamp: 1002,
+  });
+  assertEquals(r3.alertRaised, true, "fp1 recurrence must re-raise");
+  assertEquals(r3.alert?.fingerprint, "test:fp1");
+});

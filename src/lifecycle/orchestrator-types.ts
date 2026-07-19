@@ -61,6 +61,22 @@ export interface StepContext {
   /** Optional explicit session id; debug-capture + analyze use this. */
   sessionId?: string;
   /**
+   * Confidence review threshold (finding V1). Entries whose finalConfidence
+   * falls below this route to `pending_review` instead of auto-publishing.
+   * Plumbed from `.centralgauge.yml lifecycle.confidence_threshold` by the
+   * orchestrator; both the analyze step (pending list) and the publish step
+   * (skip gate) read it. Absent → default 0.7.
+   */
+  confidenceThreshold?: number;
+  /**
+   * Cross-LLM sampling rate (finding V1), from
+   * `.centralgauge.yml lifecycle.cross_llm_sample_rate`. Passed to the
+   * persisted-entry confidence scorer. Absent → default 0.2. Inert in the
+   * analyze/publish steps until a cross-LLM runner is wired (no runner →
+   * neutral cross-LLM vote), but plumbed for forward-compat + parity.
+   */
+  crossLlmSampleRate?: number;
+  /**
    * Hash of the most-recent `analysis.completed.payload` (or, when analyze
    * was skipped this run, the prior completed event's payload_hash).
    * Set by the orchestrator when dispatching the publish step so the

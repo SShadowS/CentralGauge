@@ -14,6 +14,7 @@ export type {
   StageInjections,
 } from "./types.ts";
 
+export type { InjectionValidationResult } from "./injection-resolver.ts";
 export { PromptInjectionResolver } from "./injection-resolver.ts";
 
 export type { KnowledgeLoadOptions } from "./knowledge-loader.ts";

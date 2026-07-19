@@ -46,6 +46,13 @@ export interface OpenRouterMeta {
   displayName: string;
   vendor: string;
   releasedAt: string | null;
+  /**
+   * True when the SOURCE explicitly marks the model free — for OpenRouter,
+   * the `:free` slug suffix (their own convention). Zero pricing without
+   * this marker is rejected at merge time (D4): an unmarked $0 is almost
+   * always a data gap, not a free model.
+   */
+  marksFree?: boolean | undefined;
   /** Context window in tokens, when reported. */
   maxInputTokens?: number | undefined;
   /** Max completion tokens, when reported. */

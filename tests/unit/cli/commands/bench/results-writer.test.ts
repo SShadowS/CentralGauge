@@ -341,6 +341,59 @@ Deno.test("buildScoreLines", async (t) => {
   );
 
   await t.step(
+    "CLI3: infra_invalidated survives even when no container-health snapshot is present",
+    () => {
+      // Simulates a --no-dashboard run before the monitor-state fallback
+      // was wired up (containerHealth undefined). infra_invalidated must
+      // still be visible even though the # Container Health block itself
+      // has nothing to render.
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats({
+          infraInvalidated: 5,
+          validAttempts: 45,
+        }),
+        taskCount: 10,
+        modelNames: ["sonnet"],
+        attempts: 2,
+        resultCount: 50,
+        timestamp: new Date("2026-07-17T12:00:00Z"),
+        // containerHealth intentionally omitted
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+
+      assert(!content.includes("# Container Health"));
+      assertStringIncludes(content, "infra_invalidated: 5/50");
+      assertStringIncludes(content, "valid_attempts=45");
+    },
+  );
+
+  await t.step(
+    "CLI3: infra_invalidated survives when containerHealth has zero tracked containers",
+    () => {
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats({
+          infraInvalidated: 2,
+          validAttempts: 8,
+        }),
+        taskCount: 5,
+        modelNames: ["sonnet"],
+        attempts: 2,
+        resultCount: 10,
+        timestamp: new Date("2026-07-17T12:00:00Z"),
+        containerHealth: { eventId: 0, containers: [], alerts: [] },
+      };
+
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
+
+      assert(!content.includes("# Container Health"));
+      assertStringIncludes(content, "infra_invalidated: 2/10");
+    },
+  );
+
+  await t.step(
     "emits # Infra Retries block including zero-retry exhaustions",
     () => {
       // Build a result containing four attempts covering all reporting cases:

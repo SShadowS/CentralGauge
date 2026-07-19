@@ -2,9 +2,11 @@ import type { RequestHandler } from "./$types";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { broadcastEvent } from "$lib/server/broadcaster";
 import { blobHashFromKey } from "$lib/server/ingest";
+import { verifyBlobAuth } from "$lib/server/blob-auth";
+import { sha256Hex } from "$lib/shared/hash";
 import type { FinalizeResponse } from "$lib/shared/types";
 
-export const POST: RequestHandler = async ({ params, platform }) => {
+export const POST: RequestHandler = async ({ params, request, platform }) => {
   if (!platform) {
     return errorResponse(
       new ApiError(500, "no_platform", "platform env missing"),
@@ -15,6 +17,43 @@ export const POST: RequestHandler = async ({ params, platform }) => {
   const runId = params.id!;
 
   try {
+    // S3 — finalize auth with ownership, staged. When X-CG-* signature
+    // headers are present, verify them blob-auth-style (method + path +
+    // body_sha256 + signed_at, Ed25519). Unsigned requests stay tolerated
+    // (and logged) while FLAG_REQUIRE_SIGNED_FINALIZE !== "on" so old CLIs
+    // keep working until the operator flips the flag.
+    const hasSigHeaders = request.headers.get("X-CG-Signature") !== null ||
+      request.headers.get("X-CG-Key-Id") !== null ||
+      request.headers.get("X-CG-Signed-At") !== null;
+    let verifiedKeyId: number | null = null;
+    if (hasSigHeaders) {
+      const bodyBytes = new Uint8Array(await request.arrayBuffer());
+      const bodySha256 = bodyBytes.length > 0
+        ? await sha256Hex(bodyBytes)
+        : "";
+      const verified = await verifyBlobAuth(
+        db,
+        request.headers,
+        "POST",
+        `/api/v1/runs/${runId}/finalize`,
+        bodySha256,
+        "ingest",
+      );
+      verifiedKeyId = verified.key_id;
+    } else if (
+      (platform.env as { FLAG_REQUIRE_SIGNED_FINALIZE?: string })
+        .FLAG_REQUIRE_SIGNED_FINALIZE === "on"
+    ) {
+      throw new ApiError(
+        401,
+        "signature_required",
+        "finalize requires X-CG-Signature headers (FLAG_REQUIRE_SIGNED_FINALIZE=on) — upgrade the CentralGauge CLI",
+      );
+    } else {
+      console.warn(
+        `[finalize] unsigned finalize for run ${runId} accepted (FLAG_REQUIRE_SIGNED_FINALIZE off) — upgrade CLI before enforcement`,
+      );
+    }
     // Pull model_slug + family_slug + tier alongside the row so a successful
     // transition can emit a `run_finalized` SSE event without an extra
     // round-trip. family_slug is LEFT JOINed because not every model is
@@ -22,7 +61,8 @@ export const POST: RequestHandler = async ({ params, platform }) => {
     // conditional spread below (canonicalJSON rejects explicit undefined).
     const run = await db.prepare(
       `SELECT runs.id, runs.status, runs.reproduction_bundle_r2_key, runs.machine_id,
-              runs.tier, models.slug AS model_slug, model_families.slug AS family_slug
+              runs.tier, runs.ingest_public_key_id,
+              models.slug AS model_slug, model_families.slug AS family_slug
          FROM runs
          JOIN models ON models.id = runs.model_id
          LEFT JOIN model_families ON model_families.id = models.family_id
@@ -33,11 +73,28 @@ export const POST: RequestHandler = async ({ params, platform }) => {
       reproduction_bundle_r2_key: string | null;
       machine_id: string;
       tier: string;
+      ingest_public_key_id: number | null;
       model_slug: string;
       family_slug: string | null;
     }>();
 
     if (!run) throw new ApiError(404, "not_found", `run ${runId} not found`);
+
+    // Ownership: a signed finalize must come from the same key that ingested
+    // the run (POST /runs stores verified.key_id in ingest_public_key_id).
+    // Legacy rows with a NULL key id can't be ownership-checked; signature
+    // validity alone gates those.
+    if (
+      verifiedKeyId !== null &&
+      run.ingest_public_key_id !== null &&
+      verifiedKeyId !== run.ingest_public_key_id
+    ) {
+      throw new ApiError(
+        403,
+        "not_run_owner",
+        `key ${verifiedKeyId} does not own run ${runId} (ingested by key ${run.ingest_public_key_id})`,
+      );
+    }
 
     if (run.status === "completed") {
       // Idempotent no-op: the run was already finalized by a prior request.

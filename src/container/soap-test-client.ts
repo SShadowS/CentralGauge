@@ -24,8 +24,13 @@ const SOAP_NS = "urn:microsoft-dynamics-schemas/codeunit/CGTestRunner";
  * Default cap on the harness SOAP call. The harness test execution is
  * sub-second to a few seconds in practice (observed p99 ~1s, max ~3s), so this
  * is ~40x headroom — its only job is to bound an unresponsive web service so
- * the call cannot hang indefinitely (the caller falls back to the legacy path
- * on timeout). Override with `CENTRALGAUGE_SOAP_TIMEOUT_MS`.
+ * the call cannot hang indefinitely. On timeout `runTestsViaSoap` throws a
+ * `ContainerError`; `runTests()` classifies it as infra (`reroute_infra`) and
+ * reroutes the task to a HEALTHY container — it does NOT fall back to the
+ * legacy client-session path on the same container (see `decideSoapFailureAction`
+ * / `soap-test-harness.md`: falling back there would run a second concurrent
+ * publish+test against an already-degraded container). Override with
+ * `CENTRALGAUGE_SOAP_TIMEOUT_MS`.
  */
 export const DEFAULT_SOAP_TIMEOUT_MS = 120_000;
 
@@ -133,13 +138,16 @@ export function parseRunTestsResponse(soapXml: string): TestResult {
       // result codes: 1=Failure, 2=Success, 3=Skipped. Skipped maps to
       // passed:false here for the per-method detail; the totals above count
       // it under `skipped`, not `failedTests`.
+      // `Math.max(0, NaN)` is `NaN` (Math.max propagates any NaN operand), so
+      // an unparseable start/finish timestamp must be guarded explicitly —
+      // otherwise it poisons this per-method duration (the authoritative
+      // summary counts/duration come from the harness totals above, unaffected).
+      const rawDuration = new Date(m.finishTime).getTime() -
+        new Date(m.startTime).getTime();
       const result: TestCaseResult = {
         name: m.method,
         passed: m.result === RESULT_SUCCESS,
-        duration: Math.max(
-          0,
-          new Date(m.finishTime).getTime() - new Date(m.startTime).getTime(),
-        ),
+        duration: Number.isFinite(rawDuration) ? Math.max(0, rawDuration) : 0,
       };
       if (m.result === RESULT_FAILURE) {
         result.error = [m.message, m.stackTrace].filter(Boolean).join("\n");
@@ -202,9 +210,11 @@ export async function runTestsViaSoap(
         "Authorization": `Basic ${auth}`,
       },
       body: buildRunTestsEnvelope(extensionId, testCodeunitId),
-      // Bound the call so an unresponsive web service can't hang indefinitely;
-      // on timeout the fetch rejects, we wrap it, and runTests() falls back to
-      // the legacy client-session path.
+      // Bound the call so an unresponsive web service can't hang indefinitely.
+      // On timeout the fetch rejects; we wrap it below as a ContainerError,
+      // which runTests()/decideSoapFailureAction classifies as infra and
+      // reroutes to a HEALTHY container (reroute_infra) — NOT a fallback to
+      // the legacy path on this same (possibly degraded) container.
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {

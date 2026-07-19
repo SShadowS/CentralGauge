@@ -102,6 +102,13 @@ function pricingRowToYaml(row: PricingRow): string {
   return stringify([row], { lineWidth: -1 });
 }
 
+/**
+ * Last match wins: a prior bug let appendPricingIfChanged accumulate
+ * duplicate (slug, pricing_version) rows (D2). Reading the LAST occurrence
+ * makes the "did it already change?" comparison reflect the most recently
+ * written row instead of a stale earlier one, for files that still carry
+ * leftover duplicates from before the write-side fix below.
+ */
 function findPricingAtVersion(
   content: string,
   slug: string,
@@ -110,9 +117,12 @@ function findPricingAtVersion(
   if (content.trim().length === 0) return null;
   const parsed = parseYaml(content) as PricingRow[] | null;
   if (!parsed || !Array.isArray(parsed)) return null;
-  const match = parsed.find(
-    (r) => r.model_slug === slug && r.pricing_version === pricingVersion,
-  );
+  let match: PricingRow | undefined;
+  for (const r of parsed) {
+    if (r.model_slug === slug && r.pricing_version === pricingVersion) {
+      match = r;
+    }
+  }
   if (!match) return null;
   return {
     input: match.input_per_mtoken,
@@ -120,27 +130,70 @@ function findPricingAtVersion(
   };
 }
 
+/** Leading `#`/blank lines, preserved when a replace-path rewrite regenerates the file body. */
+function extractLeadingComments(content: string): string {
+  const lines = content.split("\n");
+  let i = 0;
+  while (
+    i < lines.length &&
+    (lines[i]!.trim() === "" || lines[i]!.trim().startsWith("#"))
+  ) {
+    i++;
+  }
+  if (i === 0) return "";
+  const header = lines.slice(0, i).join("\n");
+  return header.endsWith("\n") ? header : header + "\n";
+}
+
 export async function appendPricingIfChanged(
   path: string,
   row: PricingRow,
 ): Promise<AppendResult> {
   const existing = await readTextSafe(path);
-  const sameVersion = findPricingAtVersion(
+  const latest = findPricingAtVersion(
     existing,
     row.model_slug,
     row.pricing_version,
   );
-  if (
-    sameVersion !== null &&
-    sameVersion.input === row.input_per_mtoken &&
-    sameVersion.output === row.output_per_mtoken
-  ) {
+
+  const needsWrite = latest === null ||
+    latest.input !== row.input_per_mtoken ||
+    latest.output !== row.output_per_mtoken;
+  if (!needsWrite) {
     return { added: false };
   }
-  const trailingNewline = existing.endsWith("\n") || existing.length === 0
-    ? ""
-    : "\n";
-  const next = existing + trailingNewline + pricingRowToYaml(row);
-  await writeAtomic(path, next);
+
+  const parsed = existing.trim().length === 0
+    ? []
+    : ((parseYaml(existing) as PricingRow[] | null) ?? []);
+  const matches = parsed.filter(
+    (r) =>
+      r.model_slug === row.model_slug &&
+      r.pricing_version === row.pricing_version,
+  );
+
+  if (matches.length === 0) {
+    // Fast path: no existing row for this (slug, version) — a pure append
+    // preserves header comments + formatting of the rest of the file.
+    const trailingNewline = existing.endsWith("\n") || existing.length === 0
+      ? ""
+      : "\n";
+    const next = existing + trailingNewline + pricingRowToYaml(row);
+    await writeAtomic(path, next);
+    return { added: true };
+  }
+
+  // Replace path: a same-(slug, version) row already exists and differs.
+  // Drop every existing row for the pair (folding away any pre-existing
+  // duplicates from before this fix) and append the fresh one — REPLACE,
+  // not accumulate.
+  const withoutSameVersion = parsed.filter(
+    (r) =>
+      !(r.model_slug === row.model_slug &&
+        r.pricing_version === row.pricing_version),
+  );
+  const header = extractLeadingComments(existing);
+  const body = stringify([...withoutSameVersion, row], { lineWidth: -1 });
+  await writeAtomic(path, header + body);
   return { added: true };
 }

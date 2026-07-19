@@ -343,6 +343,36 @@ describe("LLMAdapterRegistry Pool Management", () => {
       const stats = LLMAdapterRegistry.getPoolStats();
       assertEquals(stats.total, 1);
     });
+
+    it("should reconfigure pooled adapter on pool-hit acquire", () => {
+      const configs: LLMConfig[] = [];
+      LLMAdapterRegistry.register("pooltest", () => {
+        const adapter = new MockLLMAdapter();
+        const origConfigure = adapter.configure.bind(adapter);
+        adapter.configure = (c: LLMConfig) => {
+          configs.push({ ...c });
+          origConfigure(c);
+        };
+        return adapter;
+      });
+
+      const adapter1 = LLMAdapterRegistry.acquire("pooltest", {
+        provider: "pooltest",
+        model: "mock-gpt-4",
+        thinkingBudget: 1000,
+      });
+      LLMAdapterRegistry.release(adapter1);
+
+      const adapter2 = LLMAdapterRegistry.acquire("pooltest", {
+        provider: "pooltest",
+        model: "mock-gpt-4",
+        thinkingBudget: 9000,
+      });
+
+      // Pool hit: same instance, but reconfigured with the new config
+      assertEquals(adapter1, adapter2);
+      assertEquals(configs.at(-1)?.thinkingBudget, 9000);
+    });
   });
 
   describe("release()", () => {

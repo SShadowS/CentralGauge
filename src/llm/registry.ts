@@ -92,6 +92,12 @@ export class LLMAdapterRegistry {
     if (pooledEntry) {
       pooledEntry.inUse = true;
       pooledEntry.lastUsed = Date.now();
+      // Reconfigure on every pool hit: the pool key is provider+model, so
+      // variant-level config (thinkingBudget, timeout, temperature) can
+      // differ between acquires of the same slot.
+      if (config) {
+        pooledEntry.adapter.configure(config);
+      }
       return pooledEntry.adapter;
     }
 
@@ -353,7 +359,7 @@ export class LLMAdapterRegistry {
    * @param provider - The provider name
    * @returns The API key or undefined if not found
    */
-  private static getApiKeyForProvider(provider: string): string | undefined {
+  static getApiKeyForProvider(provider: string): string | undefined {
     switch (provider) {
       case "openai":
         return Deno.env.get("OPENAI_API_KEY");

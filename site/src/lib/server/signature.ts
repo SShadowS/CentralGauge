@@ -25,6 +25,59 @@ export interface SignedAdminRequest extends SignedRequest {
   version: number;
 }
 
+/**
+ * Ingest run envelope (POST /runs + /runs/precheck). v1 signs only
+ * canonical(payload) — run_id and signed_at sit UNSIGNED in the envelope, so
+ * a captured body is replayable with a fresh run_id/signed_at (finding S5).
+ * v2 signs canonicalJSON({ payload, run_id, signed_at }), binding both.
+ */
+export interface SignedRunEnvelope extends SignedRequest {
+  version: number;
+  run_id: string;
+}
+
+/**
+ * Build the exact byte-string the client signed for a run envelope, per its
+ * declared version. v1 = canonical(payload) (legacy); v2 additionally binds
+ * run_id + signed_at into the signed message.
+ */
+export function envelopeSignedMessage(signed: SignedRunEnvelope): string {
+  if (signed.version === 2) {
+    return canonicalJSON({
+      payload: signed.payload,
+      run_id: signed.run_id,
+      signed_at: signed.signature.signed_at,
+    });
+  }
+  return canonicalJSON(signed.payload);
+}
+
+/**
+ * Version gate shared by /runs and /runs/precheck. v2 is always accepted;
+ * v1 is accepted only while FLAG_REQUIRE_ENVELOPE_V2 !== "on" (staged
+ * rollout — the operator flips the flag once v1 traffic disappears from
+ * the logs). Anything else is rejected outright.
+ */
+export function assertSupportedEnvelopeVersion(
+  version: unknown,
+  requireV2: boolean,
+): void {
+  if (version !== 1 && version !== 2) {
+    throw new ApiError(
+      400,
+      "bad_version",
+      "only envelope versions 1 and 2 supported",
+    );
+  }
+  if (version === 1 && requireV2) {
+    throw new ApiError(
+      400,
+      "bad_version",
+      "envelope v1 no longer accepted (FLAG_REQUIRE_ENVELOPE_V2=on) — upgrade the CentralGauge CLI",
+    );
+  }
+}
+
 export interface VerifiedKey {
   key_id: number;
   machine_id: string;
@@ -36,13 +89,16 @@ export interface VerifiedKey {
  *  1. key_id exists and isn't revoked
  *  2. scope is sufficient for the operation
  *  3. signed_at is within +/- SKEW_LIMIT_MS of now
- *  4. Ed25519 signature matches canonical(payload)
+ *  4. Ed25519 signature matches the signed message — canonical(payload) by
+ *     default, or the caller-supplied `message` (v2 run envelopes bind
+ *     run_id + signed_at via envelopeSignedMessage)
  *  5. Update last_used_at on success
  */
 export async function verifySignedRequest(
   db: D1Database,
   req: SignedRequest,
   requiredScope: Scope,
+  message?: string,
 ): Promise<VerifiedKey> {
   if (req.signature.alg !== "Ed25519") {
     throw new ApiError(
@@ -96,7 +152,7 @@ export async function verifySignedRequest(
     );
   }
 
-  const canonical = canonicalJSON(req.payload);
+  const canonical = message ?? canonicalJSON(req.payload);
   const sigBytes = b64ToBytes(req.signature.value);
   const pubKey = new Uint8Array(keyRow.public_key);
   const messageBytes = new TextEncoder().encode(canonical);

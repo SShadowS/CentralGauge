@@ -72,12 +72,12 @@ export class CompileSessionPool {
       const i = this.nextRoundRobin % this.slots.length;
       this.nextRoundRobin = (this.nextRoundRobin + 1) % this.slots.length;
       const slot = this.slots[i]!;
-      return await slot.runScript(script);
+      return await slot.runScript(script, { operation: "compile" });
     }
 
     this.busy[idx] = true;
     try {
-      return await this.slots[idx]!.runScript(script);
+      return await this.slots[idx]!.runScript(script, { operation: "compile" });
     } finally {
       // Slot may have been disposed mid-call (rare); guard against array
       // mutation. Best-effort.

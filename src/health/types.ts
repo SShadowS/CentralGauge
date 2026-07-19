@@ -116,6 +116,13 @@ export interface HealthAlert {
   count: number;
   /** Timestamp when alert was raised */
   raisedAt: number;
+  /**
+   * `global_outage` only: every container exhibiting the fingerprint at
+   * raise time. The monitor attaches the alert to EACH member's
+   * `ContainerHealth` (dispatch gate excludes them all), and the
+   * orchestrator's alert listener drains each member (P4b).
+   */
+  affectedContainers?: string[];
 }
 
 /**

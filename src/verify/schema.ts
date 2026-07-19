@@ -12,6 +12,26 @@ import { z } from "zod";
 
 export const ConfidenceLevelSchema = z.enum(["high", "medium", "low"]);
 
+/**
+ * Bridge (finding V2) from the analyzer's coarse string confidence enum to a
+ * numeric 0..1 score. This is the ONE place the enum→number mapping lives —
+ * the shortcomings tracker stamps `ModelShortcomingEntry.confidence` with it
+ * at write time, and the lifecycle analyze step reads that numeric value as
+ * the `mappedAnalyzerConfidence` half of `finalConfidence`.
+ *
+ * `high` maps to 0.9 (not 1.0) so a cluster-consistent, cross-LLM-agreeing
+ * entry can still edge above it; `low` maps to 0.3 so it lands below the
+ * default 0.7 review threshold even before the persisted-entry scorer runs.
+ */
+export const CONFIDENCE_LEVEL_TO_SCORE: Record<
+  z.infer<typeof ConfidenceLevelSchema>,
+  number
+> = {
+  high: 0.9,
+  medium: 0.6,
+  low: 0.3,
+};
+
 export const FixableAnalysisSchema = z.object({
   outcome: z.literal("fixable"),
   category: z.enum([

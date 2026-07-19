@@ -42,7 +42,24 @@ export type { SandboxExecutionContext } from "./sandbox-executor.ts";
 
 // MCP Server Manager
 export { McpServerManager, resolveAlLspPlugin } from "./mcp-manager.ts";
-export type { McpServerConfig } from "./mcp-manager.ts";
+export type {
+  McpServerConfig,
+  McpServerHandle,
+  McpStartOptions,
+} from "./mcp-manager.ts";
+
+// Trusted Verdict Channel
+export {
+  appendVerdict,
+  evaluateVerdicts,
+  readVerdicts,
+  VERDICT_FILE,
+} from "./verdict.ts";
+export type {
+  VerdictEvaluation,
+  VerdictExpectation,
+  VerifyVerdict,
+} from "./verdict.ts";
 
 // SDK Types
 export type { SdkPluginConfig } from "./sdk-types.ts";

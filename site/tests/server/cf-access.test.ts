@@ -13,8 +13,11 @@
  *   - unknown kid → 401
  *   - wrong audience → 401 (the F5.3 acceptance gate)
  *   - expired exp → 401
+ *   - missing exp claim entirely → 401 (S2: exp is required, not optional)
  *   - missing email/sub claims → 401
  *   - happy path → returns { email, sub }
+ *   - S2 email allowlist (CF_ACCESS_ALLOWED_EMAILS): unset → no
+ *     enforcement; set + member → passes; set + non-member → 403
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -266,7 +269,12 @@ describe("verifyCfAccessJwt", () => {
     const jwt = await signJwt(
       kpNew.privateKey,
       { alg: "RS256", kid: KID, typ: "JWT" },
-      { aud: AUD, email: "op@example.com", sub: "u-1" },
+      {
+        aud: AUD,
+        email: "op@example.com",
+        sub: "u-1",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
     );
     // Stub fetch so the refresh path returns the NEW key.
     const stub = vi
@@ -367,13 +375,37 @@ describe("verifyCfAccessJwt", () => {
     );
   });
 
+  it("S2 — rejects a JWT with no exp claim at all (does not skip expiry checking)", async () => {
+    // Pre-S2: `claims.exp && ...` treated a missing exp the same as "not
+    // yet expired", so a token with no exp claim sailed through with no
+    // expiry enforcement whatsoever.
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await signJwt(
+      kp.privateKey,
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      { aud: AUD, email: "x@x", sub: "u" }, // no exp claim
+    );
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    await expectApiError(
+      () => verifyCfAccessJwt(req, envOk()),
+      "cf_access_missing_exp",
+    );
+  });
+
   it("rejects when email or sub claim missing", async () => {
     const kp = await generateRsaKeypair();
     __setJwksCacheForTests([kp.publicJwk]);
     const jwt = await signJwt(
       kp.privateKey,
       { alg: "RS256", kid: KID, typ: "JWT" },
-      { aud: AUD, sub: "u" }, // missing email
+      {
+        aud: AUD,
+        sub: "u", // missing email
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
     );
     const req = new Request("https://x/admin/lifecycle/review", {
       headers: { "cf-access-jwt-assertion": jwt },
@@ -430,13 +462,117 @@ describe("verifyCfAccessJwt", () => {
     const jwt = await signJwt(
       kp.privateKey,
       { alg: "RS256", kid: KID, typ: "JWT" },
-      { aud: ["other", AUD], email: "op@x", sub: "s" },
+      {
+        aud: ["other", AUD],
+        email: "op@x",
+        sub: "s",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
     );
     const req = new Request("https://x/admin/lifecycle/review", {
       headers: { "cf-access-jwt-assertion": jwt },
     });
     const user = await verifyCfAccessJwt(req, envOk());
     expect(user.email).toBe("op@x");
+  });
+});
+
+/**
+ * S2 — configurable email allowlist. `CF_ACCESS_ALLOWED_EMAILS` is a
+ * defense-in-depth secondary check layered on top of CF Access edge
+ * verification (which stays the primary authorization control). Unset =
+ * current behavior — every "happy path" test above already covers that
+ * case since `envOk()` never sets the var.
+ */
+describe("verifyCfAccessJwt — S2 email allowlist", () => {
+  afterEach(() => __resetJwksCacheForTests());
+
+  async function validJwt(
+    privateKey: CryptoKey,
+    email: string,
+  ): Promise<string> {
+    return signJwt(
+      privateKey,
+      { alg: "RS256", kid: KID, typ: "JWT" },
+      {
+        aud: AUD,
+        email,
+        sub: "u-allowlist",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
+    );
+  }
+
+  it("allowlist set + non-member email → 403 cf_access_email_not_allowed", async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await validJwt(kp.privateKey, "outsider@example.com");
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    await expectApiError(
+      () =>
+        verifyCfAccessJwt(req, {
+          ...envOk(),
+          CF_ACCESS_ALLOWED_EMAILS: "op@example.com,other@example.com",
+        }),
+      "cf_access_email_not_allowed",
+    );
+  });
+
+  it("allowlist set + member email → succeeds", async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await validJwt(kp.privateKey, "op@example.com");
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    const user = await verifyCfAccessJwt(req, {
+      ...envOk(),
+      CF_ACCESS_ALLOWED_EMAILS: "op@example.com,other@example.com",
+    });
+    expect(user.email).toBe("op@example.com");
+  });
+
+  it("allowlist match is case-insensitive and tolerates whitespace around entries", async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await validJwt(kp.privateKey, "Op@Example.com");
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    const user = await verifyCfAccessJwt(req, {
+      ...envOk(),
+      CF_ACCESS_ALLOWED_EMAILS: " op@example.com , other@example.com ",
+    });
+    expect(user.email).toBe("Op@Example.com");
+  });
+
+  it("allowlist unset → current behavior (no allowlist enforcement)", async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await validJwt(kp.privateKey, "anyone@example.com");
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    // envOk() carries no CF_ACCESS_ALLOWED_EMAILS — any valid aud+exp JWT
+    // passes, matching pre-S2 behavior.
+    const user = await verifyCfAccessJwt(req, envOk());
+    expect(user.email).toBe("anyone@example.com");
+  });
+
+  it("allowlist set to an empty/whitespace-only string behaves as unset", async () => {
+    const kp = await generateRsaKeypair();
+    __setJwksCacheForTests([kp.publicJwk]);
+    const jwt = await validJwt(kp.privateKey, "anyone@example.com");
+    const req = new Request("https://x/admin/lifecycle/review", {
+      headers: { "cf-access-jwt-assertion": jwt },
+    });
+    const user = await verifyCfAccessJwt(req, {
+      ...envOk(),
+      CF_ACCESS_ALLOWED_EMAILS: " , ",
+    });
+    expect(user.email).toBe("anyone@example.com");
   });
 });
 
@@ -462,7 +598,12 @@ describe("authenticateAdminRequest", () => {
     const jwt = await signJwt(
       kp.privateKey,
       { alg: "RS256", kid: KID, typ: "JWT" },
-      { aud: AUD, email: "op@example.com", sub: "u-1" },
+      {
+        aud: AUD,
+        email: "op@example.com",
+        sub: "u-1",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
     );
     const req = new Request("https://x/admin/lifecycle/review", {
       headers: { "cf-access-jwt-assertion": jwt },

@@ -57,7 +57,9 @@ describe("GET /api/v1/events/live", () => {
     const stub = env.LEADERBOARD_BROADCASTER.get(id);
 
     // Finite call proves the DO binding resolves correctly
-    const recentRes = await stub.fetch("https://do/recent");
+    const recentRes = await stub.fetch("https://do/recent", {
+      headers: { "x-test-only": "1" },
+    });
     expect(recentRes.status).toBe(200);
     const body = (await recentRes.json()) as { events: unknown[] };
     expect(Array.isArray(body.events)).toBe(true);
@@ -81,7 +83,9 @@ describe("GET /api/v1/events/live", () => {
     // A new subscriber receives the last ≤20 buffered events on connect.
     // We verify the buffer contains the event via the finite /recent endpoint
     // (same slice that /subscribe would replay).
-    const recentRes = await stub.fetch("https://do/recent?limit=20");
+    const recentRes = await stub.fetch("https://do/recent?limit=20", {
+      headers: { "x-test-only": "1" },
+    });
     expect(recentRes.status).toBe(200);
     const body = (await recentRes.json()) as {
       events: Array<{ run_id?: string }>;

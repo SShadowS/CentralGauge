@@ -33,12 +33,60 @@ import {
   createFallbackUsage,
   createStreamState,
   finalizeStream,
+  forwardAbort,
   handleStreamError,
   type StreamState,
 } from "./stream-handler.ts";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("llm:local");
+
+/**
+ * Map a raw local-model stop reason (Ollama `done_reason` / OpenAI-compatible
+ * `finish_reason`) to the canonical {@link LLMResponse.finishReason}.
+ *
+ * A truncated response MUST report `"length"` so continuation fires; the old
+ * code hardcoded `"stop"` (non-stream) and mapped anything but `"stop"` to
+ * `"error"` (stream), which both hid truncation. A missing marker means a
+ * normal completion, so it maps to `"stop"` (consistent with the OpenAI
+ * adapter's streaming fallback). Pure + exported for unit testing.
+ */
+export function mapLocalFinishReason(
+  reason: string | undefined | null,
+): "stop" | "length" | "content_filter" | "error" {
+  switch (reason) {
+    case "stop":
+    case "end_turn":
+      return "stop";
+    case "length":
+    case "max_tokens":
+      return "length";
+    case "content_filter":
+      return "content_filter";
+    case undefined:
+    case null:
+    case "":
+      return "stop";
+    default:
+      return "error";
+  }
+}
+
+/**
+ * Read the raw stop reason from a non-streaming local response and map it.
+ * Ollama exposes `done_reason`; OpenAI-compatible servers put it on
+ * `choices[0].finish_reason`. Pure + exported for unit testing.
+ */
+export function extractLocalFinishReason(
+  data: Record<string, unknown>,
+  isOllama: boolean,
+): "stop" | "length" | "content_filter" | "error" {
+  const raw = isOllama
+    ? (data["done_reason"] as string | undefined)
+    : ((data["choices"] as Array<Record<string, unknown>> | undefined)
+      ?.[0]?.["finish_reason"] as string | undefined);
+  return mapLocalFinishReason(raw);
+}
 
 export class LocalLLMAdapter
   implements StreamingLLMAdapter, DiscoverableAdapter {
@@ -384,7 +432,7 @@ export class LocalLLMAdapter
       model: this.config.model,
       usage,
       duration,
-      finishReason: "stop",
+      finishReason: extractLocalFinishReason(data, isOllama),
     };
 
     return {
@@ -553,11 +601,9 @@ export class LocalLLMAdapter
    */
   private createAbortController(options?: StreamOptions): AbortController {
     const controller = new AbortController();
-    if (options?.abortSignal) {
-      options.abortSignal.addEventListener("abort", () => {
-        controller.abort();
-      });
-    }
+    // Fires synchronously for a pre-aborted signal, so the fetch below starts
+    // already-aborted instead of never learning about the cancellation.
+    forwardAbort(options?.abortSignal, () => controller.abort());
     return controller;
   }
 
@@ -571,12 +617,17 @@ export class LocalLLMAdapter
     options?: StreamOptions,
   ): AsyncGenerator<
     StreamChunk,
-    { promptTokens: number; completionTokens: number },
+    {
+      promptTokens: number;
+      completionTokens: number;
+      doneReason?: string | undefined;
+    },
     undefined
   > {
     const reader = getStreamReader(response);
     let promptTokens = 0;
     let completionTokens = 0;
+    let doneReason: string | undefined;
 
     for await (const data of parseNDJSONStream(reader)) {
       const content = (data["response"] as string) || "";
@@ -585,15 +636,16 @@ export class LocalLLMAdapter
         yield createChunk(content, state, options);
       }
 
-      // Capture token counts from final chunk
+      // Capture token counts + stop reason from final chunk
       if (data["done"] === true) {
         promptTokens = (data["prompt_eval_count"] as number) || 0;
         completionTokens = (data["eval_count"] as number) || 0;
+        doneReason = data["done_reason"] as string | undefined;
         break;
       }
     }
 
-    return { promptTokens, completionTokens };
+    return { promptTokens, completionTokens, doneReason };
   }
 
   /**
@@ -785,7 +837,7 @@ export class LocalLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: "stop",
+        finishReason: mapLocalFinishReason(tokenCounts.doneReason),
         options,
       });
 
@@ -848,7 +900,7 @@ export class LocalLLMAdapter
         state,
         model: this.config.model,
         usage,
-        finishReason: lastFinishReason === "stop" ? "stop" : "error",
+        finishReason: mapLocalFinishReason(lastFinishReason),
         options,
       });
 

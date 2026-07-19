@@ -19,7 +19,7 @@ const TaskManifestExpectedSchema = z.object({
   testCodeunitId: z.number().int().positive().optional(),
   mustContain: z.array(z.string()).optional(),
   mustNotContain: z.array(z.string()).optional(),
-});
+}).strict();
 
 const TaskManifestMetadataSchema = z.object({
   difficulty: z.enum(["easy", "medium", "hard"]).optional(),
@@ -28,6 +28,33 @@ const TaskManifestMetadataSchema = z.object({
   estimatedTokens: z.number().int().nonnegative().optional(),
   target: z.enum(["Cloud", "OnPrem"]).optional(),
 }).passthrough();
+
+// Prompt injection config (src/prompts/types.ts::PromptInjectionConfig)
+// mirrored as a strict zod schema so a typo'd task-level `prompts:` key
+// (e.g. `injecton`) fails loudly at load time instead of silently doing
+// nothing. Keep in sync with PromptInjectionConfig — it's a small, stable
+// shape (system/prefix/suffix strings nested under stage + provider keys).
+const PromptInjectionSchema = z.object({
+  system: z.string().optional(),
+  prefix: z.string().optional(),
+  suffix: z.string().optional(),
+}).strict();
+
+const StageInjectionsSchema = z.object({
+  generation: PromptInjectionSchema.optional(),
+  fix: PromptInjectionSchema.optional(),
+  default: PromptInjectionSchema.optional(),
+}).strict();
+
+// ProviderInjections has known provider keys plus an index signature for
+// arbitrary additional providers (PromptInjectionConfig allows this) — a
+// zod record covers both since every value must be StageInjections-shaped.
+const ProviderInjectionsSchema = z.record(z.string(), StageInjectionsSchema);
+
+const PromptInjectionConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  injections: ProviderInjectionsSchema.optional(),
+}).strict();
 
 export const TaskManifestSchema = z.object({
   id: z.string().regex(
@@ -45,8 +72,8 @@ export const TaskManifestSchema = z.object({
     "domains must list at least one domain",
   ),
   metadata: TaskManifestMetadataSchema.optional(),
-  prompts: z.unknown().optional(),
-}).passthrough();
+  prompts: PromptInjectionConfigSchema.optional(),
+}).strict();
 
 export function parseTaskManifest(
   raw: unknown,

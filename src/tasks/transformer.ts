@@ -86,8 +86,14 @@ export class TaskTransformer {
         validation: {
           mustCompile: manifest.expected?.compile ?? true,
           mustPass: manifest.expected?.testApp ? true : false,
-          mustContain: this.extractRequiredPatterns(manifest),
-          mustNotContain: this.extractForbiddenPatterns(manifest),
+          // Manifest-first: an explicit expected.mustContain/mustNotContain
+          // is authoritative. The description-scrape below is a fallback for
+          // older manifests that never set these, NOT a way to override an
+          // explicit (possibly empty) list the task author provided.
+          mustContain: manifest.expected?.mustContain ??
+            this.extractRequiredPatterns(manifest),
+          mustNotContain: manifest.expected?.mustNotContain ??
+            this.extractForbiddenPatterns(manifest),
         },
       },
 

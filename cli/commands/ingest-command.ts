@@ -11,8 +11,10 @@ import type { TaskExecutionResult } from "../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../src/llm/variant-types.ts";
 import {
   assembleBenchResultsForVariant,
+  decideIngestRunFailure,
   readGitSha,
 } from "./bench/ingest-assembly.ts";
+import { parseIngestMeta, todayPricingVersion } from "./bench/ingest-meta.ts";
 
 interface IngestCommandOptions {
   url?: string;
@@ -64,11 +66,52 @@ function variantsFromResults(
   return Array.from(seen.values());
 }
 
-function todayPricingVersion(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${
-    String(d.getUTCMonth() + 1).padStart(2, "0")
-  }-${String(d.getUTCDate()).padStart(2, "0")}`;
+/**
+ * Summary of the raw-bench-results replay loop, gathered per variant.
+ * Handed to {@link decideRawIngestExitCode} rather than deciding the exit
+ * code inline in the loop.
+ */
+export interface RawIngestLoopSummary {
+  /** Number of variants for which `ingestRun` was actually invoked. */
+  attempted: number;
+  /** Number of variants that ingested successfully. */
+  okCount: number;
+  /** Number of variants that hit a retryable/transient ingest failure. */
+  transient: number;
+  /** Number of variants skipped as fully infra-invalidated (all_infra). */
+  infraSkipped: number;
+  /** True when at least one variant hit a fatal (non-retryable) ingest rejection. */
+  fatalFailure: boolean;
+}
+
+/**
+ * Decide the process exit code for a raw-bench-results replay (CLI6).
+ * Pure + exported for testing — `handleIngest` itself calls `Deno.exit()`,
+ * which isn't directly testable (same pattern as `decideIngestRunFailure`
+ * and `cycle-command.ts`'s `parseStep`).
+ *
+ * Non-zero when:
+ * - any variant hit a fatal ingest rejection (previously this aborted the
+ *   loop immediately via an inline `Deno.exit(1)`, silently dropping every
+ *   variant after the first fatal one),
+ * - any variant was fully infra-invalidated, or
+ * - 100% of attempted variants hit a transient failure with nothing landed
+ *   (mirrors `decideIngestRunFailure`, used by bench-command.ts's
+ *   immediate-ingest path — previously the replay path had no equivalent
+ *   check at all, so an all-transient replay exited 0).
+ */
+export function decideRawIngestExitCode(
+  summary: RawIngestLoopSummary,
+): number {
+  if (summary.fatalFailure) return 1;
+  if (summary.infraSkipped > 0) return 1;
+  const failure = decideIngestRunFailure({
+    attempted: summary.attempted,
+    succeeded: summary.okCount,
+    transient: summary.transient,
+    infraInvalidated: summary.infraSkipped,
+  });
+  return failure ? 1 : 0;
 }
 
 async function handleIngest(
@@ -96,7 +139,19 @@ async function handleIngest(
       console.error(colors.red("[FAIL] No variants discovered in results"));
       Deno.exit(1);
     }
-    const pricingVersion = todayPricingVersion();
+    // T3: identical read path to bench-command's immediate ingest — the
+    // saved file's `ingest` key carries the run identity so a replay after
+    // a transient failure reuses the same run_id (server answers "exists")
+    // and the pricing_version the run was actually benched under.
+    const ingestMeta = parseIngestMeta(parsed);
+    if (!ingestMeta) {
+      console.warn(
+        colors.yellow(
+          `[WARN] ${path} carries no persisted ingest identity (legacy file) — run_ids will be minted fresh (replay will NOT be idempotent)`,
+        ),
+      );
+    }
+    const pricingVersion = ingestMeta?.pricing_version ?? todayPricingVersion();
     const centralgaugeSha = await readGitSha(cwd);
 
     if (options.dryRun) {
@@ -116,23 +171,55 @@ async function handleIngest(
     );
 
     let okCount = 0;
+    let attempted = 0;
+    let transient = 0;
+    let infraSkipped = 0;
+    let fatalFailure = false;
     for (const variant of variants) {
       const assembleOpts: Parameters<typeof assembleBenchResultsForVariant>[2] =
         { pricingVersion };
       if (centralgaugeSha) assembleOpts.centralgaugeSha = centralgaugeSha;
-      const br = await assembleBenchResultsForVariant(
+      const persistedRunId = ingestMeta?.run_ids[variant.variantId];
+      if (persistedRunId) assembleOpts.runId = persistedRunId;
+      if (ingestMeta?.task_set_hash) {
+        assembleOpts.taskSetHash = ingestMeta.task_set_hash;
+      }
+      const assembled = await assembleBenchResultsForVariant(
         path,
         variant,
         assembleOpts,
       );
-      if (!br) {
+      if (assembled.kind === "no_results" || assembled.kind === "no_items") {
         console.warn(
           colors.gray(
-            `       skipped ${variant.variantId} (no matching results)`,
+            assembled.kind === "no_results"
+              ? `       skipped ${variant.variantId} (no matching results)`
+              : `       skipped ${variant.variantId} (results carry no attempts; empty payloads are never POSTed)`,
           ),
         );
         continue;
       }
+      if (assembled.kind === "all_infra") {
+        infraSkipped++;
+        console.error(
+          colors.red(
+            `[FAIL] ${variant.variantId}: all ${assembled.infraExcludedAttempts} ` +
+              `attempt(s) were infra-invalidated — NOT ingested. The run ` +
+              `carries no valid model signal; fix infra and re-bench.`,
+          ),
+        );
+        continue;
+      }
+      if (assembled.infraExcludedAttempts > 0) {
+        console.warn(
+          colors.yellow(
+            `[WARN] ${variant.variantId}: excluded ` +
+              `${assembled.infraExcludedAttempts} infra-invalidated attempt(s) from ingest`,
+          ),
+        );
+      }
+      const br = assembled.benchResults;
+      attempted++;
       const outcome = await ingestRun(br, {
         cwd,
         catalogDir: `${cwd}/site/catalog`,
@@ -142,18 +229,22 @@ async function handleIngest(
       });
 
       if (outcome.kind === "retryable-failure") {
+        transient++;
         console.warn(
           colors.yellow(
             `[WARN] ${variant.variantId} transient: ${outcome.lastError.message}`,
           ),
         );
       } else if (outcome.kind === "fatal-failure") {
+        // CLI6: do NOT abort the loop here. A fatal rejection for one
+        // variant must not silently drop every variant after it — finish
+        // the loop, print the summary, then exit non-zero below.
+        fatalFailure = true;
         console.error(
           colors.red(
             `[FAIL] ${variant.variantId} ${outcome.code}: ${outcome.message}`,
           ),
         );
-        Deno.exit(1);
       } else {
         okCount++;
         const uploaded = outcome.bytesUploaded;
@@ -184,6 +275,42 @@ async function handleIngest(
         `\nIngested ${okCount}/${variants.length} variant(s) from ${path}`,
       ),
     );
+    // Exit non-success when any variant was fully infra-invalidated: the
+    // operator must not mistake a skipped variant for an ingested one.
+    if (infraSkipped > 0) {
+      console.error(
+        colors.red(
+          `[FAIL] ${infraSkipped} variant(s) skipped as infra-invalidated; fix infra and re-bench before ingesting`,
+        ),
+      );
+    }
+    // CLI6: computed AFTER the loop + summary print so a fatal rejection on
+    // an early variant doesn't hide the outcome of the variants after it,
+    // and a replay where every attempted variant hit a transient failure
+    // (nothing landed) no longer exits 0.
+    const exitCode = decideRawIngestExitCode({
+      attempted,
+      okCount,
+      transient,
+      infraSkipped,
+      fatalFailure,
+    });
+    if (exitCode !== 0) {
+      if (fatalFailure) {
+        console.error(
+          colors.red(
+            "[FAIL] one or more variants hit a fatal ingest rejection; see above",
+          ),
+        );
+      } else if (transient > 0 && okCount === 0) {
+        console.error(
+          colors.red(
+            `[FAIL] all ${attempted} attempted variant(s) hit transient errors; replay required: centralgauge ingest ${path}`,
+          ),
+        );
+      }
+      Deno.exit(exitCode);
+    }
     return;
   }
 

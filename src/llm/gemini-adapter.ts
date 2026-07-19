@@ -67,6 +67,33 @@ import {
 
 const log = Logger.create("llm:gemini");
 
+/**
+ * Deadline (ms) that bounds an otherwise-indefinite `generateContent` call.
+ * Generous by default so it never kills a legitimate long reasoning
+ * generation; a variant's explicit `config.timeout` overrides it. The
+ * lightweight models-list call uses the shorter {@link DEFAULT_API_TIMEOUT_MS}
+ * instead.
+ */
+const GEMINI_GENERATE_TIMEOUT_MS = 300_000;
+
+/**
+ * Build the request for Gemini's `GET /v1beta/models` list endpoint.
+ *
+ * The API key MUST travel in the `x-goog-api-key` header, never the URL query
+ * string: fetch-level failures (DNS/TLS) embed the URL in the thrown error and
+ * would otherwise leak the key into logs and `LLMProviderError` contexts.
+ * Pure + exported for unit testing.
+ */
+export function buildGeminiModelsRequest(apiKey: string): {
+  url: string;
+  headers: Record<string, string>;
+} {
+  return {
+    url: "https://generativelanguage.googleapis.com/v1beta/models",
+    headers: { "x-goog-api-key": apiKey },
+  };
+}
+
 /** Token usage metadata from Gemini API responses */
 interface GeminiUsageMetadata {
   promptTokenCount?: number;
@@ -123,7 +150,9 @@ export class GeminiAdapter extends BaseLLMAdapter
     model: "gemini-2.5-pro",
     temperature: DEFAULT_TEMPERATURE,
     maxTokens: GEMINI_DEFAULT_MAX_TOKENS,
-    timeout: DEFAULT_API_TIMEOUT_MS,
+    // No default `timeout`: generation falls back to the generous
+    // GEMINI_GENERATE_TIMEOUT_MS deadline and discovery to
+    // DEFAULT_API_TIMEOUT_MS. A variant `timeout` overrides both.
   };
 
   private ai: GoogleGenAI | null = null;
@@ -186,11 +215,13 @@ export class GeminiAdapter extends BaseLLMAdapter
       );
     }
 
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const { url, headers } = buildGeminiModelsRequest(apiKey);
 
     const response = await fetch(url, {
-      signal: AbortSignal.timeout(this.config.timeout || 10000),
+      headers,
+      signal: AbortSignal.timeout(
+        this.config.timeout ?? DEFAULT_API_TIMEOUT_MS,
+      ),
     });
 
     if (!response.ok) {
@@ -232,23 +263,26 @@ export class GeminiAdapter extends BaseLLMAdapter
       ? this.config.thinkingBudget
       : undefined;
 
-    const apiResponse = await ai.models.generateContent({
-      model: this.config.model,
-      contents: request.prompt,
-      config: {
-        ...(thinkingBudget !== undefined ? {} : {
-          temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        }),
-        maxOutputTokens: this.resolveMaxTokens(request, 8192),
-        ...(request.stop ? { stopSequences: request.stop } : {}),
-        ...(request.systemPrompt
-          ? { systemInstruction: request.systemPrompt }
-          : {}),
-        ...(thinkingBudget !== undefined
-          ? { thinkingConfig: { thinkingBudget } }
-          : {}),
-      },
-    });
+    const apiResponse = await this.raceWithTimeout((signal) =>
+      ai.models.generateContent({
+        model: this.config.model,
+        contents: request.prompt,
+        config: {
+          ...(thinkingBudget !== undefined ? {} : {
+            temperature: request.temperature ?? this.config.temperature ?? 0.1,
+          }),
+          maxOutputTokens: this.resolveMaxTokens(request, 8192),
+          ...(request.stop ? { stopSequences: request.stop } : {}),
+          ...(request.systemPrompt
+            ? { systemInstruction: request.systemPrompt }
+            : {}),
+          ...(thinkingBudget !== undefined
+            ? { thinkingConfig: { thinkingBudget } }
+            : {}),
+          abortSignal: signal,
+        },
+      })
+    );
 
     const duration = Date.now() - startTime;
     const contentText = apiResponse.text ?? "";
@@ -289,36 +323,60 @@ export class GeminiAdapter extends BaseLLMAdapter
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-    const ai = await this.ensureClient();
+    const abortSignal = options?.abortSignal;
 
     let lastFinishReason: string | undefined;
     let usageMetadata: GeminiUsageMetadata | undefined;
 
     try {
+      // A pre-aborted signal must not start the request nor fire onComplete.
+      if (abortSignal?.aborted) {
+        throw new DOMException("Gemini stream aborted", "AbortError");
+      }
+
+      const ai = await this.ensureClient();
       const thinkingBudget = typeof this.config.thinkingBudget === "number"
         ? this.config.thinkingBudget
         : undefined;
 
-      const stream = await ai.models.generateContentStream({
-        model: this.config.model,
-        contents: request.prompt,
-        config: {
-          ...(thinkingBudget !== undefined ? {} : {
-            temperature: request.temperature ?? this.config.temperature ?? 0.1,
-          }),
-          maxOutputTokens: this.resolveMaxTokens(request, 8192),
-          ...(request.stop ? { stopSequences: request.stop } : {}),
-          ...(request.systemPrompt
-            ? { systemInstruction: request.systemPrompt }
-            : {}),
-          ...(thinkingBudget !== undefined
-            ? { thinkingConfig: { thinkingBudget } }
-            : {}),
-        },
+      // Bound the (otherwise indefinite) stream START under the same deadline
+      // as the non-stream path — LLMWorkPool.submit has no outer timeout, so a
+      // hung generateContentStream would stall the model attempt forever. On
+      // expiry raceWithTimeout rejects with a retryable LLMProviderError. The
+      // deadline's own signal is merged with the caller's so a mid-stream abort
+      // (or a real server-side hang) also cancels the request.
+      const stream = await this.raceWithTimeout((deadlineSignal) => {
+        const combinedSignal = abortSignal
+          ? AbortSignal.any([abortSignal, deadlineSignal])
+          : deadlineSignal;
+        return ai.models.generateContentStream({
+          model: this.config.model,
+          contents: request.prompt,
+          config: {
+            ...(thinkingBudget !== undefined ? {} : {
+              temperature: request.temperature ?? this.config.temperature ??
+                0.1,
+            }),
+            maxOutputTokens: this.resolveMaxTokens(request, 8192),
+            ...(request.stop ? { stopSequences: request.stop } : {}),
+            ...(request.systemPrompt
+              ? { systemInstruction: request.systemPrompt }
+              : {}),
+            ...(thinkingBudget !== undefined
+              ? { thinkingConfig: { thinkingBudget } }
+              : {}),
+            // Wire the merged signal so an abort actually cancels the request
+            // (a bare loop `break` left it running server-side).
+            abortSignal: combinedSignal,
+          },
+        });
       });
 
       for await (const chunk of stream) {
-        if (options?.abortSignal?.aborted) break;
+        // Abort mid-stream: throw so finalizeStream/onComplete is skipped.
+        if (abortSignal?.aborted) {
+          throw new DOMException("Gemini stream aborted", "AbortError");
+        }
 
         const text = chunk.text || "";
 
@@ -368,6 +426,38 @@ export class GeminiAdapter extends BaseLLMAdapter
   // ============================================================================
   // Private Gemini-specific helpers
   // ============================================================================
+
+  /**
+   * Run a provider call under a deadline. The SDK's `generateContent` accepts
+   * a client-side `abortSignal`, so we wire one in AND race a timer: on expiry
+   * the signal cancels the client wait and we reject with a retryable
+   * {@link LLMProviderError} (so transient-retry engages) instead of hanging
+   * the whole model attempt (L4).
+   */
+  private async raceWithTimeout<T>(
+    op: (signal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
+    const timeoutMs = this.config.timeout ?? GEMINI_GENERATE_TIMEOUT_MS;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(
+          new LLMProviderError(
+            `Gemini request timed out after ${timeoutMs}ms`,
+            "gemini",
+            true,
+          ),
+        );
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([op(controller.signal), deadline]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
 
   private async ensureClient(): Promise<GoogleGenAI> {
     if (this.ai) {

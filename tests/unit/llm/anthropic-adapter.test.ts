@@ -17,6 +17,8 @@ import {
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
 Deno.test("modelRejectsTemperature - Opus 4.7+ rejects, others accept", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("Opus >= 4.7 rejects (incl. future gens + dated)", () => {
     for (
       const m of [
@@ -49,14 +51,13 @@ Deno.test("modelRejectsTemperature - Opus 4.7+ rejects, others accept", async (t
   });
 });
 
-// Initialize pricing service before any tests run
-await PricingService.initialize();
-
 // =============================================================================
 // Provider Properties Tests
 // =============================================================================
 
 Deno.test("AnthropicAdapter - Provider Properties", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step('name property returns "anthropic"', () => {
     const adapter = new AnthropicAdapter();
     assertEquals(adapter.name, "anthropic");
@@ -68,6 +69,8 @@ Deno.test("AnthropicAdapter - Provider Properties", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - implements LLMAdapter interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("has all required methods", () => {
     const adapter = new AnthropicAdapter();
 
@@ -91,6 +94,8 @@ Deno.test("AnthropicAdapter - implements LLMAdapter interface", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - validateConfig", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("returns error when API key is missing", () => {
     const adapter = new AnthropicAdapter();
     const errors = adapter.validateConfig({
@@ -283,6 +288,8 @@ Deno.test("AnthropicAdapter - validateConfig", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - estimateCost", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost based on token counts", () => {
     const adapter = new AnthropicAdapter();
     adapter.configure({
@@ -370,6 +377,8 @@ Deno.test("AnthropicAdapter - estimateCost", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - configure", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts configuration without throwing", () => {
     const adapter = new AnthropicAdapter();
 
@@ -404,6 +413,8 @@ Deno.test("AnthropicAdapter - configure", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - constructor", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("creates instance without errors", () => {
     const adapter = new AnthropicAdapter();
     assertEquals(adapter instanceof AnthropicAdapter, true);
@@ -438,6 +449,8 @@ Deno.test("AnthropicAdapter - constructor", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - custom model validation", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts model containing 'claude'", () => {
     const adapter = new AnthropicAdapter();
     const errors = adapter.validateConfig({
@@ -506,6 +519,8 @@ Deno.test("AnthropicAdapter - custom model validation", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - estimateCost edge cases", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("calculates cost for claude-3.5-haiku model", () => {
     const adapter = new AnthropicAdapter();
     adapter.configure({
@@ -582,6 +597,8 @@ Deno.test("AnthropicAdapter - estimateCost edge cases", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - configuration merging", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("preserves default values when not overridden", () => {
     const adapter = new AnthropicAdapter();
     // Configure with minimal config
@@ -638,6 +655,8 @@ Deno.test("AnthropicAdapter - configuration merging", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - streaming interface", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("supportsStreaming property is true", () => {
     const adapter = new AnthropicAdapter();
     assertEquals(adapter.supportsStreaming, true);
@@ -659,6 +678,8 @@ Deno.test("AnthropicAdapter - streaming interface", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - error handling", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step(
     "isHealthy returns false when API call fails",
     async () => {
@@ -697,6 +718,8 @@ Deno.test("AnthropicAdapter - error handling", async (t) => {
 // =============================================================================
 
 Deno.test("AnthropicAdapter - thinking budget configuration", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   await t.step("accepts thinkingBudget in configuration", () => {
     const adapter = new AnthropicAdapter();
     // Should not throw when configuring with thinkingBudget
@@ -731,6 +754,8 @@ Deno.test("AnthropicAdapter - thinking budget configuration", async (t) => {
 // =============================================================================
 
 Deno.test("mapAnthropicModelEntry - adopts API metadata", async (t) => {
+  PricingService.reset();
+  await PricingService.initialize();
   // Mirrors the live GET /v1/models/<id> response shape.
   const raw = {
     type: "model",

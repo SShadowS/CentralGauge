@@ -1,6 +1,9 @@
 import type { CheckResult, DoctorReport } from "./types.ts";
 import { seedMissingSlugs } from "../catalog/seed/mod.ts";
 import { LiteLLMService } from "../llm/litellm-service.ts";
+import { loadAdminConfig, readPrivateKey } from "../ingest/config.ts";
+import { readCatalog } from "../ingest/catalog/read.ts";
+import { syncCatalogToAdmin } from "../ingest/catalog/sync.ts";
 
 export interface RepairResult {
   ok: boolean;
@@ -128,9 +131,16 @@ export const seedCatalogRepairer: Repairer = {
 };
 
 /**
- * Built-in repairer: invoke `centralgauge sync-catalog --apply` to push local
- * catalog YAML to D1. Used to fix `catalog.bench.missing_models` and
+ * Built-in repairer: push local catalog YAML (site/catalog/*.yml) to D1 via
+ * the signed admin API. Used to fix `catalog.bench.missing_models` and
  * `catalog.bench.missing_pricing`.
+ *
+ * D8: runs `syncCatalogToAdmin` in-process rather than shelling out to
+ * `deno task start sync-catalog --apply`. A subprocess only exposes
+ * combined stdout/stderr text, which can neither honor a `Retry-After`
+ * header from the admin API's ~10 req/min rate limit nor report which
+ * specific rows are still outstanding — the in-process call gets both: one
+ * bounded retry pass honoring the header, and a resumable per-row report.
  */
 export const syncCatalogRepairer: Repairer = {
   id: "sync-catalog",
@@ -143,17 +153,54 @@ export const syncCatalogRepairer: Repairer = {
     return missingModels.length > 0 || missingPricing.length > 0;
   },
   async run() {
-    const cmd = new Deno.Command("deno", {
-      args: ["task", "start", "sync-catalog", "--apply"],
-      stdout: "piped",
-      stderr: "piped",
-    });
-    const { success, stdout, stderr } = await cmd.output();
-    const out = new TextDecoder().decode(stdout) +
-      new TextDecoder().decode(stderr);
-    return success
-      ? { ok: true, message: "sync-catalog --apply succeeded" }
-      : { ok: false, message: `sync-catalog failed: ${out.slice(-300)}` };
+    const cwd = Deno.cwd();
+    let config;
+    try {
+      config = await loadAdminConfig(cwd, {});
+    } catch (e) {
+      return {
+        ok: false,
+        message: `cannot load admin config: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      };
+    }
+
+    let adminPrivateKey: Uint8Array;
+    try {
+      adminPrivateKey = await readPrivateKey(config.adminKeyPath);
+    } catch (e) {
+      return {
+        ok: false,
+        message: `cannot read admin key: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      };
+    }
+
+    const cat = await readCatalog(`${cwd}/site/catalog`);
+    const result = await syncCatalogToAdmin(cat, config, adminPrivateKey);
+
+    if (result.ok) {
+      const retrySuffix = result.retried ? " (after 1 retry pass)" : "";
+      return {
+        ok: true,
+        message:
+          `sync-catalog succeeded: ${result.items.length} row(s)${retrySuffix}`,
+      };
+    }
+
+    const failed = result.items.filter((r) => !r.ok);
+    const detail = failed.map((r) => `${r.kind}:${r.key}=${r.status}`).join(
+      ", ",
+    );
+    return {
+      ok: false,
+      message:
+        `sync-catalog failed for ${failed.length}/${result.items.length} row(s)${
+          result.retried ? " (after retry)" : ""
+        }: ${detail}`,
+    };
   },
 };
 

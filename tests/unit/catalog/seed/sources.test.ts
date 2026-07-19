@@ -40,6 +40,41 @@ describe("fetchOpenRouterMeta", () => {
       assertEquals(meta?.displayName, "xAI: Grok 4.3");
       assertEquals(meta?.vendor, "xAI");
       assertEquals(meta?.releasedAt, "2025-11-01");
+      // D4: a normal (paid) slug must NOT be marked free.
+      assertEquals(meta?.marksFree, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+      env.restore();
+      clearOpenRouterCache();
+    }
+  });
+
+  it("D4: marks a ':free' slug as free (OpenRouter's explicit convention)", async () => {
+    const env = new MockEnv();
+    env.set("OPENROUTER_API_KEY", "test-key");
+    clearOpenRouterCache();
+
+    const freeResponse = {
+      data: [
+        {
+          id: "meta-llama/llama-3-8b:free",
+          name: "Meta: Llama 3 8B (free)",
+          created: 1761955200,
+          pricing: { prompt: "0", completion: "0" },
+        },
+      ],
+    };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify(freeResponse), { status: 200 }),
+      )) as typeof fetch;
+
+    try {
+      const meta = await fetchOpenRouterMeta("meta-llama/llama-3-8b:free");
+      assertEquals(meta?.marksFree, true);
+      assertEquals(meta?.pricing.input, 0);
+      assertEquals(meta?.pricing.output, 0);
     } finally {
       globalThis.fetch = originalFetch;
       env.restore();

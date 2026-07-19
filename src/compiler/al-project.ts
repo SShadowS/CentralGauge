@@ -17,7 +17,19 @@ export class ALProjectManager {
     }
 
     const appJsonContent = await Deno.readTextFile(appJsonPath);
-    const appJson = JSON.parse(appJsonContent);
+    let appJson: object;
+    try {
+      appJson = JSON.parse(appJsonContent);
+    } catch (e) {
+      throw new ResourceNotFoundError(
+        `Malformed app.json in ${projectPath}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        "file",
+        "app.json",
+        { projectPath },
+      );
+    }
 
     const sourceFiles = await this.findFiles(projectPath, [".al"], ["Test"]);
     const testFiles = await this.findFiles(projectPath, [".al"], [], ["Test"]);

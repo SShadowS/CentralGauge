@@ -4,7 +4,7 @@
  * @module src/prompts/knowledge-loader
  */
 
-import { basename, extname, join } from "@std/path";
+import { extname, join } from "@std/path";
 
 /**
  * Options for loading knowledge files
@@ -32,9 +32,9 @@ function formatKnowledgeContent(
   lines.push("The following guidance should inform your code generation:");
   lines.push("");
 
-  for (const [filename, content] of filesContent) {
+  for (const [filePath, content] of filesContent) {
     lines.push("---");
-    lines.push(`## ${filename}`);
+    lines.push(`## ${filePath}`);
     lines.push("");
     lines.push(content.trim());
     lines.push("");
@@ -113,13 +113,14 @@ export async function loadKnowledgeFiles(
     return undefined;
   }
 
-  // Load all file contents
+  // Load all file contents, keyed by the full path passed in (not the
+  // basename — two files with the same name in different directories must
+  // both load rather than the second silently overwriting the first; D6).
   const filesContent = new Map<string, string>();
 
   for (const filePath of allFiles) {
     const content = await loadFileContent(filePath);
-    const filename = basename(filePath);
-    filesContent.set(filename, content);
+    filesContent.set(filePath, content);
   }
 
   // Format and return

@@ -38,10 +38,8 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from "./sdk-types.ts";
-import {
-  extractResultFromToolResult,
-  formatTaskResult,
-} from "./result-parser.ts";
+import { formatTaskResult, scoreVerdictToolResult } from "./result-parser.ts";
+import { matchToolName } from "./tool-schemas.ts";
 import {
   type SandboxExecutionContext,
   SandboxExecutor,
@@ -61,6 +59,43 @@ interface ExecutionPrepResult {
   tracker: CostTracker;
   executionId: string;
   staged: StagedWorkspace;
+}
+
+/**
+ * Resolved (generic) AL tool names whose result is an authoritative pass/fail
+ * verdict, and therefore the ONLY tool_result blocks that count toward scoring.
+ *
+ * A model controls the prose of general tools (Bash `echo "all tests passed"`,
+ * a Read of a file it wrote), so treating those as scoring inputs lets it forge
+ * a passing score (M4 follow-up). Only:
+ *  - `al_verify_task` — resolves the REAL benchmark test from the task YAML, so
+ *    the model can neither see nor substitute it. This is the test verdict.
+ *  - `al_compile` — a server-run compile verdict (compile-only tasks are scored
+ *    from it; it cannot satisfy a test task because scoreVerdictToolResult still
+ *    requires test evidence when requiresTests).
+ *
+ * `al_verify` is deliberately EXCLUDED (M1/M2 follow-up): its testFile is
+ * model-chosen, so an agent could stage a trivial always-pass test and call
+ * al_verify instead of al_verify_task — structured-only scoring can't tell that
+ * forged pass from a genuine one. Sandbox M1 made al_verify diagnostic-only for
+ * exactly this reason. (al_verify is not in AL_TOOL_SCHEMAS today, so
+ * matchToolName already returns null for it; excluding it from this set makes
+ * the exclusion explicit and robust if that ever changes.)
+ */
+const SCORING_TOOL_NAMES = new Set([
+  "al_verify_task",
+  "al_compile",
+]);
+
+/** Whether a RESOLVED generic AL tool name is an authoritative scoring input. */
+export function isScoringGenericTool(generic: string): boolean {
+  return SCORING_TOOL_NAMES.has(generic);
+}
+
+function isScoringToolResult(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  const generic = matchToolName(toolName);
+  return generic !== null && isScoringGenericTool(generic);
 }
 
 export class AgentTaskExecutor {
@@ -164,32 +199,38 @@ export class AgentTaskExecutor {
           }
         }
 
-        // Extract structured data from tool result
-        const resultText = typeof resultBlock.content === "string"
-          ? resultBlock.content
-          : JSON.stringify(resultBlock.content);
-
-        const parsed = extractResultFromToolResult(resultText);
-        if (parsed.compileSuccess !== undefined) {
-          compileSuccess = parsed.compileSuccess;
-        }
-        if (parsed.testsPassed !== undefined) {
-          testsPassed = parsed.testsPassed;
-        }
-        if (parsed.testsTotal !== undefined) {
-          testsTotal = parsed.testsTotal;
+        // Only authoritative AL verdict tools (al_verify_task / al_compile,
+        // per SCORING_TOOL_NAMES) are scoring inputs. General tools' prose is
+        // model-controlled (Bash `echo`, a Read of a self-written file), and
+        // al_verify's testFile is model-chosen — scoring either would let the
+        // model forge a pass (M4 + M1/M2 follow-up). Telemetry above still runs
+        // for every tool; scoring below does not.
+        if (!isScoringToolResult(pending?.name)) {
+          continue;
         }
 
-        // Determine success based on task type
-        const resultLower = resultText.toLowerCase();
-        if (requiresTests) {
-          if (resultLower.includes("all tests passed")) {
-            success = true;
-          }
-        } else {
-          if (resultLower.includes("compilation successful")) {
-            success = true;
-          }
+        // Score from STRUCTURED verdict fields only (M2 follow-up). Even a
+        // gated verdict tool's output embeds model-controlled strings —
+        // al_verify_task.failures[] carries each failing test's error message,
+        // al_compile diagnostics quote model-chosen object names — so prose
+        // matching over it could forge success on a FAILING run. scoreVerdict
+        // ToolResult reads the boolean `success` field only and fails closed
+        // on non-JSON.
+        const score = scoreVerdictToolResult(
+          resultBlock.content,
+          requiresTests,
+        );
+        if (score.compileSuccess !== undefined) {
+          compileSuccess = score.compileSuccess;
+        }
+        if (score.testsPassed !== undefined) {
+          testsPassed = score.testsPassed;
+        }
+        if (score.testsTotal !== undefined) {
+          testsTotal = score.testsTotal;
+        }
+        if (score.success) {
+          success = true;
         }
       }
     }

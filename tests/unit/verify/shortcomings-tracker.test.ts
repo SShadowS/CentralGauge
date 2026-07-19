@@ -204,6 +204,105 @@ Deno.test("shortcomings-tracker: tracks different models separately", async () =
   }
 });
 
+Deno.test("shortcomings-tracker: maps confidence enum to numeric score (V2)", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    const tracker = new ShortcomingsTracker(tempDir);
+    const base: Omit<ModelShortcomingResult, "confidence" | "alConcept"> = {
+      outcome: "model_shortcoming",
+      taskId: "CG-AL-E001",
+      model: "test-model",
+      category: "model_knowledge_gap",
+      concept: "c",
+      description: "d",
+      generatedCode: "g",
+      correctPattern: "p",
+      concept_slug_proposed: "c",
+      concept_slug_existing_match: null,
+      similarity_score: null,
+    };
+    await tracker.addShortcoming("test-model", {
+      ...base,
+      alConcept: "high-concept",
+      confidence: "high",
+    });
+    await tracker.addShortcoming("test-model", {
+      ...base,
+      alConcept: "medium-concept",
+      confidence: "medium",
+    });
+    await tracker.addShortcoming("test-model", {
+      ...base,
+      alConcept: "low-concept",
+      confidence: "low",
+    });
+    const entries = await tracker.getByModel("test-model");
+    const byConcept = new Map(entries.map((e) => [e.alConcept, e.confidence]));
+    assertEquals(byConcept.get("high-concept"), 0.9);
+    assertEquals(byConcept.get("medium-concept"), 0.6);
+    assertEquals(byConcept.get("low-concept"), 0.3);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("shortcomings-tracker: merge keeps MIN of confidences (V2)", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    const tracker = new ShortcomingsTracker(tempDir);
+    const mk = (
+      taskId: string,
+      confidence: ModelShortcomingResult["confidence"],
+    ): ModelShortcomingResult => ({
+      outcome: "model_shortcoming",
+      taskId,
+      model: "test-model",
+      category: "model_knowledge_gap",
+      concept: "shared",
+      alConcept: "shared-concept",
+      description: "d",
+      generatedCode: "g",
+      correctPattern: "p",
+      confidence,
+      concept_slug_proposed: "shared",
+      concept_slug_existing_match: null,
+      similarity_score: null,
+    });
+    // high (0.9) then low (0.3) → MIN 0.3.
+    await tracker.addShortcoming("test-model", mk("CG-AL-E001", "high"));
+    await tracker.addShortcoming("test-model", mk("CG-AL-E002", "low"));
+    const entries = await tracker.getByModel("test-model");
+    assertEquals(entries.length, 1);
+    assertEquals(entries[0]!.confidence, 0.3);
+
+    // Reverse order: low (0.3) first then high (0.9) → still MIN 0.3.
+    const tracker2 = new ShortcomingsTracker(tempDir);
+    await tracker2.addShortcoming("other-model", mk("CG-AL-E001", "low"));
+    await tracker2.addShortcoming("other-model", mk("CG-AL-E002", "high"));
+    const entries2 = await tracker2.getByModel("other-model");
+    assertEquals(entries2[0]!.confidence, 0.3);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("shortcomings-tracker: incrementParseFailures counts without adding entries (V9)", async () => {
+  const tempDir = await Deno.makeTempDir();
+  try {
+    const tracker = new ShortcomingsTracker(tempDir);
+    await tracker.incrementParseFailures("test-model");
+    await tracker.incrementParseFailures("test-model");
+    await tracker.save();
+
+    const reloaded = new ShortcomingsTracker(tempDir);
+    const entries = await reloaded.getByModel("test-model");
+    assertEquals(entries.length, 0);
+    assertEquals(await reloaded.getParseFailures("test-model"), 2);
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
 Deno.test("shortcomings-tracker: getCount returns correct count", async () => {
   const tempDir = await Deno.makeTempDir();
   try {

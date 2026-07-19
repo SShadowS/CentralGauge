@@ -1,2 +1,13 @@
 # Copy to .dev.vars and fill in for local dev
 # (these are NOT required for most tests — miniflare handles bindings)
+
+# S1: /admin* SSR pages fail CLOSED without a verified CF Access JWT.
+# For local dev against `wrangler dev`, set both values from your CF Access
+# application (there is deliberately NO dev bypass):
+# CF_ACCESS_AUD = "<audience tag>"
+# CF_ACCESS_TEAM_DOMAIN = "sshadows.cloudflareaccess.com"
+
+# S2 (optional): defense-in-depth email allowlist layered on top of the CF
+# Access policy above, which stays primary. Unset = no extra enforcement
+# (current behavior). Comma-separated, case-insensitive.
+# CF_ACCESS_ALLOWED_EMAILS = "op1@example.com,op2@example.com"

@@ -136,6 +136,33 @@ Deno.test("maxRetries: 0 returns result on success", async () => {
   assertEquals(result.result, { ok: true });
 });
 
+Deno.test("P9: maxRetries: 0 still consults classifyResult — a quarantined result THROWS instead of leaking to scoring", async () => {
+  const quarantinedResult = { ok: false, quarantined: true };
+  const err = await assertRejects(
+    () =>
+      withInfraRetry(
+        ({ onRouted }) => {
+          onRouted("Cronus28");
+          return Promise.resolve(quarantinedResult);
+        },
+        {
+          maxRetries: 0,
+          configuredContainers: ["Cronus28"],
+          context: { taskId: "t", variantId: "v", attemptNumber: 1 },
+          classifyResult: () => ({
+            kind: "quarantined",
+            alertId: "alert-7",
+            originContainer: "Cronus28",
+          }),
+        },
+      ),
+    ContainerError,
+  );
+  assertEquals(err.operation, "test");
+  assertEquals(err.containerName, "Cronus28");
+  assert(err.message.includes("alert-7"));
+});
+
 // ===========================================================================
 // 2. Non-infra error propagation
 // ===========================================================================
@@ -719,4 +746,53 @@ Deno.test("waiver cap: same alertId hit twice does NOT grant unlimited free retr
   // call sequence: initial (waived), retry1 (waived again? capped),
   // retry2 (no more budget) — at least 2 calls.
   assert(call >= 2);
+});
+
+// ===========================================================================
+// P10: exhaustion after loop bound reached mid-record finalizes the trail
+// ===========================================================================
+
+Deno.test("P10: quarantine trail exhaustion never leaves a '(pending)' placeholder in the thrown trail", async () => {
+  // Repeated non-first-waiver quarantine hits for the SAME alertId never
+  // grow the dynamic loop bound (maxRetries + freeRetriesGranted), so the
+  // for-loop can exit right after pushing a new "planned retry" record and
+  // before the next iteration ever finalizes it.
+  let call = 0;
+  const e = await assertRejects(
+    () =>
+      withInfraRetry<{ quarantined?: { alertId: string } }>(
+        ({ onRouted }) => {
+          call++;
+          onRouted(`C${call}`);
+          return Promise.resolve({ quarantined: { alertId: "alert-stuck" } });
+        },
+        {
+          maxRetries: 1,
+          configuredContainers: ["C1", "C2", "C3", "C4"],
+          context: { taskId: "T", variantId: "V", attemptNumber: 1 },
+          classifyResult: (r) =>
+            r.quarantined
+              ? {
+                kind: "quarantined",
+                alertId: r.quarantined.alertId,
+                // Fixed origin — keeps exclusion from ever covering all 4
+                // configured containers, so the loop exits on its dynamic
+                // bound rather than on the "allCovered" branch.
+                originContainer: "C1",
+                fingerprint: "stuck-fp",
+              }
+              : { kind: "ok" },
+          jitterMs: () => 0,
+        },
+      ),
+    InfraRetriesExhaustedError,
+  ) as InfraRetriesExhaustedError;
+  assert(e.retries.length > 0, "expected a non-empty retry trail");
+  for (const record of e.retries) {
+    assertEquals(
+      record.retryContainerName === "(pending)",
+      false,
+      `retry #${record.retryNumber} still carries the "(pending)" placeholder`,
+    );
+  }
 });

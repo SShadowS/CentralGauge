@@ -24,7 +24,7 @@ async function handleVerify(
     filter: string;
     dryRun: boolean;
     parallel: number;
-    model: string;
+    model?: string;
     shortcomingsDir: string;
     shortcomingsOnly: boolean;
     fixesOnly: boolean;
@@ -114,6 +114,14 @@ async function handleVerify(
     }
   }
 
+  // V9: analyzer responses that couldn't be parsed — counted, not stored.
+  if (summary.parseFailures.size > 0) {
+    console.log(colors.yellow("Analyzer parse failures:"));
+    for (const [model, count] of summary.parseFailures) {
+      console.log(colors.yellow(`  - ${model}: ${count} unparseable`));
+    }
+  }
+
   if (summary.errors.length > 0) {
     console.log(colors.red(`\nErrors: ${summary.errors.length}`));
     for (const error of summary.errors.slice(0, 5)) {
@@ -143,10 +151,7 @@ export function registerVerifyCommand(cli: Command): void {
     )
     .option(
       "--model <model:string>",
-      "LLM for analysis (vendor-prefixed prod slug)",
-      {
-        default: "anthropic/claude-opus-4-6",
-      },
+      "LLM for analysis, vendor-prefixed prod slug (default: lifecycle.analyzer_model config chain)",
     )
     .option(
       "--shortcomings-dir <dir:string>",

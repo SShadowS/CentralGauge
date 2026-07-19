@@ -645,14 +645,32 @@ const DASHBOARD_JS = `
   // ==================== Event Handling ====================
 
   function handleSSEEvent(event) {
-    if (!state) return;
-
+    // CLI5: full-state / health-snapshot / pool-snapshot are themselves the
+    // SSE server's replay-on-connect events -- the ones meant to (re)populate
+    // state after a failed initial /api/state fetch or a reconnect. The old
+    // blanket "if (!state) return" at the top dropped exactly those events
+    // whenever state was still null, permanently stranding the dashboard
+    // blank. These three process regardless of state; everything else still
+    // needs a populated state to mutate.
     switch (event.type) {
       case 'full-state':
         state = event.state;
         renderAll();
-        break;
+        return;
 
+      case 'container-health':
+      case 'health-snapshot':
+        renderContainerHealth(event.state);
+        return;
+
+      case 'pool-snapshot':
+        renderPoolSnapshot(event.snapshot);
+        return;
+    }
+
+    if (!state) return;
+
+    switch (event.type) {
       case 'cell-update':
         state.cells[event.key] = event.cell;
         renderCell(event.key, event.cell);
@@ -672,15 +690,6 @@ const DASHBOARD_JS = `
 
       case 'cost-point':
         state.costHistory.push(event.point);
-        break;
-
-      case 'pool-snapshot':
-        renderPoolSnapshot(event.snapshot);
-        break;
-
-      case 'container-health':
-      case 'health-snapshot':
-        renderContainerHealth(event.state);
         break;
 
       case 'inline-infra-retry':
@@ -1258,7 +1267,9 @@ const DASHBOARD_JS = `
 
   function esc(str) {
     if (!str) return '';
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    // CLI12: escape ' too, for parity with escapeHtml(). Unescaped
+    // single-quotes can break out of a single-quoted HTML attribute.
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   function setupThemeToggle() {

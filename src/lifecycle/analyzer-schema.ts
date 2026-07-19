@@ -40,6 +40,12 @@ export const ModelShortcomingsFileSchema = z.object({
   model: z.string().min(1),
   lastUpdated: z.string(),
   shortcomings: z.array(ModelShortcomingEntrySchema),
+  /**
+   * Count of analyzer responses that could not be parsed (finding V9). NOT a
+   * shortcoming — surfaced by the analyze step so an operator can force
+   * re-analysis. Absent (treated as 0) in files written before V9.
+   */
+  parse_failures: z.number().int().nonnegative().optional(),
 });
 
 export type AnalyzerOutput = z.infer<typeof ModelShortcomingsFileSchema>;

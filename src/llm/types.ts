@@ -18,6 +18,14 @@ export interface LLMConfig {
   thinkingBudget?: number | string | undefined;
   // Continuation settings for handling truncated responses
   continuation?: ContinuationConfig | undefined;
+  // Mock adapter only: finishReason the mock should report, so tests can
+  // simulate truncation ("length") / safety blocks ("content_filter")
+  simulatedFinishReason?:
+    | "stop"
+    | "length"
+    | "content_filter"
+    | "error"
+    | undefined;
 }
 
 /**
@@ -44,10 +52,14 @@ export const DEFAULT_CONTINUATION_CONFIG: ContinuationConfig = {
  * activates on `finishReason="length"`). A fresh call with the same
  * request usually succeeds.
  *
- * Skipped when:
+ * `finishReason="content_filter"` (an API-level safety refusal) is ALSO
+ * retried — those refusals are often stochastic + time-varying, so a fresh
+ * call frequently returns real content (see `empty-retry.ts`
+ * `isRetryableEmptyResponse`, shipped in 4d64992).
+ *
+ * Skipped only when:
  *  - response is non-empty
  *  - `finishReason="length"` (continuation handles)
- *  - `finishReason="content_filter"` (deterministic block)
  */
 export interface EmptyRetryConfig {
   /** Whether empty-response retry is enabled (default: true) */

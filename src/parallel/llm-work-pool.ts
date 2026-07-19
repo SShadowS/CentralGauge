@@ -321,12 +321,16 @@ export class LLMWorkPool {
     // Get API key based on provider
     const apiKey = this.getApiKeyForProvider(item.llmProvider);
 
+    const vc = item.context.variantConfig;
     return LLMAdapterRegistry.create(item.llmProvider, {
       provider: item.llmProvider,
       model: item.llmModel,
       temperature: item.context.temperature,
       maxTokens: item.context.maxTokens,
       apiKey,
+      ...(vc?.thinkingBudget !== undefined &&
+        { thinkingBudget: vc.thinkingBudget }),
+      ...(vc?.timeout !== undefined && { timeout: vc.timeout }),
     });
   }
 
@@ -549,6 +553,13 @@ export class LLMWorkPool {
     // Include system prompt if injection resolver produced one
     if (applied.systemPrompt) {
       request.systemPrompt = applied.systemPrompt;
+    }
+
+    // Variant systemPrompt is the controlled A/B parameter - it takes
+    // precedence over task-level injection (`!== undefined`, not truthiness).
+    const vc = item.context.variantConfig;
+    if (vc?.systemPrompt !== undefined) {
+      request.systemPrompt = vc.systemPrompt;
     }
 
     return request;

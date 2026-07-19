@@ -108,6 +108,62 @@ describe("event-log", () => {
     assertEquals(state.bench?.event_type, "bench.failed");
   });
 
+  it("reduceCurrentState (V4): a valid event wins over a first non-finite-ts event for the same step", () => {
+    const events: LifecycleEvent[] = [
+      {
+        id: 1,
+        ts: NaN,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.started",
+        actor: "operator",
+      },
+      {
+        id: 2,
+        ts: 200,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.completed",
+        actor: "operator",
+      },
+    ];
+    const state = reduceCurrentState(events);
+    assertEquals(
+      state.bench?.event_type,
+      "bench.completed",
+      "the NaN-ts event must be skipped so a later valid event can win",
+    );
+    assertEquals(state.bench?.id, 2);
+  });
+
+  it("reduceCurrentState (V4): skips non-finite ts events even when they appear later", () => {
+    const events: LifecycleEvent[] = [
+      {
+        id: 1,
+        ts: 100,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.started",
+        actor: "operator",
+      },
+      {
+        id: 2,
+        ts: Infinity,
+        model_slug: "m",
+        task_set_hash: "h",
+        event_type: "bench.completed",
+        actor: "operator",
+      },
+    ];
+    const state = reduceCurrentState(events);
+    assertEquals(
+      state.bench?.event_type,
+      "bench.started",
+      "an Infinity-ts event must be ignored, not adopted as current",
+    );
+    assertEquals(state.bench?.id, 1);
+  });
+
   it("isCanonicalEventType accepts every entry in CANONICAL_EVENT_TYPES", () => {
     for (const t of CANONICAL_EVENT_TYPES) {
       assert(isCanonicalEventType(t), `${t} should be canonical`);

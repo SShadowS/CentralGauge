@@ -185,7 +185,8 @@ describe("POST /api/v1/verify", () => {
       "verifier-machine",
       "verifier",
     );
-    await ingestRun("run-same-1", "ingest-machine", keyId, keypair);
+    // T13: the payload's machine_id must match the signing key's machine.
+  await ingestRun("run-same-1", "verifier-machine", keyId, keypair);
 
     const req = await buildVerifyRequest(
       {
@@ -208,13 +209,13 @@ describe("POST /api/v1/verify", () => {
       await registerMachineKey("verifier-machine", "verifier");
     await ingestRun(
       "run-orig-3",
-      "ingest-machine",
+      "verifier-machine",
       verifierKeyId,
       verifierKeypair,
     );
     await ingestRun(
       "run-verif-3",
-      "ingest-machine",
+      "verifier-machine",
       verifierKeyId,
       verifierKeypair,
     );
@@ -256,11 +257,11 @@ describe("POST /api/v1/verify", () => {
     );
 
     // Ingest original run normally (uses model sonnet-4.7)
-    await ingestRun("run-orig-4", "ingest-machine", keyId, keypair);
+    await ingestRun("run-orig-4", "verifier-machine", keyId, keypair);
 
     // Ingest verifier run with a different model
     const diffModelPayload = makeRunPayload({
-      machine_id: "ingest-machine",
+      machine_id: "verifier-machine",
       model: { slug: "gpt-4o", api_model_id: "gpt-4o", family_slug: "gpt" },
     });
     const { signedRequest } = await createSignedPayload(
@@ -298,8 +299,8 @@ describe("POST /api/v1/verify", () => {
       "verifier-machine",
       "verifier",
     );
-    await ingestRun("run-orig-5", "ingest-machine", keyId, keypair);
-    await ingestRun("run-verif-5", "ingest-machine", keyId, keypair);
+    await ingestRun("run-orig-5", "verifier-machine", keyId, keypair);
+    await ingestRun("run-verif-5", "verifier-machine", keyId, keypair);
 
     // First post with score 0.80 (no promotion)
     const req1 = await buildVerifyRequest(
@@ -356,7 +357,7 @@ describe("POST /api/v1/verify", () => {
       "verifier-machine",
       "verifier",
     );
-    await ingestRun("run-same-cc", "ingest-machine", keyId, keypair);
+    await ingestRun("run-same-cc", "verifier-machine", keyId, keypair);
 
     // Trigger same_run 400 error path
     const req = await buildVerifyRequest(
