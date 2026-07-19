@@ -1,0 +1,3002 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-05-15-bench-tracing/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Bench tracing: complete waterfall, every code block + iteration - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#bench-tracing-complete-waterfall-every-code-block-iteration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Bench tracing: complete waterfall, every code block + iteration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#v1-v2-changes-from-gpt-55-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v1 → v2 changes (from gpt-5.5 review)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Format
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Format">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#file-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File format
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#event-arg-schema-stable-common-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event arg schema (stable common fields)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-ts-side-tracer-srctracingtracerts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. TS-side Tracer (src/tracing/tracer.ts)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. TS-side Tracer (src/tracing/tracer.ts)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#api" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        API
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#off-by-default-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Off-by-default contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-powershell-side-emission" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. PowerShell-side emission
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. PowerShell-side emission">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#emit-helper-injected-at-top-of-every-relevant-script-only-when-tracing-enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emit helper (injected at top of every relevant script, only when tracing enabled)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-merger-writer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Merger / writer
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coverage plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Coverage plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#bench-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Bench-level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-task" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-task
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-script-host-side" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-script (host side)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#slot-pwsh-session-lifecycle-answers-is-the-slot-actually-warm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Slot + pwsh-session lifecycle (answers "is the slot actually warm?")
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#per-cmdlet-pwsh-side" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-cmdlet (pwsh side)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#async" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Async
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#instants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Instants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metadata-events" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metadata events
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Performance budget
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#failure-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Failure modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-surface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI surface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#testing-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Testing plan
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#roll-out" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Roll-out
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions-made-moved-out-of-open-questions-after-gpt-55-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decisions made (moved out of "open questions" after gpt-5.5 review)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#open-questions-still-undecided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Open questions (still undecided)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#file-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#done-criteria" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Done-criteria
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-05-15-bench-tracing.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="bench-tracing-complete-waterfall-every-code-block-iteration">Bench tracing: complete waterfall, every code block + iteration<a class="headerlink" href="#bench-tracing-complete-waterfall-every-code-block-iteration" title="Permanent link">&para;</a></h1>
+<p><strong>Status:</strong> v2 — incorporates gpt-5.5 review. Pre-implementation. Companion to <code>BenchBattleplan.md</code> Phase 2 troubleshooting.</p>
+<h2 id="v1-v2-changes-from-gpt-55-review">v1 → v2 changes (from gpt-5.5 review)<a class="headerlink" href="#v1-v2-changes-from-gpt-55-review" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>v1 (rejected)</th>
+<th>v2 (this doc)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default artifact = NDJSON</td>
+<td>Default = valid Chrome Trace JSON object (<code>{ "traceEvents": [...] }</code>). NDJSON is an optional internal journal, never the drag-drop artifact.</td>
+</tr>
+<tr>
+<td><code>Write-Output "[TRACE] ..."</code> for pwsh emission</td>
+<td><code>[Console]::Out.WriteLine(...)</code> — bypasses pwsh success-stream pipeline so wrapped command return values aren't corrupted.</td>
+</tr>
+<tr>
+<td>One ambiguous <code>CG_TRACE_BENCH_START_MICROS</code> env</td>
+<td>Two origins captured at tracer init: <code>originPerfMicros</code> (TS monotonic) + <code>originUnixMicros</code> (wall-clock). PS receives <code>CG_TRACE_BENCH_START_UNIX_MICROS</code> only.</td>
+</tr>
+<tr>
+<td>"Branchless, zero-allocation hot path" claim</td>
+<td>Weakened to "no clock reads, no I/O, no buffer alloc, no pwsh helper injection" when disabled.</td>
+</tr>
+<tr>
+<td><code>[hashtable]$args</code> param name</td>
+<td><code>[hashtable]$TraceArgs</code> — avoids shadowing pwsh automatic variable.</td>
+</tr>
+<tr>
+<td>Slot lifecycle implicit</td>
+<td>Explicit <code>slot.create</code>/<code>acquire</code>/<code>release</code>/<code>recycle</code> + <code>pwsh-session.first-command</code>/<code>reuse</code> spans + instants.</td>
+</tr>
+<tr>
+<td>Single <code>slot-wait</code> span</td>
+<td>Two distinct waits: <code>container-slot-wait</code> AND <code>pwsh-session-wait</code>.</td>
+</tr>
+<tr>
+<td>SOAP traced only at <code>fetch</code> boundary</td>
+<td><code>soap-test-total</code> envelope wraps build-envelope → fetch → read body → parse → result.</td>
+</tr>
+<tr>
+<td>Legacy path not explicitly traced</td>
+<td>Symmetric <code>test.legacy.*</code> spans for visual A/B compare with <code>test.soap.*</code>.</td>
+</tr>
+<tr>
+<td>Redaction in open questions</td>
+<td>Mandatory core requirement. All free-form <code>args</code> strings go through <code>redactSensitive</code> + 200-char cap.</td>
+</tr>
+<tr>
+<td><code>tid</code> as string</td>
+<td><code>tid</code> is numeric; tracer maps lane names to ids and emits <code>thread_name</code> metadata.</td>
+</tr>
+<tr>
+<td><code>--trace &lt;path&gt;</code> mixed enable+path</td>
+<td><code>--trace</code> (enable, default path) + <code>--trace-file &lt;path&gt;</code> (override) + <code>--no-trace</code>.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
+<p>Make every interesting span of a CentralGauge bench run visible on a single
+zoomable timeline — host-side TS spans, per-container PowerShell session
+slot activity, individual <code>bccontainerhelper</code> cmdlet calls, SOAP HTTP
+requests, queue waits, retries — so questions like</p>
+<ul>
+<li>"is the warm slot actually warm?",</li>
+<li>"where does the mystery 7-25 min/task go on the SOAP path?",</li>
+<li>"is <code>Get-BcContainerAppInfo</code> paying first-cmdlet cost every script?",</li>
+<li>"is queue wait or BC op the bottleneck?"</li>
+</ul>
+<p>become <strong>data lookups</strong> instead of speculation. Drag-and-drop into
+<a href="https://ui.perfetto.dev">ui.perfetto.dev</a> and answer in seconds.</p>
+<h2 id="non-goals">Non-goals<a class="headerlink" href="#non-goals" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Distributed tracing / OTLP / Jaeger — single-host bench, no cross-process trace context propagation needed.</li>
+<li>Always-on production tracing. The tracer is off by default; zero overhead when disabled.</li>
+<li>Sampling profilers / flame graphs. We want explicit spans for code blocks we control, not CPU sampling.</li>
+<li>Replacing or augmenting <code>benchmark-results-*.json</code>. Trace is a separate concern.</li>
+<li>Wall-clock accuracy below ~1 ms. Microsecond timestamps are nominal; we measure milliseconds.</li>
+<li>Cross-bench comparison built into the viewer. Future tooling can merge two traces; this spec stays scoped to one bench.</li>
+</ul>
+<h2 id="format">Format<a class="headerlink" href="#format" title="Permanent link">&para;</a></h2>
+<p><strong>Chrome Trace Event Format</strong> (a.k.a. catapult). Reasons:</p>
+<ul>
+<li>Standard since V8/Chromium/Skia/Android Studio profilers. Stable.</li>
+<li>Free, browser-native viewer at <code>ui.perfetto.dev</code> (and the older <code>chrome://tracing</code>).</li>
+<li>Drag-drop, zoom, multi-lane (one per logical "thread"), search, query language ("SQL on traces").</li>
+<li>Scales to millions of events; gzip-friendly.</li>
+<li>Both Deno/TS and PowerShell can emit it trivially as JSON lines.</li>
+</ul>
+<p>Reference: <a href="https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU">https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU</a>.</p>
+<h3 id="file-format">File format<a class="headerlink" href="#file-format" title="Permanent link">&para;</a></h3>
+<p>The <strong>drag-drop artifact</strong> is a single valid Chrome Trace JSON document:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">{</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">&quot;traceEvents&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;process_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;centralgauge-bench&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;orchestrator&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281 (slot)&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">101</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281 (pwsh cmdlets)&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;publishApp&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;cat&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;container,publish&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;X&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742031400</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;dur&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">11401000</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;taskId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CG-AL-E001&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai/gpt-5.5&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;attempt&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="p">],</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">&quot;displayTimeUnit&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ms&quot;</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="p">}</span>
+</code></pre></div>
+<p>Wrapped form (<code>{ "traceEvents": [...] }</code>) preferred over bare array — Perfetto and <code>chrome://tracing</code> accept both, but the wrapped form supports <code>displayTimeUnit</code> and <code>metadata</code>.</p>
+<p><strong>NDJSON is optional internal-journal output only</strong>, controlled by <code>--trace-journal &lt;path&gt;</code> separately. The default <code>--trace</code> output is always a valid Chrome Trace JSON file. NDJSON is never the drag-drop artifact.</p>
+<h3 id="event-shape">Event shape<a class="headerlink" href="#event-shape" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">{</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;publishApp&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">&quot;cat&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;container,publish&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;X&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">&quot;ts&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742031400</span><span class="p">,</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">&quot;dur&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">11401000</span><span class="p">,</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">&quot;taskId&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;CG-AL-E001&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai/gpt-5.5&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">&quot;attempt&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="nt">&quot;container&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281&quot;</span><span class="p">,</span>
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">&quot;ok&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="p">}</span>
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="p">}</span>
+</code></pre></div>
+<ul>
+<li><code>ts</code> and <code>dur</code> are <strong>microseconds since bench start (monotonic-derived)</strong> — eliminates wall-clock jumps mid-run.</li>
+<li><code>ph</code> (phase):</li>
+<li><code>X</code> (complete) — preferred for finished spans, carries <code>dur</code>.</li>
+<li><code>B</code>/<code>E</code> — begin/end pairs, used when span end is unknown at start.</li>
+<li><code>i</code> (instant) — point events (queue enqueue, retry-fired, error marker).</li>
+<li><code>b</code>/<code>n</code>/<code>e</code> (async) — for spans that may overlap on the same <code>tid</code> (rare; reserved for SOAP-on-different-lane patterns).</li>
+<li><code>M</code> (metadata) — <code>thread_name</code>, <code>process_name</code> to label lanes.</li>
+<li><code>pid</code> — <code>0</code> = bench. Reserved for future sub-roles.</li>
+<li><code>tid</code> — <strong>numeric</strong>. Tracer maps lane names internally; numeric ids are universally importer-safe. Convention:</li>
+<li><code>1</code> = orchestrator</li>
+<li><code>2</code> = compile-queue</li>
+<li><code>3</code> = llm-pool</li>
+<li><code>4</code> = soap-async</li>
+<li><code>100 + i*10</code> = <code>Cronus28{i}</code> slot lane</li>
+<li><code>101 + i*10</code> = <code>Cronus28{i}</code> pwsh-cmdlets sub-lane</li>
+<li><code>102 + i*10</code> = <code>Cronus28{i}</code> soap sub-lane</li>
+<li><code>cat</code> — comma-separated categories so users can filter (<code>container</code>, <code>publish</code>, <code>cleanup</code>, <code>soap</code>, <code>llm</code>, <code>compile</code>, <code>queue</code>, <code>slot</code>, <code>pwsh</code>, <code>bcch</code>).</li>
+<li><code>args</code> — stable schema (see Event arg schema below). All free-form strings go through <code>redactSensitive</code> + 200-char cap before emission.</li>
+</ul>
+<h3 id="event-arg-schema-stable-common-fields">Event arg schema (stable common fields)<a class="headerlink" href="#event-arg-schema-stable-common-fields" title="Permanent link">&para;</a></h3>
+<p>Not every event carries every field, but when present these names are stable:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>taskId</code></td>
+<td>string</td>
+<td>e.g. <code>"CG-AL-E001"</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td>string</td>
+<td>full slug, e.g. <code>"anthropic/claude-opus-4-6"</code></td>
+</tr>
+<tr>
+<td><code>attempt</code></td>
+<td>number</td>
+<td>1-based</td>
+</tr>
+<tr>
+<td><code>container</code></td>
+<td>string</td>
+<td>e.g. <code>"Cronus281"</code></td>
+</tr>
+<tr>
+<td><code>slotId</code></td>
+<td>string</td>
+<td><code>&lt;container&gt;-&lt;seq&gt;</code> per session lifecycle</td>
+</tr>
+<tr>
+<td><code>sessionId</code></td>
+<td>string</td>
+<td>distinct from slotId if slot rebuilds session</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td><code>"soap"</code> | <code>"legacy"</code></td>
+</tr>
+<tr>
+<td><code>scriptLabel</code></td>
+<td>string</td>
+<td><code>"cleanup"</code> | <code>"publish"</code> | <code>"compile"</code> | <code>"test"</code></td>
+</tr>
+<tr>
+<td><code>wasWarm</code></td>
+<td>boolean</td>
+<td>session reuse flag</td>
+</tr>
+<tr>
+<td><code>ok</code></td>
+<td>boolean</td>
+<td>true if span body completed normally</td>
+</tr>
+<tr>
+<td><code>errorType</code></td>
+<td>string</td>
+<td>class name on throw</td>
+</tr>
+<tr>
+<td><code>errorMessage</code></td>
+<td>string</td>
+<td>redacted, 200-char cap</td>
+</tr>
+<tr>
+<td><code>httpStatus</code></td>
+<td>number</td>
+<td>SOAP responses</td>
+</tr>
+<tr>
+<td><code>totalTests</code></td>
+<td>number</td>
+<td>SOAP result count</td>
+</tr>
+<tr>
+<td><code>retry</code></td>
+<td>number</td>
+<td>retry index (0 = first try)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<p>Three components:</p>
+<h3 id="1-ts-side-tracer-srctracingtracerts">1. TS-side <code>Tracer</code> (<code>src/tracing/tracer.ts</code>)<a class="headerlink" href="#1-ts-side-tracer-srctracingtracerts" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Single instance per bench. Lazy-initialized on first <code>tracer.start*</code> if <code>CENTRALGAUGE_TRACE_FILE</code> (or CLI <code>--trace</code>) is set.</li>
+<li>Buffers events in memory; flushes on shutdown via <code>Deno.addSignalListener("SIGINT", ...)</code> (best-effort on Windows; hard kill loses buffered tail) and an explicit <code>await tracer.close()</code> from the bench teardown.</li>
+<li><strong>Writes a single valid Chrome Trace JSON document on close</strong>: <code>{ "traceEvents": [...], "displayTimeUnit": "ms" }</code>. Periodic flushes (every 1 s or 1000 events) rewrite the full valid JSON to disk atomically (<code>Deno.writeTextFile(tmp); Deno.rename(tmp, final)</code>) so the on-disk file is always valid Chrome JSON even mid-run. Tiny event count (~1200/bench) makes the rewrite-on-flush approach cheap.</li>
+<li>Optional <code>--trace-journal &lt;path&gt;</code> writes a parallel NDJSON journal for tailing during the run. NDJSON is never the drag-drop artifact.</li>
+<li><strong>Time base — two origins captured at init</strong>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">this</span><span class="p">.</span><span class="nx">originPerfMicros</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">performance</span><span class="p">.</span><span class="nx">now</span><span class="p">()</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1000</span><span class="p">;</span><span class="w">   </span><span class="c1">// monotonic, no DST/NTP jumps</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">this</span><span class="p">.</span><span class="nx">originUnixMicros</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Date</span><span class="p">.</span><span class="nx">now</span><span class="p">()</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mf">1000</span><span class="p">;</span><span class="w">           </span><span class="c1">// wall-clock anchor for pwsh-side</span>
+</code></pre></div>
+  TS event <code>ts = (performance.now() * 1000) - originPerfMicros</code>. Monotonic, immune to mid-run clock adjustment.
+  PowerShell receives the env var <code>CG_TRACE_BENCH_START_UNIX_MICROS = originUnixMicros</code> only. PS computes <code>ts = (DateTimeOffset.UtcNow.ToUnixTimeMicroseconds() ?? UtcNow.ToUnixTimeMilliseconds() * 1000) - $env:CG_TRACE_BENCH_START_UNIX_MICROS</code>. Stopwatch covers <code>dur</code>. Visual alignment expected within a few ms on a single Windows host; not guaranteed if Windows time sync adjusts mid-run (rare in a benchsmall window). Stopwatch-derived <code>dur</code> is unaffected by wall-clock jumps.</li>
+</ul>
+<h4 id="api">API<a class="headerlink" href="#api" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tracer</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;../tracing/tracer.ts&quot;</span><span class="p">;</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="c1">// Span helper — preferred. Auto-closes even on throw.</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="k">await</span><span class="w"> </span><span class="nx">tracer</span><span class="p">.</span><span class="nx">span</span><span class="p">(</span><span class="s2">&quot;publishApp&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tid</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Cronus281&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cat</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;container&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;publish&quot;</span><span class="p">],</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">taskId</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="k">this</span><span class="p">.</span><span class="nx">runScriptThroughSession</span><span class="p">(</span><span class="nx">name</span><span class="p">,</span><span class="w"> </span><span class="nx">script</span><span class="p">);</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="p">});</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="c1">// Manual start/end for cases where the close site differs from start site.</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="kd">const</span><span class="w"> </span><span class="nx">span</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">tracer</span><span class="p">.</span><span class="nx">start</span><span class="p">(</span><span class="s2">&quot;queue-wait&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tid</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Cronus281&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cat</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;queue&quot;</span><span class="p">]</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="k">try</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="k">finally</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">span</span><span class="p">.</span><span class="nx">end</span><span class="p">({</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">reason</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;container-busy&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">});</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="c1">// Point event.</span>
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="nx">tracer</span><span class="p">.</span><span class="nx">instant</span><span class="p">(</span><span class="s2">&quot;infra-retry-fired&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tid</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Cronus281&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cat</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;infra&quot;</span><span class="p">],</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">fromContainer</span><span class="p">,</span><span class="w"> </span><span class="nx">toContainer</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a><span class="c1">// Async begin/end (when the span spans threads / has out-of-order end).</span>
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a><span class="kd">const</span><span class="w"> </span><span class="nx">id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">tracer</span><span class="p">.</span><span class="nx">beginAsync</span><span class="p">(</span><span class="s2">&quot;soap-call&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tid</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;soap&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">cat</span><span class="o">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;soap&quot;</span><span class="p">],</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">container</span><span class="p">,</span><span class="w"> </span><span class="nx">codeunit</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">});</span>
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a><span class="c1">// ...</span>
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a><span class="nx">tracer</span><span class="p">.</span><span class="nx">endAsync</span><span class="p">(</span><span class="nx">id</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">httpStatus</span><span class="p">,</span><span class="w"> </span><span class="nx">totalTests</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">});</span>
+</code></pre></div>
+<h4 id="off-by-default-contract">Off-by-default contract<a class="headerlink" href="#off-by-default-contract" title="Permanent link">&para;</a></h4>
+<p>When disabled (<code>--no-trace</code> or env unset):</p>
+<ul>
+<li><strong>No</strong> clock reads in <code>tracer.span*</code> / <code>tracer.start*</code>.</li>
+<li><strong>No</strong> trace buffer allocation.</li>
+<li><strong>No</strong> JSON serialization.</li>
+<li><strong>No</strong> file I/O.</li>
+<li><strong>No</strong> PowerShell helper injection — scripts emit zero <code>[TRACE]</code> lines.</li>
+<li><strong>No</strong> stdout <code>[TRACE]</code> parsing in <code>runScriptThroughSession</code>.</li>
+</ul>
+<p>Honest caveats (not eliminable without API redesign):</p>
+<ul>
+<li>Call sites still allocate the options object literal (<code>{ tid, cat, args }</code>) and async closure when calling <code>tracer.span()</code>. For a few-thousand-event bench this is irrelevant.</li>
+<li>The <code>if (this.enabled)</code> check happens once per span call. Sub-microsecond.</li>
+</ul>
+<p>If a future hot-path call site is measurably affected, the caller should guard explicitly:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="nx">tracer</span><span class="p">.</span><span class="nx">enabled</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">tracer</span><span class="p">.</span><span class="nx">span</span><span class="p">(</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">tid</span><span class="p">,</span><span class="w"> </span><span class="nx">cat</span><span class="p">,</span><span class="w"> </span><span class="nx">args</span><span class="o">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="nx">body</span><span class="p">);</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="k">await</span><span class="w"> </span><span class="nx">body</span><span class="p">();</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="p">}</span>
+</code></pre></div>
+<p>But this complication is not needed for v1; all v1 spans are at coarse workflow boundaries (LLM calls, container ops, HTTP), not CPU-tight loops.</p>
+<h3 id="2-powershell-side-emission">2. PowerShell-side emission<a class="headerlink" href="#2-powershell-side-emission" title="Permanent link">&para;</a></h3>
+<p>PowerShell scripts that run BCH cmdlets emit trace events as <code>[TRACE]</code> lines on stdout. TS-side parses them out of script output.</p>
+<h4 id="emit-helper-injected-at-top-of-every-relevant-script-only-when-tracing-enabled">Emit helper (injected at top of every relevant script, only when tracing enabled)<a class="headerlink" href="#emit-helper-injected-at-top-of-every-relevant-script-only-when-tracing-enabled" title="Permanent link">&para;</a></h4>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c"># Origin propagated from TS as Unix wall-clock microseconds.</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nv">$global:CGTraceUnixOrigin</span> <span class="p">=</span> <span class="nv">$env:CG_TRACE_BENCH_START_UNIX_MICROS</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nv">$global:CGTraceTid</span>        <span class="p">=</span> <span class="no">[int]</span><span class="nv">$env:CG_TRACE_TID</span>  <span class="c"># numeric lane id; 0 = disabled</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">function</span> <span class="n">CG-Trace</span> <span class="p">{</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="p">[</span><span class="k">CmdletBinding</span><span class="p">()]</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="k">param</span><span class="p">(</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>        <span class="p">[</span><span class="k">Parameter</span><span class="p">(</span><span class="k">Mandatory</span><span class="p">)]</span> <span class="no">[string]</span>      <span class="nv">$Name</span><span class="p">,</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>        <span class="p">[</span><span class="k">Parameter</span><span class="p">(</span><span class="k">Mandatory</span><span class="p">)]</span> <span class="no">[scriptblock]</span> <span class="nv">$Body</span><span class="p">,</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>        <span class="no">[hashtable]</span>                          <span class="nv">$TraceArgs</span> <span class="p">=</span> <span class="p">@{}</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="p">)</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="k">if</span> <span class="p">(</span><span class="o">-not</span> <span class="nv">$global:CGTraceUnixOrigin</span> <span class="o">-or</span> <span class="nv">$global:CGTraceTid</span> <span class="o">-eq</span> <span class="n">0</span><span class="p">)</span> <span class="p">{</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>        <span class="c"># Off-mode: just run the body and return its output transparently.</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>        <span class="k">return</span> <span class="p">&amp;</span> <span class="nv">$Body</span>
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>    <span class="p">}</span>
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>
+<a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>    <span class="c"># Capture origin-relative start before running body. ToUnixTimeMicroseconds()</span>
+<a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>    <span class="c"># added in .NET 7+; fall back to milliseconds × 1000 on older runtimes.</span>
+<a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>    <span class="nv">$nowMicros</span> <span class="p">=</span> <span class="k">if</span> <span class="p">(</span><span class="no">[DateTimeOffset]</span><span class="p">.</span><span class="n">GetMethod</span><span class="p">(</span><span class="s1">&#39;ToUnixTimeMicroseconds&#39;</span><span class="p">))</span> <span class="p">{</span>
+<a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>        <span class="no">[DateTimeOffset]</span><span class="p">::</span><span class="n">UtcNow</span><span class="p">.</span><span class="n">ToUnixTimeMicroseconds</span><span class="p">()</span>
+<a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>    <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+<a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>        <span class="no">[DateTimeOffset]</span><span class="p">::</span><span class="n">UtcNow</span><span class="p">.</span><span class="n">ToUnixTimeMilliseconds</span><span class="p">()</span> <span class="p">*</span> <span class="n">1000</span>
+<a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>    <span class="p">}</span>
+<a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>    <span class="nv">$tsMicros</span> <span class="p">=</span> <span class="nv">$nowMicros</span> <span class="p">-</span> <span class="nv">$global:CGTraceUnixOrigin</span>
+<a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>    <span class="nv">$sw</span>       <span class="p">=</span> <span class="no">[System.Diagnostics.Stopwatch]</span><span class="p">::</span><span class="n">StartNew</span><span class="p">()</span>
+<a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a>    <span class="nv">$ok</span>       <span class="p">=</span> <span class="nv">$true</span>
+<a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>    <span class="nv">$errType</span>  <span class="p">=</span> <span class="nv">$null</span>
+<a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a>    <span class="nv">$errMsg</span>   <span class="p">=</span> <span class="nv">$null</span>
+<a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>
+<a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>    <span class="k">try</span> <span class="p">{</span>
+<a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a>        <span class="c"># PRESERVE body output exactly. Body&#39;s success stream flows back to caller.</span>
+<a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>        <span class="c"># Do NOT use `Write-Output` for trace lines (would contaminate this stream).</span>
+<a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>        <span class="p">&amp;</span> <span class="nv">$Body</span>
+<a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>    <span class="p">}</span> <span class="k">catch</span> <span class="p">{</span>
+<a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a>        <span class="nv">$ok</span>      <span class="p">=</span> <span class="nv">$false</span>
+<a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a>        <span class="nv">$errType</span> <span class="p">=</span> <span class="nv">$_</span><span class="p">.</span><span class="n">Exception</span><span class="p">.</span><span class="n">GetType</span><span class="p">().</span><span class="n">FullName</span>
+<a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a>        <span class="nv">$errMsg</span>  <span class="p">=</span> <span class="nv">$_</span><span class="p">.</span><span class="n">Exception</span><span class="p">.</span><span class="n">Message</span>
+<a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a>        <span class="k">if</span> <span class="p">(</span><span class="nv">$errMsg</span><span class="p">.</span><span class="n">Length</span> <span class="o">-gt</span> <span class="n">200</span><span class="p">)</span> <span class="p">{</span> <span class="nv">$errMsg</span> <span class="p">=</span> <span class="nv">$errMsg</span><span class="p">.</span><span class="n">Substring</span><span class="p">(</span><span class="n">0</span><span class="p">,</span> <span class="n">200</span><span class="p">)</span> <span class="p">}</span>
+<a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a>        <span class="k">throw</span>   <span class="c"># rethrow ORIGINAL exception unchanged</span>
+<a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a>    <span class="p">}</span> <span class="k">finally</span> <span class="p">{</span>
+<a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>        <span class="c"># Best-effort trace emission; failures inside finally must not mask</span>
+<a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a>        <span class="c"># the body&#39;s exception (the `throw` above already preserved it).</span>
+<a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a>        <span class="k">try</span> <span class="p">{</span>
+<a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a>            <span class="nv">$durMicros</span> <span class="p">=</span> <span class="no">[long]</span><span class="p">(</span><span class="nv">$sw</span><span class="p">.</span><span class="n">ElapsedTicks</span> <span class="p">*</span> <span class="n">1000000</span> <span class="p">/</span> <span class="no">[System.Diagnostics.Stopwatch]</span><span class="p">::</span><span class="n">Frequency</span><span class="p">)</span>
+<a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a>            <span class="nv">$finalArgs</span> <span class="p">=</span> <span class="p">@{}</span> <span class="p">+</span> <span class="nv">$TraceArgs</span>
+<a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a>            <span class="nv">$finalArgs</span><span class="p">[</span><span class="s1">&#39;ok&#39;</span><span class="p">]</span> <span class="p">=</span> <span class="nv">$ok</span>
+<a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a>            <span class="k">if</span> <span class="p">(</span><span class="o">-not</span> <span class="nv">$ok</span><span class="p">)</span> <span class="p">{</span>
+<a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a>                <span class="nv">$finalArgs</span><span class="p">[</span><span class="s1">&#39;errorType&#39;</span><span class="p">]</span>    <span class="p">=</span> <span class="nv">$errType</span>
+<a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a>                <span class="nv">$finalArgs</span><span class="p">[</span><span class="s1">&#39;errorMessage&#39;</span><span class="p">]</span> <span class="p">=</span> <span class="nv">$errMsg</span>
+<a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a>            <span class="p">}</span>
+<a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a>            <span class="nv">$event</span> <span class="p">=</span> <span class="p">@{</span>
+<a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a>                <span class="n">name</span> <span class="p">=</span> <span class="nv">$Name</span>
+<a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a>                <span class="n">ph</span>   <span class="p">=</span> <span class="s1">&#39;X&#39;</span>
+<a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a>                <span class="n">ts</span>   <span class="p">=</span> <span class="no">[long]</span><span class="nv">$tsMicros</span>
+<a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a>                <span class="n">dur</span>  <span class="p">=</span> <span class="nv">$durMicros</span>
+<a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a>                <span class="n">pid</span>  <span class="p">=</span> <span class="n">0</span>
+<a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a>                <span class="n">tid</span>  <span class="p">=</span> <span class="nv">$global:CGTraceTid</span>
+<a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a>                <span class="nb">cat </span> <span class="p">=</span> <span class="s1">&#39;pwsh,bcch&#39;</span>
+<a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a>                <span class="n">args</span> <span class="p">=</span> <span class="nv">$finalArgs</span>
+<a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a>            <span class="p">}</span> <span class="p">|</span> <span class="nb">ConvertTo-Json</span> <span class="n">-Compress</span> <span class="n">-Depth</span> <span class="n">5</span>
+<a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a>
+<a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>            <span class="c"># Use [Console]::Out.WriteLine — bypasses the PowerShell pipeline so</span>
+<a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a>            <span class="c"># the caller&#39;s `$result = CG-Trace ... { ... }` is unaffected.</span>
+<a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>            <span class="c"># Write-Output WOULD inject &quot;[TRACE] ...&quot; into the success stream.</span>
+<a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a>            <span class="no">[Console]</span><span class="p">::</span><span class="n">Out</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s2">&quot;[TRACE] $event&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a>        <span class="p">}</span> <span class="k">catch</span> <span class="p">{</span>
+<a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a>            <span class="c"># Trace emission failed — log to stderr (so caller can decide whether</span>
+<a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a>            <span class="c"># to surface) but never re-throw or affect the original outcome.</span>
+<a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a>            <span class="no">[Console]</span><span class="p">::</span><span class="n">Error</span><span class="p">.</span><span class="n">WriteLine</span><span class="p">(</span><span class="s2">&quot;[TRACE-EMIT-ERROR] </span><span class="p">$(</span><span class="nv">$_</span><span class="p">.</span><span class="n">Exception</span><span class="p">.</span><span class="n">Message</span><span class="p">)</span><span class="s2">&quot;</span><span class="p">)</span>
+<a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a>        <span class="p">}</span>
+<a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a>    <span class="p">}</span>
+<a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="p">}</span>
+<a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a>
+<a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="c"># Usage:</span>
+<a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="nv">$apps</span> <span class="p">=</span> <span class="n">CG-Trace</span> <span class="n">-Name</span> <span class="s2">&quot;Get-BcContainerAppInfo&quot;</span> <span class="n">-TraceArgs</span> <span class="p">@{</span> <span class="n">container</span> <span class="p">=</span> <span class="nv">$containerName</span> <span class="p">}</span> <span class="n">-Body</span> <span class="p">{</span>
+<a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a>    <span class="nb">Get-BcContainerAppInfo</span> <span class="n">-containerName</span> <span class="nv">$containerName</span>
+<a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="p">}</span>
+<a id="__codelineno-5-78" name="__codelineno-5-78" href="#__codelineno-5-78"></a><span class="c"># $apps now holds the cmdlet&#39;s result unchanged.</span>
+</code></pre></div>
+<h4 id="constraints">Constraints<a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Tracing-disabled mode injects nothing.</strong> When <code>CG_TRACE_BENCH_START_UNIX_MICROS</code> is unset, TS does NOT inject the <code>CG-Trace</code> function definition into BCH scripts. Scripts are byte-identical to current production.</li>
+<li>Wrap <strong>only</strong> operations we want lanes for. Initial targets: <code>Get-BcContainerAppInfo</code>, <code>Unpublish-BcContainerApp</code>, <code>Publish-BcContainerApp</code>, <code>Invoke-ScriptInBcContainer</code> (outer call only), <code>Run-TestsInBcContainer</code>.</li>
+<li><code>[Console]::Out.WriteLine(...)</code> writes to host stdout outside the pwsh pipeline — wrapped command return values are preserved exactly.</li>
+<li>Body exceptions are re-thrown unchanged; trace emission is best-effort and runs in a nested try/catch so a serialization failure can't mask the original error.</li>
+<li>Trace lines on stderr (<code>[TRACE-EMIT-ERROR]</code>) signal trace machinery is broken — non-fatal to the bench.</li>
+</ul>
+<h3 id="3-merger-writer">3. Merger / writer<a class="headerlink" href="#3-merger-writer" title="Permanent link">&para;</a></h3>
+<p>TS-side reads script stdout, extracts <code>[TRACE] ...</code> lines, parses the JSON object, and forwards to the same <code>tracer</code> buffer as host-side spans. This means:</p>
+<ul>
+<li>PowerShell-emitted events land on the per-container pwsh-cmdlets sub-lane (<code>tid=101</code>, <code>103</code>, … per the numeric scheme above) right alongside TS-emitted spans on the container's slot lane (<code>tid=100</code>, <code>102</code>, …) in the same trace file.</li>
+<li>Single output: <code>results/&lt;run&gt;/trace.json</code> (valid Chrome Trace JSON). Optional <code>results/&lt;run&gt;/trace.ndjson</code> if <code>--trace-journal</code> requested.</li>
+<li>A tiny CLI wrapper <code>centralgauge trace open &lt;file&gt;</code> prints "drag this file to https://ui.perfetto.dev" (and on Windows, can <code>Start-Process</code> the URL). No bundled viewer.</li>
+</ul>
+<h2 id="coverage-plan">Coverage plan<a class="headerlink" href="#coverage-plan" title="Permanent link">&para;</a></h2>
+<p>These are the <strong>minimum spans</strong> for Phase 2 / 3 troubleshooting. Ship one at a time.</p>
+<h3 id="bench-level">Bench-level<a class="headerlink" href="#bench-level" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>bench</code> (root, <code>tid=orchestrator</code>) — start to end of the whole run.</li>
+<li><code>bench.setup</code> — container warmup, compiler folder, harness publish.</li>
+<li><code>bench.teardown</code> — finalize, write outputs.</li>
+</ul>
+<h3 id="per-task">Per-task<a class="headerlink" href="#per-task" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>task</code> (one per (task, model, attempt) tuple, <code>tid=&lt;container&gt;</code>) — wraps everything for one task. Carries <code>args: { taskId, model, attempt, container }</code>.</li>
+<li>Sub-spans:</li>
+<li><code>llm-request</code> (cat=<code>llm</code>) — LLM call. <code>args.path=anthropic|openai|...</code>.</li>
+<li><code>compile</code> (cat=<code>compile</code>)</li>
+<li><code>prereq-publish</code> (cat=<code>container,prereq</code>) — if applicable.</li>
+<li><code>cleanup</code> (cat=<code>container,cleanup</code>) — <code>cleanupStaleCandidates</code> call.</li>
+<li><code>publish-app</code> (cat=<code>container,publish</code>) — <code>publishApp</code> call.</li>
+<li><code>container-slot-wait</code> (cat=<code>queue,slot</code>) — time from task request to per-container slot acquire (queue depth contention).</li>
+<li><code>pwsh-session-wait</code> (cat=<code>pwsh,session</code>) — time from slot acquire to inside-session ready (mutex contention within the slot).</li>
+<li><strong>SOAP-path test spans (symmetric)</strong>:<ul>
+<li><code>test.soap.total</code> (cat=<code>soap,test</code>) — wraps everything below.</li>
+<li><code>test.soap.build-envelope</code> — XML build, auth string.</li>
+<li><code>test.soap.http</code> (cat=<code>soap,http</code>) — <code>fetch</code> start → response received.</li>
+<li><code>test.soap.read-body</code> — <code>await response.text()</code>.</li>
+<li><code>test.soap.parse</code> — XML/JSON parse to <code>TestResult</code>.</li>
+</ul>
+</li>
+<li><strong>Legacy-path test spans (symmetric)</strong>:<ul>
+<li><code>test.legacy.total</code> (cat=<code>legacy,test</code>) — wraps everything below.</li>
+<li><code>test.legacy.run-tests-in-bc-container</code> — the BCH wrapper call.</li>
+<li><code>test.legacy.parse</code> — output → <code>TestResult</code> conversion.</li>
+</ul>
+</li>
+<li>Fallback marker: instant <code>soap-fallback-to-legacy</code> with <code>args: { reason, errorType }</code> whenever SOAP fork errors and legacy path runs.</li>
+</ul>
+<h3 id="per-script-host-side">Per-script (host side)<a class="headerlink" href="#per-script-host-side" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>runScriptThroughSession</code> (cat=<code>pwsh,slot</code>, <code>tid=&lt;container slot&gt;</code>) — wraps a single slot.runScript() call. <code>args: { scriptLabel: "cleanup" | "publish" | "compile" | "test", slotId, sessionId, wasWarm }</code>.</li>
+</ul>
+<h3 id="slot-pwsh-session-lifecycle-answers-is-the-slot-actually-warm">Slot + pwsh-session lifecycle (answers "is the slot actually warm?")<a class="headerlink" href="#slot-pwsh-session-lifecycle-answers-is-the-slot-actually-warm" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>slot.create</code> (cat=<code>slot</code>, instant) — fired when a new <code>ContainerSessionSlot</code> is constructed. <code>args: { slotId, container }</code>.</li>
+<li><code>slot.acquire</code> (cat=<code>slot</code>) — wraps the lock acquisition. Same lifetime as a <code>runScript</code> call.</li>
+<li><code>slot.release</code> (instant) — fired on lock release.</li>
+<li><code>slot.recycle</code> (cat=<code>slot</code>, instant) — fired when the slot recycles its pwsh process (every N calls).</li>
+<li><code>pwsh-session.create</code> (cat=<code>pwsh,session</code>) — wraps the spawn + bootstrap of a new pwsh process. <code>args: { sessionId }</code>.</li>
+<li><code>pwsh-session.first-command</code> (cat=<code>pwsh,session</code>, instant) — fires once per session, on the first script that hits it. Lets us see "cold first-call" cost directly.</li>
+<li><code>pwsh-session.reuse</code> (cat=<code>pwsh,session</code>, instant) — every subsequent script. <code>args: { sessionId, invocationCounter }</code>.</li>
+<li><code>pwsh-session.reset</code> (cat=<code>pwsh,session</code>, instant) — if the session is killed/respawned mid-bench.</li>
+</ul>
+<h3 id="per-cmdlet-pwsh-side">Per-cmdlet (pwsh side)<a class="headerlink" href="#per-cmdlet-pwsh-side" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>Get-BcContainerAppInfo</code>, <code>Unpublish-BcContainerApp</code>, <code>Publish-BcContainerApp</code>, <code>Invoke-ScriptInBcContainer</code>, <code>Run-TestsInBcContainer</code> (cat=<code>bcch</code>, <code>tid=&lt;container&gt;-pwsh</code>).</li>
+<li>Wrap inside the existing scripts via <code>CG-Trace -name ...</code>.</li>
+</ul>
+<h3 id="async">Async<a class="headerlink" href="#async" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>soap-call</code> (cat=<code>soap</code>, <code>tid=soap-&lt;container&gt;</code>) — HTTP request. Begin on <code>fetch</code>, end on response. <code>args: { url, codeunit, httpStatus, totalTests }</code>.</li>
+</ul>
+<h3 id="instants">Instants<a class="headerlink" href="#instants" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>infra-retry-fired</code>, <code>soap-fallback-to-legacy</code>, <code>slot-recycled</code>, <code>harness-republished</code> — point events to mark interesting transitions.</li>
+</ul>
+<h3 id="metadata-events">Metadata events<a class="headerlink" href="#metadata-events" title="Permanent link">&para;</a></h3>
+<p>Emit at startup:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;process_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;centralgauge-bench&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281 (slot)&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;thread_name&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ph&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;M&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;pid&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tid&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281-pwsh&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Cronus281 (pwsh cmdlets)&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+<p>So Perfetto labels lanes nicely.</p>
+<h2 id="performance-budget">Performance budget<a class="headerlink" href="#performance-budget" title="Permanent link">&para;</a></h2>
+<p>Tracer must not perturb the thing it measures.</p>
+<ul>
+<li>Off (no <code>CENTRALGAUGE_TRACE_FILE</code>): zero allocations, zero clock reads in the hot path. Tested by spot-asserting <code>tracer.span</code> returns the original function without wrapping when disabled.</li>
+<li>On: ~1 µs per <code>span()</code> host-side, ~10 µs per <code>CG-Trace</code> pwsh-side (PowerShell <code>Stopwatch</code> + <code>ConvertTo-Json</code>). For a bench of 60 tasks × ~20 wrapped cmdlets = ~1200 events / bench → trivial.</li>
+<li>Output: ~250 bytes/event. 1200 events = ~300 KB. Bench-level trace stays under 1 MB unbatched. No streaming/compression needed for now.</li>
+<li>The buffer flushes to disk every 1 s OR every 1000 events OR on close. Reasonable for the bench's pace.</li>
+</ul>
+<h2 id="failure-modes">Failure modes<a class="headerlink" href="#failure-modes" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Body throws inside <code>CG-Trace</code></strong> → original exception propagates unchanged (re-thrown from the <code>catch</code>); trace event still emitted on <code>finally</code> with <code>ok=false</code> + <code>errorType</code> + redacted <code>errorMessage</code>.</li>
+<li><strong>Trace emission throws inside <code>finally</code></strong> → caught + written to stderr as <code>[TRACE-EMIT-ERROR] ...</code>; original body exception still propagates. Trace emission MUST NEVER mask the body's exception.</li>
+<li><strong>PowerShell <code>Write-Output</code> would corrupt the pipeline</strong> → forbidden in the helper. Use <code>[Console]::Out.WriteLine</code> so the wrapped command's return value flows through unmodified.</li>
+<li><strong>Script crashes pwsh before any <code>[TRACE]</code> line</strong> → host-side <code>runScriptThroughSession</code> emits a synthetic <code>pwsh-session.reset</code> instant + <code>script-crash</code> instant with <code>args: { exitCode, scriptLabel }</code>.</li>
+<li><strong>Malformed <code>[TRACE]</code> line</strong> (truncated JSON, non-UTF8, line happens to start with <code>[TRACE]</code> from a model that wrote it) → parser MUST strictly accept only lines matching <code>/^\[TRACE\] \{/</code>. JSON parse failures are emitted as <code>trace-parse-error</code> instants with <code>args: { reason, sample }</code> (sample capped 200 chars); bench continues.</li>
+<li><strong>Bench killed mid-run (SIGINT)</strong> → tracer's signal handler attempts to flush the in-memory buffer to disk. Best-effort on Windows (SIGINT semantics differ from Unix). Periodic flushes (1 s or 1000 events) make sure the on-disk file is always valid Chrome Trace JSON regardless. Hard <code>taskkill</code> may lose buffered tail since the last flush.</li>
+<li><strong>Trace file disk write fails</strong> → log warning once, set <code>tracer.enabled=false</code> for the rest of the run, continue. Never abort the bench.</li>
+<li><strong>Args contain credentials / generated code / error blobs</strong> → mandatory redaction: every string arg goes through <code>redactSensitive()</code> (already in <code>src/container/</code>) and is capped at 200 chars. Non-string args (numbers, booleans) pass through.</li>
+<li><strong>Non-serializable args</strong> (circular ref, BigInt, Function) → <code>JSON.stringify</code> fails → trace event is emitted with <code>args: { _serializationFailed: true }</code> placeholder; warning emitted once.</li>
+<li><strong>Negative or huge <code>ts</code></strong> (clock jump, wrong env origin) → kept as-is in the trace (do NOT silently clamp); a <code>trace-clock-anomaly</code> instant is emitted with <code>args: { observedTs, expectedRangeMicros }</code> so the time-base bug is visible in the viewer rather than papered over.</li>
+<li><strong>Two benches share <code>CG_TRACE_BENCH_START_UNIX_MICROS</code> env</strong> (only happens with weird forks) → trace will have non-zero base; viewer still works but lanes may appear offset.</li>
+<li><strong>Trace overhead becomes measurable</strong> → reduce wrapped-cmdlet list. If pwsh-side <code>CG-Trace</code> overhead is &gt;5% of any span, drop wrapping for that cmdlet.</li>
+</ul>
+<h2 id="cli-surface">CLI surface<a class="headerlink" href="#cli-surface" title="Permanent link">&para;</a></h2>
+<p>New flags on <code>centralgauge bench</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>--trace                       # enable tracing; default output path = $output_dir/trace.json
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>--trace-file &lt;path&gt;           # override output path (implies --trace)
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>--trace-journal &lt;path&gt;        # ALSO write NDJSON journal alongside (debug-only; not the drag-drop artifact)
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>--no-trace                    # disable even if CENTRALGAUGE_TRACE_FILE is set
+</code></pre></div>
+<p>Env var precedence (highest first):
+1. CLI flags (<code>--no-trace</code> &gt; <code>--trace-file</code> &gt; <code>--trace</code>)
+2. <code>CENTRALGAUGE_TRACE_FILE</code> — explicit path, also enables tracing
+3. unset → disabled</p>
+<p>A new subcommand for convenience:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>centralgauge trace open &lt;file&gt;
+</code></pre></div>
+<p>Prints the file path and a clickable line:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>Drag-drop into https://ui.perfetto.dev or run:
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>  start https://ui.perfetto.dev
+</code></pre></div>
+<p>(No bundled viewer. Perfetto's online viewer is officially supported and runs offline once cached.)</p>
+<h2 id="testing-plan">Testing plan<a class="headerlink" href="#testing-plan" title="Permanent link">&para;</a></h2>
+<p>Unit tests in <code>tests/unit/tracing/</code>:</p>
+<ol>
+<li><code>tracer.test.ts</code>:</li>
+<li>off-by-default: <code>tracer.span</code> runs body and returns its value without writing.</li>
+<li>basic span: emits one <code>X</code> event with <code>name</code>, <code>ts</code>, <code>dur</code>, <code>tid</code>, <code>args</code>.</li>
+<li>span throws: emits the <code>X</code> event AND propagates the throw.</li>
+<li>async begin/end: matched IDs, correct phase letters.</li>
+<li>signal handler: SIGINT flush emits all buffered events.</li>
+<li>parser: <code>[TRACE]</code> line extraction from script output handles JSON with embedded quotes.</li>
+<li><code>pwsh-helper.test.ts</code>:</li>
+<li>bash-driven test that runs a tiny pwsh script with <code>CG-Trace</code>, asserts the <code>[TRACE]</code> line shape on stdout.</li>
+<li>Integration test (Windows-only, opt-in): run <code>cleanupStaleCandidates</code> against Cronus281 with tracer enabled, assert the trace file contains the expected span hierarchy (<code>task → cleanup → runScriptThroughSession → Get-BcContainerAppInfo</code>).</li>
+</ol>
+<h2 id="roll-out">Roll-out<a class="headerlink" href="#roll-out" title="Permanent link">&para;</a></h2>
+<p>Two-phase ship inside this conversation:</p>
+<p><strong>Phase A (minimal): host-side tracer + critical TS spans.</strong>
+- <code>src/tracing/tracer.ts</code> — full impl with the off-by-default contract documented above.
+- Spans: <code>bench</code>, <code>bench.setup</code>, <code>bench.teardown</code>, <code>task</code>, <code>llm-request</code>, <code>compile</code>, <code>prereq-publish</code>, <code>cleanup</code>, <code>publish-app</code>, <code>container-slot-wait</code>, <code>pwsh-session-wait</code>, <code>runScriptThroughSession</code>, <code>test.soap.total</code>, <code>test.soap.http</code>, <code>test.soap.parse</code>, <code>test.legacy.total</code>, <code>test.legacy.run-tests-in-bc-container</code>, <code>test.legacy.parse</code>.
+- Slot lifecycle: <code>slot.create</code> / <code>slot.acquire</code> / <code>slot.release</code> / <code>slot.recycle</code> + <code>pwsh-session.create</code> / <code>first-command</code> / <code>reuse</code> / <code>reset</code> instants.
+- Instants: <code>soap-fallback-to-legacy</code>, <code>infra-retry-fired</code>, <code>script-crash</code>, <code>trace-parse-error</code>, <code>trace-clock-anomaly</code>.
+- One unit test file <code>tests/unit/tracing/tracer.test.ts</code>.
+- Wire <code>--trace</code> / <code>--trace-file</code> / <code>--no-trace</code> CLI flags.
+- Re-run mini bench with <code>--trace</code>; drop <code>trace.json</code> into ui.perfetto.dev.</p>
+<p>Phase A alone exposes: container-slot-wait vs pwsh-session-wait vs script-execution time vs SOAP-fetch vs legacy-cmdlet time, plus slot warm/cold state.</p>
+<p><strong>Phase B: pwsh-side <code>CG-Trace</code> + cmdlet wrapping.</strong>
+- Inject the helper (only when tracing enabled) into <code>buildCleanupStaleCandidatesScript</code>, <code>publishApp</code> script, <code>buildTestScript</code>.
+- Wrap <code>Get-BcContainerAppInfo</code>, <code>Unpublish-BcContainerApp</code>, <code>Publish-BcContainerApp</code>, <code>Invoke-ScriptInBcContainer</code> (outer), <code>Run-TestsInBcContainer</code>.
+- Parser <code>src/tracing/parse-trace-lines.ts</code> extracts <code>[TRACE]</code> lines from script stdout. Strict <code>/^\[TRACE\] \{/</code> regex; parse failures emit <code>trace-parse-error</code> instants.
+- Unit test for the parser.
+- Re-run; per-cmdlet sub-lane bars appear under each container's pwsh sub-lane.</p>
+<p>If Phase A's data already pinpoints the bottleneck, Phase B may be skipped or scoped down.</p>
+<h2 id="decisions-made-moved-out-of-open-questions-after-gpt-55-review">Decisions made (moved out of "open questions" after gpt-5.5 review)<a class="headerlink" href="#decisions-made-moved-out-of-open-questions-after-gpt-55-review" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Question</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trace artifact format</td>
+<td>Default: single valid Chrome Trace JSON document (<code>{ "traceEvents": [...] }</code>). NDJSON exists only as optional <code>--trace-journal</code> debug output.</td>
+</tr>
+<tr>
+<td>pid/tid type</td>
+<td>Numeric. Tracer maps lane names to numeric ids and emits <code>M/thread_name</code> metadata for friendly labels.</td>
+</tr>
+<tr>
+<td>Time origin</td>
+<td>Two origins captured at tracer init: <code>originPerfMicros</code> (TS monotonic from <code>performance.now()</code>) and <code>originUnixMicros</code> (wall-clock from <code>Date.now()</code>). PowerShell receives the env var <code>CG_TRACE_BENCH_START_UNIX_MICROS = originUnixMicros</code> only.</td>
+</tr>
+<tr>
+<td>Redaction</td>
+<td>Mandatory. All free-form string args go through <code>redactSensitive</code> + 200-char cap before emission.</td>
+</tr>
+<tr>
+<td>PowerShell emission channel</td>
+<td><code>[Console]::Out.WriteLine</code> — NEVER <code>Write-Output</code>. Preserves the wrapped command's success-stream return value.</td>
+</tr>
+<tr>
+<td>Off-mode pwsh helper</td>
+<td>TS does NOT inject <code>CG-Trace</code> into BCH scripts at all when tracing is disabled. Scripts are byte-identical to current production.</td>
+</tr>
+<tr>
+<td>Periodic flush format</td>
+<td>Each flush rewrites the full valid Chrome Trace JSON file atomically (<code>writeTextFile(tmp); rename(tmp, final)</code>). On-disk file always valid mid-run.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="open-questions-still-undecided">Open questions (still undecided)<a class="headerlink" href="#open-questions-still-undecided" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Per-LLM-token streaming events (each chunk as an instant)? Useful for slow-model debugging but ~10× the event volume. <strong>Tentative: default off</strong>, behind <code>CG_TRACE_LLM_STREAM=1</code>.</li>
+<li>SQLite/Perfetto-proto output for offline queries? <strong>Defer</strong> — JSON is enough now; <code>perfetto_trace_processor</code> can convert later.</li>
+<li>Auto-open ui.perfetto.dev when <code>--trace --open</code> is passed? <strong>Tentative: no</strong> in v1. <code>centralgauge trace open &lt;file&gt;</code> is a separate explicit step.</li>
+<li>Should <code>slot.acquire</code> / <code>pwsh-session-wait</code> be the SAME span (since the slot's lock acquisition IS the session wait) or separate? Currently spec'd as separate. May collapse to one after Phase A reveals which view is more useful.</li>
+<li>Should the SOAP HTTP call be on its own async lane (<code>tid=soap-&lt;container&gt;</code>) or inline on the container's slot lane? Currently spec'd as the latter (inline); revisit if SOAP overlaps interestingly with other operations.</li>
+</ol>
+<h2 id="file-layout">File layout<a class="headerlink" href="#file-layout" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>src/tracing/
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>  tracer.ts            # main module
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>  pwsh-trace-helper.ps1  # raw text injected into BCH scripts
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>  parse-trace-lines.ts # extracts [TRACE] from script stdout
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>tests/unit/tracing/
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>  tracer.test.ts
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>  parse-trace-lines.test.ts
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>docs/superpowers/specs/
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>  2026-05-15-bench-tracing.md  # this file
+</code></pre></div>
+<h2 id="done-criteria">Done-criteria<a class="headerlink" href="#done-criteria" title="Permanent link">&para;</a></h2>
+<p><strong>Phase A:</strong></p>
+<ul>
+<li>[ ] <code>--trace</code> (no path) produces <code>$output_dir/trace.json</code> as a single valid Chrome Trace JSON document (<code>{ "traceEvents": [...] }</code>).</li>
+<li>[ ] <code>--trace-file &lt;path&gt;</code> writes to the explicit path; periodic atomic rewrites keep the on-disk file valid mid-run.</li>
+<li>[ ] Drag-drop into <a href="https://ui.perfetto.dev">ui.perfetto.dev</a> renders a multi-lane timeline with named lanes (<code>orchestrator</code>, <code>Cronus281 (slot)</code>, <code>Cronus281 (pwsh cmdlets)</code>, …).</li>
+<li>[ ] <code>task</code> spans appear with correct nesting of <code>llm-request</code> / <code>compile</code> / <code>cleanup</code> / <code>publish-app</code> / <code>test.*</code> children.</li>
+<li>[ ] <code>container-slot-wait</code> and <code>pwsh-session-wait</code> spans are visible and answer "is queue or session contention the bottleneck?".</li>
+<li>[ ] <code>slot.create</code> / <code>slot.acquire</code> / <code>slot.recycle</code> + <code>pwsh-session.first-command</code> / <code>reuse</code> instants visible, answering "is the slot warm?".</li>
+<li>[ ] <code>soap-fallback-to-legacy</code> instants present whenever a fallback occurs.</li>
+<li>[ ] <code>--no-trace</code> (or env unset) produces zero trace file, zero <code>[TRACE]</code> lines on stdout, zero <code>tracer.*</code> clock reads.</li>
+<li>[ ] Phase A unit test <code>tests/unit/tracing/tracer.test.ts</code> covers: off-by-default contract, complete <code>X</code> spans, begin/end pairs, async begin/end, instant events, span throws still emits with <code>ok=false</code>, periodic flush produces valid Chrome JSON, signal-handler flush is best-effort.</li>
+<li>[ ] <code>deno task test:unit</code> green.</li>
+</ul>
+<p><strong>Phase B:</strong></p>
+<ul>
+<li>[ ] When tracing enabled, BCH scripts inject the <code>CG-Trace</code> helper before any wrapped cmdlet.</li>
+<li>[ ] When tracing disabled, BCH scripts are byte-identical to current production (verified by snapshot test of script output).</li>
+<li>[ ] PowerShell helper uses <code>[Console]::Out.WriteLine</code> — wrapped cmdlets' return values are preserved exactly (verified by Windows-only integration test running <code>$apps = CG-Trace ... { Get-BcContainerAppInfo }</code> and asserting <code>$apps</code> is an array of app-info objects, NOT mixed with strings).</li>
+<li>[ ] Per-cmdlet sub-lane bars appear in Perfetto for <code>Get-BcContainerAppInfo</code>, <code>Unpublish-BcContainerApp</code>, <code>Publish-BcContainerApp</code>, <code>Run-TestsInBcContainer</code>.</li>
+<li>[ ] Body exceptions propagate unchanged through the helper (verified by unit test of the pwsh function).</li>
+<li>[ ] Parser <code>tests/unit/tracing/parse-trace-lines.test.ts</code> covers: strict <code>[TRACE] {...}</code> matching, JSON parse failure → instant event, multiple events per script invocation, interleaved with normal stdout.</li>
+<li>[ ] <code>deno task test:unit</code> green.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

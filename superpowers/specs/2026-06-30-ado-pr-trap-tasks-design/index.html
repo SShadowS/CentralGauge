@@ -1,0 +1,2476 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/specs/2026-06-30-ado-pr-trap-tasks-design/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Design: ADO-PR → Trap-Task pipeline + first batch - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#design-ado-pr-trap-task-pipeline-first-batch" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Design: ADO-PR → Trap-Task pipeline + first batch
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#problem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Problem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#goals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Goals
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#non-goals-scope-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-goals (scope guards)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-constraint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key constraint
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-a-the-pipeline-ado-pr-trap-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part A — The pipeline (ADO PR → trap-tasks)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part A — The pipeline (ADO PR → trap-tasks)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-insight" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core insight
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-discrimination-probe-approaches-weighed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the discrimination probe (approaches weighed)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#skill-shape" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Skill shape
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-b-first-batch-4-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part B — First batch (4 tasks)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Part B — First batch (4 tasks)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cg-al-x001-bind-must-be-inside-the-codeunitrun-frame-hard-self-contained" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CG-AL-X001 — Bind must be inside the Codeunit.Run frame (HARD, self-contained)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cg-al-x002-codeunitrun-rollback-run-once-guard-ordering-hard-self-contained" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CG-AL-X002 — Codeunit.Run rollback + run-once guard ordering (HARD, self-contained)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cg-al-x003-change-log-always-logged-false-positive-gate-hard-base-app-faithful" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CG-AL-X003 — Change-Log always-logged false-positive gate (HARD, base-app-faithful)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cg-al-x004-list-then-insert-idempotent-insert-medium-self-contained" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CG-AL-X004 — list-then-insert + idempotent insert (MEDIUM, self-contained)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#part-c-marking-convention-old-vs-new-divider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Part C — Marking convention (old vs new divider)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#first-batch-id-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First-batch id map
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#risks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Risks
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#definition-of-done-this-designs-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Definition of done (this design's scope)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/specs/2026-06-30-ado-pr-trap-tasks-design.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="design-ado-pr-trap-task-pipeline-first-batch">Design: ADO-PR → Trap-Task pipeline + first batch<a class="headerlink" href="#design-ado-pr-trap-task-pipeline-first-batch" title="Permanent link">&para;</a></h1>
+<p><strong>Date:</strong> 2026-06-30
+<strong>Status:</strong> Approved (design); pending implementation plan
+<strong>Author:</strong> Torben Leth (with Claude)</p>
+<h2 id="problem">Problem<a class="headerlink" href="#problem" title="Permanent link">&para;</a></h2>
+<p>The current CentralGauge task suite has become too easy — top models saturate it.
+We need harder tasks that probe <em>runtime AL semantics</em>, not just syntax recall.
+Approved Continia ADO pull requests are a rich, untapped source: a merged PR that
+fixed a real production problem encodes exactly the non-obvious platform behaviors
+that separate a model which memorized AL syntax from one that understands BC
+runtime semantics.</p>
+<p>Two reference PRs (repo <code>Document Output - Extensions</code>, project <code>Continia Software</code>):</p>
+<ul>
+<li><strong>PR 50590 / work item #79397</strong> — "DO Permissions on DC migration." Auto-replicates
+  Document Capture permission-set assignments onto Document Output permission sets when
+  the setup wizard completes on a migration tenant.</li>
+<li><strong>PR 50285 / work item #79518</strong> — "Improve performance for updating CDO handled from DO
+  Wizard." Bulk-marks historical posted sales documents as handled, suppressing the
+  Microsoft Graph aggregate refresh and warning when the standard Change Log is active.</li>
+</ul>
+<h2 id="goals">Goals<a class="headerlink" href="#goals" title="Permanent link">&para;</a></h2>
+<ol>
+<li>A <strong>repeatable pipeline</strong> that turns any approved ADO PR into candidate CentralGauge
+   trap-tasks, delivered as a skill that composes with the existing <code>create-task</code> and
+   <code>validate-tasks</code> skills.</li>
+<li>A <strong>first batch</strong> of 4 concrete tasks distilled from the two reference PRs, serving as
+   the pipeline's proof run.</li>
+<li>A <strong>durable marker</strong> dividing the new cohort from the legacy suite, so the legacy
+   tasks can be bulk-deleted later once enough new tasks exist.</li>
+</ol>
+<h2 id="non-goals-scope-guards">Non-goals (scope guards)<a class="headerlink" href="#non-goals-scope-guards" title="Permanent link">&para;</a></h2>
+<ul>
+<li>No production scoreboard ingest in this work. Authoring + local dry-run only.</li>
+<li>No Continia-specific objects in any task (CDO Setup, CTS-SYS telemetry, CDC permission
+  sets, etc. are absent from the vanilla Cronus container).</li>
+<li>Held for a later wave: TryFunction-write-ban, state-across-<code>Codeunit.Run</code>-boundary,
+  <code>LockTable</code> concurrency, App-ID-match permission lookup.</li>
+</ul>
+<h2 id="key-constraint">Key constraint<a class="headerlink" href="#key-constraint" title="Permanent link">&para;</a></h2>
+<p>CentralGauge tasks compile and run their oracle tests inside a <strong>vanilla BC container</strong>
+(Cronus). Base-app objects the PRs lean on — <code>Access Control</code>, <code>Change Log Setup</code> /
+<code>Change Log Setup (Table)</code> / <code>Change Log Management</code>, codeunit 5532 <code>Disable Aggregate
+Table Update</code>, posted sales tables, <code>Library - Sales</code> — ARE present. Continia objects are
+not. Tasks must therefore distill the <strong>generic</strong> trap, stripped of Continia specifics,
+keeping a base-app dependency only where the trap <em>is</em> a base-app behavior.</p>
+<hr />
+<h2 id="part-a-the-pipeline-ado-pr-trap-tasks">Part A — The pipeline (ADO PR → trap-tasks)<a class="headerlink" href="#part-a-the-pipeline-ado-pr-trap-tasks" title="Permanent link">&para;</a></h2>
+<h3 id="core-insight">Core insight<a class="headerlink" href="#core-insight" title="Permanent link">&para;</a></h3>
+<p>In a well-reviewed PR, <strong>every code comment that justifies a non-obvious decision marks a
+latent trap.</strong> Examples drawn verbatim from the two reference PRs:</p>
+<ul>
+<li>"We can't use a TryFunction instead: TryFunctions can't contain database writes on-premises."</li>
+<li>"BindSubscription is bound to the current call-stack frame and does NOT reliably
+  propagate into Codeunit.Run's isolated frame."</li>
+<li>"Gate on the global 'Change Log Activated' flag FIRST. The Base App's
+  IsAlwaysLoggedTable() returns true for posted sales tables regardless of whether the
+  global Change Log is actually enabled."</li>
+<li>"Read all the matching users first, then insert below — you can't insert into a table
+  while still looping over it."</li>
+</ul>
+<p>Each justification is one thing a syntax-only model gets wrong. The pipeline harvests
+these justifications and turns each into a task whose oracle a trap-naive solution fails.</p>
+<h3 id="stages">Stages<a class="headerlink" href="#stages" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>SELECT</strong> — Identify an approved/completed PR and its linked work item. Inputs: repo
+   id, PR id. The work item supplies the business <em>intent</em> ("why"); the diff supplies the
+   <em>mechanism</em> ("how").</li>
+<li><strong>EXTRACT</strong> — Pull the PR diff and the work item description. Flag every comment or code
+   decision that justifies a non-obvious AL choice. Output: a list of candidate traps, each
+   with a one-line "naive model would do X; correct is Y because Z."</li>
+<li><strong>DISTILL</strong> — Per trap: choose containment (self-contained vs base-app-faithful per the
+   policy above), strip Continia specifics, and restate as a generic problem. The restated
+   prompt describes <em>what</em> to build, never <em>how</em>, and carries <strong>no guiding notes</strong> (project
+   rule: hints that help the model dodge the trap destroy the signal).</li>
+<li><strong>AUTHOR</strong> — Write the task YAML plus a <strong>discriminating</strong> AL oracle test. At dev time
+   only, also write TWO reference solutions: a <strong>correct</strong> one and a <strong>naive-trap</strong> one.</li>
+<li><strong>DISCRIMINATION PROBE</strong> (the gate) — Compile and run BOTH reference solutions in a
+   Cronus container. Pass condition: <strong>correct PASSES and naive FAILS.</strong> If the test passes
+   for both, or fails for both, the oracle does not measure the trap → redesign or drop the
+   task. The naive solution is a throwaway dev artifact, never committed.</li>
+<li><strong>VALIDATE + REGISTER</strong> — Zod schema load + <code>validate-tasks</code>, dry-run bench, then
+   <code>sync-catalog --apply</code> and a taxonomy refresh. (Registration is deferred per scope
+   guard; the stage is documented for completeness.)</li>
+</ol>
+<h3 id="why-the-discrimination-probe-approaches-weighed">Why the discrimination probe (approaches weighed)<a class="headerlink" href="#why-the-discrimination-probe-approaches-weighed" title="Permanent link">&para;</a></h3>
+<ul>
+<li><em>Author-by-eye</em> (today's implicit method): fast, but trap tasks are exactly where a
+  plausible-looking test silently passes naive code, producing a dead benchmark task.
+  Rejected.</li>
+<li><em>Single reference + probe it compiles/passes</em>: catches a broken-correct solution, but
+  misses a non-discriminating oracle. Rejected.</li>
+<li><em>Dual reference (correct + naive) + probe they separate</em>: proves the oracle measures the
+  trap. <strong>Chosen.</strong> Cost is one throwaway solution per task — cheap insurance against a
+  silently-useless task, and a direct application of the project's "keep tasks tough, only
+  fix broken tests" and "dry-run first" rules.</li>
+</ul>
+<h3 id="skill-shape">Skill shape<a class="headerlink" href="#skill-shape" title="Permanent link">&para;</a></h3>
+<p><code>.claude/skills/extract-trap-task/</code> bundles stages 2–5 (the new logic) plus the controlled
+containment-policy checklist. Stage 1 is operator input; stage 6 reuses existing tooling
+(<code>sync-catalog</code>, <code>refresh-task-taxonomy</code>). The skill emits, per trap: a draft task YAML, a
+draft oracle test, and a probe report (correct vs naive outcome).</p>
+<hr />
+<h2 id="part-b-first-batch-4-tasks">Part B — First batch (4 tasks)<a class="headerlink" href="#part-b-first-batch-4-tasks" title="Permanent link">&para;</a></h2>
+<p>All four belong to cohort <code>ado-trap-2026</code>. Object-ID ranges follow the existing convention:
+prereq apps <code>69000–69999</code>, generated/model code <code>70000–79999</code>, test codeunits
+<code>80000–89999</code>. Exact IDs are assigned at authoring after a collision check.</p>
+<p>For each self-contained task, shared fixtures (tables, the event harness) live in a
+<strong>prereq app</strong> so the model writes only the trap-bearing codeunit; the test codeunit drives
+it. This keeps the oracle stable and the model focused on the trap.</p>
+<h3 id="cg-al-x001-bind-must-be-inside-the-codeunitrun-frame-hard-self-contained">CG-AL-X001 — Bind must be inside the <code>Codeunit.Run</code> frame (HARD, self-contained)<a class="headerlink" href="#cg-al-x001-bind-must-be-inside-the-codeunitrun-frame-hard-self-contained" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Source:</strong> PR 50285 (<code>BindSubscription</code> inside the worker's <code>OnRun</code>, not the caller).</li>
+<li><strong>Trap:</strong> A <code>Manual</code> event subscriber bound in the caller before <code>Codeunit.Run</code> does not
+  reliably observe events raised inside the Run frame; the bind must happen inside <code>OnRun</code>.</li>
+<li><strong>Prereq fixtures:</strong> an integration-event publisher codeunit; a <code>Manual</code> subscriber
+  (<code>EventSubscriberInstance = Manual</code>) that increments a counter table when it fires; the
+  counter table.</li>
+<li><strong>Model writes:</strong> a worker codeunit with an entry procedure that invokes itself via
+  <code>Codeunit.Run</code>, and an <code>OnRun</code> that processes N items, raising the event per item. The
+  model decides where to <code>BindSubscription</code> the prereq subscriber.</li>
+<li><strong>Discriminating oracle:</strong> seed N, run, assert counter == N (subscriber observed every
+  raised event). Naive bind-in-caller → counter == 0 → fail. Correct bind-in-<code>OnRun</code> →
+  counter == N → pass.</li>
+<li><strong>Oracle risk:</strong> HIGH. The PR says the frame isolation is "not reliable," so the behavior
+  must reproduce <em>deterministically</em> in vanilla Cronus for the oracle to be valid. <strong>This
+  task is probe-gated</strong>: if the discrimination probe shows bind-in-caller also reaches the
+  Run-frame event (or the behavior is nondeterministic), X001 is dropped and replaced by a
+  held-wave trap (TryFunction-write-ban or state-across-Run-boundary, both lower-risk
+  oracles). The task is not considered buildable until the container confirms it.</li>
+</ul>
+<h3 id="cg-al-x002-codeunitrun-rollback-run-once-guard-ordering-hard-self-contained">CG-AL-X002 — <code>Codeunit.Run</code> rollback + run-once guard ordering (HARD, self-contained)<a class="headerlink" href="#cg-al-x002-codeunitrun-rollback-run-once-guard-ordering-hard-self-contained" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Source:</strong> PR 50590 (run-once guard set only after all work; failure inside
+  <code>Codeunit.Run</code> rolls back, leaving the guard off to retry).</li>
+<li><strong>Trap:</strong> Correctness depends on transaction-boundary knowledge and ordering: do the work,
+  then set the guard, then <code>Commit</code>, all inside a <code>Codeunit.Run</code> boundary. A <code>[TryFunction]</code>
+  cannot be used (DB writes are blocked in try functions on-prem); setting the guard before
+  the work, or omitting the Run boundary, leaks partial state.</li>
+<li><strong>Prereq fixtures:</strong> a singleton state table with a <code>Done</code> Boolean; a result table.</li>
+<li><strong>Model writes:</strong> a processor codeunit that processes an input list into result rows,
+  setting <code>Done := true; Commit()</code> only after all rows are written, invoked via
+  <code>Codeunit.Run</code>. The task specifies that a sentinel input element must raise an error
+  (model-written, so the failure is deterministic — no injection seam needed).</li>
+<li><strong>Discriminating oracle:</strong></li>
+<li>Clean input → <code>Done = true</code>, all result rows present.</li>
+<li>Poison input (contains sentinel) → <code>Codeunit.Run</code> returns false → assert <code>Done = false</code>
+    AND zero result rows (full rollback) AND a subsequent clean retry succeeds.</li>
+<li>Naive traps: <code>[TryFunction]</code> (won't compile), guard set before work, or no Run boundary
+    → partial rows persist or guard stuck true → fail.</li>
+<li><strong>Oracle risk:</strong> LOW. Container-safe, deterministic.</li>
+</ul>
+<h3 id="cg-al-x003-change-log-always-logged-false-positive-gate-hard-base-app-faithful">CG-AL-X003 — Change-Log always-logged false-positive gate (HARD, base-app-faithful)<a class="headerlink" href="#cg-al-x003-change-log-always-logged-false-positive-gate-hard-base-app-faithful" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Source:</strong> PR 50285 (<code>IsAlwaysLoggedTable</code> false positive; gate on <code>Change Log Activated</code>
+  first).</li>
+<li><strong>Trap:</strong> <code>Change Log Management.IsAlwaysLoggedTable()</code> returns true for posted sales
+  tables regardless of the global Change Log flag. Code that checks only
+  <code>IsAlwaysLoggedTable</code> / <code>IsLogActive</code> reports auditing active even when the global Change
+  Log is off. Correct code gates on <code>Change Log Setup."Change Log Activated"</code> FIRST.</li>
+<li><strong>Containment:</strong> base-app-faithful — uses real <code>Change Log Setup</code>, <code>Change Log Setup
+  (Table)</code>, <code>Change Log Management</code>, and a posted sales table, all present in the container.</li>
+<li><strong>Model writes:</strong> a detector codeunit returning whether modifications to the target tables
+  would be audited (true only when the global flag is on AND a target logs modifications).</li>
+<li><strong>Discriminating oracle:</strong></li>
+<li><code>"Change Log Activated" = false</code> → must return false. Naive (always-logged check only)
+    returns true for the posted sales table → fail.</li>
+<li>Activated + a target configured to log → returns true, with the table caption surfaced.</li>
+<li><strong>Oracle risk:</strong> LOW. Crisp, deterministic, base-app-only.</li>
+</ul>
+<h3 id="cg-al-x004-list-then-insert-idempotent-insert-medium-self-contained">CG-AL-X004 — list-then-insert + idempotent insert (MEDIUM, self-contained)<a class="headerlink" href="#cg-al-x004-list-then-insert-idempotent-insert-medium-self-contained" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Source:</strong> PR 50590 (read all matching rows into a <code>List</code> first, then insert; idempotent
+  <code>Get</code>-before-<code>Insert</code>).</li>
+<li><strong>Trap:</strong> Inserting into a table while iterating a <code>FindSet</code> over the same table corrupts
+  the iteration (skipped rows / runtime error). Correct: collect keys into a <code>List</code> first,
+  then insert. <code>Get</code>-before-<code>Insert</code> makes re-runs idempotent.</li>
+<li><strong>Prereq fixtures:</strong> a single table with a category field (source and target are the same
+  table, distinguished by category — this is what forces the iterate-while-insert hazard).</li>
+<li><strong>Model writes:</strong> a copy codeunit that reads all category-A rows and creates a
+  corresponding category-B row for each, safe to re-run.</li>
+<li><strong>Discriminating oracle:</strong> seed M category-A rows → run → assert exactly M category-B rows
+  and no error → run again → assert still M (idempotent). Naive in-loop insert → error or
+  wrong count → fail.</li>
+<li><strong>Oracle risk:</strong> LOW. Self-contained, deterministic.</li>
+</ul>
+<hr />
+<h2 id="part-c-marking-convention-old-vs-new-divider">Part C — Marking convention (old vs new divider)<a class="headerlink" href="#part-c-marking-convention-old-vs-new-divider" title="Permanent link">&para;</a></h2>
+<p>Verified against the loader (<code>src/tasks/interfaces.ts</code>): the task-metadata Zod schema is
+<code>.passthrough()</code> (extra fields allowed without a schema change), and the id regex
+<code>^CG-AL-[EMHX][0-9]+$</code> already permits the letter <code>X</code>, which no current task uses.
+Difficulty is inferred from description keywords (<code>src/tasks/transformer.ts</code>), not from the
+directory, so an <code>X</code>-prefixed id can live in <code>tasks/hard/</code> and still read as hard.</p>
+<p>Every new task carries:</p>
+<ul>
+<li><strong>Id:</strong> <code>CG-AL-X###</code> (cohort namespace; sequence restarts at <code>X001</code>).</li>
+<li><strong><code>metadata.cohort: ado-trap-2026</code></strong> — semantic marker, survives renames.</li>
+<li><strong><code>metadata.source_pr: &lt;id&gt;</code></strong> — provenance back to the originating PR.</li>
+</ul>
+<p>Tasks stay in their existing difficulty directories (<code>tasks/hard/</code>, <code>tasks/medium/</code>). The
+<code>X</code> id is the divider, not the directory.</p>
+<ul>
+<li><strong>Select only the new cohort:</strong> <code>--tasks "tasks/**/CG-AL-X*.yml"</code>.</li>
+<li><strong>Legacy = <code>CG-AL-[EMH]*</code>.</strong> Bulk-delete-old later is the inverse glob.</li>
+</ul>
+<p><strong>Open authoring note:</strong> <code>inferDifficulty</code> currently ignores <code>metadata.difficulty</code> and reads
+description keywords. Confirm where <code>metadata.difficulty</code> is actually consumed (leaderboard
+taxonomy vs transformer) before relying on it; if needed, ensure each hard task's
+description carries a natural "advanced/complex" signal or set the field where it is read.</p>
+<h2 id="first-batch-id-map">First-batch id map<a class="headerlink" href="#first-batch-id-map" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Provisional id</th>
+<th>Directory</th>
+<th>Tier</th>
+<th>Containment</th>
+<th>Source PR</th>
+<th>Oracle risk</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CG-AL-X001</td>
+<td>tasks/hard</td>
+<td>hard</td>
+<td>self-contained</td>
+<td>50285</td>
+<td>high (probe-gated)</td>
+</tr>
+<tr>
+<td>CG-AL-X002</td>
+<td>tasks/hard</td>
+<td>hard</td>
+<td>self-contained</td>
+<td>50590</td>
+<td>low</td>
+</tr>
+<tr>
+<td>CG-AL-X003</td>
+<td>tasks/hard</td>
+<td>hard</td>
+<td>base-app-faithful</td>
+<td>50285</td>
+<td>low</td>
+</tr>
+<tr>
+<td>CG-AL-X004</td>
+<td>tasks/medium</td>
+<td>medium</td>
+<td>self-contained</td>
+<td>50590</td>
+<td>low</td>
+</tr>
+</tbody>
+</table>
+<h2 id="risks">Risks<a class="headerlink" href="#risks" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>X001 oracle non-reproduction</strong> — mitigated by the probe gate + held-wave fallback.</li>
+<li><strong>Base-app behavior drift</strong> (X003) across BC versions — pin the behavior to the container's
+  BC version; re-probe if the container image changes.</li>
+<li><strong>Difficulty-field plumbing</strong> — open note above; resolve at authoring.</li>
+<li><strong>Held-wave creep</strong> — the four held traps stay out of this batch; revisit only after the
+  first batch lands and the pipeline is proven.</li>
+</ul>
+<h2 id="definition-of-done-this-designs-scope">Definition of done (this design's scope)<a class="headerlink" href="#definition-of-done-this-designs-scope" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Pipeline skill exists and is documented.</li>
+<li>Four tasks authored, each passing its discrimination probe (or X001 swapped per its gate).</li>
+<li>All four load under Zod + <code>validate-tasks</code> and pass a local dry-run.</li>
+<li>Marking convention applied (X ids + cohort + source_pr).</li>
+<li>No prod ingest performed.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
