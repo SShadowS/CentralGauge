@@ -40,7 +40,7 @@ param(
   [Parameter(Mandatory = $true, Position = 0)]
   [string] $TaskPath,
 
-  [string] $Models = "anthropic/claude-opus-4-8,anthropic/claude-sonnet-4-6,anthropic/claude-haiku-4-5",
+  [string] $Models = "anthropic/claude-opus-4-8,anthropic/claude-sonnet-4-6,anthropic/claude-haiku-4-5-20251001",
 
   # Bench containers. Cronus28 is deliberately EXCLUDED — it belongs to the
   # sanity lane. See .DESCRIPTION.

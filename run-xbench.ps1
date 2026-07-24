@@ -17,7 +17,7 @@
     Shakedown: opus-4-8, runs=1, 5 containers, local-only.
 
 .EXAMPLE
-  .\run-xbench.ps1 -Model "anthropic/claude-opus-4-8,anthropic/claude-sonnet-4-6,anthropic/claude-haiku-4-5" -Runs 3
+  .\run-xbench.ps1 -Model "anthropic/claude-opus-4-8,anthropic/claude-sonnet-4-6,anthropic/claude-haiku-4-5-20251001" -Runs 3
     Real discrimination spread (strong -> mid -> weak). Still local (--no-ingest).
     To put results on the scoreboard, remove --no-ingest below and re-enable the precheck.
 #>
