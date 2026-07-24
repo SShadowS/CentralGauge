@@ -17,6 +17,7 @@ import {
 import { applyRepairs, builtInRepairers } from "../../src/doctor/repair.ts";
 import { resolveWithVariants } from "../../src/llm/variant-parser.ts";
 import type { ModelVariant } from "../../src/llm/variant-types.ts";
+import { BcContainerProvider } from "../../src/container/bc-container-provider.ts";
 
 interface DoctorOptions {
   json?: boolean;
@@ -121,16 +122,36 @@ const runIngest = (options: DoctorOptions) =>
 const runAdmin = (options: DoctorOptions) =>
   runSection(adminSection, options, false);
 
+/**
+ * Purge the shared BCH artifact cache.
+ *
+ * Bench startup no longer does this implicitly (it was destroying the cache
+ * it was meant to preserve). The one case that still needs it: a run killed
+ * mid-population leaves `symbols/` present but incomplete, and BCH's
+ * population gate is `!(Test-Path $symbolsPath)` — so every later run
+ * silently builds from the broken cache until it is purged by hand.
+ */
+export async function runPurgeCompilerCache(): Promise<void> {
+  await BcContainerProvider.purgeArtifactCache();
+  console.log(colors.green("[OK]") + " Compiler artifact cache purged.");
+  console.log(
+    colors.gray("  The next bench run repopulates it (slower than usual)."),
+  );
+}
+
 export function registerDoctorCommand(cli: Command): void {
   const doctorCmd = new Command()
     .description("Environment health checks")
     .action(() => {
-      console.log("Available sections: ingest, admin");
+      console.log("Available sections: ingest, admin, purge-compiler-cache");
       console.log(
         "Run `centralgauge doctor ingest` to check ingest health (bench/publish).",
       );
       console.log(
         "Run `centralgauge doctor admin` to check admin health (lifecycle status/digest).",
+      );
+      console.log(
+        "Run `centralgauge doctor purge-compiler-cache` to clear a corrupted BCH artifact cache.",
       );
     });
 
@@ -183,6 +204,13 @@ export function registerDoctorCommand(cli: Command): void {
       { default: false },
     )
     .action((opts: DoctorOptions) => runAdmin(opts));
+
+  doctorCmd
+    .command(
+      "purge-compiler-cache",
+      "Purge the shared BCH artifact cache (maintenance; forces a full re-download next run)",
+    )
+    .action(() => runPurgeCompilerCache());
 
   cli.command("doctor", doctorCmd);
 }
