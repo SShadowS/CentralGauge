@@ -294,6 +294,9 @@ export class BcContainerProvider implements ContainerProvider {
   // re-downloading artifacts on every run, and a deterministic folder name
   // to prevent GUID folder accumulation.
   private _compilerCacheEnabled = true;
+  /** Where BCH creates per-container compiler working folders. */
+  static readonly COMPILER_FOLDER_DIR =
+    "C:\\ProgramData\\BcContainerHelper\\compiler";
   private static readonly COMPILER_CACHE_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
 
@@ -2364,14 +2367,19 @@ ${script}
   }
 
   /**
-   * Clear all compiler folders on startup so they are recreated fresh.
-   * Removes both CentralGauge-specific output folders and the shared
-   * artifact cache to ensure a clean slate every run.
+   * Remove the per-container `CentralGauge-*` compiler working folders.
+   *
+   * Does NOT touch the shared artifact cache — see `purgeArtifactCache`.
+   * Callers must only invoke this when the persistent compiler cache is
+   * explicitly disabled: clearing folders on every ordinary startup is what
+   * made the persistent cache self-defeating (each run re-downloaded and
+   * re-extracted BC artifacts, serialized across containers).
+   *
+   * @param compilerDir Override for tests; defaults to the real BCH location.
    */
-  static async clearCompilerCache(): Promise<void> {
-    const compilerDir = "C:\\ProgramData\\BcContainerHelper\\compiler";
-
-    // Remove CentralGauge-specific compiler output folders
+  static async clearCompilerFolders(
+    compilerDir: string = BcContainerProvider.COMPILER_FOLDER_DIR,
+  ): Promise<void> {
     try {
       for await (const entry of Deno.readDir(compilerDir)) {
         if (entry.isDirectory && entry.name.startsWith("CentralGauge-")) {
@@ -2385,16 +2393,28 @@ ${script}
         }
       }
     } catch (error) {
-      // NotFound is expected (directory doesn't exist yet), warn on anything else
+      // NotFound is expected (directory doesn't exist yet); warn on anything else.
       if (error instanceof Deno.errors.NotFound) return;
       log.warn(`Could not enumerate compiler directory: ${error}`);
     }
+  }
 
-    // Purge the shared artifact cache
+  /**
+   * Purge the shared BCH artifact cache.
+   *
+   * MAINTENANCE ONLY — never call this from the bench startup path. It is
+   * exposed to operators via `centralgauge doctor purge-compiler-cache` as the
+   * escape hatch for a cache left incomplete by a run killed mid-population
+   * (BCH's population gate is `!(Test-Path $symbolsPath)`, so a partial cache
+   * is otherwise sticky forever).
+   *
+   * @param cacheDir Override for tests; defaults to the real cache location.
+   */
+  static async purgeArtifactCache(
+    cacheDir: string = BcContainerProvider.COMPILER_CACHE_DIR,
+  ): Promise<void> {
     try {
-      await Deno.remove(BcContainerProvider.COMPILER_CACHE_DIR, {
-        recursive: true,
-      });
+      await Deno.remove(cacheDir, { recursive: true });
       log.info("Cleared compiler cache directory");
     } catch {
       // cache directory doesn't exist — nothing to clear

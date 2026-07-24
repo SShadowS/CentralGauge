@@ -2340,3 +2340,78 @@ Deno.test("makePublishFailureTestResult: shapes a failed Publish/Install TestRes
   assertEquals(r.results[0]!.passed, false);
   assert(r.results[0]!.error!.includes("OnInstallAppPerCompany"));
 });
+
+// =============================================================================
+// clearCompilerFolders / purgeArtifactCache
+// =============================================================================
+
+Deno.test("clearCompilerFolders removes only CentralGauge-* directories", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  try {
+    await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
+    await Deno.mkdir(`${dir}/CentralGauge-Cronus282`);
+    await Deno.mkdir(`${dir}/someone-elses-folder`);
+
+    await BcContainerProvider.clearCompilerFolders(dir);
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    assertEquals(remaining, ["someone-elses-folder"]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("clearCompilerFolders is a no-op when the directory is absent", async () => {
+  // Must not throw — a machine that has never run a bench has no compiler dir.
+  await BcContainerProvider.clearCompilerFolders(
+    "C:\\definitely\\not\\a\\real\\path\\cg-test",
+  );
+});
+
+Deno.test("clearCompilerFolders does NOT touch the artifact cache", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-split-" });
+  try {
+    const compilerDir = `${root}/compiler`;
+    const cacheDir = `${root}/compiler-cache`;
+    await Deno.mkdir(`${compilerDir}/CentralGauge-Cronus28`, {
+      recursive: true,
+    });
+    await Deno.mkdir(cacheDir, { recursive: true });
+    await Deno.writeTextFile(`${cacheDir}/marker.txt`, "keep me");
+
+    await BcContainerProvider.clearCompilerFolders(compilerDir);
+
+    // The cache survives — this is the whole point of the split.
+    assertEquals(await Deno.readTextFile(`${cacheDir}/marker.txt`), "keep me");
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("purgeArtifactCache removes the cache directory", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-" });
+  try {
+    const cacheDir = `${root}/compiler-cache`;
+    await Deno.mkdir(cacheDir, { recursive: true });
+    await Deno.writeTextFile(`${cacheDir}/marker.txt`, "delete me");
+
+    await BcContainerProvider.purgeArtifactCache(cacheDir);
+
+    let stillThere = true;
+    try {
+      await Deno.stat(cacheDir);
+    } catch {
+      stillThere = false;
+    }
+    assertEquals(stillThere, false);
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("purgeArtifactCache is a no-op when the cache is absent", async () => {
+  await BcContainerProvider.purgeArtifactCache(
+    "C:\\definitely\\not\\a\\real\\path\\cg-cache",
+  );
+});
