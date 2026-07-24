@@ -9,6 +9,7 @@ import {
   BcContainerProvider,
   ContainerProviderRegistry,
 } from "../../../src/container/mod.ts";
+import { getTracer } from "../../../src/tracing/tracer.ts";
 import { log } from "../../helpers/mod.ts";
 
 /**
@@ -218,7 +219,11 @@ export async function setupContainers(
     // Health check each container
     let healthy = false;
     try {
-      healthy = await containerProvider.isHealthy(name);
+      healthy = await getTracer().span(
+        "setup.health",
+        { cat: "setup", args: { container: name } },
+        () => containerProvider.isHealthy(name),
+      );
     } catch {
       // container doesn't exist
     }
@@ -236,21 +241,36 @@ export async function setupContainers(
   // that was killed mid-test — without this the next publishApp hits
   // bccontainerhelper@6.1.11's Unpublish-success-but-not-really race.
   if ("prenukeCentralGaugeApps" in containerProvider) {
-    await (containerProvider as BcContainerProvider)
-      .prenukeCentralGaugeApps(containerNames);
+    await getTracer().span(
+      "setup.prenuke",
+      { cat: "setup" },
+      () =>
+        (containerProvider as BcContainerProvider)
+          .prenukeCentralGaugeApps(containerNames),
+    );
   }
 
   // Pre-create compiler folders for all containers before any work is enqueued
   if ("warmupCompilerFolders" in containerProvider) {
-    await (containerProvider as BcContainerProvider).warmupCompilerFolders(
-      containerNames,
+    await getTracer().span(
+      "setup.warmup-compiler",
+      { cat: "setup" },
+      () =>
+        (containerProvider as BcContainerProvider).warmupCompilerFolders(
+          containerNames,
+        ),
     );
   }
 
   // Publish test harness during setup
   if ("ensureTestHarness" in containerProvider) {
-    await (containerProvider as BcContainerProvider).ensureTestHarness(
-      containerNames,
+    await getTracer().span(
+      "setup.harness",
+      { cat: "setup" },
+      () =>
+        (containerProvider as BcContainerProvider).ensureTestHarness(
+          containerNames,
+        ),
     );
   }
 
