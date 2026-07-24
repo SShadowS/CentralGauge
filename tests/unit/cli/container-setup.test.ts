@@ -9,6 +9,7 @@ import type { ContainerProvider } from "../../../src/container/interface.ts";
 import {
   cleanupContainer,
   endOfRunNuke,
+  setupContainer,
   setupContainers,
 } from "../../../cli/commands/bench/container-setup.ts";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
@@ -272,6 +273,90 @@ Deno.test("setupContainers clears compiler folders when noCompilerCache is set",
 
   try {
     await setupContainers(["Cronus28"], "fake-cold", { name: "Cronus28" }, {
+      noCompilerCache: true,
+    });
+    assertEquals(clearCalled, true);
+    // Even the explicit opt-out only clears folders, never the shared cache.
+    assertEquals(purgeCalled, false);
+  } finally {
+    Object.defineProperty(BcContainerProvider, "clearCompilerFolders", {
+      value: originalClear,
+      configurable: true,
+    });
+    Object.defineProperty(BcContainerProvider, "purgeArtifactCache", {
+      value: originalPurge,
+      configurable: true,
+    });
+    ContainerProviderRegistry.clearInstances();
+  }
+});
+
+Deno.test("setupContainer does NOT clear compiler folders by default", async () => {
+  const { provider } = makeFakeProvider();
+  ContainerProviderRegistry.register("fake-warm-single", () => provider);
+
+  let clearCalled = false;
+  let purgeCalled = false;
+  const originalClear = BcContainerProvider.clearCompilerFolders;
+  const originalPurge = BcContainerProvider.purgeArtifactCache;
+  Object.defineProperty(BcContainerProvider, "clearCompilerFolders", {
+    value: () => {
+      clearCalled = true;
+      return Promise.resolve();
+    },
+    configurable: true,
+  });
+  Object.defineProperty(BcContainerProvider, "purgeArtifactCache", {
+    value: () => {
+      purgeCalled = true;
+      return Promise.resolve();
+    },
+    configurable: true,
+  });
+
+  try {
+    await setupContainer("fake-warm-single", { name: "Cronus28" });
+    assertEquals(clearCalled, false);
+    // The artifact cache must NEVER be purged from the startup path.
+    assertEquals(purgeCalled, false);
+  } finally {
+    Object.defineProperty(BcContainerProvider, "clearCompilerFolders", {
+      value: originalClear,
+      configurable: true,
+    });
+    Object.defineProperty(BcContainerProvider, "purgeArtifactCache", {
+      value: originalPurge,
+      configurable: true,
+    });
+    ContainerProviderRegistry.clearInstances();
+  }
+});
+
+Deno.test("setupContainer clears compiler folders when noCompilerCache is set", async () => {
+  const { provider } = makeFakeProvider();
+  ContainerProviderRegistry.register("fake-cold-single", () => provider);
+
+  let clearCalled = false;
+  let purgeCalled = false;
+  const originalClear = BcContainerProvider.clearCompilerFolders;
+  const originalPurge = BcContainerProvider.purgeArtifactCache;
+  Object.defineProperty(BcContainerProvider, "clearCompilerFolders", {
+    value: () => {
+      clearCalled = true;
+      return Promise.resolve();
+    },
+    configurable: true,
+  });
+  Object.defineProperty(BcContainerProvider, "purgeArtifactCache", {
+    value: () => {
+      purgeCalled = true;
+      return Promise.resolve();
+    },
+    configurable: true,
+  });
+
+  try {
+    await setupContainer("fake-cold-single", { name: "Cronus28" }, {
       noCompilerCache: true,
     });
     assertEquals(clearCalled, true);
