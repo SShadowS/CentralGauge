@@ -66,16 +66,23 @@ it skips.**
 - **with** cache: local work only — DLL/symbol/compiler copies (`:241-256`) plus
   a `GetAppInfo` enumeration over every `.app` in symbols (`:313-318`). Local,
   but not free.
-- **without** cache (`--no-compiler-cache`): full artifact download + 7-zip
-  extraction, per container, serialized through `compilerFolderQueue`.
+- **without** cache (`--no-compiler-cache`): VSIX expansion plus the full
+  symbol/compiler/DLL copy set, per container, serialized through
+  `compilerFolderQueue`. **Not** a repeated network download: `Download-Artifacts`
+  has its own version-keyed cache at `bcartifactsCacheFolder`
+  (`C:\bcartifacts.cache`), gated by its own `Test-Path` check, and
+  `New-BcCompilerFolder` never passes `-force`. The network fetch happens once
+  per artifact version, not once per container per run — substantial, but
+  smaller than the "full re-download every run" framing below implies.
 
 `run-xbench.ps1:54` passes `--no-compiler-cache` across 5 containers. Its help
 text (`bench-command.ts:119`) reads "re-downloads artifacts each run".
 
-*Unverified:* that commit 4a2f8e7 added the flag as a plain opt-out with no bug
-workaround attached. This came from a `git log -S` summary, not from reading the
-diff. **W1 must confirm it before dropping the flag** — if it was added to work
-around cache corruption, W2 makes that corruption more likely, not less.
+**Verified:** commit `4a2f8e7` created the persistent compiler cache and the
+`--no-compiler-cache` opt-out in the same commit, so the flag cannot be a
+workaround for corruption of a cache that did not previously exist.
+`scripts/bench.ps1:44` and `scripts/benchsmall.ps1:44` document the flag's
+rationale as baseline comparability, not corruption avoidance.
 
 ### F3. `clearCompilerCache()` makes the persistent cache self-defeating
 
@@ -361,6 +368,7 @@ The option threads through **four** hops, not three: `cli-types.ts` →
 |---|---|
 | Adopted folder stale after a BC artifact change | Marker carries artifact URL + BCH version + layout version; any mismatch rebuilds |
 | **Permanent cache poisoning** — BCH's population gate is `!(Test-Path $symbolsPath)`, so a run killed mid-population leaves an incomplete `symbols/` that every later run silently builds from. Today's unconditional purge accidentally self-heals this; W2 removes that | Marker must cover the shared cache, not only the compiler folder; explicit purge command as the escape hatch; test the interrupted-population case |
+| **Cache staleness after a BC artifact upgrade** (the staleness half of "permanent cache poisoning" above) — **closed for Phase 1**: Task 6b keys the shared `-cacheFolder` by (query-string-stripped) artifact URL, so an upgrade lands in a fresh keyed directory and BCH repopulates it normally instead of silently compiling against the previous version's frozen symbols. The mid-population-corruption half above is unaffected | Closed by Task 6b; `purgeArtifactCache` now enumerates and removes every `compiler-cache*` directory (legacy unkeyed + all keyed) as the manual escape hatch |
 | **Cross-process race** on first cache population or folder adoption | Cross-process lock + temp-then-rename marker writes (W3) |
 | **`output/` accumulation** under adoption | Bounded retention in W3 |
 | **Unbounded artifact-cache growth** once implicit purge is removed | Size/age cap, or documented manual purge cadence |
