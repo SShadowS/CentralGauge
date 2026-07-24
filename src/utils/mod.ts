@@ -46,6 +46,20 @@ export { copyToClipboard } from "./clipboard.ts";
 export type { SplashOptions } from "./splash-screen.ts";
 export { SplashScreen } from "./splash-screen.ts";
 
+// Bench Lock (live-bench marker)
+export type {
+  AcquireBenchLockOptions,
+  BenchLockInfo,
+  IsBenchRunningOptions,
+} from "./bench-lock.ts";
+export {
+  acquireBenchLock,
+  BENCH_LOCK_FILENAME,
+  benchLockPath,
+  isBenchRunning,
+  readBenchLock,
+} from "./bench-lock.ts";
+
 // Stream Parsers
 export type { SSEEvent } from "./stream-parsers.ts";
 export {
