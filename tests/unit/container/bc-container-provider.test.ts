@@ -2111,8 +2111,13 @@ Deno.test({
   async fn() {
     let lastScript = "";
     const provider = new BcContainerProvider();
+    // Mock the warm-slot boundary — publishApp routes through
+    // runScriptThroughSession, not the cold executePowerShell path.
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = (script: string) => {
+    (provider as any).runScriptThroughSession = (
+      _name: string,
+      script: string,
+    ) => {
       lastScript = script;
       return Promise.resolve({
         output: [
@@ -2154,8 +2159,13 @@ Deno.test({
   async fn() {
     let lastScript = "";
     const provider = new BcContainerProvider();
+    // Mock the warm-slot boundary — publishApp routes through
+    // runScriptThroughSession, not the cold executePowerShell path.
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = (script: string) => {
+    (provider as any).runScriptThroughSession = (
+      _name: string,
+      script: string,
+    ) => {
       lastScript = script;
       return Promise.resolve({
         output: "PUBLISH_SUCCESS",
@@ -2284,8 +2294,10 @@ Deno.test({
   ignore: !isWindows,
   async fn() {
     const provider = new BcContainerProvider();
+    // Mock the warm-slot boundary — publishApp routes through
+    // runScriptThroughSession, not the cold executePowerShell path.
     // deno-lint-ignore no-explicit-any
-    (provider as any).executePowerShell = () =>
+    (provider as any).runScriptThroughSession = () =>
       Promise.resolve({
         output:
           "Publish-NAVApp: This Extension cannot be published as it has the same App ID and Version as a previously published Extension.",
