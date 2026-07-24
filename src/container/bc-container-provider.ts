@@ -1172,7 +1172,12 @@ ${script}
       ${bcchImport()}
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
-      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit${cacheParams}
+      # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
+      # parameter (it lands in $args and is ignored). Do NOT substitute
+      # -includeAL — that forces Download-Artifacts on every call and defeats
+      # the cache. Test-toolkit symbols arrive via the unconditional app copy
+      # inside New-BcCompilerFolder.
+      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl${cacheParams}
       Write-Output "COMPILER_FOLDER:$compilerFolder"
     `;
 
