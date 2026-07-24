@@ -2415,3 +2415,25 @@ Deno.test("purgeArtifactCache is a no-op when the cache is absent", async () => 
     "C:\\definitely\\not\\a\\real\\path\\cg-cache",
   );
 });
+
+Deno.test("purgeArtifactCache propagates non-NotFound errors", async () => {
+  const original = Deno.remove;
+  const testError = new Error("Permission denied");
+  Object.defineProperty(Deno, "remove", {
+    value: () => Promise.reject(testError),
+    configurable: true,
+  });
+
+  try {
+    await assertRejects(
+      () => BcContainerProvider.purgeArtifactCache("/tmp/test-cache"),
+      Error,
+      "Permission denied",
+    );
+  } finally {
+    Object.defineProperty(Deno, "remove", {
+      value: original,
+      configurable: true,
+    });
+  }
+});

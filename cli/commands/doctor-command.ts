@@ -132,11 +132,21 @@ const runAdmin = (options: DoctorOptions) =>
  * silently builds from the broken cache until it is purged by hand.
  */
 export async function runPurgeCompilerCache(): Promise<void> {
-  await BcContainerProvider.purgeArtifactCache();
-  console.log(colors.green("[OK]") + " Compiler artifact cache purged.");
-  console.log(
-    colors.gray("  The next bench run repopulates it (slower than usual)."),
-  );
+  try {
+    await BcContainerProvider.purgeArtifactCache();
+    console.log(colors.green("[OK]") + " Compiler artifact cache purged.");
+    console.log(
+      colors.gray("  The next bench run repopulates it (slower than usual)."),
+    );
+  } catch (error) {
+    console.log(
+      colors.red("[FAIL]") +
+        ` Failed to purge compiler cache: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+    );
+    throw error;
+  }
 }
 
 export function registerDoctorCommand(cli: Command): void {

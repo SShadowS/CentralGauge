@@ -2408,7 +2408,11 @@ ${script}
    * (BCH's population gate is `!(Test-Path $symbolsPath)`, so a partial cache
    * is otherwise sticky forever).
    *
+   * Throws on any real failure (permission denied, directory locked by a live bench,
+   * partial delete) so the caller can report accurately. Absent cache is the silent no-op.
+   *
    * @param cacheDir Override for tests; defaults to the real cache location.
+   * @throws If the directory exists but cannot be removed (permission denied, in use, etc).
    */
   static async purgeArtifactCache(
     cacheDir: string = BcContainerProvider.COMPILER_CACHE_DIR,
@@ -2416,8 +2420,13 @@ ${script}
     try {
       await Deno.remove(cacheDir, { recursive: true });
       log.info("Cleared compiler cache directory");
-    } catch {
-      // cache directory doesn't exist — nothing to clear
+    } catch (error) {
+      // Absent cache is the expected no-op. Anything else (permission denied,
+      // directory locked by a live bench, partial delete) must NOT be reported
+      // as a successful purge — this is the only operator recovery path.
+      if (error instanceof Deno.errors.NotFound) return;
+      log.warn(`Failed to purge compiler cache directory: ${error}`);
+      throw error;
     }
   }
 }
