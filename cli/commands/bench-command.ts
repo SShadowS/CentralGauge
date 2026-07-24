@@ -52,6 +52,7 @@ import {
   initTracer,
   resolveTracePath,
 } from "../../src/tracing/tracer.ts";
+import { acquireBenchLock } from "../../src/utils/bench-lock.ts";
 
 /**
  * Register the benchmark command with the CLI
@@ -643,6 +644,14 @@ export function registerBenchCommand(cli: Command): void {
       // Execute parallel benchmark
       const outputFormat = (options.format || "verbose") as OutputFormat;
       let result: Awaited<ReturnType<typeof executeParallelBenchmark>>;
+      // Publish the live-bench marker (heartbeat file under the output dir) so
+      // tooling can refuse to run tests/unit/container/ mid-run — those tests
+      // publish/unpublish on the real Cronus containers and corrupt this run's
+      // BC NST PSSession. Released in the finally below; a crash lets it go
+      // stale on its own.
+      const releaseBenchLock = acquireBenchLock(outputDir, {
+        command: `bench ${Deno.args.slice(1).join(" ")}`.trim(),
+      });
       try {
         // CLI8: run the bench+ingest body inside the root span so the span
         // records the REAL outcome — endSpanWithOutcome tags ok:false + error
@@ -722,6 +731,9 @@ export function registerBenchCommand(cli: Command): void {
         // ingestBenchResults throws. The bench root span itself is closed by
         // endSpanWithOutcome above, with the real ok/error outcome.
         await closeTracer();
+        // Bench work is done here even when the dashboard keeps the process
+        // alive below, so container tests are safe again from this point.
+        await releaseBenchLock();
       }
 
       // If dashboard is running, keep process alive for result review

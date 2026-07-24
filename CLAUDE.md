@@ -654,6 +654,27 @@ deno lint <changed-dirs>
 deno fmt <changed-files>
 ```
 
+## Claude Code automation in this repo
+
+Hooks live in `.claude/hooks/` and are wired in `.claude/settings.json`. All of
+them degrade to a silent no-op when `jq` is missing.
+
+| Hook | Event | Behavior |
+|---|---|---|
+| `deno-fmt-check.sh` | PostToolUse Edit/Write | `deno fmt` + `deno check` on the single changed `.ts` file. Skips `site/` (prettier owns it). Type errors come back as non-blocking context. |
+| `guard-bench-lock.sh` | PreToolUse Bash | DENIES container-touching test runs while a bench is live. Escape hatch: `--ignore=tests/unit/container`. |
+| `guard-deploy-order.sh` | PreToolUse Bash | ASKS on `wrangler deploy` / `npm run deploy`, restating the migrations-first order. |
+| `guard-stale-site-build.sh` | PreToolUse Bash | ASKS when `site/src` is newer than `.svelte-kit/output` and a vitest run is about to use the stale bundle. |
+
+Liveness for the bench guard comes from `src/utils/bench-lock.ts`: `bench`
+writes a heartbeat marker at `<output-dir>/.bench-running.json` and refreshes it
+every 30 s; anything older than 120 s is treated as a crashed run. Shell
+equivalent: `find results/.bench-running.json -mmin -2`.
+
+Repo-specific agents: `al-test-auditor` (task YAML + AL oracle quality),
+`worker-pitfall-reviewer` (site/ Cloudflare traps). Repo-specific operator
+skills: `/deploy-site`, `/rebench-after-task-change`.
+
 ## Documentation Maintenance
 
 When modifying public interfaces, run the `documentation-engineer` agent to update `docs/`:
