@@ -137,3 +137,5 @@ docs/superpowers/specs/2026-05-03-*.md
 # Dev-only reference solutions used by scripts/trap-probe.ts (never committed).
 scratch/
 .superpowers/
+
+docs/volotests/*
