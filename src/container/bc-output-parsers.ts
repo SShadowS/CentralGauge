@@ -382,6 +382,18 @@ export function extractCompilerFolder(output: string): string | undefined {
 }
 
 /**
+ * Extract the artifact-URL-keyed compiler cache folder from PowerShell
+ * output. Only present when the persistent compiler cache is enabled.
+ *
+ * @param output - Raw PowerShell output
+ * @returns Cache folder path or undefined
+ */
+export function extractCacheFolder(output: string): string | undefined {
+  const match = output.match(/CACHE_FOLDER:(.+)/);
+  return match?.[1]?.trim();
+}
+
+/**
  * Check if container was not found in status check
  *
  * @param output - Raw PowerShell output

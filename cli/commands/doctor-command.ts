@@ -161,7 +161,7 @@ export function registerDoctorCommand(cli: Command): void {
         "Run `centralgauge doctor admin` to check admin health (lifecycle status/digest).",
       );
       console.log(
-        "Run `centralgauge doctor purge-compiler-cache` to clear a corrupted BCH artifact cache.",
+        "Run `centralgauge doctor purge-compiler-cache` to clear a corrupted or stale-after-upgrade BCH artifact cache.",
       );
     });
 
@@ -218,7 +218,7 @@ export function registerDoctorCommand(cli: Command): void {
   doctorCmd
     .command(
       "purge-compiler-cache",
-      "Purge the shared BCH artifact cache (maintenance; forces a full re-download next run)",
+      "Purge the shared BCH artifact cache (maintenance, or after a BC artifact upgrade; forces a full re-download next run)",
     )
     .action(() => runPurgeCompilerCache());
 

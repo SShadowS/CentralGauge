@@ -2389,44 +2389,73 @@ Deno.test("clearCompilerFolders does NOT touch the artifact cache", async () => 
   }
 });
 
-Deno.test("purgeArtifactCache removes the cache directory", async () => {
+Deno.test("purgeArtifactCache removes every compiler-cache-prefixed directory, including the legacy unkeyed one", async () => {
   const root = await Deno.makeTempDir({ prefix: "cg-purge-" });
   try {
-    const cacheDir = `${root}/compiler-cache`;
-    await Deno.mkdir(cacheDir, { recursive: true });
-    await Deno.writeTextFile(`${cacheDir}/marker.txt`, "delete me");
+    // The legacy unkeyed dir a pre-Task-6b machine still has on disk...
+    await Deno.mkdir(`${root}/compiler-cache`, { recursive: true });
+    await Deno.writeTextFile(`${root}/compiler-cache/marker.txt`, "legacy");
+    // ...and several artifact-URL-keyed siblings created since.
+    await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
+      recursive: true,
+    });
+    await Deno.mkdir(`${root}/compiler-cache-001122334455`, {
+      recursive: true,
+    });
 
-    await BcContainerProvider.purgeArtifactCache(cacheDir);
+    await BcContainerProvider.purgeArtifactCache(root);
 
-    let stillThere = true;
-    try {
-      await Deno.stat(cacheDir);
-    } catch {
-      stillThere = false;
-    }
-    assertEquals(stillThere, false);
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(root)) remaining.push(e.name);
+    assertEquals(remaining, []);
   } finally {
     await Deno.remove(root, { recursive: true }).catch(() => {});
   }
 });
 
-Deno.test("purgeArtifactCache is a no-op when the cache is absent", async () => {
+Deno.test("purgeArtifactCache leaves unrelated siblings untouched", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-" });
+  try {
+    await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
+      recursive: true,
+    });
+    // "compiler" is COMPILER_FOLDER_DIR's working-folder directory, which
+    // lives alongside the cache under the same BCH root. A greedy purge of
+    // the whole root (rather than a name-prefix match) would delete it.
+    await Deno.mkdir(`${root}/compiler`, { recursive: true });
+    await Deno.mkdir(`${root}/someone-elses-folder`, { recursive: true });
+
+    await BcContainerProvider.purgeArtifactCache(root);
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(root)) remaining.push(e.name);
+    remaining.sort();
+    assertEquals(remaining, ["compiler", "someone-elses-folder"]);
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("purgeArtifactCache is a no-op when the root is absent", async () => {
+  // Must not throw — a machine that has never run a bench has no BCH root.
   await BcContainerProvider.purgeArtifactCache(
-    "C:\\definitely\\not\\a\\real\\path\\cg-cache",
+    "C:\\definitely\\not\\a\\real\\path\\cg-cache-root",
   );
 });
 
 Deno.test("purgeArtifactCache propagates non-NotFound errors", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-fail-" });
   const original = Deno.remove;
   const testError = new Error("Permission denied");
-  Object.defineProperty(Deno, "remove", {
-    value: () => Promise.reject(testError),
-    configurable: true,
-  });
-
   try {
+    await Deno.mkdir(`${root}/compiler-cache`, { recursive: true });
+    Object.defineProperty(Deno, "remove", {
+      value: () => Promise.reject(testError),
+      configurable: true,
+    });
+
     await assertRejects(
-      () => BcContainerProvider.purgeArtifactCache("/tmp/test-cache"),
+      () => BcContainerProvider.purgeArtifactCache(root),
       Error,
       "Permission denied",
     );
@@ -2435,5 +2464,6 @@ Deno.test("purgeArtifactCache propagates non-NotFound errors", async () => {
       value: original,
       configurable: true,
     });
+    await Deno.remove(root, { recursive: true }).catch(() => {});
   }
 });

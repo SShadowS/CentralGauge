@@ -45,6 +45,7 @@ import { CompileSessionPool } from "./compile-session-pool.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
+  extractCacheFolder,
   extractCompilerFolder,
   isCompilationSuccessful,
   isContainerNotFound,
@@ -297,8 +298,33 @@ export class BcContainerProvider implements ContainerProvider {
   /** Where BCH creates per-container compiler working folders. */
   static readonly COMPILER_FOLDER_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler";
+  /**
+   * Legacy unkeyed cache path. `createCompilerFolder` no longer writes here
+   * (Task 6b keys the cache by artifact URL — see `COMPILER_CACHE_ROOT` /
+   * `COMPILER_CACHE_PREFIX`), but a machine that ran a pre-Task-6b build may
+   * still have this directory on disk, so `purgeArtifactCache` must still
+   * catch it.
+   */
   private static readonly COMPILER_CACHE_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler-cache";
+  /** BCH root directory. Holds `COMPILER_FOLDER_DIR`'s working folders
+   * alongside every `COMPILER_CACHE_PREFIX`-prefixed cache directory. */
+  static readonly COMPILER_CACHE_ROOT = "C:\\ProgramData\\BcContainerHelper";
+  /** Shared prefix of the legacy unkeyed cache dir and all keyed ones. */
+  static readonly COMPILER_CACHE_PREFIX = "compiler-cache";
+  // Enforce (not just document) that the legacy path above is exactly
+  // ROOT\PREFIX, so purgeArtifactCache's prefix-based enumeration keeps
+  // reaching it without a special case, even if ROOT or PREFIX changes later.
+  static {
+    const expectedLegacyDir =
+      `${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}`;
+    if (BcContainerProvider.COMPILER_CACHE_DIR !== expectedLegacyDir) {
+      throw new Error(
+        `COMPILER_CACHE_DIR (${BcContainerProvider.COMPILER_CACHE_DIR}) must equal ` +
+          `COMPILER_CACHE_ROOT + COMPILER_CACHE_PREFIX (${expectedLegacyDir})`,
+      );
+    }
+  }
 
   // Source folder of the CG Test Harness AL app (compiled + published once per
   // container so the SOAP test path is available).
@@ -1164,14 +1190,43 @@ ${script}
 
     log.info(`Creating compiler folder for ${containerName}...`);
 
+    // $artifactUrl is only resolved inside the script (Get-BcContainerArtifactUrl
+    // below), so the artifact-URL-keyed cache folder has to be computed here
+    // too — resolving it TypeScript-side first would mean a second BCH
+    // PowerShell spawn per container (~15s module-load tax each), which is
+    // exactly the cost this cache exists to avoid. Consequence: the hash is
+    // not directly unit-testable from TypeScript. Do not add a second,
+    // TS-side implementation of this hash to work around that — two
+    // implementations that must agree and cannot be compared is worse than
+    // one that is documented. purgeArtifactCache's tests cover the testable
+    // half (enumerating/removing COMPILER_CACHE_PREFIX-* directories).
+    const cacheKeyBlock = this._compilerCacheEnabled
+      ? `
+      # Key the cache folder by artifact URL so a BC artifact upgrade lands
+      # in a fresh directory and BCH repopulates it normally, instead of
+      # every later compile silently reusing the previous version's frozen
+      # symbols/compiler (BCH only reruns Download-Artifacts when the cache's
+      # symbols/ folder is absent). Strip the query string before hashing:
+      # some artifact URLs carry a SAS token, and hashing it would churn the
+      # key (and defeat the cache) on every run.
+      $cgUrlForHash = $artifactUrl -replace '\\?.*', ''
+      $cgSha256 = [System.Security.Cryptography.SHA256]::Create()
+      $cgHashBytes = $cgSha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($cgUrlForHash))
+      $cgHashHex = -join ($cgHashBytes | ForEach-Object { $_.ToString("x2") })
+      $cgCacheKey = $cgHashHex.Substring(0, 12)
+      $cgCacheFolder = "${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-$cgCacheKey"
+      Write-Output "CACHE_FOLDER:$cgCacheFolder"
+      `
+      : "";
     const cacheParams = this._compilerCacheEnabled
-      ? ` -containerName "CentralGauge-${containerName}" -cacheFolder "${BcContainerProvider.COMPILER_CACHE_DIR}"`
+      ? ` -containerName "CentralGauge-${containerName}" -cacheFolder $cgCacheFolder`
       : "";
 
     const script = `
       ${bcchImport()}
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
+      ${cacheKeyBlock}
       # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
       # parameter (it lands in $args and is ignored). Do NOT substitute
       # -includeAL — that forces Download-Artifacts on every call and defeats
@@ -1194,6 +1249,11 @@ ${script}
     }
 
     this.compilerFolderCache.set(containerName, compilerFolder);
+
+    const cacheFolder = extractCacheFolder(result.output);
+    if (cacheFolder) {
+      log.info(`Compiler cache folder: ${cacheFolder}`);
+    }
 
     log.info(`Compiler folder ready: ${compilerFolder}`);
     return compilerFolder;
@@ -2405,32 +2465,56 @@ ${script}
   }
 
   /**
-   * Purge the shared BCH artifact cache.
+   * Purge the shared BCH artifact cache: every directory under `cacheRoot`
+   * whose name starts with `COMPILER_CACHE_PREFIX` (the legacy unkeyed
+   * `compiler-cache` and every artifact-URL-keyed `compiler-cache-<hex>`
+   * sibling created by `createCompilerFolder`). Enumerates rather than
+   * removing a single fixed path because `cacheRoot` also holds the
+   * `COMPILER_FOLDER_DIR` working folders — a name-prefix match, not a
+   * recursive wipe of the whole root, is what keeps those untouched.
    *
    * MAINTENANCE ONLY — never call this from the bench startup path. It is
-   * exposed to operators via `centralgauge doctor purge-compiler-cache` as the
-   * escape hatch for a cache left incomplete by a run killed mid-population
-   * (BCH's population gate is `!(Test-Path $symbolsPath)`, so a partial cache
-   * is otherwise sticky forever).
+   * exposed to operators via `centralgauge doctor purge-compiler-cache`, both
+   * as the escape hatch for a cache left incomplete by a run killed
+   * mid-population (BCH's population gate is `!(Test-Path $symbolsPath)`, so a
+   * partial cache is otherwise sticky forever) and to reclaim stale keyed
+   * directories left behind after a BC artifact upgrade.
    *
    * Throws on any real failure (permission denied, directory locked by a live bench,
-   * partial delete) so the caller can report accurately. Absent cache is the silent no-op.
+   * partial delete) so the caller can report accurately. Absent root, or a root
+   * with no matching directories, is the silent no-op.
    *
-   * @param cacheDir Override for tests; defaults to the real cache location.
-   * @throws If the directory exists but cannot be removed (permission denied, in use, etc).
+   * @param cacheRoot Override for tests; defaults to the real BCH root.
+   * @throws If a matching directory exists but cannot be removed (permission denied, in use, etc).
    */
   static async purgeArtifactCache(
-    cacheDir: string = BcContainerProvider.COMPILER_CACHE_DIR,
+    cacheRoot: string = BcContainerProvider.COMPILER_CACHE_ROOT,
   ): Promise<void> {
     try {
-      await Deno.remove(cacheDir, { recursive: true });
-      log.info("Cleared compiler cache directory");
+      let removed = 0;
+      for await (const entry of Deno.readDir(cacheRoot)) {
+        if (
+          !entry.isDirectory ||
+          !entry.name.startsWith(BcContainerProvider.COMPILER_CACHE_PREFIX)
+        ) {
+          continue;
+        }
+        await Deno.remove(`${cacheRoot}\\${entry.name}`, { recursive: true });
+        removed++;
+      }
+      if (removed > 0) {
+        log.info(
+          `Cleared ${removed} compiler cache director${
+            removed === 1 ? "y" : "ies"
+          }`,
+        );
+      }
     } catch (error) {
-      // Absent cache is the expected no-op. Anything else (permission denied,
+      // Absent root is the expected no-op. Anything else (permission denied,
       // directory locked by a live bench, partial delete) must NOT be reported
       // as a successful purge — this is the only operator recovery path.
       if (error instanceof Deno.errors.NotFound) return;
-      log.warn(`Failed to purge compiler cache directory: ${error}`);
+      log.warn(`Failed to purge compiler cache directories: ${error}`);
       throw error;
     }
   }
