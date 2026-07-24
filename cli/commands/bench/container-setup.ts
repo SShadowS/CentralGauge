@@ -46,8 +46,13 @@ export async function setupContainer(
 ): Promise<ContainerSetupResult> {
   const containerName = containerConfig.name || "centralgauge-benchmark";
 
-  // Clear all compiler folders so they are recreated fresh
-  await BcContainerProvider.clearCompilerCache();
+  // Only clear compiler folders when the persistent cache is explicitly
+  // disabled. Clearing on every startup destroyed the cache it was meant to
+  // preserve — see the split in BcContainerProvider.clearCompilerFolders.
+  // The shared artifact cache is NEVER purged from this path.
+  if (options?.noCompilerCache) {
+    await BcContainerProvider.clearCompilerFolders();
+  }
 
   // Resolve container provider
   const containerProvider =
@@ -176,8 +181,13 @@ export async function setupContainers(
   containerConfig: ContainerAppConfig,
   options?: { noCompilerCache?: boolean },
 ): Promise<MultiContainerSetupResult> {
-  // Clear all compiler folders so they are recreated fresh
-  await BcContainerProvider.clearCompilerCache();
+  // Only clear compiler folders when the persistent cache is explicitly
+  // disabled. Clearing on every startup destroyed the cache it was meant to
+  // preserve — see the split in BcContainerProvider.clearCompilerFolders.
+  // The shared artifact cache is NEVER purged from this path.
+  if (options?.noCompilerCache) {
+    await BcContainerProvider.clearCompilerFolders();
+  }
 
   // Resolve provider once (singleton per type)
   const containerProvider =
