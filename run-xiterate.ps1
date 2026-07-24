@@ -21,11 +21,20 @@
   loop exists to detect. Cronus28 is also the only container with credentials
   wired for trap-probe (others 401).
 
+.PARAMETER TraceFile
+  Optional path to write a Chrome Trace Format file for the bench run (forwarded
+  as bench's own `--trace-file`). Omit for the normal authoring loop; useful for
+  measuring startup-phase (`setup.*`) span durations, e.g. when comparing a cold
+  vs warm compiler-cache run.
+
 .EXAMPLE
   .\run-xiterate.ps1 tasks/hard/CG-AL-X037-inner-commit.yml
 
 .EXAMPLE
   .\run-xiterate.ps1 tasks/hard/CG-AL-X037-inner-commit.yml -Models "anthropic/claude-opus-4-8,anthropic/claude-sonnet-4-6"
+
+.EXAMPLE
+  .\run-xiterate.ps1 tasks/hard/CG-AL-X035-poisoned-rescue.yml -NoSanity -TraceFile results/trace-cold.json
 #>
 param(
   [Parameter(Mandatory = $true, Position = 0)]
@@ -42,7 +51,12 @@ param(
   [string] $DebugOutput = "h:\Temp3",
 
   # Skip the sanity lane even when a reference solution exists.
-  [switch] $NoSanity
+  [switch] $NoSanity,
+
+  # Write a Chrome Trace Format file via bench's own --trace-file. Omitted by
+  # default, in which case $benchArgs is byte-identical to before this param
+  # existed.
+  [string] $TraceFile
 )
 
 $ErrorActionPreference = "Stop"
@@ -94,6 +108,9 @@ $benchArgs = @(
   "--debug-level",  "verbose",
   "--debug"
 )
+if ($TraceFile) {
+  $benchArgs += @("--trace-file", $TraceFile)
+}
 
 Write-Host "Benching $taskId | models=$Models | containers=$Containers | LOCAL" -ForegroundColor Green
 deno task start bench @benchArgs
