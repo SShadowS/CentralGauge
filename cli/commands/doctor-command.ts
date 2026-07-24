@@ -126,10 +126,12 @@ const runAdmin = (options: DoctorOptions) =>
  * Purge the shared BCH artifact cache.
  *
  * Bench startup no longer does this implicitly (it was destroying the cache
- * it was meant to preserve). The one case that still needs it: a run killed
+ * it was meant to preserve). Two cases still need it by hand: a run killed
  * mid-population leaves `symbols/` present but incomplete, and BCH's
  * population gate is `!(Test-Path $symbolsPath)` — so every later run
- * silently builds from the broken cache until it is purged by hand.
+ * silently builds from the broken cache until it is purged; and after a BC
+ * container artifact upgrade, to reclaim the keyed directory left behind for
+ * the now-unused previous version.
  */
 export async function runPurgeCompilerCache(): Promise<void> {
   try {
@@ -218,7 +220,7 @@ export function registerDoctorCommand(cli: Command): void {
   doctorCmd
     .command(
       "purge-compiler-cache",
-      "Purge the shared BCH artifact cache (maintenance, or after a BC artifact upgrade; forces a full re-download next run)",
+      "Purge the shared BCH artifact cache (maintenance, or after a BC artifact upgrade; costs a local compiler-folder rebuild next run, not a network re-download)",
     )
     .action(() => runPurgeCompilerCache());
 

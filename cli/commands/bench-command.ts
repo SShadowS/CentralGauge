@@ -117,7 +117,7 @@ export function registerBenchCommand(cli: Command): void {
     )
     .option(
       "--no-compiler-cache",
-      "Disable persistent compiler cache (re-downloads artifacts each run)",
+      "Disable persistent compiler cache (rebuilds the compiler folder from scratch each run; artifact downloads themselves are still cached separately by BCH)",
     )
     .option(
       "--max-concurrency <number>",

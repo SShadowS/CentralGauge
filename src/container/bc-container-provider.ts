@@ -1238,6 +1238,16 @@ ${script}
 
     const result = await this.executePowerShell(script);
 
+    // Log the cache folder before the failure check below: the CACHE_FOLDER
+    // line is written before New-BcCompilerFolder runs, so it's still present
+    // in the output even when that call fails — and knowing which cache
+    // directory was in play is exactly what an operator needs when diagnosing
+    // that failure.
+    const cacheFolder = extractCacheFolder(result.output);
+    if (cacheFolder) {
+      log.info(`Compiler cache folder: ${cacheFolder}`);
+    }
+
     const compilerFolder = extractCompilerFolder(result.output);
     if (!compilerFolder) {
       throw this.buildPwshError({
@@ -1249,11 +1259,6 @@ ${script}
     }
 
     this.compilerFolderCache.set(containerName, compilerFolder);
-
-    const cacheFolder = extractCacheFolder(result.output);
-    if (cacheFolder) {
-      log.info(`Compiler cache folder: ${cacheFolder}`);
-    }
 
     log.info(`Compiler folder ready: ${compilerFolder}`);
     return compilerFolder;
@@ -2490,32 +2495,54 @@ ${script}
   static async purgeArtifactCache(
     cacheRoot: string = BcContainerProvider.COMPILER_CACHE_ROOT,
   ): Promise<void> {
+    // Enumerate first, fully, before removing anything. This keeps "the root
+    // itself doesn't exist" (expected no-op — a machine that never ran a
+    // bench has no BCH root) as the ONLY NotFound this function tolerates.
+    // A NotFound raised later, while removing a directory that enumeration
+    // just found, means something else changed the filesystem mid-purge
+    // (concurrent purge, broken junction) — that must be reported as a real
+    // failure below, not folded into this same no-op branch.
+    let entries: Deno.DirEntry[];
     try {
-      let removed = 0;
+      entries = [];
       for await (const entry of Deno.readDir(cacheRoot)) {
-        if (
-          !entry.isDirectory ||
-          !entry.name.startsWith(BcContainerProvider.COMPILER_CACHE_PREFIX)
-        ) {
-          continue;
-        }
-        await Deno.remove(`${cacheRoot}\\${entry.name}`, { recursive: true });
-        removed++;
-      }
-      if (removed > 0) {
-        log.info(
-          `Cleared ${removed} compiler cache director${
-            removed === 1 ? "y" : "ies"
-          }`,
-        );
+        entries.push(entry);
       }
     } catch (error) {
-      // Absent root is the expected no-op. Anything else (permission denied,
-      // directory locked by a live bench, partial delete) must NOT be reported
-      // as a successful purge — this is the only operator recovery path.
       if (error instanceof Deno.errors.NotFound) return;
-      log.warn(`Failed to purge compiler cache directories: ${error}`);
+      log.warn(`Failed to enumerate compiler cache root: ${error}`);
       throw error;
+    }
+
+    let removed = 0;
+    for (const entry of entries) {
+      if (
+        !entry.isDirectory ||
+        !entry.name.startsWith(BcContainerProvider.COMPILER_CACHE_PREFIX)
+      ) {
+        continue;
+      }
+      try {
+        await Deno.remove(`${cacheRoot}\\${entry.name}`, { recursive: true });
+        removed++;
+      } catch (error) {
+        // Anything here (including NotFound — the directory enumeration just
+        // found it) means the purge did not necessarily reach every matching
+        // directory. Must NOT be reported as a successful purge — this is the
+        // only operator recovery path.
+        log.warn(
+          `Failed to purge compiler cache directory ${entry.name}: ${error}`,
+        );
+        throw error;
+      }
+    }
+
+    if (removed > 0) {
+      log.info(
+        `Cleared ${removed} compiler cache director${
+          removed === 1 ? "y" : "ies"
+        }`,
+      );
     }
   }
 }

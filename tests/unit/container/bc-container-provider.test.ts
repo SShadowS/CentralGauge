@@ -2467,3 +2467,36 @@ Deno.test("purgeArtifactCache propagates non-NotFound errors", async () => {
     await Deno.remove(root, { recursive: true }).catch(() => {});
   }
 });
+
+Deno.test("purgeArtifactCache treats a NotFound raised while removing an already-enumerated directory as a real failure, not the root-absent no-op", async () => {
+  // Distinguishes two different NotFound sites: the root itself missing
+  // (silent no-op, covered above) vs. a directory that enumeration just
+  // found vanishing before/during its own removal (concurrent purge, broken
+  // junction) — the latter must surface as a failure so an operator running
+  // `doctor purge-compiler-cache` sees [FAIL], not a false [OK].
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-race-" });
+  const original = Deno.remove;
+  try {
+    await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
+      recursive: true,
+    });
+    Object.defineProperty(Deno, "remove", {
+      value: () =>
+        Promise.reject(
+          new Deno.errors.NotFound("simulated concurrent removal"),
+        ),
+      configurable: true,
+    });
+
+    await assertRejects(
+      () => BcContainerProvider.purgeArtifactCache(root),
+      Deno.errors.NotFound,
+    );
+  } finally {
+    Object.defineProperty(Deno, "remove", {
+      value: original,
+      configurable: true,
+    });
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
