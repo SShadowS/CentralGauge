@@ -2691,12 +2691,32 @@ ${script}
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   /**
+   * Minimum age a GUID-named folder must reach before the sweep will remove
+   * it. `trap-probe` and `bench` are deliberately separate processes (the
+   * trap-authoring loop runs the sanity lane and the model bench in
+   * parallel), and both can be compiling into a fresh `--no-compiler-cache`
+   * GUID folder at the same time. A GUID folder carries no container name,
+   * so the per-container lock (`folder-lock.ts`, keyed `.cg-<container>.lock`)
+   * cannot cover it — mtime age is the only signal available, and a live
+   * build touches its folder continuously. This sweep only runs on the
+   * diagnostic `--no-compiler-cache` path, so a conservative skip costs at
+   * most a stale orphan the next sweep collects — far cheaper than deleting
+   * another process's live work.
+   */
+  private static readonly GUID_FOLDER_MIN_AGE_MS = 30 * 60 * 1000;
+
+  /**
    * Remove the compiler working folders this project creates: the
    * per-container `CentralGauge-*` ones, and the GUID-named ones BCH falls
    * back to whenever `-containerName` was not passed (i.e. every
    * `--no-compiler-cache` run). Those GUID folders were never swept by
    * anything — 37 had accumulated on the development machine — because they
    * are unreachable by name once the run that made them exits.
+   *
+   * GUID-named folders younger than `GUID_FOLDER_MIN_AGE_MS` are skipped —
+   * see that constant for why. `CentralGauge-*` folders are deterministic
+   * per container and already covered by the per-container lock, so they
+   * stay unconditional regardless of age.
    *
    * Does NOT touch the shared artifact cache — see `purgeArtifactCache`.
    * Callers must only invoke this when the persistent compiler cache is
@@ -2705,22 +2725,37 @@ ${script}
    * re-extracted BC artifacts, serialized across containers).
    *
    * @param compilerDir Override for tests; defaults to the real BCH location.
+   * @param opts.minAgeMs Override for tests; defaults to `GUID_FOLDER_MIN_AGE_MS`.
    */
   static async clearCompilerFolders(
     compilerDir: string = BcContainerProvider.COMPILER_FOLDER_DIR,
+    opts?: { minAgeMs?: number },
   ): Promise<void> {
+    const minAgeMs = opts?.minAgeMs ??
+      BcContainerProvider.GUID_FOLDER_MIN_AGE_MS;
     try {
       for await (const entry of Deno.readDir(compilerDir)) {
-        const ours = entry.name.startsWith("CentralGauge-") ||
-          BcContainerProvider.GUID_FOLDER_RE.test(entry.name);
-        if (entry.isDirectory && ours) {
-          const folderPath = `${compilerDir}\\${entry.name}`;
+        const isCentralGauge = entry.name.startsWith("CentralGauge-");
+        const isGuid = BcContainerProvider.GUID_FOLDER_RE.test(entry.name);
+        if (!entry.isDirectory || !(isCentralGauge || isGuid)) continue;
+
+        const folderPath = `${compilerDir}\\${entry.name}`;
+
+        if (isGuid && !isCentralGauge) {
           try {
-            await Deno.remove(folderPath, { recursive: true });
-            log.info(`Cleared compiler folder: ${entry.name}`);
+            const stat = await Deno.stat(folderPath);
+            const age = Date.now() - (stat.mtime?.getTime() ?? 0);
+            if (age < minAgeMs) continue; // too young — could be a live build
           } catch {
-            log.warn(`Failed to clear compiler folder: ${entry.name}`);
+            continue; // stat failed (e.g. removed concurrently) — leave it alone
           }
+        }
+
+        try {
+          await Deno.remove(folderPath, { recursive: true });
+          log.info(`Cleared compiler folder: ${entry.name}`);
+        } catch {
+          log.warn(`Failed to clear compiler folder: ${entry.name}`);
         }
       }
     } catch (error) {

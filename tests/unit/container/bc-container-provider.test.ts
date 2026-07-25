@@ -2370,8 +2370,17 @@ Deno.test("clearCompilerFolders also removes BCH's GUID-named folders", async ()
   const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
   try {
     await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
-    await Deno.mkdir(`${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d154`);
-    await Deno.mkdir(`${dir}/03C44404-9A9F-4F6A-A4E9-9AC52CE04DAA`);
+    const guidA = `${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d154`;
+    const guidB = `${dir}/03C44404-9A9F-4F6A-A4E9-9AC52CE04DAA`;
+    await Deno.mkdir(guidA);
+    await Deno.mkdir(guidB);
+    // Backdate past the default age guard: a freshly created GUID folder is
+    // indistinguishable from another process's live build (see the
+    // dedicated age-guard tests below) and is deliberately left alone. This
+    // test simulates an orphan left behind by a process that already exited.
+    const old = new Date(Date.now() - 60 * 60 * 1000);
+    await Deno.utime(guidA, old, old);
+    await Deno.utime(guidB, old, old);
     // Near-misses that must survive: a GUID is only swept when the whole
     // name is one.
     await Deno.mkdir(`${dir}/someone-elses-folder`);
@@ -2392,6 +2401,66 @@ Deno.test("clearCompilerFolders also removes BCH's GUID-named folders", async ()
       "backup-0114ff34-7b1d-4d51-9a78-5d6d20a2d154",
       "someone-elses-folder",
     ]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("clearCompilerFolders skips a GUID folder younger than the age guard", async () => {
+  // Concurrent-process safety: trap-probe and bench run as separate
+  // processes and can both be compiling into a fresh --no-compiler-cache
+  // GUID folder at once. A folder that hasn't reached the age guard must be
+  // left alone, even though its name matches GUID_FOLDER_RE exactly.
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  try {
+    const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
+    await Deno.mkdir(`${dir}/${guidName}`);
+    // Freshly created -> mtime is "now", well within the guard below.
+
+    await BcContainerProvider.clearCompilerFolders(dir, { minAgeMs: 60_000 });
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    assertEquals(remaining, [guidName]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("clearCompilerFolders removes a GUID folder once past the age guard", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  try {
+    const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
+    const folderPath = `${dir}/${guidName}`;
+    await Deno.mkdir(folderPath);
+    const old = new Date(Date.now() - 60_000);
+    await Deno.utime(folderPath, old, old);
+
+    await BcContainerProvider.clearCompilerFolders(dir, { minAgeMs: 1_000 });
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    assertEquals(remaining, []);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("clearCompilerFolders removes CentralGauge-* folders regardless of age", async () => {
+  // CentralGauge-* names are deterministic per container and already
+  // covered by the per-container lock, so they stay unconditional — even
+  // under a generous age guard that would spare a same-age GUID folder.
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  try {
+    await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
+
+    await BcContainerProvider.clearCompilerFolders(dir, {
+      minAgeMs: 60 * 60 * 1000,
+    });
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    assertEquals(remaining, []);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
