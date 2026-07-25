@@ -41,6 +41,14 @@ export class ModelCatalog {
   private static slugs: Set<string> | null = null;
 
   /**
+   * In-flight disk load, so concurrent callers (e.g. bench's
+   * `validateModels()`, which runs `Promise.all` over every model variant)
+   * share one read instead of racing redundant ones. Mirrors
+   * `PricingService.initialize()`'s `configLoadPromise` guard.
+   */
+  private static loadPromise: Promise<void> | null = null;
+
+  /**
    * Whether `<provider>/<model>` is a slug the catalog knows about.
    * Best-effort: a missing/unparseable catalog file resolves to `false`
    * rather than throwing, so a discovery-based validation can still succeed
@@ -52,11 +60,27 @@ export class ModelCatalog {
   }
 
   /**
-   * Read `site/catalog/models.yml` from disk and load it. Skips if already
-   * populated (e.g. a test injected rows via {@link loadRows}).
+   * Ensure the catalog is loaded. Deduplicates concurrent callers onto a
+   * single in-flight load; skips entirely once loaded (e.g. a test injected
+   * rows via {@link loadRows}).
    */
   private static async ensureLoaded(): Promise<void> {
     if (this.slugs) return;
+
+    if (this.loadPromise) {
+      await this.loadPromise;
+      return;
+    }
+
+    this.loadPromise = this.loadFromDisk();
+    await this.loadPromise;
+    this.loadPromise = null;
+  }
+
+  /**
+   * Read `site/catalog/models.yml` from disk and load it.
+   */
+  private static async loadFromDisk(): Promise<void> {
     for (const path of CATALOG_MODELS_PATHS) {
       try {
         const text = await Deno.readTextFile(path);
@@ -93,5 +117,6 @@ export class ModelCatalog {
   /** Clear the loaded catalog (for testing). */
   static clear(): void {
     this.slugs = null;
+    this.loadPromise = null;
   }
 }
