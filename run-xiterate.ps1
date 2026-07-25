@@ -56,7 +56,12 @@ param(
   # Write a Chrome Trace Format file via bench's own --trace-file. Omitted by
   # default, in which case $benchArgs is byte-identical to before this param
   # existed.
-  [string] $TraceFile
+  [string] $TraceFile,
+
+  # Extra args forwarded verbatim to `deno task start bench`, e.g.
+  # -ExtraArgs "--no-reuse-compiler-folders". Omitted by default, in which
+  # case $benchArgs is byte-identical to before this param existed.
+  [string[]] $ExtraArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -110,6 +115,9 @@ $benchArgs = @(
 )
 if ($TraceFile) {
   $benchArgs += @("--trace-file", $TraceFile)
+}
+if ($ExtraArgs) {
+  $benchArgs += $ExtraArgs
 }
 
 Write-Host "Benching $taskId | models=$Models | containers=$Containers | LOCAL" -ForegroundColor Green
