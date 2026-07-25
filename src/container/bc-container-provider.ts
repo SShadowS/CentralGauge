@@ -744,6 +744,7 @@ export class BcContainerProvider implements ContainerProvider {
     "prenuke": "publish",
     "prereq-cleanup": "publish",
     "nst-maintain": "health",
+    "harness-probe": "health",
     "test-legacy": "test",
   };
 
@@ -1475,24 +1476,65 @@ ${script}
    * it from `infra/cg-test-harness/` against the container's compiler folder
    * and publishes it, unless the expected name+version is already installed.
    * Idempotent; safe to call at every bench startup.
+   *
+   * Two phases:
+   *   1. Probe (concurrent, warm slot) -- the "is it installed?" check is
+   *      read-only and independent per container, so it is safe to run all
+   *      containers concurrently and safe to route through the warm session
+   *      slot (`runScriptThroughSession`) instead of a cold `pwsh` spawn.
+   *   2. Publish (serial, cold `executePowerShell`) -- compile+publish
+   *      mutates container state and runs rarely (only when the harness is
+   *      missing or its probe failed), so it stays serial on the path that
+   *      has been proven; see the per-container try/catch below.
    */
   async ensureTestHarness(containerNames: string[]): Promise<void> {
     if (!this.isWindows()) return;
-    for (const name of containerNames) {
-      try {
-        const installed = await this.executePowerShell(`
-          ${bcchImport()}
-          $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
-            $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
-            $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
-          }
-          if ($a) { Write-Output "HARNESS_PRESENT" } else { Write-Output "HARNESS_ABSENT" }
-        `);
-        if (installed.output.includes("HARNESS_PRESENT")) {
-          log.info(`Test harness already published on ${name}`);
-          continue;
-        }
 
+    const probeScript = (name: string) => `
+      ${bcchImport()}
+      $a = Get-BcContainerAppInfo -containerName "${name}" | Where-Object {
+        $_.Name -eq "${BcContainerProvider.HARNESS_APP_NAME}" -and
+        $_.Version -eq "${BcContainerProvider.HARNESS_APP_VERSION}"
+      }
+      if ($a) { Write-Output "HARNESS_PRESENT" } else { Write-Output "HARNESS_ABSENT" }
+    `;
+    // Promise.allSettled (not Promise.all): one container's probe throwing
+    // must not prevent the others from being probed, and must not reject
+    // ensureTestHarness -- a failed probe just routes that container into
+    // the publish phase below, whose own try/catch handles it non-fatally.
+    const probeResults = await Promise.allSettled(
+      containerNames.map((name) =>
+        this.runScriptThroughSession(name, probeScript(name), "harness-probe")
+      ),
+    );
+
+    const needsPublish: string[] = [];
+    containerNames.forEach((name, i) => {
+      // probeResults has exactly one entry per containerNames entry, in the
+      // same order, by construction (mapped from the same array above).
+      const probe = probeResults[i]!;
+      if (
+        probe.status === "fulfilled" &&
+        probe.value.output.includes("HARNESS_PRESENT")
+      ) {
+        log.info(`Test harness already published on ${name}`);
+        return;
+      }
+      if (probe.status === "rejected") {
+        log.warn(
+          `Test harness presence probe failed for ${name}; attempting publish`,
+          {
+            error: probe.reason instanceof Error
+              ? probe.reason.message
+              : String(probe.reason),
+          },
+        );
+      }
+      needsPublish.push(name);
+    });
+
+    for (const name of needsPublish) {
+      try {
         const compilerFolder = await this.getOrCreateCompilerFolder(name);
         // Resolve the harness source dir against this module's location so it
         // works regardless of the process cwd (other paths in this provider
