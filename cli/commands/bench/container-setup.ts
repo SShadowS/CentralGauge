@@ -43,7 +43,7 @@ export interface ContainerSetupResult {
 export async function setupContainer(
   containerProviderName: string | undefined,
   containerConfig: ContainerAppConfig,
-  options?: { noCompilerCache?: boolean },
+  options?: { noCompilerCache?: boolean; noReuseCompilerFolders?: boolean },
 ): Promise<ContainerSetupResult> {
   const containerName = containerConfig.name || "centralgauge-benchmark";
 
@@ -78,6 +78,14 @@ export async function setupContainer(
     "setCompilerCacheEnabled" in containerProvider
   ) {
     (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
+  }
+
+  // Configure compiler-folder adoption (on by default; opt out via
+  // --no-reuse-compiler-folders to force a rebuild every run)
+  if ("setReuseCompilerFolders" in containerProvider) {
+    (containerProvider as BcContainerProvider).setReuseCompilerFolders(
+      !options?.noReuseCompilerFolders,
+    );
   }
 
   // Check if container already exists and is healthy
@@ -204,7 +212,7 @@ export async function setupContainers(
   containerNames: string[],
   containerProviderName: string | undefined,
   containerConfig: ContainerAppConfig,
-  options?: { noCompilerCache?: boolean },
+  options?: { noCompilerCache?: boolean; noReuseCompilerFolders?: boolean },
 ): Promise<MultiContainerSetupResult> {
   // Only clear compiler folders when the persistent cache is explicitly
   // disabled. Clearing on every startup destroyed the cache it was meant to
@@ -228,6 +236,14 @@ export async function setupContainers(
     "setCompilerCacheEnabled" in containerProvider
   ) {
     (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
+  }
+
+  // Configure compiler-folder adoption (on by default; opt out via
+  // --no-reuse-compiler-folders to force a rebuild every run)
+  if ("setReuseCompilerFolders" in containerProvider) {
+    (containerProvider as BcContainerProvider).setReuseCompilerFolders(
+      !options?.noReuseCompilerFolders,
+    );
   }
 
   for (const name of containerNames) {

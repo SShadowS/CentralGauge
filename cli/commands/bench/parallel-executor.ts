@@ -267,9 +267,12 @@ export async function executeParallelBenchmark(
     // `primaryContainerName`, `wasExisting`, `containerNames` (declared
     // above the try) so the function's finally block can clean up /
     // dispose on any exit path.
-    const setupOpts = options.noCompilerCache
-      ? { noCompilerCache: true as const }
-      : {};
+    const setupOpts: { noCompilerCache?: true; noReuseCompilerFolders?: true } =
+      {};
+    if (options.noCompilerCache) setupOpts.noCompilerCache = true;
+    if (options.noReuseCompilerFolders) {
+      setupOpts.noReuseCompilerFolders = true;
+    }
 
     if (options.containers && options.containers.length > 0) {
       // Multi-container mode

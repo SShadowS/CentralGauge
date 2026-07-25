@@ -120,6 +120,10 @@ export function registerBenchCommand(cli: Command): void {
       "Disable persistent compiler cache (rebuilds the compiler folder from scratch each run; artifact downloads themselves are still cached separately by BCH)",
     )
     .option(
+      "--no-reuse-compiler-folders",
+      "Rebuild each container's compiler folder even when it already matches the container's artifact URL (adoption is on by default and skips the rebuild entirely)",
+    )
+    .option(
       "--max-concurrency <number>",
       "Maximum concurrent LLM calls (auto: taskConcurrency × variants × 2, floor 10)",
     )
@@ -487,6 +491,7 @@ export function registerBenchCommand(cli: Command): void {
         noNotify: !options.notify,
         runs,
         noCompilerCache: !options.compilerCache,
+        noReuseCompilerFolders: !options.reuseCompilerFolders,
         dashboard: options.dashboard,
       };
       if (options.maxConcurrency !== undefined) {
