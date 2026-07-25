@@ -4,14 +4,14 @@
  */
 
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import {
-  categorizeAttempt,
-  formatSingleTaskMatrix,
-} from "../../../cli/commands/bench/single-task-matrix.ts";
 import type {
   ExecutionAttempt,
   TaskExecutionResult,
 } from "../../../src/tasks/interfaces.ts";
+import {
+  categorizeAttempt,
+  formatSingleTaskMatrix,
+} from "../../../cli/commands/bench/single-task-matrix.ts";
 import { synthesizeInfraFailureResult } from "../../../src/health/mod.ts";
 import {
   createMockExecutionAttempt,
