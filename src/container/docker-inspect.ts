@@ -4,7 +4,15 @@ const log = Logger.create("container:docker-inspect");
 
 /** The two facts we read straight from Docker, no BCH involved. */
 export interface ContainerInspection {
-  /** Value of the container's `artifactUrl` env entry, if present. */
+  /**
+   * Value of the container's `artifactUrl` env entry, if present.
+   *
+   * `undefined` means the env entry itself is absent from `Config.Env`.
+   * `""` means the entry is present but empty (e.g. `artifactUrl=`).
+   * This diverges from BCH's own `Get-BcContainerArtifactUrl`, which
+   * returns `""` for the absent case too — do not treat `""` here as
+   * "absent".
+   */
   artifactUrl: string | undefined;
   /** Docker's own view of whether the container is running. */
   running: boolean;
