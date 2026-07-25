@@ -8,12 +8,19 @@
  * would otherwise shell out stubs `inspectForAdoption`.
  */
 
-import { assert, assertEquals } from "@std/assert";
+import {
+  assert,
+  assertEquals,
+  assertRejects,
+  assertStringIncludes,
+} from "@std/assert";
 import type { ContainerInspection } from "../../../src/container/docker-inspect.ts";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
 import { BCCH_PINNED_VERSION } from "../../../src/container/bcch-config.ts";
+import { compilerCacheKey } from "../../../src/container/compiler-cache-key.ts";
 import {
   LAYOUT_VERSION,
+  MARKER_FILENAME,
   writeMarker,
 } from "../../../src/container/compiler-folder-marker.ts";
 
@@ -26,6 +33,10 @@ interface AdoptionInternals {
   adoptableFolderPath(name: string): string | undefined;
   tryAdoptCompilerFolder(name: string): Promise<string | undefined>;
   pruneCompilerOutput(folder: string, keep?: number): Promise<void>;
+  rebuildCompilerFolder(name: string): Promise<string>;
+  executePowerShell(
+    script: string,
+  ): Promise<{ output: string; exitCode: number }>;
 }
 
 function internals(p: BcContainerProvider): AdoptionInternals {
@@ -288,6 +299,119 @@ Deno.test("adopts a matching folder and prunes its stale output", async () => {
   } finally {
     restorePath();
     restoreInspect();
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+/**
+ * Drive `rebuildCompilerFolder` with the pwsh call stubbed out, returning the
+ * script it would have run plus the folder it built into (a temp dir, so the
+ * marker write is safe).
+ */
+async function captureRebuild(
+  p: BcContainerProvider,
+  inspection: ContainerInspection | undefined,
+): Promise<{ script: string; folder: string }> {
+  const folder = await Deno.makeTempDir({ prefix: "cg-rebuild-" });
+  let script = "";
+  const restoreInspect = stub(
+    p,
+    "inspectForAdoption",
+    () => Promise.resolve(inspection),
+  );
+  const restoreExec = stub(p, "executePowerShell", (s: string) => {
+    script = s;
+    return Promise.resolve({
+      output: `COMPILER_FOLDER:${folder}`,
+      exitCode: 0,
+    });
+  });
+  try {
+    await internals(p).rebuildCompilerFolder("Cronus282");
+  } finally {
+    restoreExec();
+    restoreInspect();
+  }
+  return { script, folder };
+}
+
+Deno.test("rebuild pins the script to the host-resolved artifact URL", async () => {
+  const p = new BcContainerProvider();
+  // A SAS-style query with a `$` in it: proof the value is emitted as a
+  // single-quoted PS string, where `$sig` cannot expand to nothing.
+  const url = `${ARTIFACT_URL}?sv=2021&sig=$abc`;
+  const { script, folder } = await captureRebuild(p, {
+    artifactUrl: url,
+    running: true,
+  });
+  try {
+    assertStringIncludes(script, `$artifactUrl = '${url}'`);
+    // The in-script resolution is what the pin replaces.
+    assert(!script.includes("Get-BcContainerArtifactUrl"));
+    assertStringIncludes(script, 'Write-Output "ARTIFACT_URL:$artifactUrl"');
+    // The Phase 1 explanatory comment must survive every rework.
+    assertStringIncludes(script, "# No -includeTestToolkit");
+    assertStringIncludes(
+      script,
+      "# -includeAL — that forces Download-Artifacts",
+    );
+    // Cache key is derived from the normalized (query-stripped) URL.
+    assertStringIncludes(
+      script,
+      ` -containerName "CentralGauge-Cronus282" -cacheFolder "${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${await compilerCacheKey(
+        url,
+      )}"`,
+    );
+    // The marker records the SAME string the script was pinned to — that
+    // identity is the whole point of the pin.
+    const marker = JSON.parse(
+      await Deno.readTextFile(`${folder}/${MARKER_FILENAME}`),
+    );
+    assertEquals(marker.artifactUrl, url);
+    assertEquals(marker.bchVersion, BCCH_PINNED_VERSION);
+    assertEquals(marker.layoutVersion, LAYOUT_VERSION);
+  } finally {
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+Deno.test("rebuild falls back to in-script resolution when inspect gives nothing", async () => {
+  const p = new BcContainerProvider();
+  const { script, folder } = await captureRebuild(p, undefined);
+  try {
+    assertStringIncludes(
+      script,
+      '$artifactUrl = Get-BcContainerArtifactUrl -containerName "Cronus282"',
+    );
+    assertStringIncludes(script, 'Write-Output "ARTIFACT_URL:$artifactUrl"');
+    // No host-side URL means no cache params and no marker to write.
+    assert(!script.includes("-cacheFolder"));
+    await assertRejects(
+      () => Deno.stat(`${folder}/${MARKER_FILENAME}`),
+      Deno.errors.NotFound,
+    );
+  } finally {
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+Deno.test("rebuild writes no marker when the folder can never be adopted", async () => {
+  // --no-compiler-cache: BCH builds into a GUID folder that
+  // adoptableFolderPath will never consult, so a marker there is dead weight.
+  const p = new BcContainerProvider();
+  p.setCompilerCacheEnabled(false);
+  const { script, folder } = await captureRebuild(p, {
+    artifactUrl: ARTIFACT_URL,
+    running: true,
+  });
+  try {
+    assert(!script.includes("-cacheFolder"));
+    assert(!script.includes('-containerName "CentralGauge-'));
+    await assertRejects(
+      () => Deno.stat(`${folder}/${MARKER_FILENAME}`),
+      Deno.errors.NotFound,
+    );
+  } finally {
     await Deno.remove(folder, { recursive: true });
   }
 });

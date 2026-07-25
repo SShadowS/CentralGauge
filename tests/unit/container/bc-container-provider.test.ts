@@ -2362,6 +2362,41 @@ Deno.test("clearCompilerFolders removes only CentralGauge-* directories", async 
   }
 });
 
+Deno.test("clearCompilerFolders also removes BCH's GUID-named folders", async () => {
+  // BCH invents a GUID name whenever -containerName is not passed, i.e. every
+  // --no-compiler-cache run. Nothing swept those, so they accumulated forever
+  // (37 were on the dev machine) — they are unreachable by name once the run
+  // that created them exits.
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  try {
+    await Deno.mkdir(`${dir}/CentralGauge-Cronus28`);
+    await Deno.mkdir(`${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d154`);
+    await Deno.mkdir(`${dir}/03C44404-9A9F-4F6A-A4E9-9AC52CE04DAA`);
+    // Near-misses that must survive: a GUID is only swept when the whole
+    // name is one.
+    await Deno.mkdir(`${dir}/someone-elses-folder`);
+    await Deno.mkdir(`${dir}/backup-0114ff34-7b1d-4d51-9a78-5d6d20a2d154`);
+    await Deno.mkdir(`${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d154-old`);
+    await Deno.mkdir(`${dir}/0114ff34-7b1d-4d51-9a78-5d6d20a2d15`); // too short
+    await Deno.writeTextFile(`${dir}/.cg-Cronus28.lock`, "{}");
+
+    await BcContainerProvider.clearCompilerFolders(dir);
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    remaining.sort();
+    assertEquals(remaining, [
+      ".cg-Cronus28.lock",
+      "0114ff34-7b1d-4d51-9a78-5d6d20a2d15",
+      "0114ff34-7b1d-4d51-9a78-5d6d20a2d154-old",
+      "backup-0114ff34-7b1d-4d51-9a78-5d6d20a2d154",
+      "someone-elses-folder",
+    ]);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("clearCompilerFolders is a no-op when the directory is absent", async () => {
   // Must not throw — a machine that has never run a bench has no compiler dir.
   await BcContainerProvider.clearCompilerFolders(

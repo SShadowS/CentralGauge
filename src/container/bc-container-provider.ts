@@ -1232,6 +1232,15 @@ ${script}
     // Rebuild mutates the folder, so take the cross-process lock — trap-probe
     // and bench run as separate processes and compilerFolderQueue only
     // serializes within one.
+    //
+    // Create the directory first: on a machine that has never run a bench it
+    // does not exist, and `acquireLock`'s `Deno.open(createNew)` would fail
+    // NotFound and log a warning per container before correctly proceeding
+    // unlocked. `recursive: true` is already a no-op on an existing dir; a
+    // permission failure still lands on that same proceed-unlocked path.
+    await Deno.mkdir(BcContainerProvider.COMPILER_FOLDER_DIR, {
+      recursive: true,
+    }).catch(() => {});
     const lockPath =
       `${BcContainerProvider.COMPILER_FOLDER_DIR}\\.cg-${containerName}.lock`;
     const lock = await acquireLock(lockPath);
@@ -1373,9 +1382,20 @@ ${script}
       log.info(`Compiler cache folder: ${cacheFolder}`);
     }
 
+    // Pin the script to the SAME url the marker and cache key were derived
+    // from, instead of letting it resolve its own ~49s later. Both reads hit
+    // the identical source (`Get-BcContainerArtifactUrl` is `docker inspect`
+    // plus an env lookup), but a container recreated on a different artifact
+    // between the two would otherwise leave a marker that does not describe
+    // the folder BCH just built — and a later run would adopt it. Falls back
+    // to in-script resolution only when `docker inspect` gave us nothing.
+    const artifactUrlLine = artifactUrl
+      ? `$artifactUrl = '${escapeForPS(artifactUrl)}'`
+      : `$artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"`;
+
     const script = `
       ${bcchImport()}
-      $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
+      ${artifactUrlLine}
       Write-Output "ARTIFACT_URL:$artifactUrl"
       # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
       # parameter (it lands in $args and is ignored). Do NOT substitute
@@ -1399,7 +1419,11 @@ ${script}
     }
 
     this.lastWarmupStats.rebuilt++;
-    if (artifactUrl) {
+    // Only mark a folder adoption can actually consult. Under
+    // --no-compiler-cache BCH builds into a GUID folder that
+    // `adoptableFolderPath` will never look at, so a marker there is dead
+    // weight that only serves to confuse a later postmortem.
+    if (artifactUrl && this.adoptableFolderPath(containerName)) {
       await writeMarker(compilerFolder, {
         layoutVersion: LAYOUT_VERSION,
         artifactUrl,
@@ -2593,7 +2617,22 @@ ${script}
   }
 
   /**
-   * Remove the per-container `CentralGauge-*` compiler working folders.
+   * Matches the folder name BCH invents when `New-BcCompilerFolder` is called
+   * without `-containerName` (`New-BcCompilerFolder.ps1:63`:
+   * `[GUID]::NewGuid().ToString()`). Anchored and shape-exact so it can only
+   * ever match a bare GUID — an unrelated sibling that merely contains one is
+   * left alone.
+   */
+  private static readonly GUID_FOLDER_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /**
+   * Remove the compiler working folders this project creates: the
+   * per-container `CentralGauge-*` ones, and the GUID-named ones BCH falls
+   * back to whenever `-containerName` was not passed (i.e. every
+   * `--no-compiler-cache` run). Those GUID folders were never swept by
+   * anything — 37 had accumulated on the development machine — because they
+   * are unreachable by name once the run that made them exits.
    *
    * Does NOT touch the shared artifact cache — see `purgeArtifactCache`.
    * Callers must only invoke this when the persistent compiler cache is
@@ -2608,7 +2647,9 @@ ${script}
   ): Promise<void> {
     try {
       for await (const entry of Deno.readDir(compilerDir)) {
-        if (entry.isDirectory && entry.name.startsWith("CentralGauge-")) {
+        const ours = entry.name.startsWith("CentralGauge-") ||
+          BcContainerProvider.GUID_FOLDER_RE.test(entry.name);
+        if (entry.isDirectory && ours) {
           const folderPath = `${compilerDir}\\${entry.name}`;
           try {
             await Deno.remove(folderPath, { recursive: true });
