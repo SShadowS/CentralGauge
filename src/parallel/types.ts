@@ -151,6 +151,14 @@ export interface LLMWorkResult {
   /** Error message (if failed) */
   error?: string;
 
+  /**
+   * Structured classification of why extraction failed (set alongside
+   * `error` for the same three branches). Absent when `success` is true.
+   * `empty_response` carries zero trap signal and must not be read as a
+   * genuine catch by the authoring-loop reporter.
+   */
+  failureKind?: "empty_response" | "safety_refusal" | "low_confidence";
+
   /** Duration of LLM call in ms */
   duration: number;
 
