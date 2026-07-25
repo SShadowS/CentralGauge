@@ -2714,9 +2714,12 @@ ${script}
    * are unreachable by name once the run that made them exits.
    *
    * GUID-named folders younger than `GUID_FOLDER_MIN_AGE_MS` are skipped —
-   * see that constant for why. `CentralGauge-*` folders are deterministic
-   * per container and already covered by the per-container lock, so they
-   * stay unconditional regardless of age.
+   * see that constant for why. A GUID folder whose age cannot be determined
+   * (a `Deno.stat` failure, or a `null` mtime) is skipped for the same
+   * reason: unknown age must resolve the same way as known-too-young, never
+   * the opposite. `CentralGauge-*` folders are deterministic per container
+   * and already covered by the per-container lock, so they stay
+   * unconditional regardless of age.
    *
    * Does NOT touch the shared artifact cache — see `purgeArtifactCache`.
    * Callers must only invoke this when the persistent compiler cache is
@@ -2740,20 +2743,36 @@ ${script}
         if (!entry.isDirectory || !(isCentralGauge || isGuid)) continue;
 
         const folderPath = `${compilerDir}\\${entry.name}`;
+        let reason = "CentralGauge, unconditional";
 
         if (isGuid && !isCentralGauge) {
           try {
             const stat = await Deno.stat(folderPath);
-            const age = Date.now() - (stat.mtime?.getTime() ?? 0);
-            if (age < minAgeMs) continue; // too young — could be a live build
+            // A null mtime is exactly as uninformative as a stat failure
+            // below: it means we cannot prove the folder is old, so it
+            // must be treated the same way (skip), not the opposite way
+            // (delete). `FileInfo.mtime` is `Date | null` on some
+            // platform/filesystem combinations even though NTFS always
+            // populates it in practice on this project's targets.
+            if (
+              stat.mtime === null ||
+              Date.now() - stat.mtime.getTime() < minAgeMs
+            ) {
+              log.debug(
+                `Skipped compiler folder, age unknown or too recent: ${entry.name}`,
+              );
+              continue;
+            }
+            reason = "GUID, verified old";
           } catch {
+            log.debug(`Skipped compiler folder, stat failed: ${entry.name}`);
             continue; // stat failed (e.g. removed concurrently) — leave it alone
           }
         }
 
         try {
           await Deno.remove(folderPath, { recursive: true });
-          log.info(`Cleared compiler folder: ${entry.name}`);
+          log.info(`Cleared compiler folder (${reason}): ${entry.name}`);
         } catch {
           log.warn(`Failed to clear compiler folder: ${entry.name}`);
         }

@@ -2466,6 +2466,40 @@ Deno.test("clearCompilerFolders removes CentralGauge-* folders regardless of age
   }
 });
 
+Deno.test("clearCompilerFolders skips a GUID folder whose mtime cannot be determined (null mtime)", async () => {
+  // Deno.FileInfo.mtime is `Date | null` on some platform/filesystem
+  // combinations. An unknown age must resolve the SAME way as a known-too-
+  // young folder (skip), never the opposite (delete) -- deleting on unknown
+  // age is exactly the failure this age guard exists to prevent. minAgeMs:0
+  // isolates the null-mtime branch: with a real mtime, age >= 0 always
+  // clears a zero threshold, so only the explicit null check can save this
+  // folder.
+  const dir = await Deno.makeTempDir({ prefix: "cg-compiler-" });
+  const originalStat = Deno.stat;
+  try {
+    const guidName = "0114ff34-7b1d-4d51-9a78-5d6d20a2d154";
+    const folderPath = `${dir}/${guidName}`;
+    await Deno.mkdir(folderPath);
+    const realStat = await originalStat(folderPath);
+    Object.defineProperty(Deno, "stat", {
+      value: () => Promise.resolve({ ...realStat, mtime: null }),
+      configurable: true,
+    });
+
+    await BcContainerProvider.clearCompilerFolders(dir, { minAgeMs: 0 });
+
+    const remaining: string[] = [];
+    for await (const e of Deno.readDir(dir)) remaining.push(e.name);
+    assertEquals(remaining, [guidName]);
+  } finally {
+    Object.defineProperty(Deno, "stat", {
+      value: originalStat,
+      configurable: true,
+    });
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("clearCompilerFolders is a no-op when the directory is absent", async () => {
   // Must not throw — a machine that has never run a bench has no compiler dir.
   await BcContainerProvider.clearCompilerFolders(
