@@ -211,6 +211,86 @@ totals: min 27.8 s, p50 40.9 s, p90 67.2 s, max 199.4 s.
   gap do not clear the noise floor.** Both are within ordinary per-spawn
   jitter and are reported as observations, not evidence of anything.
 
+## Independent verification: adoption did not change scoring outcomes
+
+`compile_time` being byte-identical (44.2 s = 44.2 s, above) is suggestive but
+thin — a wall-clock match does not rule out a compiler folder silently
+resolving different symbols. Reviewed directly against the raw result files
+(`results/benchmark-results-1784971802124.json` = control,
+`results/benchmark-results-1784972045576.json` = adoption) and the pinned
+BCH 6.1.14 source, not taken on trust:
+
+- **Two of three models produced byte-identical attempt-2 failure signatures
+  across both runs.** Haiku: `'Codeunit "CG X035 Worker"' does not contain a
+  definition for 'Process'` in both files. Sonnet: `'Codeunit "CG X035
+  Worker"' does not contain a definition for 'SetRecord'` in both files. A
+  compiler-folder defect (stale or wrong symbols) would not spare two models
+  and hit only the third.
+- **All six attempt-1 compiles produced identical error strings in both
+  runs, including the compiler's candidate list**: `No overload for method
+  'Run' takes 1 arguments. Candidates: built-in method 'Run()'`, for Haiku,
+  Sonnet, and Opus, in both the control and adoption runs. That candidate
+  list is resolved out of `System.app` in the compiler folder's `symbols/`
+  — identical enumeration across a rebuilt folder (control) and an adopted
+  one (adoption-on) is direct proof the adopted folder supplied the same
+  platform symbols as a fresh rebuild would have.
+- **Every failure in both runs is an AL semantic error about the model's own
+  generated code**, not a symbol-resolution problem. Grepping both
+  `results/run-adopt.log` and `results/run-noadopt.log` for
+  `system symbols|Unable to locate|symbols folder|dependency` returns zero
+  hits in either file.
+- **Opus's adoption-run attempt 2 repeated the exact attempt-1 error**
+  (`No overload for method 'Run' takes 1 arguments. Candidates: built-in
+  method 'Run()'`) — a model that failed to repair its own mistake, not a
+  compiler that failed to resolve something on the second pass.
+- **Container assignment is not the explanation either, though not for the
+  reason a same-container comparison would suggest.** Each attempt's
+  `containerName` in the result JSON shows the three containers were used
+  unevenly and *differently* between the two runs: control was
+  Haiku=Cronus282(x2), Sonnet=Cronus284(x2), Opus=Cronus283(x2);
+  adoption-on was Haiku=Cronus284→Cronus282, Opus=Cronus282→Cronus283,
+  Sonnet=Cronus283→Cronus284 (attempt 1 -> attempt 2). No model ran on the
+  same container for both attempts in the adoption run, and no model's
+  container assignment matched between the two runs for attempt 1. That the
+  Haiku/Sonnet attempt-2 error strings stayed byte-identical anyway, despite
+  neither model staying on a fixed container, is stronger evidence against a
+  container-specific confound than a same-container comparison would have
+  been — it rules out "one specific container's folder was stale" as an
+  explanation, since the identical output survived a container change.
+
+**Mechanism, verified at the BCH source level (pinned 6.1.14,
+`CompilerFolderHandling/Compile-AppWithBcCompilerFolder.ps1`), not asserted:**
+`$appSymbolsFolder` defaults to `(Join-Path $appProjectFolder ".alpackages")`
+(line 79) — the candidate app's own project folder, not the compiler
+folder's `symbols/` — and the only place the script ever writes an app file
+into `$appSymbolsFolder` is gated behind the `-CopyAppToSymbolsFolder` switch
+(line 546-547). Both of CentralGauge's compile call sites
+(`buildCompileScript` in `src/container/bc-script-builders.ts:122` for
+per-task candidate compiles, and the harness compile in
+`bc-container-provider.ts:1517`) pass neither `-appSymbolsFolder` nor
+`-CopyAppToSymbolsFolder`. So there is no code path, in this BCH version,
+by which compiling one model's candidate app through a shared adopted
+compiler folder could write into or otherwise mutate that folder's
+`symbols/` — there is no cross-run, cross-model, or cross-container
+pollution channel to begin with, independent of which container ran which
+attempt.
+
+Separately, the marker itself proves completeness by construction, not just
+presence: `rebuildCompilerFolder` only calls `writeMarker` (line 1436) after
+successfully parsing a `COMPILER_FOLDER:` line out of the script's own output
+via `extractCompilerFolder` (line 1420) — i.e. after `New-BcCompilerFolder`
+returned a path at all. A rebuild that failed or was killed before printing
+that line leaves no marker, so `validateFolder` on the next run correctly
+falls back to "rebuild" rather than adopting a partial folder.
+
+**One claim from the review that did NOT hold up under this verification:**
+an earlier pass characterized this as "all six model-runs landed on
+Cronus282 in both runs." The `containerName` field per attempt (above)
+contradicts that directly — only 2 of 12 attempts (control Haiku's two
+attempts) actually ran on Cronus282, and every model used a different
+container across the two runs for at least one of its two attempts. This
+section states only what the JSON actually shows.
+
 ## Verdict
 
 **Adoption delivered.** `setup.warmup-compiler` went from 57.93 s (control,
@@ -249,7 +329,7 @@ exactly the phase it was meant to touch.
   The design's own estimate (~15 s spawn/import/artifact-URL tax + ~32-34 s
   of `New-BcCompilerFolder` proper) assumed adoption would still pay the
   spawn tax. The shipped implementation's host-side `docker inspect` check
-  (`inspectForAdoption` / `tryAdoptCompilerFolder`) avoids spawning pwsh at
+  (`dockerInspectSeam` / `tryAdoptCompilerFolder`) avoids spawning pwsh at
   all when adopting, so the realized saving (57.56 s) is close to the full
   measured phase cost, not just the rebuild-internals portion.
 - **`setup.harness` is now clearly the next-largest fixed cost** (~26.2-26.6
