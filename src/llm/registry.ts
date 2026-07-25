@@ -257,7 +257,7 @@ export class LLMAdapterRegistry {
     error?: string;
     suggestions?: string[];
     availableModels?: string[];
-    source: "api" | "cache";
+    source: "api" | "cache" | "catalog";
   }> {
     if (!this.isAvailable(provider)) {
       throw new ConfigurationError(

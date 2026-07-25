@@ -16,6 +16,7 @@ import type {
   DiscoveryResult,
 } from "./model-discovery-types.ts";
 import { isDiscoverableAdapter } from "./model-discovery-types.ts";
+import { ModelCatalog } from "./model-catalog.ts";
 import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("model-discovery");
@@ -313,7 +314,7 @@ export class ModelDiscoveryService {
     error?: string;
     suggestions?: string[];
     availableModels?: string[];
-    source: "api" | "cache";
+    source: "api" | "cache" | "catalog";
   }> {
     const result = await this.getModels(provider, adapter, options);
 
@@ -329,6 +330,15 @@ export class ModelDiscoveryService {
       return { valid: true, source: result.source };
     }
 
+    // Discovery can omit a slug the catalog already knows is real and
+    // callable: e.g. Anthropic's /v1/models hides bare aliases like
+    // `claude-haiku-4-5` even though the completion endpoint accepts them.
+    // Trust an EXACT catalog slug match (no prefix magic) so this fallback
+    // only rescues known models, not typos that happen to share a prefix.
+    if (await ModelCatalog.isKnown(provider, model)) {
+      return { valid: true, source: "catalog" };
+    }
+
     // Find similar models for suggestions
     const suggestions = this.findSimilarModels(model, result.models);
 
@@ -337,7 +347,7 @@ export class ModelDiscoveryService {
       error?: string;
       suggestions?: string[];
       availableModels?: string[];
-      source: "api" | "cache";
+      source: "api" | "cache" | "catalog";
     } = {
       valid: false,
       error: `Model '${model}' not found in ${provider} provider`,

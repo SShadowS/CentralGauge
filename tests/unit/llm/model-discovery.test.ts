@@ -9,6 +9,7 @@ import {
   isDiscoverableAdapter,
 } from "../../../src/llm/model-discovery-types.ts";
 import { ModelDiscoveryService } from "../../../src/llm/model-discovery.ts";
+import { ModelCatalog } from "../../../src/llm/model-catalog.ts";
 import type {
   LLMAdapter,
   LLMConfig,
@@ -224,6 +225,10 @@ Deno.test("ModelDiscoveryService", async (t) => {
 
   await t.step("validateModel", async (t) => {
     ModelDiscoveryService.clearCache();
+    // Isolate from the real site/catalog/models.yml that the fallback would
+    // otherwise read from disk: these steps only exercise discovery.
+    ModelCatalog.clear();
+    ModelCatalog.loadRows([]);
 
     await t.step("validates exact match", async () => {
       const adapter = new MockDiscoverableAdapter();
@@ -261,6 +266,81 @@ Deno.test("ModelDiscoveryService", async (t) => {
       assertExists(result.availableModels);
       assertEquals(result.availableModels?.length, 3);
     });
+  });
+
+  await t.step("validateModel catalog fallback", async (t) => {
+    // Regression coverage for the `models --check` vs bench divergence: a
+    // provider's live discovery can omit a slug (e.g. Anthropic hides bare
+    // aliases like `claude-haiku-4-5` from /v1/models) that the catalog
+    // still knows is real. `--check` calls the provider directly and sees
+    // it succeed; without this fallback, bench's validateModel would
+    // wrongly reject the same slug.
+    ModelDiscoveryService.clearCache();
+
+    await t.step(
+      "rescues a slug the catalog knows but discovery omits",
+      async () => {
+        ModelCatalog.clear();
+        ModelCatalog.loadRows([
+          { slug: "anthropic/claude-haiku-4-5" },
+          { slug: "anthropic/claude-haiku-4-5-20251001" },
+        ]);
+
+        // Mirrors the real Anthropic /v1/models response: only the dated
+        // slug is discoverable, the bare alias is not.
+        const adapter = new MockDiscoverableAdapter();
+        adapter.setDiscoveredModels([
+          { id: "claude-haiku-4-5-20251001" },
+        ]);
+
+        const aliasResult = await ModelDiscoveryService.validateModel(
+          "anthropic",
+          "claude-haiku-4-5",
+          adapter,
+          { skipCache: true },
+        );
+        const datedResult = await ModelDiscoveryService.validateModel(
+          "anthropic",
+          "claude-haiku-4-5-20251001",
+          adapter,
+          { skipCache: true },
+        );
+
+        // Both paths must agree the model is usable: the alias via the
+        // catalog fallback, the dated slug via direct discovery.
+        assertEquals(aliasResult.valid, true);
+        assertEquals(aliasResult.source, "catalog");
+        assertEquals(datedResult.valid, true);
+        assertEquals(datedResult.source, "api");
+
+        ModelCatalog.clear();
+      },
+    );
+
+    await t.step(
+      "still rejects a slug absent from both discovery and catalog",
+      async () => {
+        ModelCatalog.clear();
+        ModelCatalog.loadRows([{ slug: "anthropic/claude-haiku-4-5" }]);
+
+        const adapter = new MockDiscoverableAdapter();
+        adapter.setDiscoveredModels([
+          { id: "claude-haiku-4-5-20251001" },
+        ]);
+
+        const result = await ModelDiscoveryService.validateModel(
+          "anthropic",
+          "totally-made-up-model",
+          adapter,
+          { skipCache: true },
+        );
+
+        assertEquals(result.valid, false);
+        assertExists(result.error);
+
+        ModelCatalog.clear();
+      },
+    );
   });
 
   await t.step("cache management", async (t) => {
@@ -348,6 +428,7 @@ Deno.test("ModelDiscoveryService", async (t) => {
 
   // Clean up
   ModelDiscoveryService.clearCache();
+  ModelCatalog.clear();
 });
 
 Deno.test("ModelDiscoveryService.getCachedMaxOutputTokens", async (t) => {
