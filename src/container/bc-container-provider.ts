@@ -45,7 +45,6 @@ import { CompileSessionPool } from "./compile-session-pool.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
-  extractCacheFolder,
   extractCompilerFolder,
   isCompilationSuccessful,
   isContainerNotFound,
@@ -65,6 +64,14 @@ import {
   escapeForPS,
 } from "./bc-script-builders.ts";
 import { resolveSoapTimeoutMs, runTestsViaSoap } from "./soap-test-client.ts";
+import { compilerCacheKey } from "./compiler-cache-key.ts";
+import { inspectContainer } from "./docker-inspect.ts";
+import {
+  LAYOUT_VERSION,
+  validateFolder,
+  writeMarker,
+} from "./compiler-folder-marker.ts";
+import { acquireLock } from "./folder-lock.ts";
 import { getTracer, getUnixOriginMicros } from "../tracing/tracer.ts";
 import { mergeIntoTracer } from "../tracing/parse-trace-lines.ts";
 
@@ -295,6 +302,17 @@ export class BcContainerProvider implements ContainerProvider {
   // re-downloading artifacts on every run, and a deterministic folder name
   // to prevent GUID folder accumulation.
   private _compilerCacheEnabled = true;
+  /**
+   * Adopt an existing compiler folder instead of rebuilding it, when a marker
+   * plus a concrete file check proves it matches the container's current
+   * artifact URL. On by default; `--no-reuse-compiler-folders` turns it off.
+   */
+  private _reuseCompilerFolders = true;
+  /** Per-warmup counters, read by the setup.warmup-compiler trace span. */
+  lastWarmupStats: { adopted: number; rebuilt: number } = {
+    adopted: 0,
+    rebuilt: 0,
+  };
   /** Where BCH creates per-container compiler working folders. */
   static readonly COMPILER_FOLDER_DIR =
     "C:\\ProgramData\\BcContainerHelper\\compiler";
@@ -374,6 +392,19 @@ export class BcContainerProvider implements ContainerProvider {
    */
   setCompilerCacheEnabled(enabled: boolean): void {
     this._compilerCacheEnabled = enabled;
+  }
+
+  /**
+   * Enable or disable compiler-folder adoption (default enabled). Disabling
+   * forces `New-BcCompilerFolder` on every warmup, which is the pre-adoption
+   * behaviour and costs ~49s per container even when nothing changed.
+   */
+  setReuseCompilerFolders(enabled: boolean): void {
+    this._reuseCompilerFolders = enabled;
+  }
+
+  isReuseCompilerFoldersEnabled(): boolean {
+    return this._reuseCompilerFolders;
   }
 
   /**
@@ -1173,7 +1204,8 @@ ${script}
   }
 
   /**
-   * Create a compiler folder unless another queued call already created it.
+   * Adopt the existing compiler folder when it still matches, otherwise
+   * rebuild it — unless another queued call already produced one.
    */
   private async createCompilerFolder(containerName: string): Promise<string> {
     // Re-check cache inside the serialized queue — a preceding queued call
@@ -1188,45 +1220,163 @@ ${script}
       }
     }
 
+    // Host-side adoption: if the existing folder already matches this
+    // container's current artifact URL, skip the pwsh spawn entirely.
+    const adopted = await this.tryAdoptCompilerFolder(containerName);
+    if (adopted) {
+      this.compilerFolderCache.set(containerName, adopted);
+      this.lastWarmupStats.adopted++;
+      return adopted;
+    }
+
+    // Rebuild mutates the folder, so take the cross-process lock — trap-probe
+    // and bench run as separate processes and compilerFolderQueue only
+    // serializes within one.
+    const lockPath =
+      `${BcContainerProvider.COMPILER_FOLDER_DIR}\\.cg-${containerName}.lock`;
+    const lock = await acquireLock(lockPath);
+    try {
+      // Double-check under the lock: another process may have finished a
+      // rebuild while we waited, in which case adopting is now correct.
+      const afterWait = await this.tryAdoptCompilerFolder(containerName);
+      if (afterWait) {
+        this.compilerFolderCache.set(containerName, afterWait);
+        this.lastWarmupStats.adopted++;
+        return afterWait;
+      }
+      return await this.rebuildCompilerFolder(containerName);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  /**
+   * Seam so tests can stub the Docker call. One line on purpose.
+   */
+  private inspectForAdoption(containerName: string) {
+    return inspectContainer(containerName);
+  }
+
+  /**
+   * The deterministic folder path adoption keys off, or `undefined` when this
+   * run will not produce one.
+   *
+   * BCH names the folder after its `-containerName` argument
+   * (`New-BcCompilerFolder.ps1:67`: `Join-Path $hostHelperFolder
+   * "compiler\\$containerName"`), and that argument is only passed alongside
+   * `-cacheFolder`. With the compiler cache disabled BCH falls back to a fresh
+   * GUID folder per call, so there is no stable path to adopt — and adopting
+   * the folder a cached run left behind would defeat the point of
+   * `--no-compiler-cache`, which exists to give a clean baseline.
+   */
+  private adoptableFolderPath(containerName: string): string | undefined {
+    if (!this._compilerCacheEnabled) return undefined;
+    return `${BcContainerProvider.COMPILER_FOLDER_DIR}\\CentralGauge-${containerName}`;
+  }
+
+  /**
+   * Try to adopt the existing compiler folder for `containerName`.
+   *
+   * Entirely host-side: `docker inspect` (~0.36s) is the exact source
+   * `Get-BcContainerArtifactUrl` reads, so no pwsh spawn is needed to decide.
+   * Returns the folder path on success, `undefined` to mean "rebuild".
+   * Never throws — every uncertain answer is "rebuild".
+   */
+  private async tryAdoptCompilerFolder(
+    containerName: string,
+  ): Promise<string | undefined> {
+    if (!this._reuseCompilerFolders) return undefined;
+
+    const folder = this.adoptableFolderPath(containerName);
+    if (!folder) return undefined;
+
+    const inspection = await this.inspectForAdoption(containerName);
+    if (!inspection?.artifactUrl) return undefined;
+
+    const result = await validateFolder(folder, {
+      artifactUrl: inspection.artifactUrl,
+      bchVersion: BCCH_PINNED_VERSION,
+    });
+    if (!result.ok) {
+      log.info(
+        `Rebuilding compiler folder for ${containerName}: ${result.reason}`,
+      );
+      return undefined;
+    }
+
+    await this.pruneCompilerOutput(folder);
+    log.info(
+      `Adopted compiler folder for ${containerName} (no rebuild needed)`,
+    );
+    return folder;
+  }
+
+  /**
+   * Bound `output/` growth.
+   *
+   * Every compile creates `${compilerFolder}\output\${name}_${uuid8}`. BCH's
+   * unconditional folder delete used to garbage-collect these incidentally;
+   * adoption preserves the folder, so without this the directory grows one
+   * entry per compile forever. Best-effort — never fails a run.
+   */
+  private async pruneCompilerOutput(folder: string, keep = 10): Promise<void> {
+    const outputDir = `${folder}\\output`;
+    try {
+      const entries: Array<{ name: string; mtime: number }> = [];
+      for await (const e of Deno.readDir(outputDir)) {
+        if (!e.isDirectory) continue;
+        try {
+          const stat = await Deno.stat(`${outputDir}\\${e.name}`);
+          entries.push({ name: e.name, mtime: stat.mtime?.getTime() ?? 0 });
+        } catch {
+          // Vanished mid-scan; skip.
+        }
+      }
+      entries.sort((a, b) => b.mtime - a.mtime);
+      for (const stale of entries.slice(keep)) {
+        await Deno.remove(`${outputDir}\\${stale.name}`, { recursive: true })
+          .catch(() => {});
+      }
+    } catch {
+      // No output dir yet, or unreadable. Nothing to prune.
+    }
+  }
+
+  /**
+   * Rebuild the compiler folder via `New-BcCompilerFolder`, which deletes and
+   * recreates it unconditionally (`New-BcCompilerFolder.ps1:64-68`). Only
+   * reached when adoption declined; the caller holds the cross-process lock.
+   */
+  private async rebuildCompilerFolder(containerName: string): Promise<string> {
     log.info(`Creating compiler folder for ${containerName}...`);
 
-    // $artifactUrl is only resolved inside the script (Get-BcContainerArtifactUrl
-    // below), so the artifact-URL-keyed cache folder has to be computed here
-    // too — resolving it TypeScript-side first would mean a second BCH
-    // PowerShell spawn per container (~15s module-load tax each), which is
-    // exactly the cost this cache exists to avoid. Consequence: the hash is
-    // not directly unit-testable from TypeScript. Do not add a second,
-    // TS-side implementation of this hash to work around that — two
-    // implementations that must agree and cannot be compared is worse than
-    // one that is documented. purgeArtifactCache's tests cover the testable
-    // half (enumerating/removing COMPILER_CACHE_PREFIX-* directories).
-    const cacheKeyBlock = this._compilerCacheEnabled
-      ? `
-      # Key the cache folder by artifact URL so a BC artifact upgrade lands
-      # in a fresh directory and BCH repopulates it normally, instead of
-      # every later compile silently reusing the previous version's frozen
-      # symbols/compiler (BCH only reruns Download-Artifacts when the cache's
-      # symbols/ folder is absent). Strip the query string before hashing:
-      # some artifact URLs carry a SAS token, and hashing it would churn the
-      # key (and defeat the cache) on every run.
-      $cgUrlForHash = $artifactUrl -replace '\\?.*', ''
-      $cgSha256 = [System.Security.Cryptography.SHA256]::Create()
-      $cgHashBytes = $cgSha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($cgUrlForHash))
-      $cgHashHex = -join ($cgHashBytes | ForEach-Object { $_.ToString("x2") })
-      $cgCacheKey = $cgHashHex.Substring(0, 12)
-      $cgCacheFolder = "${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-$cgCacheKey"
-      Write-Output "CACHE_FOLDER:$cgCacheFolder"
-      `
-      : "";
-    const cacheParams = this._compilerCacheEnabled
-      ? ` -containerName "CentralGauge-${containerName}" -cacheFolder $cgCacheFolder`
-      : "";
+    const inspection = await this.inspectForAdoption(containerName);
+    const artifactUrl = inspection?.artifactUrl;
+
+    // Cache folder is computed here, in TypeScript, because the artifact URL
+    // is now known host-side. The PowerShell hash this replaces was untestable
+    // by construction; do not reintroduce it. Keying by artifact URL is what
+    // makes a BC artifact upgrade land in a fresh directory that BCH
+    // repopulates normally, instead of every later compile silently reusing
+    // the previous version's frozen symbols (BCH only reruns
+    // Download-Artifacts when the cache's symbols/ folder is absent).
+    let cacheParams = "";
+    let cacheKey: string | undefined;
+    if (this._compilerCacheEnabled && artifactUrl) {
+      cacheKey = await compilerCacheKey(artifactUrl);
+      const cacheFolder =
+        `${BcContainerProvider.COMPILER_CACHE_ROOT}\\${BcContainerProvider.COMPILER_CACHE_PREFIX}-${cacheKey}`;
+      cacheParams =
+        ` -containerName "CentralGauge-${containerName}" -cacheFolder "${cacheFolder}"`;
+      // Logged before the script runs, so an operator diagnosing a failed
+      // New-BcCompilerFolder still learns which cache directory was in play.
+      log.info(`Compiler cache folder: ${cacheFolder}`);
+    }
 
     const script = `
       ${bcchImport()}
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
-      ${cacheKeyBlock}
       # No -includeTestToolkit: BCH 6.1.14's New-BcCompilerFolder has no such
       # parameter (it lands in $args and is ignored). Do NOT substitute
       # -includeAL — that forces Download-Artifacts on every call and defeats
@@ -1238,16 +1388,6 @@ ${script}
 
     const result = await this.executePowerShell(script);
 
-    // Log the cache folder before the failure check below: the CACHE_FOLDER
-    // line is written before New-BcCompilerFolder runs, so it's still present
-    // in the output even when that call fails — and knowing which cache
-    // directory was in play is exactly what an operator needs when diagnosing
-    // that failure.
-    const cacheFolder = extractCacheFolder(result.output);
-    if (cacheFolder) {
-      log.info(`Compiler cache folder: ${cacheFolder}`);
-    }
-
     const compilerFolder = extractCompilerFolder(result.output);
     if (!compilerFolder) {
       throw this.buildPwshError({
@@ -1255,6 +1395,21 @@ ${script}
         operation: "compile",
         message: "Failed to create compiler folder",
         output: result.output,
+      });
+    }
+
+    this.lastWarmupStats.rebuilt++;
+    if (artifactUrl) {
+      await writeMarker(compilerFolder, {
+        layoutVersion: LAYOUT_VERSION,
+        artifactUrl,
+        cacheKey: cacheKey ?? "",
+        bchVersion: BCCH_PINNED_VERSION,
+        containerName,
+        createdAt: new Date().toISOString(),
+      }).catch((error) => {
+        // A missing marker only costs a rebuild next run.
+        log.warn(`Could not write compiler-folder marker: ${error}`);
       });
     }
 
@@ -1270,6 +1425,7 @@ ${script}
    * is enqueued so compile queue timeouts are not affected.
    */
   async warmupCompilerFolders(containerNames: string[]): Promise<void> {
+    this.lastWarmupStats = { adopted: 0, rebuilt: 0 };
     for (const name of containerNames) {
       await this.getOrCreateCompilerFolder(name);
     }
