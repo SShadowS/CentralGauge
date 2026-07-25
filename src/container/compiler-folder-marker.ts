@@ -12,8 +12,13 @@ export const MARKER_FILENAME = ".centralgauge-marker.json";
  * Bump to invalidate every marker on every machine at once — use this when the
  * expected-entry list below changes, rather than waiting for an artifact URL
  * to change.
+ *
+ * Bumped 1 -> 2 to add `dlls/Service`, `dlls/Mock Assemblies`, `dlls/OpenXML`,
+ * and `alc.exe` to the checks below. Every marker written under version 1 now
+ * fails validation, so the next run rebuilds once per container — expected
+ * one-time cost, not a regression.
  */
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 
 export interface FolderMarker {
   layoutVersion: number;
@@ -38,6 +43,19 @@ const EXPECTED: Array<{ path: string; kind: "dir" | "file" }> = [
   { path: "manifest.json", kind: "file" },
   { path: "dlls", kind: "dir" },
   { path: "dlls/Test Assemblies", kind: "dir" },
+  { path: "dlls/Service", kind: "dir" },
+  { path: "dlls/Mock Assemblies", kind: "dir" },
+  { path: "dlls/OpenXML", kind: "dir" },
+];
+
+/**
+ * `alc.exe` moves between `compiler/extension/bin` and
+ * `compiler/extension/bin/win32` depending on BCH version — presence in
+ * either location satisfies the check.
+ */
+const ALC_EXE_CANDIDATES = [
+  "compiler/extension/bin/alc.exe",
+  "compiler/extension/bin/win32/alc.exe",
 ];
 
 /** Atomic write: temp file then rename, so a torn marker can never validate. */
@@ -109,6 +127,27 @@ export async function validateFolder(
     } catch {
       return { ok: false, reason: `missing ${entry.path}` };
     }
+  }
+
+  // alc.exe lives under one of two locations depending on BCH version;
+  // either is acceptable, so absence only fails when both are missing.
+  let sawAlc = false;
+  for (const candidate of ALC_EXE_CANDIDATES) {
+    try {
+      const stat = await Deno.stat(`${folder}/${candidate}`);
+      if (stat.isFile) {
+        sawAlc = true;
+        break;
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  if (!sawAlc) {
+    return {
+      ok: false,
+      reason: `missing alc.exe (checked ${ALC_EXE_CANDIDATES.join(", ")})`,
+    };
   }
 
   // symbols/ must actually carry symbol packages, not just exist.

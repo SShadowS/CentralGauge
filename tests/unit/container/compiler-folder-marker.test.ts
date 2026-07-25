@@ -19,6 +19,9 @@ async function makeGoodFolder(): Promise<string> {
   await Deno.writeTextFile(`${dir}/symbols/cache_AppInfo.json`, "{}");
   await Deno.writeTextFile(`${dir}/manifest.json`, "{}");
   await Deno.mkdir(`${dir}/dlls/Test Assemblies`, { recursive: true });
+  await Deno.mkdir(`${dir}/dlls/Service`, { recursive: true });
+  await Deno.mkdir(`${dir}/dlls/Mock Assemblies`, { recursive: true });
+  await Deno.mkdir(`${dir}/dlls/OpenXML`, { recursive: true });
   await writeMarker(dir, {
     layoutVersion: LAYOUT_VERSION,
     artifactUrl: URL_A,
@@ -175,6 +178,9 @@ Deno.test("validateFolder rejects each missing expected entry", async () => {
     "symbols/cache_AppInfo.json",
     "manifest.json",
     "dlls/Test Assemblies",
+    "dlls/Service",
+    "dlls/Mock Assemblies",
+    "dlls/OpenXML",
   ];
   for (const victim of victims) {
     const dir = await makeGoodFolder();
@@ -188,6 +194,43 @@ Deno.test("validateFolder rejects each missing expected entry", async () => {
     } finally {
       await Deno.remove(dir, { recursive: true });
     }
+  }
+});
+
+Deno.test("validateFolder rejects a folder missing alc.exe from both bin locations", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/compiler/extension/bin/alc.exe`);
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder accepts alc.exe under the win32 subfolder when the direct location is absent", async () => {
+  // BCH places the compiler directly under bin on some versions, and under
+  // bin/win32 on others. Either location must satisfy the check.
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/compiler/extension/bin/alc.exe`);
+    await Deno.mkdir(`${dir}/compiler/extension/bin/win32`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${dir}/compiler/extension/bin/win32/alc.exe`,
+      "x",
+    );
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, true);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
   }
 });
 

@@ -63,8 +63,12 @@ function stub(
 async function seedValidFolder(artifactUrl = ARTIFACT_URL): Promise<string> {
   const folder = await Deno.makeTempDir({ prefix: "cg-adopt-" });
   await Deno.mkdir(`${folder}/compiler/extension/bin`, { recursive: true });
+  await Deno.writeTextFile(`${folder}/compiler/extension/bin/alc.exe`, "x");
   await Deno.mkdir(`${folder}/symbols`, { recursive: true });
   await Deno.mkdir(`${folder}/dlls/Test Assemblies`, { recursive: true });
+  await Deno.mkdir(`${folder}/dlls/Service`, { recursive: true });
+  await Deno.mkdir(`${folder}/dlls/Mock Assemblies`, { recursive: true });
+  await Deno.mkdir(`${folder}/dlls/OpenXML`, { recursive: true });
   await Deno.writeTextFile(`${folder}/symbols/cache_AppInfo.json`, "{}");
   await Deno.writeTextFile(`${folder}/symbols/Microsoft_Base.app`, "app");
   await Deno.writeTextFile(`${folder}/manifest.json`, "{}");
