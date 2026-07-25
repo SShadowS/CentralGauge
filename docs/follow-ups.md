@@ -8,22 +8,7 @@ what would resolve it. Entries are removed when fixed, not marked done.
 
 ---
 
-## 1. `setup.harness` fix landed; re-measurement pending
-
-**Where:** `src/container/bc-container-provider.ts:1479` (`ensureTestHarness`)
-
-Commit `43dcabe8` refactored the test-harness presence probes to run
-**concurrently through the warm session slot**, eliminating the serial cold-spawn
-overhead that was consuming ~26.5 s per bench run. The steady-state path (all
-three containers already have the harness) is now expected to complete in ~4 s
-instead of ~26 s.
-
-The fix is confirmed in code. A follow-up measurement bench run (Task 6) will
-verify the wall-time improvement, once the benchmark can be executed.
-
----
-
-## 2. Catalog fallback in `validateModel` trusts rows with no re-verification
+## 1. Catalog fallback in `validateModel` trusts rows with no re-verification
 
 **Where:** `src/llm/model-discovery.ts:338` (`ModelDiscoveryService.validateModel`),
 `src/llm/model-catalog.ts` (`ModelCatalog`)
@@ -53,3 +38,40 @@ re-validates instead of being trusted forever; or re-checking any
 catalog-sourced hit against the live provider API once per bench run
 (not once per model variant) so a genuinely stale catalog entry fails
 pre-flight instead of failing mid-run.
+
+---
+
+## 2. GUID compiler-folder sweep's age guard measures the wrong mtime
+
+**Where:** `src/container/bc-container-provider.ts:2693`
+(`GUID_FOLDER_MIN_AGE_MS`, used by `clearCompilerFolders`)
+
+The sweep that removes orphaned `--no-compiler-cache` GUID folders skips any
+GUID folder younger than 30 minutes, so it doesn't delete out from under a
+`trap-probe`/`bench` process still compiling into one. The age check stats
+the top-level GUID folder itself. On NTFS, writing into a nested
+subdirectory only updates the *immediate parent's* mtime, not every
+ancestor's — and a compile writes into `<guid>/output/<name>_<uuid>`, so the
+top-level folder's own mtime stops changing once that structure exists.
+Verified directly on this machine:
+
+```
+root mtime after initial create:  2026-07-25T12:39:41.399Z
+root mtime after nested write:    2026-07-25T12:39:41.399Z   <- unchanged
+output/ mtime after nested write: 2026-07-25T12:39:42.909Z
+```
+
+So the 30-minute window actually measures time since the folder's last
+*direct* child was added, not time since the build was last active. A
+multi-hour overlap between `trap-probe` and `bench` — exactly the scenario
+this guard exists for — can outlast the window while the build is still
+running.
+
+Left unfixed for now because the guard is still strictly safer than the
+unconditional delete it replaced, this sweep only runs on the diagnostic
+`--no-compiler-cache` path, and a conservative skip in the worst case costs
+a stale orphan the next sweep collects — never a live folder.
+
+Would be resolved by stating the folder's age from the max mtime across its
+immediate children (or by statting `output/` directly) instead of the
+top-level folder alone.

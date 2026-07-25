@@ -119,18 +119,40 @@ and the gap is diagnosable rather than being spun as a clean win.**
 The fix's mechanism was to move the three probes from serial cold `pwsh`
 spawns (~8.8 s each, summing to 26.2-26.6 s) to concurrent execution through
 the warm session slot, so wall time should approach the cost of a *single*
-probe rather than three. 5.351 s is close to one cold `setup.health` probe in
-this same run (5.20-5.33 s) — a plausible reading is that the **first**
-warm-slot script invocation per container still pays session-establishment
-cost even when the probes themselves run concurrently, so what remains in
-`setup.harness` is that one-time setup rather than per-container probe cost.
-This is offered as a hypothesis, not verified here — the trace does not break
-out session-establishment as its own span — and is worth naming as the next
-lever if `setup.harness` is revisited.
+probe rather than three. The trace does break the probes out individually
+(`runScriptThroughSession` spans tagged `scriptLabel: "harness-probe"`, one
+per container), and they settle the question directly rather than leaving it
+as a hypothesis:
 
-Either way, the delta clears the noise floor (see below) and the mechanism
-is directly evidenced: three concurrent hits, zero serial cold spawns,
-observed on the harness log.
+```
+jq '.traceEvents[]|select(.args.scriptLabel=="harness-probe")' results/trace-harness.json
+tid 100  ts 66595343  dur 4.831812s
+tid 110  ts 66595390  dur 4.725950s
+tid 120  ts 66595410  dur 5.350514s
+```
+
+All three start within **67 microseconds** of each other — genuinely
+concurrent, not serial. `setup.harness` (5.351151 s) lands within ~0.6 ms of
+the slowest probe alone (5.350514 s on tid 120), so there is essentially
+**zero** non-probe overhead in the phase: wall time already *is* the cost of
+one probe, not three, exactly as the fix intended.
+
+That also rules out the session-establishment hypothesis this section
+previously offered. `setup.prenuke` ran immediately before this phase
+through the *same three session-slot tids* (100/110/120, first hit at
+`ts=16493675`, well ahead of the harness probes at `ts≈66595390`), and
+`src/container/pwsh-session.ts` has no idle reaper that would tear a slot
+down between the two phases — so the slots were already warm, not
+first-use, by the time the harness probe ran. The ~5 s residual is not
+one-time setup; it is the recurring per-call cost of `Get-BcContainerAppInfo`
+(the probe script's body, `ensureTestHarness` in
+`bc-container-provider.ts:1495`) through an already-warm slot, ~4.7-5.4 s
+per call. That call cost, not session establishment, is the next lever if
+`setup.harness` is revisited.
+
+The delta clears the noise floor (see below) and the concurrency mechanism
+is directly evidenced twice over: three concurrent hits, zero serial cold
+spawns, observed both in the trace above and on the harness log.
 
 ## Full `setup.*` breakdown and total wall time
 
@@ -196,10 +218,13 @@ target this measurement set out to verify, and it is now resolved on this
 metric.
 
 The predicted ~4 s undershot slightly (5.351 s measured) rather than
-overshot — reported honestly rather than rounded down. The likely remaining
-cost is one-time warm-slot session establishment rather than per-container
-probe work, offered as a hypothesis for a future measurement, not asserted as
-fact.
+overshot — reported honestly rather than rounded down. The remaining cost is
+not session establishment: the per-probe trace spans show the three probes
+running fully concurrently (67 microseconds apart) with `setup.harness`
+tracking the slowest probe to within ~0.6 ms, and the same session slots
+were already warm from `setup.prenuke` moments earlier. The residual is the
+recurring per-call cost of `Get-BcContainerAppInfo` through a warm slot,
+~4.7-5.4 s per call — that is the next lever, not one-time setup.
 
 This run also **cannot speak to whether `setup.warmup-compiler` returns to
 ~0.4 s** — that's the next run's job, deliberately not re-verified here
