@@ -1191,9 +1191,17 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Create a failed attempt record (LLM call failed)
+   * Create a failed attempt record (LLM call failed).
+   *
+   * Not private: `LLMWorkResult.failureKind` -> `ExecutionAttempt.failureKind`
+   * is a bridge that has silently gone dead once before (Task 8 added the
+   * field to `LLMWorkResult`; nothing carried it to `ExecutionAttempt` until
+   * Task 9 caught it). Exposed so
+   * `tests/unit/parallel/empty-response-field.test.ts` can drive the real
+   * method instead of reimplementing its assignment logic in a test double,
+   * which would pass even if this bridge broke again.
    */
-  private createFailedAttempt(
+  createFailedAttempt(
     attemptNumber: number,
     llmResult: LLMWorkResult | undefined,
   ): ExecutionAttempt {

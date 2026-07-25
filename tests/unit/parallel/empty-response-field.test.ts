@@ -10,8 +10,10 @@
 import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 
-import { classifyExtractionFailure } from "../../../src/parallel/llm-work-pool.ts";
 import type { LLMWorkResult } from "../../../src/parallel/types.ts";
+import { classifyExtractionFailure } from "../../../src/parallel/llm-work-pool.ts";
+import { ParallelBenchmarkOrchestrator } from "../../../src/parallel/orchestrator.ts";
+import { categorizeAttempt } from "../../../cli/commands/bench/single-task-matrix.ts";
 
 describe("classifyExtractionFailure", () => {
   it("classifies a content_filter finish reason as safety_refusal", () => {
@@ -137,5 +139,56 @@ describe("LLMWorkResult.failureKind", () => {
 
       assertEquals(result.failureKind, testCase.expected);
     }
+  });
+});
+
+describe("failureKind bridge: LLMWorkResult -> ExecutionAttempt -> EMPTY category", () => {
+  // This is the seam that already went dead once: Task 8 added failureKind
+  // to LLMWorkResult, but nothing carried it onto ExecutionAttempt, so the
+  // EMPTY bucket in the single-task matrix was structurally unreachable
+  // until Task 9 caught it. Drive the REAL
+  // ParallelBenchmarkOrchestrator.createFailedAttempt (not a hand-built
+  // ExecutionAttempt literal) so a future regression that drops the copy
+  // fails here, not silently. Mirrors the real-synthesis pattern in
+  // tests/unit/cli/single-task-matrix.test.ts ("infra retry DISABLED"),
+  // which pins the sibling infraSynthesized bridge the same way.
+  it("survives createFailedAttempt and categorizeAttempt reads it as EMPTY", () => {
+    const classification = classifyExtractionFailure("stop", "", 0);
+    const llmResult: LLMWorkResult = {
+      workItemId: "work-1",
+      success: false,
+      duration: 10,
+      readyForCompile: false,
+      error: classification.error,
+      failureKind: classification.failureKind,
+    };
+
+    const orchestrator = new ParallelBenchmarkOrchestrator();
+    const attempt = orchestrator.createFailedAttempt(1, llmResult);
+
+    assertEquals(attempt.failureKind, "empty_response");
+    assertEquals(categorizeAttempt(attempt, true), "EMPTY");
+  });
+
+  it("other failureKind values survive too but categorize as COMPILE, not EMPTY", () => {
+    const classification = classifyExtractionFailure(
+      "content_filter",
+      "",
+      0,
+    );
+    const llmResult: LLMWorkResult = {
+      workItemId: "work-1",
+      success: false,
+      duration: 10,
+      readyForCompile: false,
+      error: classification.error,
+      failureKind: classification.failureKind,
+    };
+
+    const orchestrator = new ParallelBenchmarkOrchestrator();
+    const attempt = orchestrator.createFailedAttempt(1, llmResult);
+
+    assertEquals(attempt.failureKind, "safety_refusal");
+    assertEquals(categorizeAttempt(attempt, true), "COMPILE");
   });
 });
