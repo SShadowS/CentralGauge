@@ -83,7 +83,11 @@ export async function setupContainer(
   // Check if container already exists and is healthy
   let containerReady = false;
   try {
-    containerReady = await containerProvider.isHealthy(containerName);
+    containerReady = await getTracer().span(
+      "setup.health",
+      { cat: "setup", args: { container: containerName } },
+      () => containerProvider.isHealthy(containerName),
+    );
     if (!containerReady) {
       // Container exists but might be stopped - try to start it
       try {
@@ -111,20 +115,35 @@ export async function setupContainer(
     // that was killed mid-test — without this the next publishApp hits
     // bccontainerhelper@6.1.11's Unpublish-success-but-not-really race.
     if ("prenukeCentralGaugeApps" in containerProvider) {
-      await (containerProvider as BcContainerProvider)
-        .prenukeCentralGaugeApps([containerName]);
+      await getTracer().span(
+        "setup.prenuke",
+        { cat: "setup" },
+        () =>
+          (containerProvider as BcContainerProvider)
+            .prenukeCentralGaugeApps([containerName]),
+      );
     }
     // Pre-create compiler folder before any work is enqueued
     if ("warmupCompilerFolders" in containerProvider) {
-      await (containerProvider as BcContainerProvider).warmupCompilerFolders([
-        containerName,
-      ]);
+      await getTracer().span(
+        "setup.warmup-compiler",
+        { cat: "setup" },
+        () =>
+          (containerProvider as BcContainerProvider).warmupCompilerFolders([
+            containerName,
+          ]),
+      );
     }
     // Publish test harness during setup
     if ("ensureTestHarness" in containerProvider) {
-      await (containerProvider as BcContainerProvider).ensureTestHarness([
-        containerName,
-      ]);
+      await getTracer().span(
+        "setup.harness",
+        { cat: "setup" },
+        () =>
+          (containerProvider as BcContainerProvider).ensureTestHarness([
+            containerName,
+          ]),
+      );
     }
   } else {
     log.container("Setting up...");
@@ -151,9 +170,14 @@ export async function setupContainer(
     // the SOAP test path is available from the first bench run (the compiler
     // folder is warmed up inside ensureTestHarness).
     if ("ensureTestHarness" in containerProvider) {
-      await (containerProvider as BcContainerProvider).ensureTestHarness([
-        containerName,
-      ]);
+      await getTracer().span(
+        "setup.harness",
+        { cat: "setup" },
+        () =>
+          (containerProvider as BcContainerProvider).ensureTestHarness([
+            containerName,
+          ]),
+      );
     }
   }
 
