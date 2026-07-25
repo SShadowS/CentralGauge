@@ -5,12 +5,12 @@
 
 import type { ContainerConfig } from "../../../src/container/types.ts";
 import type { ContainerProvider } from "../../../src/container/interface.ts";
+import type { SpanHandle } from "../../../src/tracing/tracer.ts";
 import {
   BcContainerProvider,
   ContainerProviderRegistry,
 } from "../../../src/container/mod.ts";
 import { getTracer } from "../../../src/tracing/tracer.ts";
-import type { SpanHandle } from "../../../src/tracing/tracer.ts";
 import { log } from "../../helpers/mod.ts";
 
 /**

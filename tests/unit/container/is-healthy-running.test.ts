@@ -16,3 +16,26 @@ Deno.test("isHealthy reports false when Docker says the container is not running
   });
   assertEquals(await p.isHealthy("Cronus284"), false);
 });
+
+Deno.test("isHealthy falls through to Test-BcContainer when Docker inspection is inconclusive", async () => {
+  // inspectForAdoption returns undefined for BOTH "container doesn't exist
+  // yet" and "docker CLI failed" (docker-inspect.ts's contract). Neither
+  // case should short-circuit to false -- a container that genuinely does
+  // not exist yet must still reach the PowerShell probe, which is what
+  // actually determines existence/health for that case.
+  const p = new BcContainerProvider();
+  Object.defineProperty(p, "inspectForAdoption", {
+    value: () => Promise.resolve(undefined),
+    configurable: true,
+  });
+  let pwshCalled = false;
+  Object.defineProperty(p, "executePowerShell", {
+    value: (_script: string) => {
+      pwshCalled = true;
+      return Promise.resolve({ output: "HEALTHY:True", exitCode: 0 });
+    },
+    configurable: true,
+  });
+  assertEquals(await p.isHealthy("Cronus28"), true);
+  assertEquals(pwshCalled, true);
+});

@@ -193,3 +193,87 @@ Deno.test("setupContainer (singular) emits setup.harness on the freshly-created-
     stub.restore();
   }
 });
+
+// Task 7 fix-round 1: every fake provider above omits lastWarmupStats, so
+// they only exercise warmupCompilerFoldersTraced's "no stats" branch. That
+// left the actual adopted/rebuilt attachment -- the thing Task 10's
+// acceptance gate reads -- completely untested. These two cover the
+// true branch on both entry points, mirroring the split above.
+Deno.test("setupContainers attaches adopted/rebuilt to the setup.warmup-compiler span", async () => {
+  const provider = {
+    isHealthy: () => Promise.resolve(true),
+    setCredentials: () => {},
+    prenukeCentralGaugeApps: () => Promise.resolve(),
+    warmupCompilerFolders: () => Promise.resolve(),
+    ensureTestHarness: () => Promise.resolve(),
+    lastWarmupStats: { adopted: 2, rebuilt: 1 },
+  } as unknown as ContainerProvider;
+  ContainerProviderRegistry.register("fake-trace-stats", () => provider);
+
+  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const stub = stubCacheStatics();
+  try {
+    initTracer(traceFile);
+    await setupContainers(["Cronus28", "Cronus282"], "fake-trace-stats", {
+      name: "Cronus28",
+    });
+    await closeTracer();
+
+    const trace = JSON.parse(await Deno.readTextFile(traceFile)) as {
+      traceEvents: Array<
+        { name: string; ph: string; args?: Record<string, unknown> }
+      >;
+    };
+    const warmupSpan = trace.traceEvents.find((e) =>
+      e.ph === "X" && e.name === "setup.warmup-compiler"
+    );
+    assertEquals(warmupSpan?.args?.["adopted"], 2);
+    assertEquals(warmupSpan?.args?.["rebuilt"], 1);
+    assertEquals(warmupSpan?.args?.["ok"], true);
+  } finally {
+    await closeTracer();
+    await Deno.remove(traceFile).catch(() => {});
+    ContainerProviderRegistry.clearInstances();
+    stub.restore();
+  }
+});
+
+Deno.test("setupContainer (singular) attaches adopted/rebuilt to the setup.warmup-compiler span", async () => {
+  const provider = {
+    isHealthy: () => Promise.resolve(true),
+    setCredentials: () => {},
+    prenukeCentralGaugeApps: () => Promise.resolve(),
+    warmupCompilerFolders: () => Promise.resolve(),
+    ensureTestHarness: () => Promise.resolve(),
+    lastWarmupStats: { adopted: 1, rebuilt: 1 },
+  } as unknown as ContainerProvider;
+  ContainerProviderRegistry.register(
+    "fake-trace-stats-single",
+    () => provider,
+  );
+
+  const traceFile = await Deno.makeTempFile({ suffix: ".json" });
+  const stub = stubCacheStatics();
+  try {
+    initTracer(traceFile);
+    await setupContainer("fake-trace-stats-single", { name: "Cronus28" });
+    await closeTracer();
+
+    const trace = JSON.parse(await Deno.readTextFile(traceFile)) as {
+      traceEvents: Array<
+        { name: string; ph: string; args?: Record<string, unknown> }
+      >;
+    };
+    const warmupSpan = trace.traceEvents.find((e) =>
+      e.ph === "X" && e.name === "setup.warmup-compiler"
+    );
+    assertEquals(warmupSpan?.args?.["adopted"], 1);
+    assertEquals(warmupSpan?.args?.["rebuilt"], 1);
+    assertEquals(warmupSpan?.args?.["ok"], true);
+  } finally {
+    await closeTracer();
+    await Deno.remove(traceFile).catch(() => {});
+    ContainerProviderRegistry.clearInstances();
+    stub.restore();
+  }
+});
