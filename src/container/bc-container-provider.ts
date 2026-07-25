@@ -2697,11 +2697,23 @@ ${script}
    * parallel), and both can be compiling into a fresh `--no-compiler-cache`
    * GUID folder at the same time. A GUID folder carries no container name,
    * so the per-container lock (`folder-lock.ts`, keyed `.cg-<container>.lock`)
-   * cannot cover it — mtime age is the only signal available, and a live
-   * build touches its folder continuously. This sweep only runs on the
+   * cannot cover it — mtime age is the only signal available.
+   *
+   * That signal is weaker than it looks: on NTFS, writing into a nested
+   * subdirectory only updates the *immediate parent's* mtime, not every
+   * ancestor's. A compile writes into `<guid>/output/<name>_<uuid>`, so the
+   * top-level `<guid>` folder's own mtime stops changing once that
+   * structure exists — this guard actually measures time since the
+   * folder's last *direct* child was added, not time since the build was
+   * last active. A multi-hour overlap between `trap-probe` and `bench`
+   * (exactly the scenario this guard exists for) can outlast the 30-minute
+   * window while still compiling. The guard is still strictly better than
+   * the unconditional delete it replaced, and this sweep only runs on the
    * diagnostic `--no-compiler-cache` path, so a conservative skip costs at
    * most a stale orphan the next sweep collects — far cheaper than deleting
-   * another process's live work.
+   * another process's live work. A precise fix would take the max mtime
+   * across the folder's immediate children (or stat `output/` directly)
+   * instead of the top-level folder alone; tracked in `docs/follow-ups.md`.
    */
   private static readonly GUID_FOLDER_MIN_AGE_MS = 30 * 60 * 1000;
 
