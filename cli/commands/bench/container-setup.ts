@@ -81,7 +81,14 @@ export async function setupContainer(
   }
 
   // Configure compiler-folder adoption (on by default; opt out via
-  // --no-reuse-compiler-folders to force a rebuild every run)
+  // --no-reuse-compiler-folders to force a rebuild every run). Unlike the
+  // noCompilerCache call above, this one is unconditional (not gated on
+  // options?.noReuseCompilerFolders &&): ContainerProviderRegistry caches
+  // provider instances as singletons (registry-pattern.md), so a stale
+  // "disabled" flag from an earlier setup call in the same process would
+  // otherwise survive into a run that never asked to disable it. The
+  // provider's own default is already true, so this restates rather than
+  // changes behavior on a fresh instance.
   if ("setReuseCompilerFolders" in containerProvider) {
     (containerProvider as BcContainerProvider).setReuseCompilerFolders(
       !options?.noReuseCompilerFolders,
@@ -239,7 +246,14 @@ export async function setupContainers(
   }
 
   // Configure compiler-folder adoption (on by default; opt out via
-  // --no-reuse-compiler-folders to force a rebuild every run)
+  // --no-reuse-compiler-folders to force a rebuild every run). Unlike the
+  // noCompilerCache call above, this one is unconditional (not gated on
+  // options?.noReuseCompilerFolders &&): ContainerProviderRegistry caches
+  // provider instances as singletons (registry-pattern.md), so a stale
+  // "disabled" flag from an earlier setup call in the same process would
+  // otherwise survive into a run that never asked to disable it. The
+  // provider's own default is already true, so this restates rather than
+  // changes behavior on a fresh instance.
   if ("setReuseCompilerFolders" in containerProvider) {
     (containerProvider as BcContainerProvider).setReuseCompilerFolders(
       !options?.noReuseCompilerFolders,
