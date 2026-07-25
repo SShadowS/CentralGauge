@@ -117,12 +117,19 @@ export async function setupContainer(
       });
   }
 
-  // Configure compiler cache
-  if (
-    options?.noCompilerCache &&
-    "setCompilerCacheEnabled" in containerProvider
-  ) {
-    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
+  // Configure compiler cache. Unconditional (not gated on
+  // options?.noCompilerCache &&), matching setReuseCompilerFolders below:
+  // ContainerProviderRegistry caches provider instances as singletons
+  // (registry-pattern.md), so a leaked `false` from an earlier setup call in
+  // the same process would otherwise survive into a run that never asked to
+  // disable the cache — and since adoptableFolderPath() also gates on
+  // `_compilerCacheEnabled`, a leaked `false` would silently disable
+  // compiler-folder adoption too, not just the cache parameter it used to
+  // only skip.
+  if ("setCompilerCacheEnabled" in containerProvider) {
+    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(
+      !options?.noCompilerCache,
+    );
   }
 
   // Configure compiler-folder adoption (on by default; opt out via
@@ -275,12 +282,19 @@ export async function setupContainers(
         : await ContainerProviderRegistry.getDefault())
       : ContainerProviderRegistry.create(containerProviderName);
 
-  // Configure compiler cache
-  if (
-    options?.noCompilerCache &&
-    "setCompilerCacheEnabled" in containerProvider
-  ) {
-    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(false);
+  // Configure compiler cache. Unconditional (not gated on
+  // options?.noCompilerCache &&), matching setReuseCompilerFolders below:
+  // ContainerProviderRegistry caches provider instances as singletons
+  // (registry-pattern.md), so a leaked `false` from an earlier setup call in
+  // the same process would otherwise survive into a run that never asked to
+  // disable the cache — and since adoptableFolderPath() also gates on
+  // `_compilerCacheEnabled`, a leaked `false` would silently disable
+  // compiler-folder adoption too, not just the cache parameter it used to
+  // only skip.
+  if ("setCompilerCacheEnabled" in containerProvider) {
+    (containerProvider as BcContainerProvider).setCompilerCacheEnabled(
+      !options?.noCompilerCache,
+    );
   }
 
   // Configure compiler-folder adoption (on by default; opt out via
