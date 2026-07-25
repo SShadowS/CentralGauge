@@ -183,8 +183,10 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   `C:\ProgramData\BcContainerHelper\compiler-cache-<12hex>`, where `<12hex>` is
   the first 12 hex chars of a SHA-256 of the artifact URL with its query string
   stripped (a SAS token in the URL would otherwise churn the key every run),
-  computed in-script inside `createCompilerFolder` to avoid a second BCH
-  PowerShell spawn per container (~15 s module-load tax each).
+  computed host-side in `src/container/compiler-cache-key.ts` (it was an
+  in-script PowerShell hash until compiler-folder adoption made the artifact
+  URL known host-side; that version is deleted — do not reintroduce a second
+  implementation).
   - The legacy unkeyed `compiler-cache` directory is orphaned on every machine
     at first run after this change (can be multi-GB); one new keyed directory
     accrues per BC artifact version thereafter.
@@ -200,6 +202,24 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
     loud-fail version check; ad-hoc operator `pwsh` checks are NOT — import the
     pin explicitly (`Import-Module bccontainerhelper -RequiredVersion 6.1.14`)
     before trusting one against this machine.
+- **Compiler-folder adoption is ON by default**; `--no-reuse-compiler-folders`
+  opts out. An existing folder is adopted outright rather than rebuilt when a
+  marker plus a file check proves it matches the container's current artifact
+  URL — decided entirely host-side from `docker inspect` (the exact source
+  `Get-BcContainerArtifactUrl` reads), so a warm run makes no `pwsh` call for
+  compiler folders at all. `New-BcCompilerFolder` deletes and rebuilds the
+  folder on every call regardless of cache state, which measured 48.96 s across
+  three containers even fully warm.
+  - Adoption requires the compiler cache to be ENABLED. Under
+    `--no-compiler-cache` no `-containerName` is passed, so BCH names the
+    folder `[GUID]::NewGuid()` (`New-BcCompilerFolder.ps1:60-62`) — there is no
+    stable folder to adopt and adoption correctly short-circuits.
+  - `scripts/bench.ps1` and `scripts/benchsmall.ps1` are **gitignored** operator
+    wrappers (`.gitignore:98-110` allowlist). Their local copies were changed to
+    default `-NoCompilerCache` to `$false` so full benches get adoption. **That
+    change does not survive a fresh clone — re-apply it.** Passing
+    `-NoCompilerCache` restores rebuild-every-run, which is what the R2
+    baseline's published scores were produced under.
 
 ## Project Structure
 
