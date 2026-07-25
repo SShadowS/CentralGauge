@@ -115,8 +115,18 @@ Any missing entry means rebuild.
 
 `trap-probe` and `bench` run as separate processes by design, and
 `compilerFolderQueue` serializes only within one process. The adopt path is
-read-only (stat plus one file read) and needs no lock. Only rebuild mutates,
-so:
+mostly read-only (stat plus one file read to validate the marker), but on a
+match `tryAdoptCompilerFolder` also calls `pruneCompilerOutput`, which
+deletes stale `output/` subdirectories — before any lock is taken. This is
+deliberate, not an oversight: the residual risk is bounded on three sides.
+Live output dirs (from an in-flight compile in the other process) have the
+freshest mtimes, so `pruneCompilerOutput`'s `keep = 10` retention leaves them
+alone; the compile pool caps in-flight output dirs at 3 per container, well
+under that retention floor; and Windows refuses to delete a directory with an
+open handle, so even a race that targeted a live dir would fail the delete,
+not corrupt it — `pruneCompilerOutput` swallows that failure and moves on
+(best-effort, never fails a run). Only rebuild mutates the folder's
+compiler/symbols contents, so:
 
 1. Try adoption unlocked.
 2. On miss, acquire a lock file at `<COMPILER_FOLDER_DIR>\.cg-<container>.lock`
