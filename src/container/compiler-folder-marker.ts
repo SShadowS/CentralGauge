@@ -48,7 +48,12 @@ export async function writeMarker(
   const target = `${folder}/${MARKER_FILENAME}`;
   const tmp = `${target}.tmp-${Deno.pid}`;
   await Deno.writeTextFile(tmp, JSON.stringify(marker, null, 2));
-  await Deno.rename(tmp, target);
+  try {
+    await Deno.rename(tmp, target);
+  } catch (error) {
+    await Deno.remove(tmp).catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -63,9 +68,15 @@ export async function validateFolder(
 ): Promise<ValidationResult> {
   let marker: FolderMarker;
   try {
-    marker = JSON.parse(
+    const parsed: unknown = JSON.parse(
       await Deno.readTextFile(`${folder}/${MARKER_FILENAME}`),
-    ) as FolderMarker;
+    );
+    if (
+      parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+    ) {
+      return { ok: false, reason: "marker not an object" };
+    }
+    marker = parsed as FolderMarker;
   } catch {
     return { ok: false, reason: "marker missing or unreadable" };
   }

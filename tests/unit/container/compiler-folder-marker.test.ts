@@ -111,6 +111,50 @@ Deno.test("validateFolder rejects a torn marker", async () => {
   }
 });
 
+Deno.test("validateFolder rejects a null marker body", async () => {
+  // JSON.parse("null") doesn't throw — it returns null, and the next field
+  // access must not dereference it.
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.writeTextFile(`${dir}/${MARKER_FILENAME}`, "null");
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder rejects a scalar marker body", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.writeTextFile(`${dir}/${MARKER_FILENAME}`, '"42"');
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder rejects an array marker body", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.writeTextFile(`${dir}/${MARKER_FILENAME}`, "[]");
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("validateFolder rejects a missing marker", async () => {
   const dir = await makeGoodFolder();
   try {
@@ -156,6 +200,66 @@ Deno.test("validateFolder rejects a symbols folder with no .app", async () => {
       bchVersion: BCH,
     });
     assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder rejects an expected directory that is actually a file", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/compiler/extension/bin`, { recursive: true });
+    await Deno.writeTextFile(`${dir}/compiler/extension/bin`, "x");
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder rejects an expected file that is actually a directory", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/manifest.json`);
+    await Deno.mkdir(`${dir}/manifest.json`);
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder rejects a symbols folder whose only *.app entry is a directory", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/symbols/Base.app`);
+    await Deno.mkdir(`${dir}/symbols/Fake.app`);
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, false);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("validateFolder accepts a case-insensitive .app extension", async () => {
+  const dir = await makeGoodFolder();
+  try {
+    await Deno.remove(`${dir}/symbols/Base.app`);
+    await Deno.writeTextFile(`${dir}/symbols/Upper.APP`, "x");
+    const r = await validateFolder(dir, {
+      artifactUrl: URL_A,
+      bchVersion: BCH,
+    });
+    assertEquals(r.ok, true);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
