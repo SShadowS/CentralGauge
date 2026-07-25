@@ -403,6 +403,21 @@ export interface ExecutionAttempt {
    * `infraRetryExhausted === true`.
    */
   infraRetryExhaustionReason?: InfraRetryExhaustionReason | undefined;
+  /**
+   * Structured reason the LLM call never produced ready-to-compile code,
+   * mirrored from `LLMWorkResult.failureKind` (`src/parallel/types.ts`) by
+   * `createFailedAttempt` in `orchestrator.ts`. Only ever set when
+   * `compilationResult` is absent (the attempt never reached compilation).
+   * Exists so the trap-task authoring loop's single-task matrix
+   * (`cli/commands/bench/single-task-matrix.ts`) can distinguish an
+   * `"empty_response"` (zero trap signal) from a real extraction failure
+   * without string-matching `failureReasons`.
+   */
+  failureKind?:
+    | "empty_response"
+    | "safety_refusal"
+    | "low_confidence"
+    | undefined;
 }
 
 /**

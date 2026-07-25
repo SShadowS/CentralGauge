@@ -1198,7 +1198,7 @@ export class ParallelBenchmarkOrchestrator {
     llmResult: LLMWorkResult | undefined,
   ): ExecutionAttempt {
     const now = new Date();
-    return {
+    const attempt: ExecutionAttempt = {
       attemptNumber,
       startTime: new Date(now.getTime() - (llmResult?.duration ?? 0)),
       endTime: now,
@@ -1222,6 +1222,14 @@ export class ParallelBenchmarkOrchestrator {
       llmDuration: llmResult?.duration ?? 0,
       compileDuration: 0,
     };
+    // Mirror LLMWorkResult.failureKind onto the attempt (Task 8 sets it on
+    // the pool result but never carried it further) so downstream matrix
+    // reporters can distinguish "empty response" from other extraction
+    // failures without string-matching failureReasons.
+    if (llmResult?.failureKind !== undefined) {
+      attempt.failureKind = llmResult.failureKind;
+    }
+    return attempt;
   }
 
   /**

@@ -29,6 +29,16 @@ export {
   saveScoresFile,
 } from "./results-writer.ts";
 
+// Single-task matrix (compact model x attempt grid for one-task runs)
+export type {
+  AttemptCategory,
+  SingleTaskMatrixInput,
+} from "./single-task-matrix.ts";
+export {
+  categorizeAttempt,
+  formatSingleTaskMatrix,
+} from "./single-task-matrix.ts";
+
 // Container setup
 export type {
   ContainerAppConfig,

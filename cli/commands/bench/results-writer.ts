@@ -27,6 +27,7 @@ import {
   shouldCopyToClipboard,
   type TaskMatrixInput,
 } from "../../../src/utils/formatters.ts";
+import { formatSingleTaskMatrix } from "./single-task-matrix.ts";
 import { copyToClipboard } from "../../../src/utils/clipboard.ts";
 import { formatDurationMs, log } from "../../helpers/mod.ts";
 
@@ -544,6 +545,8 @@ export async function displayFormattedOutput(
         results,
       };
       console.log(formatTaskMatrix(matrixInput));
+    } else if (taskCount === 1) {
+      console.log(formatSingleTaskMatrix({ results }));
     }
   } else {
     const formatter = getFormatter(outputFormat);
@@ -552,6 +555,13 @@ export async function displayFormattedOutput(
     console.log(`\n${"─".repeat(50)}`);
     console.log(colors.bold(`${outputFormat.toUpperCase()} Format:\n`));
     console.log(formatted);
+
+    // F5: the compact single-task matrix must render on every output
+    // format, not just verbose — printing it only under verbose would
+    // reproduce half the bug this exists to fix (see single-task-matrix.ts).
+    if (taskCount === 1) {
+      console.log(formatSingleTaskMatrix({ results }));
+    }
 
     if (shouldCopyToClipboard(outputFormat)) {
       const copied = await copyToClipboard(formatted);
