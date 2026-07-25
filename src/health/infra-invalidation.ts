@@ -18,8 +18,18 @@ export function isInfraInvalidatedAttempt(a: {
   failureReasons?: string[] | undefined;
   infraRetryExhausted?: boolean | undefined;
   quarantined?: unknown;
+  infraSynthesized?: boolean | undefined;
 }): boolean {
   if (a.infraRetryExhausted) return true;
   if (a.quarantined) return true;
+  // Structural flag first: `infraSynthesized` is the unconditional marker
+  // `synthesizeInfraFailureResult` always stamps (see categorizeAttempt in
+  // single-task-matrix.ts), including the infra-retry-disabled fast path
+  // where the raw error propagates unwrapped with no exhaustion reason. The
+  // string-prefix check below is additive, not replaced by this: result
+  // files written before commit a133e6e7 carry no `infraSynthesized` flag,
+  // and `centralgauge ingest <file>` replays those files, so the legacy
+  // fallback must stay for that scoring-exclusion path to keep working.
+  if (a.infraSynthesized) return true;
   return (a.failureReasons?.[0] ?? "").startsWith("Infra error:");
 }

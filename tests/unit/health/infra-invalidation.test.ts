@@ -32,8 +32,27 @@ Deno.test("isInfraInvalidatedAttempt", async (t) => {
   });
 
   await t.step(
-    "true when first failure reason has the Infra error: prefix",
+    "true when infraSynthesized is set, even without the legacy prefix",
     () => {
+      // Proves the structural flag is checked on its own, not just riding
+      // along with a failureReasons string that would also match the legacy
+      // prefix check below.
+      assertEquals(
+        isInfraInvalidatedAttempt({
+          infraSynthesized: true,
+          failureReasons: ["SQL Server connection lost"],
+        }),
+        true,
+      );
+    },
+  );
+
+  await t.step(
+    "true via the legacy prefix fallback when infraSynthesized is absent",
+    () => {
+      // Result files written before commit a133e6e7 carry no infraSynthesized
+      // flag; `centralgauge ingest <file>` still replays them, so this path
+      // must keep working on its own.
       assertEquals(
         isInfraInvalidatedAttempt({
           failureReasons: ["Infra error: PSSession lost"],
