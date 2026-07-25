@@ -102,6 +102,15 @@ export function synthesizeInfraFailureResult(
   if (err instanceof ContainerError) {
     attempt.containerName = err.containerName;
   }
+  // Unconditional marker: this function ONLY ever runs for a failure the
+  // caller has already classified as infra (see orchestrator.ts's
+  // `wasInfraExhaustion || isInfraError(err)` gate), so every attempt it
+  // builds is infra-synthesized regardless of whether a retry budget
+  // existed to exhaust. Consumers that need "is this attempt infra, not
+  // model" without string-matching `failureReasons` must read this instead
+  // of (or in addition to) `infraRetryExhausted` — see the field's doc in
+  // `src/tasks/interfaces.ts`.
+  attempt.infraSynthesized = true;
   // Attach inline-retry metadata so downstream consumers (JSON, dashboard)
   // can show the full retry trail + exhaustion reason without re-parsing the
   // prose `failureReasons[]` block (which remains unchanged for backward

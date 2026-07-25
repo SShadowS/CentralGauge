@@ -404,6 +404,22 @@ export interface ExecutionAttempt {
    */
   infraRetryExhaustionReason?: InfraRetryExhaustionReason | undefined;
   /**
+   * Always `true` on every attempt built by `synthesizeInfraFailureResult`
+   * (`src/health/terminal-record.ts`) — i.e. any attempt that terminated
+   * because the infra layer classified the failure as infra, whether or not
+   * a retry budget existed to exhaust. Distinct from `infraRetryExhausted`,
+   * which is only set when the retry loop actually ran out of budget: with
+   * `bench.infraRetriesPerAttempt: 0` / `CENTRALGAUGE_BENCH_INFRA_RETRY=0`
+   * (`maxRetries <= 0`), `src/parallel/infra-retry.ts`'s fast path
+   * propagates the raw infra error UNWRAPPED (never as
+   * `InfraRetriesExhaustedError`), so `infraRetryExhausted` never gets set
+   * even though the resulting attempt is still purely an infra failure.
+   * This field is the unconditional signal consumers must check instead —
+   * see `single-task-matrix.ts`'s `categorizeAttempt`, which needs to tell
+   * "infra, not model" apart without string-matching `failureReasons`.
+   */
+  infraSynthesized?: true | undefined;
+  /**
    * Structured reason the LLM call never produced ready-to-compile code,
    * mirrored from `LLMWorkResult.failureKind` (`src/parallel/types.ts`) by
    * `createFailedAttempt` in `orchestrator.ts`. Only ever set when

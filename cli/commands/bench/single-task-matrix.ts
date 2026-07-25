@@ -52,13 +52,42 @@ export function categorizeAttempt(
   // reported as INFRA regardless of what compilationResult/testResult say.
   if (attempt.quarantined) return "INFRA";
 
-  // An infra retry that exhausted its budget without recovering produces a
-  // synthesized attempt (src/health/terminal-record.ts) with no
-  // compilationResult at all — the same "infra, not a model behaviour"
-  // reasoning as the zero-tests rule further down, just for the case where
-  // compilation never even started. Not called out in the design doc's
-  // table (only the recovered case is); flagged in task-9-report.md.
-  if (attempt.infraRetryExhausted) return "INFRA";
+  // An attempt that terminated through the infra-failure synthesis path
+  // (src/health/terminal-record.ts) is infra by construction, whether or
+  // not a retry budget existed to exhaust. `infraRetryExhausted` is set
+  // only when the retry loop actually ran out of budget; `infraSynthesized`
+  // is the unconditional marker `synthesizeInfraFailureResult` always
+  // stamps, including the `maxRetries <= 0` / infra-retry-disabled path
+  // (src/parallel/infra-retry.ts's fast path) where the raw infra error
+  // propagates unwrapped and no exhaustion reason is ever computed.
+  // Checking both catches every attempt that function can produce. Not
+  // called out in the design doc's table (only the recovered case is); see
+  // task-9-report.md.
+  if (attempt.infraRetryExhausted || attempt.infraSynthesized) {
+    return "INFRA";
+  }
+
+  // Compiled successfully but zero tests ran on a task that expects a test
+  // app: GH #13 — scoring this as a model failure once hid a broken
+  // bccontainerhelper version across an entire bench run. This MUST be
+  // checked before `attempt.success` below, not after: some providers
+  // report `success: true` on a zero-test result (`docker-output-parsers.ts`,
+  // `mock-provider.ts` both derive `success` from `failedTests === 0`, which
+  // is vacuously true at zero tests), so gating on `attempt.success` first
+  // would let a zero-test PASS slip through by luck of a downstream
+  // invariant elsewhere — precisely what this check exists to prevent, and
+  // the one row with GH #13 history. The container layer is supposed to
+  // throw before a zero-test result gets this far
+  // (src/container/bc-container-provider.ts), but the matrix must not rely
+  // on that either — it must not read a stale or edge-case zero-test result
+  // as PASS or TEST.
+  if (
+    expectsTests &&
+    attempt.compilationResult?.success === true &&
+    (attempt.testResult?.totalTests ?? 0) === 0
+  ) {
+    return "INFRA";
+  }
 
   // Genuine pass. `attempt.success` already folds compile + test +
   // mustContain/mustNotContain pattern checks (orchestrator.ts createAttempt,
@@ -85,18 +114,11 @@ export function categorizeAttempt(
 
   if (!attempt.compilationResult.success) return "COMPILE";
 
-  // Compiled successfully but zero tests ran on a task that expects a test
-  // app: GH #13 — scoring this as a model failure once hid a broken
-  // bccontainerhelper version across an entire bench run. The container
-  // layer is supposed to throw before a zero-test result gets this far
-  // (src/container/bc-container-provider.ts), but the matrix must not read
-  // a stale or edge-case zero-test result as PASS or TEST either way.
-  const totalTests = attempt.testResult?.totalTests ?? 0;
-  if (expectsTests && totalTests === 0) return "INFRA";
-
-  // Compiled, tests ran (or none were expected of this task), and something
-  // still failed — either a test assertion or a required mustContain/
-  // mustNotContain pattern. Genuine model behaviour either way.
+  // Compiled, tests ran (or none were expected of this task — including a
+  // compile-only task where a required mustContain/mustNotContain pattern
+  // still failed, the least-bad of the five buckets for that edge case;
+  // pinned by a dedicated test), and something still failed. Genuine model
+  // behaviour either way.
   return "TEST";
 }
 
