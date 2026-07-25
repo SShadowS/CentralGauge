@@ -135,11 +135,45 @@ const runAdmin = (options: DoctorOptions) =>
  */
 export async function runPurgeCompilerCache(): Promise<void> {
   try {
-    await BcContainerProvider.purgeArtifactCache();
-    console.log(colors.green("[OK]") + " Compiler artifact cache purged.");
-    console.log(
-      colors.gray("  The next bench run repopulates it (slower than usual)."),
-    );
+    const { removed, skipped } = await BcContainerProvider
+      .purgeArtifactCache();
+
+    if (removed > 0) {
+      console.log(
+        colors.green("[OK]") +
+          ` Purged ${removed} compiler cache director${
+            removed === 1 ? "y" : "ies"
+          }.`,
+      );
+      console.log(
+        colors.gray(
+          "  The next bench run repopulates it (slower than usual).",
+        ),
+      );
+    } else if (skipped.length === 0) {
+      console.log(
+        colors.yellow("[WARN]") +
+          ` No compiler-cache directories found under ${BcContainerProvider.COMPILER_CACHE_ROOT} — nothing to purge.`,
+      );
+    }
+
+    if (skipped.length > 0) {
+      console.log(
+        colors.yellow("[WARN]") +
+          ` Skipped ${skipped.length} entr${
+            skipped.length === 1 ? "y" : "ies"
+          } matching the cache naming convention that ${
+            skipped.length === 1 ? "is" : "are"
+          } not a real directory (likely a junction or symlink): ${
+            skipped.join(", ")
+          }.`,
+      );
+      console.log(
+        colors.gray(
+          "  The purge is INCOMPLETE — remove these by hand and re-run.",
+        ),
+      );
+    }
   } catch (error) {
     console.log(
       colors.red("[FAIL]") +

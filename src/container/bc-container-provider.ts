@@ -2401,7 +2401,7 @@ ${script}
   async cleanupAllCompilerFolders(): Promise<
     { removed: number; failed: number }
   > {
-    const compilerDir = "C:\\ProgramData\\BcContainerHelper\\compiler";
+    const compilerDir = BcContainerProvider.COMPILER_FOLDER_DIR;
     let removed = 0;
     let failed = 0;
 
@@ -2486,15 +2486,25 @@ ${script}
    * directories left behind after a BC artifact upgrade.
    *
    * Throws on any real failure (permission denied, directory locked by a live bench,
-   * partial delete) so the caller can report accurately. Absent root, or a root
-   * with no matching directories, is the silent no-op.
+   * partial delete) so the caller can report accurately. Absent root is the
+   * silent no-op (`{ removed: 0, skipped: [] }`).
+   *
+   * Returns an outcome object rather than `void` so the caller can tell a
+   * real purge apart from one that found nothing to do: `removed` counts
+   * directories actually deleted; `skipped` names cache-prefixed entries
+   * left untouched because they are not real directories by lstat (a
+   * Windows junction or symlink — `Deno.readDir` reports those as
+   * `isDirectory: false, isSymlink: true`, and a naive `!isDirectory` filter
+   * would otherwise silently treat a junctioned cache dir the same as an
+   * unrelated sibling). A non-empty `skipped` means the purge was
+   * INCOMPLETE — callers must not report a bare `[OK]` in that case.
    *
    * @param cacheRoot Override for tests; defaults to the real BCH root.
-   * @throws If a matching directory exists but cannot be removed (permission denied, in use, etc).
+   * @throws If a matching real directory exists but cannot be removed (permission denied, in use, etc).
    */
   static async purgeArtifactCache(
     cacheRoot: string = BcContainerProvider.COMPILER_CACHE_ROOT,
-  ): Promise<void> {
+  ): Promise<{ removed: number; skipped: string[] }> {
     // Enumerate first, fully, before removing anything. This keeps "the root
     // itself doesn't exist" (expected no-op — a machine that never ran a
     // bench has no BCH root) as the ONLY NotFound this function tolerates.
@@ -2509,17 +2519,29 @@ ${script}
         entries.push(entry);
       }
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) return;
+      if (error instanceof Deno.errors.NotFound) {
+        return { removed: 0, skipped: [] };
+      }
       log.warn(`Failed to enumerate compiler cache root: ${error}`);
       throw error;
     }
 
     let removed = 0;
+    const skipped: string[] = [];
     for (const entry of entries) {
-      if (
-        !entry.isDirectory ||
-        !entry.name.startsWith(BcContainerProvider.COMPILER_CACHE_PREFIX)
-      ) {
+      if (!entry.name.startsWith(BcContainerProvider.COMPILER_CACHE_PREFIX)) {
+        continue;
+      }
+      if (!entry.isDirectory) {
+        // Matches the cache-directory naming convention but isn't a real
+        // directory by lstat — almost always a junction or symlink. Do NOT
+        // attempt a recursive remove through it: that can delete the
+        // TARGET's contents instead of the link itself. Surface it instead
+        // so the operator investigates by hand.
+        log.warn(
+          `Compiler cache entry ${entry.name} matches the cache prefix but is not a real directory (junction/symlink?) — skipping, purge is incomplete`,
+        );
+        skipped.push(entry.name);
         continue;
       }
       try {
@@ -2544,5 +2566,7 @@ ${script}
         }`,
       );
     }
+
+    return { removed, skipped };
   }
 }

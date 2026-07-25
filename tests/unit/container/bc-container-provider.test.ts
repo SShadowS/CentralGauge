@@ -2500,3 +2500,79 @@ Deno.test("purgeArtifactCache treats a NotFound raised while removing an already
     await Deno.remove(root, { recursive: true }).catch(() => {});
   }
 });
+
+// The outcome-reporting contract: purgeArtifactCache used to return void, so
+// `doctor purge-compiler-cache` printed [OK] on any non-throw — including
+// when it purged nothing at all. These lock in the { removed, skipped }
+// shape the CLI now depends on to report honestly.
+
+Deno.test("purgeArtifactCache returns zero removed and empty skipped when nothing matches", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-empty-" });
+  try {
+    await Deno.mkdir(`${root}/someone-elses-folder`, { recursive: true });
+
+    const outcome = await BcContainerProvider.purgeArtifactCache(root);
+
+    assertEquals(outcome, { removed: 0, skipped: [] });
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("purgeArtifactCache returns the real removed count on a normal purge", async () => {
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-count-" });
+  try {
+    await Deno.mkdir(`${root}/compiler-cache-a1b2c3d4e5f6`, {
+      recursive: true,
+    });
+    await Deno.mkdir(`${root}/compiler-cache-001122334455`, {
+      recursive: true,
+    });
+
+    const outcome = await BcContainerProvider.purgeArtifactCache(root);
+
+    assertEquals(outcome, { removed: 2, skipped: [] });
+  } finally {
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
+
+Deno.test("purgeArtifactCache skips (but does not delete) a cache-prefixed entry that is not a real directory", async () => {
+  // Windows junctions report isDirectory: false, isSymlink: true under
+  // Deno.readDir's lstat semantics — verified empirically. A junctioned
+  // cache dir must never be silently folded into "nothing to purge"; it
+  // must come back in `skipped` so the caller can report an incomplete
+  // purge instead of a false [OK].
+  const root = await Deno.makeTempDir({ prefix: "cg-purge-junction-" });
+  const originalReadDir = Deno.readDir;
+  try {
+    await Deno.mkdir(`${root}/compiler-cache-realdir`, { recursive: true });
+
+    Object.defineProperty(Deno, "readDir", {
+      value: (path: string | URL) => {
+        if (path !== root) return originalReadDir(path);
+        return (async function* () {
+          for await (const entry of originalReadDir(root)) yield entry;
+          yield {
+            name: "compiler-cache-junctioned",
+            isDirectory: false,
+            isFile: false,
+            isSymlink: true,
+          } satisfies Deno.DirEntry;
+        })();
+      },
+      configurable: true,
+    });
+
+    const outcome = await BcContainerProvider.purgeArtifactCache(root);
+
+    assertEquals(outcome.removed, 1);
+    assertEquals(outcome.skipped, ["compiler-cache-junctioned"]);
+  } finally {
+    Object.defineProperty(Deno, "readDir", {
+      value: originalReadDir,
+      configurable: true,
+    });
+    await Deno.remove(root, { recursive: true }).catch(() => {});
+  }
+});
