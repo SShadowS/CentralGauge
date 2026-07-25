@@ -145,16 +145,20 @@ hand-waving as "process startup":
   file's mtime is within 2-3 s of the recorded end-epoch in both cases
   (cold: results file at +0s, trace file / end-epoch at +3s; warm: +0s vs
   +2s). This part is not where the asymmetry lives.
-- **Pre-root gap is where it lives, and it is asymmetric**: computing
-  epoch-start-to-root-span-open (`end_epoch - root_duration - start_epoch`)
-  gives **4.73 s cold vs 25.70 s warm** — an ~21 s difference in the time
-  between launching `pwsh` and the tracer's root `bench` span actually
-  opening (which happens essentially at the top of bench's `.action()`
-  handler, before the environment banner or model discovery/pricing calls
-  print — so those are inside the root span, not the source of the pre-root
-  gap). This is Deno process startup / module resolution time, which this
-  measurement did not instrument and cannot explain. No confirmed root
-  cause is offered here — this is reported as an open, unexplained data
+- **Pre-root gap is where it lives, and it is asymmetric**: `end_epoch -
+  root_duration - start_epoch` gives **4.73 s cold vs 25.70 s warm**, but that
+  formula computes the *combined* pre-root + post-root gap (total wall time
+  minus root-span duration), not pure pre-root. Subtracting the post-root
+  figures established above (~3 s cold / ~2 s warm) isolates the true
+  pre-root gap at **~1.73 s cold vs ~23.70 s warm** — an ~22 s difference in
+  the time between launching `pwsh` and the tracer's root `bench` span
+  actually opening (which happens essentially at the top of bench's
+  `.action()` handler, before the environment banner or model
+  discovery/pricing calls print — so those are inside the root span, not the
+  source of the pre-root gap). This is Deno process startup / module
+  resolution time, which this measurement did not instrument and cannot
+  explain. No confirmed root cause is offered here — this is reported as an
+  open, unexplained data
   point, not folded into any conclusion.
 - **This does not hurt the verdict.** If anything it strengthens the
   cross-check: the pure wall-clock delta (97 s) is almost an exact match
@@ -201,9 +205,9 @@ trace's `compile`/`prepare-candidate`/`test.soap.total` span counts:
 | `prepare-candidate` spans (publish+prep) | **2** | **1** |
 | `test.soap.total` spans | **2** | **1** |
 
-Compile workload was identical (14/14 — every attempt across all 3 models x
-2 attempts gets compiled once per container assignment, regardless of
-outcome). But cold completed a full second publish+test cycle (Opus on
+Compile workload was identical (14/14 — 7 candidate compiles + 7 prereq
+compiles per run, not "3 models × 2 attempts" as the prior draft implied;
+3 × 2 is 6, not 14). But cold completed a full second publish+test cycle (Opus on
 Cronus283, in addition to Sonnet on Cronus282) that warm did not — because
 in the warm run both Opus and Haiku failed compilation on attempt 2 and
 never reached publish, while in the cold run Opus's attempt 2 compiled and

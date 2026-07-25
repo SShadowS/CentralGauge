@@ -174,6 +174,32 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
     disposes its Windows-PowerShell sub-session at end-of-script under
     `usePwshForBc24=$false`, so each separate `runScriptThroughSession`
     call would re-pay the ~120 s bridge setup.
+- **Compiler artifact cache — bench startup never touches it.** `setupContainer`/
+  `setupContainers` no longer clear BCH compiler folders unconditionally; that's
+  now gated on `--no-compiler-cache` (`BcContainerProvider.clearCompilerFolders`),
+  and the shared artifact cache is NEVER purged from the startup path at all
+  (the old implicit purge was destroying the cache it was meant to preserve).
+  The cache is keyed by artifact URL:
+  `C:\ProgramData\BcContainerHelper\compiler-cache-<12hex>`, where `<12hex>` is
+  the first 12 hex chars of a SHA-256 of the artifact URL with its query string
+  stripped (a SAS token in the URL would otherwise churn the key every run),
+  computed in-script inside `createCompilerFolder` to avoid a second BCH
+  PowerShell spawn per container (~15 s module-load tax each).
+  - The legacy unkeyed `compiler-cache` directory is orphaned on every machine
+    at first run after this change (can be multi-GB); one new keyed directory
+    accrues per BC artifact version thereafter.
+  - `centralgauge doctor purge-compiler-cache` is the manual escape hatch — the
+    only recovery for a cache left incomplete by a run killed mid-population
+    (BCH only repopulates when `symbols/` is absent). What it does NOT do: it
+    costs a local cache repopulation (VSIX expansion + symbol/compiler/DLL
+    copies), not a network re-download — `Download-Artifacts` keys its own
+    separate cache at `C:\bcartifacts.cache` and gates on `Test-Path` there.
+  - A bare `pwsh` on this machine resolves bccontainerhelper **6.1.15** while
+    `BCCH_PINNED_VERSION` pins **6.1.14** (they differ: 6.1.15 adds
+    `-platformArtifactUrl`). Runtime scripts are protected by `bcchImport()`'s
+    loud-fail version check; ad-hoc operator `pwsh` checks are NOT — import the
+    pin explicitly (`Import-Module bccontainerhelper -RequiredVersion 6.1.14`)
+    before trusting one against this machine.
 
 ## Project Structure
 

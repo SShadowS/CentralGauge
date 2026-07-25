@@ -48,7 +48,7 @@ param(
 
   [string] $SanityContainer = "Cronus28",
 
-  [string] $DebugOutput = "h:\Temp3",
+  [string] $DebugOutput = "debug/",
 
   # Skip the sanity lane even when a reference solution exists.
   [switch] $NoSanity,

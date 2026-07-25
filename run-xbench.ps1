@@ -26,7 +26,7 @@ param(
   [int]   $Runs        = 1,
   [string]$Tasks       = "tasks/**/CG-AL-X*.yml",   # scope: e.g. "tasks/hard/CG-AL-X03[345]-*.yml" for the hard batch
   [string]$Containers  = "Cronus28,Cronus282,Cronus283,Cronus284,Cronus285", # add Cronus281 for a 6th worker
-  [string]$DebugOutput = "h:\Temp3",
+  [string]$DebugOutput = "debug/",
   [switch]$SkipCheck
 )
 
