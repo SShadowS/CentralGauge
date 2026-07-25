@@ -10,7 +10,52 @@ import {
   ContainerProviderRegistry,
 } from "../../../src/container/mod.ts";
 import { getTracer } from "../../../src/tracing/tracer.ts";
+import type { SpanHandle } from "../../../src/tracing/tracer.ts";
 import { log } from "../../helpers/mod.ts";
+
+/**
+ * Run `warmupCompilerFolders` inside a caller-owned `setup.warmup-compiler`
+ * span and attach `lastWarmupStats` as post-hoc args on `end()`.
+ *
+ * `getTracer().span()` fixes its args before `body` runs, but
+ * adopted/rebuilt counts are only known after `warmupCompilerFolders`
+ * returns — so this uses `start()`/`end()` directly (the tracer's own
+ * post-hoc-args mechanism) instead of the `span()` convenience wrapper.
+ * `lastWarmupStats` may be absent on a fake test provider that only
+ * implements `warmupCompilerFolders`; that's treated as "no stats to
+ * report" rather than a crash.
+ */
+async function warmupCompilerFoldersTraced(
+  containerProvider: ContainerProvider,
+  containerNames: string[],
+): Promise<void> {
+  const handle: SpanHandle = getTracer().start("setup.warmup-compiler", {
+    cat: "setup",
+  });
+  try {
+    await (containerProvider as BcContainerProvider).warmupCompilerFolders(
+      containerNames,
+    );
+    const stats = (containerProvider as BcContainerProvider).lastWarmupStats;
+    if (stats) {
+      handle.end({
+        args: { adopted: stats.adopted, rebuilt: stats.rebuilt },
+        ok: true,
+      });
+    } else {
+      handle.end({ ok: true });
+    }
+  } catch (e) {
+    handle.end({
+      args: {
+        errorType: e instanceof Error ? e.constructor.name : "unknown",
+        errorMessage: e instanceof Error ? e.message : String(e),
+      },
+      ok: false,
+    });
+    throw e;
+  }
+}
 
 /**
  * Container configuration from app config
@@ -140,14 +185,7 @@ export async function setupContainer(
     }
     // Pre-create compiler folder before any work is enqueued
     if ("warmupCompilerFolders" in containerProvider) {
-      await getTracer().span(
-        "setup.warmup-compiler",
-        { cat: "setup" },
-        () =>
-          (containerProvider as BcContainerProvider).warmupCompilerFolders([
-            containerName,
-          ]),
-      );
+      await warmupCompilerFoldersTraced(containerProvider, [containerName]);
     }
     // Publish test harness during setup
     if ("ensureTestHarness" in containerProvider) {
@@ -306,14 +344,7 @@ export async function setupContainers(
 
   // Pre-create compiler folders for all containers before any work is enqueued
   if ("warmupCompilerFolders" in containerProvider) {
-    await getTracer().span(
-      "setup.warmup-compiler",
-      { cat: "setup" },
-      () =>
-        (containerProvider as BcContainerProvider).warmupCompilerFolders(
-          containerNames,
-        ),
-    );
+    await warmupCompilerFoldersTraced(containerProvider, containerNames);
   }
 
   // Publish test harness during setup

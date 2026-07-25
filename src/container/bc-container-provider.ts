@@ -2527,6 +2527,13 @@ ${script}
       // running Test-BcContainer cannot be cancelled mid-flight, but an
       // aborted probe must never be reported healthy.
       if (opts?.signal?.aborted) return false;
+      // Docker's own view first: Test-BcContainer has been observed reporting
+      // healthy for a container Docker reports as not running, which silently
+      // contaminated a whole benchmark measurement. Cheap (~0.36s) and
+      // authoritative on liveness.
+      const inspection = await this.inspectForAdoption(containerName);
+      if (inspection && !inspection.running) return false;
+      if (opts?.signal?.aborted) return false;
       const script = `
         ${bcchImport()}
         ${bcchConfigInit()}
