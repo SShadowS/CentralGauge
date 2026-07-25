@@ -5,7 +5,7 @@
  * compiler folders and artifact caches live there, and preserving them is the
  * entire point of adoption. Every test that needs a folder on disk stubs
  * `adoptableFolderPath` onto a `Deno.makeTempDir()` path; every test that
- * would otherwise shell out stubs `inspectForAdoption`.
+ * would otherwise shell out stubs `dockerInspectSeam`.
  */
 
 import {
@@ -29,7 +29,7 @@ const ARTIFACT_URL =
 
 /** Shape of the private surface the tests drive. Cast, never exported. */
 interface AdoptionInternals {
-  inspectForAdoption(name: string): Promise<ContainerInspection | undefined>;
+  dockerInspectSeam(name: string): Promise<ContainerInspection | undefined>;
   adoptableFolderPath(name: string): string | undefined;
   tryAdoptCompilerFolder(name: string): Promise<string | undefined>;
   pruneCompilerOutput(folder: string, keep?: number): Promise<void>;
@@ -116,7 +116,7 @@ Deno.test("adoption is skipped entirely when disabled", async () => {
   const p = new BcContainerProvider();
   p.setReuseCompilerFolders(false);
   let inspected = false;
-  const restore = stub(p, "inspectForAdoption", () => {
+  const restore = stub(p, "dockerInspectSeam", () => {
     inspected = true;
     return Promise.resolve(undefined);
   });
@@ -136,7 +136,7 @@ Deno.test("adoption is skipped when the compiler cache is disabled", async () =>
   const p = new BcContainerProvider();
   p.setCompilerCacheEnabled(false);
   let inspected = false;
-  const restore = stub(p, "inspectForAdoption", () => {
+  const restore = stub(p, "dockerInspectSeam", () => {
     inspected = true;
     return Promise.resolve(undefined);
   });
@@ -165,7 +165,7 @@ Deno.test("adoption bails when docker inspect yields no artifact URL", async (t)
     const p = new BcContainerProvider();
     const restore = stub(
       p,
-      "inspectForAdoption",
+      "dockerInspectSeam",
       () => Promise.resolve(undefined),
     );
     // A folder that WOULD validate — proves the bail is on the inspection,
@@ -188,7 +188,7 @@ Deno.test("adoption bails when docker inspect yields no artifact URL", async (t)
     const p = new BcContainerProvider();
     const restore = stub(
       p,
-      "inspectForAdoption",
+      "dockerInspectSeam",
       () => Promise.resolve({ artifactUrl: undefined, running: true }),
     );
     try {
@@ -205,7 +205,7 @@ Deno.test("adoption bails when docker inspect yields no artifact URL", async (t)
     const p = new BcContainerProvider();
     const restore = stub(
       p,
-      "inspectForAdoption",
+      "dockerInspectSeam",
       () => Promise.resolve({ artifactUrl: "", running: true }),
     );
     try {
@@ -223,7 +223,7 @@ Deno.test("adoption bails, without throwing, when the folder does not validate",
   const p = new BcContainerProvider();
   const restoreInspect = stub(
     p,
-    "inspectForAdoption",
+    "dockerInspectSeam",
     () => Promise.resolve({ artifactUrl: ARTIFACT_URL, running: true }),
   );
 
@@ -279,7 +279,7 @@ Deno.test("adopts a matching folder and prunes its stale output", async () => {
   await seedOutput(folder, 12);
   const restoreInspect = stub(
     p,
-    "inspectForAdoption",
+    "dockerInspectSeam",
     // A SAS query string must not defeat the match — validateFolder compares
     // the raw URL, so the marker carries the raw URL too.
     () => Promise.resolve({ artifactUrl: ARTIFACT_URL, running: true }),
@@ -316,7 +316,7 @@ async function captureRebuild(
   let script = "";
   const restoreInspect = stub(
     p,
-    "inspectForAdoption",
+    "dockerInspectSeam",
     () => Promise.resolve(inspection),
   );
   const restoreExec = stub(p, "executePowerShell", (s: string) => {

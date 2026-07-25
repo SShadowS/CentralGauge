@@ -6,7 +6,7 @@ Deno.test("isHealthy reports false when Docker says the container is not running
   // container not running, so every task dispatched there failed and the
   // Phase 1 measurement was contaminated.
   const p = new BcContainerProvider();
-  Object.defineProperty(p, "inspectForAdoption", {
+  Object.defineProperty(p, "dockerInspectSeam", {
     value: () =>
       Promise.resolve({
         artifactUrl: "https://x/sandbox/28.3/dk",
@@ -18,13 +18,13 @@ Deno.test("isHealthy reports false when Docker says the container is not running
 });
 
 Deno.test("isHealthy falls through to Test-BcContainer when Docker inspection is inconclusive", async () => {
-  // inspectForAdoption returns undefined for BOTH "container doesn't exist
+  // dockerInspectSeam returns undefined for BOTH "container doesn't exist
   // yet" and "docker CLI failed" (docker-inspect.ts's contract). Neither
   // case should short-circuit to false -- a container that genuinely does
   // not exist yet must still reach the PowerShell probe, which is what
   // actually determines existence/health for that case.
   const p = new BcContainerProvider();
-  Object.defineProperty(p, "inspectForAdoption", {
+  Object.defineProperty(p, "dockerInspectSeam", {
     value: () => Promise.resolve(undefined),
     configurable: true,
   });

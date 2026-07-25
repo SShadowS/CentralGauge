@@ -1260,9 +1260,18 @@ ${script}
   }
 
   /**
-   * Seam so tests can stub the Docker call. One line on purpose.
+   * Seam so tests can stub the Docker `inspect` call. One line on purpose.
+   *
+   * Two unrelated callers share it: compiler-folder adoption
+   * (`tryAdoptCompilerFolder` / `rebuildCompilerFolder`) reads `artifactUrl`
+   * to decide whether an existing folder still matches the container, and
+   * `isHealthy` reads `running` as an authoritative liveness gate ahead of
+   * `Test-BcContainer` (Task 7 — a container Docker reports as not running
+   * has been observed passing `Test-BcContainer` anyway, which silently
+   * contaminated a benchmark run). Named for the underlying `docker inspect`
+   * call, not either caller, since it is not adoption-specific.
    */
-  private inspectForAdoption(containerName: string) {
+  private dockerInspectSeam(containerName: string) {
     return inspectContainer(containerName);
   }
 
@@ -1299,7 +1308,7 @@ ${script}
     const folder = this.adoptableFolderPath(containerName);
     if (!folder) return undefined;
 
-    const inspection = await this.inspectForAdoption(containerName);
+    const inspection = await this.dockerInspectSeam(containerName);
     if (!inspection?.artifactUrl) return undefined;
 
     const result = await validateFolder(folder, {
@@ -1359,7 +1368,7 @@ ${script}
   private async rebuildCompilerFolder(containerName: string): Promise<string> {
     log.info(`Creating compiler folder for ${containerName}...`);
 
-    const inspection = await this.inspectForAdoption(containerName);
+    const inspection = await this.dockerInspectSeam(containerName);
     const artifactUrl = inspection?.artifactUrl;
 
     // Cache folder is computed here, in TypeScript, because the artifact URL
@@ -1427,6 +1436,12 @@ ${script}
       await writeMarker(compilerFolder, {
         layoutVersion: LAYOUT_VERSION,
         artifactUrl,
+        // This guard requires artifactUrl && adoptableFolderPath(...) truthy,
+        // which requires _compilerCacheEnabled — the exact condition
+        // (`this._compilerCacheEnabled && artifactUrl`) that computed
+        // cacheKey above, so it is always defined by the time we get here.
+        // TS does not correlate the two conditions, so `?? ""` stays only to
+        // satisfy the type checker; it is never exercised at runtime.
         cacheKey: cacheKey ?? "",
         bchVersion: BCCH_PINNED_VERSION,
         containerName,
@@ -2531,7 +2546,7 @@ ${script}
       // healthy for a container Docker reports as not running, which silently
       // contaminated a whole benchmark measurement. Cheap (~0.36s) and
       // authoritative on liveness.
-      const inspection = await this.inspectForAdoption(containerName);
+      const inspection = await this.dockerInspectSeam(containerName);
       if (inspection && !inspection.running) return false;
       if (opts?.signal?.aborted) return false;
       const script = `
