@@ -174,14 +174,33 @@ Deno.test("runTaskNew", async (t) => {
   );
 
   await t.step(
-    "rejects a malformed --id before touching the filesystem",
+    "rejects a malformed --id before touching the filesystem (scaffoldDraft's own check)",
     async () => {
       await setup();
       try {
         await assertRejects(
           () => runTaskNew({ slug: "day-close", id: "not-an-id", roots }),
           Error,
-          "Invalid --id",
+          "must match CG-AL-X",
+        );
+        assertEquals(await exists(roots.scratchDir), false);
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "rejects an E/M/H id: this workbench only collision-tracks the X-series",
+    async () => {
+      await setup();
+      try {
+        // Regression check for the hole a wider --id regex would reopen:
+        // an E/M/H id must not silently produce an untracked draft.
+        await assertRejects(
+          () => runTaskNew({ slug: "day-close", id: "CG-AL-E001", roots }),
+          Error,
+          "must match CG-AL-X",
         );
         assertEquals(await exists(roots.scratchDir), false);
       } finally {

@@ -5,10 +5,14 @@
  * under `scratch/<id>/` by wiring the Cliffy CLI directly to
  * `src/workbench/scaffold.ts`'s `scaffoldDraft`, and `task probe` runs the
  * discrimination probe via `src/workbench/probe.ts`'s `probeDraft`. This
- * module is deliberately thin — all draft-generation and probe logic lives
- * in `src/workbench/`, so a later Phase 2 UI panel can call `runTaskNew` /
- * `runTaskProbe` (or `scaffoldDraft` / `probeDraft` directly) without going
- * through Cliffy at all.
+ * module is deliberately thin — all draft-generation and probe logic,
+ * INCLUDING `--id` format validation, lives in `src/workbench/` (see
+ * `scaffoldDraft`'s own `CG-AL-X<digits>` check), so a later Phase 2 UI
+ * panel gets the same guarantees calling `scaffoldDraft` / `probeDraft`
+ * directly as it would going through `runTaskNew` / `runTaskProbe` here.
+ * This layer does not duplicate that validation — a second regex here
+ * could drift from the workbench's, silently reopening the id-collision
+ * hole `scaffoldDraft` closes.
  *
  * @module cli/commands/task
  */
@@ -26,24 +30,6 @@ import type {
 } from "../../src/workbench/probe.ts";
 import { scaffoldDraft } from "../../src/workbench/scaffold.ts";
 import { probeDraft } from "../../src/workbench/probe.ts";
-
-/**
- * Matches `TaskManifestSchema.id` in `src/tasks/interfaces.ts` exactly —
- * an explicit `--id` is raw user input and this command is the layer that
- * sees it first, so a malformed id (wrong case, missing digits, stray
- * characters) is rejected here with an immediate, specific error instead
- * of surfacing later as an opaque schema-parse failure.
- *
- * Note this is looser than the workbench's own convention: every id
- * `scaffoldDraft` allocates is `CG-AL-X###` (see `TASK_ID_PATTERN` in
- * `src/workbench/ids.ts`, which only ever matches the `X` letter). An
- * explicit `--id CG-AL-E001` passes this check, and `scaffoldDraft` itself
- * does not reject it either — but the collision scan in `ids.ts` only
- * recognizes `X` ids, so an `E`/`M`/`H` draft id would silently never be
- * tracked for future collisions. Kept intentionally general here to match
- * the real manifest schema rather than inventing a narrower one.
- */
-const TASK_ID_PATTERN = /^CG-AL-[EMHX][0-9]+$/;
 
 /** Repo-layout roots for the workbench, resolved relative to the process cwd. */
 function defaultRoots(): IdRoots {
@@ -70,14 +56,14 @@ export interface TaskNewOptions {
  * Exported separately from the Cliffy wiring below so it can be unit
  * tested directly against a temp tree. Driving Cliffy's own argument
  * parsing in a unit test would just be re-testing the framework.
+ *
+ * Deliberately does NOT re-validate `opts.slug`/`opts.id` itself:
+ * `scaffoldDraft` rejects a malformed slug or a non-`CG-AL-X<digits>` id
+ * before any side effects (no directories, no allocation), so a second
+ * check here would only add a regex that could drift out of sync with the
+ * one that actually matters.
  */
 export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
-  if (opts.id !== undefined && !TASK_ID_PATTERN.test(opts.id)) {
-    throw new Error(
-      `Invalid --id "${opts.id}": must match CG-AL-[EMHX]NNN (e.g. CG-AL-X053).`,
-    );
-  }
-
   const roots = opts.roots ?? defaultRoots();
   const meta = await scaffoldDraft({
     ...(opts.id !== undefined ? { id: opts.id } : {}),
