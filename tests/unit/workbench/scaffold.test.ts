@@ -261,6 +261,112 @@ describe("workbench/scaffold", () => {
       assertEquals(await exists(join(roots.scratchDir, "CG-AL-E002")), false);
     });
 
+    it("refuses an explicit id already used by a committed task", async () => {
+      // Without this the draft scaffolds happily, burns a test-codeunit-id
+      // allocation, and the collision only surfaces at promote - after the
+      // task has been authored against the taken id.
+      await ensureDir(join(roots.tasksDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.tasksDir, "hard", "CG-AL-X052-inner-commit.yml"),
+        "id: CG-AL-X052\n",
+      );
+
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-X052", slug: "day-close", roots }),
+        Error,
+        "already in use",
+      );
+
+      assertEquals(await exists(join(roots.scratchDir, "CG-AL-X052")), false);
+    });
+
+    it("refuses an explicit id already used by a committed test codeunit", async () => {
+      await ensureDir(join(roots.testsDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.testsDir, "hard", "CG-AL-X052.Test.al"),
+        'codeunit 80052 "CG-AL-X052 Test"\n{\n}\n',
+      );
+
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-X052", slug: "day-close", roots }),
+        Error,
+        "already in use",
+      );
+    });
+
+    it("normalises a short explicit id to 3 digits", async () => {
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X52",
+        slug: "day-close",
+        roots,
+      });
+
+      assertEquals(meta.id, "CG-AL-X052");
+      assertEquals(await exists(join(roots.scratchDir, "CG-AL-X052")), true);
+      assertEquals(await exists(join(roots.scratchDir, "CG-AL-X52")), false);
+    });
+
+    it("normalises an over-padded explicit id to 3 digits", async () => {
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X0052",
+        slug: "day-close",
+        roots,
+      });
+
+      assertEquals(meta.id, "CG-AL-X052");
+    });
+
+    it("refuses a digit-width variant of an id already shipped", async () => {
+      // The escape the collision check exists to close: ids.ts folds X52 and
+      // X052 to the same number, but promote.ts's filenameMatchesId compares
+      // substrings, so "CG-AL-X52" does not match
+      // "CG-AL-X052-day-close.yml" - the promote gate would have shipped a
+      // second manifest for the same task.
+      await ensureDir(join(roots.tasksDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.tasksDir, "hard", "CG-AL-X052-day-close.yml"),
+        "id: CG-AL-X052\n",
+      );
+
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-X52", slug: "inner-commit", roots }),
+        Error,
+        "already in use",
+      );
+    });
+
+    it("refuses an explicit id already claimed by another draft", async () => {
+      await scaffoldDraft({ id: "CG-AL-X052", slug: "day-close", roots });
+
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-X052", slug: "inner-commit", roots }),
+        Error,
+      );
+      // The digit-width variant must be refused too, and must not create a
+      // second directory alongside the first.
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-X52", slug: "inner-commit", roots }),
+        Error,
+      );
+      assertEquals(await exists(join(roots.scratchDir, "CG-AL-X52")), false);
+    });
+
+    it("still scaffolds an explicit id that is genuinely free", async () => {
+      await ensureDir(join(roots.tasksDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.tasksDir, "hard", "CG-AL-X052-inner-commit.yml"),
+        "id: CG-AL-X052\n",
+      );
+
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X060",
+        slug: "day-close",
+        roots,
+      });
+
+      assertEquals(meta.id, "CG-AL-X060");
+    });
+
     it("does not collide on test codeunit id across two drafts scaffolded before either promotes", async () => {
       // This is the exact gap allocateTestCodeunitId used to have: draft 1
       // writes its codeunit id into scratch/, and a second scaffoldDraft

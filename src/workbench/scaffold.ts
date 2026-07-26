@@ -29,7 +29,7 @@ import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 
 import type { IdRoots } from "./ids.ts";
-import { allocateTaskId, allocateTestCodeunitId } from "./ids.ts";
+import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
 
 /** Metadata recorded for a scaffolded draft, both returned and written to `.meta.json`. */
 export interface DraftMeta {
@@ -60,10 +60,33 @@ const KEBAB_CASE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const TASK_ID_PATTERN = /^CG-AL-X[0-9]+$/;
 
 /**
+ * Folds every digit-width spelling of one id onto the 3-digit form
+ * `allocateTaskId` hands out: `CG-AL-X52` and `CG-AL-X0052` both become
+ * `CG-AL-X052`.
+ *
+ * Not cosmetic. `ids.ts` compares ids NUMERICALLY, so it already sees
+ * `X52` and `X052` as the same task - but `promote.ts`'s `filenameMatchesId`
+ * compares them as SUBSTRINGS, and "CG-AL-X52" does not occur in
+ * "CG-AL-X052-day-close.yml". Left unnormalised, the two spellings collide
+ * for allocation yet slip past the promote gate, shipping two manifests for
+ * one task. Normalising at the only place an id enters the workbench closes
+ * that gap at the source.
+ */
+function normalizeTaskId(id: string): string {
+  const digits = /^CG-AL-X([0-9]+)$/.exec(id)?.[1];
+  if (digits === undefined) {
+    // Unreachable: callers validate against TASK_ID_PATTERN first.
+    throw new Error(`Cannot normalize task id "${id}".`);
+  }
+  return `CG-AL-X${String(Number(digits)).padStart(3, "0")}`;
+}
+
+/**
  * Scaffolds a new trap-task draft under `roots.scratchDir/<id>/`.
  *
  * Refuses rather than overwrites when the target draft directory already
- * exists - that path is someone's in-progress work.
+ * exists - that path is someone's in-progress work - and refuses an explicit
+ * `--id` that any of the three roots has already spoken for.
  */
 export async function scaffoldDraft(opts: {
   id?: string;
@@ -81,13 +104,20 @@ export async function scaffoldDraft(opts: {
     );
   }
 
-  const id = opts.id ?? await allocateTaskId(roots);
-
-  if (!TASK_ID_PATTERN.test(id)) {
-    throw new Error(
-      `Invalid id "${id}": must match CG-AL-X<digits> - this workbench ` +
-        `only collision-tracks the X-series (see src/workbench/ids.ts).`,
-    );
+  let id: string;
+  if (opts.id === undefined) {
+    // Already padded, and allocated as highest + 1 across all three roots,
+    // so it is free by construction - no existence check needed.
+    id = await allocateTaskId(roots);
+  } else {
+    if (!TASK_ID_PATTERN.test(opts.id)) {
+      throw new Error(
+        `Invalid id "${opts.id}": must match CG-AL-X<digits> - this ` +
+          `workbench only collision-tracks the X-series (see ` +
+          `src/workbench/ids.ts).`,
+      );
+    }
+    id = normalizeTaskId(opts.id);
   }
 
   const draftDir = join(roots.scratchDir, id);
@@ -96,6 +126,18 @@ export async function scaffoldDraft(opts: {
     throw new Error(
       `Draft already exists at ${draftDir} - refusing to overwrite ` +
         `in-progress work.`,
+    );
+  }
+
+  // Only for an explicit --id: an id already spoken for by a committed task,
+  // a committed test codeunit, or another draft would otherwise scaffold
+  // happily, burn a test-codeunit-id allocation, and only be caught at
+  // promote - after the draft has been authored against it.
+  if (opts.id !== undefined && await taskIdExists(id, roots)) {
+    throw new Error(
+      `Task id ${id} is already in use (a task manifest, test codeunit or ` +
+        `draft for it exists under ${roots.tasksDir}, ${roots.testsDir} or ` +
+        `${roots.scratchDir}) - omit --id to allocate the next free one.`,
     );
   }
 
