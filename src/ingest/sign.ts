@@ -1,4 +1,4 @@
-import * as ed from "npm:@noble/ed25519@3.1.0";
+import * as ed from "@noble/ed25519";
 import { encodeBase64 } from "jsr:@std/encoding@^1.0.5/base64";
 import { canonicalJSON } from "./canonical.ts";
 

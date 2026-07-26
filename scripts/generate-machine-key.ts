@@ -21,7 +21,7 @@
  * directly via scripts/seed-admin-key.ts.
  */
 
-import * as ed from "npm:@noble/ed25519@2.1.0";
+import * as ed from "@noble/ed25519";
 import { encodeBase64 } from "jsr:@std/encoding@^1.0.5/base64";
 import { dirname, join } from "jsr:@std/path@^1.1.4";
 import { ensureDir } from "jsr:@std/fs@^1.0.23";
@@ -42,8 +42,8 @@ async function main(): Promise<void> {
 
   await ensureDir(dirname(outPath));
 
-  // Generate keypair. @noble/ed25519 v2 is sync-friendly via getPublicKeyAsync.
-  const privateKey = ed.utils.randomPrivateKey(); // 32 bytes
+  // Generate keypair. @noble/ed25519 v3 renamed randomPrivateKey -> randomSecretKey.
+  const privateKey = ed.utils.randomSecretKey(); // 32 bytes
   const publicKey = await ed.getPublicKeyAsync(privateKey); // 32 bytes
   const publicKeyB64 = encodeBase64(publicKey);
 
