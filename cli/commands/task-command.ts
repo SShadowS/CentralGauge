@@ -28,8 +28,13 @@ import type {
   ProbeRunner,
   ProbeVerdict,
 } from "../../src/workbench/probe.ts";
+import type {
+  PromoteDifficulty,
+  PromoteResult,
+} from "../../src/workbench/promote.ts";
 import { scaffoldDraft } from "../../src/workbench/scaffold.ts";
 import { probeDraft } from "../../src/workbench/probe.ts";
+import { promoteDraft } from "../../src/workbench/promote.ts";
 
 /** Repo-layout roots for the workbench, resolved relative to the process cwd. */
 function defaultRoots(): IdRoots {
@@ -191,6 +196,98 @@ export async function runTaskProbe(
   return verdict;
 }
 
+export interface TaskPromoteOptions {
+  id: string;
+  difficulty: PromoteDifficulty;
+  slug?: string;
+  force?: boolean;
+  /** Override for tests; defaults to the real repo tree under `Deno.cwd()`. */
+  roots?: IdRoots;
+}
+
+/**
+ * Reads the verdict a prior `centralgauge task probe` run cached at
+ * `scratch/<id>/.probe.json`, or `undefined` if none exists.
+ */
+async function readCachedVerdict(
+  scratchDir: string,
+  id: string,
+): Promise<ProbeVerdict | undefined> {
+  try {
+    const raw = await Deno.readTextFile(
+      join(scratchDir, id, ".probe.json"),
+    );
+    return JSON.parse(raw) as ProbeVerdict;
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Promotes `scratch/<id>/` into the committed suite.
+ *
+ * Deliberately does NOT run a fresh probe itself: it reads the verdict a
+ * prior `task probe` cached at `scratch/<id>/.probe.json`, so `task
+ * promote` never silently spawns a multi-minute container operation.
+ * Missing that cache, `promoteDraft` refuses on its own (naming `task
+ * probe`) unless `--force` is given — this function does not paper over
+ * that refusal.
+ *
+ * Exported separately from the Cliffy wiring below (mirrors `runTaskNew` /
+ * `runTaskProbe`) so tests drive it directly instead of Cliffy parsing, and
+ * so a later Phase 2 panel can call it without going through Cliffy at all.
+ */
+export async function runTaskPromote(
+  opts: TaskPromoteOptions,
+): Promise<PromoteResult> {
+  const roots = opts.roots ?? defaultRoots();
+  const verdict = await readCachedVerdict(roots.scratchDir, opts.id);
+
+  const result = await promoteDraft(opts.id, {
+    difficulty: opts.difficulty,
+    roots,
+    ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
+    ...(opts.force !== undefined ? { force: opts.force } : {}),
+    ...(verdict !== undefined ? { verdict } : {}),
+  });
+
+  if (result.forced) {
+    console.log(
+      colors.yellow("[FORCED]") +
+        ` Promoted ${opts.id} despite the probe gate — verify the` +
+        " result by hand.",
+    );
+  }
+
+  const okPrefix = `[OK] Promoted ${opts.id} -> `;
+  const okIndent = " ".repeat(okPrefix.length);
+  console.log(
+    colors.green("[OK]") + okPrefix.slice("[OK]".length) + result.movedTask,
+  );
+  console.log(okIndent + result.movedTest);
+  if (result.movedPrereq) {
+    console.log(okIndent + result.movedPrereq);
+  }
+
+  const bangIndent = " ".repeat("[!]  ".length);
+  console.log(
+    colors.yellow("[!]") +
+      "  task_sets hash changed. Models benched under the previous hash" +
+      " are not",
+  );
+  console.log(
+    bangIndent +
+      "comparable until re-benched. See CLAUDE.md's \"Task-set hash" +
+      ' scope" note,',
+  );
+  console.log(bangIndent + "or run the /rebench-after-task-change skill.");
+
+  return result;
+}
+
 export function registerTaskCommand(cli: Command): void {
   const parent = new Command().description(
     "Author new benchmark trap-tasks (workbench).",
@@ -235,6 +332,46 @@ export function registerTaskCommand(cli: Command): void {
         ...(opts.container !== undefined ? { container: opts.container } : {}),
       });
       Deno.exit(probeExitCode(verdict));
+    });
+
+  parent
+    .command(
+      "promote",
+      "Promote a discriminating draft from scratch/<id>/ into the suite",
+    )
+    .arguments("<id:string>")
+    .option(
+      "--difficulty <difficulty:string>",
+      "Target difficulty: easy, medium, or hard",
+      { required: true },
+    )
+    .option(
+      "--slug <slug:string>",
+      "Override the slug recorded in scratch/<id>/.meta.json",
+    )
+    .option(
+      "--force",
+      "Skip the probe gate — cannot skip the target-already-exists check",
+      { default: false },
+    )
+    .action(async (opts, id) => {
+      const { difficulty } = opts;
+      if (
+        difficulty !== "easy" && difficulty !== "medium" &&
+        difficulty !== "hard"
+      ) {
+        console.error(
+          colors.red("[FAIL]") +
+            ` --difficulty must be easy, medium, or hard (got "${difficulty}")`,
+        );
+        Deno.exit(1);
+      }
+      await runTaskPromote({
+        id,
+        difficulty,
+        ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
+        force: opts.force,
+      });
     });
 
   // deno-lint-ignore no-explicit-any

@@ -19,13 +19,18 @@ import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 
 import type { IdRoots } from "../../../src/workbench/ids.ts";
-import type { ProbeRunner } from "../../../src/workbench/probe.ts";
+import type {
+  ProbeRunner,
+  ProbeVerdict,
+} from "../../../src/workbench/probe.ts";
 import {
   probeExitCode,
   registerTaskCommand,
   runTaskNew,
   runTaskProbe,
+  runTaskPromote,
 } from "../../../cli/commands/task-command.ts";
+import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +66,18 @@ Deno.test("task registers a probe subcommand under the task parent", () => {
 
   const names = (sub?.getOptions() ?? []).map((o) => o.name);
   assertEquals(names.includes("container"), true);
+});
+
+Deno.test("task registers a promote subcommand under the task parent", () => {
+  const cli = new Command();
+  registerTaskCommand(cli);
+  const sub = cli.getCommand("task")?.getCommand("promote");
+  assertEquals(sub?.getName(), "promote");
+
+  const names = (sub?.getOptions() ?? []).map((o) => o.name);
+  assertEquals(names.includes("difficulty"), true);
+  assertEquals(names.includes("slug"), true);
+  assertEquals(names.includes("force"), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -429,4 +446,130 @@ Deno.test("probeExitCode", () => {
     ),
     3,
   );
+});
+
+// ---------------------------------------------------------------------------
+// runTaskPromote
+// ---------------------------------------------------------------------------
+
+function writeCachedVerdict(
+  scratchDir: string,
+  id: string,
+  verdict: ProbeVerdict,
+): Promise<void> {
+  return Deno.writeTextFile(
+    join(scratchDir, id, ".probe.json"),
+    JSON.stringify(verdict, null, 2) + "\n",
+  );
+}
+
+const PASSING_VERDICT: ProbeVerdict = {
+  correct: "pass",
+  naive: "fail",
+  discriminates: true,
+  at: "2026-07-26T00:00:00.000Z",
+};
+
+Deno.test("runTaskPromote", async (t) => {
+  let base: string;
+  let roots: IdRoots;
+
+  async function setup() {
+    base = await createTempDir("task-command-promote-test");
+    roots = {
+      tasksDir: join(base, "tasks"),
+      testsDir: join(base, "tests", "al"),
+      scratchDir: join(base, "scratch"),
+    };
+  }
+  async function teardown() {
+    await cleanupTempDir(base);
+  }
+
+  await t.step(
+    "reads the .probe.json a prior `task probe` cached and promotes without --force",
+    async () => {
+      await setup();
+      try {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+        await writeCachedVerdict(roots.scratchDir, meta.id, PASSING_VERDICT);
+
+        const { value: result, logs } = await withCapturedLog(() =>
+          runTaskPromote({ id: meta.id, difficulty: "hard", roots })
+        );
+
+        assertEquals(result.movedTask, `tasks/hard/${meta.id}-day-close.yml`);
+        assertEquals(result.movedTest, `tests/al/hard/${meta.id}.Test.al`);
+        assertEquals(result.forced, false);
+        const joined = logs.join("\n");
+        assertStringIncludes(joined, "[OK]");
+        assertStringIncludes(joined, result.movedTask);
+        assertStringIncludes(joined, result.movedTest);
+        assertStringIncludes(joined, "task_sets hash changed");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "without a cached verdict and without --force, propagates promoteDraft's refusal naming `task probe`",
+    async () => {
+      await setup();
+      try {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+
+        await assertRejects(
+          () => runTaskPromote({ id: meta.id, difficulty: "hard", roots }),
+          Error,
+          "task probe",
+        );
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "--force promotes with no cached verdict and prints [FORCED]",
+    async () => {
+      await setup();
+      try {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+
+        const { value: result, logs } = await withCapturedLog(() =>
+          runTaskPromote({
+            id: meta.id,
+            difficulty: "hard",
+            roots,
+            force: true,
+          })
+        );
+
+        assertEquals(result.forced, true);
+        assertStringIncludes(logs.join("\n"), "[FORCED]");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step("--slug overrides the .meta.json slug", async () => {
+    await setup();
+    try {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      await writeCachedVerdict(roots.scratchDir, meta.id, PASSING_VERDICT);
+
+      const result = await runTaskPromote({
+        id: meta.id,
+        difficulty: "hard",
+        slug: "renamed-slug",
+        roots,
+      });
+
+      assertEquals(result.movedTask, `tasks/hard/${meta.id}-renamed-slug.yml`);
+    } finally {
+      await teardown();
+    }
+  });
 });
