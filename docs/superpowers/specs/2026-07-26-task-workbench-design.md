@@ -70,7 +70,16 @@ scratch/CG-AL-X053/
   correct/             reference solution — must pass
   naive/               plausible-wrong solution — must fail
   NOTES.md             what the trap is, why a model should miss it
+  .meta.json           slug + allocated ids, written at creation
 ```
+
+**The slug is captured here, at creation.** Shipped task filenames are
+`CG-AL-X051-day-close.yml`, `CG-AL-X037-inner-commit.yml` — a descriptive
+kebab-case name that appears **only in the filename** and nowhere in the YAML,
+so `promote` cannot derive it. `task new` therefore takes `--slug
+<kebab-case>` and records it in `.meta.json` alongside the allocated ids.
+`promote` uses that value, accepts a `--slug` override, and refuses when
+neither is present rather than inventing one.
 
 `--with-prereq` additionally scaffolds `tests/al/dependencies/<id>/` with a
 static UUID (`a1b2c3d4-<suffix>-0000-0000-000000000001`) and object ids in the
