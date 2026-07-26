@@ -116,7 +116,16 @@ export async function scaffoldDraft(opts: {
   await Deno.writeTextFile(join(draftDir, "NOTES.md"), renderNotes(id, slug));
 
   if (withPrereq) {
-    const prereqDir = join(roots.testsDir, "dependencies", id);
+    // Scratch-local (scratch/<id>/prereq/), NOT roots.testsDir/dependencies/
+    // - src/ingest/catalog/task-set-hash.ts hashes every file under
+    // tests/al/** with no .gitignore awareness, so writing directly into
+    // the committed tree here would stamp a fresh task_sets hash for every
+    // subsequent bench on this machine before the task is ever promoted,
+    // silently splitting unrelated runs (any model, any task) onto a hash
+    // no clean checkout can reproduce. promoteDraft (src/workbench/
+    // promote.ts) moves this directory to its final
+    // tests/al/dependencies/<id>/ location at promote time.
+    const prereqDir = join(draftDir, "prereq");
     await ensureDir(prereqDir);
     await Deno.writeTextFile(
       join(prereqDir, "app.json"),

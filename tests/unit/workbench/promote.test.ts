@@ -18,13 +18,20 @@ import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
 import { promoteDraft } from "../../../src/workbench/promote.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
-/** A verdict that clears the gate outright. */
+/**
+ * A verdict that clears the gate outright. `at` is set a minute into the
+ * future rather than "now": the freshness check (I4) refuses a verdict
+ * older than the draft's own files, and comparing against real mtimes
+ * leaves no safety margin against filesystem mtime rounding - dedicated
+ * staleness tests below control timestamps precisely via `Deno.utime`
+ * instead of relying on this helper's timing.
+ */
 function passingVerdict(): ProbeVerdict {
   return {
     correct: "pass",
     naive: "fail",
     discriminates: true,
-    at: new Date().toISOString(),
+    at: new Date(Date.now() + 60_000).toISOString(),
   };
 }
 
@@ -307,13 +314,20 @@ describe("workbench/promote", () => {
       );
     });
 
-    it("reports movedPrereq for a draft's own --with-prereq app without refusing", async () => {
+    it("moves scratch/<id>/prereq/ to tests/al/dependencies/<id>/ and reports movedPrereq", async () => {
       const meta = await scaffoldDraft({
         id: "CG-AL-X053",
         slug: "poisoned-rescue",
         withPrereq: true,
         roots,
       });
+
+      // Not yet in the committed tree - C1: scaffoldDraft only writes it
+      // under scratch/.
+      assertEquals(
+        await exists(join(roots.testsDir, "dependencies", meta.id)),
+        false,
+      );
 
       const result = await promoteDraft(meta.id, {
         difficulty: "hard",
@@ -322,12 +336,65 @@ describe("workbench/promote", () => {
       });
 
       assertEquals(result.movedPrereq, `tests/al/dependencies/${meta.id}`);
-      // Still there - nothing to move, it was already at its final path.
       assertEquals(
         await exists(
           join(roots.testsDir, "dependencies", meta.id, "app.json"),
         ),
         true,
+      );
+      // Moved, not copied - nothing left behind in scratch/.
+      assertEquals(
+        await exists(join(roots.scratchDir, meta.id, "prereq")),
+        false,
+      );
+    });
+
+    it("refuses when the prereq target already exists, even for the draft's own --with-prereq app", async () => {
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X053",
+        slug: "poisoned-rescue",
+        withPrereq: true,
+        roots,
+      });
+      await ensureDir(join(roots.testsDir, "dependencies", meta.id));
+      await Deno.writeTextFile(
+        join(roots.testsDir, "dependencies", meta.id, "app.json"),
+        "{}\n",
+      );
+
+      await assertRejects(
+        () =>
+          promoteDraft(meta.id, {
+            difficulty: "hard",
+            roots,
+            verdict: passingVerdict(),
+            force: true,
+          }),
+        Error,
+        "prereq dir already exists",
+      );
+    });
+
+    it("refuses when .meta.json says withPrereq but scratch/<id>/prereq/ is missing", async () => {
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X053",
+        slug: "poisoned-rescue",
+        withPrereq: true,
+        roots,
+      });
+      await Deno.remove(join(roots.scratchDir, meta.id, "prereq"), {
+        recursive: true,
+      });
+
+      await assertRejects(
+        () =>
+          promoteDraft(meta.id, {
+            difficulty: "hard",
+            roots,
+            verdict: passingVerdict(),
+          }),
+        Error,
+        "no prereq/",
       );
     });
 
@@ -449,5 +516,329 @@ describe("workbench/promote", () => {
         "no CG-AL-X",
       );
     });
+
+    it("rewrites metadata.difficulty to match --difficulty, not scaffold's hardcoded value", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+
+      const result = await promoteDraft(meta.id, {
+        difficulty: "easy",
+        roots,
+        verdict: passingVerdict(),
+      });
+
+      assertEquals(result.movedTask, `tasks/easy/${meta.id}-day-close.yml`);
+      const manifest = parse(
+        await Deno.readTextFile(
+          join(roots.tasksDir, "easy", `${meta.id}-day-close.yml`),
+        ),
+      ) as { metadata: { difficulty: string } };
+      assertEquals(manifest.metadata.difficulty, "easy");
+    });
+
+    it("refuses when the oracle was edited after the cached verdict (staleness)", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const verdict: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date().toISOString(),
+      };
+      // Simulate an edit landing after the probe ran, by bumping the
+      // oracle's mtime forward of the verdict's timestamp.
+      const testAlPath = join(
+        roots.scratchDir,
+        meta.id,
+        `${meta.id}.Test.al`,
+      );
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(testAlPath, future, future);
+
+      await assertRejects(
+        () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+        Error,
+        "modified after the cached probe verdict",
+      );
+      assertEquals(
+        await exists(
+          join(roots.tasksDir, "hard", `${meta.id}-day-close.yml`),
+        ),
+        false,
+      );
+    });
+
+    it("refuses when a file under correct/ was edited after the cached verdict (staleness)", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const correctFile = join(
+        roots.scratchDir,
+        meta.id,
+        "correct",
+        "Solution.al",
+      );
+      await Deno.writeTextFile(correctFile, "codeunit 70001 Solution { }\n");
+      const verdict: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date().toISOString(),
+      };
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(correctFile, future, future);
+
+      await assertRejects(
+        () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+        Error,
+        "modified after the cached probe verdict",
+      );
+    });
+
+    it("does not refuse when the verdict postdates every draft file", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const verdict: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date(Date.now() + 60_000).toISOString(),
+      };
+
+      const result = await promoteDraft(meta.id, {
+        difficulty: "hard",
+        roots,
+        verdict,
+      });
+
+      assertEquals(result.hashChanged, true);
+    });
+
+    it("force: true bypasses the staleness check along with the rest of the gate", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const testAlPath = join(
+        roots.scratchDir,
+        meta.id,
+        `${meta.id}.Test.al`,
+      );
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(testAlPath, future, future);
+      const stale: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date().toISOString(),
+      };
+
+      const result = await promoteDraft(meta.id, {
+        difficulty: "hard",
+        roots,
+        verdict: stale,
+        force: true,
+      });
+
+      assertEquals(result.forced, true);
+    });
+
+    it(
+      "refuses to re-promote a shipped id under a different --difficulty " +
+        "(cross-difficulty id collision)",
+      async () => {
+        await ensureDir(join(roots.tasksDir, "hard"));
+        await Deno.writeTextFile(
+          join(roots.tasksDir, "hard", "CG-AL-X001-day-close.yml"),
+          "id: CG-AL-X001\n",
+        );
+
+        // A fresh scratch draft reusing the same id under a new slug - the
+        // path-based checks alone would miss this, since medium/ is a
+        // different destination folder than the one already shipped under.
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X001",
+          slug: "second-attempt",
+          roots,
+        });
+
+        await assertRejects(
+          () =>
+            promoteDraft(meta.id, {
+              difficulty: "medium",
+              roots,
+              verdict: passingVerdict(),
+            }),
+          Error,
+          "already exists somewhere under",
+        );
+
+        assertEquals(
+          await exists(
+            join(roots.tasksDir, "medium", `${meta.id}-second-attempt.yml`),
+          ),
+          false,
+        );
+      },
+    );
+
+    it(
+      "refuses to re-promote when a test codeunit for this id already " +
+        "exists under a different --difficulty",
+      async () => {
+        await ensureDir(join(roots.testsDir, "hard"));
+        await Deno.writeTextFile(
+          join(roots.testsDir, "hard", "CG-AL-X001.Test.al"),
+          'codeunit 1 "placeholder" { }\n',
+        );
+
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X001",
+          slug: "second-attempt",
+          roots,
+        });
+
+        await assertRejects(
+          () =>
+            promoteDraft(meta.id, {
+              difficulty: "medium",
+              roots,
+              verdict: passingVerdict(),
+            }),
+          Error,
+          "already exists somewhere under",
+        );
+      },
+    );
+
+    it(
+      "rolls back the task write when the test-file move fails partway " +
+        "through (no half-promotion)",
+      async () => {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+        const originalRename = Deno.rename;
+        Object.defineProperty(Deno, "rename", {
+          value: () => {
+            throw new Deno.errors.AlreadyExists("simulated: dest appeared");
+          },
+          configurable: true,
+        });
+
+        try {
+          await assertRejects(
+            () =>
+              promoteDraft(meta.id, {
+                difficulty: "hard",
+                roots,
+                verdict: passingVerdict(),
+              }),
+            Error,
+            "rolled back",
+          );
+        } finally {
+          Object.defineProperty(Deno, "rename", {
+            value: originalRename,
+            configurable: true,
+          });
+        }
+
+        // Not half-promoted: neither destination exists, and both draft
+        // files are still in scratch/.
+        assertEquals(
+          await exists(
+            join(roots.tasksDir, "hard", `${meta.id}-day-close.yml`),
+          ),
+          false,
+        );
+        assertEquals(
+          await exists(join(roots.testsDir, "hard", `${meta.id}.Test.al`)),
+          false,
+        );
+        assertEquals(
+          await exists(join(roots.scratchDir, meta.id, "task.yml")),
+          true,
+        );
+        assertEquals(
+          await exists(
+            join(roots.scratchDir, meta.id, `${meta.id}.Test.al`),
+          ),
+          true,
+        );
+      },
+    );
+
+    it(
+      "rolls back the task write AND the test-file move when the prereq " +
+        "move fails partway through (no half-promotion)",
+      async () => {
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X053",
+          slug: "poisoned-rescue",
+          withPrereq: true,
+          roots,
+        });
+
+        const originalRename = Deno.rename;
+        let callCount = 0;
+        Object.defineProperty(Deno, "rename", {
+          value: async (src: string | URL, dest: string | URL) => {
+            callCount++;
+            // Let the first rename (the test-file move) succeed for real;
+            // fail the second (the prereq move) to simulate a failure
+            // after part of the move already landed.
+            if (callCount === 2) {
+              throw new Deno.errors.AlreadyExists("simulated: dest appeared");
+            }
+            return await originalRename(src, dest);
+          },
+          configurable: true,
+        });
+
+        try {
+          await assertRejects(
+            () =>
+              promoteDraft(meta.id, {
+                difficulty: "hard",
+                roots,
+                verdict: passingVerdict(),
+              }),
+            Error,
+            "rolled back",
+          );
+        } finally {
+          Object.defineProperty(Deno, "rename", {
+            value: originalRename,
+            configurable: true,
+          });
+        }
+
+        // Nothing half-promoted: no destination exists, and the task
+        // file, test file, and prereq app.json are all back in scratch/.
+        assertEquals(
+          await exists(
+            join(roots.tasksDir, "hard", `${meta.id}-poisoned-rescue.yml`),
+          ),
+          false,
+        );
+        assertEquals(
+          await exists(join(roots.testsDir, "hard", `${meta.id}.Test.al`)),
+          false,
+        );
+        assertEquals(
+          await exists(
+            join(roots.testsDir, "dependencies", meta.id, "app.json"),
+          ),
+          false,
+        );
+        assertEquals(
+          await exists(join(roots.scratchDir, meta.id, "task.yml")),
+          true,
+        );
+        assertEquals(
+          await exists(
+            join(roots.scratchDir, meta.id, `${meta.id}.Test.al`),
+          ),
+          true,
+        );
+        assertEquals(
+          await exists(
+            join(roots.scratchDir, meta.id, "prereq", "app.json"),
+          ),
+          true,
+        );
+      },
+    );
   });
 });

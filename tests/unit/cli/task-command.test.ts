@@ -162,11 +162,19 @@ Deno.test("runTaskNew", async (t) => {
         roots,
       });
       assertEquals(meta.withPrereq, true);
+      // Scratch-local, not the committed tests/al/ tree - see C1 in
+      // src/workbench/scaffold.ts.
+      assertEquals(
+        await exists(
+          join(roots.scratchDir, meta.id, "prereq", "app.json"),
+        ),
+        true,
+      );
       assertEquals(
         await exists(
           join(roots.testsDir, "dependencies", meta.id, "app.json"),
         ),
-        true,
+        false,
       );
     } finally {
       await teardown();
@@ -463,12 +471,21 @@ function writeCachedVerdict(
   );
 }
 
-const PASSING_VERDICT: ProbeVerdict = {
-  correct: "pass",
-  naive: "fail",
-  discriminates: true,
-  at: "2026-07-26T00:00:00.000Z",
-};
+/**
+ * A verdict that clears the gate outright. `at` is a minute into the
+ * future, not a fixed literal: `promoteDraft`'s staleness guard refuses a
+ * verdict older than the draft's own files, so a hardcoded timestamp would
+ * eventually (or immediately, depending on when the suite runs) read as
+ * stale against files scaffoldDraft just wrote "now".
+ */
+function passingVerdict(): ProbeVerdict {
+  return {
+    correct: "pass",
+    naive: "fail",
+    discriminates: true,
+    at: new Date(Date.now() + 60_000).toISOString(),
+  };
+}
 
 Deno.test("runTaskPromote", async (t) => {
   let base: string;
@@ -492,7 +509,7 @@ Deno.test("runTaskPromote", async (t) => {
       await setup();
       try {
         const meta = await scaffoldDraft({ slug: "day-close", roots });
-        await writeCachedVerdict(roots.scratchDir, meta.id, PASSING_VERDICT);
+        await writeCachedVerdict(roots.scratchDir, meta.id, passingVerdict());
 
         const { value: result, logs } = await withCapturedLog(() =>
           runTaskPromote({ id: meta.id, difficulty: "hard", roots })
@@ -558,7 +575,7 @@ Deno.test("runTaskPromote", async (t) => {
     await setup();
     try {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
-      await writeCachedVerdict(roots.scratchDir, meta.id, PASSING_VERDICT);
+      await writeCachedVerdict(roots.scratchDir, meta.id, passingVerdict());
 
       const result = await runTaskPromote({
         id: meta.id,

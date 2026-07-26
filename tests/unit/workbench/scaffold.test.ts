@@ -169,7 +169,7 @@ describe("workbench/scaffold", () => {
       assertEquals(Number.isNaN(Date.parse(written.createdAt)), false);
     });
 
-    it("withPrereq: true also scaffolds tests/al/dependencies/<id>/app.json", async () => {
+    it("withPrereq: true scaffolds scratch/<id>/prereq/app.json - never tests/al/", async () => {
       const meta = await scaffoldDraft({
         id: "CG-AL-X053",
         slug: "poisoned-rescue",
@@ -180,9 +180,9 @@ describe("workbench/scaffold", () => {
       assertEquals(meta.withPrereq, true);
 
       const appJsonPath = join(
-        roots.testsDir,
-        "dependencies",
+        roots.scratchDir,
         "CG-AL-X053",
+        "prereq",
         "app.json",
       );
       assertEquals(await exists(appJsonPath), true);
@@ -193,14 +193,24 @@ describe("workbench/scaffold", () => {
       // "x" is not a hex digit, so "a1b2c3d4-x053-..." is not a valid GUID.
       assertEquals(appJson.id, "a1b2c3d4-0a53-0000-0000-000000000001");
       assertEquals(appJson.idRanges, [{ from: 69000, to: 69099 }]);
+
+      // Load-bearing: the committed tests/al/ tree (and therefore
+      // task_sets.hash, which src/ingest/catalog/task-set-hash.ts computes
+      // from every file under tests/al/** with no .gitignore awareness)
+      // must be untouched by scaffolding alone - only promoteDraft may
+      // write there.
+      assertEquals(
+        await exists(join(roots.testsDir, "dependencies", "CG-AL-X053")),
+        false,
+      );
     });
 
-    it("withPrereq: false (default) does not create a dependencies/ entry", async () => {
+    it("withPrereq: false (default) does not create a prereq/ entry", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const appJsonPath = join(
-        roots.testsDir,
-        "dependencies",
+        roots.scratchDir,
         meta.id,
+        "prereq",
         "app.json",
       );
 
