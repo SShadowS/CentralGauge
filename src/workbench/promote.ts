@@ -172,9 +172,16 @@ async function assertVerdictIsFresh(
 ): Promise<void> {
   const verdictAt = new Date(verdict.at).getTime();
   if (Number.isNaN(verdictAt)) {
-    // Malformed timestamp - nothing sound to compare against, so don't
-    // block promotion on it.
-    return;
+    // Fail CLOSED, not open: an unparseable timestamp means this gate
+    // cannot establish that promotion is safe, and a corrupt .probe.json
+    // is less trustworthy than a merely stale one, not more. Skipping the
+    // check here would let a garbled verdict file sail through with no
+    // freshness protection at all.
+    throw new Error(
+      `Refusing to promote ${id}: the cached probe verdict has an ` +
+        `unreadable timestamp ("${verdict.at}") - re-run "centralgauge ` +
+        `task probe ${id}" to get a valid one, or pass --force to override.`,
+    );
   }
 
   const candidates = [
@@ -422,19 +429,63 @@ export async function promoteDraft(
     const onDisk = parse(await Deno.readTextFile(taskTargetPath));
     parseTaskManifest(onDisk, taskTargetPath);
   } catch (error) {
+    // Each rollback step is individually guarded: a failure here must
+    // never mask the ORIGINAL error by throwing in its place - the
+    // operator needs to know what actually went wrong, not just that
+    // cleanup also failed. Rollback failures are collected and appended
+    // instead of replacing the primary message.
+    const rollbackErrors: string[] = [];
     if (prereqMoved) {
-      await move(prereqTargetDir, draftPrereqDir);
+      try {
+        await move(prereqTargetDir, draftPrereqDir);
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `restoring ${prereqTargetDir} -> ${draftPrereqDir}: ${
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError)
+          }`,
+        );
+      }
     }
     if (testMoved) {
-      await move(testTargetPath, draftTestAlPath);
+      try {
+        await move(testTargetPath, draftTestAlPath);
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `restoring ${testTargetPath} -> ${draftTestAlPath}: ${
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError)
+          }`,
+        );
+      }
     }
     if (taskWritten) {
-      await Deno.remove(taskTargetPath);
+      try {
+        await Deno.remove(taskTargetPath);
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `removing ${taskTargetPath}: ${
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError)
+          }`,
+        );
+      }
     }
+
+    const originalMessage = error instanceof Error
+      ? error.message
+      : String(error);
+    const rollbackSuffix = rollbackErrors.length > 0
+      ? ` ROLLBACK ALSO FAILED (${
+        rollbackErrors.join("; ")
+      }) - scratch/${id}/ and the destination may both hold partial ` +
+        `state now; check by hand.`
+      : "";
     throw new Error(
-      `Promotion of ${id} rolled back: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      `Promotion of ${id} rolled back: ${originalMessage}${rollbackSuffix}`,
     );
   }
 

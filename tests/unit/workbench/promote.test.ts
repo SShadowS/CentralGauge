@@ -609,6 +609,42 @@ describe("workbench/promote", () => {
       assertEquals(result.hashChanged, true);
     });
 
+    it(
+      "fails CLOSED on an unreadable verdict timestamp, even with a " +
+        "stale oracle it could otherwise have caught",
+      async () => {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+        // The oracle is genuinely 10 minutes newer than "now" - if the
+        // unparseable-timestamp path silently skipped the freshness gate
+        // (fail-open), this would promote anyway.
+        const testAlPath = join(
+          roots.scratchDir,
+          meta.id,
+          `${meta.id}.Test.al`,
+        );
+        const future = new Date(Date.now() + 10 * 60_000);
+        await Deno.utime(testAlPath, future, future);
+        const verdict: ProbeVerdict = {
+          correct: "pass",
+          naive: "fail",
+          discriminates: true,
+          at: "not-a-date",
+        };
+
+        await assertRejects(
+          () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+          Error,
+          "unreadable timestamp",
+        );
+        assertEquals(
+          await exists(
+            join(roots.tasksDir, "hard", `${meta.id}-day-close.yml`),
+          ),
+          false,
+        );
+      },
+    );
+
     it("force: true bypasses the staleness check along with the rest of the gate", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const testAlPath = join(
@@ -838,6 +874,64 @@ describe("workbench/promote", () => {
           ),
           true,
         );
+      },
+    );
+
+    it(
+      "surfaces the ORIGINAL move failure, not a rollback failure, when " +
+        "rollback itself also fails (M2)",
+      async () => {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+        const originalRename = Deno.rename;
+        const originalRemove = Deno.remove;
+        Object.defineProperty(Deno, "rename", {
+          value: () => {
+            throw new Error("ORIGINAL: simulated test-file move failure");
+          },
+          configurable: true,
+        });
+        Object.defineProperty(Deno, "remove", {
+          value: () => {
+            throw new Error("SECONDARY: simulated rollback remove failure");
+          },
+          configurable: true,
+        });
+
+        try {
+          const error = await assertRejects(
+            () =>
+              promoteDraft(meta.id, {
+                difficulty: "hard",
+                roots,
+                verdict: passingVerdict(),
+              }),
+            Error,
+          );
+          const message = (error as Error).message;
+          // The original failure must be present and not replaced by the
+          // rollback's own failure - an operator debugging this needs to
+          // know what actually went wrong first.
+          assertEquals(
+            message.includes("ORIGINAL: simulated test-file move failure"),
+            true,
+          );
+          assertEquals(message.includes("ROLLBACK ALSO FAILED"), true);
+          assertEquals(
+            message.includes(
+              "SECONDARY: simulated rollback remove failure",
+            ),
+            true,
+          );
+        } finally {
+          Object.defineProperty(Deno, "rename", {
+            value: originalRename,
+            configurable: true,
+          });
+          Object.defineProperty(Deno, "remove", {
+            value: originalRemove,
+            configurable: true,
+          });
+        }
       },
     );
   });
