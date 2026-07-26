@@ -14,7 +14,10 @@
  * - The AL skeleton never contains a placeholder assertion
  *   (`Assert.IsTrue(true, ...)` always passes, which would let an unfinished
  *   oracle look green in a bench run). It instead contains an explicit
- *   `Assert.Fail(...)` marker, so an unedited draft cannot pass a probe.
+ *   `Assert.IsTrue(false, ...)` marker, so an unedited draft cannot pass a
+ *   probe. `Assert.Fail` has zero precedent anywhere in `tests/al/` (149
+ *   test files); `Assert.IsTrue` is used 550 times, so this is the verified
+ *   choice, not an inferred one.
  * - The rendered description never contains a guiding note ("note:",
  *   "remember", "be careful", "do not forget"). The benchmark tests whether
  *   a model knows AL, not whether it can read a warning about the mistake
@@ -49,6 +52,14 @@ const DRAFT_DIFFICULTY = "hard";
 const KEBAB_CASE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
+ * `X` only, not the manifest schema's `[EMHX]`: `src/workbench/ids.ts`
+ * collision-tracks only `CG-AL-X###` (see its `TASK_ID_PATTERN`), so an
+ * E/M/H id would sail through here without ever being collision-checked.
+ * The workbench exists for the ado-trap-2026 X-series only.
+ */
+const TASK_ID_PATTERN = /^CG-AL-X[0-9]+$/;
+
+/**
  * Scaffolds a new trap-task draft under `roots.scratchDir/<id>/`.
  *
  * Refuses rather than overwrites when the target draft directory already
@@ -71,6 +82,14 @@ export async function scaffoldDraft(opts: {
   }
 
   const id = opts.id ?? await allocateTaskId(roots);
+
+  if (!TASK_ID_PATTERN.test(id)) {
+    throw new Error(
+      `Invalid id "${id}": must match CG-AL-X<digits> - this workbench ` +
+        `only collision-tracks the X-series (see src/workbench/ids.ts).`,
+    );
+  }
+
   const draftDir = join(roots.scratchDir, id);
 
   if (await exists(draftDir)) {
@@ -145,13 +164,19 @@ function renderTaskYaml(id: string, testCodeunitId: number): string {
   // lineWidth: -1 means "no wrap limit" in js-yaml's stringifier. 0 is NOT
   // "unlimited" - it means "wrap after zero characters", which forces every
   // scalar (including short ones like the id) into folded block style.
+  // Omitting the option entirely (default ~80) would also dodge the 0 bug
+  // and only fold the long description - -1 is a deliberate choice to
+  // unfold every field instead, so short values like `id` stay plain.
   return stringify(manifest, { lineWidth: -1 });
 }
 
 /**
  * Renders the AL test skeleton. Deliberately fails until edited: the only
- * assertion is `Assert.Fail(...)`, never a tautology like
- * `Assert.IsTrue(true, ...)` that would let an unfinished oracle pass.
+ * assertion is `Assert.IsTrue(false, ...)`, which always fails without ever
+ * writing the placeholder-tautology shape (`Assert.IsTrue(true, ...)`) that
+ * would let an unfinished oracle pass. `Assert.IsTrue` is used 550 times
+ * across `tests/al/`; `Assert.Fail` has zero precedent there, so `IsTrue`
+ * is the verified choice for a marker this load-bearing.
  */
 function renderAlSkeleton(id: string, testCodeunitId: number): string {
   return `codeunit ${testCodeunitId} "${id} Test"
@@ -168,7 +193,7 @@ function renderAlSkeleton(id: string, testCodeunitId: number): string {
         // TODO: seed the state that exposes the trap, invoke the object
         // under test, and assert the specific value a naive-but-plausible
         // implementation gets wrong.
-        Assert.Fail('TODO: assert the trap - this draft has not been filled in yet.');
+        Assert.IsTrue(false, 'TODO: assert the trap - this draft has not been filled in yet.');
     end;
 }
 `;
@@ -195,9 +220,40 @@ and the specific way it diverges from \`correct/\`.
 `;
 }
 
-/** `CG-AL-X053` -> `x053`, matching the prereq-apps.md UUID convention. */
+/**
+ * `CG-AL-X053` -> `0a53`, matching every committed X-series prereq
+ * `app.json` (verified against all 30 committed files, e.g.
+ * `tests/al/dependencies/CG-AL-X052/app.json`). NOT the literal lowercased
+ * task letter - `x` is not a hex digit, so `a1b2c3d4-x053-...` (the
+ * originally-briefed example) is not a valid GUID and would fail to
+ * compile. `0a` is a fixed hex-safe stand-in; only the two-digit numeric
+ * suffix varies.
+ */
 function derivePrereqSuffix(id: string): string {
-  return id.replace(/^CG-AL-/, "").toLowerCase();
+  const match = /^CG-AL-X(\d+)$/.exec(id);
+  const digits = match?.[1];
+  if (!digits) {
+    throw new Error(
+      `Cannot derive a prereq GUID suffix from id "${id}" - expected ` +
+        `CG-AL-X<digits>.`,
+    );
+  }
+  // Task ids are zero-padded to (at least) 3 digits by allocateTaskId
+  // (X001, X053, ... X100), so the captured digit string's LENGTH is not
+  // the thing to bound - its numeric VALUE is. Every committed precedent
+  // is a two-digit value (X001..X052 -> 0a01..0a52).
+  const value = Number(digits);
+  if (value > 99) {
+    // A three-digit value would overflow the GUID's 4-hex-char segment
+    // (`0a` + digits must stay at 4 chars total) - fail loudly rather than
+    // silently emit a GUID with the wrong segment length.
+    throw new Error(
+      `Prereq GUID suffix derivation only supports two-digit X-ids ` +
+        `(00-99); got "${id}" whose numeric suffix would overflow the ` +
+        `GUID segment. Extend the convention before scaffolding X100+.`,
+    );
+  }
+  return `0a${String(value).padStart(2, "0")}`;
 }
 
 function renderPrereqAppJson(id: string): string {

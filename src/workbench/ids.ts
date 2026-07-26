@@ -138,30 +138,19 @@ export async function taskIdExists(
 }
 
 /**
- * Next free AL test codeunit id in the reserved 80000-89999 range (see
- * `.claude/rules/prereq-apps.md` for the full id-range convention), scanned
- * from `codeunit <id> "..."` declarations at line start across
- * `tests/al/**\/*.al`. Throws rather than returning a colliding id once the
- * range is exhausted.
- *
- * Unlike `allocateTaskId`, this does not scan `scratch/`: a draft's task id
- * is its directory name, but its test codeunit id only exists inside the
- * draft's `.al` file content, which Task 2's scaffolding writes using this
- * same function's return value at creation time - there is nothing in
- * `scratch/` to collide with until this call has already happened.
+ * Scans `codeunit <id> "..."` declarations at line start across every
+ * `.al` file under `dir`, folding the highest into `current`. A shared
+ * helper because `allocateTestCodeunitId` must scan two independent roots
+ * (`testsDir` and `scratchDir`) and fold both into one running maximum.
  */
-export async function allocateTestCodeunitId(roots: IdRoots): Promise<number> {
-  // Empty tree allocates 80001, not 80000: the range start itself is
-  // treated as the floor (equivalent to task ids defaulting to 0 before
-  // the +1), not as a valid standalone allocation.
-  let highest = CODEUNIT_RANGE_START;
-
-  await ifExists(roots.testsDir, async () => {
+async function highestCodeunitIdIn(
+  dir: string,
+  current: number,
+): Promise<number> {
+  let highest = current;
+  await ifExists(dir, async () => {
     for await (
-      const entry of walk(roots.testsDir, {
-        exts: [".al"],
-        includeDirs: false,
-      })
+      const entry of walk(dir, { exts: [".al"], includeDirs: false })
     ) {
       const content = await Deno.readTextFile(entry.path);
       const match = CODEUNIT_ID_PATTERN.exec(content);
@@ -170,6 +159,30 @@ export async function allocateTestCodeunitId(roots: IdRoots): Promise<number> {
       }
     }
   });
+  return highest;
+}
+
+/**
+ * Next free AL test codeunit id in the reserved 80000-89999 range (see
+ * `.claude/rules/prereq-apps.md` for the full id-range convention), scanned
+ * from `codeunit <id> "..."` declarations at line start across
+ * `tests/al/**\/*.al` AND `scratch/**\/*.al`. Throws rather than returning a
+ * colliding id once the range is exhausted.
+ *
+ * Also scans `scratch/`: a single scaffold call has nothing there to
+ * collide with yet, but a SECOND draft scaffolded before the first one
+ * promotes does - the first draft's `.al` file already declares the id this
+ * function handed out. Scanning only `testsDir` re-scans an empty set and
+ * hands out the same id twice, a silent collision in the exact range this
+ * module exists to protect.
+ */
+export async function allocateTestCodeunitId(roots: IdRoots): Promise<number> {
+  // Empty tree allocates 80001, not 80000: the range start itself is
+  // treated as the floor (equivalent to task ids defaulting to 0 before
+  // the +1), not as a valid standalone allocation.
+  let highest = CODEUNIT_RANGE_START;
+  highest = await highestCodeunitIdIn(roots.testsDir, highest);
+  highest = await highestCodeunitIdIn(roots.scratchDir, highest);
 
   const next = highest + 1;
   if (next > CODEUNIT_RANGE_END) {

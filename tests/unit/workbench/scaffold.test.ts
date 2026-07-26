@@ -117,7 +117,11 @@ describe("workbench/scaffold", () => {
         join(draftDir, `${meta.id}.Test.al`),
       );
 
-      assertStringIncludes(al, "Assert.Fail(");
+      // Assert.IsTrue(false, ...), not Assert.Fail(...): IsTrue is used 550
+      // times across tests/al/ (verified), Assert.Fail has zero precedent
+      // there, and this marker is load-bearing enough to need proof over
+      // inference.
+      assertStringIncludes(al, "Assert.IsTrue(false,");
     });
 
     it("declares the allocated test codeunit id in the AL skeleton", async () => {
@@ -184,7 +188,10 @@ describe("workbench/scaffold", () => {
       assertEquals(await exists(appJsonPath), true);
 
       const appJson = JSON.parse(await Deno.readTextFile(appJsonPath));
-      assertEquals(appJson.id, "a1b2c3d4-x053-0000-0000-000000000001");
+      // 0a53, not the literal task letter: verified against every
+      // committed X-series app.json (e.g. CG-AL-X052 -> a1b2c3d4-0a52-...).
+      // "x" is not a hex digit, so "a1b2c3d4-x053-..." is not a valid GUID.
+      assertEquals(appJson.id, "a1b2c3d4-0a53-0000-0000-000000000001");
       assertEquals(appJson.idRanges, [{ from: 69000, to: 69099 }]);
     });
 
@@ -225,6 +232,33 @@ describe("workbench/scaffold", () => {
 
       // No draft directory should be left behind by a rejected call.
       assertEquals(await exists(join(roots.scratchDir, "Not_Kebab")), false);
+    });
+
+    it("refuses an explicit id that is not CG-AL-X<digits>", async () => {
+      // E/M/H are valid per the manifest schema but NOT per this workbench:
+      // src/workbench/ids.ts only collision-tracks the X-series, so letting
+      // one through here would produce a draft that is never checked for
+      // collisions.
+      await assertRejects(
+        () => scaffoldDraft({ id: "CG-AL-E002", slug: "day-close", roots }),
+        Error,
+      );
+      await assertRejects(
+        () => scaffoldDraft({ id: "not-an-id", slug: "day-close", roots }),
+        Error,
+      );
+
+      assertEquals(await exists(join(roots.scratchDir, "CG-AL-E002")), false);
+    });
+
+    it("does not collide on test codeunit id across two drafts scaffolded before either promotes", async () => {
+      // This is the exact gap allocateTestCodeunitId used to have: draft 1
+      // writes its codeunit id into scratch/, and a second scaffoldDraft
+      // call - before draft 1 is promoted into tests/al/ - must see it.
+      const first = await scaffoldDraft({ slug: "day-close", roots });
+      const second = await scaffoldDraft({ slug: "inner-commit", roots });
+
+      assertEquals(second.testCodeunitId, first.testCodeunitId + 1);
     });
   });
 });

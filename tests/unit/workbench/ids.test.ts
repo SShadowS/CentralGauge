@@ -160,5 +160,17 @@ describe("workbench/ids", () => {
         "89999",
       );
     });
+
+    it("also scans scratch/ drafts' .al content - closes the gap before promotion", async () => {
+      // A draft's codeunit id lives only inside its .al file content until
+      // promoted into tests/al/. A second draft scaffolded before the first
+      // promotes must still see it, or it hands out the same id twice.
+      await writeFile(
+        join(roots.scratchDir, "CG-AL-X053", "CG-AL-X053.Test.al"),
+        testCodeunit(80343),
+      );
+
+      assertEquals(await allocateTestCodeunitId(roots), 80344);
+    });
   });
 });
