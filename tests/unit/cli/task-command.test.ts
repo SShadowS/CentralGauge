@@ -15,13 +15,16 @@
 
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { Command } from "@cliffy/command";
-import { exists } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 
 import type { IdRoots } from "../../../src/workbench/ids.ts";
+import type { ProbeRunner } from "../../../src/workbench/probe.ts";
 import {
+  probeExitCode,
   registerTaskCommand,
   runTaskNew,
+  runTaskProbe,
 } from "../../../cli/commands/task-command.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
@@ -48,6 +51,16 @@ Deno.test("task new exposes --slug, --id, --with-prereq options", () => {
   assertEquals(names.includes("slug"), true);
   assertEquals(names.includes("id"), true);
   assertEquals(names.includes("with-prereq"), true);
+});
+
+Deno.test("task registers a probe subcommand under the task parent", () => {
+  const cli = new Command();
+  registerTaskCommand(cli);
+  const sub = cli.getCommand("task")?.getCommand("probe");
+  assertEquals(sub?.getName(), "probe");
+
+  const names = (sub?.getOptions() ?? []).map((o) => o.name);
+  assertEquals(names.includes("container"), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -190,5 +203,211 @@ Deno.test("runTaskNew", async (t) => {
         await teardown();
       }
     },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// runTaskProbe / probeExitCode
+// ---------------------------------------------------------------------------
+
+/**
+ * Maps exit codes onto the recorded call for a `--solution` dir whose path
+ * contains "correct" or "naive" — mirrors the stub in
+ * `tests/unit/workbench/probe.test.ts`. Never spawns a real process.
+ */
+function stubProbeRunner(
+  codes: { correct: number; naive: number },
+): ProbeRunner {
+  return (args: string[]): Promise<number> => {
+    const solutionIdx = args.indexOf("--solution");
+    const solutionDir = args[solutionIdx + 1] ?? "";
+    return Promise.resolve(
+      solutionDir.includes("naive") ? codes.naive : codes.correct,
+    );
+  };
+}
+
+Deno.test("runTaskProbe", async (t) => {
+  let base: string;
+  let scratchDir: string;
+  const id = "CG-AL-X001";
+
+  async function setup() {
+    base = await createTempDir("task-command-probe-test");
+    scratchDir = join(base, "scratch");
+    await ensureDir(join(scratchDir, id, "correct"));
+    await ensureDir(join(scratchDir, id, "naive"));
+  }
+  async function teardown() {
+    await cleanupTempDir(base);
+  }
+
+  await t.step(
+    "returns a discriminating verdict and prints [OK]",
+    async () => {
+      await setup();
+      try {
+        const { value: verdict, logs } = await withCapturedLog(() =>
+          runTaskProbe({
+            id,
+            scratchDir,
+            runner: stubProbeRunner({ correct: 0, naive: 0 }),
+          })
+        );
+        assertEquals(verdict.discriminates, true);
+        assertEquals(probeExitCode(verdict), 0);
+        assertStringIncludes(logs.join("\n"), "[OK]");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "reports naive/ passed when it does not discriminate that way",
+    async () => {
+      await setup();
+      try {
+        const { value: verdict, logs } = await withCapturedLog(() =>
+          runTaskProbe({
+            id,
+            scratchDir,
+            runner: stubProbeRunner({ correct: 0, naive: 1 }),
+          })
+        );
+        assertEquals(verdict.discriminates, false);
+        assertEquals(probeExitCode(verdict), 1);
+        assertStringIncludes(logs.join("\n"), "naive/ passed");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "reports correct/ did not pass when it does not discriminate that way",
+    async () => {
+      await setup();
+      try {
+        const { value: verdict, logs } = await withCapturedLog(() =>
+          runTaskProbe({
+            id,
+            scratchDir,
+            runner: stubProbeRunner({ correct: 1, naive: 0 }),
+          })
+        );
+        assertEquals(verdict.discriminates, false);
+        assertEquals(probeExitCode(verdict), 1);
+        assertStringIncludes(logs.join("\n"), "correct/ did not pass");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "reports inconclusive distinctly from a hard failure",
+    async () => {
+      await setup();
+      try {
+        const { value: verdict, logs } = await withCapturedLog(() =>
+          runTaskProbe({
+            id,
+            scratchDir,
+            runner: stubProbeRunner({ correct: 3, naive: 0 }),
+          })
+        );
+        assertEquals(verdict.correct, "inconclusive");
+        assertEquals(probeExitCode(verdict), 3);
+        assertStringIncludes(logs.join("\n"), "INCONCLUSIVE");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step("forwards an explicit container to probeDraft", async () => {
+    await setup();
+    try {
+      const calls: string[][] = [];
+      const runner: ProbeRunner = (args) => {
+        calls.push(args);
+        return Promise.resolve(0);
+      };
+      await runTaskProbe({ id, scratchDir, container: "Cronus281", runner });
+
+      for (const call of calls) {
+        assertEquals(call[call.indexOf("--container") + 1], "Cronus281");
+      }
+    } finally {
+      await teardown();
+    }
+  });
+
+  await t.step(
+    "propagates probeDraft's rejection when correct/ is missing",
+    async () => {
+      await setup();
+      try {
+        await Deno.remove(join(scratchDir, id, "correct"), {
+          recursive: true,
+        });
+        await assertRejects(
+          () =>
+            runTaskProbe({
+              id,
+              scratchDir,
+              runner: stubProbeRunner({ correct: 0, naive: 0 }),
+            }),
+          Error,
+          "correct/",
+        );
+      } finally {
+        await teardown();
+      }
+    },
+  );
+});
+
+Deno.test("probeExitCode", () => {
+  assertEquals(
+    probeExitCode(
+      { correct: "pass", naive: "fail", discriminates: true, at: "x" },
+    ),
+    0,
+  );
+  assertEquals(
+    probeExitCode(
+      { correct: "pass", naive: "pass", discriminates: false, at: "x" },
+    ),
+    1,
+  );
+  assertEquals(
+    probeExitCode(
+      { correct: "fail", naive: "fail", discriminates: false, at: "x" },
+    ),
+    1,
+  );
+  assertEquals(
+    probeExitCode(
+      {
+        correct: "inconclusive",
+        naive: "fail",
+        discriminates: false,
+        at: "x",
+      },
+    ),
+    3,
+  );
+  assertEquals(
+    probeExitCode(
+      {
+        correct: "pass",
+        naive: "inconclusive",
+        discriminates: false,
+        at: "x",
+      },
+    ),
+    3,
   );
 });
