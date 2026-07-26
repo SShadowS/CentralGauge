@@ -675,20 +675,23 @@ describe("workbench/promote", () => {
       "refuses to re-promote a shipped id under a different --difficulty " +
         "(cross-difficulty id collision)",
       async () => {
-        await ensureDir(join(roots.tasksDir, "hard"));
-        await Deno.writeTextFile(
-          join(roots.tasksDir, "hard", "CG-AL-X001-day-close.yml"),
-          "id: CG-AL-X001\n",
-        );
-
-        // A fresh scratch draft reusing the same id under a new slug - the
-        // path-based checks alone would miss this, since medium/ is a
-        // different destination folder than the one already shipped under.
+        // A scratch draft, and only THEN the shipped manifest claiming the
+        // same id under a new slug - scaffoldDraft refuses an id already in
+        // the tree, so this ordering is the only way to reach the state
+        // promoteDraft's cross-difficulty check exists for (a task shipped
+        // after the draft was cut). The path-based checks alone would miss
+        // it: medium/ is a different destination folder than hard/.
         const meta = await scaffoldDraft({
           id: "CG-AL-X001",
           slug: "second-attempt",
           roots,
         });
+
+        await ensureDir(join(roots.tasksDir, "hard"));
+        await Deno.writeTextFile(
+          join(roots.tasksDir, "hard", "CG-AL-X001-day-close.yml"),
+          "id: CG-AL-X001\n",
+        );
 
         await assertRejects(
           () =>
@@ -714,17 +717,19 @@ describe("workbench/promote", () => {
       "refuses to re-promote when a test codeunit for this id already " +
         "exists under a different --difficulty",
       async () => {
-        await ensureDir(join(roots.testsDir, "hard"));
-        await Deno.writeTextFile(
-          join(roots.testsDir, "hard", "CG-AL-X001.Test.al"),
-          'codeunit 1 "placeholder" { }\n',
-        );
-
+        // Draft first, shipped test codeunit second - see the sibling test
+        // above for why the ordering matters.
         const meta = await scaffoldDraft({
           id: "CG-AL-X001",
           slug: "second-attempt",
           roots,
         });
+
+        await ensureDir(join(roots.testsDir, "hard"));
+        await Deno.writeTextFile(
+          join(roots.testsDir, "hard", "CG-AL-X001.Test.al"),
+          'codeunit 1 "placeholder" { }\n',
+        );
 
         await assertRejects(
           () =>
