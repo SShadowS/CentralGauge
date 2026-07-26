@@ -1,0 +1,194 @@
+/**
+ * Unit tests for `centralgauge task new`.
+ *
+ * SAFETY: every fixture lives under `Deno.makeTempDir()`; `roots` is always
+ * passed explicitly to `runTaskNew` so nothing here reads or writes the
+ * real `tasks/`, `tests/al/` or `scratch/` trees.
+ *
+ * Cliffy's own argument parsing is not exercised here — only that
+ * `registerTaskCommand` attaches the expected subcommand + options.
+ * `runTaskNew` (the actual logic) is tested directly, per the framework
+ * boundary called out in the workbench plan.
+ *
+ * @module tests/unit/cli/task-command
+ */
+
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
+import { Command } from "@cliffy/command";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
+
+import type { IdRoots } from "../../../src/workbench/ids.ts";
+import {
+  registerTaskCommand,
+  runTaskNew,
+} from "../../../cli/commands/task-command.ts";
+import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+Deno.test("task registers a new subcommand under the task parent", () => {
+  const cli = new Command();
+  registerTaskCommand(cli);
+  const parent = cli.getCommand("task");
+  assertEquals(parent?.getName(), "task");
+
+  const sub = parent?.getCommand("new");
+  assertEquals(sub?.getName(), "new");
+});
+
+Deno.test("task new exposes --slug, --id, --with-prereq options", () => {
+  const cli = new Command();
+  registerTaskCommand(cli);
+  const sub = cli.getCommand("task")?.getCommand("new");
+  const names = (sub?.getOptions() ?? []).map((o) => o.name);
+
+  assertEquals(names.includes("slug"), true);
+  assertEquals(names.includes("id"), true);
+  assertEquals(names.includes("with-prereq"), true);
+});
+
+// ---------------------------------------------------------------------------
+// runTaskNew
+// ---------------------------------------------------------------------------
+
+async function withCapturedLog<T>(
+  fn: () => Promise<T>,
+): Promise<{ value: T; logs: string[] }> {
+  const logs: string[] = [];
+  const original = console.log;
+  console.log = (msg: string) => {
+    logs.push(msg);
+  };
+  try {
+    const value = await fn();
+    return { value, logs };
+  } finally {
+    console.log = original;
+  }
+}
+
+Deno.test("runTaskNew", async (t) => {
+  let base: string;
+  let roots: IdRoots;
+
+  async function setup() {
+    base = await createTempDir("task-command-test");
+    roots = {
+      tasksDir: join(base, "tasks"),
+      testsDir: join(base, "tests", "al"),
+      scratchDir: join(base, "scratch"),
+    };
+  }
+  async function teardown() {
+    await cleanupTempDir(base);
+  }
+
+  await t.step("returns the created DraftMeta", async () => {
+    await setup();
+    try {
+      const meta = await runTaskNew({ slug: "day-close", roots });
+      assertEquals(meta.id, "CG-AL-X001");
+      assertEquals(meta.slug, "day-close");
+      assertEquals(meta.withPrereq, false);
+      assertEquals(
+        await exists(join(roots.scratchDir, meta.id, "task.yml")),
+        true,
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  await t.step(
+    "prints the created draft id, codeunit, path and next command",
+    async () => {
+      await setup();
+      try {
+        const { value: meta, logs } = await withCapturedLog(() =>
+          runTaskNew({ slug: "day-close", roots })
+        );
+        const joined = logs.join("\n");
+
+        assertStringIncludes(joined, "CG-AL-X001");
+        assertStringIncludes(joined, "80001");
+        assertStringIncludes(joined, "scratch/CG-AL-X001");
+        assertStringIncludes(joined, "centralgauge task probe CG-AL-X001");
+        assertEquals(meta.id, "CG-AL-X001");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step("--with-prereq is forwarded to scaffoldDraft", async () => {
+    await setup();
+    try {
+      const meta = await runTaskNew({
+        slug: "day-close",
+        withPrereq: true,
+        roots,
+      });
+      assertEquals(meta.withPrereq, true);
+      assertEquals(
+        await exists(
+          join(roots.testsDir, "dependencies", meta.id, "app.json"),
+        ),
+        true,
+      );
+    } finally {
+      await teardown();
+    }
+  });
+
+  await t.step(
+    "an explicit --id is used instead of the next free one",
+    async () => {
+      await setup();
+      try {
+        const meta = await runTaskNew({
+          slug: "poisoned-rescue",
+          id: "CG-AL-X053",
+          roots,
+        });
+        assertEquals(meta.id, "CG-AL-X053");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "rejects a malformed --id before touching the filesystem",
+    async () => {
+      await setup();
+      try {
+        await assertRejects(
+          () => runTaskNew({ slug: "day-close", id: "not-an-id", roots }),
+          Error,
+          "Invalid --id",
+        );
+        assertEquals(await exists(roots.scratchDir), false);
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "propagates scaffoldDraft's rejection on an invalid slug",
+    async () => {
+      await setup();
+      try {
+        await assertRejects(
+          () => runTaskNew({ slug: "Not_Kebab", roots }),
+          Error,
+        );
+      } finally {
+        await teardown();
+      }
+    },
+  );
+});

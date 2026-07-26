@@ -40,6 +40,7 @@ import {
   registerStatusCommand,
   registerSyncCatalogCommand,
   registerSyncTaxonomyCommand,
+  registerTaskCommand,
   registerTaskSetCommand,
   registerVerifyCommand,
 } from "./commands/mod.ts";
@@ -122,6 +123,7 @@ registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
 registerSyncCatalogCommand(cliAny);
 registerSyncTaxonomyCommand(cliAny);
+registerTaskCommand(cliAny);
 registerTaskSetCommand(cliAny);
 registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
