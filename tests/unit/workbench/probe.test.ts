@@ -41,16 +41,30 @@ function recordingRunner(calls: string[][]): ProbeRunner {
   };
 }
 
+/** Value of `--<flag>` in a recorded call, or undefined when absent. */
+function flag(args: string[], name: string): string | undefined {
+  const idx = args.indexOf(name);
+  return idx === -1 ? undefined : args[idx + 1];
+}
+
 describe("workbench/probe", () => {
   let base: string;
   let scratchDir: string;
+  let draftDir: string;
   const id = "CG-AL-X053";
 
   beforeEach(async () => {
     base = await createTempDir("workbench-probe-test");
     scratchDir = join(base, "scratch");
-    await ensureDir(join(scratchDir, id, "correct"));
-    await ensureDir(join(scratchDir, id, "naive"));
+    draftDir = join(scratchDir, id);
+    await ensureDir(join(draftDir, "correct"));
+    await ensureDir(join(draftDir, "naive"));
+    // The oracle a real draft carries. probeDraft refuses without it, and
+    // every assertion below about --test-file keys off this path.
+    await Deno.writeTextFile(
+      join(draftDir, `${id}.Test.al`),
+      `codeunit 80053 "${id} Test"\n{\n    Subtype = Test;\n}\n`,
+    );
   });
 
   afterEach(async () => {
@@ -224,6 +238,125 @@ describe("workbench/probe", () => {
       for (const call of calls) {
         assertEquals(call[call.indexOf("--container") + 1], "Cronus281");
       }
+    });
+
+    it(
+      "probes the draft's own oracle by path, never by committed task id",
+      async () => {
+        // THE regression this file exists to pin. Resolving the oracle from
+        // the task id looks for tests/al/<difficulty>/<id>.Test.al, which a
+        // draft has not got - trap-probe then returns "Test file not found",
+        // which classifies as a real "fail" on BOTH sides. Every scaffolded
+        // draft scored {correct: fail, naive: fail} and could only be
+        // promoted with --force, i.e. with no discrimination gate at all.
+        const calls: string[][] = [];
+        await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+        assertEquals(calls.length, 2);
+        for (const call of calls) {
+          assertEquals(
+            flag(call, "--test-file"),
+            join(draftDir, `${id}.Test.al`),
+          );
+        }
+      },
+    );
+
+    it("passes the codeunit id from task.yml's expected block", async () => {
+      // Preferred over .meta.json because it is the field the bench itself
+      // reads (loadTestCodeunitId in mcp/al-tools-server.ts) once promoted,
+      // and the file the operator actually edits.
+      await Deno.writeTextFile(
+        join(draftDir, "task.yml"),
+        `id: ${id}\nexpected:\n  testCodeunitId: 80099\n`,
+      );
+      await Deno.writeTextFile(
+        join(draftDir, ".meta.json"),
+        JSON.stringify({ id, slug: "day-close", testCodeunitId: 80053 }),
+      );
+
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      for (const call of calls) {
+        assertEquals(flag(call, "--test-codeunit-id"), "80099");
+      }
+    });
+
+    it("falls back to .meta.json when task.yml has no usable codeunit id", async () => {
+      await Deno.writeTextFile(join(draftDir, "task.yml"), "id: not-yaml: [\n");
+      await Deno.writeTextFile(
+        join(draftDir, ".meta.json"),
+        JSON.stringify({ id, slug: "day-close", testCodeunitId: 80053 }),
+      );
+
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      for (const call of calls) {
+        assertEquals(flag(call, "--test-codeunit-id"), "80053");
+      }
+    });
+
+    it("omits --test-codeunit-id when neither file yields one", async () => {
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      for (const call of calls) {
+        assertEquals(flag(call, "--test-codeunit-id"), undefined);
+      }
+    });
+
+    it("passes --prereq-dir for a draft scaffolded with one", async () => {
+      // A --with-prereq draft keeps its prereq at scratch/<id>/prereq/ until
+      // promote moves it; without this the correct/ solution cannot compile
+      // against it and the probe reports a failure that is not real.
+      await ensureDir(join(draftDir, "prereq"));
+      await Deno.writeTextFile(
+        join(draftDir, "prereq", "app.json"),
+        JSON.stringify({ id: "a1b2c3d4-0a53-0000-0000-000000000001" }),
+      );
+
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      for (const call of calls) {
+        assertEquals(flag(call, "--prereq-dir"), join(draftDir, "prereq"));
+      }
+    });
+
+    it("omits --prereq-dir when the draft has none", async () => {
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      for (const call of calls) {
+        assertEquals(flag(call, "--prereq-dir"), undefined);
+      }
+    });
+
+    it("throws naming the oracle when <id>.Test.al is missing", async () => {
+      await Deno.remove(join(draftDir, `${id}.Test.al`));
+
+      await assertRejects(
+        () =>
+          probeDraft(id, {
+            scratchDir,
+            runner: stubRunner({ correct: 0, naive: 0 }),
+          }),
+        Error,
+        `${id}.Test.al`,
+      );
+    });
+
+    it("does not invoke the runner at all when the oracle is missing", async () => {
+      await Deno.remove(join(draftDir, `${id}.Test.al`));
+      const calls: string[][] = [];
+
+      await assertRejects(() =>
+        probeDraft(id, { scratchDir, runner: recordingRunner(calls) })
+      );
+
+      assertEquals(calls.length, 0);
     });
   });
 });

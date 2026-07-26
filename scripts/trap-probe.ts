@@ -2,6 +2,30 @@
 // Discrimination-probe driver. Runs a task's oracle against a provided AL
 // solution directory and asserts the pass/fail outcome.
 // Usage: deno run -A scripts/trap-probe.ts --task CG-AL-X002 --solution <dir> --expect pass|fail [--container Cronus28]
+//        deno run -A scripts/trap-probe.ts --task CG-AL-X053 --solution <dir> --expect pass \
+//          --test-file scratch/CG-AL-X053/CG-AL-X053.Test.al [--test-codeunit-id 80053] [--prereq-dir <dir>]
+//
+// TWO WAYS TO LOCATE THE ORACLE, and the difference is the whole point of the
+// second one:
+//
+// - `--task` alone (the original contract, used by run-xiterate.ps1's sanity
+//   lane and by hand) means "a COMMITTED task id". It routes through
+//   `handleAlVerifyTask`, which resolves the oracle by id to
+//   `tests/al/<difficulty>/<id>.Test.al` and reads `expected.testCodeunitId`
+//   out of `tasks/<difficulty>/<id>-*.yml`. Both live in the task_sets hash
+//   scope, so both exist only AFTER the task has been promoted.
+// - `--test-file` (additive; the id-based resolution is skipped entirely)
+//   points at an oracle directly and routes through `handleAlVerify`, which
+//   takes the test file as a parameter. This is what lets the task workbench
+//   (`centralgauge task probe`) probe an UNPROMOTED draft whose oracle still
+//   sits in `scratch/<id>/` — the discrimination gate has to run BEFORE
+//   promotion, or `promote` can only ever be satisfied by `--force`.
+//   `--test-codeunit-id` supplies what the not-yet-existing task YAML would
+//   have, and `--prereq-dir` what `tests/al/dependencies/<id>/` would have.
+//
+// `--task` stays required in both modes: it is the label every log line is
+// keyed on, and in `--test-file` mode `handleAlVerify` independently derives
+// the same id from the test file's NAME for prereq/support-file lookup.
 //
 // This script is invoked directly via `deno run -A` (NOT `deno task`), so it
 // does NOT inherit the project's normal `.env` loading. Without it, BC
@@ -22,6 +46,9 @@ import { resolve } from "@std/path";
 import * as colors from "@std/fmt/colors";
 import { classifyInfraError } from "../src/health/classify.ts";
 import { EnvLoader } from "../src/utils/env-loader.ts";
+
+/** The only local container with credentials wired for this script (others 401). */
+const DEFAULT_CONTAINER = "Cronus28";
 
 /** Local-only dev defaults for THIS machine's Cronus containers (CLAUDE.md
  * "Local BC Container"). `.env` does not carry container credentials today
@@ -124,45 +151,190 @@ export function classifyProbeOutcome(res: VerifyResult): ProbeOutcome {
   return "fail";
 }
 
-async function main() {
-  const a = parseArgs(Deno.args, {
-    string: ["task", "solution", "expect", "container"],
-    default: { container: "Cronus28" },
-  });
+/**
+ * Raw string CLI inputs {@link planProbe} consumes, already de-hyphenated.
+ * Every field is explicitly `| undefined` because the repo compiles with
+ * `exactOptionalPropertyTypes`, and `parseArgs` hands back `undefined` for
+ * every flag the caller omitted.
+ */
+export interface ProbeArgsInput {
+  task?: string | undefined;
+  solution?: string | undefined;
+  expect?: string | undefined;
+  container?: string | undefined;
+  testFile?: string | undefined;
+  testCodeunitId?: string | undefined;
+  prereqDir?: string | undefined;
+}
 
+/**
+ * Where the oracle comes from, and therefore which handler runs.
+ *
+ * `task-id` is the original contract (committed task, resolved by id);
+ * `test-file` is the additive path that lets an unpromoted draft be probed.
+ */
+export type ProbeOracle =
+  | { via: "task-id" }
+  | {
+    via: "test-file";
+    testFile: string;
+    testCodeunitId?: number;
+    prereqDir?: string;
+  };
+
+export type ProbePlan =
+  | { ok: false; message: string }
+  | {
+    ok: true;
+    taskId: string;
+    expect: "pass" | "fail";
+    container: string;
+    solutionDir: string;
+    oracle: ProbeOracle;
+  };
+
+/**
+ * Pure argument validation + mode selection, split out of {@link main} so the
+ * routing decision is unit-testable without a container, a subprocess, or a
+ * `Deno.exit`. This is the function that guarantees the additive contract:
+ * WITHOUT `--test-file` the plan is byte-for-byte the old one (`via:
+ * "task-id"`, same handler, same arguments), so `run-xiterate.ps1` and every
+ * hand invocation behave exactly as before.
+ *
+ * Every path is resolved to an absolute one before it crosses into a handler:
+ * the compile pool runs scripts in a pwsh subprocess whose working directory
+ * is NOT this Deno process's cwd (it resolves relative to the AL compiler's
+ * own bin directory), so a relative path silently produces "AL1001: Source
+ * file ... could not be found" inside the container's compile step. Resolving
+ * here keeps the CLI ergonomic (relative paths still work from the invoker's
+ * shell) while the handler always sees an absolute path.
+ */
+export function planProbe(a: ProbeArgsInput): ProbePlan {
   if (!a.task || !a.solution || !a.expect) {
-    console.error("Required: --task <id> --solution <dir> --expect pass|fail");
-    Deno.exit(2);
+    return {
+      ok: false,
+      message: "Required: --task <id> --solution <dir> --expect pass|fail",
+    };
   }
   if (a.expect !== "pass" && a.expect !== "fail") {
-    console.error(`--expect must be 'pass' or 'fail', got '${a.expect}'`);
-    Deno.exit(2);
+    return {
+      ok: false,
+      message: `--expect must be 'pass' or 'fail', got '${a.expect}'`,
+    };
   }
 
-  // Resolve to an absolute path before crossing into handleAlVerifyTask: the
-  // compile pool runs scripts in a pwsh subprocess whose working directory is
-  // NOT this Deno process's cwd (it resolves relative to the AL compiler's own
-  // bin directory), so a relative --solution silently produces
-  // "AL1001: Source file ... could not be found" inside the container's
-  // compile step. Resolving here keeps the CLI ergonomic (relative paths still
-  // work from the invoker's shell) while the handler always sees an absolute
-  // path.
-  const solutionDir = resolve(a.solution);
+  // Bound immediately: the narrowing above is on a property access, and the
+  // `resolve()` call below is enough to lose it by the time `base` is spread.
+  const expect: "pass" | "fail" = a.expect;
+
+  const base = {
+    ok: true as const,
+    taskId: a.task,
+    expect,
+    container: a.container ?? DEFAULT_CONTAINER,
+    solutionDir: resolve(a.solution),
+  };
+
+  if (a.testFile === undefined) {
+    // Refuse rather than ignore: silently dropping these would run the
+    // id-based resolution the caller was explicitly trying to bypass, and
+    // report its "Test file not found" as a real oracle result.
+    if (a.testCodeunitId !== undefined || a.prereqDir !== undefined) {
+      return {
+        ok: false,
+        message:
+          "--test-codeunit-id and --prereq-dir only apply with --test-file " +
+          "(without it the oracle is resolved from the committed task id).",
+      };
+    }
+    return { ...base, oracle: { via: "task-id" } };
+  }
+
+  let testCodeunitId: number | undefined;
+  if (a.testCodeunitId !== undefined) {
+    testCodeunitId = Number(a.testCodeunitId);
+    if (!Number.isInteger(testCodeunitId)) {
+      return {
+        ok: false,
+        message:
+          `--test-codeunit-id must be an integer, got '${a.testCodeunitId}'`,
+      };
+    }
+  }
+
+  return {
+    ...base,
+    oracle: {
+      via: "test-file",
+      testFile: resolve(a.testFile),
+      ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
+      ...(a.prereqDir !== undefined ? { prereqDir: resolve(a.prereqDir) } : {}),
+    },
+  };
+}
+
+async function main() {
+  const a = parseArgs(Deno.args, {
+    string: [
+      "task",
+      "solution",
+      "expect",
+      "container",
+      "test-file",
+      "test-codeunit-id",
+      "prereq-dir",
+    ],
+    default: { container: DEFAULT_CONTAINER },
+  });
+
+  const plan = planProbe({
+    task: a.task,
+    solution: a.solution,
+    expect: a.expect,
+    container: a.container,
+    testFile: a["test-file"],
+    testCodeunitId: a["test-codeunit-id"],
+    prereqDir: a["prereq-dir"],
+  });
+  if (!plan.ok) {
+    console.error(plan.message);
+    Deno.exit(2);
+  }
 
   // MUST happen before the dynamic import below — see the file-header note
   // on why this can't be a static import + a later loadEnvironment() call.
   await resolveCredentialsEnv();
-  const { handleAlVerifyTask } = await import("../mcp/al-tools-server.ts");
+  const { handleAlVerify, handleAlVerifyTask } = await import(
+    "../mcp/al-tools-server.ts"
+  );
 
-  const res: VerifyResult = await handleAlVerifyTask({
-    projectDir: solutionDir,
-    taskId: a.task,
-    containerName: a.container,
-  });
+  let res: VerifyResult;
+  if (plan.oracle.via === "test-file") {
+    console.error(
+      colors.gray(`[trap-probe] oracle: ${plan.oracle.testFile}`),
+    );
+    res = await handleAlVerify({
+      projectDir: plan.solutionDir,
+      testFile: plan.oracle.testFile,
+      containerName: plan.container,
+      ...(plan.oracle.testCodeunitId !== undefined
+        ? { testCodeunitId: plan.oracle.testCodeunitId }
+        : {}),
+      ...(plan.oracle.prereqDir !== undefined
+        ? { prereqDir: plan.oracle.prereqDir }
+        : {}),
+    });
+  } else {
+    res = await handleAlVerifyTask({
+      projectDir: plan.solutionDir,
+      taskId: plan.taskId,
+      containerName: plan.container,
+    });
+  }
 
   const outcome = classifyProbeOutcome(res);
   console.log(
-    `[trap-probe] ${a.task}: actual=${outcome} expected=${a.expect}`,
+    `[trap-probe] ${plan.taskId}: actual=${outcome} expected=${plan.expect}`,
   );
   if (res.message) console.log(`[trap-probe] message: ${res.message}`);
   if (res.totalTests !== undefined) {

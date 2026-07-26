@@ -425,22 +425,12 @@ function extractProjectRoot(testFilePath: string): string {
 }
 
 /**
- * Find prereq app directory for a given task ID.
- * Checks for tests/al/dependencies/{task-id}/ directory.
+ * Load a prereq app from an explicit directory. Returns null when the path is
+ * not a directory or holds no readable app.json.
  */
-async function findPrereqApp(
-  taskId: string,
-  projectRoot: string,
+async function loadPrereqAppFrom(
+  prereqDir: string,
 ): Promise<{ path: string; appJson: AppJson } | null> {
-  // Resolve path relative to project root
-  const prereqDir = join(
-    projectRoot,
-    "tests",
-    "al",
-    "dependencies",
-    taskId,
-  );
-
   try {
     const stat = await Deno.stat(prereqDir);
     if (!stat.isDirectory) return null;
@@ -454,6 +444,20 @@ async function findPrereqApp(
   } catch {
     return null;
   }
+}
+
+/**
+ * Find prereq app directory for a given task ID.
+ * Checks for tests/al/dependencies/{task-id}/ directory.
+ */
+async function findPrereqApp(
+  taskId: string,
+  projectRoot: string,
+): Promise<{ path: string; appJson: AppJson } | null> {
+  // Resolve path relative to project root
+  return await loadPrereqAppFrom(
+    join(projectRoot, "tests", "al", "dependencies", taskId),
+  );
 }
 
 /**
@@ -489,10 +493,17 @@ async function findPrereqAppById(
 /**
  * Find all prereq apps needed for a task, in dependency order.
  * Returns array with dependencies first, then the main prereq.
+ *
+ * `explicitPrereqDir` overrides only the MAIN prereq lookup, for a task whose
+ * prereq does not (yet) live at `tests/al/dependencies/{task-id}/` - an
+ * unpromoted workbench draft keeps it at `scratch/{task-id}/prereq/`. Chained
+ * dependencies are still resolved by app id under `projectRoot`, so a draft
+ * prereq that depends on a committed one still works.
  */
 async function findAllPrereqApps(
   taskId: string,
   projectRoot: string,
+  explicitPrereqDir?: string,
 ): Promise<Array<{ path: string; appJson: AppJson }>> {
   const result: Array<{ path: string; appJson: AppJson }> = [];
   const visited = new Set<string>();
@@ -518,7 +529,9 @@ async function findAllPrereqApps(
     result.push(prereq);
   }
 
-  const mainPrereq = await findPrereqApp(taskId, projectRoot);
+  const mainPrereq = explicitPrereqDir
+    ? await loadPrereqAppFrom(explicitPrereqDir)
+    : await findPrereqApp(taskId, projectRoot);
   if (mainPrereq) {
     await collectDeps(mainPrereq);
   }
@@ -1192,13 +1205,26 @@ export async function createVerifyStagingDir(): Promise<string> {
 /**
  * Verify agent code by running tests in an isolated directory.
  * This prevents the agent from seeing or modifying test files.
+ *
+ * Exported so a host-side caller can verify against an oracle that has no
+ * committed home yet: `scripts/trap-probe.ts --test-file` probes an
+ * unpromoted `scratch/<id>/` draft, whose test file, codeunit id and prereq
+ * are all still outside the `tests/al/` + `tasks/` trees `handleAlVerifyTask`
+ * resolves ids against. `testCodeunitId` and `prereqDir` are the two things
+ * that would otherwise be read out of those trees.
+ *
+ * `prereqDir` and `testCodeunitId` are deliberately NOT part of the
+ * `al_verify` MCP tool's inputSchema, and the TOOL_HANDLERS entry passes only
+ * the four advertised fields - a sandboxed agent must not be able to name an
+ * arbitrary host directory to compile and publish (path containment, M4).
  */
-async function handleAlVerify(params: {
+export async function handleAlVerify(params: {
   projectDir: string;
   testFile: string;
   containerName?: string;
   target?: "Cloud" | "OnPrem";
   testCodeunitId?: number;
+  prereqDir?: string;
 }): Promise<VerifyResult> {
   debugLog("al_verify", "Starting verification", {
     projectDir: params.projectDir,
@@ -1244,9 +1270,19 @@ async function handleAlVerify(params: {
     }> = [];
 
     if (taskId) {
-      debugLog("al_verify", "Checking for prereqs", { taskId, projectRoot });
-      // Check cache first to avoid recompiling prereqs on every call
-      const cachedPrereqs = prereqCache.get(taskId);
+      debugLog("al_verify", "Checking for prereqs", {
+        taskId,
+        projectRoot,
+        prereqDir: params.prereqDir,
+      });
+      // Check cache first to avoid recompiling prereqs on every call. The key
+      // includes the explicit prereq dir so a draft's scratch-local prereq
+      // can never be served from - or written into - the cache entry for the
+      // same id's committed one in a long-lived MCP server.
+      const prereqCacheKey = params.prereqDir
+        ? `${taskId}|${params.prereqDir}`
+        : taskId;
+      const cachedPrereqs = prereqCache.get(prereqCacheKey);
       if (cachedPrereqs) {
         debugLog("al_verify", "Using cached prereqs", {
           taskId,
@@ -1255,7 +1291,11 @@ async function handleAlVerify(params: {
         prereqApps = cachedPrereqs;
       } else {
         // Find all prereqs in dependency order
-        const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
+        const allPrereqs = await findAllPrereqApps(
+          taskId,
+          projectRoot,
+          params.prereqDir,
+        );
         debugLog("al_verify", "Found prereqs", {
           taskId,
           count: allPrereqs.length,
@@ -1313,7 +1353,7 @@ async function handleAlVerify(params: {
 
         // Cache the compiled prereqs for future calls
         if (prereqApps.length > 0) {
-          prereqCache.set(taskId, prereqApps);
+          prereqCache.set(prereqCacheKey, prereqApps);
           debugLog("al_verify", "Prereqs cached", {
             taskId,
             count: prereqApps.length,
@@ -1576,15 +1616,25 @@ const TOOL_HANDLERS: Record<
     handleAlTest(args as { projectDir: string; containerName?: string }),
   al_container_status: (args) =>
     handleContainerStatus(args as { containerName?: string }),
-  al_verify: (args) =>
-    handleAlVerify(
-      args as {
-        projectDir: string;
-        testFile: string;
-        containerName?: string;
-        target?: "Cloud" | "OnPrem";
-      },
-    ),
+  // Rebuilt field by field rather than cast-and-forwarded: a cast does not
+  // strip anything at runtime, so forwarding `args` wholesale would let a
+  // sandboxed agent set parameters the inputSchema never advertises -
+  // including `prereqDir`, which names a host directory to compile and
+  // publish. Only the four advertised fields cross this boundary (M4).
+  al_verify: (args) => {
+    const { projectDir, testFile, containerName, target } = args as {
+      projectDir: string;
+      testFile: string;
+      containerName?: string;
+      target?: "Cloud" | "OnPrem";
+    };
+    return handleAlVerify({
+      projectDir,
+      testFile,
+      ...(containerName !== undefined ? { containerName } : {}),
+      ...(target !== undefined ? { target } : {}),
+    });
+  },
   al_verify_task: (args) =>
     handleAlVerifyTask(
       args as {

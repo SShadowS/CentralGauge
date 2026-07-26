@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import {
+  handleAlVerify,
+  handleAlVerifyTask,
   loadTaskTarget,
   loadTestCodeunitId,
   resolveTestFileFromTaskId,
@@ -252,6 +254,64 @@ expected:
     it("should return success:false for an invalid task ID format", async () => {
       const result = await resolveTestFileFromTaskId("invalid-id", tempDir);
       assertEquals(result.success, false);
+    });
+  });
+
+  /**
+   * Both halves of the task-workbench probe defect, pinned without a
+   * container: resolving an oracle from a task id CANNOT serve an unpromoted
+   * draft, and passing the oracle explicitly reaches the verify pipeline
+   * instead. Neither test below gets far enough to compile or publish -
+   * `handleAlVerify` returns before `findProjectDir` yields a project.
+   */
+  describe("draft oracle resolution", () => {
+    it("id-based resolution misses an unpromoted draft, and reports it as a plain error", async () => {
+      // The draft's oracle sits in scratch/<id>/, so nothing exists at
+      // tests/al/<difficulty>/<id>.Test.al. The resulting VerifyResult has
+      // no "Verification error: " catch-all prefix and no infra signature,
+      // so scripts/trap-probe.ts's classifyProbeOutcome scores it "fail" -
+      // which is what made every scaffolded draft look non-discriminating.
+      const resolution = await resolveTestFileFromTaskId(
+        "CG-AL-X999",
+        tempDir,
+      );
+      assertEquals(resolution.success, false);
+      if (!resolution.success) {
+        assertStringIncludes(resolution.error, "Test file not found");
+      }
+
+      const result = await handleAlVerifyTask({
+        projectDir: tempDir,
+        taskId: "CG-AL-X999",
+      });
+      assertEquals(result.success, false);
+      assertStringIncludes(result.message, "Test file not found");
+    });
+
+    it("an explicit testFile bypasses id resolution and reaches the verify pipeline", async () => {
+      // Same id, same absent tests/al/ entry - but the oracle is handed over
+      // directly, exactly as `trap-probe --test-file` does for a draft. The
+      // failure now comes from the SOLUTION directory (no app.json), i.e.
+      // from inside handleAlVerify's own pipeline, proving the id-based
+      // lookup is not consulted. No container is touched: findProjectDir
+      // finds nothing and the handler returns before compiling.
+      const draftDir = join(tempDir, "scratch", "CG-AL-X999");
+      await ensureDir(draftDir);
+      const draftOracle = join(draftDir, "CG-AL-X999.Test.al");
+      await Deno.writeTextFile(draftOracle, "codeunit 80999 Test { }\n");
+
+      const emptySolutionDir = join(draftDir, "correct");
+      await ensureDir(emptySolutionDir);
+
+      const result = await handleAlVerify({
+        projectDir: emptySolutionDir,
+        testFile: draftOracle,
+        testCodeunitId: 80999,
+      });
+
+      assertEquals(result.success, false);
+      assertStringIncludes(result.message, "No app.json found");
+      assertEquals(result.message.includes("Test file not found"), false);
     });
   });
 });

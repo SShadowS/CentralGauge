@@ -281,6 +281,13 @@ Deno.test("runTaskProbe", async (t) => {
     scratchDir = join(base, "scratch");
     await ensureDir(join(scratchDir, id, "correct"));
     await ensureDir(join(scratchDir, id, "naive"));
+    // The draft's own oracle. probeDraft passes it to trap-probe as
+    // --test-file (an unpromoted draft has nothing under tests/al/ to
+    // resolve by id) and refuses outright when it is missing.
+    await Deno.writeTextFile(
+      join(scratchDir, id, `${id}.Test.al`),
+      `codeunit 80001 "${id} Test"\n{\n    Subtype = Test;\n}\n`,
+    );
   }
   async function teardown() {
     await cleanupTempDir(base);
