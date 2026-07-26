@@ -75,3 +75,77 @@ a stale orphan the next sweep collects — never a live folder.
 Would be resolved by stating the folder's age from the max mtime across its
 immediate children (or by statting `output/` directly) instead of the
 top-level folder alone.
+
+---
+
+## 3. `centralgauge task probe` leaves its last-probed candidate published
+
+**Where:** `src/workbench/probe.ts` (`probeDraft`), `scripts/trap-probe.ts`
+
+`probeDraft` runs `trap-probe` twice per draft — once against `correct/`
+(`--expect pass`), once against `naive/` (`--expect fail`). Each run
+publishes its solution as the candidate app via
+`BcContainerProvider.prepareCandidateApp`, which cleans up any STALE prior
+candidate before publishing the new one. Nothing unpublishes the candidate
+after the *final* call, though — there is no equivalent of the bench's
+`endOfRunNuke` in this path. Confirmed directly during the task workbench
+Phase 1 Task 6 container smoke test: after probing `CG-AL-X053` on
+Cronus28, `BcContainerProvider.cleanupStaleCandidates("Cronus28")` found
+and removed one stale candidate (`CG-AL-X053 Smoke Solution v1.0.0.0`,
+the `naive/` solution probed last).
+
+CLAUDE.md documents that all candidates share one fixed app id, so a
+stale published candidate can block a subsequent ad-hoc publish with a
+"same App ID and Version" conflict. The bench's startup prenuke
+(`endOfRunNuke`, `cli/commands/bench/container-setup.ts`) clears this
+automatically before the next bench run, so a later bench self-heals. But
+`run-xiterate.ps1`'s sanity lane runs `trap-probe` directly, ad hoc,
+between bench runs — exactly the kind of standalone publish that can hit
+the stale candidate before any bench-level cleanup gets a chance to run.
+
+Left unfixed for now because it was found by the Task 6 end-to-end smoke
+after the rest of the workbench branch was already fully verified; it
+self-heals on the next bench's prenuke; and fixing it means touching
+`probe.ts`/`trap-probe.ts` and another implement-and-review cycle the
+branch does not need for this.
+
+Would be resolved by having `probeDraft` (or `trap-probe.ts`) unpublish
+the candidate after the final probe call, or by routing both probe calls
+through the same prepare-and-cleanup-at-both-ends path the bench itself
+uses.
+
+---
+
+## 4. SOAP test harness unavailable to a standalone `task probe` run
+
+**Where:** `scripts/trap-probe.ts`, `mcp/al-tools-server.ts`
+(`handleAlVerify` → `runTests`), `BcContainerProvider.ensureTestHarness()`
+
+A standalone `task probe` (or hand-run `trap-probe.ts`) invocation never
+goes through the bench's startup path that calls `ensureTestHarness()` to
+compile+publish the SOAP test-harness app (`CG Test Harness` / codeunit
+`CGTestRunner`) once per container. If that harness is not already
+installed on the target container from a prior bench run, every test run
+inside the probe silently falls back to the slower legacy client-session
+test path (`.claude/rules/soap-test-harness.md` documents the SOAP path
+as ~38x faster). Confirmed directly during the Task 6 smoke test: both
+probe calls against Cronus28 logged `SOAP harness path failed; falling
+back to client-session path (error="harness SOAP fault: Service
+"Codeunit/CGTestRunner" was not found!")`, and completed correctly via
+the fallback but paid the slower path (the two-solution probe took ~260s
+total).
+
+Correctness is unaffected — the fallback is automatic and silent — so
+this is a performance gap only, and needlessly slows `task probe` runs
+whenever a container has not recently run a full bench.
+
+Left unfixed for now for the same reason as #3: correct behavior
+already, just slower; fixing it means either having `task probe` call
+`ensureTestHarness()` itself or documenting the prerequisite, another
+change + review cycle the branch does not need right now.
+
+Would be resolved by having `probeDraft`/`trap-probe.ts` call
+`ensureTestHarness()` before running probes (mirroring what the bench
+does at startup), or by documenting in `task probe`'s help/output that
+the target container should have had at least one full bench run against
+it first.
