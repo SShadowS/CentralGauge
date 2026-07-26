@@ -1,0 +1,2929 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code">
+      
+      
+      
+        <link rel="canonical" href="https://sshadows.github.io/CentralGauge/superpowers/plans/2026-05-14-centralgauge-benchmark-roadmap/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>CentralGauge Benchmark Roadmap (Tool + UI) — Phased Program Plan - CentralGauge</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#centralgauge-benchmark-roadmap-tool-ui-phased-program-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="CentralGauge" class="md-header__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            CentralGauge
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              CentralGauge Benchmark Roadmap (Tool + UI) — Phased Program Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../overview/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../guides/running-benchmarks/" class="md-tabs__link">
+          
+  
+  
+  User Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../tasks/task-format/" class="md-tabs__link">
+          
+  
+  
+  Task Authoring
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../architecture/overview/" class="md-tabs__link">
+          
+  
+  
+  Architecture
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../site/architecture/" class="md-tabs__link">
+          
+  
+  
+  Site
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../postmortems/_template/" class="md-tabs__link">
+          
+  
+  
+  Postmortems
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../cli/commands/" class="md-tabs__link">
+          
+  
+  
+  CLI Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../api/" class="md-tabs__link">
+          
+  
+  
+  API Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contributing/development/" class="md-tabs__link">
+          
+  
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="CentralGauge" class="md-nav__button md-logo" aria-label="CentralGauge" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    CentralGauge
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/SShadowS/CentralGauge" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    SShadowS/CentralGauge
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../quick-start/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/running-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Running Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/understanding-results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Understanding Results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guides/model-variants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Model Variants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Authoring
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Task Authoring
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/writing-tests/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writing Tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/categories/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Categories
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../tasks/task-creation-prompt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Creation Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/llm-adapters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LLM Adapters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/containers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Container Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../architecture/agents/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Site
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Site
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/design-system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design system
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../site/lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postmortems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Postmortems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../postmortems/_template/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    CLI Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/bench/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    bench
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/report/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../cli/rules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Index
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_10" >
+        
+          
+          <label class="md-nav__link" for="__nav_10" id="__nav_10_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/development/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Development Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing Patterns
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contributing/style/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Style
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#relationship-to-existing-plans" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Relationship to existing plans
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-0-baseline-audit-prerequisite-2-days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 0 — Baseline audit (prerequisite, ~2 days)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 0 — Baseline audit (prerequisite, ~2 days)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p0-1-audit-existing-plan-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P0-1: Audit existing plan completion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p0-2-freeze-current-metric-semantics-in-writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P0-2: Freeze current metric semantics in writing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-1-trust-metric-clarity-highest-roi-12-weeks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1 — Trust &amp; metric clarity (highest ROI, ~1–2 weeks)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 1 — Trust &amp; metric clarity (highest ROI, ~1–2 weeks)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p1-m1-metric-rename-pass1-pass2-repair-uplift" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-M1: Metric rename + Pass@1 / Pass@2 / Repair uplift
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-m2-wilson-confidence-intervals-visible-n" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-M2: Wilson confidence intervals + visible n
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-m3-paired-ab-comparison-stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-M3: Paired A/B comparison stats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-r1-run-manifest-capture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-R1: Run manifest capture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-r2-trust-panel-per-leaderboard-row" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-R2: Trust panel per leaderboard row
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-r3-official-community-unverified-run-badges" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-R3: Official / community / unverified run badges
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-d1-domainobject-type-tags-on-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-D1: Domain/object-type tags on tasks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p1-c1-cost-per-solved-task-cost-quality-frontier" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P1-C1: Cost per solved task + cost-quality frontier
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-2-drill-downs-operational-hardening-24-weeks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2 — Drill-downs &amp; operational hardening (~2–4 weeks)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 2 — Drill-downs &amp; operational hardening (~2–4 weeks)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p2-u1-per-domain-scores-capability-profile-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-U1: Per-domain scores + capability profile pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-u2-task-pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-U2: Task pages
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-u3-model-ab-comparison-page-full" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-U3: Model A/B comparison page (full)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-u4-task-results-matrix-trend-over-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-U4: Task results matrix + trend-over-time
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-u5-public-api-artifact-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-U5: Public API + artifact export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t1-centralgauge-tasks-lint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T1: centralgauge tasks lint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t2-container-quarantine-cooldown-phase-b" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T2: Container quarantine + cooldown ("Phase B")
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t3-structured-jsonl-event-log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T3: Structured JSONL event log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t4-failure-taxonomy-surfacing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T4: Failure taxonomy surfacing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t5-cost-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T5: Cost guardrails
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p2-t6-reproducible-container-state-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P2-T6: Reproducible container-state contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-3-contamination-resistance-calibration-12-months" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 3 — Contamination resistance &amp; calibration (~1–2 months)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 3 — Contamination resistance &amp; calibration (~1–2 months)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p3-x1-three-tier-task-suite" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P3-X1: Three-tier task suite
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p3-x2-contamination-audit-tooling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P3-X2: Contamination audit tooling
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p3-x3-empirical-difficulty-discrimination-calibration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P3-X3: Empirical difficulty + discrimination calibration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p3-x4-variance-audit-mode-opt-in" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P3-X4: Variance audit mode (opt-in)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p3-x5-task-retirerotate-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P3-X5: Task retire/rotate process
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#phase-4-community-authority-ongoing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 4 — Community authority (ongoing)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Phase 4 — Community authority (ongoing)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#p4-a1-methodology-document-mini-paper" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4-A1: Methodology document (mini-paper)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p4-a2-bc-task-taxonomy-coverage-map" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4-A2: BC task taxonomy + coverage map
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p4-a3-baselines-reference-points" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4-A3: Baselines + reference points
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p4-a4-contributor-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4-A4: Contributor workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#p4-a5-quarterly-report-recurring-outputs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4-A5: Quarterly report + recurring outputs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-phase-guardrails-apply-to-every-work-item" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-phase guardrails (apply to every work item)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing summary
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/SShadowS/CentralGauge/edit/master/docs/superpowers/plans/2026-05-14-centralgauge-benchmark-roadmap.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="centralgauge-benchmark-roadmap-tool-ui-phased-program-plan">CentralGauge Benchmark Roadmap (Tool + UI) — Phased Program Plan<a class="headerlink" href="#centralgauge-benchmark-roadmap-tool-ui-phased-program-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> This is a PROGRAM ROADMAP, not a single-feature implementation plan.
+Each phase below lists work items with acceptance criteria and gates. Before starting a work
+item, write a dedicated bite-sized TDD plan for it (use superpowers:writing-plans) under
+<code>docs/superpowers/plans/YYYY-MM-DD-&lt;item&gt;.md</code>. This file is the index + sequencing + gate
+authority.</p>
+</blockquote>
+<p><strong>Goal:</strong> Make every CentralGauge leaderboard row auditable, statistically honest, and
+BC-relevant — turning it from "a leaderboard" into the authoritative AL/BC diagnostic benchmark.</p>
+<p><strong>Constraint:</strong> Bench runtime must stay practical (hours, not days). This roadmap is
+deliberately incremental — it adds credibility, drill-downs, and hardening on top of the
+existing execution model. It does NOT change the sampling model (stays single-run), the
+container reuse model, or rewrite the task corpus.</p>
+<p><strong>Architecture:</strong> Four sequential phases, each with an entry gate and exit gate. Phase 1 buys
+credibility (metrics + reproducibility metadata), Phase 2 buys usefulness (drill-downs +
+hardening), Phase 3 buys durability (contamination resistance + calibration), Phase 4 buys
+authority (methodology + community). A phase does not start until the prior phase's exit gate
+passes.</p>
+<p><strong>Tech Stack:</strong> Deno 1.44+ / TypeScript 5 (CLI + engine), SvelteKit + Cloudflare Worker + D1
+SQLite + R2 (site), Ed25519-signed ingest, bccontainerhelper + Windows LCOW (BC containers).</p>
+<p><strong>Source of recommendations:</strong> gpt-5.5 review, 2026-05-14 (PAL continuation_id
+<code>39a35c65-1e47-449c-9d63-b335979b19e8</code>).</p>
+<hr />
+<h2 id="relationship-to-existing-plans">Relationship to existing plans<a class="headerlink" href="#relationship-to-existing-plans" title="Permanent link">&para;</a></h2>
+<p>These already-written plans implement parts of this roadmap. Do not re-plan them; treat them
+as the implementation vehicle for the referenced work items.</p>
+<table>
+<thead>
+<tr>
+<th>Existing plan</th>
+<th>Covers roadmap items</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>2026-05-02-benchmark-stats-tier-1-2.md</code></td>
+<td>P1-M1, P1-M2, P1-M3 (partial), P2-U4 (partial)</td>
+<td>Pending — drives Phase 1 metrics</td>
+</tr>
+<tr>
+<td><code>2026-04-29-p7-stat-parity.md</code></td>
+<td>P1-M1 (Pass@1/@2 split), P2-U1 (categories), P2-U2 (task matrix), P2-U5 (shortcomings UI)</td>
+<td>Pending — drives much of Phase 1/2 UI</td>
+</tr>
+<tr>
+<td><code>2026-04-29-p7-stat-parity.md</code> CC-2 / "P8 analyzer"</td>
+<td>P2-T4 (failure taxonomy)</td>
+<td>Deferred — P8 analyzer is the vehicle</td>
+</tr>
+<tr>
+<td><code>2026-05-12-container-health-detection-phase-a.md</code></td>
+<td>P2-T2 prerequisite (health classification)</td>
+<td>Shipped</td>
+</tr>
+<tr>
+<td><code>2026-05-13-automatic-infra-retry.md</code></td>
+<td>P2-T2 prerequisite (inline retry)</td>
+<td>Shipped</td>
+</tr>
+</tbody>
+</table>
+<p>If an existing plan diverges from the acceptance criteria here, this roadmap's criteria win —
+amend the plan.</p>
+<hr />
+<h2 id="phase-0-baseline-audit-prerequisite-2-days">Phase 0 — Baseline audit (prerequisite, ~2 days)<a class="headerlink" href="#phase-0-baseline-audit-prerequisite-2-days" title="Permanent link">&para;</a></h2>
+<p>Purpose: know exactly what is already done so Phase 1 does not redo it.</p>
+<h3 id="p0-1-audit-existing-plan-completion">P0-1: Audit existing plan completion<a class="headerlink" href="#p0-1-audit-existing-plan-completion" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Verify shipped state of <code>benchmark-stats-tier-1-2</code> and <code>p7-stat-parity</code> against production
+  (<code>https://ai.sshadows.dk</code> + <code>/api/v1/leaderboard</code>, <code>/api/v1/models/[slug]</code>).</li>
+<li>Produce <code>docs/superpowers/plans/2026-05-14-roadmap-baseline-audit.md</code>: per work item below,
+  mark <code>done</code> / <code>partial</code> / <code>not-started</code> with evidence (endpoint response, UI screenshot, code ref).</li>
+</ul>
+<h3 id="p0-2-freeze-current-metric-semantics-in-writing">P0-2: Freeze current metric semantics in writing<a class="headerlink" href="#p0-2-freeze-current-metric-semantics-in-writing" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Document today's exact meaning of <code>pass_at_n</code>, <code>avg_score</code>, <code>pass_at_n_per_attempted</code> in
+  <code>docs/site/methodology.md</code> (new file, stub). This is the diff baseline for P1-M1.</li>
+</ul>
+<p><strong>Phase 0 exit gate G0:</strong>
+- [ ] Baseline audit doc exists, every Phase 1–2 work item classified.
+- [ ] <code>methodology.md</code> stub committed with current metric definitions.
+- [ ] Owner confirms: no Phase 1 item is already 100% shipped (if it is, strike it).</p>
+<hr />
+<h2 id="phase-1-trust-metric-clarity-highest-roi-12-weeks">Phase 1 — Trust &amp; metric clarity (highest ROI, ~1–2 weeks)<a class="headerlink" href="#phase-1-trust-metric-clarity-highest-roi-12-weeks" title="Permanent link">&para;</a></h2>
+<p>Entry gate: G0 passed.</p>
+<h3 id="p1-m1-metric-rename-pass1-pass2-repair-uplift">P1-M1: Metric rename + Pass@1 / Pass@2 / Repair uplift<a class="headerlink" href="#p1-m1-metric-rename-pass1-pass2-repair-uplift" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>cli/commands/report/stats-calculator.ts</code>, <code>site/src/lib/server/leaderboard.ts</code>,
+<code>site/src/lib/shared/api-types.ts</code>, <code>site/src/routes/+page.svelte</code>, <code>docs/site/methodology.md</code>.</p>
+<ul>
+<li>Headline metric relabeled in UI to <strong>Pass@2</strong> (a.k.a. "two-attempt solve rate"); tooltip:
+  "Task counted solved if either of up to two attempts passes all compile + test checks."</li>
+<li>Adjacent columns surfaced: <strong>Pass@1</strong> (first-shot), <strong>Repair uplift</strong> (= Pass@2 − Pass@1).</li>
+<li>Stored D1 field name may stay; this is a presentation + API-contract change. If a new API
+  field is added, old field stays for ≥1 release with <code>deprecated</code> note (mirror the existing
+  <code>pass_at_n_per_attempted</code> precedent).</li>
+<li><strong>Acceptance:</strong> leaderboard + model pages show all three; methodology.md defines each with a
+  worked example; API contract test asserts all three present.</li>
+</ul>
+<h3 id="p1-m2-wilson-confidence-intervals-visible-n">P1-M2: Wilson confidence intervals + visible <code>n</code><a class="headerlink" href="#p1-m2-wilson-confidence-intervals-visible-n" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>stats-calculator.ts</code> (<code>wilsonInterval</code>), <code>model-aggregates.ts</code>, leaderboard UI.</p>
+<ul>
+<li>Every pass-rate number carries a Wilson 95% CI.</li>
+<li><code>solved / total</code> (denominator) shown on the main leaderboard row, not hidden.</li>
+<li>"Statistically tied" visual grouping when CIs overlap materially (define "materially" =
+  CI overlap &gt; 50% of the narrower interval; document the rule).</li>
+<li>Per-difficulty CIs on model pages.</li>
+<li><strong>Acceptance:</strong> unit tests for <code>wilsonInterval</code> (known inputs → known bounds); leaderboard
+  renders CI band + <code>n</code>; tied models visually grouped.</li>
+</ul>
+<h3 id="p1-m3-paired-ab-comparison-stats">P1-M3: Paired A/B comparison stats<a class="headerlink" href="#p1-m3-paired-ab-comparison-stats" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>stats-calculator.ts</code>, <code>site/src/routes/compare/</code>.</p>
+<ul>
+<li>Per-task win/loss/tie matrix between two models on the same task-set hash.</li>
+<li>McNemar (or exact sign) test + bootstrap CI on score delta.</li>
+<li>UI sentence form: "Model A +7 tasks / +8.3 pp vs Model B; 95% bootstrap CI +2.1 to +14.0 pp."</li>
+<li>Hard requirement: comparisons only allowed within one <code>task_sets.hash</code> (reuse the existing
+  <code>set=all</code> rejection pattern).</li>
+<li><strong>Acceptance:</strong> compare page shows paired stats; rejects cross-hash comparison with a clear
+  error; bootstrap CI unit-tested against a fixed seed.</li>
+</ul>
+<h3 id="p1-r1-run-manifest-capture">P1-R1: Run manifest capture<a class="headerlink" href="#p1-r1-run-manifest-capture" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>src/ingest/</code> (payload builder), new <code>src/run-manifest.ts</code>, D1 migration
+(<code>site/migrations/</code>), ingest API.</p>
+<ul>
+<li>On every bench run, capture a canonical manifest: CG git SHA, CLI version, task-set hash,
+  prompt-template hash, task YAML schema version, BC artifact URL + major/minor/build,
+  container image digest, bccontainerhelper version, Deno version, host OS build, model slug,
+  provider, provider-returned model ID + request ID (when API exposes it), temperature/top_p/
+  seed, max input/output tokens, attempt limit, infra-retry policy + count, pricing version,
+  ingest signer/machine ID.</li>
+<li>Stored in D1 (new <code>run_manifests</code> table, FK from <code>runs</code>) and uploaded to R2 alongside
+  artifacts.</li>
+<li><strong>Acceptance:</strong> new migration applied; ingest writes a manifest row per run; manifest
+  retrievable via <code>/api/v1/runs/:id</code>; missing-field handling is explicit (null + reason, never
+  silent drop).</li>
+</ul>
+<h3 id="p1-r2-trust-panel-per-leaderboard-row">P1-R2: Trust panel per leaderboard row<a class="headerlink" href="#p1-r2-trust-panel-per-leaderboard-row" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>site/src/routes/+page.svelte</code>, <code>site/src/lib/components/</code>, <code>/api/v1/runs/:id</code>.</p>
+<ul>
+<li>Expandable "Why trust this?" panel per row: signed? official? task-set hash, CG commit, BC
+  version, run date, infra-retry count, artifact links (generated code, compiler logs, test
+  results, run manifest).</li>
+<li>Reuses existing signed-ingest + R2 artifact storage — no new storage layer.</li>
+<li><strong>Acceptance:</strong> panel renders for any official run; all manifest fields from P1-R1 visible;
+  artifact links resolve to R2 blobs; e2e test covers expand + link presence.</li>
+</ul>
+<h3 id="p1-r3-official-community-unverified-run-badges">P1-R3: Official / community / unverified run badges<a class="headerlink" href="#p1-r3-official-community-unverified-run-badges" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> ingest verification, D1 <code>runs</code> schema (add <code>trust_tier</code>), leaderboard filter.</p>
+<ul>
+<li><code>official</code> = signed by official key + executed by trusted infra + current task set.</li>
+<li><code>community</code> = signed by a known external key; visible but not ranked by default.</li>
+<li><code>unverified</code> = hidden from main leaderboard.</li>
+<li><strong>Acceptance:</strong> ingest classifies trust tier; leaderboard defaults to <code>official</code> only with a
+  toggle to include <code>community</code>; <code>unverified</code> never appears in default view.</li>
+</ul>
+<h3 id="p1-d1-domainobject-type-tags-on-tasks">P1-D1: Domain/object-type tags on tasks<a class="headerlink" href="#p1-d1-domainobject-type-tags-on-tasks" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>tasks/**/*.yml</code> schema (Zod), <code>task_categories</code> table (already exists per p7),
+<code>centralgauge tasks lint</code> (stub if not present).</p>
+<ul>
+<li>Add a required <code>domains: []</code> array to task YAML schema (tables, pages, reports, interfaces,
+  events, permissions, queries, xmlports, install-upgrade, posting, dimensions, flowfields,
+  table-relations, testability, integration, performance — extensible list).</li>
+<li>Backfill all existing tasks.</li>
+<li>Note: this changes <code>tasks/**/*.yml</code> → new <code>task_sets.hash</code>. Plan a coordinated re-bench (see
+  G1 gate).</li>
+<li><strong>Acceptance:</strong> Zod rejects a task with no <code>domains</code>; all current tasks tagged; sync-catalog
+  pushes tags to D1.</li>
+</ul>
+<h3 id="p1-c1-cost-per-solved-task-cost-quality-frontier">P1-C1: Cost per solved task + cost-quality frontier<a class="headerlink" href="#p1-c1-cost-per-solved-task-cost-quality-frontier" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>stats-calculator.ts</code> (<code>costPerPass</code>), leaderboard column, new frontier chart.</p>
+<ul>
+<li>Columns: cost / solved task, cost / Pass@1-solved, marginal cost of attempt 2.</li>
+<li>Scatter: X = cost/solved, Y = Pass@2, bubble = latency, color = provider/family; Pareto
+  frontier highlighted (best cheap / best overall / best open / best agent).</li>
+<li><strong>Acceptance:</strong> frontier renders; Pareto set computed correctly (unit-tested); cost columns
+  match <code>costPerPass</code> helper output.</li>
+</ul>
+<p><strong>Phase 1 exit gate G1:</strong>
+- [ ] Leaderboard shows Pass@1, Pass@2, Repair uplift, Wilson CI, solved/total, cost/solved.
+- [ ] Every official run has a manifest + working trust panel.
+- [ ] Trust-tier badges live; default view = official only.
+- [ ] All tasks carry <code>domains</code> tags; coordinated re-bench of the tracked-models set complete
+      under the new task-set hash; <code>task_sets.is_current</code> flipped only after enough models
+      re-benched (follow the existing admin <code>set_current</code> runbook).
+- [ ] <code>methodology.md</code> updated to define every new metric with a worked example.
+- [ ] No regression: existing API consumers (old field names) still work for ≥1 release.</p>
+<hr />
+<h2 id="phase-2-drill-downs-operational-hardening-24-weeks">Phase 2 — Drill-downs &amp; operational hardening (~2–4 weeks)<a class="headerlink" href="#phase-2-drill-downs-operational-hardening-24-weeks" title="Permanent link">&para;</a></h2>
+<p>Entry gate: G1 passed.</p>
+<h3 id="p2-u1-per-domain-scores-capability-profile-pages">P2-U1: Per-domain scores + capability profile pages<a class="headerlink" href="#p2-u1-per-domain-scores-capability-profile-pages" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>model-aggregates.ts</code>, <code>site/src/routes/models/[slug]/</code>, new radar chart.</p>
+<ul>
+<li>Per-model: score by AL domain (radar), strengths/weaknesses, "best use" recommendation
+  string ("strong repair-loop, weak on reports").</li>
+<li>Depends on P1-D1 tags.</li>
+<li><strong>Acceptance:</strong> model page shows domain radar + ranked strengths/weaknesses; "hardest AL
+  concepts" view aggregates across models.</li>
+</ul>
+<h3 id="p2-u2-task-pages">P2-U2: Task pages<a class="headerlink" href="#p2-u2-task-pages" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>site/src/routes/tasks/[id]/</code>, <code>/api/v1/tasks/:id</code>.</p>
+<ul>
+<li>Public task page: prompt, difficulty, domain tags, task-set membership, empirical pass rate,
+  which models pass/fail, failure-category distribution, compile-vs-test failure split,
+  retired/current status, AL tests if public.</li>
+<li>Holdout/private tasks: redacted metadata only (domain, difficulty, empirical pass rate,
+  failure categories, scheduled public-release date).</li>
+<li><strong>Acceptance:</strong> task page renders for a public task; private task shows redacted view;
+  <code>/api/v1/tasks/:id</code> contract-tested.</li>
+</ul>
+<h3 id="p2-u3-model-ab-comparison-page-full">P2-U3: Model A/B comparison page (full)<a class="headerlink" href="#p2-u3-model-ab-comparison-page-full" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>site/src/routes/compare/</code>.</p>
+<ul>
+<li>Builds on P1-M3 paired stats: overall delta, Pass@1/@2 delta, cost delta, speed delta,
+  per-difficulty + per-domain delta, task-by-task 4-quadrant matrix (both pass / only A /
+  only B / both fail), failure-category differences.</li>
+<li><strong>Acceptance:</strong> compare page renders all deltas + quadrant matrix; quadrant counts sum to
+  total tasks in the shared set.</li>
+</ul>
+<h3 id="p2-u4-task-results-matrix-trend-over-time">P2-U4: Task results matrix + trend-over-time<a class="headerlink" href="#p2-u4-task-results-matrix-trend-over-time" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>site/src/routes/</code> (matrix view), <code>model-aggregates.ts</code> (time series).</p>
+<ul>
+<li>Wide matrix: every task (rows) × every model (cols), color-coded pass/fail, failure tooltip
+  on fail cells. (This is the p7 "most-missed view".)</li>
+<li>Trend chart: score history per model + per family, per task-set hash. Never mix hashes in a
+  single headline trend line.</li>
+<li><strong>Acceptance:</strong> matrix renders for current task set; trend respects per-hash separation;
+  empty-state when catalog not synced.</li>
+</ul>
+<h3 id="p2-u5-public-api-artifact-export">P2-U5: Public API + artifact export<a class="headerlink" href="#p2-u5-public-api-artifact-export" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>site/src/routes/api/v1/</code>, docs.</p>
+<ul>
+<li>Stable documented endpoints: <code>/api/v1/leaderboard</code>, <code>/runs/:id</code>, <code>/tasks/:id</code>,
+  <code>/models/:slug</code>; JSON + CSV download; artifact-bundle link for official runs.</li>
+<li>"Current task set" made explicit in UI: release name (<code>CentralGauge 2026.05</code>), task count,
+  BC version, release notes (added / retired / changed).</li>
+<li><strong>Acceptance:</strong> every endpoint has a contract test + a docs page; CSV export validated;
+  release-name banner live.</li>
+</ul>
+<h3 id="p2-t1-centralgauge-tasks-lint">P2-T1: <code>centralgauge tasks lint</code><a class="headerlink" href="#p2-t1-centralgauge-tasks-lint" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> new <code>cli/commands/tasks/lint.ts</code>.</p>
+<ul>
+<li>Flags: guiding-note phrases ("note:", "hint", "remember", "in AL you must"), placeholder
+  assertions (<code>Assert.IsTrue(true, ...)</code>), tests not asserting specified fields/behaviors,
+  object-ID collisions, duplicate public task names, missing <code>domains</code>/difficulty, random
+  tests without deterministic setup, tests with external deps, too-few assertions.</li>
+<li>Runs in CI on <code>tasks/**</code> + <code>tests/al/**</code> changes.</li>
+<li><strong>Acceptance:</strong> lint catches each flagged pattern (unit tests with fixture tasks); CI job
+  added; existing task suite passes lint (or violations are tracked).</li>
+</ul>
+<h3 id="p2-t2-container-quarantine-cooldown-phase-b">P2-T2: Container quarantine + cooldown ("Phase B")<a class="headerlink" href="#p2-t2-container-quarantine-cooldown-phase-b" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>src/health/</code>, <code>src/parallel/</code>, new <code>doctor containers</code> command.</p>
+<ul>
+<li>Auto-quarantine a container after repeated same-signature failures; cooldown before reuse;
+  drain mode (finish current task, accept no new); preflight warm-up smoke test (publish/
+  unpublish tiny app, run one smoke codeunit, verify PSSession + web client).</li>
+<li>Builds directly on shipped container-health classification + inline infra retry.</li>
+<li><strong>Acceptance:</strong> quarantine triggers on the 3-of-window threshold; <code>doctor containers</code> shows
+  health/quarantine/cooldown state; preflight runs at bench startup; single-container
+  deployments short-circuit with a warning (mirror existing infra-retry behavior).</li>
+</ul>
+<h3 id="p2-t3-structured-jsonl-event-log">P2-T3: Structured JSONL event log<a class="headerlink" href="#p2-t3-structured-jsonl-event-log" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> new <code>src/events/</code> emitter, optional ingest.</p>
+<ul>
+<li>JSONL events with <code>run_id</code>, <code>model_slug</code>, <code>task_id</code>, <code>attempt</code>, <code>container</code>, <code>phase</code>,
+  <code>timestamp</code>, <code>duration_ms</code>, <code>status</code>, <code>error_kind</code>, <code>error_fingerprint</code>, <code>cost_estimate</code>,
+  <code>token_usage</code>. Phases: <code>llm.request.start/end</code>, <code>code.extract</code>, <code>container.lease</code>,
+  <code>al.compile.start/end</code>, <code>app.publish.start</code>, <code>tests.run.start/end</code>, <code>infra.retry</code>,
+  <code>ingest.start/end</code>.</li>
+<li>No OpenTelemetry. CLI can render a waterfall from the JSONL.</li>
+<li><strong>Acceptance:</strong> every bench run writes a JSONL trace; waterfall command renders it;
+  schema documented.</li>
+</ul>
+<h3 id="p2-t4-failure-taxonomy-surfacing">P2-T4: Failure taxonomy surfacing<a class="headerlink" href="#p2-t4-failure-taxonomy-surfacing" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> depends on P8 analyzer (existing shortcomings analyzer, deferred in p7 CC-2).
+<code>cli/commands/bench/results-writer.ts</code>, model pages, task authoring guidance.</p>
+<ul>
+<li>Public failure categories: AL syntax invalid, object ID/name mismatch, wrong object type,
+  missing field/property, table relation wrong, flowfield/calcformula wrong, trigger/event
+  misuse, test data setup, report/RDLC issue, permission issue, business-logic boundary,
+  compiles-but-wrong, timeout, infra-excluded.</li>
+<li>Surfaced in: CLI run summary, scoreboard per-model failure profile, task authoring coverage.</li>
+<li><strong>Acceptance:</strong> taxonomy applied to a benched run; model page shows failure profile; CLI
+  summary prints category counts. <strong>Blocked until P8 analyzer ships</strong> — track as dependency.</li>
+</ul>
+<h3 id="p2-t5-cost-guardrails">P2-T5: Cost guardrails<a class="headerlink" href="#p2-t5-cost-guardrails" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>cli/commands/bench/</code>, <code>cli/commands/lifecycle/</code>, <code>.centralgauge.yml</code>.</p>
+<ul>
+<li>Flags: <code>--max-cost-usd</code>, <code>--max-cost-per-model-usd</code>, <code>--max-tokens</code>,
+  <code>--max-agent-wall-clock</code>, <code>--max-agent-tool-calls</code>, <code>--stop-on-budget-exceeded</code>.</li>
+<li>Pre-run cost estimate ("Expected cost: $X–$Y"); lifecycle requires <code>--allow-expensive</code> above
+  a configurable threshold; weekly CI digest includes expected vs actual cost.</li>
+<li><strong>Acceptance:</strong> budget exceed stops the run cleanly with partial results preserved; estimate
+  printed before run; lifecycle gate enforced; cost recorded in run manifest (P1-R1).</li>
+</ul>
+<h3 id="p2-t6-reproducible-container-state-contract">P2-T6: Reproducible container-state contract<a class="headerlink" href="#p2-t6-reproducible-container-state-contract" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>src/container/bc-container-provider.ts</code>, docs, run manifest.</p>
+<ul>
+<li>Document + enforce: clean tenant state per task, apps always unpublished/removed,
+  deterministic dependency restore, unique app IDs / object ranges, test-data prefixes,
+  periodic container recycle after N tasks, tenant reset on detected contamination.</li>
+<li>Container reuse policy recorded in the run manifest.</li>
+<li><strong>Acceptance:</strong> isolation contract documented in <code>.claude/rules/</code>; recycle-after-N enforced;
+  manifest carries reuse policy; a contamination-detection test proves tenant reset fires.</li>
+</ul>
+<p><strong>Phase 2 exit gate G2:</strong>
+- [ ] Model pages: domain radar + capability profile. Task pages live. A/B compare full.
+      Task results matrix live. Public API + CSV documented and contract-tested.
+- [ ] <code>tasks lint</code> in CI; container quarantine + <code>doctor containers</code> live; JSONL traces on
+      every run; cost guardrails enforced; container-state contract documented + enforced.
+- [ ] P2-T4 explicitly marked blocked-on-P8 if the analyzer has not shipped (not a G2 blocker,
+      but must be tracked).
+- [ ] No reliability regression: re-run a known-good model, confirm pass rate within the
+      Wilson CI of its prior run.</p>
+<hr />
+<h2 id="phase-3-contamination-resistance-calibration-12-months">Phase 3 — Contamination resistance &amp; calibration (~1–2 months)<a class="headerlink" href="#phase-3-contamination-resistance-calibration-12-months" title="Permanent link">&para;</a></h2>
+<p>Entry gate: G2 passed.</p>
+<blockquote>
+<p><strong>Constraint reminder:</strong> none of these items may push a normal bench run past hours into
+days. The seeded-variant work below is a task-authoring / release-freeze activity, not a
+per-run cost. Variance audit (P3-X4) is an opt-in mode, never the default.</p>
+</blockquote>
+<h3 id="p3-x1-three-tier-task-suite">P3-X1: Three-tier task suite<a class="headerlink" href="#p3-x1-three-tier-task-suite" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>tasks/</code> structure, task YAML schema, generator tooling.</p>
+<ul>
+<li><strong>Tier A — public canonical:</strong> fully open, reproducible (today's tasks).</li>
+<li><strong>Tier B — public template, private seed:</strong> task templates open; official eval uses a seed
+  revealed only at release freeze. Variants are pre-generated and pre-validated at
+  release-freeze time — NOT generated per bench run, so run cost is unchanged.</li>
+<li><strong>Tier C — private holdout:</strong> small reviewer-maintained set; rotated and disclosed on
+  retirement.</li>
+<li>Per-task contamination metadata: source (original/adapted/synthetic/anonymized-real),
+  public-since date, retired date, unique-string presence, similarity-check status.</li>
+<li><strong>Acceptance:</strong> Tier-B variants are deterministic from a seed and pre-validated before a
+  release; Tier-C tasks excluded from public repo; contamination metadata in YAML schema
+  (Zod-enforced); a normal bench run's wall-clock is unchanged vs Tier-A-only.</li>
+</ul>
+<h3 id="p3-x2-contamination-audit-tooling">P3-X2: Contamination audit tooling<a class="headerlink" href="#p3-x2-contamination-audit-tooling" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> new <code>cli/commands/tasks/contamination-check.ts</code>.</p>
+<ul>
+<li>GitHub/code search for exact object names + unique phrases; docs/example similarity;
+  MinHash / n-gram overlap against a known-AL corpus if available.</li>
+<li>Runs at task-authoring / release time, not during a bench run.</li>
+<li><strong>Acceptance:</strong> check flags a deliberately-leaked fixture task; runs in CI advisory mode;
+  results stored in per-task contamination metadata.</li>
+</ul>
+<h3 id="p3-x3-empirical-difficulty-discrimination-calibration">P3-X3: Empirical difficulty + discrimination calibration<a class="headerlink" href="#p3-x3-empirical-difficulty-discrimination-calibration" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>stats-calculator.ts</code>, task metadata, a calibration report.</p>
+<ul>
+<li>Per task, computed from ALREADY-COLLECTED results (no extra runs): empirical pass rate
+  across official models, Pass@1 rate, repair rate, compile-failure rate, discrimination
+  score (do high-performing models pass more often than low?).</li>
+<li>Classify tasks: too-easy / too-hard-or-broken / good-discriminator / noisy.</li>
+<li>Lightweight — no item-response-theory pipeline.</li>
+<li><strong>Acceptance:</strong> calibration report generated from existing production results; each task
+  gets a computed class; "hard ≠ ambiguous" check (broken tasks flagged separately from hard).</li>
+</ul>
+<h3 id="p3-x4-variance-audit-mode-opt-in">P3-X4: Variance audit mode (opt-in)<a class="headerlink" href="#p3-x4-variance-audit-mode-opt-in" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>cli/commands/bench/</code>, leaderboard "variance sampled" badge.</p>
+<ul>
+<li>Official benchmark stays single-run (run cost unchanged). Variance audit is an explicit
+  opt-in <code>--variance-audit</code> mode that re-runs a SMALL set (top-5 + one cheap baseline) 3×,
+  run occasionally (e.g. before a major announcement) — never the default, never all models.</li>
+<li>Tracks task-level instability, score stddev, rank changes across reruns.</li>
+<li><strong>Acceptance:</strong> variance mode runs only when explicitly requested; "variance sampled" badge
+  on replicated models; instability report produced; default bench behaviour unchanged.</li>
+</ul>
+<h3 id="p3-x5-task-retirerotate-process">P3-X5: Task retire/rotate process<a class="headerlink" href="#p3-x5-task-retirerotate-process" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> docs, <code>tasks/</code> structure, admin tooling.</p>
+<ul>
+<li>Maintain: current official set, previous sets, retired public archive, experimental/dev
+  tasks, private holdout.</li>
+<li>Retire when: too easy, ambiguous, contaminated, flaky, tests outdated BC behavior,
+  duplicate.</li>
+<li><strong>Acceptance:</strong> retire process documented; retired tasks moved to archive (still queryable
+  by old hash via D1); release notes auto-list retired tasks.</li>
+</ul>
+<p><strong>Phase 3 exit gate G3:</strong>
+- [ ] Tier A/B/C suite live; Tier-B variants pre-validated at release freeze; Tier-C excluded
+      from public repo; a normal bench run is no slower than before.
+- [ ] Contamination check in CI; every task has contamination metadata.
+- [ ] Calibration report classifies every task from existing data; broken/ambiguous tasks
+      separated from hard.
+- [ ] Variance audit available as opt-in mode; default bench unchanged; badges + instability
+      report live.
+- [ ] Retire/rotate process documented and exercised on ≥1 real task.</p>
+<hr />
+<h2 id="phase-4-community-authority-ongoing">Phase 4 — Community authority (ongoing)<a class="headerlink" href="#phase-4-community-authority-ongoing" title="Permanent link">&para;</a></h2>
+<p>Entry gate: G3 passed (but P4-A1 methodology page may start earlier — see note).</p>
+<h3 id="p4-a1-methodology-document-mini-paper">P4-A1: Methodology document (mini-paper)<a class="headerlink" href="#p4-a1-methodology-document-mini-paper" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>docs/site/methodology.md</code> (promote the Phase-0 stub to full).</p>
+<ul>
+<li>What is / is not measured; exact execution protocol; attempt policy; prompt policy;
+  container environment; scoring formula; statistical treatment; contamination policy; model
+  inclusion policy; agent/tool policy; cost calculation; task contribution/review policy.</li>
+<li><strong>Note:</strong> the stub starts in Phase 0 and grows every phase. P4-A1 is the final consolidation</li>
+<li>public publish, not a from-scratch write.</li>
+<li><strong>Acceptance:</strong> methodology page published on the site; linked from every leaderboard;
+  reviewed by one external BC developer for clarity.</li>
+</ul>
+<h3 id="p4-a2-bc-task-taxonomy-coverage-map">P4-A2: BC task taxonomy + coverage map<a class="headerlink" href="#p4-a2-bc-task-taxonomy-coverage-map" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> new <code>docs/site/coverage.md</code> + a generated coverage matrix.</p>
+<ul>
+<li>Public matrix: domain × difficulty, current count vs target count.</li>
+<li><strong>Acceptance:</strong> coverage page auto-generated from task metadata; gaps visible; linked from
+  the contributor guide.</li>
+</ul>
+<h3 id="p4-a3-baselines-reference-points">P4-A3: Baselines + reference points<a class="headerlink" href="#p4-a3-baselines-reference-points" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>tasks/</code> baseline runners, leaderboard "baseline" section.</p>
+<ul>
+<li>Trivial/no-op baseline, template-only baseline, old small-model baseline, strong raw-LLM
+  baseline, strong agent baseline; optionally a time-boxed human AL-developer run on a subset.</li>
+<li><strong>Acceptance:</strong> baselines appear as a distinct leaderboard section; human-baseline protocol
+  documented even if the run is deferred.</li>
+</ul>
+<h3 id="p4-a4-contributor-workflow">P4-A4: Contributor workflow<a class="headerlink" href="#p4-a4-contributor-workflow" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>docs/contributing/</code>, PR templates, labels.</p>
+<ul>
+<li>Task authoring guide, <code>tasks lint</code> + dry-run instructions, review checklist, required tags,
+  minimum test quality, no-guidance prompt policy, contamination declaration.</li>
+<li>PR labels: <code>task:new</code>, <code>task:needs-review</code>, <code>task:contamination-risk</code>,
+  <code>task:good-discriminator</code>, <code>task:retire</code>.</li>
+<li><strong>Acceptance:</strong> contributor guide published; PR template enforces the checklist; one
+  external task contribution accepted end-to-end through the workflow.</li>
+</ul>
+<h3 id="p4-a5-quarterly-report-recurring-outputs">P4-A5: Quarterly report + recurring outputs<a class="headerlink" href="#p4-a5-quarterly-report-recurring-outputs" title="Permanent link">&para;</a></h3>
+<p><strong>Area:</strong> <code>docs/blog/</code> (follow the blog-writing skill conventions).</p>
+<ul>
+<li>Recurring posts: "Best LLM for Business Central development in <quarter>", "Common AL
+  mistakes by model family", "Agent vs raw model on AL repair", "Cost of solving real AL
+  tasks".</li>
+<li><strong>Acceptance:</strong> first quarterly report published; template reusable; weekly CI digest links
+  to it.</li>
+</ul>
+<p><strong>Phase 4 exit gate G4 (program "done" definition):</strong>
+- [ ] Methodology page published + externally reviewed.
+- [ ] Coverage map live and auto-generated.
+- [ ] Baselines on the leaderboard.
+- [ ] Contributor workflow accepted ≥1 external contribution.
+- [ ] First quarterly report published.
+- [ ] CentralGauge can answer, for any row: "what does this score mean, could I reproduce it,
+      and what is this model good/bad at in AL?" — yes to all three.</p>
+<hr />
+<h2 id="cross-phase-guardrails-apply-to-every-work-item">Cross-phase guardrails (apply to every work item)<a class="headerlink" href="#cross-phase-guardrails-apply-to-every-work-item" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Bench runtime is sacred.</strong> No work item may turn a normal bench run from hours into days.
+  Multi-sampling, fresh-container-per-task, and per-run procedural generation are explicitly
+  out of scope. Heavy work (variant validation, contamination audit, calibration) runs at
+  task-authoring / release time or as opt-in modes — never in the default run path.</li>
+<li><strong>Traps to avoid (gpt-5.5):</strong> avg_score as headline; mixing raw + agent in one rank; single
+  run treated as exact (state the limitation, don't fix it by 5×-ing run cost); padding <code>n</code>
+  with low-quality tasks; hidden tests so extensive that OSS reproducibility breaks; heavy
+  observability before JSONL; LLM-judge for AL correctness (compiler + tests are the
+  authority).</li>
+<li><strong>Raw vs agent separation:</strong> every UI surface that ranks must distinguish raw / repair-loop /
+  agentic categories. Agent rows must show time budget, tool-call budget, MCP tools, sandbox
+  flag. Enforced from P1-M1 onward.</li>
+<li><strong>Task-set hash discipline:</strong> any change to <code>tasks/**</code> or <code>tests/al/**</code> produces a new hash.
+  Each phase that touches tasks (P1-D1, P3-X1, P3-X5) must include a coordinated re-bench +
+  <code>set_current</code> flip in its exit gate.</li>
+<li><strong>After every change:</strong> <code>deno check</code>, <code>deno lint</code>, <code>deno fmt</code> on touched files only (CRLF
+  drift). Site: <code>cd site &amp;&amp; npm run build</code> before <code>npm test</code>. Never <code>deno fmt</code> on <code>site/</code>.</li>
+<li><strong>No real bench runs during development:</strong> dry-run first, confirm before live (per
+  CLAUDE.md + memory).</li>
+</ul>
+<hr />
+<h2 id="sequencing-summary">Sequencing summary<a class="headerlink" href="#sequencing-summary" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Phase 0  audit          ──G0──▶ Phase 1  trust+metrics  ──G1──▶ Phase 2  drilldowns+hardening
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>                                                                      │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>                                                                    ──G2──▶
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>                                                                      │
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>Phase 3  contamination+calibration  ──G3──▶ Phase 4  community authority  ──G4──▶ done
+</code></pre></div>
+<p>Phase 4's P4-A1 (methodology) is the one item allowed to run continuously from Phase 0 — it is
+a living document that every phase feeds. Everything else is strictly gated.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "search.share", "content.code.copy", "content.action.edit"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
