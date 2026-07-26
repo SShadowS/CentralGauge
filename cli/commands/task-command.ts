@@ -1,18 +1,31 @@
 /**
  * `centralgauge task <subcommand>` — task workbench CLI surface.
  *
- * Phase 1 of the task workbench: `task new` scaffolds a draft trap-task
- * under `scratch/<id>/` by wiring the Cliffy CLI directly to
- * `src/workbench/scaffold.ts`'s `scaffoldDraft`, and `task probe` runs the
- * discrimination probe via `src/workbench/probe.ts`'s `probeDraft`. This
- * module is deliberately thin — all draft-generation and probe logic,
- * INCLUDING `--id` format validation, lives in `src/workbench/` (see
- * `scaffoldDraft`'s own `CG-AL-X<digits>` check), so a later Phase 2 UI
- * panel gets the same guarantees calling `scaffoldDraft` / `probeDraft`
- * directly as it would going through `runTaskNew` / `runTaskProbe` here.
- * This layer does not duplicate that validation — a second regex here
- * could drift from the workbench's, silently reopening the id-collision
- * hole `scaffoldDraft` closes.
+ * Phase 1 of the task workbench is the three-step authoring loop, and
+ * nothing reaches the scored suite without passing through all three:
+ *
+ * - `task new` scaffolds a draft trap-task under `scratch/<id>/` via
+ *   `src/workbench/scaffold.ts`'s `scaffoldDraft`. Everything it writes -
+ *   including a `--with-prereq` app - stays in `scratch/`, outside the
+ *   `task_sets` hash scope.
+ * - `task probe` runs the discrimination gate via `src/workbench/probe.ts`'s
+ *   `probeDraft`: `correct/` must pass the draft's own oracle and `naive/`
+ *   must fail it, and the verdict is cached at `scratch/<id>/.probe.json`.
+ * - `task promote` moves the draft into `tasks/` and `tests/al/` via
+ *   `src/workbench/promote.ts`'s `promoteDraft`, refusing on a
+ *   non-discriminating or stale verdict, and refusing outright (no
+ *   `--force`) when any destination path is occupied. Promoting changes
+ *   `task_sets.hash`, so the command says so.
+ *
+ * This module is deliberately thin — all draft-generation, probe and
+ * promote logic, INCLUDING `--id` format validation and the
+ * already-taken-id check, lives in `src/workbench/` (see `scaffoldDraft`'s
+ * own `CG-AL-X<digits>` check), so a later Phase 2 UI panel gets the same
+ * guarantees calling those functions directly as it would going through
+ * `runTaskNew` / `runTaskProbe` / `runTaskPromote` here. This layer does
+ * not duplicate that validation — a second regex here could drift from the
+ * workbench's, silently reopening the id-collision hole `scaffoldDraft`
+ * closes.
  *
  * @module cli/commands/task
  */
@@ -63,10 +76,13 @@ export interface TaskNewOptions {
  * parsing in a unit test would just be re-testing the framework.
  *
  * Deliberately does NOT re-validate `opts.slug`/`opts.id` itself:
- * `scaffoldDraft` rejects a malformed slug or a non-`CG-AL-X<digits>` id
- * before any side effects (no directories, no allocation), so a second
- * check here would only add a regex that could drift out of sync with the
- * one that actually matters.
+ * `scaffoldDraft` rejects a malformed slug, a non-`CG-AL-X<digits>` id, and
+ * an id already taken by a committed task, a committed test codeunit or
+ * another draft — all before any side effects (no directories, no
+ * allocation), so a second check here would only add a regex that could
+ * drift out of sync with the one that actually matters. `meta.id` is the
+ * NORMALISED id (`--id CG-AL-X52` scaffolds `CG-AL-X052`), which is why the
+ * created path is printed from it rather than from `opts.id`.
  */
 export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
   const roots = opts.roots ?? defaultRoots();
@@ -300,11 +316,13 @@ export function registerTaskCommand(cli: Command): void {
     })
     .option(
       "--id <id:string>",
-      "Explicit CG-AL-X### id to use instead of the next free one",
+      "Explicit CG-AL-X### id to use instead of the next free one " +
+        "(refused if already taken; padded to 3 digits)",
     )
     .option(
       "--with-prereq",
-      "Also scaffold a tests/al/dependencies/<id>/ prereq app",
+      "Also scaffold a scratch/<id>/prereq/ app — promote moves it to " +
+        "tests/al/dependencies/<id>/",
       { default: false },
     )
     .action(async (opts) => {
