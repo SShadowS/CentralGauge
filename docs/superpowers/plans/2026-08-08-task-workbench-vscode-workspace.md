@@ -23,7 +23,12 @@
 - Console output uses `@std/fmt/colors` with `[Tag]` prefixes, never emoji.
 - Existing exit codes for `scripts/trap-probe.ts`: `0` matched `--expect`, `1` mismatched, `2` bad arguments, `3` inconclusive. This plan adds `4`.
 - AL id ranges: 69000-69999 prereq objects, 70000-79999 generated code, 80000-89999 test codeunits.
-- Task 4 changes `task_sets.hash`. Everything before it is hash-neutral.
+- **`task_sets.hash` changes exactly once, at Task 3.** Wiring
+  `isEditorOnlyAppJson` into `computeTaskSetHash` is the moment
+  `tests/al/app.json` leaves the hashed set. Task 4's manifests are then
+  hash-neutral by construction. (This plan originally attributed the change to
+  Task 4; Task 4's own before/after measurement disproved that.) No bench or
+  ingest run may sit between Tasks 3 and 4.
 - **Line numbers in this plan are anchors, not addresses.** They were captured
   before any task ran, and each task shifts the ones after it — Task 1 alone
   moved everything in `mcp/al-tools-server.ts` up by ~64 lines. Always locate
@@ -869,7 +874,7 @@ change what compiles and publishes."
 - Consumes: the carve-out from Task 3 (these files must be hash-neutral)
 - Produces: nothing consumed by later tasks
 
-**This task changes `task_sets.hash` once**, because `tests/al/app.json` leaves the hashed set. It must land in the same commit as, or after, Task 3, with no bench or ingest run in between. After merging, every benched model needs re-benching before the leaderboard is comparable — see `/rebench-after-task-change`.
+**The hash change happened in Task 3, not here.** Wiring `isEditorOnlyAppJson` into `computeTaskSetHash` is what removed `tests/al/app.json` from the hashed set. The three manifests this task adds are hash-neutral — Step 4 below proves it. No bench or ingest run may sit between Tasks 3 and 4. After merging, every benched model needs re-benching before the leaderboard is comparable — see `/rebench-after-task-change`.
 
 The root `tests/al/app.json` **stays on disk**: `src/stats/hasher.ts:247` reads it via `generateComprehensiveTaskSetHash`, called from `cli/helpers/task-loader.ts:124` and `cli/commands/report-db-command.ts:88`. Deleting it makes that hash go `"missing"`. It is simply never used as a project root — no generated workspace lists `tests/al` as a folder.
 
