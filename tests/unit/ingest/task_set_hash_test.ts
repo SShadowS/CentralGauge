@@ -1,9 +1,15 @@
 import { assert, assertEquals, assertNotEquals } from "@std/assert";
+import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import {
   computeTaskSetHash,
+  isEditorOnlyAppJson,
   resolveCurrentTaskSetHash,
 } from "../../../src/ingest/catalog/task-set-hash.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+} from "../../../tests/utils/test-helpers.ts";
 
 async function makeProjectRoot(): Promise<string> {
   const root = await Deno.makeTempDir();
@@ -414,4 +420,92 @@ Deno.test("hash still skips a real .alpackages/output dir inside the task tree",
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("computeTaskSetHash: editor-only app.json carve-out", async (t) => {
+  await t.step("isEditorOnlyAppJson accepts the root manifest", () => {
+    assertEquals(isEditorOnlyAppJson("app.json"), true);
+  });
+
+  await t.step("isEditorOnlyAppJson accepts per-difficulty manifests", () => {
+    assertEquals(isEditorOnlyAppJson("easy/app.json"), true);
+    assertEquals(isEditorOnlyAppJson("medium/app.json"), true);
+    assertEquals(isEditorOnlyAppJson("hard/app.json"), true);
+  });
+
+  await t.step("isEditorOnlyAppJson rejects prereq manifests", () => {
+    assertEquals(
+      isEditorOnlyAppJson("dependencies/CG-AL-X052/app.json"),
+      false,
+    );
+  });
+
+  await t.step("isEditorOnlyAppJson rejects other json", () => {
+    assertEquals(isEditorOnlyAppJson("hard/CG-AL-X052.Test.al"), false);
+    assertEquals(isEditorOnlyAppJson("support-files/layout.json"), false);
+    assertEquals(isEditorOnlyAppJson("app.json.bak"), false);
+  });
+
+  await t.step(
+    "editing tests/al/app.json does not change the hash",
+    async () => {
+      const root = await createTempDir("task-set-hash-carveout");
+      try {
+        await ensureDir(join(root, "tasks", "hard"));
+        await ensureDir(join(root, "tests", "al", "hard"));
+        await Deno.writeTextFile(
+          join(root, "tasks", "hard", "CG-AL-X001-a.yml"),
+          "id: CG-AL-X001\n",
+        );
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", "CG-AL-X001.Test.al"),
+          'codeunit 80001 "T" { }',
+        );
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "app.json"),
+          '{"idRanges":[{"from":80001,"to":80200}]}',
+        );
+
+        const before = await computeTaskSetHash(root);
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "app.json"),
+          '{"idRanges":[{"from":80000,"to":89999}]}',
+        );
+        const after = await computeTaskSetHash(root);
+        assertEquals(before, after);
+      } finally {
+        await cleanupTempDir(root);
+      }
+    },
+  );
+
+  await t.step("editing a prereq app.json DOES change the hash", async () => {
+    const root = await createTempDir("task-set-hash-prereq");
+    try {
+      await ensureDir(join(root, "tasks", "hard"));
+      await ensureDir(
+        join(root, "tests", "al", "dependencies", "CG-AL-X001"),
+      );
+      await Deno.writeTextFile(
+        join(root, "tasks", "hard", "CG-AL-X001-a.yml"),
+        "id: CG-AL-X001\n",
+      );
+      const prereqPath = join(
+        root,
+        "tests",
+        "al",
+        "dependencies",
+        "CG-AL-X001",
+        "app.json",
+      );
+      await Deno.writeTextFile(prereqPath, '{"version":"1.0.0.0"}');
+
+      const before = await computeTaskSetHash(root);
+      await Deno.writeTextFile(prereqPath, '{"version":"1.0.1.0"}');
+      const after = await computeTaskSetHash(root);
+      assertNotEquals(before, after);
+    } finally {
+      await cleanupTempDir(root);
+    }
+  });
 });

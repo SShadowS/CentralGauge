@@ -3,6 +3,29 @@ import { encodeHex } from "jsr:@std/encoding@^1.0.5/hex";
 import { join, relative } from "jsr:@std/path@^1.0.0";
 
 /**
+ * True for the `app.json` files that exist ONLY to make VS Code treat a
+ * directory as an AL project: `tests/al/app.json` and
+ * `tests/al/<difficulty>/app.json`.
+ *
+ * These are editor configuration, not test content, and they are excluded
+ * from the task-set hash so adding or retuning an AL project never forces a
+ * re-bench.
+ *
+ * `tests/al/dependencies/<id>/app.json` is deliberately NOT covered. A prereq
+ * manifest carries the app GUID, id ranges and dependency chain — it changes
+ * what gets compiled and published, which makes it test content. Excluding it
+ * would let a prereq chain edit pass without invalidating the task set, which
+ * is exactly the silent drift this hash exists to catch.
+ *
+ * Path-aware by necessity: `SKIP_FILE_RE` is tested against basenames only
+ * (see `collectFiles`), so it cannot distinguish these cases.
+ */
+export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
+  if (relUnderTestsAl === "app.json") return true;
+  return /^(easy|medium|hard)\/app\.json$/.test(relUnderTestsAl);
+}
+
+/**
  * Compute a deterministic content hash that defines a task_set snapshot.
  *
  * Scope (relative to projectRoot):
@@ -14,6 +37,7 @@ import { join, relative } from "jsr:@std/path@^1.0.0";
  *   - any directory named ".alpackages" or "output"
  *   - files matching *.app  (compiled AL output)
  *   - files matching cache_*.json  (alpackages cache manifests)
+ *   - tests/al/app.json and tests/al/<difficulty>/app.json (editor configuration)
  *
  * Framing (binary-safe):
  *   For each file, compute its SHA-256 separately, then feed
@@ -35,7 +59,7 @@ export async function computeTaskSetHash(projectRoot: string): Promise<string> {
   const alFiles = await collectFiles(
     projectRoot,
     "tests/al",
-    () => true,
+    (rel) => !isEditorOnlyAppJson(rel),
   );
   const all = [...tasksFiles, ...alFiles].sort((a, b) =>
     a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0
