@@ -14,7 +14,6 @@
 import { basename, dirname, fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
-import { TEST_TOOLKIT_DEPENDENCIES } from "../src/constants.ts";
 import {
   translatePath as translateWithMapping,
   type WorkspaceMapping,
@@ -29,6 +28,12 @@ import {
   validateToolCallEnvelope,
 } from "./server-utils.ts";
 import { appendVerdict, type VerifyVerdict } from "../src/agents/verdict.ts";
+import type { AppJson } from "../src/al/app-manifest.ts";
+import {
+  ensurePrereqDependency,
+  ensureTestCodeunitRange,
+  ensureTestDependencies,
+} from "../src/al/app-manifest.ts";
 
 /** Get the CentralGauge project root from the script location */
 function getProjectRoot(): string {
@@ -355,52 +360,6 @@ async function buildALProject(
   };
 }
 
-// =============================================================================
-// App.json Helpers for Test Verification
-// =============================================================================
-
-interface AppJson {
-  dependencies?: Array<
-    { id: string; name: string; publisher: string; version: string }
-  >;
-  idRanges?: Array<{ from: number; to: number }>;
-  [key: string]: unknown;
-}
-
-/** Local alias for centralized test toolkit dependencies */
-const TEST_TOOLKIT_DEPS = TEST_TOOLKIT_DEPENDENCIES;
-
-/**
- * Add Test Toolkit dependencies to app.json if not already present.
- */
-function ensureTestDependencies(appJson: AppJson): void {
-  if (!appJson.dependencies) {
-    appJson.dependencies = [];
-  }
-
-  for (const dep of TEST_TOOLKIT_DEPS) {
-    const exists = appJson.dependencies.some((d) => d.id === dep.id);
-    if (!exists) {
-      appJson.dependencies.push(dep);
-    }
-  }
-}
-
-/**
- * Extend idRanges to include test codeunit range (80000-89999) if not present.
- */
-function ensureTestCodeunitRange(appJson: AppJson): void {
-  if (!appJson.idRanges) {
-    appJson.idRanges = [];
-  }
-  const hasTestRange = appJson.idRanges.some(
-    (r) => r.from <= 80001 && r.to >= 80001,
-  );
-  if (!hasTestRange) {
-    appJson.idRanges.push({ from: 80000, to: 89999 });
-  }
-}
-
 /**
  * Extract task ID from a test file path.
  * e.g., "tests/al/easy/CG-AL-E002.Test.al" -> "CG-AL-E002"
@@ -537,29 +496,6 @@ async function findAllPrereqApps(
   }
 
   return result;
-}
-
-/**
- * Add prereq app as dependency to app.json.
- */
-function ensurePrereqDependency(
-  appJson: AppJson,
-  prereqAppJson: AppJson,
-): void {
-  if (!appJson.dependencies) {
-    appJson.dependencies = [];
-  }
-
-  const prereqId = prereqAppJson["id"] as string;
-  const exists = appJson.dependencies.some((d) => d.id === prereqId);
-  if (!exists) {
-    appJson.dependencies.push({
-      id: prereqId,
-      name: prereqAppJson["name"] as string,
-      publisher: prereqAppJson["publisher"] as string,
-      version: prereqAppJson["version"] as string,
-    });
-  }
 }
 
 /**
