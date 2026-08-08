@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { parse } from "@std/yaml";
@@ -53,6 +53,44 @@ describe("workbench/promote", () => {
   });
 
   describe("promoteDraft", () => {
+    /**
+     * Fixed id for the companion/compile-fail/freshness tests below, so
+     * they can reference `${ID}.<name>.al` paths directly rather than
+     * threading a dynamically-allocated id through every assertion.
+     */
+    const ID = "CG-AL-X001";
+
+    /**
+     * Builds `scratch/<ID>/` via the real `scaffoldDraft` (task.yml,
+     * .meta.json, correct/app.json + `<ID>.Test.al`, naive/app.json), then
+     * writes any named companions into `correct/` as `<ID>.<name>.al` -
+     * the reserved oracle-side prefix `classifyOracleFiles` (Task 2)
+     * requires for them to be picked up as companions.
+     */
+    async function writeDraft(opts: { companions?: string[] }): Promise<void> {
+      await scaffoldDraft({ id: ID, slug: "day-close", roots });
+      for (const name of opts.companions ?? []) {
+        await Deno.writeTextFile(
+          join(roots.scratchDir, ID, "correct", `${ID}.${name}.al`),
+          `codeunit 80090 "${ID} ${name}" { }\n`,
+        );
+      }
+    }
+
+    /**
+     * A discriminating verdict stamped one second into the future, so the
+     * freshness gate (I4) passes against files `writeDraft` just wrote -
+     * same reasoning as `passingVerdict()` above, scoped to these tests.
+     */
+    function freshVerdict(): ProbeVerdict {
+      return {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date(Date.now() + 1_000).toISOString(),
+      };
+    }
+
     it("moves task.yml and <id>.Test.al to their final paths, rewriting expected.testApp", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
 
@@ -76,14 +114,16 @@ describe("workbench/promote", () => {
       assertEquals(await exists(taskTarget), true);
       assertEquals(await exists(testTarget), true);
 
-      // The draft's task.yml is gone (it was moved, not copied); the .al
-      // source is gone too via the same move.
+      // The draft's task.yml is gone (it was moved, not copied); the oracle
+      // is gone from correct/ too via the same move.
       assertEquals(
         await exists(join(roots.scratchDir, meta.id, "task.yml")),
         false,
       );
       assertEquals(
-        await exists(join(roots.scratchDir, meta.id, `${meta.id}.Test.al`)),
+        await exists(
+          join(roots.scratchDir, meta.id, "correct", `${meta.id}.Test.al`),
+        ),
         false,
       );
 
@@ -468,7 +508,7 @@ describe("workbench/promote", () => {
         assertEquals(await exists(draftYamlPath), true);
         assertEquals(
           await exists(
-            join(roots.scratchDir, meta.id, `${meta.id}.Test.al`),
+            join(roots.scratchDir, meta.id, "correct", `${meta.id}.Test.al`),
           ),
           true,
         );
@@ -503,7 +543,13 @@ describe("workbench/promote", () => {
 
     it("refuses with a clear message when the draft has no <id>.Test.al", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
-      await Deno.remove(join(roots.scratchDir, meta.id, `${meta.id}.Test.al`));
+      // The oracle lives in correct/ (Task 5), not the draft root - this
+      // refusal is now classifyOracleFiles' own (Task 2's single source of
+      // truth for the oracle-side file set), reached via promoteDraft's
+      // resolution of it.
+      await Deno.remove(
+        join(roots.scratchDir, meta.id, "correct", `${meta.id}.Test.al`),
+      );
 
       await assertRejects(
         () =>
@@ -513,7 +559,7 @@ describe("workbench/promote", () => {
             verdict: passingVerdict(),
           }),
         Error,
-        "no CG-AL-X",
+        "no oracle at correct/",
       );
     });
 
@@ -548,6 +594,7 @@ describe("workbench/promote", () => {
       const testAlPath = join(
         roots.scratchDir,
         meta.id,
+        "correct",
         `${meta.id}.Test.al`,
       );
       const future = new Date(Date.now() + 60_000);
@@ -620,6 +667,7 @@ describe("workbench/promote", () => {
         const testAlPath = join(
           roots.scratchDir,
           meta.id,
+          "correct",
           `${meta.id}.Test.al`,
         );
         const future = new Date(Date.now() + 10 * 60_000);
@@ -650,6 +698,7 @@ describe("workbench/promote", () => {
       const testAlPath = join(
         roots.scratchDir,
         meta.id,
+        "correct",
         `${meta.id}.Test.al`,
       );
       const future = new Date(Date.now() + 60_000);
@@ -793,7 +842,7 @@ describe("workbench/promote", () => {
         );
         assertEquals(
           await exists(
-            join(roots.scratchDir, meta.id, `${meta.id}.Test.al`),
+            join(roots.scratchDir, meta.id, "correct", `${meta.id}.Test.al`),
           ),
           true,
         );
@@ -869,7 +918,7 @@ describe("workbench/promote", () => {
         );
         assertEquals(
           await exists(
-            join(roots.scratchDir, meta.id, `${meta.id}.Test.al`),
+            join(roots.scratchDir, meta.id, "correct", `${meta.id}.Test.al`),
           ),
           true,
         );
@@ -939,5 +988,108 @@ describe("workbench/promote", () => {
         }
       },
     );
+
+    it("moves companion mocks alongside the oracle", async () => {
+      await writeDraft({ companions: ["MockThing", "Spy"] });
+      const result = await promoteDraft(ID, {
+        difficulty: "hard",
+        roots,
+        verdict: freshVerdict(),
+      });
+
+      assertEquals(result.movedCompanions.sort(), [
+        `tests/al/hard/${ID}.MockThing.al`,
+        `tests/al/hard/${ID}.Spy.al`,
+      ]);
+      assertEquals(
+        await exists(join(roots.testsDir, "hard", `${ID}.MockThing.al`)),
+        true,
+      );
+      assertEquals(
+        await exists(join(roots.scratchDir, ID, "correct", `${ID}.Spy.al`)),
+        false,
+      );
+    });
+
+    it("rolls the whole move back when one companion's target exists", async () => {
+      await writeDraft({ companions: ["MockThing", "Spy"] });
+      await ensureDir(join(roots.testsDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.testsDir, "hard", `${ID}.Spy.al`),
+        'codeunit 80090 "Existing" { }',
+      );
+
+      await assertRejects(() =>
+        promoteDraft(ID, { difficulty: "hard", roots, verdict: freshVerdict() })
+      );
+
+      // Nothing partially moved, nothing removed from the draft.
+      assertEquals(
+        await exists(join(roots.testsDir, "hard", `${ID}.MockThing.al`)),
+        false,
+      );
+      assertEquals(
+        await exists(join(roots.testsDir, "hard", `${ID}.Test.al`)),
+        false,
+      );
+      assertEquals(
+        await exists(
+          join(roots.scratchDir, ID, "correct", `${ID}.MockThing.al`),
+        ),
+        true,
+      );
+      assertEquals(await exists(join(roots.scratchDir, ID, "task.yml")), true);
+    });
+
+    it("refuses a compile_fail verdict", async () => {
+      await writeDraft({});
+      const error = await assertRejects(() =>
+        promoteDraft(ID, {
+          difficulty: "hard",
+          roots,
+          verdict: {
+            correct: "pass",
+            naive: "compile_fail",
+            discriminates: false,
+            at: new Date().toISOString(),
+          },
+        })
+      );
+      assertStringIncludes((error as Error).message, "compile");
+    });
+
+    it("accepts a compile_fail verdict carrying allowCompileFail", async () => {
+      await writeDraft({});
+      const result = await promoteDraft(ID, {
+        difficulty: "hard",
+        roots,
+        verdict: {
+          correct: "pass",
+          naive: "compile_fail",
+          discriminates: true,
+          allowCompileFail: true,
+          at: new Date().toISOString(),
+        },
+      });
+      assertEquals(result.movedTest, `tests/al/hard/${ID}.Test.al`);
+    });
+
+    it("does not trip freshness on an editor-state write", async () => {
+      await writeDraft({});
+      const verdict = freshVerdict();
+      // Simulate the AL Test Runner extension writing into the project.
+      await ensureDir(join(roots.scratchDir, ID, "correct", ".altestrunner"));
+      await Deno.writeTextFile(
+        join(roots.scratchDir, ID, "correct", ".altestrunner", "config.json"),
+        "{}",
+      );
+
+      const result = await promoteDraft(ID, {
+        difficulty: "hard",
+        roots,
+        verdict,
+      });
+      assertEquals(result.hashChanged, true);
+    });
   });
 });

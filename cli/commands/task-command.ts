@@ -310,6 +310,9 @@ export async function runTaskPromote(
     colors.green("[OK]") + okPrefix.slice("[OK]".length) + result.movedTask,
   );
   console.log(okIndent + result.movedTest);
+  for (const companion of result.movedCompanions) {
+    console.log(okIndent + companion);
+  }
   if (result.movedPrereq) {
     console.log(okIndent + result.movedPrereq);
   }

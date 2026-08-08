@@ -3,8 +3,10 @@
  *
  * `promoteDraft` is the last checkpoint before a hand-authored trap-task
  * becomes something models are scored against: it moves a `scratch/<id>/`
- * draft's `task.yml`, `<id>.Test.al`, and (when present) `prereq/` into the
- * committed `tasks/` and `tests/al/` trees. Because that move changes
+ * draft's `task.yml`, the oracle-side file set in `correct/` (the `<id>.Test.al`
+ * oracle itself plus any `<id>.*.al` companions - mocks, spies, helper
+ * enums), and (when present) `prereq/` into the committed `tasks/` and
+ * `tests/al/` trees. Because that move changes
  * `task_sets.hash` (see CLAUDE.md's "Task-set hash scope"), it refuses far
  * more than it accepts - a task that a naive solution also passes tests
  * nothing, and a task promoted on an infra hiccup is worse, because it
@@ -35,19 +37,21 @@
  * rewritten to match the promotion target) is validated through the real
  * `parseTaskManifest` before anything moves - the common failure (a
  * malformed draft) then needs no rollback. The move itself - task write,
- * test-file move, and prereq-dir move when present - runs as one unit: a
- * failure partway through rolls back everything already done, because a
- * half-promoted draft (task in `tasks/`, oracle still in `scratch/`) is
- * worse than one this function simply refused.
+ * test-file move, companion moves, and prereq-dir move when present - runs
+ * as one unit: a failure partway through rolls back everything already
+ * done, in reverse order, because a half-promoted draft (task in `tasks/`,
+ * oracle still in `scratch/`) is worse than one this function simply
+ * refused.
  */
 
 import { ensureDir, exists, move, walk } from "@std/fs";
-import { dirname, join } from "@std/path";
+import { basename, dirname, join, relative } from "@std/path";
 import { parse, stringify } from "@std/yaml";
 
 import type { IdRoots } from "./ids.ts";
 import type { DraftMeta } from "./scaffold.ts";
 import type { ProbeVerdict } from "./probe.ts";
+import { classifyOracleFiles } from "./oracle-files.ts";
 import { parseTaskManifest } from "../tasks/interfaces.ts";
 
 export type PromoteDifficulty = "easy" | "medium" | "hard";
@@ -58,6 +62,15 @@ export interface PromoteResult {
   movedTask: string;
   /** Repo-canonical destination, e.g. `tests/al/hard/CG-AL-X053.Test.al`. */
   movedTest: string;
+  /**
+   * Repo-canonical destinations for the oracle's companion files (mocks,
+   * spies, helper enums) that lived alongside it in `correct/` under the
+   * reserved `<id>.` prefix. `compile-queue.ts` copies every
+   * `${taskId}.`-prefixed `.al` out of `tests/al/<difficulty>/` at bench
+   * time, so a companion left behind in the draft would fail the promoted
+   * task's compile for every model despite a green probe.
+   */
+  movedCompanions: string[];
   /**
    * Repo-canonical path the prereq app was moved to, when this draft has
    * one (`scratch/<id>/prereq/` -> `tests/al/dependencies/<id>/`).
@@ -136,6 +149,18 @@ function assertVerdictAllowsPromotion(
     );
   }
 
+  if (verdict.naive === "compile_fail" && !verdict.allowCompileFail) {
+    throw new Error(
+      `Refusing to promote ${id}: the naive side failed to COMPILE rather ` +
+        `than failing its assertions. That is not discrimination - it ` +
+        `usually means a solution file in correct/ carries the reserved ` +
+        `"${id}." prefix and was injected into the naive run, or that the ` +
+        `oracle references a helper only correct/ has. Fix the layout and ` +
+        `re-probe, or re-run the probe with --allow-compile-fail if this ` +
+        `trap genuinely is about a compile error.`,
+    );
+  }
+
   if (!verdict.discriminates) {
     const problems: string[] = [];
     if (verdict.correct !== "pass") {
@@ -184,14 +209,20 @@ async function assertVerdictIsFresh(
     );
   }
 
-  const candidates = [
-    join(draftDir, "task.yml"),
-    join(draftDir, `${id}.Test.al`),
-  ];
+  const candidates = [join(draftDir, "task.yml")];
+
+  // Only source files, and never editor state. Once correct/ and naive/ are
+  // live AL projects, the AL extension and AL Test Runner write .altestrunner/,
+  // rad.json, .vscode/ and .alpackages/ into them; treating those as draft
+  // edits would force a spurious multi-minute re-probe after every session.
   for (const solutionDir of ["correct", "naive"]) {
     const dir = join(draftDir, solutionDir);
     if (!(await exists(dir))) continue;
     for await (const entry of walk(dir, { includeDirs: false })) {
+      const rel = relative(dir, entry.path).replaceAll("\\", "/");
+      if (rel.split("/").some((seg) => seg.startsWith("."))) continue;
+      const name = entry.name.toLowerCase();
+      if (!name.endsWith(".al") && name !== "app.json") continue;
       candidates.push(entry.path);
     }
   }
@@ -257,8 +288,9 @@ async function idExistsAnywhereUnder(
 /**
  * Promotes `scratch/<id>/` into the committed suite. See the module doc for
  * the load-bearing refusal rules. Order: resolve slug -> gate on the probe
- * verdict (discriminates + fresh) -> check every destination path is free
- * -> validate the rewritten manifest -> move -> report.
+ * verdict (discriminates + fresh) -> resolve the oracle-side file set ->
+ * check every destination path is free -> validate the rewritten manifest
+ * -> move -> report.
  */
 export async function promoteDraft(
   id: string,
@@ -284,6 +316,16 @@ export async function promoteDraft(
     await assertVerdictIsFresh(id, draftDir, verdict);
   }
 
+  // --- resolve the oracle-side file set (Task 2's single source of truth
+  // for what lives under the reserved "<id>." prefix in correct/) - needed
+  // below for the per-companion destination refusals, and again further
+  // down for the move itself. ---
+  const oracleSet = await classifyOracleFiles({ id, draftDir });
+  const draftTestAlPath = join(draftDir, "correct", oracleSet.oracle);
+  const draftCompanionPaths = oracleSet.companions.map((name) =>
+    join(draftDir, "correct", name)
+  );
+
   // --- check every destination path is free (never overridable) ---
   const taskTargetPath = join(
     roots.tasksDir,
@@ -296,6 +338,12 @@ export async function promoteDraft(
   await refuseIfExists(taskTargetPath, "task manifest");
   await refuseIfExists(testTargetPath, "test codeunit");
   await refuseIfExists(prereqTargetDir, "prereq dir");
+  for (const name of oracleSet.companions) {
+    await refuseIfExists(
+      join(roots.testsDir, difficulty, name),
+      `companion file ${name}`,
+    );
+  }
 
   if (await idExistsAnywhereUnder(roots.tasksDir, id)) {
     throw new Error(
@@ -315,19 +363,14 @@ export async function promoteDraft(
   }
 
   // --- validate before moving ---
+  // The oracle's own existence was already established by classifyOracleFiles
+  // above (its Refusal 3) - draftTestAlPath is guaranteed to exist here.
   const draftTaskYamlPath = join(draftDir, "task.yml");
-  const draftTestAlPath = join(draftDir, `${id}.Test.al`);
   const draftPrereqDir = join(draftDir, "prereq");
 
   if (!(await exists(draftTaskYamlPath))) {
     throw new Error(
       `Cannot promote ${id}: no task.yml at ${draftTaskYamlPath} - is ` +
-        `this a scaffolded draft?`,
-    );
-  }
-  if (!(await exists(draftTestAlPath))) {
-    throw new Error(
-      `Cannot promote ${id}: no ${id}.Test.al at ${draftTestAlPath} - is ` +
         `this a scaffolded draft?`,
     );
   }
@@ -400,13 +443,14 @@ export async function promoteDraft(
 
   const finalYamlText = stringify(rewritten, { lineWidth: -1 });
 
-  // --- move: task write, test-file move, and (if present) prereq-dir move
-  // all share ONE rollback. A failure partway through - e.g. the test-file
-  // move fails after the task manifest was already written - undoes
-  // everything that succeeded so far, because a half-promoted draft (task
-  // in tasks/, oracle still in scratch/) is worse than a refused one. ---
+  // --- move: task write, test-file move, companion moves, and (if present)
+  // prereq-dir move all share ONE rollback. A failure partway through -
+  // e.g. a companion move fails after the task manifest and test file were
+  // already moved - undoes everything that succeeded so far, because a
+  // half-promoted draft (task in tasks/, oracle still in scratch/) is worse
+  // than a refused one. ---
+  const movedPairs: Array<{ from: string; to: string }> = [];
   let taskWritten = false;
-  let testMoved = false;
   let prereqMoved = false;
   try {
     await ensureDir(dirname(taskTargetPath));
@@ -415,7 +459,13 @@ export async function promoteDraft(
     taskWritten = true;
 
     await move(draftTestAlPath, testTargetPath);
-    testMoved = true;
+    movedPairs.push({ from: draftTestAlPath, to: testTargetPath });
+
+    for (const from of draftCompanionPaths) {
+      const to = join(roots.testsDir, difficulty, basename(from));
+      await move(from, to);
+      movedPairs.push({ from, to });
+    }
 
     if (meta?.withPrereq) {
       await ensureDir(dirname(prereqTargetDir));
@@ -448,12 +498,14 @@ export async function promoteDraft(
         );
       }
     }
-    if (testMoved) {
+    // Undo the most recent move first - this list holds the test-file move
+    // followed by any companion moves, in the order they landed.
+    for (const pair of movedPairs.slice().reverse()) {
       try {
-        await move(testTargetPath, draftTestAlPath);
+        await move(pair.to, pair.from);
       } catch (rollbackError) {
         rollbackErrors.push(
-          `restoring ${testTargetPath} -> ${draftTestAlPath}: ${
+          `restoring ${pair.to} -> ${pair.from}: ${
             rollbackError instanceof Error
               ? rollbackError.message
               : String(rollbackError)
@@ -498,6 +550,9 @@ export async function promoteDraft(
   return {
     movedTask,
     movedTest,
+    movedCompanions: oracleSet.companions.map((n) =>
+      `tests/al/${difficulty}/${n}`
+    ),
     ...(meta?.withPrereq ? { movedPrereq: `tests/al/dependencies/${id}` } : {}),
     hashChanged: true,
     forced: force,
