@@ -138,6 +138,55 @@ describe("workbench/probe", () => {
       assertEquals(verdict.discriminates, false);
     });
 
+    it("records a compile-earned naive fail as compile_fail, not fail", async () => {
+      const verdict = await probeDraft(id, {
+        scratchDir,
+        runner: stubRunner({ correct: 0, naive: 4 }),
+      });
+      assertEquals(verdict.naive, "compile_fail");
+      assertEquals(verdict.discriminates, false);
+    });
+
+    it("passes --strict-fail-mode on the naive run only", async () => {
+      const seen: string[][] = [];
+      const runner: ProbeRunner = (args) => {
+        seen.push(args);
+        return Promise.resolve(0);
+      };
+      await probeDraft(id, { scratchDir, runner });
+
+      const naiveArgs = seen.find((a) =>
+        (a[a.indexOf("--solution") + 1] ?? "").includes("naive")
+      );
+      const correctArgs = seen.find((a) =>
+        (a[a.indexOf("--solution") + 1] ?? "").includes("correct")
+      );
+      assertEquals(naiveArgs?.includes("--strict-fail-mode"), true);
+      assertEquals(correctArgs?.includes("--strict-fail-mode"), false);
+    });
+
+    it("treats compile_fail as discriminating under allowCompileFail", async () => {
+      const verdict = await probeDraft(id, {
+        scratchDir,
+        allowCompileFail: true,
+        runner: stubRunner({ correct: 0, naive: 4 }),
+      });
+      assertEquals(verdict.discriminates, true);
+      assertEquals(verdict.allowCompileFail, true);
+    });
+
+    it("persists allowCompileFail into .probe.json", async () => {
+      await probeDraft(id, {
+        scratchDir,
+        allowCompileFail: true,
+        runner: stubRunner({ correct: 0, naive: 4 }),
+      });
+      const saved = JSON.parse(
+        await Deno.readTextFile(join(scratchDir, id, ".probe.json")),
+      ) as ProbeVerdict;
+      assertEquals(saved.allowCompileFail, true);
+    });
+
     it("writes scratch/<id>/.probe.json with the verdict", async () => {
       const verdict = await probeDraft(id, {
         scratchDir,

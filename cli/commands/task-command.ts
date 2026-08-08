@@ -122,25 +122,34 @@ export interface TaskProbeOptions {
   scratchDir?: string;
   /** Override for tests; defaults to `probeDraft`'s real subprocess runner. */
   runner?: ProbeRunner;
+  /**
+   * Declares a compile-earned naive failure to be the real trap. Threaded
+   * through to `probeDraft`, which persists it into `.probe.json` so the
+   * promote gate can surface it.
+   */
+  allowCompileFail?: boolean;
 }
 
-/** `pass` green, `fail` red, `inconclusive` yellow — matches `trap-probe.ts`'s own coloring. */
+/** `pass` green, `fail` red, `compile_fail`/`inconclusive` yellow — matches `trap-probe.ts`'s own coloring. */
 function formatOutcome(outcome: ProbeOutcome): string {
   switch (outcome) {
     case "pass":
       return colors.green(outcome);
     case "fail":
       return colors.red(outcome);
+    case "compile_fail":
+      return colors.yellow(outcome);
     case "inconclusive":
       return colors.yellow(outcome);
   }
 }
 
 /**
- * Exit code the `probe` action passes to `Deno.exit`, mirroring the verdict:
- * `0` discriminates, `3` when either side is inconclusive (distinct from a
- * hard failure — `trap-probe` returns 3 for infra trouble, and an operator
- * seeing "inconclusive" needs to re-run, not edit the task), `1` otherwise.
+ * Exit code the `probe` action passes to `Deno.exit`:
+ * `0` discriminates, `3` inconclusive (re-run, do not edit), `5` a
+ * compile-earned naive failure (fix the layout, or re-run with
+ * `--allow-compile-fail` if the trap really is a compile error), `1`
+ * otherwise.
  *
  * Pure (no `Deno.exit` of its own) so it's unit-testable without process
  * teardown — mirrors `status-command.ts`'s `emitActionError` pattern.
@@ -150,6 +159,7 @@ export function probeExitCode(verdict: ProbeVerdict): number {
   if (verdict.correct === "inconclusive" || verdict.naive === "inconclusive") {
     return 3;
   }
+  if (verdict.naive === "compile_fail") return 5;
   return 1;
 }
 
@@ -170,6 +180,9 @@ export async function runTaskProbe(
     scratchDir,
     ...(opts.container !== undefined ? { container: opts.container } : {}),
     ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
+    ...(opts.allowCompileFail !== undefined
+      ? { allowCompileFail: opts.allowCompileFail }
+      : {}),
   });
 
   console.log(
@@ -199,6 +212,19 @@ export async function runTaskProbe(
         " correct/ did not pass its own oracle — fix the reference solution" +
         " or the test it's meant to satisfy.",
     );
+  }
+  if (verdict.naive === "compile_fail" && !verdict.allowCompileFail) {
+    console.log(
+      colors.red("[FAIL]") +
+        " naive/ failed to COMPILE rather than failing its assertions." +
+        " That is not discrimination — it usually means a solution file in" +
+        ' correct/ carries the reserved "' + opts.id + '." prefix and was' +
+        " injected into the naive run, or that the oracle references a" +
+        " helper that only correct/ has. Fix the layout, or re-run with" +
+        " --allow-compile-fail if this trap genuinely is about a compile" +
+        " error.",
+    );
+    return verdict;
   }
   if (verdict.naive !== "fail") {
     console.log(
@@ -344,10 +370,17 @@ export function registerTaskCommand(cli: Command): void {
       "BC container to probe against (default: Cronus28 — the only one " +
         "with credentials wired for trap-probe)",
     )
+    .option(
+      "--allow-compile-fail",
+      "Accept a naive/ that fails to COMPILE (rather than failing its " +
+        "assertions) as real discrimination",
+      { default: false },
+    )
     .action(async (opts, id) => {
       const verdict = await runTaskProbe({
         id,
         ...(opts.container !== undefined ? { container: opts.container } : {}),
+        allowCompileFail: opts.allowCompileFail,
       });
       Deno.exit(probeExitCode(verdict));
     });

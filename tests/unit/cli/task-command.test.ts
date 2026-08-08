@@ -463,6 +463,18 @@ Deno.test("probeExitCode", () => {
   );
 });
 
+Deno.test("probeExitCode: compile-failure verdict returns 5", () => {
+  assertEquals(
+    probeExitCode({
+      correct: "pass",
+      naive: "compile_fail",
+      discriminates: false,
+      at: new Date().toISOString(),
+    }),
+    5,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // runTaskPromote
 // ---------------------------------------------------------------------------

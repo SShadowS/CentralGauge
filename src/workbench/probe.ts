@@ -47,13 +47,26 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 
-import type { ProbeOutcome } from "../../scripts/trap-probe.ts";
+import type { ProbeOutcome as RawProbeOutcome } from "../../scripts/trap-probe.ts";
 import type { DraftMeta } from "./scaffold.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
 
-// Re-exported so callers (the CLI layer, a later Phase 2 panel) depend only
-// on `src/workbench/probe.ts`, not on reaching past it into `scripts/`.
-export type { ProbeOutcome };
+/**
+ * Outcome of probing one side of a draft.
+ *
+ * `compile_fail` is a workbench-level distinction that `trap-probe` reports
+ * via exit code 4 under `--strict-fail-mode`: the side failed, but because
+ * it did not COMPILE rather than because its assertions failed.
+ *
+ * That distinction is the guard no filename rule can provide. A
+ * plausible-but-wrong trap solution should compile and fail asserts. A naive
+ * side that fails to compile is the signature of a misnamed solution
+ * colliding with an injected oracle-side file, an oracle-referenced helper
+ * present in correct/ and absent from naive/, or an unresolved symbol - each
+ * of which produces a green verdict for a task that discriminates on
+ * nothing.
+ */
+export type ProbeOutcome = RawProbeOutcome | "compile_fail";
 
 /** Verdict recorded for one probe run, both returned and written to `.probe.json`. */
 export interface ProbeVerdict {
@@ -61,6 +74,12 @@ export interface ProbeVerdict {
   naive: ProbeOutcome;
   discriminates: boolean;
   at: string;
+  /**
+   * Set when the operator declared a compile-earned naive failure to be the
+   * real trap. Persisted so the promote gate can surface it rather than
+   * silently accepting a verdict that would otherwise be refused.
+   */
+  allowCompileFail?: boolean;
 }
 
 /**
@@ -79,20 +98,22 @@ export type ProbeRunner = (args: string[]) => Promise<number>;
 const DEFAULT_CONTAINER = "Cronus28";
 
 /**
- * Maps one `trap-probe` invocation's exit code, given the `--expect` value
- * it was called with, to the outcome of the solution actually probed.
+ * Maps one `trap-probe` invocation's exit code, given the `--expect` value it
+ * was called with, to the outcome of the solution actually probed.
  *
  * - `3` -> `"inconclusive"`, regardless of `expect` - infra trouble, not a
  *   real result, and must never be compared against the expectation.
+ * - `4` -> `"compile_fail"` - only emitted under `--strict-fail-mode`, which
+ *   this module passes on the naive run only.
  * - `0` -> the run matched `--expect`, so the actual outcome IS `expect`.
- * - anything else (`1` mismatched, or any other unexpected code) -> the
- *   actual outcome is the opposite of `expect`.
+ * - anything else -> the actual outcome is the opposite of `expect`.
  */
 function outcomeFromExitCode(
   expect: "pass" | "fail",
   exitCode: number,
 ): ProbeOutcome {
   if (exitCode === 3) return "inconclusive";
+  if (exitCode === 4) return "compile_fail";
   if (exitCode === 0) return expect;
   return expect === "pass" ? "fail" : "pass";
 }
@@ -176,7 +197,12 @@ async function resolveDraftTestCodeunitId(
  */
 export async function probeDraft(
   id: string,
-  opts: { scratchDir: string; container?: string; runner?: ProbeRunner },
+  opts: {
+    scratchDir: string;
+    container?: string;
+    runner?: ProbeRunner;
+    allowCompileFail?: boolean;
+  },
 ): Promise<ProbeVerdict> {
   const draftDir = join(opts.scratchDir, id);
   const correctDir = join(draftDir, "correct");
@@ -221,6 +247,9 @@ export async function probeDraft(
       ? ["--test-codeunit-id", String(testCodeunitId)]
       : []),
     ...(hasPrereq ? ["--prereq-dir", prereqDir] : []),
+    // Both sides compile the prereq independently, so staging from either
+    // invocation is valid; the flag just needs to be on both.
+    ...(hasPrereq ? ["--stage-symbols-dir", join(draftDir, ".symbols")] : []),
   ];
 
   const correctExitCode = await runner([
@@ -244,16 +273,24 @@ export async function probeDraft(
     "--container",
     container,
     ...oracleArgs,
+    // Naive only: a naive side must fail by not satisfying the oracle's
+    // assertions, not by failing to compile - see the module doc.
+    "--strict-fail-mode",
   ]);
 
   const correct = outcomeFromExitCode("pass", correctExitCode);
   const naive = outcomeFromExitCode("fail", naiveExitCode);
 
+  const allowCompileFail = opts.allowCompileFail ?? false;
+  const naiveDiscriminates = naive === "fail" ||
+    (naive === "compile_fail" && allowCompileFail);
+
   const verdict: ProbeVerdict = {
     correct,
     naive,
-    discriminates: correct === "pass" && naive === "fail",
+    discriminates: correct === "pass" && naiveDiscriminates,
     at: new Date().toISOString(),
+    ...(allowCompileFail ? { allowCompileFail: true } : {}),
   };
 
   await Deno.writeTextFile(
