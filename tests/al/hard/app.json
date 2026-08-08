@@ -1,0 +1,41 @@
+{
+  "id": "b7c4e1a0-0000-4000-8000-0000000ba500",
+  "name": "CentralGauge Tests (hard)",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "brief": "AL project boundary for editing hard-difficulty test codeunits",
+  "description": "Editor-only. Not compiled by the benchmark and not part of the task_set hash. Exists so VS Code treats this directory as an AL project when authoring an oracle.",
+  "platform": "28.0.0.0",
+  "application": "28.0.0.0",
+  "idRanges": [
+    {
+      "from": 80000,
+      "to": 89999
+    }
+  ],
+  "runtime": "17.0",
+  "target": "OnPrem",
+  "features": [
+    "NoImplicitWith"
+  ],
+  "dependencies": [
+    {
+      "id": "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+      "name": "Library Assert",
+      "publisher": "Microsoft",
+      "version": "28.0.0.0"
+    },
+    {
+      "id": "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+      "name": "Any",
+      "publisher": "Microsoft",
+      "version": "28.0.0.0"
+    },
+    {
+      "id": "5d86850b-0d76-4eca-bd7b-951ad998e997",
+      "name": "Tests-TestLibraries",
+      "publisher": "Microsoft",
+      "version": "28.0.0.0"
+    }
+  ]
+}
