@@ -17,13 +17,20 @@
 - Tests run via `deno task test:unit`. Never `deno test` bare — it lacks `--allow-all`.
 - Never run the full `deno task test:unit` while a bench is live. Use `deno test --allow-all --ignore=tests/unit/container tests/unit/` or confirm no bench is running. A hook enforces this.
 - Every workbench test fixture lives under `Deno.makeTempDir()` via `createTempDir` from `tests/utils/test-helpers.ts`. **No test may read or write the real `tasks/`, `tests/al/` or `scratch/` trees.**
-- `mcp/al-tools-server.ts` must only ever be imported **dynamically**, after credentials are resolved. It constructs a `BcContainerProvider` and reads `CENTRALGAUGE_CONTAINER_USERNAME`/`_PASSWORD` at module scope (`:75-87`). Nothing under `src/workbench/` may statically import it.
+- `mcp/al-tools-server.ts` must only ever be imported **dynamically**, after credentials are resolved. It constructs a `BcContainerProvider` and reads `CENTRALGAUGE_CONTAINER_USERNAME`/`_PASSWORD` at module scope (`:80-92`). Nothing under `src/workbench/` may statically import it.
 - `scripts/trap-probe.ts` changes are **additive only**: new flags, new exit codes reachable only behind a new flag. The `--task`-only invocation contract must stay byte-for-byte identical.
 - Repo-relative paths written into manifests and printed to operators use forward slashes even on Windows.
 - Console output uses `@std/fmt/colors` with `[Tag]` prefixes, never emoji.
 - Existing exit codes for `scripts/trap-probe.ts`: `0` matched `--expect`, `1` mismatched, `2` bad arguments, `3` inconclusive. This plan adds `4`.
 - AL id ranges: 69000-69999 prereq objects, 70000-79999 generated code, 80000-89999 test codeunits.
 - Task 4 changes `task_sets.hash`. Everything before it is hash-neutral.
+- **Line numbers in this plan are anchors, not addresses.** They were captured
+  before any task ran, and each task shifts the ones after it — Task 1 alone
+  moved everything in `mcp/al-tools-server.ts` up by ~64 lines. Always locate
+  by symbol name (`grep -n "function copyCompanionTestFiles"`) and treat the
+  cited line as a hint about which region to look in. If a citation is stale
+  in a comment you are already editing, correct it; do not go hunting for
+  stale citations outside your task.
 
 ---
 
@@ -185,7 +192,7 @@ Create `src/al/app-manifest.ts`. Copy the bodies verbatim from `mcp/al-tools-ser
  *
  * Extracted from `mcp/al-tools-server.ts` so `src/workbench/` can reuse them.
  * That module constructs a `BcContainerProvider` and reads container
- * credentials at module-evaluation time (`:75-87`), so it must only ever be
+ * credentials at module-evaluation time (`:80-92`), so it must only ever be
  * imported dynamically — see `scripts/trap-probe.ts:30-43`. Anything the
  * eagerly-loaded CLI needs has to live here instead.
  *
@@ -499,7 +506,7 @@ Create `src/workbench/oracle-files.ts`:
  * The draft's oracle lives in `correct/` so the AL Language extension sees
  * one project containing solution + test — the same app the probe compiles.
  * That placement has a consequence: `copyCompanionTestFiles`
- * (`mcp/al-tools-server.ts:646-676`) copies every `<id>.*.al` from the
+ * (`mcp/al-tools-server.ts:582-612`) copies every `<id>.*.al` from the
  * ORACLE'S directory into BOTH verify directories. For a mock the oracle
  * needs, that is right. For a solution file it is contamination that makes a
  * non-discriminating task look discriminating.
@@ -538,7 +545,7 @@ export class OracleFileError extends Error {
 
 /**
  * Faithful re-implementation of `copyCompanionTestFiles`' matcher
- * (`mcp/al-tools-server.ts:660-671`): `.al` extension, case-SENSITIVE
+ * (`mcp/al-tools-server.ts:596-601`): `.al` extension, case-SENSITIVE
  * `startsWith(taskPrefix + ".")`, excluding the exact test filename.
  *
  * Exists only so the anti-drift test can compare the two matchers directly.
@@ -974,7 +981,7 @@ Benched models need re-benching before leaderboard comparison."
 - Consumes: `AppJson`, `ensureTestDependencies`, `ensureTestCodeunitRange`, `ensurePrereqDependency` from Task 1
 - Produces: draft layout with `correct/<id>.Test.al`, `correct/app.json`, `naive/app.json`. `DraftMeta` is unchanged.
 
-This also fixes a live bug: `al_verify` hard-requires `app.json` in the solution directory (`prepareAppJsonForTesting`, fatal at `mcp/al-tools-server.ts:1387`), and today `scaffoldDraft` never writes one — so `task probe` on a fresh draft dies with `No app.json found in .../correct`.
+This also fixes a live bug: `al_verify` hard-requires `app.json` in the solution directory (`prepareAppJsonForTesting`, fatal at `mcp/al-tools-server.ts:1323`), and today `scaffoldDraft` never writes one — so `task probe` on a fresh draft dies with `No app.json found in .../correct`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1105,7 +1112,7 @@ const DEFAULT_PROBE_CONTAINER = "Cronus28";
  * Renders the `app.json` for one solution directory.
  *
  * `al_verify` REQUIRES this file (`prepareAppJsonForTesting` is fatal at
- * `mcp/al-tools-server.ts:1387`), so its absence is why a freshly scaffolded
+ * `mcp/al-tools-server.ts:1323`), so its absence is why a freshly scaffolded
  * draft could not be probed at all before this existed. It also makes the
  * directory an AL project, which is what gives the author IntelliSense.
  *
@@ -1374,7 +1381,7 @@ would fake discrimination never produces a verdict at all."
 
 **Files:**
 - Modify: `scripts/trap-probe.ts` (`ProbeArgsInput`, `ProbeOracle`, `planProbe`, `main`, usage header at `:5-6`)
-- Modify: `mcp/al-tools-server.ts` (`handleAlVerify` params, staging after the prereq compile loop at `:1345-1352`)
+- Modify: `mcp/al-tools-server.ts` (`handleAlVerify` params, staging after the prereq compile loop at `:1280-1290`)
 - Modify: `tests/unit/scripts/trap-probe.test.ts` (create if absent)
 
 **Interfaces:**
@@ -1617,7 +1624,7 @@ Keep the existing explanatory comment about the explicit exit. Update the usage 
 
 - [ ] **Step 4: Implement the staging parameter in `handleAlVerify`**
 
-In `mcp/al-tools-server.ts`, add `stageSymbolsDir?: string;` to `handleAlVerify`'s params type (alongside `prereqDir`). Immediately after the prereq compile loop populates `compiledAppPath` (around `:1345-1352`), stage every compiled prereq:
+In `mcp/al-tools-server.ts`, add `stageSymbolsDir?: string;` to `handleAlVerify`'s params type (alongside `prereqDir`). Immediately after the prereq compile loop populates `compiledAppPath` (around `:1280-1290`), stage every compiled prereq:
 
 ```typescript
     // Stage compiled prereq symbols for the editor (workbench drafts only).
@@ -1647,7 +1654,7 @@ In `mcp/al-tools-server.ts`, add `stageSymbolsDir?: string;` to `handleAlVerify`
     }
 ```
 
-Adjust the field name if `prereqApps` entries store the compiled path under a different key — read the loop at `:1320-1355` and use the actual name. Do **not** add `stageSymbolsDir` to the tool's input JSON schema at `:257-274`.
+Adjust the field name if `prereqApps` entries store the compiled path under a different key — read the loop at `:1256-1291` and use the actual name. Do **not** add `stageSymbolsDir` to the tool's input JSON schema at `:262-279`.
 
 Thread the value from `trap-probe`'s `test-file` oracle branch into the `handleAlVerify` call.
 
