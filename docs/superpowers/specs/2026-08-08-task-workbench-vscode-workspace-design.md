@@ -1,7 +1,7 @@
 # Task Workbench: VS Code Workspace and Authoring Test Loop
 
 Date: 2026-08-08
-Status: awaiting review (revision 2, after adversarial review)
+Status: awaiting review (revision 3, after two adversarial review rounds)
 
 ## Problem
 
@@ -100,7 +100,35 @@ convention for companion mocks — eight exist under
 `tests/al/{easy,medium,hard}/`, including
 `CG-AL-M009.MockShippingProvider.al` and `CG-AL-H205.Spy.al`.
 
-The design below turns this into an enforced naming rule rather than a trap.
+### The prefix is not a usable membership test
+
+A tempting fix is a content-based rule: companions must declare objects in
+80000-89999, so a misnamed solution (70000-79999 by the id-range convention
+in `.claude/rules/prereq-apps.md`) is refused. It does not survive the
+committed tree.
+
+Seven of the eight companions are 80xxx. The eighth,
+`tests/al/hard/CG-AL-H001.ProductType.al`, is `enum 70098` — inside the
+generated-code range — and the oracle genuinely references it
+(`CG-AL-H001.Test.al:24`, `"CG Product Type"::Standard`). It sits in that
+range precisely because the model's generated code must reference it too. An
+80000-89999 refusal would reject a legitimate, shipped pattern.
+
+So no filename or id-range predicate separates an oracle-side companion from a
+misnamed solution. Section 1 handles this with a failure-mode check instead.
+
+### A bare `<id>.al` would overwrite every model's submission
+
+`compile-queue.ts:1081-1082` writes the model's generated code to
+`${manifest.id}.al` in the temp project, and `:1093-1103` then copies every
+`${taskId}.`-prefixed `.al` out of `tests/al/<difficulty>/` into that same
+directory. `"CG-AL-X053.al".startsWith("CG-AL-X053.")` is true, so a file with
+that exact name would land on top of the model's own code — for every model,
+in every run — and the probe could never catch it, because on the naive side
+it merely looks like a collision.
+
+No such file exists today. Reserving the `<id>.` prefix without excluding the
+bare name would have made one possible.
 
 ### Companion files are dropped at promote
 
@@ -226,16 +254,67 @@ hazards recorded in the Verified findings:
 - `promote` must move the same set, so companion mocks reach
   `tests/al/<difficulty>/` where `compile-queue` looks for them.
 
-Enforcement, so the rule is not merely documentation:
+Enforcement comes in two layers, because — as the Verified findings record —
+no name or id-range predicate can tell an oracle-side companion from a
+misnamed solution. The filename layer catches what is *unambiguously* wrong;
+the failure-mode layer catches the rest.
 
-- `scaffoldDraft` writes the rule into `NOTES.md` and `CHECKLIST.md`.
-- `probeDraft` refuses before spawning any container work when `correct/`
-  holds an `<id>.*.al` file that is neither the oracle nor a file whose first
-  object is a test or mock helper. The cheap, unambiguous form of this check:
-  refuse any `<id>.*.al` in `correct/` that `promote` would not move, i.e.
-  make the probe's accepted set and promote's moved set the same list,
-  computed by one shared function.
-- `promoteDraft` moves every `correct/<id>.*.al`, not just `<id>.Test.al`.
+**Layer 1: three refusals in `src/workbench/oracle-files.ts`**, each with a
+real trip condition, checked before any container work is spawned.
+
+- **A bare `<id>.al` in `correct/`, always.** Per the Verified findings, that
+  filename would overwrite every model's generated code at bench time. Match
+  the prefix **case-insensitively** — on Windows's case-insensitive
+  filesystem, `cg-al-x053.al` is the same file but evades a case-sensitive
+  check, and `copyCompanionTestFiles` uses a case-sensitive `startsWith`
+  (`al-tools-server.ts:664`), so a case-mismatched name slips past the copier
+  and a naive refusal alike.
+- **Any `<id>.*.al` in `naive/`, always.** `copyAlFilesToDir` writes it into
+  the naive verify dir (`:1395`) and `copyCompanionTestFiles` then overwrites
+  it from `correct/` (`:1415`, later write wins), so the naive verdict stops
+  reflecting what is actually in `naive/`. Oracle-side files are injected from
+  `correct/` on both runs, so `naive/` never needs one.
+- **Anything `copyCompanionTestFiles` would match in `correct/` that
+  `oracle-files.ts` does not classify.** This is the anti-drift invariant: the
+  helper is a *second* matcher alongside the copier's own logic (first-dot
+  prefix, case-sensitive `startsWith`, `.al` only, non-recursive, excludes
+  only the exact test filename — `:660-671`). If the two ever disagree, the
+  shared-list guarantee this design rests on is gone. Asserted directly in
+  tests rather than assumed.
+
+**Layer 2: refuse a naive verdict earned by compile failure.** A
+plausible-but-wrong trap solution should *compile* and fail assertions. A
+naive side that fails to compile is the signature of every contamination this
+design cannot name-check: a misnamed solution colliding, a non-prefixed helper
+that the correct side has and the naive side does not, an unresolved symbol.
+
+So `probeDraft` treats "naive failed, but it failed to compile" as **not a
+discriminating result** — reported distinctly from both `fail` and
+`inconclusive`, and refused at the promote gate. An override flag exists for
+the genuine case where a trap is *about* a compile error, and using it is
+recorded in `.probe.json` so the promote gate can surface it.
+
+This is the check that actually protects the gate. It also catches the
+under-inclusion mirror image, which no filename rule can: an oracle-referenced
+helper *without* the prefix compiles on the correct side (`copyAlFilesToDir`
+takes every top-level `.al`) but is absent from the naive side and from
+promote's moved set — a false green whose promoted task then fails for every
+model.
+
+Implementing layer 2 needs `trap-probe` to distinguish compile failure from
+test failure in what it returns. It already has the data (`res.compileErrors`
+vs `res.failures`); it needs a distinct exit code. See the scope note below.
+
+**Promote side.** `promoteDraft` moves every `correct/<id>.*.al`, not just
+`<id>.Test.al`, so companions reach `tests/al/<difficulty>/` where
+`compile-queue` looks for them. Mechanics that the current single-file code
+does not cover:
+
+- `refuseIfExists` runs per destination file, not just for `testTargetPath`
+  (`promote.ts:296-298` covers one path today).
+- The rollback block tracks each moved companion, not the three fixed step
+  booleans at `:408-410`. A mid-move failure must still satisfy the module's
+  one-unit rollback contract (`:403-407`).
 
 Changes required:
 
@@ -249,10 +328,15 @@ Changes required:
 - New shared helper listing the oracle-side files in a draft, used by both
   the probe refusal and the promote move so they can never diverge.
 
-`scripts/trap-probe.ts` needs no behavioural change, only a stale comment
-fix. `mcp/al-tools-server.ts` gets the pure helper move of section 2 plus one
-additive return field for the prereq artifact path (section 3); neither
-changes what the probe does.
+**Scope note.** Revision 2 forbade behavioural changes to
+`scripts/trap-probe.ts`. That constraint was mine, not the code's, and it
+turned out to block the two fixes that matter most: layer 2 above needs a
+compile-failure exit code, and the prereq symbol staging in section 3 needs a
+passthrough flag. Both are additive and neither changes any existing
+invocation. The constraint is relaxed to **additive flags and exit codes
+only** — the `--task`-only contract that `run-xiterate.ps1` and hand
+invocations depend on stays byte-for-byte identical, which is the property
+`planProbe` was built to guarantee (`trap-probe.ts:196-211`).
 
 **Freshness-gate scoping.** `assertVerdictIsFresh` currently walks *every*
 file under `correct/` and `naive/` (`promote.ts:191-197`). Once those are live
@@ -341,15 +425,48 @@ extension flags the dependency unresolved and every reference to prereq
 objects errors. That would gut the IntelliSense goal for precisely the tasks
 that most need it.
 
-Fix: `task probe` already compiles the prereq. Have it copy the resulting
-`.app` into `scratch/<id>/.symbols/`, and list that directory in
-`al.packageCachePath`. This needs `handleAlVerify` to report the prereq
-artifact path back to its caller, which it currently keeps internal — a small
-additive change to its return type.
+Fix: `task probe` already compiles the prereq, so stage the compiled `.app`
+into `scratch/<id>/.symbols/` and list that directory in
+`al.packageCachePath`.
 
-Chicken-and-egg, to be stated in `CHECKLIST.md`: before the first successful
-probe, prereq references are unresolved in the editor. Authors of prereq tasks
-should write the prereq first and run one probe to light up symbols.
+**The staging must happen inside `handleAlVerify`, not in `probe.ts`.**
+Returning the artifact path to the caller does not work: the return value
+surfaces inside the `trap-probe` subprocess (`trap-probe.ts:316`), and
+`ProbeRunner` is exit-code-only (`probe.ts:61`) with `defaultRunner` spawning
+under `stdout: "inherit"` (`:94-101`), so nothing crosses the process
+boundary. `probe.ts` cannot locate the artifact independently either — it
+lands in `<compilerFolder>\output\<AppName>_<8 hex>\` with a fresh
+`crypto.randomUUID().slice(0, 8)` per compile
+(`bc-container-provider.ts:1669-1679`).
+
+So: an optional `stageSymbolsDir` **parameter** on `handleAlVerify`, symmetric
+with the existing `prereqDir`, with the copy happening immediately after the
+prereq compile loop populates `compiledAppPath` (`:1345-1352`).
+`trap-probe` gains a passthrough flag; `probeDraft` appends it to `oracleArgs`
+(`probe.ts:205-212`), which both sides already share.
+
+Three constraints:
+
+- **Not exposed in the `al_verify` MCP tool schema**, for the same reason
+  `prereqDir` is not: to a sandboxed agent it would be an arbitrary
+  host-directory write primitive.
+- **Stage every entry of `prereqApps`**, not one file. `findAllPrereqApps`
+  resolves chains (H022 → H023) and the editor needs every `.app` in the
+  chain.
+- Staging after the *prereq* compile rather than at the end means symbols land
+  even when the candidate itself fails to compile — the normal state while
+  authoring, which makes the note below hold even for a red first probe.
+
+Both probe runs compile the prereq independently: each side is a fresh
+subprocess (`probe.ts:214`, `:225`) so the per-process prereq cache starts
+empty, and its key includes the explicit `prereqDir`
+(`al-tools-server.ts:1282-1284`). Staging is therefore order-independent and
+last-write-wins. Do not assert byte-equality between the two sides' compiled
+`.app` files in tests; either copy is valid.
+
+Chicken-and-egg, to be stated in `CHECKLIST.md`: before the first probe,
+prereq references are unresolved in the editor. Authors of prereq tasks should
+write the prereq first and run one probe — pass or fail — to light up symbols.
 
 **Tasks.** Emitted in the workspace file's `tasks` key.
 
@@ -521,10 +638,11 @@ today — the fix is preventative.
 - Problems-panel integration. Requires changing `trap-probe`'s compile-error
   format and mapping verify-staging paths back to authored files. Worth doing;
   not here.
-- Any behavioural change to `scripts/trap-probe.ts` (a stale usage comment is
-  updated, nothing else). Changes to `mcp/al-tools-server.ts` are limited to
-  the pure helper extraction and one additive return field carrying the prereq
-  artifact path out of `handleAlVerify`.
+- Non-additive changes to `scripts/trap-probe.ts`. It gains a
+  `--stage-symbols-dir` passthrough flag and a distinct exit code for
+  compile-failure, plus a stale usage-comment fix; the existing `--task`-only
+  contract is unchanged. Changes to `mcp/al-tools-server.ts` are limited to
+  the helper extraction and the optional `stageSymbolsDir` parameter.
 
 ## Testing
 
@@ -537,15 +655,24 @@ Unit tests, against temp trees, following the existing workbench test style:
   80000-89999 range, and the prereq dependency when `--with-prereq`.
 - `probeDraft` passes `--test-file correct/<id>.Test.al`, verified through the
   injected `ProbeRunner` stub.
-- **`probeDraft` refuses, without invoking the runner, when `correct/` holds
-  an `<id>.`-prefixed file outside the oracle-side set.** This is the guard
-  against faked discrimination, so it gets a test that asserts the runner was
-  never called.
-- **The probe's accepted oracle-side set and promote's moved set come from the
-  same function**, asserted directly so they cannot drift apart.
+- **`probeDraft` refuses, without invoking the runner, on each of the three
+  layer-1 conditions:** a bare `<id>.al` in `correct/` (including the
+  case-mismatched `cg-al-x053.al`), any `<id>.*.al` in `naive/`, and a
+  `correct/` file the copier would match but `oracle-files.ts` does not
+  classify. Each gets a fixture that actually trips it, and each asserts the
+  runner was never called.
+- **The anti-drift invariant**, asserted directly: for a generated set of
+  filenames, every name `copyCompanionTestFiles`' predicate matches in
+  `correct/` is classified by `oracle-files.ts`.
+- **Layer 2**: a naive side that fails to compile yields a distinct,
+  non-discriminating verdict, and the promote gate refuses it. The override
+  flag produces a discriminating verdict and is recorded in `.probe.json`.
 - `promoteDraft` moves the oracle *and* companion mocks from `correct/` to
   `tests/al/<difficulty>/`, and its freshness gate still trips on an edit to
   the oracle in its new location.
+- **Multi-file promote mechanics**: a fixture with two companions, one whose
+  destination is already occupied, asserting the whole move rolls back and
+  nothing is left at the destination.
 - The freshness gate does **not** trip on a `.altestrunner/`, `.vscode/` or
   `.alpackages/` write inside `correct/`.
 - `promoteDraft` rewrites the workspace folder list to the promoted paths, and
@@ -572,8 +699,10 @@ Manual verification, gated on a live container:
   `Assert` resolves in the oracle under `tests/al/hard`. Do **not** expect a
   clean Problems panel there — see section 4.
 - End-to-end anti-regression for the discrimination gate: build a draft whose
-  correct solution is deliberately misnamed with the `<id>.` prefix and
-  confirm the probe refuses rather than reporting a green verdict.
+  correct solution is deliberately misnamed with the `<id>.` prefix, and
+  confirm the probe reports a non-discriminating compile-failure verdict
+  rather than a green one. This is the layer-2 case — no filename rule catches
+  it, so this test is the one that proves the gate actually holds.
 
 ## Files changed
 
@@ -581,16 +710,16 @@ Manual verification, gated on a live container:
 |---|---|
 | `src/workbench/scaffold.ts` | oracle into `correct/`; generate both `app.json`; generate workspace file and `CHECKLIST.md` |
 | `src/workbench/workspace.ts` | new — workspace render + symbol-path resolution + rewrite-on-promote + `CHECKLIST.md` |
-| `src/workbench/oracle-files.ts` | new — the single oracle-side file list shared by the probe refusal and the promote move |
-| `src/workbench/probe.ts` | oracle path; `<id>.`-prefix refusal; refresh symbol path; stage prereq `.app` into `.symbols/` |
-| `src/workbench/promote.ts` | oracle path; move companions too; scope freshness walk; rewrite workspace after the move commits |
+| `src/workbench/oracle-files.ts` | new — oracle-side classification, the three layer-1 refusals, shared by probe and promote |
+| `src/workbench/probe.ts` | oracle path; layer-1 refusals; layer-2 compile-failure verdict; refresh symbol path; pass `--stage-symbols-dir` |
+| `src/workbench/promote.ts` | oracle path; move companions with per-file refusal and rollback; scope freshness walk; refuse a compile-failure verdict; rewrite workspace after the move commits |
 | `src/al/app-manifest.ts` | new — `ensureTestDependencies`, `ensureTestCodeunitRange`, `ensurePrereqDependency` moved out of `mcp/` |
-| `mcp/al-tools-server.ts` | import the three helpers from `src/al/app-manifest.ts`; return the prereq artifact path from `handleAlVerify` |
+| `mcp/al-tools-server.ts` | import the three helpers from `src/al/app-manifest.ts`; optional `stageSymbolsDir` param staging every prereq `.app`, not exposed in the MCP tool schema |
 | `src/ingest/catalog/task-set-hash.ts` | path-aware `includeFile` predicate for `tests/al` |
 | `tests/al/{easy,medium,hard}/app.json` | new AL project manifests |
 | `tests/al/app.json` | `description` field marking it frozen and why |
 | `cli/commands/task-command.ts` | "Next:" hint text names the new oracle path |
-| `scripts/trap-probe.ts` | usage header (`:5-6`) names the new oracle path — comment only |
+| `scripts/trap-probe.ts` | additive `--stage-symbols-dir` flag; distinct exit code for compile failure; usage header (`:5-6`) names the new oracle path |
 | `.claude/rules/prereq-apps.md` | new draft layout, the `<id>.` prefix rule, the frozen root manifest, the nested-project caveat |
 | `CLAUDE.md` | note the `app.json` carve-out in the task-set hash scope section |
 | `tests/unit/workbench/*` | tests per the section above |
