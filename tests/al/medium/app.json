@@ -3,7 +3,7 @@
   "name": "CentralGauge Tests (medium)",
   "publisher": "CentralGauge",
   "version": "1.0.0.0",
-  "brief": "AL project boundary for editing hard-difficulty test codeunits",
+  "brief": "AL project boundary for editing medium-difficulty test codeunits",
   "description": "Editor-only. Not compiled by the benchmark and not part of the task_set hash. Exists so VS Code treats this directory as an AL project when authoring an oracle.",
   "platform": "28.0.0.0",
   "application": "28.0.0.0",
