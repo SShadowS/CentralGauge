@@ -27,8 +27,10 @@
  *    proposal, microsoft/vscode#86520, was closed unmerged; shipped `false`
  *    disables a pattern, it does not re-include a path) and the setting is
  *    resource-scoped, so one workspace-level value applies to every root.
- * 2. No task carries a `problemMatcher`. See `buildTasks` below for why the
- *    key is omitted entirely rather than set to `[]`.
+ * 2. Every task sets `"problemMatcher": []`. See `buildTasks` below for why
+ *    an EMPTY matcher, not an omitted key - VS Code prompts the author to
+ *    pick a matcher on every run of a shell task that has none at all, and
+ *    `[]` is how a task says "I know, there genuinely isn't one."
  * 3. Every task gets an absolute `options.cwd` pointing at `repoRoot`, baked
  *    in at generation time - `deno task start` and `scripts/trap-probe.ts`
  *    both need the repo root, and VS Code otherwise defaults a task's cwd to
@@ -192,6 +194,8 @@ interface WorkspaceTask {
   type: "shell";
   command: string;
   options: { cwd: string };
+  /** Always `[]` - see `buildTasks`'s doc comment for why an empty array, not an omitted key. */
+  problemMatcher: never[];
   group?: { kind: "build"; isDefault: boolean };
 }
 
@@ -234,17 +238,18 @@ function buildProbeCommand(
 /**
  * The four always-present tasks, plus `sync taxonomy` once promoted.
  *
- * No task sets `problemMatcher`, in either form. The obvious VS Code idiom
- * for "no matcher" is `"problemMatcher": []`, and that is what the brief for
- * this module called for - but the probe reformats compiler errors as
- * `file(line,col): CODE - message` (no `error`/`warning` keyword) against
- * paths inside a staging directory deleted before the task exits, so no
- * matcher, empty or otherwise, could ever match real output. Emitting the key
- * would only be documentation with no runtime effect, and the unit contract
- * this module is built against (`tests/unit/workbench/workspace.test.ts`)
- * requires the literal string "problemMatcher" not to appear anywhere in the
- * rendered workspace at all - so the key is omitted outright rather than set
- * to `[]`.
+ * Every task sets `"problemMatcher": []`, never an omitted key. VS Code
+ * prompts "Select for which kind of errors and warnings to scan the task
+ * output" on every run of a shell task that carries no `problemMatcher` at
+ * all - which would put a modal in front of the author on every single probe
+ * run and defeat the one-keystroke workflow this workspace exists to give.
+ * `[]` tells VS Code "I know, there genuinely is no matcher" and suppresses
+ * that prompt. It is still functionally a no-op matcher: the probe reformats
+ * compiler errors as `file(line,col): CODE - message` (no `error`/`warning`
+ * keyword) against paths inside a staging directory deleted before the task
+ * exits, so no PATTERN could ever match real output here - `[]` only
+ * suppresses the prompt, it does not (and could not) add real problem
+ * annotations.
  */
 function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
   const cwd = ctx.repoRoot;
@@ -254,6 +259,7 @@ function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
       type: "shell",
       command: `deno task start task probe ${ctx.id}`,
       options: { cwd },
+      problemMatcher: [],
       group: { kind: "build", isDefault: true },
     },
     {
@@ -261,12 +267,14 @@ function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
       type: "shell",
       command: buildProbeCommand(ctx, "correct"),
       options: { cwd },
+      problemMatcher: [],
     },
     {
       label: "probe: naive only",
       type: "shell",
       command: buildProbeCommand(ctx, "naive"),
       options: { cwd },
+      problemMatcher: [],
     },
     {
       label: "promote",
@@ -275,6 +283,7 @@ function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
         ctx.difficulty ?? "hard"
       }`,
       options: { cwd },
+      problemMatcher: [],
     },
   ];
   if (ctx.state === "promoted") {
@@ -283,6 +292,7 @@ function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
       type: "shell",
       command: "deno task start sync-taxonomy --apply",
       options: { cwd },
+      problemMatcher: [],
     });
   }
   return tasks;

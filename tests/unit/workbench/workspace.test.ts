@@ -90,9 +90,14 @@ describe("workbench/workspace", () => {
       }
     });
 
-    it("emits no problemMatcher", () => {
+    it("sets an empty problemMatcher on every task", () => {
       const raw = renderWorkspace(draftCtx());
-      assertEquals(raw.includes("problemMatcher"), false);
+      const tasks = (JSON.parse(raw) as {
+        tasks: { tasks: Array<{ problemMatcher?: unknown }> };
+      }).tasks.tasks;
+      for (const task of tasks) {
+        assertEquals(task.problemMatcher, []);
+      }
     });
 
     it("makes the full probe the default build task", () => {
