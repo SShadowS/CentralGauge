@@ -120,6 +120,61 @@ describe("workbench/workspace", () => {
       assertStringIncludes(naive?.command ?? "", `scratch/${ID}/naive`);
       assertStringIncludes(naive?.command ?? "", "--expect fail");
     });
+
+    it("carries --prereq-dir and --stage-symbols-dir on both single-side tasks when hasPrereq", () => {
+      const ws = JSON.parse(
+        renderWorkspace(draftCtx({ hasPrereq: true })),
+      ) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const correct = ws.tasks.tasks.find((t) =>
+        t.label === "probe: correct only"
+      );
+      const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
+      for (const task of [correct, naive]) {
+        assertStringIncludes(
+          task?.command ?? "",
+          `--prereq-dir scratch/${ID}/prereq`,
+        );
+        assertStringIncludes(
+          task?.command ?? "",
+          `--stage-symbols-dir scratch/${ID}/.symbols`,
+        );
+      }
+    });
+
+    it("keeps --strict-fail-mode on the naive task only, even with a prereq", () => {
+      const ws = JSON.parse(
+        renderWorkspace(draftCtx({ hasPrereq: true })),
+      ) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const correct = ws.tasks.tasks.find((t) =>
+        t.label === "probe: correct only"
+      );
+      const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
+      // The regression this guards against: gating --stage-symbols-dir on
+      // `side === "naive"` alongside --strict-fail-mode, or dropping either
+      // flag from one side while editing the other. The prior test already
+      // requires both prereq flags on BOTH sides, so combined with this one,
+      // either mistake fails one of the two tests.
+      assertEquals(correct?.command.includes("--strict-fail-mode"), false);
+      assertEquals(naive?.command.includes("--strict-fail-mode"), true);
+    });
+
+    it("omits prereq flags from both single-side tasks when there is no prereq", () => {
+      const ws = JSON.parse(renderWorkspace(draftCtx())) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const correct = ws.tasks.tasks.find((t) =>
+        t.label === "probe: correct only"
+      );
+      const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
+      for (const task of [correct, naive]) {
+        assertEquals(task?.command.includes("--prereq-dir"), false);
+        assertEquals(task?.command.includes("--stage-symbols-dir"), false);
+      }
+    });
   });
 
   describe("renderWorkspace (promoted state)", () => {
