@@ -1091,5 +1091,48 @@ describe("workbench/promote", () => {
       });
       assertEquals(result.hashChanged, true);
     });
+
+    it(
+      "ignores an .al file inside a dot-directory, isolating the dot-skip " +
+        "from the extension filter",
+      async () => {
+        await writeDraft({});
+        // Unlike the editor-state test above (config.json - already
+        // excluded by the .al/app.json extension filter on its own), this
+        // file ends in .al. Only the dot-directory skip can exclude it, so
+        // this is the test that actually fails if that line is removed -
+        // see the RED/GREEN trace in the task-9 report.
+        const dotDirFile = join(
+          roots.scratchDir,
+          ID,
+          "correct",
+          ".alpackages",
+          "Cached.al",
+        );
+        await ensureDir(
+          join(roots.scratchDir, ID, "correct", ".alpackages"),
+        );
+        await Deno.writeTextFile(dotDirFile, "// cached symbol shadow\n");
+        // Stamped newer than the verdict below (Deno.utime, same technique
+        // as the staleness tests above) - if the dot-skip did not exclude
+        // it, this mtime alone would trip the freshness refusal.
+        const future = new Date(Date.now() + 60_000);
+        await Deno.utime(dotDirFile, future, future);
+
+        const verdict: ProbeVerdict = {
+          correct: "pass",
+          naive: "fail",
+          discriminates: true,
+          at: new Date().toISOString(),
+        };
+
+        const result = await promoteDraft(ID, {
+          difficulty: "hard",
+          roots,
+          verdict,
+        });
+        assertEquals(result.hashChanged, true);
+      },
+    );
   });
 });
