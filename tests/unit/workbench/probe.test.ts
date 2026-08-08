@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 
@@ -16,6 +16,7 @@ import type {
   ProbeVerdict,
 } from "../../../src/workbench/probe.ts";
 import { probeDraft } from "../../../src/workbench/probe.ts";
+import { OracleFileError } from "../../../src/workbench/oracle-files.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 /**
@@ -59,10 +60,11 @@ describe("workbench/probe", () => {
     draftDir = join(scratchDir, id);
     await ensureDir(join(draftDir, "correct"));
     await ensureDir(join(draftDir, "naive"));
-    // The oracle a real draft carries. probeDraft refuses without it, and
-    // every assertion below about --test-file keys off this path.
+    // The oracle a real draft carries, now inside correct/ (Task 5). probeDraft
+    // refuses without it, and every assertion below about --test-file keys off
+    // this path.
     await Deno.writeTextFile(
-      join(draftDir, `${id}.Test.al`),
+      join(draftDir, "correct", `${id}.Test.al`),
       `codeunit 80053 "${id} Test"\n{\n    Subtype = Test;\n}\n`,
     );
   });
@@ -256,7 +258,7 @@ describe("workbench/probe", () => {
         for (const call of calls) {
           assertEquals(
             flag(call, "--test-file"),
-            join(draftDir, `${id}.Test.al`),
+            join(draftDir, "correct", `${id}.Test.al`),
           );
         }
       },
@@ -335,7 +337,7 @@ describe("workbench/probe", () => {
     });
 
     it("throws naming the oracle when <id>.Test.al is missing", async () => {
-      await Deno.remove(join(draftDir, `${id}.Test.al`));
+      await Deno.remove(join(draftDir, "correct", `${id}.Test.al`));
 
       await assertRejects(
         () =>
@@ -349,7 +351,7 @@ describe("workbench/probe", () => {
     });
 
     it("does not invoke the runner at all when the oracle is missing", async () => {
-      await Deno.remove(join(draftDir, `${id}.Test.al`));
+      await Deno.remove(join(draftDir, "correct", `${id}.Test.al`));
       const calls: string[][] = [];
 
       await assertRejects(() =>
@@ -357,6 +359,54 @@ describe("workbench/probe", () => {
       );
 
       assertEquals(calls.length, 0);
+    });
+
+    it("probes the oracle inside correct/", async () => {
+      const seen: string[][] = [];
+      const runner: ProbeRunner = (args) => {
+        seen.push(args);
+        return Promise.resolve(0);
+      };
+      await probeDraft(id, { scratchDir, runner });
+
+      for (const args of seen) {
+        const testFile = args[args.indexOf("--test-file") + 1] ?? "";
+        assertStringIncludes(testFile, join("correct", `${id}.Test.al`));
+      }
+    });
+
+    it("refuses a bare <id>.al without invoking the runner", async () => {
+      await Deno.writeTextFile(
+        join(scratchDir, id, "correct", `${id}.al`),
+        'codeunit 70001 "X" { }',
+      );
+      let called = false;
+      const runner: ProbeRunner = () => {
+        called = true;
+        return Promise.resolve(0);
+      };
+      await assertRejects(
+        () => probeDraft(id, { scratchDir, runner }),
+        OracleFileError,
+      );
+      assertEquals(called, false);
+    });
+
+    it("refuses an <id>.*.al in naive/ without invoking the runner", async () => {
+      await Deno.writeTextFile(
+        join(scratchDir, id, "naive", `${id}.Mock.al`),
+        'codeunit 88806 "X" { }',
+      );
+      let called = false;
+      const runner: ProbeRunner = () => {
+        called = true;
+        return Promise.resolve(0);
+      };
+      await assertRejects(
+        () => probeDraft(id, { scratchDir, runner }),
+        OracleFileError,
+      );
+      assertEquals(called, false);
     });
   });
 });

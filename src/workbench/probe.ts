@@ -18,7 +18,18 @@
  * operator to fix a reference solution that was never run, and left `--force`
  * (which skips the discrimination gate entirely) as the only way to promote.
  * So `probeDraft` passes `--test-file`, `--test-codeunit-id` and, when the
- * draft has one, `--prereq-dir`, pointing at the scratch-local files.
+ * draft has one, `--prereq-dir`, pointing at the scratch-local files. The
+ * oracle itself lives at `scratch/<id>/correct/<id>.Test.al` - inside the
+ * reference solution's own directory, so the AL Language extension sees one
+ * project containing solution + test.
+ *
+ * **Before any of that, `classifyOracleFiles` runs the layer-1 refusals.**
+ * A draft whose `correct/`/`naive/` file layout would fake discrimination
+ * (a bare `<id>.al` that would overwrite a model's submission, an
+ * `<id>.*.al` in `naive/` that gets silently overwritten by the oracle-side
+ * injection, or a missing oracle) is refused with `OracleFileError` before
+ * any container work is spawned - such a draft's probe verdict would look
+ * green and be meaningless.
  *
  * **The exit-code mapping below is the subtlest thing in this module.**
  * `trap-probe` exits `0` when the *actual* outcome matched the `--expect`
@@ -38,6 +49,7 @@ import { parse as parseYaml } from "@std/yaml";
 
 import type { ProbeOutcome } from "../../scripts/trap-probe.ts";
 import type { DraftMeta } from "./scaffold.ts";
+import { classifyOracleFiles } from "./oracle-files.ts";
 
 // Re-exported so callers (the CLI layer, a later Phase 2 panel) depend only
 // on `src/workbench/probe.ts`, not on reaching past it into `scripts/`.
@@ -155,10 +167,12 @@ async function resolveDraftTestCodeunitId(
  * `scratch/<id>/.probe.json` (Task 5's promote gate and the Phase 2 panel
  * both read it without re-running the probe) and returns it.
  *
- * Throws, naming which, when `correct/`, `naive/` or the `<id>.Test.al`
- * oracle does not exist yet - a draft that has not been filled in is a
- * different situation from one that genuinely does not discriminate, and
- * must not be silently scored as a failure.
+ * Throws, naming which, when `correct/` or `naive/` does not exist yet, and
+ * throws `OracleFileError` (via `classifyOracleFiles`) when the
+ * `correct/<id>.Test.al` oracle is missing or the draft's file layout would
+ * fake discrimination - a draft that has not been filled in, or filled in
+ * unsafely, is a different situation from one that genuinely does not
+ * discriminate, and must not be silently scored as a failure.
  */
 export async function probeDraft(
   id: string,
@@ -181,14 +195,12 @@ export async function probeDraft(
     );
   }
 
-  const testFile = join(draftDir, `${id}.Test.al`);
-  if (!(await exists(testFile))) {
-    throw new Error(
-      `Draft ${id} is missing its oracle at ${testFile} - the probe runs ` +
-        `that test file against both solutions, so there is nothing to ` +
-        `discriminate with until it exists.`,
-    );
-  }
+  // Layer-1 refusals. Runs BEFORE any container work: a draft whose file
+  // layout would fake discrimination must never reach a probe run, because
+  // its verdict would come back green and be meaningless.
+  await classifyOracleFiles({ id, draftDir });
+
+  const testFile = join(correctDir, `${id}.Test.al`);
 
   const container = opts.container ?? DEFAULT_CONTAINER;
   const runner = opts.runner ?? defaultRunner;
