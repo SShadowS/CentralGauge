@@ -377,6 +377,37 @@ Deno.test("runTaskProbe", async (t) => {
     },
   );
 
+  await t.step(
+    "reports a compile-earned naive fail distinctly, and does NOT also " +
+      "print the generic naive-passed message",
+    async () => {
+      await setup();
+      try {
+        const { value: verdict, logs } = await withCapturedLog(() =>
+          runTaskProbe({
+            id,
+            scratchDir,
+            runner: stubProbeRunner({ correct: 0, naive: 4 }),
+          })
+        );
+        assertEquals(verdict.naive, "compile_fail");
+        assertEquals(probeExitCode(verdict), 5);
+
+        const joined = logs.join("\n");
+        // The compile-fail-specific message names the likely causes and
+        // points at the override.
+        assertStringIncludes(joined, "failed to COMPILE");
+        assertStringIncludes(joined, "--allow-compile-fail");
+        // The early return in runTaskProbe is what stops the generic
+        // "naive/ passed" message from ALSO firing - this is the assertion
+        // that pins that ordering down, not just the message's own content.
+        assertEquals(joined.includes("naive/ passed"), false);
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
   await t.step("forwards an explicit container to probeDraft", async () => {
     await setup();
     try {

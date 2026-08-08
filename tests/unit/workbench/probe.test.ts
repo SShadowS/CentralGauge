@@ -385,6 +385,40 @@ describe("workbench/probe", () => {
       }
     });
 
+    it("passes --stage-symbols-dir <draftDir>/.symbols on both invocations for a prereq draft", async () => {
+      // Both sides compile the prereq independently, so staging from either
+      // is valid - the flag just needs to be on both. Task 11 depends on
+      // this staging actually working for the AL extension to resolve
+      // symbols, so it must be verified, not just wired.
+      await ensureDir(join(draftDir, "prereq"));
+      await Deno.writeTextFile(
+        join(draftDir, "prereq", "app.json"),
+        JSON.stringify({ id: "a1b2c3d4-0a53-0000-0000-000000000001" }),
+      );
+
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      assertEquals(calls.length, 2);
+      for (const call of calls) {
+        assertEquals(
+          flag(call, "--stage-symbols-dir"),
+          join(draftDir, ".symbols"),
+        );
+      }
+    });
+
+    it("omits --stage-symbols-dir entirely for a draft with no prereq", async () => {
+      const calls: string[][] = [];
+      await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+      assertEquals(calls.length, 2);
+      for (const call of calls) {
+        assertEquals(call.includes("--stage-symbols-dir"), false);
+        assertEquals(flag(call, "--stage-symbols-dir"), undefined);
+      }
+    });
+
     it("throws naming the oracle when <id>.Test.al is missing", async () => {
       await Deno.remove(join(draftDir, "correct", `${id}.Test.al`));
 
