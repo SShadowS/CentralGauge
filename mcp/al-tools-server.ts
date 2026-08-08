@@ -1161,6 +1161,7 @@ export async function handleAlVerify(params: {
   target?: "Cloud" | "OnPrem";
   testCodeunitId?: number;
   prereqDir?: string;
+  stageSymbolsDir?: string;
 }): Promise<VerifyResult> {
   debugLog("al_verify", "Starting verification", {
     projectDir: params.projectDir,
@@ -1298,6 +1299,32 @@ export async function handleAlVerify(params: {
       }
     }
     logTiming("Prereq resolution", prereqStart);
+
+    // Stage compiled prereq symbols for the editor (workbench drafts only).
+    //
+    // Deliberately here rather than at the end: the candidate app frequently
+    // fails to compile while a task is being authored, and the author still
+    // needs prereq symbols. Staging after the PREREQ compile means one probe
+    // lights up IntelliSense whether or not that probe was green.
+    //
+    // Every entry, not just the last: findAllPrereqApps resolves chains
+    // (H022 -> H023) and the editor needs the whole chain resolvable.
+    //
+    // NOT exposed in the al_verify MCP tool schema, for the same reason
+    // prereqDir is not: to a sandboxed agent it would be an arbitrary
+    // host-directory write primitive.
+    if (params.stageSymbolsDir && prereqApps.length > 0) {
+      await ensureDir(params.stageSymbolsDir);
+      for (const prereq of prereqApps) {
+        if (!prereq.compiledAppPath) continue;
+        const target = join(
+          params.stageSymbolsDir,
+          basename(prereq.compiledAppPath),
+        );
+        await Deno.copyFile(prereq.compiledAppPath, target);
+        debugLog("al_verify", "Staged prereq symbols", { target });
+      }
+    }
 
     // 2. Create isolated verification directory (host temp, OUTSIDE any
     // agent-writable workspace mount — closes the TOCTOU window where a

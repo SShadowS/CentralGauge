@@ -2,11 +2,13 @@
 //
 // SAFETY: nothing here spawns trap-probe or touches a container. Only the
 // pure classifier and the pure argument planner are exercised.
+import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { isAbsolute } from "@std/path";
 import {
   classifyProbeOutcome,
   planProbe,
+  strictFailExitCode,
   type VerifyResult,
 } from "../../../scripts/trap-probe.ts";
 
@@ -226,4 +228,120 @@ Deno.test("planProbe: refuses an --expect that is neither pass nor fail", () => 
   assertEquals(plan.ok, false);
   if (plan.ok) return;
   assertStringIncludes(plan.message, "--expect");
+});
+
+// --- Task 7 additive flags: --stage-symbols-dir + --strict-fail-mode -------
+
+describe("scripts/trap-probe", () => {
+  describe("planProbe additive flags", () => {
+    const base = {
+      task: "CG-AL-X053",
+      solution: "scratch/CG-AL-X053/correct",
+      expect: "pass",
+    };
+
+    it("omits stageSymbolsDir when the flag is absent", () => {
+      const plan = planProbe({
+        ...base,
+        testFile: "scratch/CG-AL-X053/correct/CG-AL-X053.Test.al",
+      });
+      assertEquals(plan.ok, true);
+      if (!plan.ok) return;
+      assertEquals(plan.oracle.via, "test-file");
+      if (plan.oracle.via !== "test-file") return;
+      assertEquals(plan.oracle.stageSymbolsDir, undefined);
+    });
+
+    it("resolves stageSymbolsDir to an absolute path", () => {
+      const plan = planProbe({
+        ...base,
+        testFile: "scratch/CG-AL-X053/correct/CG-AL-X053.Test.al",
+        stageSymbolsDir: "scratch/CG-AL-X053/.symbols",
+      });
+      assertEquals(plan.ok, true);
+      if (!plan.ok || plan.oracle.via !== "test-file") return;
+      assertEquals(
+        plan.oracle.stageSymbolsDir?.includes(".symbols"),
+        true,
+      );
+      assertEquals(
+        plan.oracle.stageSymbolsDir?.startsWith("scratch"),
+        false,
+        "must be absolute - the compile pool's cwd is not this process's",
+      );
+    });
+
+    it("refuses --stage-symbols-dir without --test-file", () => {
+      const plan = planProbe({ ...base, stageSymbolsDir: "somewhere" });
+      assertEquals(plan.ok, false);
+    });
+
+    it("carries strictFailMode through", () => {
+      const plan = planProbe({
+        ...base,
+        expect: "fail",
+        strictFailMode: true,
+      });
+      assertEquals(plan.ok, true);
+      if (!plan.ok) return;
+      assertEquals(plan.strictFailMode, true);
+    });
+
+    it("defaults strictFailMode to false", () => {
+      const plan = planProbe(base);
+      assertEquals(plan.ok, true);
+      if (!plan.ok) return;
+      assertEquals(plan.strictFailMode, false);
+    });
+  });
+
+  describe("strictFailExitCode", () => {
+    it("returns 4 for a compile-earned fail under strict mode", () => {
+      assertEquals(
+        strictFailExitCode({
+          strictFailMode: true,
+          expect: "fail",
+          outcome: "fail",
+          hasCompileErrors: true,
+        }),
+        4,
+      );
+    });
+
+    it("returns 0 for a test-earned fail under strict mode", () => {
+      assertEquals(
+        strictFailExitCode({
+          strictFailMode: true,
+          expect: "fail",
+          outcome: "fail",
+          hasCompileErrors: false,
+        }),
+        0,
+      );
+    });
+
+    it("returns 0 for a compile-earned fail WITHOUT strict mode", () => {
+      assertEquals(
+        strictFailExitCode({
+          strictFailMode: false,
+          expect: "fail",
+          outcome: "fail",
+          hasCompileErrors: true,
+        }),
+        0,
+      );
+    });
+
+    it("never returns 4 when expecting pass", () => {
+      assertEquals(
+        strictFailExitCode({
+          strictFailMode: true,
+          expect: "pass",
+          outcome: "pass",
+          hasCompileErrors: true,
+        }),
+        0,
+      );
+    });
+  });
 });

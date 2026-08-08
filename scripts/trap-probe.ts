@@ -3,7 +3,8 @@
 // solution directory and asserts the pass/fail outcome.
 // Usage: deno run -A scripts/trap-probe.ts --task CG-AL-X002 --solution <dir> --expect pass|fail [--container Cronus28]
 //        deno run -A scripts/trap-probe.ts --task CG-AL-X053 --solution <dir> --expect pass \
-//          --test-file scratch/CG-AL-X053/CG-AL-X053.Test.al [--test-codeunit-id 80053] [--prereq-dir <dir>]
+//          --test-file scratch/CG-AL-X053/correct/CG-AL-X053.Test.al [--test-codeunit-id 80053] \
+//          [--prereq-dir <dir>] [--stage-symbols-dir <dir>] [--strict-fail-mode]
 //
 // TWO WAYS TO LOCATE THE ORACLE, and the difference is the whole point of the
 // second one:
@@ -22,6 +23,12 @@
 //   promotion, or `promote` can only ever be satisfied by `--force`.
 //   `--test-codeunit-id` supplies what the not-yet-existing task YAML would
 //   have, and `--prereq-dir` what `tests/al/dependencies/<id>/` would have.
+//   `--stage-symbols-dir <dir>` (test-file mode only) copies every compiled
+//   prereq `.app` into `<dir>` so the VS Code AL extension can resolve them.
+//   `--strict-fail-mode` makes an expected `fail` earned by a COMPILE failure
+//   exit `4` instead of `0` — a naive solution that fails to compile isn't
+//   real discrimination. Both flags are additive: omitted, behaviour and
+//   exit codes are unchanged from before this task.
 //
 // `--task` stays required in both modes: it is the label every log line is
 // keyed on, and in `--test-file` mode `handleAlVerify` independently derives
@@ -165,6 +172,8 @@ export interface ProbeArgsInput {
   testFile?: string | undefined;
   testCodeunitId?: string | undefined;
   prereqDir?: string | undefined;
+  stageSymbolsDir?: string | undefined;
+  strictFailMode?: boolean | undefined;
 }
 
 /**
@@ -180,6 +189,7 @@ export type ProbeOracle =
     testFile: string;
     testCodeunitId?: number;
     prereqDir?: string;
+    stageSymbolsDir?: string;
   };
 
 export type ProbePlan =
@@ -191,6 +201,7 @@ export type ProbePlan =
     container: string;
     solutionDir: string;
     oracle: ProbeOracle;
+    strictFailMode: boolean;
   };
 
 /**
@@ -233,18 +244,23 @@ export function planProbe(a: ProbeArgsInput): ProbePlan {
     expect,
     container: a.container ?? DEFAULT_CONTAINER,
     solutionDir: resolve(a.solution),
+    strictFailMode: a.strictFailMode ?? false,
   };
 
   if (a.testFile === undefined) {
     // Refuse rather than ignore: silently dropping these would run the
     // id-based resolution the caller was explicitly trying to bypass, and
     // report its "Test file not found" as a real oracle result.
-    if (a.testCodeunitId !== undefined || a.prereqDir !== undefined) {
+    if (
+      a.testCodeunitId !== undefined || a.prereqDir !== undefined ||
+      a.stageSymbolsDir !== undefined
+    ) {
       return {
         ok: false,
         message:
-          "--test-codeunit-id and --prereq-dir only apply with --test-file " +
-          "(without it the oracle is resolved from the committed task id).",
+          "--test-codeunit-id, --prereq-dir and --stage-symbols-dir only " +
+          "apply with --test-file (without it the oracle is resolved from " +
+          "the committed task id).",
       };
     }
     return { ...base, oracle: { via: "task-id" } };
@@ -269,8 +285,34 @@ export function planProbe(a: ProbeArgsInput): ProbePlan {
       testFile: resolve(a.testFile),
       ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
       ...(a.prereqDir !== undefined ? { prereqDir: resolve(a.prereqDir) } : {}),
+      ...(a.stageSymbolsDir !== undefined
+        ? { stageSymbolsDir: resolve(a.stageSymbolsDir) }
+        : {}),
     },
   };
+}
+
+/**
+ * Exit code for a run whose outcome already MATCHED `--expect`.
+ *
+ * Returns `4` only when strict-fail mode is on, `fail` was expected, `fail`
+ * was what happened, and it happened because the code did not COMPILE. A
+ * plausible-but-wrong trap solution should compile and fail its assertions; a
+ * naive side that fails to compile is the signature of a misnamed solution
+ * colliding, a helper present on the correct side and absent on the naive
+ * one, or an unresolved symbol — none of which is real discrimination.
+ *
+ * Gated behind the flag so every existing invocation keeps its exit codes.
+ */
+export function strictFailExitCode(input: {
+  strictFailMode: boolean;
+  expect: "pass" | "fail";
+  outcome: ProbeOutcome;
+  hasCompileErrors: boolean;
+}): number {
+  if (!input.strictFailMode) return 0;
+  if (input.expect !== "fail" || input.outcome !== "fail") return 0;
+  return input.hasCompileErrors ? 4 : 0;
 }
 
 async function main() {
@@ -283,7 +325,9 @@ async function main() {
       "test-file",
       "test-codeunit-id",
       "prereq-dir",
+      "stage-symbols-dir",
     ],
+    boolean: ["strict-fail-mode"],
     default: { container: DEFAULT_CONTAINER },
   });
 
@@ -295,6 +339,8 @@ async function main() {
     testFile: a["test-file"],
     testCodeunitId: a["test-codeunit-id"],
     prereqDir: a["prereq-dir"],
+    stageSymbolsDir: a["stage-symbols-dir"],
+    strictFailMode: a["strict-fail-mode"],
   });
   if (!plan.ok) {
     console.error(plan.message);
@@ -322,6 +368,9 @@ async function main() {
         : {}),
       ...(plan.oracle.prereqDir !== undefined
         ? { prereqDir: plan.oracle.prereqDir }
+        : {}),
+      ...(plan.oracle.stageSymbolsDir !== undefined
+        ? { stageSymbolsDir: plan.oracle.stageSymbolsDir }
         : {}),
     });
   } else {
@@ -365,6 +414,24 @@ async function main() {
     );
     Deno.exit(1);
   }
+
+  const strictCode = strictFailExitCode({
+    strictFailMode: plan.strictFailMode,
+    expect: plan.expect,
+    outcome,
+    hasCompileErrors: (res.compileErrors?.length ?? 0) > 0,
+  });
+  if (strictCode === 4) {
+    console.error(
+      colors.yellow(
+        `[trap-probe] COMPILE-EARNED FAIL — the naive side failed to ` +
+          `compile rather than failing its assertions. That is not ` +
+          `discrimination.`,
+      ),
+    );
+    Deno.exit(4);
+  }
+
   console.log(colors.green(`[trap-probe] OK`));
   // Explicit exit: BcContainerProvider keeps pooled pwsh child-process handles
   // (compile session pool, per-container session slot) open for reuse across
