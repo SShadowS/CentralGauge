@@ -8,6 +8,8 @@
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import {
   assertEquals,
+  assertMatch,
+  assertNotEquals,
   assertNotMatch,
   assertRejects,
   assertStringIncludes,
@@ -45,13 +47,96 @@ describe("workbench/scaffold", () => {
 
       assertEquals(await exists(join(draftDir, "task.yml")), true);
       assertEquals(
-        await exists(join(draftDir, `${meta.id}.Test.al`)),
+        await exists(join(draftDir, "correct", `${meta.id}.Test.al`)),
         true,
       );
       assertEquals(await exists(join(draftDir, "correct")), true);
       assertEquals(await exists(join(draftDir, "naive")), true);
       assertEquals(await exists(join(draftDir, "NOTES.md")), true);
       assertEquals(await exists(join(draftDir, ".meta.json")), true);
+    });
+
+    it("writes the oracle into correct/, not the draft root", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(
+        await exists(join(draftDir, "correct", `${meta.id}.Test.al`)),
+        true,
+      );
+      assertEquals(await exists(join(draftDir, `${meta.id}.Test.al`)), false);
+    });
+
+    it("writes an app.json into both solution directories", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      for (const side of ["correct", "naive"]) {
+        const raw = await Deno.readTextFile(join(draftDir, side, "app.json"));
+        const appJson = JSON.parse(raw) as {
+          idRanges: Array<{ from: number; to: number }>;
+          dependencies: Array<{ name: string }>;
+          id: string;
+        };
+
+        const covers = (n: number) =>
+          appJson.idRanges.some((r) => r.from <= n && r.to >= n);
+        assertEquals(covers(70001), true, `${side}: generated-code range`);
+        assertEquals(covers(80001), true, `${side}: test-codeunit range`);
+        assertEquals(
+          appJson.dependencies.some((d) => d.name === "Library Assert"),
+          true,
+          `${side}: Library Assert dependency`,
+        );
+      }
+    });
+
+    it("gives correct/ and naive/ different app ids", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+      const read = async (side: string) =>
+        (JSON.parse(
+          await Deno.readTextFile(join(draftDir, side, "app.json")),
+        ) as { id: string }).id;
+
+      const correctId = await read("correct");
+      const naiveId = await read("naive");
+      assertNotEquals(correctId, naiveId);
+      // Both must be syntactically valid GUIDs - an invalid one fails to compile.
+      const guid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      assertMatch(correctId, guid);
+      assertMatch(naiveId, guid);
+    });
+
+    it("declares the prereq dependency only when --with-prereq", async () => {
+      const withPrereq = await scaffoldDraft({
+        slug: "with-dep",
+        withPrereq: true,
+        roots,
+      });
+      const withDir = join(roots.scratchDir, withPrereq.id);
+      const prereqAppJson = JSON.parse(
+        await Deno.readTextFile(join(withDir, "prereq", "app.json")),
+      ) as { id: string };
+      const correctAppJson = JSON.parse(
+        await Deno.readTextFile(join(withDir, "correct", "app.json")),
+      ) as { dependencies: Array<{ id: string }> };
+      assertEquals(
+        correctAppJson.dependencies.some((d) => d.id === prereqAppJson.id),
+        true,
+      );
+
+      const without = await scaffoldDraft({ slug: "no-dep", roots });
+      const withoutAppJson = JSON.parse(
+        await Deno.readTextFile(
+          join(roots.scratchDir, without.id, "correct", "app.json"),
+        ),
+      ) as { dependencies: Array<{ id: string }> };
+      assertEquals(
+        withoutAppJson.dependencies.some((d) => d.id.includes("0a")),
+        false,
+      );
     });
 
     it("returns the allocated id and test codeunit id", async () => {
@@ -102,7 +187,7 @@ describe("workbench/scaffold", () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const draftDir = join(roots.scratchDir, meta.id);
       const al = await Deno.readTextFile(
-        join(draftDir, `${meta.id}.Test.al`),
+        join(draftDir, "correct", `${meta.id}.Test.al`),
       );
 
       // Assert.IsTrue(true, ...) always passes - it would let an unfinished
@@ -114,7 +199,7 @@ describe("workbench/scaffold", () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const draftDir = join(roots.scratchDir, meta.id);
       const al = await Deno.readTextFile(
-        join(draftDir, `${meta.id}.Test.al`),
+        join(draftDir, "correct", `${meta.id}.Test.al`),
       );
 
       // Assert.IsTrue(false, ...), not Assert.Fail(...): IsTrue is used 550
@@ -128,7 +213,7 @@ describe("workbench/scaffold", () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const draftDir = join(roots.scratchDir, meta.id);
       const al = await Deno.readTextFile(
-        join(draftDir, `${meta.id}.Test.al`),
+        join(draftDir, "correct", `${meta.id}.Test.al`),
       );
 
       assertStringIncludes(al, `codeunit ${meta.testCodeunitId} `);

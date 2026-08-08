@@ -28,7 +28,13 @@ import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 
+import type { AppJson } from "../al/app-manifest.ts";
 import type { IdRoots } from "./ids.ts";
+import {
+  ensurePrereqDependency,
+  ensureTestCodeunitRange,
+  ensureTestDependencies,
+} from "../al/app-manifest.ts";
 import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
 
 /** Metadata recorded for a scaffolded draft, both returned and written to `.meta.json`. */
@@ -147,16 +153,7 @@ export async function scaffoldDraft(opts: {
   await ensureDir(join(draftDir, "correct"));
   await ensureDir(join(draftDir, "naive"));
 
-  await Deno.writeTextFile(
-    join(draftDir, "task.yml"),
-    renderTaskYaml(id, testCodeunitId),
-  );
-  await Deno.writeTextFile(
-    join(draftDir, `${id}.Test.al`),
-    renderAlSkeleton(id, testCodeunitId),
-  );
-  await Deno.writeTextFile(join(draftDir, "NOTES.md"), renderNotes(id, slug));
-
+  let prereqAppJson: AppJson | undefined;
   if (withPrereq) {
     // Scratch-local (scratch/<id>/prereq/), NOT roots.testsDir/dependencies/
     // - src/ingest/catalog/task-set-hash.ts hashes every file under
@@ -169,11 +166,28 @@ export async function scaffoldDraft(opts: {
     // tests/al/dependencies/<id>/ location at promote time.
     const prereqDir = join(draftDir, "prereq");
     await ensureDir(prereqDir);
-    await Deno.writeTextFile(
-      join(prereqDir, "app.json"),
-      renderPrereqAppJson(id),
-    );
+    const prereqText = renderPrereqAppJson(id);
+    await Deno.writeTextFile(join(prereqDir, "app.json"), prereqText);
+    prereqAppJson = JSON.parse(prereqText) as AppJson;
   }
+
+  await Deno.writeTextFile(
+    join(draftDir, "task.yml"),
+    renderTaskYaml(id, testCodeunitId),
+  );
+  await Deno.writeTextFile(
+    join(draftDir, "correct", `${id}.Test.al`),
+    renderAlSkeleton(id, testCodeunitId),
+  );
+  await Deno.writeTextFile(
+    join(draftDir, "correct", "app.json"),
+    renderSolutionAppJson(id, "correct", prereqAppJson),
+  );
+  await Deno.writeTextFile(
+    join(draftDir, "naive", "app.json"),
+    renderSolutionAppJson(id, "naive", prereqAppJson),
+  );
+  await Deno.writeTextFile(join(draftDir, "NOTES.md"), renderNotes(id, slug));
 
   const meta: DraftMeta = { id, slug, testCodeunitId, createdAt, withPrereq };
   await Deno.writeTextFile(
@@ -268,7 +282,88 @@ not a typo, a real semantic gap.
 
 TODO: describe the plausible-wrong implementation that will sit in \`naive/\`,
 and the specific way it diverges from \`correct/\`.
+
+## File naming
+
+Files in \`correct/\` starting with \`${id}.\` are ORACLE-SIDE: the probe
+injects them into both the correct and the naive run, and \`task promote\`
+moves them to \`tests/al/<difficulty>/\`. Use that prefix for mocks, spies and
+helper objects the test needs.
+
+Your solution files must NOT start with \`${id}.\`. A solution that does gets
+copied into the naive run too, collides there, and makes a task that tests
+nothing look like it discriminates.
 `;
+}
+
+/**
+ * Fixed hex segments distinguishing the two solution projects' app ids.
+ * `derivePrereqSuffix` already owns `0a<NN>`; these must not collide with it
+ * or with each other, and both must be valid hex - an invalid GUID in
+ * app.json fails to compile.
+ */
+const CORRECT_APP_SEGMENT = "0c";
+const NAIVE_APP_SEGMENT = "0e";
+
+/**
+ * Renders the `app.json` for one solution directory.
+ *
+ * `al_verify` REQUIRES this file (`prepareAppJsonForTesting` is fatal at
+ * `mcp/al-tools-server.ts:1323`), so its absence is why a freshly scaffolded
+ * draft could not be probed at all before this existed. It also makes the
+ * directory an AL project, which is what gives the author IntelliSense.
+ *
+ * The dependency and id-range shape comes from the same helpers the probe
+ * applies at verify time, so the editor and the compiler agree. The `id` is
+ * overwritten with `BENCHMARK_APP_ID` by the probe regardless - it only needs
+ * to be stable and distinct per side.
+ */
+function renderSolutionAppJson(
+  id: string,
+  side: "correct" | "naive",
+  prereqAppJson?: AppJson,
+): string {
+  // `0c<NN>` / `0e<NN>` never collide with derivePrereqSuffix's `0a<NN>`,
+  // and both are valid hex - `x` is not, which is why the task letter cannot
+  // be used directly (see derivePrereqSuffix's own note).
+  const segment = side === "correct" ? CORRECT_APP_SEGMENT : NAIVE_APP_SEGMENT;
+  const digits = /^CG-AL-X(\d+)$/.exec(id)?.[1];
+  if (digits === undefined) {
+    throw new Error(`Cannot derive a solution app id from "${id}".`);
+  }
+  const value = Number(digits);
+  if (value > 99) {
+    // Same two-digit ceiling as derivePrereqSuffix, and for the same reason:
+    // `segment` + the numeric part must total exactly 4 hex chars. Fail
+    // loudly rather than emit a mis-sized GUID segment.
+    throw new Error(
+      `Solution app id derivation only supports two-digit X-ids (00-99); ` +
+        `got "${id}". Extend the convention before scaffolding X100+.`,
+    );
+  }
+  const twoDigit = String(value).padStart(2, "0");
+  const tail = String(value).padStart(12, "0");
+
+  const appJson: AppJson = {
+    id: `a1b2c3d4-${segment}${twoDigit}-0000-0000-${tail}`,
+    name: `${id} ${side}`,
+    publisher: "CentralGauge",
+    version: "1.0.0.0",
+    platform: "28.0.0.0",
+    application: "28.0.0.0",
+    idRanges: [{ from: 70000, to: 79999 }],
+    runtime: "17.0",
+    target: "OnPrem",
+    features: ["NoImplicitWith"],
+  };
+
+  ensureTestCodeunitRange(appJson);
+  ensureTestDependencies(appJson);
+  if (prereqAppJson) {
+    ensurePrereqDependency(appJson, prereqAppJson);
+  }
+
+  return JSON.stringify(appJson, null, 2) + "\n";
 }
 
 /**
