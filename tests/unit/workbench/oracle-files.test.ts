@@ -14,6 +14,7 @@ import {
   classifyOracleFiles,
   companionPredicateMatches,
   OracleFileError,
+  type OracleFileSet,
 } from "../../../src/workbench/oracle-files.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
@@ -117,48 +118,83 @@ describe("workbench/oracle-files", () => {
   });
 
   describe("anti-drift invariant", () => {
-    // Every name copyCompanionTestFiles would match in correct/ must be
-    // classified by classifyOracleFiles - accepted as a companion, or
-    // refused. A name that neither matcher agrees on is the exact failure
-    // the shared-list design exists to prevent.
-    const names = [
-      `${ID}.Test.al`,
-      `${ID}.MockThing.al`,
-      `${ID}.al`,
-      `${ID}.Spy.al`,
-      "DayClose.Codeunit.al",
-      "Other.al",
-      `${ID}Extra.al`,
-      `${ID}.Test.txt`,
+    // Each name has an explicit expected outcome. The copier
+    // (copyCompanionTestFiles) and classifier must agree on all names it
+    // handles. If companionPredicateMatches returns true, the name must be
+    // either refused or included in the classification. If it returns false,
+    // the classifier must ignore it (not refuse it).
+    interface TestCase {
+      name: string;
+      // "oracle" = must be set.oracle
+      // "companion" = must be in set.companions
+      // "refused" = must throw OracleFileError
+      // "ignored" = must not be refused, and not be in oracle/companions
+      expected: "oracle" | "companion" | "refused" | "ignored";
+    }
+
+    const cases: TestCase[] = [
+      { name: `${ID}.Test.al`, expected: "oracle" },
+      { name: `${ID}.MockThing.al`, expected: "companion" },
+      { name: `${ID}.al`, expected: "refused" },
+      { name: `${ID}.Spy.al`, expected: "companion" },
+      { name: "DayClose.Codeunit.al", expected: "ignored" },
+      { name: "Other.al", expected: "ignored" },
+      { name: `${ID}Extra.al`, expected: "ignored" },
+      { name: `${ID}.Test.txt`, expected: "ignored" },
     ];
 
-    for (const name of names) {
-      it(`agrees on ${name}`, async () => {
+    for (const { name, expected } of cases) {
+      it(`expects ${name} to be ${expected}`, async () => {
         if (name !== `${ID}.Test.al`) {
           await Deno.writeTextFile(
             join(draftDir, "correct", name),
             'codeunit 88888 "X" { }',
           );
         }
-        const copierMatches = companionPredicateMatches(ID, name);
 
-        let classified: string[] | "refused";
+        let set: OracleFileSet | null = null;
+        let error: OracleFileError | null = null;
         try {
-          const set = await classifyOracleFiles({ id: ID, draftDir });
-          classified = [set.oracle, ...set.companions];
-        } catch (error) {
-          if (!(error instanceof OracleFileError)) throw error;
-          classified = "refused";
+          set = await classifyOracleFiles({ id: ID, draftDir });
+        } catch (e) {
+          if (!(e instanceof OracleFileError)) throw e;
+          error = e;
         }
 
-        if (copierMatches) {
-          const known = classified === "refused" ||
-            classified.includes(name);
+        if (expected === "oracle") {
+          assertEquals(set?.oracle, name, `${name} should be the oracle`);
+        } else if (expected === "companion") {
           assertEquals(
-            known,
+            set?.companions.includes(name),
             true,
-            `${name} is copied by copyCompanionTestFiles but neither ` +
-              `classified nor refused by classifyOracleFiles`,
+            `${name} should be in companions`,
+          );
+        } else if (expected === "refused") {
+          assertEquals(error !== null, true, `${name} should be refused`);
+        } else if (expected === "ignored") {
+          assertEquals(
+            set?.oracle === name || set?.companions.includes(name),
+            false,
+            `${name} should be ignored (not oracle, not companion)`,
+          );
+          assertEquals(
+            error,
+            null,
+            `${name} should not throw an error`,
+          );
+        }
+
+        // Verify companionPredicateMatches is consistent: if it matches,
+        // the name must be either refused or in the classification.
+        const copierMatches = companionPredicateMatches(ID, name);
+        if (copierMatches) {
+          const isClassified = set?.oracle === name ||
+            set?.companions.includes(name);
+          const isRefused = error !== null;
+          assertEquals(
+            isClassified || isRefused,
+            true,
+            `copier matched ${name} but it was neither classified nor refused`,
           );
         }
       });

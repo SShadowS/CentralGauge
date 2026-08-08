@@ -4,7 +4,7 @@
  * The draft's oracle lives in `correct/` so the AL Language extension sees
  * one project containing solution + test — the same app the probe compiles.
  * That placement has a consequence: `copyCompanionTestFiles`
- * (`mcp/al-tools-server.ts:646-676`) copies every `<id>.*.al` from the
+ * (`mcp/al-tools-server.ts:582-612`) copies every `<id>.*.al` from the
  * ORACLE'S directory into BOTH verify directories. For a mock the oracle
  * needs, that is right. For a solution file it is contamination that makes a
  * non-discriminating task look discriminating.
@@ -43,7 +43,7 @@ export class OracleFileError extends Error {
 
 /**
  * Faithful re-implementation of `copyCompanionTestFiles`' matcher
- * (`mcp/al-tools-server.ts:660-671`): `.al` extension, case-SENSITIVE
+ * (`mcp/al-tools-server.ts:596-601`): `.al` extension, case-SENSITIVE
  * `startsWith(taskPrefix + ".")`, excluding the exact test filename.
  *
  * Exists only so the anti-drift test can compare the two matchers directly.
