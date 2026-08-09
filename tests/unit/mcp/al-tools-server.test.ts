@@ -8,6 +8,7 @@ import {
   loadTaskTarget,
   loadTestCodeunitId,
   resolveTestFileFromTaskId,
+  verifyResultFromTestResult,
 } from "../../../mcp/al-tools-server.ts";
 
 // Real project root, for tests that exercise the X-prefixed (trap-task)
@@ -312,6 +313,80 @@ expected:
       assertEquals(result.success, false);
       assertStringIncludes(result.message, "No app.json found");
       assertEquals(result.message.includes("Test file not found"), false);
+    });
+  });
+
+  /**
+   * Middle link of the chain `makePublishFailureTestResult` ->
+   * `verifyResultFromTestResult` -> `strictFailExitCode`. The other two links
+   * are pinned in `tests/unit/container/bc-container-provider.test.ts` and
+   * `tests/unit/scripts/trap-probe.test.ts`; drop the flag at THIS link and
+   * the task workbench's discrimination gate silently reopens to the
+   * publish-defect bypass with a fully green suite.
+   */
+  describe("verifyResultFromTestResult", () => {
+    const baseTestResult = {
+      duration: 1234,
+      output: "",
+    };
+
+    it("forwards syntheticNoTestsRan for a publish/install defect", () => {
+      // Exactly what makePublishFailureTestResult produces: real-looking 1/1
+      // counts that no AL test method actually earned.
+      const verify = verifyResultFromTestResult({
+        ...baseTestResult,
+        success: false,
+        totalTests: 1,
+        passedTests: 0,
+        failedTests: 1,
+        results: [{
+          name: "Publish/Install",
+          passed: false,
+          duration: 0,
+          error: "Candidate publish/install defect: …",
+        }],
+        syntheticNoTestsRan: true,
+      });
+
+      assertEquals(verify.syntheticNoTestsRan, true);
+      // The counts must still come through — the flag qualifies them, it does
+      // not replace them, and the bench still scores this as a model failure.
+      assertEquals(verify.totalTests, 1);
+      assertEquals(verify.failed, 1);
+    });
+
+    it("omits the key entirely for a genuine assertion failure", () => {
+      const verify = verifyResultFromTestResult({
+        ...baseTestResult,
+        success: false,
+        totalTests: 5,
+        passedTests: 3,
+        failedTests: 2,
+        results: [
+          { name: "TestPostsLine", passed: false, duration: 1, error: "boom" },
+          { name: "TestOk", passed: true, duration: 1 },
+        ],
+      });
+
+      // Absent, not `undefined`: exactOptionalPropertyTypes distinguishes the
+      // two, and `"key" in obj` is what proves the conditional spread held.
+      assertEquals("syntheticNoTestsRan" in verify, false);
+      assertEquals(verify.failures, ["TestPostsLine: boom"]);
+    });
+
+    it("forwards the flag on the success branch too", () => {
+      // No producer emits this combination today. Asserted so the branch
+      // cannot drift into dropping the flag if one ever does.
+      const verify = verifyResultFromTestResult({
+        ...baseTestResult,
+        success: true,
+        totalTests: 2,
+        passedTests: 2,
+        failedTests: 0,
+        results: [],
+        syntheticNoTestsRan: true,
+      });
+      assertEquals(verify.syntheticNoTestsRan, true);
     });
   });
 });

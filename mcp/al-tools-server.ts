@@ -42,7 +42,7 @@ function getProjectRoot(): string {
   return dirname(dirname(scriptPath));
 }
 import { BcContainerProvider } from "../src/container/bc-container-provider.ts";
-import type { ALProject } from "../src/container/types.ts";
+import type { ALProject, TestResult } from "../src/container/types.ts";
 
 // =============================================================================
 // MCP Protocol Types
@@ -871,7 +871,7 @@ async function handleContainerStatus(params: {
   }
 }
 
-interface VerifyResult {
+export interface VerifyResult {
   success: boolean;
   message: string;
   totalTests?: number;
@@ -887,6 +887,51 @@ interface VerifyResult {
    * `reachedAndFailedAssertions`.
    */
   syntheticNoTestsRan?: boolean;
+}
+
+/**
+ * Flatten a container `TestResult` into the `VerifyResult` shape `al_verify`
+ * returns.
+ *
+ * Extracted from `handleAlVerify`'s tail purely so it is testable WITHOUT a
+ * container: it is the second link in the chain
+ * `makePublishFailureTestResult` -> here -> `strictFailExitCode`, and dropping
+ * `syntheticNoTestsRan` at this link silently reopens the publish-defect
+ * bypass in the task workbench's discrimination gate (a naive solution that
+ * never installed would score as a task that discriminates) while every test
+ * in the suite stays green. Pinning it needs a seam, and this is the smallest
+ * one that does not require injecting a fake container provider.
+ */
+export function verifyResultFromTestResult(
+  testResult: TestResult,
+): VerifyResult {
+  const counts = {
+    totalTests: testResult.totalTests,
+    passed: testResult.passedTests,
+    failed: testResult.failedTests,
+    // Spread conditionally, not `?? undefined`: exactOptionalPropertyTypes
+    // distinguishes an absent key from an explicit `undefined`.
+    ...(testResult.syntheticNoTestsRan ? { syntheticNoTestsRan: true } : {}),
+  };
+
+  if (testResult.success) {
+    return {
+      success: true,
+      message:
+        `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
+      ...counts,
+    };
+  }
+
+  return {
+    success: false,
+    message:
+      `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
+    ...counts,
+    failures: testResult.results
+      .filter((r) => !r.passed)
+      .map((r) => `${r.name}: ${r.error || "Failed"}`),
+  };
 }
 
 /**
@@ -1508,31 +1553,7 @@ export async function handleAlVerify(params: {
       });
     }
 
-    if (testResult.success) {
-      return {
-        success: true,
-        message:
-          `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
-        totalTests: testResult.totalTests,
-        passed: testResult.passedTests,
-        failed: testResult.failedTests,
-      };
-    }
-
-    return {
-      success: false,
-      message:
-        `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
-      totalTests: testResult.totalTests,
-      passed: testResult.passedTests,
-      failed: testResult.failedTests,
-      failures: testResult.results
-        .filter((r) => !r.passed)
-        .map((r) => `${r.name}: ${r.error || "Failed"}`),
-      ...(testResult.syntheticNoTestsRan
-        ? { syntheticNoTestsRan: true as const }
-        : {}),
-    };
+    return verifyResultFromTestResult(testResult);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     debugLog("al_verify", "EXCEPTION", { error: errorMessage });

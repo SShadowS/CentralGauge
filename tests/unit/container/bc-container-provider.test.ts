@@ -2339,6 +2339,15 @@ Deno.test("makePublishFailureTestResult: shapes a failed Publish/Install TestRes
   assertEquals(r.results[0]!.name, "Publish/Install");
   assertEquals(r.results[0]!.passed, false);
   assert(r.results[0]!.error!.includes("OnInstallAppPerCompany"));
+  // Load-bearing for the task workbench, not for the bench. The 1/1 counts
+  // above are a scoring CONVENTION so the bench treats a candidate
+  // publish/install defect as a model failure rather than retrying it as
+  // infra -- no AL test method ran. `scripts/trap-probe.ts`'s discrimination
+  // gate requires evidence that assertions ran and lost, and reads this flag
+  // to tell the synthetic pair apart from a genuine one-test loss. Drop it
+  // here and a naive solution that never installed scores as a task that
+  // discriminates, with a fully green suite.
+  assertEquals(r.syntheticNoTestsRan, true);
 });
 
 // =============================================================================
