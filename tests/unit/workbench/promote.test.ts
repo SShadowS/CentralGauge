@@ -653,6 +653,110 @@ describe("workbench/promote", () => {
       );
     });
 
+    it("refuses when the prereq was edited after the cached verdict (staleness)", async () => {
+      // prereq/ is promoted into tests/al/dependencies/<id>/, which IS in the
+      // task-set hash scope. An edit landing after a green probe therefore
+      // changes both what compiles against the oracle and what the benchmark
+      // hashes, while the verdict still claims discrimination was proven.
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X053",
+        slug: "day-close",
+        withPrereq: true,
+        roots,
+      });
+      const prereqAppJson = join(
+        roots.scratchDir,
+        meta.id,
+        "prereq",
+        "app.json",
+      );
+      const verdict: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date().toISOString(),
+      };
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(prereqAppJson, future, future);
+
+      await assertRejects(
+        () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+        Error,
+        "modified after the cached probe verdict",
+      );
+      // Nothing moved - the prereq is still where the draft left it.
+      assertEquals(
+        await exists(join(roots.testsDir, "dependencies", meta.id)),
+        false,
+      );
+    });
+
+    it("refuses when a .al file under prereq/ was edited after the cached verdict", async () => {
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X053",
+        slug: "day-close",
+        withPrereq: true,
+        roots,
+      });
+      const prereqAl = join(
+        roots.scratchDir,
+        meta.id,
+        "prereq",
+        "CGDayCloseLog.Table.al",
+      );
+      await Deno.writeTextFile(prereqAl, 'table 69001 "CG Day Close Log" { }');
+      const verdict: ProbeVerdict = {
+        correct: "pass",
+        naive: "fail",
+        discriminates: true,
+        at: new Date().toISOString(),
+      };
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(prereqAl, future, future);
+
+      await assertRejects(
+        () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+        Error,
+        "modified after the cached probe verdict",
+      );
+    });
+
+    it("does not trip prereq freshness on editor state under prereq/", async () => {
+      // The dot-segment and extension filters must apply to prereq/ exactly
+      // as they do to correct//naive/ - otherwise adding prereq/ to the walk
+      // would force a spurious multi-minute re-probe after every AL Test
+      // Runner session.
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X053",
+        slug: "day-close",
+        withPrereq: true,
+        roots,
+      });
+      const cached = join(
+        roots.scratchDir,
+        meta.id,
+        "prereq",
+        ".alpackages",
+        "Cached.al",
+      );
+      await ensureDir(join(roots.scratchDir, meta.id, "prereq", ".alpackages"));
+      await Deno.writeTextFile(cached, "// cached symbol shadow\n");
+      const future = new Date(Date.now() + 60_000);
+      await Deno.utime(cached, future, future);
+
+      const result = await promoteDraft(meta.id, {
+        difficulty: "hard",
+        roots,
+        verdict: {
+          correct: "pass",
+          naive: "fail",
+          discriminates: true,
+          at: new Date().toISOString(),
+        },
+      });
+      assertEquals(result.movedPrereq, `tests/al/dependencies/${meta.id}`);
+    });
+
     it("does not refuse when the verdict postdates every draft file", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const verdict: ProbeVerdict = {

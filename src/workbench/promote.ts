@@ -20,10 +20,10 @@
  *   failed the gate" edits a task that may be perfectly good; one told
  *   "inconclusive - re-run" does the right thing instead.
  * - A cached verdict older than the draft's own files (task.yml,
- *   `<id>.Test.al`, or anything under `correct/`/`naive/`) is refused too -
- *   a green probe followed by an edit to the oracle or either reference
- *   solution no longer describes what is about to be promoted. Checked via
- *   mtimes only; never touches a container.
+ *   `<id>.Test.al`, or anything under `correct/`/`naive/`/`prereq/`) is
+ *   refused too - a green probe followed by an edit to the oracle, either
+ *   reference solution, or the prereq no longer describes what is about to
+ *   be promoted. Checked via mtimes only; never touches a container.
  * - Any destination path that already exists (task manifest, test
  *   codeunit, prereq dir) refuses with NO `--force` override. Unlike a
  *   failed probe gate, silently overwriting a shipped task has no
@@ -186,11 +186,20 @@ function assertVerdictAllowsPromotion(
 }
 
 /**
- * Refuses when `task.yml`, `<id>.Test.al`, or anything under `correct/` or
- * `naive/` has an mtime later than the cached verdict's timestamp. A green
- * probe followed by an edit to the oracle or either reference solution
- * promotes against a verdict that no longer describes the draft. Compares
- * filesystem mtimes only - never spawns a probe or touches a container.
+ * Refuses when `task.yml`, `<id>.Test.al`, or anything under `correct/`,
+ * `naive/` or `prereq/` has an mtime later than the cached verdict's
+ * timestamp. A green probe followed by an edit to the oracle, either
+ * reference solution, or the prereq promotes against a verdict that no longer
+ * describes the draft. Compares filesystem mtimes only - never spawns a probe
+ * or touches a container.
+ *
+ * `prereq/` is walked for the same reason the other two are, and the reason is
+ * not symmetry: `promoteDraft` MOVES it to `tests/al/dependencies/<id>/`,
+ * which IS inside the task-set hash scope (`isEditorOnlyAppJson` deliberately
+ * excludes prereq manifests from the editor carve-out). So a prereq edited
+ * after a green probe changes both what compiles against the oracle and what
+ * the benchmark hashes, while the verdict still claims the task was proven to
+ * discriminate.
  */
 async function assertVerdictIsFresh(
   id: string,
@@ -213,11 +222,12 @@ async function assertVerdictIsFresh(
 
   const candidates = [join(draftDir, "task.yml")];
 
-  // Only source files, and never editor state. Once correct/ and naive/ are
-  // live AL projects, the AL extension and AL Test Runner write .altestrunner/,
-  // rad.json, .vscode/ and .alpackages/ into them; treating those as draft
-  // edits would force a spurious multi-minute re-probe after every session.
-  for (const solutionDir of ["correct", "naive"]) {
+  // Only source files, and never editor state. Once correct/, naive/ and
+  // prereq/ are live AL projects, the AL extension and AL Test Runner write
+  // .altestrunner/, rad.json, .vscode/ and .alpackages/ into them; treating
+  // those as draft edits would force a spurious multi-minute re-probe after
+  // every session.
+  for (const solutionDir of ["correct", "naive", "prereq"]) {
     const dir = join(draftDir, solutionDir);
     if (!(await exists(dir))) continue;
     for await (const entry of walk(dir, { includeDirs: false })) {
