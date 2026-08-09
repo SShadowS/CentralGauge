@@ -25,10 +25,12 @@
 //   have, and `--prereq-dir` what `tests/al/dependencies/<id>/` would have.
 //   `--stage-symbols-dir <dir>` (test-file mode only) copies every compiled
 //   prereq `.app` into `<dir>` so the VS Code AL extension can resolve them.
-//   `--strict-fail-mode` makes an expected `fail` earned by a COMPILE failure
-//   exit `4` instead of `0` — a naive solution that fails to compile isn't
-//   real discrimination. Both flags are additive: omitted, behaviour and
-//   exit codes are unchanged from before this task.
+//   `--strict-fail-mode` makes an expected `fail` exit `4` instead of `0`
+//   unless the run actually REACHED the oracle's assertions and failed them
+//   (`totalTests > 0 && failed > 0`) — a naive solution that never compiled,
+//   never published, or ran no tests isn't real discrimination. Both flags
+//   are additive: omitted, behaviour and exit codes are unchanged from
+//   before this task, and exit 4 is unreachable.
 //
 // `--task` stays required in both modes: it is the label every log line is
 // keyed on, and in `--test-file` mode `handleAlVerify` independently derives
@@ -293,26 +295,69 @@ export function planProbe(a: ProbeArgsInput): ProbePlan {
 }
 
 /**
+ * POSITIVE evidence that a run actually reached the oracle's assertions and
+ * lost: the test step ran at least one test, and at least one of them failed.
+ *
+ * This is the whole of the strict-fail contract, and it is deliberately
+ * phrased as evidence-of-success-of-the-test-step rather than as
+ * evidence-of-compile-failure. The previous formulation inferred "did not
+ * compile" from `compileErrors.length > 0`, which is a SIDE CHANNEL:
+ * `handleAlVerify` populates `compileErrors` at exactly two sites (the prereq
+ * compile failure and the candidate compile failure), and both build it from
+ * the AL parser's error list. A compile that dies WITHOUT producing
+ * parser-recognisable `file(line,col): ALxxxx` lines — an alc crash, truncated
+ * output, a killed script — returns `success:false, errors:[]`
+ * (`isCompilationSuccessful` in `src/container/bc-output-parsers.ts` is
+ * `errorCount === 0 && output.includes("COMPILE_SUCCESS")`, so a missing
+ * sentinel alone fails it). That produced `compileErrors: []`, length 0, "no
+ * compile errors", exit 0 — a naive side that never compiled scored as a
+ * legitimate assertion failure and the task was recorded as discriminating.
+ * The `naive/` directory losing its `app.json` was the same bug through
+ * another door: `handleAlVerify` returns `{success:false, message:"No app.json
+ * found in …"}` with no `compileErrors` key at all.
+ *
+ * Requiring evidence instead of absence-of-evidence closes every one of those
+ * doors at once, including the ones nobody has hit yet — "Test file not
+ * found", "app.json preparation failed", a publish that never happened, and a
+ * run that published but executed zero tests all fail this predicate for the
+ * same reason: no assertion was ever evaluated, so nothing discriminated.
+ *
+ * `totalTests !== undefined` and `totalTests > 0` are both required and not
+ * redundant. `undefined` means the run never reached the test step at all
+ * (every early return above omits the field); `0` means it reached it and ran
+ * nothing.
+ */
+function reachedAndFailedAssertions(res: VerifyResult): boolean {
+  return res.totalTests !== undefined && res.totalTests > 0 &&
+    (res.failed ?? 0) > 0;
+}
+
+/**
  * Exit code for a run whose outcome already MATCHED `--expect`.
  *
  * Returns `4` only when strict-fail mode is on, `fail` was expected, `fail`
- * was what happened, and it happened because the code did not COMPILE. A
- * plausible-but-wrong trap solution should compile and fail its assertions; a
- * naive side that fails to compile is the signature of a misnamed solution
- * colliding, a helper present on the correct side and absent on the naive
- * one, or an unresolved symbol — none of which is real discrimination.
+ * was what happened, and the run did NOT reach and fail real assertions (see
+ * {@link reachedAndFailedAssertions}). A plausible-but-wrong trap solution
+ * should compile, publish, run the oracle and lose on its assertions; a naive
+ * side that never got that far is the signature of a misnamed solution
+ * colliding, a helper present on the correct side and absent on the naive one,
+ * an unresolved symbol, or a draft missing a manifest — none of which is real
+ * discrimination.
  *
- * Gated behind the flag so every existing invocation keeps its exit codes.
+ * Gated behind the flag so every existing invocation keeps its exit codes:
+ * without `--strict-fail-mode` this returns 0 unconditionally, so exit 4 stays
+ * unreachable for `scripts/run-xiterate.ps1` and every hand invocation.
  */
 export function strictFailExitCode(input: {
   strictFailMode: boolean;
   expect: "pass" | "fail";
   outcome: ProbeOutcome;
-  hasCompileErrors: boolean;
+  /** The handler's own result — the only thing that can carry the evidence. */
+  result: VerifyResult;
 }): number {
   if (!input.strictFailMode) return 0;
   if (input.expect !== "fail" || input.outcome !== "fail") return 0;
-  return input.hasCompileErrors ? 4 : 0;
+  return reachedAndFailedAssertions(input.result) ? 0 : 4;
 }
 
 async function main() {
@@ -419,14 +464,15 @@ async function main() {
     strictFailMode: plan.strictFailMode,
     expect: plan.expect,
     outcome,
-    hasCompileErrors: (res.compileErrors?.length ?? 0) > 0,
+    result: res,
   });
   if (strictCode === 4) {
     console.error(
       colors.yellow(
-        `[trap-probe] COMPILE-EARNED FAIL — the naive side failed to ` +
-          `compile rather than failing its assertions. That is not ` +
-          `discrimination.`,
+        `[trap-probe] UNEARNED FAIL — the naive side never reached and ` +
+          `failed the oracle's assertions (no test ran, or none failed). ` +
+          `It failed to compile, publish, or find its manifest instead. ` +
+          `That is not discrimination.`,
       ),
     );
     Deno.exit(4);

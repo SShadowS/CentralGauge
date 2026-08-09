@@ -56,16 +56,27 @@ import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
  * Outcome of probing one side of a draft.
  *
  * `compile_fail` is a workbench-level distinction that `trap-probe` reports
- * via exit code 4 under `--strict-fail-mode`: the side failed, but because
- * it did not COMPILE rather than because its assertions failed.
+ * via exit code 4 under `--strict-fail-mode`: the side failed, but WITHOUT
+ * ever reaching and failing the oracle's assertions.
+ *
+ * The name is narrower than the condition, and deliberately kept: `trap-probe`
+ * decides exit 4 from POSITIVE evidence that assertions ran and lost
+ * (`totalTests > 0 && failed > 0`), so everything else lands here - a compile
+ * failure whose errors the AL parser could not recognise, a `naive/` with no
+ * `app.json`, an oracle that could not be copied, a publish that never
+ * happened, a run that executed zero tests. Compile failure is merely the
+ * common case; see `strictFailExitCode` in `scripts/trap-probe.ts` for why
+ * absence-of-compile-errors was not a safe test. Renaming the value would
+ * invalidate every `.probe.json` already on disk, so the doc carries the
+ * breadth instead.
  *
  * That distinction is the guard no filename rule can provide. A
  * plausible-but-wrong trap solution should compile and fail asserts. A naive
- * side that fails to compile is the signature of a misnamed solution
+ * side that never got that far is the signature of a misnamed solution
  * colliding with an injected oracle-side file, an oracle-referenced helper
- * present in correct/ and absent from naive/, or an unresolved symbol - each
- * of which produces a green verdict for a task that discriminates on
- * nothing.
+ * present in correct/ and absent from naive/, an unresolved symbol, or a
+ * missing manifest - each of which produces a green verdict for a task that
+ * discriminates on nothing.
  */
 export type ProbeOutcome = RawProbeOutcome | "compile_fail";
 
@@ -104,8 +115,10 @@ const DEFAULT_CONTAINER = "Cronus28";
  *
  * - `3` -> `"inconclusive"`, regardless of `expect` - infra trouble, not a
  *   real result, and must never be compared against the expectation.
- * - `4` -> `"compile_fail"` - only emitted under `--strict-fail-mode`, which
- *   this module passes on the naive run only.
+ * - `4` -> `"compile_fail"` - the side failed without reaching a failing
+ *   assertion. Only emitted under `--strict-fail-mode`, which this module
+ *   passes on the naive run only. See {@link ProbeOutcome} for why the name
+ *   is narrower than the condition.
  * - `0` -> the run matched `--expect`, so the actual outcome IS `expect`.
  * - anything else -> the actual outcome is the opposite of `expect`.
  */

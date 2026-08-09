@@ -296,39 +296,121 @@ describe("scripts/trap-probe", () => {
   });
 
   describe("strictFailExitCode", () => {
-    it("returns 4 for a compile-earned fail under strict mode", () => {
+    // Each fixture is a VERBATIM shape of a real `handleAlVerify` return, so
+    // these tests fail if that handler's contract drifts rather than merely
+    // if this predicate does. Site references are to `mcp/al-tools-server.ts`.
+
+    /** The one legitimate discrimination: compiled, published, ran, lost. */
+    const assertionFailure: VerifyResult = {
+      success: false,
+      message: "Tests failed: 2 of 5 tests failed",
+      totalTests: 5,
+      passed: 3,
+      failed: 2,
+      failures: ["TestPostsLine: expected 100 got 0"],
+    };
+
+    /** Candidate compile failure WITH parseable AL errors. */
+    const compileFailWithErrors: VerifyResult = {
+      success: false,
+      message: "Verification compilation failed",
+      compileErrors: [
+        "CG-AL-X053.al(12,5): AL0118 - The name 'Foo' does not exist",
+      ],
+    };
+
+    /**
+     * BYPASS PATH 1. A compile that died without the `COMPILE_SUCCESS`
+     * sentinel AND without parser-recognisable `file(line,col): ALxxxx` lines
+     * — an alc crash, truncated output, a killed script. `errors` is empty, so
+     * the handler's `.map()` yields `compileErrors: []`. The old
+     * `compileErrors.length > 0` test read that as "no compile errors" and
+     * scored a naive side that never compiled as a real assertion failure.
+     */
+    const compileFailEmptyErrors: VerifyResult = {
+      success: false,
+      message: "Verification compilation failed",
+      compileErrors: [],
+    };
+
+    /**
+     * BYPASS PATH 2. `naive/` with no `app.json`: the handler returns before
+     * any compile, so there is no `compileErrors` KEY at all. Asymmetric with
+     * `correct/`, where the same deletion fails closed via `--expect pass`.
+     */
+    const noAppJson: VerifyResult = {
+      success: false,
+      message:
+        "No app.json found in C:/scratch/CG-AL-X053/naive or its subdirectories. " +
+        "Create an app.json manifest first.",
+    };
+
+    /** Same family: the oracle could not be copied into the verify dir. */
+    const testFileNotFound: VerifyResult = {
+      success: false,
+      message: "Test file not found: C:/scratch/CG-AL-X053/correct/x.Test.al",
+    };
+
+    /**
+     * Reached the test step but ran nothing. Cannot arrive via the SOAP path
+     * (that throws `ContainerError("test")` on `totalTests === 0`, which the
+     * catch-all turns into "inconclusive" before this predicate is reached),
+     * but is asserted anyway so the gate does not depend on that upstream
+     * guard staying in place.
+     */
+    const zeroTests: VerifyResult = {
+      success: false,
+      message: "Tests failed: 0 of 0 tests failed",
+      totalTests: 0,
+      passed: 0,
+      failed: 0,
+    };
+
+    const underStrict = (result: VerifyResult) =>
+      strictFailExitCode({
+        strictFailMode: true,
+        expect: "fail",
+        outcome: "fail",
+        result,
+      });
+
+    it("returns 0 for a genuine assertion failure — the one earned fail", () => {
+      assertEquals(underStrict(assertionFailure), 0);
+    });
+
+    it("returns 4 for a compile failure with a populated error array", () => {
+      assertEquals(underStrict(compileFailWithErrors), 4);
+    });
+
+    it("returns 4 for a compile failure with an EMPTY error array (bypass path 1)", () => {
+      assertEquals(underStrict(compileFailEmptyErrors), 4);
+    });
+
+    it("returns 4 when there is no compileErrors key and no tests (bypass path 2)", () => {
+      assertEquals(underStrict(noAppJson), 4);
+    });
+
+    it("returns 4 when the oracle file could not be found", () => {
+      assertEquals(underStrict(testFileNotFound), 4);
+    });
+
+    it("returns 4 when the run reached the test step but ran zero tests", () => {
+      assertEquals(underStrict(zeroTests), 4);
+    });
+
+    it("returns 4 when tests ran but none of them failed", () => {
+      // `success:false` with `failed:0` is not an assertion loss. Today the
+      // SOAP client produces this for an all-skipped codeunit (skips count
+      // toward totalTests but not toward failedTests).
       assertEquals(
-        strictFailExitCode({
-          strictFailMode: true,
-          expect: "fail",
-          outcome: "fail",
-          hasCompileErrors: true,
+        underStrict({
+          success: false,
+          message: "Tests failed: 0 of 3 tests failed",
+          totalTests: 3,
+          passed: 0,
+          failed: 0,
         }),
         4,
-      );
-    });
-
-    it("returns 0 for a test-earned fail under strict mode", () => {
-      assertEquals(
-        strictFailExitCode({
-          strictFailMode: true,
-          expect: "fail",
-          outcome: "fail",
-          hasCompileErrors: false,
-        }),
-        0,
-      );
-    });
-
-    it("returns 0 for a compile-earned fail WITHOUT strict mode", () => {
-      assertEquals(
-        strictFailExitCode({
-          strictFailMode: false,
-          expect: "fail",
-          outcome: "fail",
-          hasCompileErrors: true,
-        }),
-        0,
       );
     });
 
@@ -338,10 +420,50 @@ describe("scripts/trap-probe", () => {
           strictFailMode: true,
           expect: "pass",
           outcome: "pass",
-          hasCompileErrors: true,
+          result: compileFailWithErrors,
         }),
         0,
       );
+    });
+
+    it("never returns 4 for an outcome that is not 'fail'", () => {
+      for (const outcome of ["pass", "inconclusive"] as const) {
+        assertEquals(
+          strictFailExitCode({
+            strictFailMode: true,
+            expect: "fail",
+            outcome,
+            result: compileFailEmptyErrors,
+          }),
+          0,
+        );
+      }
+    });
+
+    // The additive contract: `scripts/run-xiterate.ps1` and every hand
+    // invocation omit `--strict-fail-mode`, and exit 4 must stay unreachable
+    // for them no matter what the result looks like.
+    it("returns 0 for EVERY result shape without strict mode", () => {
+      for (
+        const result of [
+          assertionFailure,
+          compileFailWithErrors,
+          compileFailEmptyErrors,
+          noAppJson,
+          testFileNotFound,
+          zeroTests,
+        ]
+      ) {
+        assertEquals(
+          strictFailExitCode({
+            strictFailMode: false,
+            expect: "fail",
+            outcome: "fail",
+            result,
+          }),
+          0,
+        );
+      }
     });
   });
 });
