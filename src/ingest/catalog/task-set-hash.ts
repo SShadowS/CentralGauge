@@ -34,6 +34,7 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
  *                                       support files — RDLC, layouts, etc.)
  *
  * Excluded (build artifacts, regenerable from source):
+ *   - any path segment starting with "." (editor/tool state — see collectFiles)
  *   - any directory named ".alpackages" or "output"
  *   - files matching *.app  (compiled AL output)
  *   - files matching cache_*.json  (alpackages cache manifests)
@@ -115,6 +116,30 @@ const SKIP_DIR_RE = /(^|[\\/])(\.alpackages|output)([\\/]|$)/;
 const SKIP_FILE_RE = /(\.app|^cache_.*\.json)$/;
 
 /**
+ * True when any segment of `relUnderSubdir` starts with a dot — the file is
+ * editor or tool state, never task content.
+ *
+ * `tests/al/<difficulty>` is an AL project root, so the AL Language extension
+ * and AL Test Runner deposit `.altestrunner/`, `.vscode/` and friends there
+ * while an oracle is being authored. `.altestrunner/` is globally gitignored
+ * (`.gitignore`), which is exactly what makes it dangerous here: it never
+ * shows up in `git status`, so without this skip it would move
+ * `task_sets.hash` silently on the authoring machine and every bench run
+ * would record a hash no clean checkout can reproduce.
+ *
+ * Same rule `assertVerdictIsFresh` applies in `src/workbench/promote.ts` for
+ * the same reason, on the draft-side copy of these directories.
+ *
+ * Segment-wise, not a prefix test on the whole path: a dot only means "tool
+ * state" when it starts a path SEGMENT. This also subsumes `.alpackages`,
+ * which `SKIP_DIR_RE` still covers independently so that regex stays a
+ * standalone statement of the build-artifact rule.
+ */
+function hasDotSegment(relUnderSubdir: string): boolean {
+  return relUnderSubdir.split("/").some((seg) => seg.startsWith("."));
+}
+
+/**
  * File extensions whose content is CRLF/LF-normalized before hashing.
  * Restricted to genuinely text formats — a Windows vs. Unix checkout of the
  * same logical content must hash identically for these. Binary formats
@@ -177,6 +202,7 @@ async function collectFiles(
       const relFromRoot = relative(projectRoot, e.path).replaceAll("\\", "/");
       const relUnderSubdir = relative(dir, e.path).replaceAll("\\", "/");
       if (SKIP_DIR_RE.test(relUnderSubdir)) continue;
+      if (hasDotSegment(relUnderSubdir)) continue;
       const basename = relUnderSubdir.split("/").pop() ?? "";
       if (SKIP_FILE_RE.test(basename)) continue;
       if (!includeFile(relUnderSubdir)) continue;

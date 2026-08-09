@@ -87,9 +87,13 @@ docs/blog/
 # Agent task working directories
 test-configs/*/.tasks/
 
-# AL build artifacts (prereq apps)
+# AL build artifacts (prereq apps, and the per-difficulty project roots that
+# tests/al/{easy,medium,hard}/app.json turn into AL projects for the editor)
 tests/al/dependencies/*/.alpackages/
 tests/al/dependencies/*/output/
+tests/al/*/.alpackages/
+tests/al/*/output/
+tests/al/*/rad.json
 
 # Plan G — workflow orchestrator output (CI-only).
 weekly-cycle-result.json

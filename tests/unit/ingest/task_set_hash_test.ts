@@ -479,6 +479,59 @@ Deno.test("computeTaskSetHash: editor-only app.json carve-out", async (t) => {
     },
   );
 
+  await t.step(
+    "editor byproducts under tests/al/<difficulty> do not move the hash",
+    async () => {
+      // `tests/al/<difficulty>` is an AL project root, so the AL extension and
+      // AL Test Runner write .altestrunner/ and .vscode/ into it while an
+      // oracle is being authored. .altestrunner/ is globally gitignored, so
+      // without the dot-segment skip it would move task_sets.hash INVISIBLY —
+      // benches would record a hash no clean checkout reproduces.
+      const root = await createTempDir("task-set-hash-dotdir");
+      try {
+        await ensureDir(join(root, "tasks", "hard"));
+        await ensureDir(join(root, "tests", "al", "hard"));
+        await Deno.writeTextFile(
+          join(root, "tasks", "hard", "CG-AL-X001-a.yml"),
+          "id: CG-AL-X001\n",
+        );
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", "CG-AL-X001.Test.al"),
+          'codeunit 80001 "T" { }',
+        );
+
+        const before = await computeTaskSetHash(root);
+
+        await ensureDir(join(root, "tests", "al", "hard", ".altestrunner"));
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", ".altestrunner", "config.json"),
+          '{"launchConfigName":"local"}',
+        );
+        await ensureDir(join(root, "tests", "al", "hard", ".vscode"));
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", ".vscode", "settings.json"),
+          '{"al.enableCodeAnalysis":false}',
+        );
+        // A dotFILE, not just a dot-directory — same segment rule.
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", ".gitkeep"),
+          "",
+        );
+        assertEquals(await computeTaskSetHash(root), before);
+
+        // …but real content in the same directory still moves it, so the skip
+        // has not quietly widened into "ignore this project root".
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", "CG-AL-X001.Mock.al"),
+          'codeunit 80002 "M" { }',
+        );
+        assertNotEquals(await computeTaskSetHash(root), before);
+      } finally {
+        await cleanupTempDir(root);
+      }
+    },
+  );
+
   await t.step("editing a prereq app.json DOES change the hash", async () => {
     const root = await createTempDir("task-set-hash-prereq");
     try {
