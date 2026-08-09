@@ -15,8 +15,12 @@ import type {
   ProbeRunner,
   ProbeVerdict,
 } from "../../../src/workbench/probe.ts";
-import { probeDraft } from "../../../src/workbench/probe.ts";
+import {
+  probeDraft,
+  resolveDraftSlugForWorkspace,
+} from "../../../src/workbench/probe.ts";
 import { OracleFileError } from "../../../src/workbench/oracle-files.ts";
+import { renderWorkspace } from "../../../src/workbench/workspace.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 /**
@@ -490,6 +494,153 @@ describe("workbench/probe", () => {
         OracleFileError,
       );
       assertEquals(called, false);
+    });
+
+    it(
+      "refreshes the workspace with the probe's actual container and " +
+        "codeunit id before running",
+      async () => {
+        // A real codeunit id must resolve or the refresh is skipped
+        // entirely - see the "leaves a pre-existing workspace untouched"
+        // test below for that path.
+        await Deno.writeTextFile(
+          join(draftDir, "task.yml"),
+          `id: ${id}\nexpected:\n  testCodeunitId: 80099\n`,
+        );
+        await Deno.writeTextFile(
+          join(draftDir, ".meta.json"),
+          JSON.stringify({
+            id,
+            slug: "poisoned-rescue",
+            testCodeunitId: 80053,
+          }),
+        );
+        // A stale pre-existing workspace, so a genuine rewrite (not just
+        // "the file already existed") is what makes this test pass.
+        await Deno.writeTextFile(
+          join(draftDir, `${id}.code-workspace`),
+          JSON.stringify({ folders: [{ path: ".", name: "STALE" }] }),
+        );
+
+        await probeDraft(id, {
+          scratchDir,
+          container: "Cronus281",
+          runner: stubRunner({ correct: 0, naive: 0 }),
+        });
+
+        const raw = await Deno.readTextFile(
+          join(draftDir, `${id}.code-workspace`),
+        );
+        const ws = JSON.parse(raw) as {
+          folders: Array<{ path: string; name: string }>;
+          settings: Record<string, unknown>;
+          tasks: { tasks: Array<{ label: string; command: string }> };
+        };
+
+        assertEquals(ws.folders.some((f) => f.name === "STALE"), false);
+        assertEquals(
+          ws.folders.some((f) => f.name === `${id} (draft)`),
+          true,
+        );
+
+        const correctOnly = ws.tasks.tasks.find((t) =>
+          t.label === "probe: correct only"
+        );
+        assertStringIncludes(
+          correctOnly?.command ?? "",
+          "--container Cronus281",
+        );
+        assertStringIncludes(
+          correctOnly?.command ?? "",
+          "--test-codeunit-id 80099",
+        );
+
+        // Symbol paths: resolveSymbolPaths is never called directly here.
+        // Instead, whatever it actually resolved (read back from the file
+        // itself) must round-trip through the same pure renderWorkspace the
+        // production code uses - proving the write is a genuine fresh
+        // render of the probe's real inputs, not a stale or guessed value.
+        const resolvedSymbolPaths =
+          (ws.settings["al.packageCachePath"] as string[] | undefined) ?? [];
+        const expected = renderWorkspace({
+          id,
+          slug: "poisoned-rescue",
+          draftDir,
+          repoRoot: Deno.cwd(),
+          hasPrereq: false,
+          testCodeunitId: 80099,
+          container: "Cronus281",
+          symbolPaths: resolvedSymbolPaths,
+          state: "draft",
+        });
+        assertEquals(raw, expected);
+      },
+    );
+
+    it(
+      "leaves a pre-existing workspace and checklist untouched when no " +
+        "codeunit id resolves (the refresh is skipped, not defaulted)",
+      async () => {
+        // beforeEach never writes task.yml/.meta.json for this id, so
+        // resolveDraftTestCodeunitId returns undefined and the refresh
+        // block never runs - this is the documented degrade: an author
+        // keeps whatever workspace/checklist they already had, stale
+        // symbol path included, rather than getting a freshly-but-wrongly
+        // shaped one.
+        await Deno.writeTextFile(
+          join(draftDir, `${id}.code-workspace`),
+          "STALE-WORKSPACE-MARKER",
+        );
+        await Deno.writeTextFile(
+          join(draftDir, "CHECKLIST.md"),
+          "STALE-CHECKLIST-MARKER",
+        );
+
+        await probeDraft(id, {
+          scratchDir,
+          runner: stubRunner({ correct: 0, naive: 0 }),
+        });
+
+        assertEquals(
+          await Deno.readTextFile(join(draftDir, `${id}.code-workspace`)),
+          "STALE-WORKSPACE-MARKER",
+        );
+        assertEquals(
+          await Deno.readTextFile(join(draftDir, "CHECKLIST.md")),
+          "STALE-CHECKLIST-MARKER",
+        );
+      },
+    );
+  });
+
+  describe("resolveDraftSlugForWorkspace", () => {
+    it("returns the slug from .meta.json when present", async () => {
+      await Deno.writeTextFile(
+        join(draftDir, ".meta.json"),
+        JSON.stringify({ id, slug: "poisoned-rescue", testCodeunitId: 80053 }),
+      );
+      assertEquals(
+        await resolveDraftSlugForWorkspace(draftDir, id),
+        "poisoned-rescue",
+      );
+    });
+
+    it("falls back to id when .meta.json is missing", async () => {
+      // beforeEach never writes .meta.json for this id.
+      assertEquals(await resolveDraftSlugForWorkspace(draftDir, id), id);
+    });
+
+    it("falls back to id when .meta.json has no usable slug", async () => {
+      await Deno.writeTextFile(
+        join(draftDir, ".meta.json"),
+        JSON.stringify({ id, slug: "", testCodeunitId: 80053 }),
+      );
+      assertEquals(await resolveDraftSlugForWorkspace(draftDir, id), id);
+    });
+
+    it("falls back to id when .meta.json is unparseable", async () => {
+      await Deno.writeTextFile(join(draftDir, ".meta.json"), "not-json: [");
+      assertEquals(await resolveDraftSlugForWorkspace(draftDir, id), id);
     });
   });
 });

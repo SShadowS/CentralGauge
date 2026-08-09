@@ -186,11 +186,18 @@ async function resolveDraftTestCodeunitId(
 /**
  * Reads `scratch/<id>/.meta.json`'s slug for the workspace refresh in
  * `probeDraft` below. A draft-state workspace never renders `slug` -
- * `workspace.ts`'s own doc comment notes it is only used once promoted - so
- * falling back to `id` itself when `.meta.json` is missing or unparseable is
- * safe: the fallback value never actually surfaces.
+ * `WorkspaceContext.slug` is read exactly once in `workspace.ts`, inside
+ * `renderChecklist`'s `state === "promoted"` branch - so falling back to
+ * `id` itself when `.meta.json` is missing or unparseable is safe: the
+ * fallback value never actually surfaces while `probeDraft` only ever writes
+ * `state: "draft"`.
+ *
+ * Exported (not just used internally) so its two branches are directly unit
+ * testable - the value they return has no observable effect on any file
+ * `probeDraft` writes today, so an indirect test asserting on written output
+ * could not actually distinguish the two branches.
  */
-async function resolveDraftSlugForWorkspace(
+export async function resolveDraftSlugForWorkspace(
   draftDir: string,
   id: string,
 ): Promise<string> {
