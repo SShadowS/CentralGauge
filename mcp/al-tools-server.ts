@@ -879,6 +879,14 @@ interface VerifyResult {
   failed?: number;
   failures?: string[];
   compileErrors?: string[];
+  /**
+   * Passed through from `TestResult.syntheticNoTestsRan`: the counts above
+   * are a scoring convention for a candidate publish/install defect, not a
+   * measurement of tests that ran. `scripts/trap-probe.ts` needs it to keep
+   * its discrimination gate honest — see that file's
+   * `reachedAndFailedAssertions`.
+   */
+  syntheticNoTestsRan?: boolean;
 }
 
 /**
@@ -1521,6 +1529,9 @@ export async function handleAlVerify(params: {
       failures: testResult.results
         .filter((r) => !r.passed)
         .map((r) => `${r.name}: ${r.error || "Failed"}`),
+      ...(testResult.syntheticNoTestsRan
+        ? { syntheticNoTestsRan: true as const }
+        : {}),
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

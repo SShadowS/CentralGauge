@@ -104,6 +104,8 @@ export type VerifyResult = {
   failed?: number;
   failures?: string[];
   compileErrors?: string[];
+  /** See `TestResult.syntheticNoTestsRan` — the counts are a convention, not a measurement. */
+  syntheticNoTestsRan?: boolean;
 };
 
 export type ProbeOutcome = "pass" | "fail" | "inconclusive";
@@ -326,8 +328,19 @@ export function planProbe(a: ProbeArgsInput): ProbePlan {
  * redundant. `undefined` means the run never reached the test step at all
  * (every early return above omits the field); `0` means it reached it and ran
  * nothing.
+ *
+ * `syntheticNoTestsRan` is the one case where the counts LIE in the honest
+ * direction for a different consumer. A candidate that compiles but fails to
+ * publish/install is reported by `makePublishFailureTestResult`
+ * (`src/container/bc-container-provider.ts`) as `totalTests: 1, failed: 1` so
+ * the BENCH scores it as a model failure rather than retrying it as infra.
+ * That convention is right there and wrong here: a naive side that never
+ * installed never evaluated an assertion, so it proves nothing about whether
+ * the oracle discriminates. The flag is what lets both readings coexist
+ * without either one string-matching the other's output.
  */
 function reachedAndFailedAssertions(res: VerifyResult): boolean {
+  if (res.syntheticNoTestsRan) return false;
   return res.totalTests !== undefined && res.totalTests > 0 &&
     (res.failed ?? 0) > 0;
 }

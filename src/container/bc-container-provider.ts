@@ -281,6 +281,10 @@ export function makePublishFailureTestResult(
       },
     ],
     output: `PUBLISH_DEFECT_CLASS:model\n${output}`,
+    // The 1/1 counts above are a scoring convention, not a measurement — no
+    // AL test method ran. Flagged so consumers that need real assertion
+    // evidence (the workbench discrimination probe) can tell the difference.
+    syntheticNoTestsRan: true,
   };
 }
 

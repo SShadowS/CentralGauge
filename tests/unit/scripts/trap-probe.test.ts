@@ -366,6 +366,24 @@ describe("scripts/trap-probe", () => {
       failed: 0,
     };
 
+    /**
+     * A candidate that compiled but failed to publish/install.
+     * `makePublishFailureTestResult` reports it as `1 of 1 tests failed` so
+     * the BENCH scores it as a model failure instead of retrying it as
+     * infra — real counts, but no AL test method ran. Only the
+     * `syntheticNoTestsRan` flag separates it from a genuine single-test
+     * loss.
+     */
+    const publishDefect: VerifyResult = {
+      success: false,
+      message: "Tests failed: 1 of 1 tests failed",
+      totalTests: 1,
+      passed: 0,
+      failed: 1,
+      failures: ["Publish/Install: Candidate publish/install defect: …"],
+      syntheticNoTestsRan: true,
+    };
+
     const underStrict = (result: VerifyResult) =>
       strictFailExitCode({
         strictFailMode: true,
@@ -396,6 +414,17 @@ describe("scripts/trap-probe", () => {
 
     it("returns 4 when the run reached the test step but ran zero tests", () => {
       assertEquals(underStrict(zeroTests), 4);
+    });
+
+    it("returns 4 for a publish/install defect despite its 1-of-1 counts", () => {
+      assertEquals(underStrict(publishDefect), 4);
+    });
+
+    it("returns 0 for the same counts WITHOUT the synthetic flag", () => {
+      // Isolates the flag from the counts: strip it and the identical shape
+      // is a genuine single-test loss, which must still be discrimination.
+      const { syntheticNoTestsRan: _drop, ...genuine } = publishDefect;
+      assertEquals(underStrict(genuine), 0);
     });
 
     it("returns 4 when tests ran but none of them failed", () => {
@@ -452,6 +481,7 @@ describe("scripts/trap-probe", () => {
           noAppJson,
           testFileNotFound,
           zeroTests,
+          publishDefect,
         ]
       ) {
         assertEquals(
