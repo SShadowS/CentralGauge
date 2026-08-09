@@ -82,6 +82,14 @@ export interface PromoteResult {
   hashChanged: true;
   /** Whether `--force` was used to skip the probe gate. */
   forced: boolean;
+  /**
+   * Non-fatal failures from the post-commit tidy-up (removing the draft's
+   * `task.yml`, rewriting the workspace) - steps that run AFTER the move has
+   * committed and therefore must not turn a successful promotion into a
+   * thrown error. Omitted entirely when everything succeeded. The CLI prints
+   * these; see the "post-commit tidy-up" block in {@link promoteDraft}.
+   */
+  postCommitWarnings?: string[];
 }
 
 /** Options for {@link promoteDraft}. */
@@ -170,9 +178,13 @@ function assertVerdictAllowsPromotion(
         `correct/ did not pass its own oracle (got "${verdict.correct}")`,
       );
     }
-    if (verdict.naive !== "fail") {
+    if (verdict.naive === "pass") {
+      problems.push("naive/ passed the oracle, so this task tests nothing");
+    } else if (verdict.naive !== "fail") {
+      // "passed" would be a lie for compile_fail/inconclusive - state the
+      // actual outcome instead of asserting the one case it is not.
       problems.push(
-        `naive/ passed, so this task tests nothing (got "${verdict.naive}")`,
+        `naive/ did not fail its assertions (got "${verdict.naive}")`,
       );
     }
     throw new Error(
@@ -553,11 +565,35 @@ export async function promoteDraft(
     );
   }
 
+  // --- post-commit tidy-up: NON-FATAL by construction. ---
+  //
+  // Everything below runs AFTER the rollback window has closed: the manifest,
+  // the oracle, the companions and the prereq are all at their destinations
+  // and re-validated. Letting either step throw would report a FAILURE for a
+  // promotion that fully succeeded, and the operator's natural retry would
+  // then hit `refuseIfExists` ("already exists ... there is no --force for
+  // this check") on work that was already done correctly - the worst
+  // combination available. Rolling back instead is not an option either: the
+  // move is committed and undoing a good promotion over a failed `unlink` is
+  // strictly worse than leaving one stale file behind.
+  //
+  // So each is guarded and its failure is REPORTED, never swallowed, via
+  // `postCommitWarnings` - the CLI prints them under a `[!]` line.
+  const postCommitWarnings: string[] = [];
+
   // Only remove the draft's task.yml once the promoted copy is confirmed
   // good - keeps scratch/ as the rollback source until that's certain.
   // correct/, naive/, NOTES.md, .meta.json and .probe.json are left in
   // place as the draft's authoring history.
-  await Deno.remove(draftTaskYamlPath);
+  try {
+    await Deno.remove(draftTaskYamlPath);
+  } catch (error) {
+    postCommitWarnings.push(
+      `could not remove the promoted draft's ${draftTaskYamlPath} (${
+        error instanceof Error ? error.message : String(error)
+      }) - the promotion itself succeeded; delete the leftover by hand.`,
+    );
+  }
 
   // Rewrite the workspace to the promoted paths only now, after the move
   // has fully committed - everything above that can still roll back (the
@@ -568,25 +604,35 @@ export async function promoteDraft(
   // container, and none of the promoted folders is an AL project root any
   // more (see promotedFolders' own doc comment), so there is nothing left
   // for al.packageCachePath to serve.
-  await writeWorkspace({
-    id,
-    slug,
-    draftDir,
-    repoRoot: Deno.cwd(),
-    hasPrereq: meta?.withPrereq ?? false,
-    // .meta.json is written once at scaffold time and never touched again
-    // before promotion, so it is the reliable source here - unlike
-    // task.yml's copy, whose schema deliberately allows an operator to omit
-    // it. 0 only fires when .meta.json is gone AND opts.slug was given
-    // explicitly (the one path that reaches this line without it) - a
-    // placeholder, not a guess, exactly like resolveSymbolPaths returning
-    // [] rather than a wrong-but-plausible answer.
-    testCodeunitId: meta?.testCodeunitId ?? 0,
-    container: DEFAULT_PROBE_CONTAINER,
-    symbolPaths: [],
-    state: "promoted",
-    difficulty,
-  });
+  try {
+    await writeWorkspace({
+      id,
+      slug,
+      draftDir,
+      repoRoot: Deno.cwd(),
+      hasPrereq: meta?.withPrereq ?? false,
+      // .meta.json is written once at scaffold time and never touched again
+      // before promotion, so it is the reliable source here - unlike
+      // task.yml's copy, whose schema deliberately allows an operator to omit
+      // it. 0 only fires when .meta.json is gone AND opts.slug was given
+      // explicitly (the one path that reaches this line without it) - a
+      // placeholder, not a guess, exactly like resolveSymbolPaths returning
+      // [] rather than a wrong-but-plausible answer.
+      testCodeunitId: meta?.testCodeunitId ?? 0,
+      container: DEFAULT_PROBE_CONTAINER,
+      symbolPaths: [],
+      state: "promoted",
+      difficulty,
+    });
+  } catch (error) {
+    postCommitWarnings.push(
+      `could not rewrite ${id}.code-workspace/CHECKLIST.md for the promoted ` +
+        `paths (${error instanceof Error ? error.message : String(error)}) - ` +
+        `the promotion itself succeeded; the workspace still points at the ` +
+        `draft layout. Re-run "centralgauge task promote ${id}" is NOT the ` +
+        `fix (the destinations are taken); regenerate or edit it by hand.`,
+    );
+  }
 
   return {
     movedTask,
@@ -597,5 +643,6 @@ export async function promoteDraft(
     ...(meta?.withPrereq ? { movedPrereq: `tests/al/dependencies/${id}` } : {}),
     hashChanged: true,
     forced: force,
+    ...(postCommitWarnings.length > 0 ? { postCommitWarnings } : {}),
   };
 }

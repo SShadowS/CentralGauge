@@ -250,12 +250,21 @@ export async function runTaskProbe(
     );
     return verdict;
   }
-  if (verdict.naive !== "fail") {
+  if (verdict.naive === "pass") {
     console.log(
       colors.red("[FAIL]") +
-        " naive/ passed — this task does not discriminate and tests" +
-        " nothing. Strengthen the oracle, or pick a naive solution that" +
-        " actually diverges from correct/.",
+        " naive/ passed the oracle — this task does not discriminate and" +
+        " tests nothing. Strengthen the oracle, or pick a naive solution" +
+        " that actually diverges from correct/.",
+    );
+  } else if (verdict.naive !== "fail") {
+    // Reachable only when correct/ is the failing side (a naive
+    // compile_fail/inconclusive already returned above). Never claim
+    // "naive/ passed" here — it did not.
+    console.log(
+      colors.red("[FAIL]") +
+        ` naive/ did not fail its assertions (got "${verdict.naive}"), so` +
+        " this probe does not establish discrimination.",
     );
   }
 
@@ -342,6 +351,12 @@ export async function runTaskPromote(
   }
 
   const bangIndent = " ".repeat("[!]  ".length);
+  // Post-commit tidy-up failures: the promotion itself succeeded, so these
+  // are reported rather than thrown (see promoteDraft's own note on why
+  // throwing here would send the operator into an unretryable refusal).
+  for (const warning of result.postCommitWarnings ?? []) {
+    console.log(colors.yellow("[!]") + "  " + warning);
+  }
   console.log(
     colors.yellow("[!]") +
       "  task_sets hash changed. Models benched under the previous hash" +

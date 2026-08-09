@@ -1267,6 +1267,51 @@ describe("workbench/promote", () => {
       },
     );
 
+    it(
+      "reports a post-commit workspace-write failure instead of throwing",
+      async () => {
+        // Deno.remove(task.yml) and writeWorkspace() run AFTER the rollback
+        // window closes. Throwing there would report failure for a promotion
+        // that fully succeeded, and the operator's retry would then hit
+        // refuseIfExists on work already done - unrecoverable without hand
+        // surgery. Force the failure by parking a DIRECTORY where
+        // CHECKLIST.md must be written.
+        await writeDraft({});
+        const checklistPath = join(roots.scratchDir, ID, "CHECKLIST.md");
+        await Deno.remove(checklistPath); // scaffoldDraft wrote it as a file
+        await ensureDir(checklistPath);
+
+        const result = await promoteDraft(ID, {
+          difficulty: "hard",
+          roots,
+          verdict: freshVerdict(),
+        });
+
+        // The promotion itself is reported as the success it is...
+        assertEquals(result.movedTask, `tasks/hard/${ID}-day-close.yml`);
+        assertEquals(
+          await exists(join(roots.testsDir, "hard", `${ID}.Test.al`)),
+          true,
+        );
+        // ...and the tidy-up failure is surfaced, not swallowed.
+        assertEquals(result.postCommitWarnings?.length, 1);
+        assertStringIncludes(
+          result.postCommitWarnings?.[0] ?? "",
+          "the promotion itself succeeded",
+        );
+      },
+    );
+
+    it("omits postCommitWarnings entirely on a clean promotion", async () => {
+      await writeDraft({});
+      const result = await promoteDraft(ID, {
+        difficulty: "hard",
+        roots,
+        verdict: freshVerdict(),
+      });
+      assertEquals(result.postCommitWarnings, undefined);
+    });
+
     it("rewrites the workspace to the promoted paths", async () => {
       await writeDraft({});
       await promoteDraft(ID, {
