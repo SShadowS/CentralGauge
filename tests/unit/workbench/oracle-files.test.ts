@@ -109,6 +109,32 @@ describe("workbench/oracle-files", () => {
     );
   });
 
+  it("refuses a case-mismatched companion in correct/", async () => {
+    // NTFS makes this the same prefix; both copiers' `startsWith` does not.
+    // Classified as a companion and promoted, then injected by NEITHER
+    // copier - so the promoted oracle would fail to compile for every model
+    // despite a green probe that never exercised the mismatch.
+    await Deno.writeTextFile(
+      join(draftDir, "correct", "cg-al-x053.Mock.al"),
+      'codeunit 88806 "X Mock" { }',
+    );
+    const error = await assertRejects(
+      () => classifyOracleFiles({ id: ID, draftDir }),
+      OracleFileError,
+    );
+    assertStringIncludes(error.message, "CASE");
+  });
+
+  it("still accepts an exact-case companion alongside the mis-cased check", async () => {
+    // Guards the refusal from widening into "no companions allowed".
+    await Deno.writeTextFile(
+      join(draftDir, "correct", `${ID}.Mock.al`),
+      'codeunit 88806 "X Mock" { }',
+    );
+    const set = await classifyOracleFiles({ id: ID, draftDir });
+    assertEquals(set.companions, [`${ID}.Mock.al`]);
+  });
+
   it("refuses when correct/ has no oracle at all", async () => {
     await Deno.remove(join(draftDir, "correct", `${ID}.Test.al`));
     await assertRejects(
@@ -141,6 +167,10 @@ describe("workbench/oracle-files", () => {
       { name: "Other.al", expected: "ignored" },
       { name: `${ID}Extra.al`, expected: "ignored" },
       { name: `${ID}.Test.txt`, expected: "ignored" },
+      // Matches hasTaskPrefix but NOT companionPredicateMatches — the
+      // mis-cased gap the copiers would silently drop.
+      { name: "cg-al-x053.Mock.al", expected: "refused" },
+      { name: "CG-AL-x053.Mock.al", expected: "refused" },
     ];
 
     for (const { name, expected } of cases) {

@@ -60,11 +60,17 @@ export function companionPredicateMatches(
 }
 
 /**
- * Case-insensitive prefix test. The copier is case-sensitive, but NTFS is
+ * Case-insensitive prefix test. The copiers are case-sensitive, but NTFS is
  * not: `cg-al-x053.Mock.al` is the same file to the filesystem while evading
- * the copier's `startsWith`. Refusing case-insensitively means such a file is
- * rejected rather than silently behaving differently from its canonical
- * spelling.
+ * their `startsWith`. Detecting case-insensitively is what lets both
+ * directories refuse such a file rather than let it behave differently from
+ * its canonical spelling - in `naive/` because it would be silently
+ * overwritten by the oracle-side injection, in `correct/` because it would be
+ * promoted and then never injected at all (Refusal 4).
+ *
+ * Pair with {@link companionPredicateMatches}, which is the case-SENSITIVE
+ * copier-faithful matcher: a name that satisfies this one but not that one is
+ * exactly the mis-cased case.
  */
 function hasTaskPrefix(taskId: string, fileName: string): boolean {
   return fileName.toLowerCase().startsWith(`${taskId.toLowerCase()}.`);
@@ -139,6 +145,34 @@ export async function classifyOracleFiles(
       `Draft ${id}: no oracle at correct/${oracleName}. The probe runs that ` +
         `test file against both solutions, so there is nothing to ` +
         `discriminate with until it exists.`,
+    );
+  }
+
+  // --- Refusal 4: a companion whose prefix matches only case-INSENSITIVELY.
+  // This module classifies case-insensitively (NTFS does not distinguish
+  // `cg-al-x053.Mock.al` from `CG-AL-X053.Mock.al`), but BOTH copiers that
+  // act on the classification are case-SENSITIVE: `copyCompanionTestFiles`
+  // (`mcp/al-tools-server.ts`) at probe time, and the bench copier in
+  // `src/parallel/compile-queue.ts` at score time. A mis-cased companion is
+  // therefore classified here, promoted by `promoteDraft` into
+  // `tests/al/<difficulty>/`, and then never injected by either copier - so
+  // a promoted oracle that references it fails to compile for every model,
+  // despite a green probe that never exercised the mismatch.
+  //
+  // Refusing is symmetric with what `naive/` already does above, and the
+  // author's fix is the same one line: match the id's canonical casing.
+  for (const name of correctFiles) {
+    if (name === oracleName) continue;
+    if (!hasTaskPrefix(id, name)) continue;
+    if (companionPredicateMatches(id, name)) continue;
+    throw new OracleFileError(
+      `Draft ${id}: correct/${name} carries the reserved "${id}." prefix ` +
+        `in the wrong CASE. The copiers that inject oracle-side files are ` +
+        `case-sensitive (mcp/al-tools-server.ts at probe time, ` +
+        `src/parallel/compile-queue.ts at bench time), so this file would ` +
+        `be promoted but never injected - the promoted oracle would fail ` +
+        `to compile for every model despite a green probe. Rename it to ` +
+        `the exact prefix "${id}.".`,
     );
   }
 
