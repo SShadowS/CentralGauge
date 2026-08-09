@@ -324,10 +324,13 @@ export function planProbe(a: ProbeArgsInput): ProbePlan {
  * run that published but executed zero tests all fail this predicate for the
  * same reason: no assertion was ever evaluated, so nothing discriminated.
  *
- * `totalTests !== undefined` and `totalTests > 0` are both required and not
- * redundant. `undefined` means the run never reached the test step at all
- * (every early return above omits the field); `0` means it reached it and ran
- * nothing.
+ * The `totalTests !== undefined` check is there for the TYPE system, not the
+ * runtime: `undefined > 0` is already `false`, so the comparison alone would
+ * reject a run that never reached the test step. Under
+ * `exactOptionalPropertyTypes` the explicit narrowing is still required to
+ * compare an optional `number | undefined` at all. (`undefined` means the run
+ * never reached the test step — every early return omits the field; `0` means
+ * it reached the step and ran nothing. Both must fail, and both do.)
  *
  * `syntheticNoTestsRan` is the one case where the counts LIE in the honest
  * direction for a different consumer. A candidate that compiles but fails to

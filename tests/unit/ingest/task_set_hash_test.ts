@@ -517,6 +517,19 @@ Deno.test("computeTaskSetHash: editor-only app.json carve-out", async (t) => {
           join(root, "tests", "al", "hard", ".gitkeep"),
           "",
         );
+        // Dot-LESS byproducts, which hasDotSegment cannot catch and which are
+        // gitignored (so `git status` cannot warn either). rad.json is written
+        // into an AL project root by a RAD publish; Thumbs.db by Explorer.
+        // These are the same hazard through a door the dot rule does not
+        // cover — they must come out via SKIP_FILE_RE instead.
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", "rad.json"),
+          '{"activated":true}',
+        );
+        await Deno.writeTextFile(
+          join(root, "tests", "al", "hard", "Thumbs.db"),
+          "binary-ish",
+        );
         assertEquals(await computeTaskSetHash(root), before);
 
         // …but real content in the same directory still moves it, so the skip

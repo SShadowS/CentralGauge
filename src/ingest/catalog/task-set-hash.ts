@@ -38,6 +38,7 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
  *   - any directory named ".alpackages" or "output"
  *   - files matching *.app  (compiled AL output)
  *   - files matching cache_*.json  (alpackages cache manifests)
+ *   - rad.json and Thumbs.db  (dot-less editor/OS droppings — see SKIP_FILE_RE)
  *   - tests/al/app.json and tests/al/<difficulty>/app.json (editor configuration)
  *
  * Framing (binary-safe):
@@ -113,7 +114,27 @@ interface FileEntry {
 }
 
 const SKIP_DIR_RE = /(^|[\\/])(\.alpackages|output)([\\/]|$)/;
-const SKIP_FILE_RE = /(\.app|^cache_.*\.json)$/;
+
+/**
+ * Basenames that are never task content.
+ *
+ * - `*.app` — compiled AL output.
+ * - `cache_*.json` — alpackages cache manifests.
+ * - `rad.json` — the AL extension's Rapid Application Development state,
+ *   written into an AL project root by a RAD publish. NO dot segment, so
+ *   {@link hasDotSegment} does not catch it, and it is gitignored — the exact
+ *   invisible-drift combination that skip exists to prevent, one door along.
+ * - `Thumbs.db` — Windows Explorer writes it into any directory it renders
+ *   image thumbnails for, which includes `tests/al/support-files/`. Same
+ *   shape: no dot segment, globally gitignored.
+ *
+ * The rule for adding here: gitignored (so `git status` cannot warn) AND
+ * incapable of being real task content. Both halves matter — excluding
+ * something an author might legitimately ship as a support file would drop it
+ * from the hash silently, which is the same class of bug pointing the other
+ * way.
+ */
+const SKIP_FILE_RE = /(\.app|^cache_.*\.json|^rad\.json|^Thumbs\.db)$/;
 
 /**
  * True when any segment of `relUnderSubdir` starts with a dot — the file is
