@@ -398,6 +398,17 @@ export function renderWorkspace(ctx: WorkspaceContext): string {
 export function renderChecklist(ctx: WorkspaceContext): string {
   const lines: string[] = [`# Checklist - ${ctx.id}`, ""];
 
+  // A file called CHECKLIST invites ticking, and every `task probe` run
+  // rewrites it wholesale - so say so at the top, before anything a reader
+  // might be tempted to edit. NOTES.md is the file that survives.
+  lines.push(
+    `> **Generated file - do not edit.** Rewritten on every ` +
+      `\`centralgauge task probe ${ctx.id}\` and on \`task promote\`. Any ` +
+      `edit here, including a ticked box, is silently lost on the next run. ` +
+      `Put durable notes in [NOTES.md](NOTES.md) instead.`,
+    "",
+  );
+
   lines.push("## Files this draft spans", "");
   lines.push(`- [task.yml](task.yml) - description, metadata, expected block.`);
   lines.push(
@@ -423,7 +434,22 @@ export function renderChecklist(ctx: WorkspaceContext): string {
       `\`${ctx.id}.\` are ORACLE-SIDE: the probe injects them into both the ` +
       `correct and the naive run. Solution files must not use the ` +
       `\`${ctx.id}.\` prefix - one that does gets copied into the naive run ` +
-      `too and makes a task that tests nothing look like it discriminates.`,
+      `too and makes a task that tests nothing look like it discriminates. ` +
+      `The prefix is matched case-SENSITIVELY by the copiers, so a ` +
+      `mis-cased companion is refused rather than silently dropped.`,
+  );
+  lines.push("");
+
+  // The naive-side manifest is the one file whose ABSENCE used to be
+  // indistinguishable from a legitimate assertion failure (the probe's
+  // strict-fail gate now catches it, but nothing else tells an author it
+  // matters). Say so where the author is looking at the file list.
+  lines.push(
+    `**\`naive/app.json\` is load-bearing.** Without it the naive run ` +
+      `cannot build an AL project at all, so it "fails" without ever ` +
+      `compiling, publishing or reaching a single assertion. The probe ` +
+      `refuses that as \`compile_fail\` rather than counting it as ` +
+      `discrimination - do not delete it to "simplify" the draft.`,
   );
   lines.push("");
 
@@ -441,10 +467,11 @@ export function renderChecklist(ctx: WorkspaceContext): string {
     lines.push(
       `**Single-side task limits.** \`probe: correct only\` and ` +
         `\`probe: naive only\` bake in \`--test-codeunit-id\`, \`--container\` ` +
-        `and prereq presence at generation time - re-run \`new\`/regenerate ` +
-        `this workspace if any of those change. They also never write ` +
-        `\`.probe.json\`, so only the full \`probe\` task produces a verdict ` +
-        `that can satisfy the promote gate.`,
+        `and prereq presence at generation time - run the \`probe\` task if ` +
+        `any of those change, which regenerates this workspace. (\`new\` ` +
+        `cannot: it refuses when the draft directory already exists.) They ` +
+        `also never write \`.probe.json\`, so only the full \`probe\` task ` +
+        `produces a verdict that can satisfy the promote gate.`,
     );
   } else {
     lines.push(

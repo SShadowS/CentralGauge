@@ -6,7 +6,11 @@
  */
 
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import {
+  assertEquals,
+  assertNotMatch,
+  assertStringIncludes,
+} from "@std/assert";
 import { join } from "@std/path";
 
 import type { WorkspaceContext } from "../../../src/workbench/workspace.ts";
@@ -279,6 +283,39 @@ describe("workbench/workspace", () => {
     it("notes the single-side task limits", () => {
       const md = renderChecklist(draftCtx());
       assertStringIncludes(md, ".probe.json");
+    });
+
+    it("declares itself generated, before anything a reader might edit", () => {
+      // The file is rewritten wholesale on every probe, and a file called
+      // CHECKLIST invites ticking. The warning must lead, not trail.
+      for (const ctx of [draftCtx(), draftCtx({ state: "promoted" })]) {
+        const md = renderChecklist(ctx);
+        assertStringIncludes(md, "Generated file - do not edit");
+        assertStringIncludes(md, "NOTES.md");
+        const warningAt = md.indexOf("Generated file - do not edit");
+        assertEquals(
+          warningAt < md.indexOf("## Files this draft spans"),
+          true,
+          "the generated-file warning must precede the file list",
+        );
+      }
+    });
+
+    it("says naive/app.json is load-bearing", () => {
+      // Its absence made the naive run "fail" without ever compiling, which
+      // was bypass path 2 of the discrimination gate. Nothing else tells an
+      // author not to delete it.
+      const md = renderChecklist(draftCtx());
+      assertStringIncludes(md, "naive/app.json` is load-bearing");
+      assertStringIncludes(md, "do not delete it");
+    });
+
+    it("points a changed container/codeunit id at `probe`, not `new`", () => {
+      // `new` refuses when the draft directory exists, so telling the author
+      // to re-run it is an instruction that cannot be followed.
+      const md = renderChecklist(draftCtx());
+      assertStringIncludes(md, "run the `probe` task if");
+      assertNotMatch(md, /re-run `new`/);
     });
   });
 });

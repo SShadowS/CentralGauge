@@ -4,7 +4,7 @@
   "publisher": "CentralGauge",
   "version": "1.0.0.0",
   "brief": "Test codeunits for CentralGauge benchmark tasks",
-  "description": "FROZEN. Read by src/stats/hasher.ts:247 (generateComprehensiveTaskSetHash), so deleting it breaks local report-db continuity. Not used as an AL project root - the per-difficulty app.json files serve that purpose. Its idRanges are deliberately stale; do not 'fix' them.",
+  "description": "Contains AL test codeunits to validate LLM-generated code for CentralGauge benchmark scenarios",
   "privacyStatement": "",
   "EULA": "",
   "help": "",

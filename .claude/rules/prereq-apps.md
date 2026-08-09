@@ -227,13 +227,20 @@ violation rather than a runtime one); it tells the gate to accept
 refusing it.
 
 **`tests/al/app.json` is frozen.** It exists only so VS Code / the AL
-Language extension has a project root, and its content is read structurally
-by `generateComprehensiveTaskSetHash` (`src/stats/hasher.ts:247`) as
-`testAppManifestHash` for consistency checks, even though it is excluded from
-the task-set hash proper (see CLAUDE.md's "Task-set hash scope"). The actual
-VS Code project roots authors and generated workspaces point at are the
-per-difficulty manifests: `tests/al/easy/app.json`, `tests/al/medium/app.json`,
-`tests/al/hard/app.json`.
+Language extension has a project root, and `generateComprehensiveTaskSetHash`
+(`src/stats/hasher.ts`) folds it into the local report-db's
+`testAppManifestHash`. That is a RAW CONTENT hash - `sha256` of the whole
+file, trimmed - not a structural read of selected fields. So ANY byte changes
+it, including a comment-style edit to `description` or a reflow of the JSON.
+Freeze means freeze: do not edit it to explain that it is frozen (that
+rationale belongs here, not in the file), and do not "fix" its deliberately
+stale `idRanges`.
+
+It is excluded from the task-set hash proper (see CLAUDE.md's "Task-set hash
+scope"), so this is local report-db continuity only, not a re-bench trigger.
+The actual VS Code project roots authors and generated workspaces point at
+are the per-difficulty manifests: `tests/al/easy/app.json`,
+`tests/al/medium/app.json`, `tests/al/hard/app.json`.
 
 **Nested-project caveat - untested, do not treat as safe.** Opening the repo
 root itself in VS Code could let the AL extension discover both the root
