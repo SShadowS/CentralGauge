@@ -16,6 +16,7 @@ import type { IdRoots } from "../../../src/workbench/ids.ts";
 import type { ProbeVerdict } from "../../../src/workbench/probe.ts";
 import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
 import { promoteDraft } from "../../../src/workbench/promote.ts";
+import { writeWorkspace } from "../../../src/workbench/workspace.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 /**
@@ -75,6 +76,20 @@ describe("workbench/promote", () => {
           `codeunit 80090 "${ID} ${name}" { }\n`,
         );
       }
+      // Seeded explicitly (not relying on scaffoldDraft's own write) so the
+      // rolled-back-promote test below checks promoteDraft's own behavior in
+      // isolation - it must never touch this file before the move commits.
+      await writeWorkspace({
+        id: ID,
+        slug: "day-close",
+        draftDir: join(roots.scratchDir, ID),
+        repoRoot: base,
+        hasPrereq: false,
+        testCodeunitId: 80001,
+        container: "Cronus28",
+        symbolPaths: [],
+        state: "draft",
+      });
     }
 
     /**
@@ -1134,5 +1149,42 @@ describe("workbench/promote", () => {
         assertEquals(result.hashChanged, true);
       },
     );
+
+    it("rewrites the workspace to the promoted paths", async () => {
+      await writeDraft({});
+      await promoteDraft(ID, {
+        difficulty: "hard",
+        roots,
+        verdict: freshVerdict(),
+      });
+      const ws = JSON.parse(
+        await Deno.readTextFile(
+          join(roots.scratchDir, ID, `${ID}.code-workspace`),
+        ),
+      ) as { folders: Array<{ path: string }> };
+      assertEquals(
+        ws.folders.some((f) => f.path.includes("tests/al/hard")),
+        true,
+      );
+      assertEquals(ws.folders.some((f) => f.path === "correct"), false);
+    });
+
+    it("leaves the workspace pointing at the draft on a rolled-back promote", async () => {
+      await writeDraft({ companions: ["Spy"] });
+      await ensureDir(join(roots.testsDir, "hard"));
+      await Deno.writeTextFile(
+        join(roots.testsDir, "hard", `${ID}.Spy.al`),
+        'codeunit 80090 "Existing" { }',
+      );
+      await assertRejects(() =>
+        promoteDraft(ID, { difficulty: "hard", roots, verdict: freshVerdict() })
+      );
+      const ws = JSON.parse(
+        await Deno.readTextFile(
+          join(roots.scratchDir, ID, `${ID}.code-workspace`),
+        ),
+      ) as { folders: Array<{ path: string }> };
+      assertEquals(ws.folders.some((f) => f.path === "correct"), true);
+    });
   });
 });

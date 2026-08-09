@@ -67,6 +67,16 @@ describe("workbench/scaffold", () => {
       assertEquals(await exists(join(draftDir, `${meta.id}.Test.al`)), false);
     });
 
+    it("writes the workspace file and checklist", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+      assertEquals(
+        await exists(join(draftDir, `${meta.id}.code-workspace`)),
+        true,
+      );
+      assertEquals(await exists(join(draftDir, "CHECKLIST.md")), true);
+    });
+
     it("writes an app.json into both solution directories", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const draftDir = join(roots.scratchDir, meta.id);

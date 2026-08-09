@@ -36,6 +36,7 @@ import {
   ensureTestDependencies,
 } from "../al/app-manifest.ts";
 import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
+import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 
 /** Metadata recorded for a scaffolded draft, both returned and written to `.meta.json`. */
 export interface DraftMeta {
@@ -53,6 +54,15 @@ export interface DraftMeta {
  * both key off this constant.
  */
 const DRAFT_DIFFICULTY = "hard";
+
+/**
+ * Default BC container the generated workspace's symbol resolution and
+ * single-side probe VS Code tasks target when `--container` is not given -
+ * the only local container with credentials wired for `trap-probe`.
+ * Mirrors `probe.ts`'s own (separately declared) `DEFAULT_CONTAINER`, whose
+ * job is the actual probe run rather than the workspace it authors against.
+ */
+export const DEFAULT_PROBE_CONTAINER = "Cronus28";
 
 /** Lowercase, hyphen-separated segments only - the slug becomes a filename at promote time. */
 const KEBAB_CASE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -98,6 +108,8 @@ export async function scaffoldDraft(opts: {
   id?: string;
   slug: string;
   withPrereq?: boolean;
+  /** BC container the generated workspace targets. Defaults to `DEFAULT_PROBE_CONTAINER`. */
+  container?: string;
   roots: IdRoots;
 }): Promise<DraftMeta> {
   const { slug, roots } = opts;
@@ -194,6 +206,26 @@ export async function scaffoldDraft(opts: {
     join(draftDir, ".meta.json"),
     JSON.stringify(meta, null, 2) + "\n",
   );
+
+  // Symbol resolution is best-effort. A container that is down at scaffold
+  // time must not block authoring - the workspace is written without
+  // al.packageCachePath and `task probe` refreshes it on the next run.
+  const symbolPaths = await resolveSymbolPaths({
+    container: opts.container ?? DEFAULT_PROBE_CONTAINER,
+    draftDir,
+    hasPrereq: withPrereq,
+  });
+  await writeWorkspace({
+    id,
+    slug,
+    draftDir,
+    repoRoot: Deno.cwd(),
+    hasPrereq: withPrereq,
+    testCodeunitId,
+    container: opts.container ?? DEFAULT_PROBE_CONTAINER,
+    symbolPaths,
+    state: "draft",
+  });
 
   return meta;
 }

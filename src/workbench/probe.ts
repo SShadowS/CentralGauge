@@ -50,6 +50,7 @@ import { parse as parseYaml } from "@std/yaml";
 import type { ProbeOutcome as RawProbeOutcome } from "../../scripts/trap-probe.ts";
 import type { DraftMeta } from "./scaffold.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
+import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 
 /**
  * Outcome of probing one side of a draft.
@@ -183,6 +184,29 @@ async function resolveDraftTestCodeunitId(
 }
 
 /**
+ * Reads `scratch/<id>/.meta.json`'s slug for the workspace refresh in
+ * `probeDraft` below. A draft-state workspace never renders `slug` -
+ * `workspace.ts`'s own doc comment notes it is only used once promoted - so
+ * falling back to `id` itself when `.meta.json` is missing or unparseable is
+ * safe: the fallback value never actually surfaces.
+ */
+async function resolveDraftSlugForWorkspace(
+  draftDir: string,
+  id: string,
+): Promise<string> {
+  try {
+    const raw = await Deno.readTextFile(join(draftDir, ".meta.json"));
+    const meta = JSON.parse(raw) as Partial<DraftMeta>;
+    if (typeof meta.slug === "string" && meta.slug.length > 0) {
+      return meta.slug;
+    }
+  } catch {
+    // Missing or unparseable .meta.json - fall back to id.
+  }
+  return id;
+}
+
+/**
  * Runs the discrimination probe for `scratch/<id>/`: `correct/` against
  * `--expect pass`, `naive/` against `--expect fail`. Writes the verdict to
  * `scratch/<id>/.probe.json` (Task 5's promote gate and the Phase 2 panel
@@ -234,6 +258,34 @@ export async function probeDraft(
   const testCodeunitId = await resolveDraftTestCodeunitId(draftDir);
   const prereqDir = join(draftDir, "prereq");
   const hasPrereq = await exists(join(prereqDir, "app.json"));
+
+  // Refresh the workspace before running the probe below - the probe is
+  // already about to talk to the container, so this extra `docker inspect`
+  // is cheap by comparison, and it keeps the symbol path from going stale
+  // between `task new` and `task promote`. Skipped only when neither
+  // task.yml nor .meta.json yields a codeunit id: WorkspaceContext requires
+  // one, but the probe itself tolerates its absence (it just runs every
+  // test in the candidate app instead of filtering by id) - see
+  // resolveDraftTestCodeunitId's own doc comment.
+  if (testCodeunitId !== undefined) {
+    const slug = await resolveDraftSlugForWorkspace(draftDir, id);
+    const symbolPaths = await resolveSymbolPaths({
+      container,
+      draftDir,
+      hasPrereq,
+    });
+    await writeWorkspace({
+      id,
+      slug,
+      draftDir,
+      repoRoot: Deno.cwd(),
+      hasPrereq,
+      testCodeunitId,
+      container,
+      symbolPaths,
+      state: "draft",
+    });
+  }
 
   /**
    * Args common to both sides. `--test-file` (plus what would otherwise be

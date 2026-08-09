@@ -52,7 +52,9 @@ import type { IdRoots } from "./ids.ts";
 import type { DraftMeta } from "./scaffold.ts";
 import type { ProbeVerdict } from "./probe.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
+import { DEFAULT_PROBE_CONTAINER } from "./scaffold.ts";
 import { parseTaskManifest } from "../tasks/interfaces.ts";
+import { writeWorkspace } from "./workspace.ts";
 
 export type PromoteDifficulty = "easy" | "medium" | "hard";
 
@@ -546,6 +548,35 @@ export async function promoteDraft(
   // correct/, naive/, NOTES.md, .meta.json and .probe.json are left in
   // place as the draft's authoring history.
   await Deno.remove(draftTaskYamlPath);
+
+  // Rewrite the workspace to the promoted paths only now, after the move
+  // has fully committed - everything above that can still roll back (the
+  // try/catch) never reaches this line, so a refused or rolled-back
+  // promotion always leaves the workspace pointing at the draft, never at
+  // destination paths that were never created. No fresh docker inspect
+  // here (unlike scaffoldDraft/probeDraft): promoteDraft never talks to a
+  // container, and none of the promoted folders is an AL project root any
+  // more (see promotedFolders' own doc comment), so there is nothing left
+  // for al.packageCachePath to serve.
+  await writeWorkspace({
+    id,
+    slug,
+    draftDir,
+    repoRoot: Deno.cwd(),
+    hasPrereq: meta?.withPrereq ?? false,
+    // .meta.json is written once at scaffold time and never touched again
+    // before promotion, so it is the reliable source here - unlike
+    // task.yml's copy, whose schema deliberately allows an operator to omit
+    // it. 0 only fires when .meta.json is gone AND opts.slug was given
+    // explicitly (the one path that reaches this line without it) - a
+    // placeholder, not a guess, exactly like resolveSymbolPaths returning
+    // [] rather than a wrong-but-plausible answer.
+    testCodeunitId: meta?.testCodeunitId ?? 0,
+    container: DEFAULT_PROBE_CONTAINER,
+    symbolPaths: [],
+    state: "promoted",
+    difficulty,
+  });
 
   return {
     movedTask,

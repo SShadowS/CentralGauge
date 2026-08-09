@@ -63,6 +63,8 @@ export interface TaskNewOptions {
   slug: string;
   id?: string;
   withPrereq?: boolean;
+  /** BC container the generated workspace targets. Forwarded to `scaffoldDraft`. */
+  container?: string;
   /** Override for tests; defaults to the real repo tree under `Deno.cwd()`. */
   roots?: IdRoots;
 }
@@ -90,6 +92,7 @@ export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
     ...(opts.id !== undefined ? { id: opts.id } : {}),
     slug: opts.slug,
     ...(opts.withPrereq !== undefined ? { withPrereq: opts.withPrereq } : {}),
+    ...(opts.container !== undefined ? { container: opts.container } : {}),
     roots,
   });
 
@@ -105,12 +108,16 @@ export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
   );
   console.log(`     ${displayPath}/`);
   console.log(
-    "Next: fill in task.yml + the oracle, put a working solution in correct/",
+    `Next: open ${displayPath}/${meta.id}.code-workspace in VS Code,`,
   );
   console.log(
-    "      and a plausible-wrong one in naive/, then:",
+    `      fill in task.yml + correct/${meta.id}.Test.al, put a working`,
   );
-  console.log(`      centralgauge task probe ${meta.id}`);
+  console.log(
+    "      solution in correct/ and a plausible-wrong one in naive/,",
+  );
+  console.log('      then run the "probe" build task (or:');
+  console.log(`      centralgauge task probe ${meta.id})`);
 
   return meta;
 }
@@ -354,11 +361,18 @@ export function registerTaskCommand(cli: Command): void {
         "tests/al/dependencies/<id>/",
       { default: false },
     )
+    .option(
+      "--container <container:string>",
+      "BC container the generated workspace's symbol resolution and " +
+        "single-side probe tasks target (default: Cronus28 — the only " +
+        "one with credentials wired for trap-probe)",
+    )
     .action(async (opts) => {
       await runTaskNew({
         slug: opts.slug,
         ...(opts.id !== undefined ? { id: opts.id } : {}),
         withPrereq: opts.withPrereq,
+        ...(opts.container !== undefined ? { container: opts.container } : {}),
       });
     });
 
