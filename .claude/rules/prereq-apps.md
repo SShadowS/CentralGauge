@@ -175,3 +175,90 @@ Publishing order: H022 → H023 → Benchmark App
 - `mcp/al-tools-server.ts`: Detection, compilation, dependency injection
 - `src/container/bc-container-provider.ts`: Prereq publishing in test script
 - `tests/al/dependencies/{task-id}/`: Prereq app files
+
+## Workbench Draft Layout (`scratch/<id>/`)
+
+A hand-authored trap-task draft lives at `scratch/<id>/` with one AL project
+per solution directory: `correct/` (the reference solution, which must pass
+the oracle), `naive/` (a plausible-but-wrong solution, which must fail it),
+and optionally `prereq/`. Each has its own `app.json` (rendered by
+`renderSolutionAppJson` in `src/workbench/scaffold.ts`), and the oracle test
+codeunit lives at `correct/<id>.Test.al` - inside the reference solution's own
+directory, so the AL Language extension sees one project containing solution
++ test rather than two projects that don't resolve each other's symbols.
+
+**The `<id>.` prefix inside `correct/` is a reserved namespace.** Any
+`<id>.*.al` file there besides the oracle itself (a mock, a spy, an event
+subscriber, a helper enum the oracle references) is treated as oracle-side.
+The reason is `copyCompanionTestFiles` (`mcp/al-tools-server.ts:582-612`):
+at verify time it copies every `<id>.*.al` file from the oracle's directory
+into BOTH the correct and naive verify runs. That is exactly right for a mock
+the oracle genuinely needs. It is contamination if a *solution* file happens
+to carry the same prefix - it gets injected into the naive run too, and the
+naive verdict stops reflecting what naive/ actually contains. A bare `<id>.al`
+in `correct/` is refused outright, unconditionally, not just discouraged: the
+bench writes the model's generated candidate to `${taskId}.al`
+(`src/parallel/compile-queue.ts:1081`) and then copies every
+`${taskId}.`-prefixed file from `tests/al/<difficulty>/` on top of it, so a
+solution file with that exact name would silently overwrite every model's
+submission - a 100% pass rate for a task testing nothing. `naive/` gets the
+symmetric refusal: no `<id>.*.al` may live there either, because the same
+oracle-side injection from `correct/` would silently overwrite a same-named
+file in `naive/`.
+
+`classifyOracleFiles` (`src/workbench/oracle-files.ts`) is the single place
+that enforces both refusals - used by `probeDraft` (refuses before any
+container work is spawned) and by `promoteDraft` (decides what moves into
+`tests/al/<difficulty>/`).
+
+**The compile-failure verdict, not the naming rule, is what actually catches
+a misnamed solution.** No filename or id-range rule can tell a legitimate
+companion apart from a misnamed solution - `tests/al/hard/CG-AL-H001.ProductType.al`
+is a real, committed companion enum sitting inside the generated-code id
+range, and the oracle genuinely references it. The real guard is
+`probeDraft`'s naive run, which passes `--strict-fail-mode`: if `naive/`
+fails to *compile* rather than failing its assertions, the probe reports
+`naive=compile_fail` and `promoteDraft` refuses to promote - a compile
+failure is the fingerprint a naming collision or a missing companion leaves
+behind, not a real trap. `--allow-compile-fail` exists for the rare trap that
+genuinely *is* about a compile error (the naive mistake is a syntax/type
+violation rather than a runtime one); it tells the gate to accept
+`naive=compile_fail` as a legitimate discriminating outcome instead of
+refusing it.
+
+**`tests/al/app.json` is frozen.** It exists only so VS Code / the AL
+Language extension has a project root, and its content is read structurally
+by `generateComprehensiveTaskSetHash` (`src/stats/hasher.ts:247`) as
+`testAppManifestHash` for consistency checks, even though it is excluded from
+the task-set hash proper (see CLAUDE.md's "Task-set hash scope"). The actual
+VS Code project roots authors and generated workspaces point at are the
+per-difficulty manifests: `tests/al/easy/app.json`, `tests/al/medium/app.json`,
+`tests/al/hard/app.json`.
+
+**Nested-project caveat - untested, do not treat as safe.** Opening the repo
+root itself in VS Code could let the AL extension discover both the root
+`tests/al` project and the per-difficulty projects underneath it at the same
+time, producing duplicate diagnostics for the same objects. The generated
+`.code-workspace` files (draft and promoted) never open the repo root, so
+they don't hit this - but the scenario itself has not been verified either
+way.
+
+**`tests/al/<difficulty>` shows unresolved-reference errors by
+construction.** Every oracle references the solution object it is testing -
+the table, page, or codeunit the model was supposed to write - and that
+object exists nowhere in the repo; it only exists inside whatever a model
+generates at bench time. Opening `tests/al/hard/app.json` (etc.) in VS Code
+buys real symbol resolution for `Assert` and the `Library - *` test-library
+codeunits, which is what makes having an AL project there worth it at all -
+it does not buy a clean Problems panel. Expect an unresolved-reference
+diagnostic for the object each oracle exercises.
+
+One more pre-existing condition worth knowing before assuming a Problems
+panel finding is new: `tests/al/hard/` carries two pairs of duplicate test
+codeunit ids - 80015 (`CG-AL-H014.Test.al` and `CG-AL-H015.Test.al`) and
+80021 (`CG-AL-H020.Test.al` and `CG-AL-H021.Test.al`). Harmless to the
+benchmark itself, which compiles and publishes one task's app at a time, but
+the `tests/al/hard` AL project will permanently show `AL0264` duplicate-object
+errors on top of the unresolved-reference ones above. Deliberately not
+renumbered: changing a committed test codeunit id would edit `tests/al/**`
+content and move the task-set hash for no benchmark-visible benefit.
