@@ -216,15 +216,30 @@ a misnamed solution.** No filename or id-range rule can tell a legitimate
 companion apart from a misnamed solution - `tests/al/hard/CG-AL-H001.ProductType.al`
 is a real, committed companion enum sitting inside the generated-code id
 range, and the oracle genuinely references it. The real guard is
-`probeDraft`'s naive run, which passes `--strict-fail-mode`: if `naive/`
-fails to *compile* rather than failing its assertions, the probe reports
-`naive=compile_fail` and `promoteDraft` refuses to promote - a compile
-failure is the fingerprint a naming collision or a missing companion leaves
-behind, not a real trap. `--allow-compile-fail` exists for the rare trap that
-genuinely *is* about a compile error (the naive mistake is a syntax/type
-violation rather than a runtime one); it tells the gate to accept
-`naive=compile_fail` as a legitimate discriminating outcome instead of
-refusing it.
+`probeDraft`'s naive run, which passes `--strict-fail-mode`: unless the naive
+run REACHED the oracle's assertions and failed them (`totalTests > 0 &&
+failed > 0`), the probe reports `naive=compile_fail` and `promoteDraft`
+refuses to promote - that is the fingerprint a naming collision or a missing
+companion leaves behind, not a real trap.
+
+**`compile_fail` is now wider than its name.** `strictFailExitCode`
+(`scripts/trap-probe.ts`) decides exit 4 from positive evidence that
+assertions ran and lost, so the outcome also covers a `naive/` with no
+`app.json`, a missing oracle, a candidate that compiled but failed to
+publish/install, and a run that executed zero tests. The name is kept only
+because it is persisted in every `.probe.json` already on disk.
+
+`--allow-compile-fail` exists for the rare trap that genuinely *is* about a
+compile error (the naive mistake is a syntax/type violation rather than a
+runtime one); it tells the gate to accept `naive=compile_fail` as a
+legitimate discriminating outcome instead of refusing it. **Because the
+outcome widened, so did the flag**: it now blesses that whole bucket, not
+just compile errors. In particular `probe --allow-compile-fail` on a draft
+whose `naive/app.json` is missing still yields `discriminates: true` for a
+task that tests nothing. That is a known, deliberately-open hole - it needs
+an explicit operator flag, so it is documented rather than closed. Only pass
+it when you have read the probe's own output and confirmed the naive side
+failed the way you intended.
 
 **`tests/al/app.json` is frozen.** It exists only so VS Code / the AL
 Language extension has a project root, and `generateComprehensiveTaskSetHash`

@@ -307,7 +307,17 @@ describe("workbench/workspace", () => {
       // author not to delete it.
       const md = renderChecklist(draftCtx());
       assertStringIncludes(md, "naive/app.json` is load-bearing");
-      assertStringIncludes(md, "do not delete it");
+      assertStringIncludes(md, "Do not delete it");
+    });
+
+    it("warns that --allow-compile-fail re-opens the missing-manifest case", () => {
+      // Exit 4 widened past compile errors, so the flag blesses a wider
+      // bucket than its name implies. That hole is deliberately open (it
+      // needs an explicit operator flag), which makes saying so the only
+      // control on it — this assertion is that control.
+      const md = renderChecklist(draftCtx());
+      assertStringIncludes(md, "--allow-compile-fail");
+      assertStringIncludes(md, "still reports `discriminates: true`");
     });
 
     it("points a changed container/codeunit id at `probe`, not `new`", () => {

@@ -447,9 +447,12 @@ export function renderChecklist(ctx: WorkspaceContext): string {
   lines.push(
     `**\`naive/app.json\` is load-bearing.** Without it the naive run ` +
       `cannot build an AL project at all, so it "fails" without ever ` +
-      `compiling, publishing or reaching a single assertion. The probe ` +
-      `refuses that as \`compile_fail\` rather than counting it as ` +
-      `discrimination - do not delete it to "simplify" the draft.`,
+      `compiling, publishing or reaching a single assertion. A plain ` +
+      `\`probe\` refuses that as \`compile_fail\` rather than counting it as ` +
+      `discrimination - but \`--allow-compile-fail\` accepts the whole ` +
+      `\`compile_fail\` bucket, this case included, so with that flag a ` +
+      `draft missing this file still reports \`discriminates: true\` for a ` +
+      `task that tests nothing. Do not delete it to "simplify" the draft.`,
   );
   lines.push("");
 
