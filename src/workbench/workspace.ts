@@ -58,7 +58,7 @@ export interface WorkspaceContext {
   repoRoot: string;
   /** Whether the draft has a `prereq/` project. */
   hasPrereq: boolean;
-  /** AL test codeunit id, baked into the single-side probe tasks' `--test-codeunit-id`. */
+  /** AL test codeunit id. Only used in draft state's single-side probe tasks' `--test-codeunit-id` - promoted state resolves it from the committed task.yml instead. */
   testCodeunitId: number;
   /** BC container name, baked into the single-side probe tasks' `--container`. */
   container: string;
@@ -157,8 +157,10 @@ function draftFolders(ctx: WorkspaceContext): WorkspaceFolder[] {
  * (still needed for `NOTES.md`/`CHECKLIST.md` - `promoteDraft` leaves those
  * behind as authoring history). Drops `correct`/`naive`: the oracle has moved
  * out of `correct/tests`, so that AL project no longer compiles as a
- * benchmark artifact (it still exists on disk, which is why the single-side
- * probe tasks below still work after promotion).
+ * benchmark artifact. `correct/` and `naive/` still exist on disk (they hold
+ * the solutions themselves, which never move), which is why the single-side
+ * probe tasks below still run after promotion - see `buildProbeCommand` for
+ * how they resolve the oracle without the file this folder list just dropped.
  *
  * Every path is repo-relative-from-the-draft-dir - the workspace file's own
  * directory never moves at promote time, only the files it points at do.
@@ -200,11 +202,35 @@ interface WorkspaceTask {
 }
 
 /**
- * The `--test-file`/`--test-codeunit-id`/`--prereq-dir`/`--stage-symbols-dir`
- * argument order below matches `probeDraft` (`src/workbench/probe.ts`)
- * exactly, so a task run from the editor probes the same thing `task probe`
- * does. `--strict-fail-mode` is naive-only, appended last, mirroring
- * `probeDraft`'s own placement.
+ * Two entirely different argument shapes, branched on `ctx.state` - NOT a
+ * cosmetic choice, and NOT interchangeable:
+ *
+ * - **Draft**: `--test-file scratch/<id>/correct/<id>.Test.al` plus
+ *   `--test-codeunit-id`/`--prereq-dir`/`--stage-symbols-dir`, matching
+ *   `probeDraft` (`src/workbench/probe.ts`) exactly - `promoteDraft` has not
+ *   run yet, so none of a promoted task's committed files exist, and the
+ *   oracle must be pointed at explicitly.
+ * - **Promoted**: none of those four flags. `promoteDraft` MOVES
+ *   `correct/<id>.Test.al` out to `tests/al/<difficulty>/<id>.Test.al`, so a
+ *   draft-shaped command here would point `--test-file` at a file that no
+ *   longer exists. The fix is not to recompute a new `--test-file` - it is to
+ *   drop the flag entirely and fall back to `trap-probe`'s ORIGINAL
+ *   `--task`-alone contract (`planProbe`'s `via: "task-id"` branch in
+ *   `scripts/trap-probe.ts`): given just `--task <id>`, it resolves the
+ *   oracle from `tests/al/<difficulty>/<id>.Test.al`, the codeunit id from
+ *   `tasks/<difficulty>/<id>-*.yml`, and the prereq from
+ *   `tests/al/dependencies/<id>/` by convention - exactly where promotion
+ *   just put everything. `--solution scratch/<id>/<side>` still applies:
+ *   those directories, and the solutions inside them, survive promotion.
+ *
+ * The four flags must be dropped TOGETHER, never individually: `planProbe`
+ * explicitly REFUSES `--test-codeunit-id`/`--prereq-dir`/`--stage-symbols-dir`
+ * without `--test-file` (`trap-probe.ts`'s `planProbe`, the `a.testFile ===
+ * undefined` branch) rather than silently ignoring them - keeping any one in
+ * a promoted command fails argument validation before a container is ever
+ * touched.
+ *
+ * `--strict-fail-mode` is naive-only in both shapes, appended last.
  *
  * Everything is folded into one `command` string (not a separate `args[]`)
  * because every value here - the id, repo-relative paths, the container name
@@ -215,19 +241,21 @@ function buildProbeCommand(
   ctx: WorkspaceContext,
   side: "correct" | "naive",
 ): string {
-  const testFile = `scratch/${ctx.id}/correct/${ctx.id}.Test.al`;
   const parts = [
     "deno run -A scripts/trap-probe.ts",
     `--task ${ctx.id}`,
     `--solution scratch/${ctx.id}/${side}`,
     `--expect ${side === "correct" ? "pass" : "fail"}`,
     `--container ${ctx.container}`,
-    `--test-file ${testFile}`,
-    `--test-codeunit-id ${ctx.testCodeunitId}`,
   ];
-  if (ctx.hasPrereq) {
-    parts.push(`--prereq-dir scratch/${ctx.id}/prereq`);
-    parts.push(`--stage-symbols-dir scratch/${ctx.id}/.symbols`);
+  if (ctx.state === "draft") {
+    const testFile = `scratch/${ctx.id}/correct/${ctx.id}.Test.al`;
+    parts.push(`--test-file ${testFile}`);
+    parts.push(`--test-codeunit-id ${ctx.testCodeunitId}`);
+    if (ctx.hasPrereq) {
+      parts.push(`--prereq-dir scratch/${ctx.id}/prereq`);
+      parts.push(`--stage-symbols-dir scratch/${ctx.id}/.symbols`);
+    }
   }
   if (side === "naive") {
     parts.push("--strict-fail-mode");
@@ -395,14 +423,26 @@ export function renderChecklist(ctx: WorkspaceContext): string {
     lines.push("");
   }
 
-  lines.push(
-    `**Single-side task limits.** \`probe: correct only\` and ` +
-      `\`probe: naive only\` bake in \`--test-codeunit-id\`, \`--container\` ` +
-      `and prereq presence at generation time - re-run \`new\`/regenerate ` +
-      `this workspace if any of those change. They also never write ` +
-      `\`.probe.json\`, so only the full \`probe\` task produces a verdict ` +
-      `that can satisfy the promote gate.`,
-  );
+  if (ctx.state === "draft") {
+    lines.push(
+      `**Single-side task limits.** \`probe: correct only\` and ` +
+        `\`probe: naive only\` bake in \`--test-codeunit-id\`, \`--container\` ` +
+        `and prereq presence at generation time - re-run \`new\`/regenerate ` +
+        `this workspace if any of those change. They also never write ` +
+        `\`.probe.json\`, so only the full \`probe\` task produces a verdict ` +
+        `that can satisfy the promote gate.`,
+    );
+  } else {
+    lines.push(
+      `**Single-side task limits.** Once promoted, \`probe: correct only\` ` +
+        `and \`probe: naive only\` drop \`--test-file\`, \`--test-codeunit-id\`, ` +
+        `\`--prereq-dir\` and \`--stage-symbols-dir\` entirely and resolve the ` +
+        `oracle, codeunit id and prereq from the committed \`tasks/\`/` +
+        `\`tests/al/\` tree via \`--task\` alone - only \`--container\` stays ` +
+        `baked in. They still never write \`.probe.json\`, so only the full ` +
+        `\`probe\` task produces a verdict that can satisfy the promote gate.`,
+    );
+  }
 
   if (ctx.state === "promoted") {
     const difficulty = ctx.difficulty ?? "hard";

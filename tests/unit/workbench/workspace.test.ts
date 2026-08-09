@@ -211,6 +211,44 @@ describe("workbench/workspace", () => {
         true,
       );
     });
+
+    it("drops --test-file/--test-codeunit-id/--prereq-dir/--stage-symbols-dir from the single-side tasks", () => {
+      // hasPrereq: true here on purpose - the four flags must be dropped
+      // regardless of prereq presence, since correct/<id>.Test.al (the file
+      // --test-file would point at) no longer exists once promoted.
+      const ws = JSON.parse(
+        renderWorkspace({ ...promoted, hasPrereq: true }),
+      ) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const correct = ws.tasks.tasks.find((t) =>
+        t.label === "probe: correct only"
+      );
+      const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
+      for (const task of [correct, naive]) {
+        assertEquals(task?.command.includes("--test-file"), false);
+        assertEquals(task?.command.includes("--test-codeunit-id"), false);
+        assertEquals(task?.command.includes("--prereq-dir"), false);
+        assertEquals(task?.command.includes("--stage-symbols-dir"), false);
+        assertStringIncludes(task?.command ?? "", `--task ${ID}`);
+        assertStringIncludes(task?.command ?? "", `--solution scratch/${ID}/`);
+        assertStringIncludes(task?.command ?? "", "--container Cronus28");
+      }
+      assertStringIncludes(correct?.command ?? "", "--expect pass");
+      assertStringIncludes(naive?.command ?? "", "--expect fail");
+    });
+
+    it("keeps --strict-fail-mode on the naive task only, once promoted", () => {
+      const ws = JSON.parse(renderWorkspace(promoted)) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const correct = ws.tasks.tasks.find((t) =>
+        t.label === "probe: correct only"
+      );
+      const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
+      assertEquals(correct?.command.includes("--strict-fail-mode"), false);
+      assertEquals(naive?.command.includes("--strict-fail-mode"), true);
+    });
   });
 
   describe("renderChecklist", () => {
