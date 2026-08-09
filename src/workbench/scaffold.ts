@@ -36,6 +36,7 @@ import {
   ensureTestDependencies,
 } from "../al/app-manifest.ts";
 import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
+import type { SymbolPathResolver } from "./workspace.ts";
 import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 
 /** Metadata recorded for a scaffolded draft, both returned and written to `.meta.json`. */
@@ -111,6 +112,12 @@ export async function scaffoldDraft(opts: {
   /** BC container the generated workspace targets. Defaults to `DEFAULT_PROBE_CONTAINER`. */
   container?: string;
   roots: IdRoots;
+  /**
+   * Override for tests; defaults to the real `docker inspect` resolver. See
+   * {@link SymbolPathResolver} - without this the unit suite would spawn one
+   * `docker inspect` per scaffolded draft.
+   */
+  resolveSymbols?: SymbolPathResolver;
 }): Promise<DraftMeta> {
   const { slug, roots } = opts;
   const withPrereq = opts.withPrereq ?? false;
@@ -210,7 +217,7 @@ export async function scaffoldDraft(opts: {
   // Symbol resolution is best-effort. A container that is down at scaffold
   // time must not block authoring - the workspace is written without
   // al.packageCachePath and `task probe` refreshes it on the next run.
-  const symbolPaths = await resolveSymbolPaths({
+  const symbolPaths = await (opts.resolveSymbols ?? resolveSymbolPaths)({
     container: opts.container ?? DEFAULT_PROBE_CONTAINER,
     draftDir,
     hasPrereq: withPrereq,

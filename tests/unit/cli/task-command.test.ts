@@ -3,7 +3,9 @@
  *
  * SAFETY: every fixture lives under `Deno.makeTempDir()`; `roots` is always
  * passed explicitly to `runTaskNew` so nothing here reads or writes the
- * real `tasks/`, `tests/al/` or `scratch/` trees.
+ * real `tasks/`, `tests/al/` or `scratch/` trees, and the `docker inspect`
+ * seam behind `runTaskNew`/`runTaskProbe` is stubbed by the local wrappers
+ * below so nothing here reaches a container either.
  *
  * Cliffy's own argument parsing is not exercised here — only that
  * `registerTaskCommand` attaches the expected subcommand + options.
@@ -26,12 +28,28 @@ import type {
 import {
   probeExitCode,
   registerTaskCommand,
-  runTaskNew,
-  runTaskProbe,
+  runTaskNew as realRunTaskNew,
+  runTaskProbe as realRunTaskProbe,
   runTaskPromote,
 } from "../../../cli/commands/task-command.ts";
-import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
-import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import { scaffoldDraft as realScaffoldDraft } from "../../../src/workbench/scaffold.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  stubSymbolResolver,
+} from "../../utils/test-helpers.ts";
+
+/**
+ * The three entry points that reach `resolveSymbolPaths`, each shadowing its
+ * real import with the `docker inspect` seam stubbed. An explicit
+ * `resolveSymbols` in `opts` still wins.
+ */
+const runTaskNew: typeof realRunTaskNew = (opts) =>
+  realRunTaskNew({ resolveSymbols: stubSymbolResolver, ...opts });
+const runTaskProbe: typeof realRunTaskProbe = (opts) =>
+  realRunTaskProbe({ resolveSymbols: stubSymbolResolver, ...opts });
+const scaffoldDraft: typeof realScaffoldDraft = (opts) =>
+  realScaffoldDraft({ resolveSymbols: stubSymbolResolver, ...opts });
 
 // ---------------------------------------------------------------------------
 // Registration

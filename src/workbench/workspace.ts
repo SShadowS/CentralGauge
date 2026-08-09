@@ -14,9 +14,9 @@
  * `renderWorkspace` and `renderChecklist` are pure - they take a
  * `WorkspaceContext` and return a string, so every shape decision below is
  * unit-testable without a container. `resolveSymbolPaths` is the one function
- * that does I/O (a `docker inspect`), and it is the one thing no test may
- * call - see its own doc comment for why a wrong answer there is worse than
- * no answer.
+ * that does I/O (a `docker inspect`) - see its own doc comment for why a
+ * wrong answer there is worse than no answer, and {@link SymbolPathResolver}
+ * for the seam that keeps it out of the unit suite.
  *
  * Four decisions here are load-bearing enough to repeat close to the code
  * that encodes them - see each function's comments for the "why":
@@ -72,6 +72,20 @@ export interface WorkspaceContext {
 
 /** Windows-style symbol cache root every artifact-URL-keyed compiler cache lives under. */
 const COMPILER_CACHE_ROOT = "C:\\ProgramData\\BcContainerHelper";
+
+/**
+ * Injection seam for {@link resolveSymbolPaths}, mirroring `ProbeRunner` in
+ * `probe.ts`: the one I/O-doing function in this module, taken as a parameter
+ * by every caller so a unit test can supply a stub.
+ *
+ * Without it, `scaffoldDraft` and `probeDraft` reach `docker inspect`
+ * unconditionally, which makes the canonical unit suite docker-dependent -
+ * ~100 subprocess spawns across the three workbench test files for a value
+ * that is caught to `[]` and asserted on in exactly one place.
+ */
+export type SymbolPathResolver = (
+  opts: { container: string; draftDir: string; hasPrereq: boolean },
+) => Promise<string[]>;
 
 /**
  * Resolves `al.packageCachePath` entries for a draft: the container's

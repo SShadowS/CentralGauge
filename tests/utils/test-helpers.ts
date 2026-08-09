@@ -473,3 +473,19 @@ export function createMockExecutionAttempt(
     ...overrides,
   };
 }
+
+/**
+ * Stub for the task workbench's `SymbolPathResolver`
+ * (`src/workbench/workspace.ts`) — the one I/O-doing function reachable from
+ * `scaffoldDraft`/`probeDraft`, which shells out to `docker inspect`.
+ *
+ * Returning `[]` is not a shortcut: it is exactly what the real resolver
+ * returns whenever the container cannot be inspected, so a stubbed test
+ * exercises a production-reachable state rather than an invented one.
+ * Without it the workbench unit suite spawns one `docker inspect` per
+ * scaffolded draft (~100 across the four test files) for a value that is
+ * caught to `[]` anyway — making the canonical unit suite docker-dependent.
+ */
+export function stubSymbolResolver(): Promise<string[]> {
+  return Promise.resolve([]);
+}

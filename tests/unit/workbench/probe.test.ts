@@ -3,7 +3,9 @@
  *
  * SAFETY: every fixture lives under `Deno.makeTempDir()`. No test may spawn
  * `trap-probe` or touch a container - every probe run here goes through a
- * stub `ProbeRunner` injected via `opts.runner`.
+ * stub `ProbeRunner` injected via `opts.runner`, and the workspace refresh's
+ * `docker inspect` goes through a stub `SymbolPathResolver` injected via
+ * `opts.resolveSymbols` by the local wrapper below.
  */
 
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
@@ -16,12 +18,24 @@ import type {
   ProbeVerdict,
 } from "../../../src/workbench/probe.ts";
 import {
-  probeDraft,
+  probeDraft as realProbeDraft,
   resolveDraftSlugForWorkspace,
 } from "../../../src/workbench/probe.ts";
 import { OracleFileError } from "../../../src/workbench/oracle-files.ts";
 import { renderWorkspace } from "../../../src/workbench/workspace.ts";
-import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  stubSymbolResolver,
+} from "../../utils/test-helpers.ts";
+
+/**
+ * `probeDraft` with the `docker inspect` seam stubbed, shadowing the real
+ * import so every call site below gets it without repeating the option. An
+ * explicit `resolveSymbols` in `opts` still wins.
+ */
+const probeDraft: typeof realProbeDraft = (id, opts) =>
+  realProbeDraft(id, { resolveSymbols: stubSymbolResolver, ...opts });
 
 /**
  * Maps exit codes onto the recorded run for a solution directory whose path
@@ -555,11 +569,13 @@ describe("workbench/probe", () => {
           "--test-codeunit-id 80099",
         );
 
-        // Symbol paths: resolveSymbolPaths is never called directly here.
-        // Instead, whatever it actually resolved (read back from the file
-        // itself) must round-trip through the same pure renderWorkspace the
+        // Symbol paths: this test does not assert a specific value. Whatever
+        // the injected resolver produced (read back from the file itself)
+        // must round-trip through the same pure renderWorkspace the
         // production code uses - proving the write is a genuine fresh
         // render of the probe's real inputs, not a stale or guessed value.
+        // That holds for the stub's `[]` exactly as it would for a real
+        // resolution, which is why the seam does not weaken the assertion.
         const resolvedSymbolPaths =
           (ws.settings["al.packageCachePath"] as string[] | undefined) ?? [];
         const expected = renderWorkspace({

@@ -45,6 +45,7 @@ import type {
   PromoteDifficulty,
   PromoteResult,
 } from "../../src/workbench/promote.ts";
+import type { SymbolPathResolver } from "../../src/workbench/workspace.ts";
 import { scaffoldDraft } from "../../src/workbench/scaffold.ts";
 import { probeDraft } from "../../src/workbench/probe.ts";
 import { promoteDraft } from "../../src/workbench/promote.ts";
@@ -67,6 +68,11 @@ export interface TaskNewOptions {
   container?: string;
   /** Override for tests; defaults to the real repo tree under `Deno.cwd()`. */
   roots?: IdRoots;
+  /**
+   * Override for tests; defaults to the real `docker inspect` resolver.
+   * Forwarded to `scaffoldDraft` — see `SymbolPathResolver`.
+   */
+  resolveSymbols?: SymbolPathResolver;
 }
 
 /**
@@ -93,6 +99,9 @@ export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
     slug: opts.slug,
     ...(opts.withPrereq !== undefined ? { withPrereq: opts.withPrereq } : {}),
     ...(opts.container !== undefined ? { container: opts.container } : {}),
+    ...(opts.resolveSymbols !== undefined
+      ? { resolveSymbols: opts.resolveSymbols }
+      : {}),
     roots,
   });
 
@@ -135,6 +144,11 @@ export interface TaskProbeOptions {
    * promote gate can surface it.
    */
   allowCompileFail?: boolean;
+  /**
+   * Override for tests; defaults to the real `docker inspect` resolver.
+   * Forwarded to `probeDraft` — see `SymbolPathResolver`.
+   */
+  resolveSymbols?: SymbolPathResolver;
 }
 
 /** `pass` green, `fail` red, `compile_fail`/`inconclusive` yellow — matches `trap-probe.ts`'s own coloring. */
@@ -189,6 +203,9 @@ export async function runTaskProbe(
     ...(opts.runner !== undefined ? { runner: opts.runner } : {}),
     ...(opts.allowCompileFail !== undefined
       ? { allowCompileFail: opts.allowCompileFail }
+      : {}),
+    ...(opts.resolveSymbols !== undefined
+      ? { resolveSymbols: opts.resolveSymbols }
       : {}),
   });
 

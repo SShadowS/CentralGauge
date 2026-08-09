@@ -2,7 +2,9 @@
  * Unit tests for task workbench draft scaffolding.
  *
  * SAFETY: every fixture lives under `Deno.makeTempDir()`. Nothing here may
- * read or write the real `tasks/`, `tests/al/` or `scratch/` trees.
+ * read or write the real `tasks/`, `tests/al/` or `scratch/` trees, and
+ * nothing may reach a container - `scaffoldDraft`'s `docker inspect` seam is
+ * stubbed for every call by the local wrapper below.
  */
 
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
@@ -19,9 +21,21 @@ import { join } from "@std/path";
 
 import type { IdRoots } from "../../../src/workbench/ids.ts";
 import type { DraftMeta } from "../../../src/workbench/scaffold.ts";
-import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
+import { scaffoldDraft as realScaffoldDraft } from "../../../src/workbench/scaffold.ts";
 import { parseTaskManifest } from "../../../src/tasks/interfaces.ts";
-import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  stubSymbolResolver,
+} from "../../utils/test-helpers.ts";
+
+/**
+ * `scaffoldDraft` with the `docker inspect` seam stubbed, shadowing the real
+ * import so every call site below gets it without repeating the option. An
+ * explicit `resolveSymbols` in `opts` still wins.
+ */
+const scaffoldDraft: typeof realScaffoldDraft = (opts) =>
+  realScaffoldDraft({ resolveSymbols: stubSymbolResolver, ...opts });
 
 describe("workbench/scaffold", () => {
   let base: string;

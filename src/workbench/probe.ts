@@ -49,6 +49,7 @@ import { parse as parseYaml } from "@std/yaml";
 
 import type { ProbeOutcome as RawProbeOutcome } from "../../scripts/trap-probe.ts";
 import type { DraftMeta } from "./scaffold.ts";
+import type { SymbolPathResolver } from "./workspace.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
 import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 
@@ -246,6 +247,12 @@ export async function probeDraft(
     container?: string;
     runner?: ProbeRunner;
     allowCompileFail?: boolean;
+    /**
+     * Override for tests; defaults to the real `docker inspect` resolver.
+     * Same seam, and same reason, as `runner` above - see
+     * {@link SymbolPathResolver}.
+     */
+    resolveSymbols?: SymbolPathResolver;
   },
 ): Promise<ProbeVerdict> {
   const draftDir = join(opts.scratchDir, id);
@@ -289,7 +296,7 @@ export async function probeDraft(
   // resolveDraftTestCodeunitId's own doc comment.
   if (testCodeunitId !== undefined) {
     const slug = await resolveDraftSlugForWorkspace(draftDir, id);
-    const symbolPaths = await resolveSymbolPaths({
+    const symbolPaths = await (opts.resolveSymbols ?? resolveSymbolPaths)({
       container,
       draftDir,
       hasPrereq,

@@ -14,10 +14,23 @@ import { parse } from "@std/yaml";
 
 import type { IdRoots } from "../../../src/workbench/ids.ts";
 import type { ProbeVerdict } from "../../../src/workbench/probe.ts";
-import { scaffoldDraft } from "../../../src/workbench/scaffold.ts";
+import { scaffoldDraft as realScaffoldDraft } from "../../../src/workbench/scaffold.ts";
 import { promoteDraft } from "../../../src/workbench/promote.ts";
 import { writeWorkspace } from "../../../src/workbench/workspace.ts";
-import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  stubSymbolResolver,
+} from "../../utils/test-helpers.ts";
+
+/**
+ * `scaffoldDraft` with the `docker inspect` seam stubbed, shadowing the real
+ * import so every call site below gets it without repeating the option.
+ * `promoteDraft` itself never resolves symbols (it writes `symbolPaths: []`),
+ * so this only covers the scaffolding these tests do to build a fixture.
+ */
+const scaffoldDraft: typeof realScaffoldDraft = (opts) =>
+  realScaffoldDraft({ resolveSymbols: stubSymbolResolver, ...opts });
 
 /**
  * A verdict that clears the gate outright. `at` is set a minute into the
