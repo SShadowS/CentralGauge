@@ -6,7 +6,7 @@ whether a test codeunit uses `TestPage` (which cannot run on the headless SOAP
 test path).
 
 - Source: [`@sshadows/tree-sitter-al`](https://github.com/SShadowS/tree-sitter-al)
-- Version: 2.5.1 (git rev `8a2d841`)
+- Version: 4.0.1 (git rev `58c236f`)
 - Runtime: loaded via `web-tree-sitter` (see `deno.json` imports)
 
 ## Updating
