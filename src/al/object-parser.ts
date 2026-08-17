@@ -11,6 +11,9 @@
 
 import type { Node } from "web-tree-sitter";
 import { Language, Parser } from "web-tree-sitter";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("al:object-parser");
 
 // Vendored tree-sitter-al grammar (@sshadows/tree-sitter-al). See
 // vendor/tree-sitter-al/README.md for provenance.
@@ -26,7 +29,7 @@ export interface AlObject {
   kind: string; // "codeunit" | "table" | "enum" | "interface" | "tableextension" | ...
   id?: number; // absent for interface, controladdin
   name: string; // unquoted
-  extendsTarget?: string; // tableextension/enumextension only, unquoted
+  extendsTarget?: string; // set when the declaration has an `extends` clause, unquoted
   startIndex: number; // byte offset into the source
   endIndex: number;
   source: string; // the object's own text
@@ -117,11 +120,27 @@ function extractFields(
  * partially-parsed candidate would produce misleading rows in an
  * object-per-row matrix, so a parse error yields no objects rather than a
  * best-effort partial list.
+ *
+ * This is the same `{ objects: [], hasError: true }` contract when the
+ * parser itself fails (throws, or returns no tree) rather than the grammar
+ * rejecting the input — a caller fanning this out across N models' arbitrary
+ * output should never have one pathological response take down the whole
+ * run. Failures are logged so a swallowed exception stays discoverable.
  */
 export async function parseAlObjects(source: string): Promise<ParsedAl> {
   const parser = await getAlParser();
-  const tree = parser.parse(source);
+
+  let tree: ReturnType<Parser["parse"]>;
+  try {
+    tree = parser.parse(source);
+  } catch (e) {
+    log.warn("AL parse threw; treating as unparseable", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return { objects: [], hasError: true };
+  }
   if (!tree) {
+    log.warn("AL parse produced no tree; treating as unparseable");
     return { objects: [], hasError: true };
   }
 

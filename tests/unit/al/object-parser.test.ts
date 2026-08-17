@@ -2,8 +2,28 @@ import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertGreater } from "@std/assert";
 import { expandGlob } from "@std/fs";
 import { fromFileUrl } from "@std/path";
+import { Parser } from "web-tree-sitter";
 
 import { parseAlObjects } from "../../../src/al/object-parser.ts";
+
+/**
+ * Temporarily replaces `Parser.prototype.parse` so a test can force the
+ * two failure modes `parseAlObjects` guards against (a throw, or a `null`
+ * tree — the latter is how a real `parse()` reports an aborted parse, e.g.
+ * a `progressCallback` timeout). Always restored, even if the body throws.
+ */
+async function withPatchedParse(
+  patched: typeof Parser.prototype.parse,
+  body: () => Promise<void>,
+): Promise<void> {
+  const original = Parser.prototype.parse;
+  Parser.prototype.parse = patched;
+  try {
+    await body();
+  } finally {
+    Parser.prototype.parse = original;
+  }
+}
 
 const CODEUNIT =
   'codeunit 71410 "CG X054 Agent"\n{\n    procedure P() begin end;\n}';
@@ -54,6 +74,28 @@ describe("al/object-parser", () => {
   it("returns no objects for empty input without throwing", async () => {
     const p = await parseAlObjects("");
     assertEquals(p.objects.length, 0);
+  });
+
+  it("treats a thrown parse() as unparseable instead of propagating", async () => {
+    await withPatchedParse(
+      () => {
+        throw new Error("simulated parser crash");
+      },
+      async () => {
+        const p = await parseAlObjects('codeunit 1 "X"\n{\n}');
+        assertEquals(p, { objects: [], hasError: true });
+      },
+    );
+  });
+
+  it("treats a null tree (e.g. an aborted parse) as unparseable", async () => {
+    await withPatchedParse(
+      () => null,
+      async () => {
+        const p = await parseAlObjects('codeunit 1 "X"\n{\n}');
+        assertEquals(p, { objects: [], hasError: true });
+      },
+    );
   });
 
   it("parses every committed tests/al/hard/*.al file with at least one named object", async () => {
