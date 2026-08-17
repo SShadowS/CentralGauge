@@ -510,12 +510,11 @@ export class LLMWorkPool {
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
-      const errorSnippet = errors.slice(0, 20).join("\n");
       basePrompt = buildFixPrompt({
         attemptNumber: item.attemptNumber,
         originalInstructions: item.context.instructions,
         previousCode: previousAttempt.extractedCode,
-        errorSnippet,
+        errors,
       });
     }
 

@@ -10,11 +10,12 @@ export function buildFixPrompt(opts: {
   attemptNumber: number;
   originalInstructions: string;
   previousCode: string;
-  errorSnippet: string;
+  errors: string[];
 }): string {
   const truncatedCode = opts.previousCode.length > 4000
     ? opts.previousCode.substring(0, 4000) + "\n... (truncated)"
     : opts.previousCode;
+  const errorSnippet = opts.errors.slice(0, 20).join("\n");
 
   return `Your previous submission (attempt ${
     opts.attemptNumber - 1
@@ -29,7 +30,7 @@ ${truncatedCode}
 \`\`\`
 
 ## Compilation/Test Errors
-${opts.errorSnippet}
+${errorSnippet}
 
 ## Instructions
 1. Analyze the compilation errors or test failures above
