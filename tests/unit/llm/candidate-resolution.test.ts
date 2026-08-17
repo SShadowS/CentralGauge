@@ -2,6 +2,7 @@ import { join } from "@std/path";
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 
+import type { ExtractionMethod } from "../../../src/llm/code-extractor.ts";
 import {
   classifyExtractionFailure,
   resolveCandidate,
@@ -81,99 +82,59 @@ interface RawResponse {
 }
 
 /**
- * Recursively find every object carrying an `attempts` array (result files
- * nest these at varying depths across the corpus's history) and pull each
- * attempt's `llmResponse.content` / `llmResponse.finishReason` out of it,
- * skipping attempts that are missing either field.
+ * Curated fixture of real recorded LLM responses, harvested once from local
+ * `results/benchmark-results-*.json` run history (gitignored, not committed
+ * — see `scripts/harvest-candidate-corpus.ts`'s header) and committed here
+ * so the preservation test is deterministic on every machine, not just one
+ * with enough local bench history. Regenerate with:
+ *
+ *   deno run --allow-read --allow-write scripts/harvest-candidate-corpus.ts
+ *
+ * Selected to cover every `ExtractionMethod` plus the empty-response and
+ * content_filter (safety refusal) edge cases — see the coverage test below.
  */
-function harvestFromValue(
-  value: unknown,
-  out: RawResponse[],
-  limit: number,
-): void {
-  if (out.length >= limit || value === null || typeof value !== "object") {
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      if (out.length >= limit) return;
-      harvestFromValue(item, out, limit);
-    }
-    return;
-  }
-  const obj = value as Record<string, unknown>;
-  if (Array.isArray(obj["attempts"])) {
-    for (const attempt of obj["attempts"]) {
-      if (out.length >= limit) return;
-      const llmResponse = attempt && typeof attempt === "object"
-        ? (attempt as Record<string, unknown>)["llmResponse"]
-        : undefined;
-      if (llmResponse && typeof llmResponse === "object") {
-        const content = (llmResponse as Record<string, unknown>)["content"];
-        const finishReason =
-          (llmResponse as Record<string, unknown>)["finishReason"];
-        if (typeof content === "string" && typeof finishReason === "string") {
-          out.push({
-            content,
-            finishReason: finishReason as RawResponse["finishReason"],
-          });
-        }
-      }
-    }
-  }
-  for (const nested of Object.values(obj)) {
-    if (out.length >= limit) return;
-    harvestFromValue(nested, out, limit);
-  }
-}
+const FIXTURE_PATH = join(
+  import.meta.dirname ?? ".",
+  "..",
+  "..",
+  "fixtures",
+  "llm",
+  "candidate-corpus.json",
+);
 
-/** Recursively yield every `benchmark-results-*.json` path under `dir`. */
-async function* walkBenchmarkResultFiles(
-  dir: string,
-): AsyncGenerator<string> {
-  let entries: Deno.DirEntry[];
-  try {
-    entries = await Array.fromAsync(Deno.readDir(dir));
-  } catch {
-    return; // dir absent entirely — harvestRawResponses reports 0, not a crash
+async function loadFixtureCorpus(): Promise<RawResponse[]> {
+  const raw = JSON.parse(await Deno.readTextFile(FIXTURE_PATH));
+  if (!Array.isArray(raw)) {
+    throw new Error(`Fixture at ${FIXTURE_PATH} is not a JSON array`);
   }
-  for (const entry of entries) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory) {
-      yield* walkBenchmarkResultFiles(path);
-    } else if (
-      entry.isFile && /^benchmark-results-.*\.json$/.test(entry.name)
+  return raw.map((entry, i) => {
+    if (
+      typeof entry !== "object" || entry === null ||
+      typeof (entry as Record<string, unknown>)["content"] !== "string" ||
+      typeof (entry as Record<string, unknown>)["finishReason"] !== "string"
     ) {
-      yield path;
+      throw new Error(
+        `Fixture entry ${i} is malformed: ${
+          JSON.stringify(entry).slice(0, 200)
+        }`,
+      );
     }
-  }
-}
-
-/**
- * Read up to `limit` real `(content, finishReason)` pairs out of the
- * committed `results/benchmark-results-*.json` fixtures. Read-only: never
- * writes to `results/`.
- */
-async function harvestRawResponses(limit: number): Promise<RawResponse[]> {
-  const out: RawResponse[] = [];
-  const resultsDir = join(Deno.cwd(), "results");
-  for await (const path of walkBenchmarkResultFiles(resultsDir)) {
-    if (out.length >= limit) break;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await Deno.readTextFile(path));
-    } catch {
-      continue; // corrupt/partial file on disk — skip, don't fail the corpus
-    }
-    harvestFromValue(parsed, out, limit);
-  }
-  return out;
+    const e = entry as { content: string; finishReason: string };
+    return {
+      content: e.content,
+      finishReason: e.finishReason as RawResponse["finishReason"],
+    };
+  });
 }
 
 describe("llm/candidate-resolution: behaviour preservation", () => {
-  it("matches the inline pipeline on a corpus of real responses", async () => {
-    const raws = await harvestRawResponses(300);
-    assertEquals(raws.length > 50, true, "need a real corpus, not a stub");
+  it("matches the inline pipeline on the committed response corpus", async () => {
+    const raws = await loadFixtureCorpus();
+    assertEquals(
+      raws.length > 50,
+      true,
+      "fixture is truncated or corrupted — regenerate it, don't lower this guard",
+    );
 
     for (const { content, finishReason } of raws) {
       const got = resolveCandidate(content, finishReason);
@@ -182,6 +143,37 @@ describe("llm/candidate-resolution: behaviour preservation", () => {
       assertEquals(got.isReadyForCompile, want.isReadyForCompile);
       assertEquals(got.failure?.error, want.failure?.error);
       assertEquals(got.failure?.failureKind, want.failure?.failureKind);
+    }
+  });
+});
+
+// Every ExtractionMethod the type allows. A `Record` (not a plain array)
+// so TypeScript enforces exhaustiveness: adding a 7th ExtractionMethod
+// without adding a key here is a compile error, not a silently-incomplete
+// coverage check.
+const ALL_EXTRACTION_METHODS: Record<ExtractionMethod, true> = {
+  "custom-delimiters": true,
+  "tagged-fence": true,
+  "untagged-fence": true,
+  "greedy-fence": true,
+  "pattern": true,
+  "whole-response": true,
+};
+
+describe("llm/candidate-resolution: fixture coverage", () => {
+  it("covers every ExtractionMethod, by re-extraction, not a stored label", async () => {
+    const raws = await loadFixtureCorpus();
+    const seenMethods = new Set(
+      raws.map((r) => CodeExtractor.extract(r.content).method),
+    );
+    for (
+      const method of Object.keys(ALL_EXTRACTION_METHODS) as ExtractionMethod[]
+    ) {
+      assertEquals(
+        seenMethods.has(method),
+        true,
+        `fixture has no example that extracts as "${method}" — regenerate via scripts/harvest-candidate-corpus.ts`,
+      );
     }
   });
 });
