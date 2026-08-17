@@ -77,7 +77,7 @@ export type { LiteLLMModelInfo, LiteLLMPricing } from "./litellm-service.ts";
 export { LiteLLMService } from "./litellm-service.ts";
 
 // Code Extraction
-export type { ExtractionResult } from "./code-extractor.ts";
+export type { ExtractionMethod, ExtractionResult } from "./code-extractor.ts";
 export { CodeExtractor } from "./code-extractor.ts";
 
 // Adapters

@@ -564,6 +564,6 @@ Deno.test("CodeExtractor: reports which method extracted the code", async (t) =>
 
   await t.step("method is set even on a zero-confidence result", () => {
     const r = CodeExtractor.extract("I cannot help with that request.");
-    assertEquals(typeof r.method, "string");
+    assertEquals(r.method, "whole-response");
   });
 });
