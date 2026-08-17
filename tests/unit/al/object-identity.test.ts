@@ -93,5 +93,30 @@ describe("al/object-identity", () => {
     ]);
     assertEquals(rows.length, 1);
     assertEquals(rows[0]?.name, "Agent");
+    assertEquals(rows[0]?.id, 71410);
+  });
+
+  it("keeps extensions of different targets in separate rows", () => {
+    const rows = buildRowUniverse([], [
+      {
+        model: "m1",
+        objects: [obj({
+          kind: "tableextension",
+          id: 71400,
+          name: "CG Ext",
+          extendsTarget: "Customer",
+        })],
+      },
+      {
+        model: "m2",
+        objects: [obj({
+          kind: "tableextension",
+          id: 71401,
+          name: "CG Ext",
+          extendsTarget: "Vendor",
+        })],
+      },
+    ]);
+    assertEquals(rows.length, 2);
   });
 });

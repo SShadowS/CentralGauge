@@ -99,7 +99,11 @@ export function buildRowUniverse(
 
     // Fall back to name-based matching (merge rule)
     const normalizedName = normalizeName(obj.name);
-    const nameKey = `${obj.kind}|${normalizedName}`;
+    const nameKeyParts: string[] = [obj.kind, normalizedName];
+    if (obj.extendsTarget !== undefined) {
+      nameKeyParts.push(normalizeName(obj.extendsTarget));
+    }
+    const nameKey = nameKeyParts.join("|");
     if (nameToIndex.has(nameKey)) {
       return nameToIndex.get(nameKey)!;
     }
