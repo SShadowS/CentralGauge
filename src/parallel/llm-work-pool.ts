@@ -18,7 +18,6 @@ import {
   isStreamingAdapter,
   type LLMAdapter,
   type LLMRequest,
-  type LLMResponse,
   type StreamingLLMAdapter,
 } from "../llm/types.ts";
 import {
@@ -27,7 +26,7 @@ import {
 } from "../llm/empty-retry.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
-import { CodeExtractor } from "../llm/code-extractor.ts";
+import { resolveCandidate } from "../llm/candidate-resolution.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
@@ -38,57 +37,6 @@ import {
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
 import type { TokenUsage } from "../llm/types.ts";
-
-/**
- * Structured classification of why extraction of usable code from an LLM
- * response failed. Mirrors the operator-facing `error` string but gives
- * callers (e.g. the trap-task authoring loop's result matrix) a value to
- * switch on instead of string-matching. `empty_response` carries zero trap
- * signal and must not be read as a genuine catch.
- */
-export interface ExtractionFailureClassification {
-  error: string;
-  failureKind: "empty_response" | "safety_refusal" | "low_confidence";
-}
-
-/**
- * Classify why an extracted response is not ready for compilation. Callers
- * must only invoke this when extraction has already been determined to have
- * failed (empty code or confidence <= 0.5) — this function does not itself
- * decide readiness.
- *
- * Pure and side-effect free so it can be tested without standing up the
- * pool. Keep the three `error` strings byte-identical to their historical
- * values: they are operator-facing (bench output) and other code may match
- * on them.
- */
-export function classifyExtractionFailure(
-  finishReason: LLMResponse["finishReason"],
-  cleanedCode: string,
-  confidence: number,
-): ExtractionFailureClassification {
-  if (finishReason === "content_filter") {
-    // API safety-classifier refusal (stop_reason "refusal" on Fable-5+):
-    // HTTP 200, empty content, deterministic per prompt. Distinct label
-    // so bench matrices aren't misread as flaky-API noise.
-    return {
-      error: "API safety refusal (stop_reason=refusal)",
-      failureKind: "safety_refusal",
-    };
-  }
-  if (cleanedCode.trim().length === 0) {
-    return {
-      error: "Model returned empty response",
-      failureKind: "empty_response",
-    };
-  }
-  return {
-    error: `Insufficient code quality (confidence: ${
-      (confidence * 100).toFixed(0)
-    }%)`,
-    failureKind: "low_confidence",
-  };
-}
 
 /**
  * Fold token usage across every attempt of an empty-retry sequence onto
@@ -282,13 +230,11 @@ export class LLMWorkPool {
       );
       const emptyRetryCount = retryOutcome.retryCount;
 
-      // Extract code from response and clean it
-      const extracted = CodeExtractor.extract(
+      // Extract code from response, clean it, and gate readiness — the same
+      // pipeline the authoring dashboard reviews (src/llm/candidate-resolution.ts).
+      const resolution = resolveCandidate(
         continuationResult.response.content,
-      );
-      const cleanedCode = CodeExtractor.cleanCode(
-        extracted.code,
-        extracted.language === "diff" ? "diff" : "al",
+        continuationResult.response.finishReason,
       );
 
       // Release lease with actual token count (sum across retries)
@@ -303,31 +249,21 @@ export class LLMWorkPool {
         continuationResult.wasTruncated,
       );
 
-      // Determine success based on extraction quality
-      // Empty code or low confidence indicates extraction failure
-      const isReadyForCompile = extracted.confidence > 0.5 &&
-        cleanedCode.trim().length > 0;
-
       const result: LLMWorkResult = {
         workItemId: item.id,
-        success: isReadyForCompile,
-        code: cleanedCode,
+        success: resolution.isReadyForCompile,
+        code: resolution.cleanedCode,
         llmResponse: continuationResult.response,
         duration: Date.now() - startTime,
-        readyForCompile: isReadyForCompile,
+        readyForCompile: resolution.isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
         emptyRetryCount,
       };
 
       // Set error message for extraction failures (categorizes as model failure, not transient)
-      if (!isReadyForCompile) {
-        const classification = classifyExtractionFailure(
-          continuationResult.response.finishReason,
-          cleanedCode,
-          extracted.confidence,
-        );
-        result.error = classification.error;
-        result.failureKind = classification.failureKind;
+      if (resolution.failure) {
+        result.error = resolution.failure.error;
+        result.failureKind = resolution.failure.failureKind;
       }
 
       if (truncationWarning) {

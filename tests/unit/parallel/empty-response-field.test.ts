@@ -11,7 +11,7 @@ import { assertEquals } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 
 import type { LLMWorkResult } from "../../../src/parallel/types.ts";
-import { classifyExtractionFailure } from "../../../src/parallel/llm-work-pool.ts";
+import { classifyExtractionFailure } from "../../../src/llm/candidate-resolution.ts";
 import { ParallelBenchmarkOrchestrator } from "../../../src/parallel/orchestrator.ts";
 import { categorizeAttempt } from "../../../cli/commands/bench/single-task-matrix.ts";
 
