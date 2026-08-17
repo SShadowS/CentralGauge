@@ -27,6 +27,7 @@ import {
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
+import { buildFixPrompt } from "../llm/prompt-building.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
@@ -509,12 +510,13 @@ export class LLMWorkPool {
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
-      basePrompt = this.buildFixPrompt(
-        item.context.instructions,
-        previousAttempt.extractedCode,
-        errors,
-        item.attemptNumber,
-      );
+      const errorSnippet = errors.slice(0, 20).join("\n");
+      basePrompt = buildFixPrompt({
+        attemptNumber: item.attemptNumber,
+        originalInstructions: item.context.instructions,
+        previousCode: previousAttempt.extractedCode,
+        errorSnippet,
+      });
     }
 
     // Apply prompt injections (knowledge bank, system prompt overrides)
@@ -546,48 +548,6 @@ export class LLMWorkPool {
     }
 
     return request;
-  }
-
-  /**
-   * Build a fix prompt that includes the errors and previous code
-   */
-  private buildFixPrompt(
-    originalInstructions: string,
-    previousCode: string,
-    errors: string[],
-    attemptNumber: number,
-  ): string {
-    const errorSnippet = errors.slice(0, 20).join("\n"); // Limit errors
-    const truncatedCode = previousCode.length > 4000
-      ? previousCode.substring(0, 4000) + "\n... (truncated)"
-      : previousCode;
-
-    return `Your previous submission (attempt ${
-      attemptNumber - 1
-    }) failed to compile or pass tests.
-
-## Original Task
-${originalInstructions}
-
-## Your Previous Code
-\`\`\`al
-${truncatedCode}
-\`\`\`
-
-## Compilation/Test Errors
-${errorSnippet}
-
-## Instructions
-1. Analyze the compilation errors or test failures above
-2. Fix the issues in your code
-3. Provide the COMPLETE corrected AL code (not a diff)
-4. Ensure the fix addresses the root cause
-5. Do NOT add references to objects that don't exist (pages, codeunits, etc.) unless they are part of the task
-6. Output ONLY the corrected code inside the BEGIN-CODE/END-CODE fences below - no explanations, no markdown, no commentary
-
-BEGIN-CODE
-// Your corrected AL code here
-END-CODE`;
   }
 
   /**
