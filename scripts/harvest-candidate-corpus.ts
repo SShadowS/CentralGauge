@@ -31,8 +31,8 @@
 // deterministically for a given `results/` snapshot; review the diff before
 // committing, same as any other fixture change.
 
-import { join } from "jsr:@std/path";
-import { walk } from "jsr:@std/fs/walk";
+import { join } from "@std/path";
+import { walk } from "@std/fs/walk";
 
 import {
   CodeExtractor,
