@@ -1,9 +1,26 @@
+/**
+ * Which extraction strategy produced a result.
+ *
+ * `extractedFromDelimiters` cannot serve this purpose: it is true for the
+ * custom-delimiter path AND every fenced path, so it says "some delimiter was
+ * involved", not which. Confidence does not disambiguate either — 0.9 is both
+ * the tagged-fence path and the greedy fallback.
+ */
+export type ExtractionMethod =
+  | "custom-delimiters"
+  | "tagged-fence"
+  | "untagged-fence"
+  | "greedy-fence"
+  | "pattern"
+  | "whole-response";
+
 export interface ExtractionResult {
   code: string;
   language: "al" | "diff" | "unknown";
   extractedFromDelimiters: boolean;
   confidence: number; // 0-1, how confident we are this is the right code
   originalResponse: string;
+  method: ExtractionMethod;
 }
 
 export class CodeExtractor {
@@ -57,6 +74,7 @@ export class CodeExtractor {
         extractedFromDelimiters: true,
         confidence: 0.95,
         originalResponse: response,
+        method: "custom-delimiters",
       };
     }
 
@@ -66,6 +84,7 @@ export class CodeExtractor {
       extractedFromDelimiters: false,
       confidence: 0,
       originalResponse: response,
+      method: "custom-delimiters",
     };
   }
 
@@ -127,6 +146,7 @@ export class CodeExtractor {
         extractedFromDelimiters: false,
         confidence: 0,
         originalResponse: response,
+        method: "untagged-fence",
       };
     }
 
@@ -142,6 +162,7 @@ export class CodeExtractor {
           extractedFromDelimiters: true,
           confidence: 0.9,
           originalResponse: response,
+          method: "tagged-fence",
         };
       }
     }
@@ -167,6 +188,7 @@ export class CodeExtractor {
       extractedFromDelimiters: true,
       confidence: detectedLanguage === expectedLanguage ? 0.8 : 0.6,
       originalResponse: response,
+      method: "untagged-fence",
     };
   }
 
@@ -192,6 +214,7 @@ export class CodeExtractor {
           extractedFromDelimiters: true,
           confidence: 0.9,
           originalResponse: response,
+          method: "greedy-fence",
         };
       }
     }
@@ -212,6 +235,7 @@ export class CodeExtractor {
         extractedFromDelimiters: true,
         confidence: detectedLanguage === expectedLanguage ? 0.8 : 0.6,
         originalResponse: response,
+        method: "greedy-fence",
       };
     }
 
@@ -221,6 +245,7 @@ export class CodeExtractor {
       extractedFromDelimiters: false,
       confidence: 0,
       originalResponse: response,
+      method: "greedy-fence",
     };
   }
 
@@ -244,6 +269,7 @@ export class CodeExtractor {
           extractedFromDelimiters: false,
           confidence: 0.7,
           originalResponse: response,
+          method: "pattern",
         };
       }
     } else {
@@ -261,6 +287,7 @@ export class CodeExtractor {
             extractedFromDelimiters: false,
             confidence: 0.7,
             originalResponse: response,
+            method: "pattern",
           };
         }
       }
@@ -272,6 +299,7 @@ export class CodeExtractor {
       extractedFromDelimiters: false,
       confidence: 0,
       originalResponse: response,
+      method: "pattern",
     };
   }
 
@@ -288,6 +316,7 @@ export class CodeExtractor {
       extractedFromDelimiters: false,
       confidence: detectedLanguage === expectedLanguage ? 0.3 : 0.1,
       originalResponse: response,
+      method: "whole-response",
     };
   }
 

@@ -538,3 +538,32 @@ codeunit 50100 "Test"
     });
   });
 });
+
+Deno.test("CodeExtractor: reports which method extracted the code", async (t) => {
+  await t.step("custom delimiters", () => {
+    const r = CodeExtractor.extract(
+      'BEGIN-CODE\ncodeunit 70001 "X" { }\nEND-CODE',
+    );
+    assertEquals(r.method, "custom-delimiters");
+  });
+
+  await t.step("tagged fence", () => {
+    const r = CodeExtractor.extract('```al\ncodeunit 70001 "X" { }\n```');
+    assertEquals(r.method, "tagged-fence");
+  });
+
+  await t.step("untagged fence", () => {
+    const r = CodeExtractor.extract('```\ncodeunit 70001 "X" { }\n```');
+    assertEquals(r.method, "untagged-fence");
+  });
+
+  await t.step("whole response when nothing else matches", () => {
+    const r = CodeExtractor.extract('codeunit 70001 "X" { }');
+    assertEquals(["pattern", "whole-response"].includes(r.method), true);
+  });
+
+  await t.step("method is set even on a zero-confidence result", () => {
+    const r = CodeExtractor.extract("I cannot help with that request.");
+    assertEquals(typeof r.method, "string");
+  });
+});
