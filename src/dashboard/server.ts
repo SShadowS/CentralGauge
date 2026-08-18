@@ -41,7 +41,17 @@ import type { QuickRun } from "./run-manager.ts";
 import { listDrafts } from "./drafts.ts";
 import { runQuick, writeRunArtifact } from "./run-manager.ts";
 import { createModelCaller } from "./model-caller.ts";
+import { loadPrereqSources } from "./prereq-sources.ts";
 import { loadTrapSources } from "./source-loader.ts";
+
+/**
+ * Root a draft's `prereq/` chained dependencies resolve against
+ * (`loadPrereqSources`'s `dependenciesRoot`). A plain constant, not read
+ * from `.centralgauge.yml` via the config loader — that module is exactly
+ * what `tests/unit/dashboard/ingest-safety.test.ts` forbids this file from
+ * reaching, per the module doc comment above.
+ */
+const PREREQ_DEPENDENCIES_ROOT = "tests/al/dependencies";
 
 export interface DashboardServer {
   port: number;
@@ -302,6 +312,10 @@ export function createHandler(
           draft.id,
           draft.dir,
         );
+        const { sources: prereqSources } = await loadPrereqSources(
+          draft.dir,
+          PREREQ_DEPENDENCIES_ROOT,
+        );
         const call = deps.createModelCaller({
           taskId: draft.id,
           description: `Dashboard quick run for ${draft.id}`,
@@ -311,6 +325,7 @@ export function createHandler(
           models: validated.models,
           correctSources,
           naiveSources,
+          prereqSources,
           call,
         });
 

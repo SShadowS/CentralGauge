@@ -429,4 +429,65 @@ describe("dashboard/run-manager", () => {
       writeRunArtifact(dir, { ...run, draftId: "../../escaped" })
     );
   });
+
+  it("attaches tiered prereq findings to each response", async () => {
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: true,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [PREREQ],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    const finding = run.responses[0]?.prereqBinding?.findings.find(
+      (f) => f.member === "Discount",
+    );
+    assertEquals(finding?.tier, "hard");
+  });
+
+  it("leaves the binding undefined when a draft has no prereq", async () => {
+    const CODE = `codeunit 70054 "A" { procedure P() begin end; }`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: false,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    assertEquals(run.responses[0]?.prereqBinding, undefined);
+  });
 });

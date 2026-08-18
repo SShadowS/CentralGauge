@@ -20,6 +20,8 @@ import { isAbsolute, relative, resolve } from "@std/path";
 
 import type { AlObject } from "../al/object-parser.ts";
 import type { MatrixRow } from "../al/object-identity.ts";
+import type { BinderResult } from "../al/prereq-binder.ts";
+import type { PrereqIndex } from "../al/prereq-index.ts";
 import type {
   TrapClassification,
   TrapSignature,
@@ -34,6 +36,8 @@ import {
   assignObjectsToRows,
   buildRowUniverse,
 } from "../al/object-identity.ts";
+import { bindResponseToPrereqs } from "../al/prereq-binder.ts";
+import { buildPrereqIndex } from "../al/prereq-index.ts";
 import {
   classifyAgainstSignature,
   deriveTrapSignature,
@@ -81,6 +85,15 @@ export interface ModelResponse {
   rowAssignments: Record<string, number>;
   classification: TrapClassification;
   error?: string;
+  /**
+   * Tiered prereq-reference findings for this response, from
+   * `bindResponseToPrereqs`. Genuinely ABSENT — not present with an empty
+   * `findings` array — when the draft has no prereq/ sources to check
+   * against, or when this response errored before producing any code to
+   * analyse (`runOneModel`'s catch path). Present means analysis actually
+   * ran, even when `findings` came back empty.
+   */
+  prereqBinding?: BinderResult;
 }
 
 export interface QuickRun {
@@ -205,6 +218,16 @@ export async function runQuick(opts: {
   models: string[];
   correctSources: string[];
   naiveSources: string[];
+  /**
+   * Raw AL source of the draft's `prereq/` app plus its chained
+   * dependencies (`loadPrereqSources`'s `sources`). Built into a
+   * `PrereqIndex` ONCE per run, not once per model — every model in a run
+   * must be judged against the identical prereq, and rebuilding per
+   * response would both waste parsing and let the columns drift apart.
+   * Omitted or empty means the draft has no prereq to check: binding is
+   * skipped entirely and every response's `prereqBinding` stays absent.
+   */
+  prereqSources?: string[];
   call: ModelCaller;
   /** Overridable so a test can pin the rendered text without reading the
    *  repo's real `templates/`. Production passes nothing. */
@@ -239,16 +262,41 @@ export async function runQuick(opts: {
     responses.map((r) => ({ model: r.model, objects: r.objects })),
   );
 
+  // Built ONCE per run, not once per model — see the `prereqSources` doc
+  // comment above. `undefined` (rather than an index built from `[]`) is
+  // what makes "no prereq to check" and "checked, found nothing" two
+  // distinguishable states below.
+  const prereqIndex: PrereqIndex | undefined =
+    opts.prereqSources && opts.prereqSources.length > 0
+      ? await buildPrereqIndex(opts.prereqSources)
+      : undefined;
+
+  const boundResponses = await Promise.all(
+    responses.map(async (response) => {
+      const rowAssignments = assignObjectsToRows(rows, response.objects);
+      // No index to check against, or this response errored before
+      // producing any code to analyse (`runOneModel`'s catch path) — either
+      // way there is nothing to bind, so `prereqBinding` stays genuinely
+      // absent rather than present-and-empty (`exactOptionalPropertyTypes`
+      // is why this is a conditional spread, not `prereqBinding: undefined`).
+      if (!prereqIndex || response.error !== undefined) {
+        return { ...response, rowAssignments };
+      }
+      const prereqBinding = await bindResponseToPrereqs(
+        response.resolution.cleanedCode,
+        prereqIndex,
+      );
+      return { ...response, rowAssignments, prereqBinding };
+    }),
+  );
+
   return {
     draftId: opts.draft.id,
     startedAt: new Date().toISOString(),
     signature,
     // Cell placement is decided here, where both sides are in hand, rather
     // than re-derived by the UI from a copy of the identity rules.
-    responses: responses.map((response) => ({
-      ...response,
-      rowAssignments: assignObjectsToRows(rows, response.objects),
-    })),
+    responses: boundResponses,
     rows,
   };
 }
