@@ -27,7 +27,11 @@ import {
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
-import { buildFixPrompt } from "../llm/prompt-building.ts";
+import {
+  buildFixPrompt,
+  buildGenerationPrompt,
+  DEFAULT_TEMPLATE_DIR,
+} from "../llm/prompt-building.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
@@ -109,7 +113,7 @@ export class LLMWorkPool {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
     this.templateRenderer = new TemplateRenderer(
-      config.templateDir || "templates",
+      config.templateDir || DEFAULT_TEMPLATE_DIR,
     );
     this.continuationConfig = continuationConfig ?? DEFAULT_CONTINUATION_CONFIG;
     this.emptyRetryConfig = emptyRetryConfig ?? DEFAULT_EMPTY_RETRY_CONFIG;
@@ -493,40 +497,45 @@ export class LLMWorkPool {
     const previousAttempt =
       item.previousAttempts[item.previousAttempts.length - 1];
 
-    let basePrompt: string;
     const stage = item.attemptNumber === 1 ? "generation" : "fix";
 
+    // Both branches render their base prompt AND apply prompt injections
+    // (knowledge bank, system prompt overrides) through `src/llm/
+    // prompt-building.ts`, which the authoring dashboard also calls — spec
+    // §2b: an author calibrates against the prompt the bench actually sends,
+    // so a second lookalike pipeline is not allowed to exist.
+    let applied;
     if (item.attemptNumber === 1 || !previousAttempt) {
       // First attempt - render template with task description
-      const promptTemplate = item.taskManifest.prompt_template || "code-gen.md";
-      basePrompt = await this.templateRenderer.render(
-        promptTemplate,
-        {
-          description: item.context.instructions,
-          task_id: item.taskManifest.id,
-          max_attempts: item.taskManifest.max_attempts,
-        },
-      );
+      applied = await buildGenerationPrompt({
+        renderer: this.templateRenderer,
+        promptTemplate: item.taskManifest.prompt_template,
+        description: item.context.instructions,
+        taskId: item.taskManifest.id,
+        maxAttempts: item.taskManifest.max_attempts,
+        taskPrompts: item.taskManifest.prompts,
+        cliOverrides: item.context.promptOverrides,
+        provider: item.llmProvider,
+        stage,
+      });
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
-      basePrompt = buildFixPrompt({
+      const basePrompt = buildFixPrompt({
         attemptNumber: item.attemptNumber,
         originalInstructions: item.context.instructions,
         previousCode: previousAttempt.extractedCode,
         errors,
       });
+      applied = PromptInjectionResolver.resolveAndApply(
+        basePrompt,
+        undefined, // globalConfig.prompts - not needed here
+        item.taskManifest.prompts,
+        item.context.promptOverrides,
+        item.llmProvider,
+        stage,
+      );
     }
-
-    // Apply prompt injections (knowledge bank, system prompt overrides)
-    const applied = PromptInjectionResolver.resolveAndApply(
-      basePrompt,
-      undefined, // globalConfig.prompts - not needed here
-      item.taskManifest.prompts,
-      item.context.promptOverrides,
-      item.llmProvider,
-      stage,
-    );
 
     const request: LLMRequest = {
       prompt: applied.prompt,

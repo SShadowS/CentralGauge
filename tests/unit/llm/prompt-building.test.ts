@@ -1,7 +1,13 @@
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertStringIncludes } from "@std/assert";
+import { fromFileUrl } from "@std/path";
 
-import { buildFixPrompt } from "../../../src/llm/prompt-building.ts";
+import {
+  buildFixPrompt,
+  buildGenerationPrompt,
+  DEFAULT_PROMPT_TEMPLATE,
+} from "../../../src/llm/prompt-building.ts";
+import { TemplateRenderer } from "../../../src/templates/renderer.ts";
 
 describe("llm/prompt-building", () => {
   const base = {
@@ -79,5 +85,138 @@ BEGIN-CODE
 // Your corrected AL code here
 END-CODE`;
     assertEquals(p, expected);
+  });
+});
+
+describe("llm/prompt-building buildGenerationPrompt", () => {
+  // The real bench template directory, resolved from this file rather than
+  // from the process cwd so the golden assertion below reads the same
+  // `templates/code-gen.md` the bench renders regardless of where the suite
+  // was started.
+  const renderer = new TemplateRenderer(
+    fromFileUrl(new URL("../../../templates/", import.meta.url)),
+  );
+
+  const base = {
+    renderer,
+    description: "Create a codeunit that posts a sales order.",
+    taskId: "CG-AL-X054",
+    maxAttempts: 2,
+    provider: "anthropic",
+  };
+
+  // GOLDEN STRING. This pins the attempt-1 prompt the BENCH sends, captured
+  // from the pre-extraction inline pipeline in `LLMWorkPool.buildRequest`
+  // (TemplateRenderer.render("code-gen.md", {description, task_id,
+  // max_attempts}) then PromptInjectionResolver.resolveAndApply) before that
+  // code moved into `buildGenerationPrompt`. Brittleness is the FEATURE, per
+  // the Task 3 ruling on `buildFixPrompt`: an intentional prompt change must
+  // require a deliberate test update, because it changes what every
+  // benchmarked model is asked.
+  it("renders the bench's attempt-1 prompt exactly", async () => {
+    const applied = await buildGenerationPrompt(base);
+    const expected = `You are a Business Central AL expert developer.
+
+## Task
+
+Create a codeunit that posts a sales order.
+
+## Rules
+
+1. Output code only inside BEGIN-CODE/END-CODE fences
+2. Use proper AL syntax and Business Central conventions
+3. Include all necessary object declarations and dependencies
+4. Follow Microsoft naming conventions for AL objects
+5. Ensure code compiles without errors
+6. Do NOT reference objects that don't exist (pages, codeunits, reports, etc.) unless explicitly required by the task
+7. Only create the objects specifically requested - do not add extra objects "for completeness"
+8. Output ONLY AL code - no explanations, no markdown formatting, no commentary
+
+## Context
+
+- Target Business Central version: 24.0 or later
+- Use modern AL syntax and features
+- Include proper error handling where applicable
+
+BEGIN-CODE
+// Your AL code here
+END-CODE
+`;
+    assertEquals(applied.prompt, expected);
+    assertEquals(applied.systemPrompt, undefined);
+  });
+
+  it("defaults a missing prompt_template to code-gen.md", async () => {
+    const withUndefined = await buildGenerationPrompt(base);
+    const withEmpty = await buildGenerationPrompt({
+      ...base,
+      promptTemplate: "",
+    });
+    const explicit = await buildGenerationPrompt({
+      ...base,
+      promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+    });
+    assertEquals(DEFAULT_PROMPT_TEMPLATE, "code-gen.md");
+    // `||`, not `??` — an empty string falls back too, exactly as the pool did.
+    assertEquals(withEmpty.prompt, explicit.prompt);
+    assertEquals(withUndefined.prompt, explicit.prompt);
+  });
+
+  it("substitutes task_id and max_attempts as well as description", async () => {
+    const applied = await buildGenerationPrompt({
+      ...base,
+      renderer: {
+        render: (name: string, ctx: Record<string, unknown>) =>
+          Promise.resolve(
+            `${name}|${ctx["task_id"]}|${ctx["max_attempts"]}|${
+              ctx["description"]
+            }`,
+          ),
+      },
+    });
+    assertEquals(
+      applied.prompt,
+      "code-gen.md|CG-AL-X054|2|Create a codeunit that posts a sales order.",
+    );
+  });
+
+  it("applies task-level prompt injections for the generation stage", async () => {
+    const applied = await buildGenerationPrompt({
+      ...base,
+      renderer: { render: () => Promise.resolve("BASE") },
+      taskPrompts: {
+        injections: {
+          default: {
+            generation: { prefix: "PRE\n", suffix: "\nPOST", system: "SYS" },
+          },
+        },
+      },
+    });
+    assertEquals(applied.prompt, "PRE\nBASE\nPOST");
+    assertEquals(applied.systemPrompt, "SYS");
+  });
+
+  // The pool renders the GENERATION template but resolves FIX-stage
+  // injections when attemptNumber > 1 with no previous attempt recorded
+  // (`item.attemptNumber === 1 || !previousAttempt` vs `stage`). The stage is
+  // therefore a parameter rather than hardcoded, so that quirk survives the
+  // extraction instead of being silently normalised.
+  it("resolves injections for the stage it is given", async () => {
+    const taskPrompts = {
+      injections: { default: { fix: { prefix: "FIX-" } } },
+    };
+    const asGeneration = await buildGenerationPrompt({
+      ...base,
+      renderer: { render: () => Promise.resolve("BASE") },
+      taskPrompts,
+    });
+    const asFix = await buildGenerationPrompt({
+      ...base,
+      renderer: { render: () => Promise.resolve("BASE") },
+      taskPrompts,
+      stage: "fix",
+    });
+    assertEquals(asGeneration.prompt, "BASE");
+    assertEquals(asFix.prompt, "FIX-BASE");
   });
 });
