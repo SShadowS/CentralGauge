@@ -80,6 +80,35 @@ describe("al/object-identity", () => {
     assertEquals(rows.length, 2);
   });
 
+  it("marks a row from correct/ as inReference even after a response matches it", () => {
+    const ref = [obj({ kind: "codeunit", id: 71410, name: "Agent" })];
+    const rows = buildRowUniverse(ref, [
+      {
+        model: "m1",
+        objects: [obj({ kind: "codeunit", id: 71410, name: "Agent" })],
+      },
+    ]);
+    assertEquals(rows.length, 1);
+    assertEquals(rows[0]?.inReference, true);
+  });
+
+  it("marks a row first introduced by a response as not inReference", () => {
+    const ref = [obj({ kind: "codeunit", id: 71410, name: "Agent" })];
+    const rows = buildRowUniverse(ref, [
+      {
+        model: "m1",
+        objects: [
+          obj({ kind: "codeunit", id: 71410, name: "Agent" }),
+          obj({ kind: "enum", id: 71411, name: "Kind" }),
+        ],
+      },
+    ]);
+    const refRow = rows.find((r) => r.key === "codeunit|71410");
+    const extraRow = rows.find((r) => r.key === "enum|71411");
+    assertEquals(refRow?.inReference, true);
+    assertEquals(extraRow?.inReference, false);
+  });
+
   it("merges two responses' same-named objects with different ids into one row", () => {
     const rows = buildRowUniverse([], [
       {

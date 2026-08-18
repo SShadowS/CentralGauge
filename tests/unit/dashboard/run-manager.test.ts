@@ -37,6 +37,7 @@ describe("dashboard/run-manager", () => {
     dir: "",
     dirName: "CG-AL-X054",
     hasPrereq: false,
+    prereqFiles: [],
   };
 
   it("collects one response per model and classifies each", async () => {

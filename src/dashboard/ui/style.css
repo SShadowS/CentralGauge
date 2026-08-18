@@ -113,6 +113,21 @@ body {
   border-bottom: none;
 }
 
+.file-list-heading {
+  font-weight: 600;
+}
+
+.file-list-nested {
+  padding-left: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.file-list-nested.empty-state {
+  font-style: italic;
+}
+
 #run-button {
   width: 100%;
   margin-top: 10px;

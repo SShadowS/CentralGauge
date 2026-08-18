@@ -19,7 +19,10 @@ describe("dashboard/drafts", () => {
     await cleanupTempDir(scratch);
   });
 
-  async function makeDraft(id: string, opts: { prereq?: boolean } = {}) {
+  async function makeDraft(
+    id: string,
+    opts: { prereq?: boolean; prereqFiles?: string[] } = {},
+  ) {
     const dir = join(scratch, id);
     await ensureDir(join(dir, "correct"));
     await Deno.writeTextFile(
@@ -30,7 +33,12 @@ describe("dashboard/drafts", () => {
       join(dir, ".meta.json"),
       JSON.stringify({ id, slug: "day-close" }),
     );
-    if (opts.prereq) await ensureDir(join(dir, "prereq"));
+    if (opts.prereq || opts.prereqFiles) {
+      await ensureDir(join(dir, "prereq"));
+      for (const name of opts.prereqFiles ?? []) {
+        await Deno.writeTextFile(join(dir, "prereq", name), "");
+      }
+    }
   }
 
   it("lists a scaffolded draft", async () => {
@@ -54,6 +62,25 @@ describe("dashboard/drafts", () => {
   it("reports whether a draft has a prereq", async () => {
     await makeDraft("CG-AL-X054", { prereq: true });
     assertEquals((await listDrafts(scratch))[0]?.hasPrereq, true);
+  });
+
+  it("lists prereq/ filenames sorted", async () => {
+    await makeDraft("CG-AL-X054", {
+      prereqFiles: ["Table.al", "app.json", "Enum.al"],
+    });
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts[0]?.hasPrereq, true);
+    assertEquals(drafts[0]?.prereqFiles, ["Enum.al", "Table.al", "app.json"]);
+  });
+
+  it("reports an empty prereqFiles list when prereq/ exists but is empty", async () => {
+    await makeDraft("CG-AL-X054", { prereq: true });
+    assertEquals((await listDrafts(scratch))[0]?.prereqFiles, []);
+  });
+
+  it("reports an empty prereqFiles list when there is no prereq/ at all", async () => {
+    await makeDraft("CG-AL-X054");
+    assertEquals((await listDrafts(scratch))[0]?.prereqFiles, []);
   });
 
   it("returns an empty list when scratch does not exist", async () => {

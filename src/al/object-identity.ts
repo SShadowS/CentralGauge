@@ -61,6 +61,21 @@ export interface MatrixRow {
   id?: number;
   name: string;
   extendsTarget?: string;
+  /**
+   * True when this row's identity was first established by a `reference`
+   * object (i.e. it is something the task's `correct/` solution actually
+   * contains). False when the row was first established by a response —
+   * an object no reference solution asked for.
+   *
+   * Set once, at row creation, from whichever side (`reference` or a
+   * response) first introduces this identity, and never overwritten:
+   * `buildRowUniverse` processes every `reference` object before any
+   * response object, so a row a response later matches against an
+   * already-existing reference row stays `true`. This is what lets a
+   * consumer (the matrix UI) render "Wrote extra object" exactly, from
+   * `!row.inReference`, instead of guessing from indirect evidence.
+   */
+  inReference: boolean;
 }
 
 /**
@@ -86,10 +101,11 @@ export function buildRowUniverse(
   const rows: MatrixRow[] = [];
 
   /**
-   * Adds an object to the universe if not already present.
+   * Adds an object to the universe if not already present. `isReference`
+   * is only consulted on first creation of a row — see `MatrixRow.inReference`.
    * Returns the index of the row (new or existing).
    */
-  function addObject(obj: AlObject): number {
+  function addObject(obj: AlObject, isReference: boolean): number {
     const key = objectKey(obj);
 
     // Check if already present by key
@@ -114,6 +130,7 @@ export function buildRowUniverse(
       key,
       kind: obj.kind,
       name: obj.name,
+      inReference: isReference,
       ...(obj.id !== undefined ? { id: obj.id } : {}),
       ...(obj.extendsTarget !== undefined
         ? { extendsTarget: obj.extendsTarget }
@@ -130,13 +147,13 @@ export function buildRowUniverse(
 
   // Start with reference objects
   for (const obj of reference) {
-    addObject(obj);
+    addObject(obj, true);
   }
 
   // Add objects from each response that aren't already present
   for (const response of responses) {
     for (const obj of response.objects) {
-      addObject(obj);
+      addObject(obj, false);
     }
   }
 

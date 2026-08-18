@@ -13,6 +13,15 @@ export interface DraftSummary {
   dirName: string;
   slug?: string;
   hasPrereq: boolean;
+  /**
+   * Filenames directly inside `prereq/`, sorted. `[]` when the directory
+   * is absent, empty, or unreadable — never throws. Distinct from
+   * `hasPrereq`: an empty `prereq/` directory is `hasPrereq: true` with
+   * `prereqFiles: []`, a meaningful state (the author scaffolded it but
+   * hasn't populated it yet) that a boolean alone can't tell apart from
+   * "no prereq directory at all".
+   */
+  prereqFiles: string[];
   testCodeunitId?: number;
 }
 
@@ -29,6 +38,27 @@ async function isDirectory(path: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+/**
+ * Lists the filenames directly inside `dir` (files only, not
+ * subdirectories), sorted. A missing, empty, or unreadable directory
+ * yields `[]` rather than throwing — the same tolerance this module
+ * already applies to malformed `task.yml`/`.meta.json`.
+ */
+async function listTopLevelFiles(dir: string): Promise<string[]> {
+  const names: string[] = [];
+  try {
+    for await (const entry of Deno.readDir(dir)) {
+      if (entry.isFile) {
+        names.push(entry.name);
+      }
+    }
+  } catch {
+    return [];
+  }
+  names.sort();
+  return names;
 }
 
 /**
@@ -101,9 +131,10 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       // Malformed task.yml - just skip testCodeunitId, don't fail the listing
     }
 
-    // Check for prereq directory
+    // Check for prereq directory, and list its files when present
     const prereqPath = join(dir, "prereq");
     const hasPrereq = await isDirectory(prereqPath);
+    const prereqFiles = await listTopLevelFiles(prereqPath);
 
     // Build the summary object, spreading optional fields only when defined
     const summary: DraftSummary = {
@@ -111,6 +142,7 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       dir,
       dirName,
       hasPrereq,
+      prereqFiles,
       ...(slug !== undefined ? { slug } : {}),
       ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
     };

@@ -64,35 +64,6 @@ function findObjectForRow(row, objects) {
   return undefined;
 }
 
-/**
- * A row is CONFIRMED to be part of what the task asked for when some
- * response's trap classification names it as the deciding site —
- * `decidingSite.objectKey` only ever points at an object present in both
- * correct/ and naive/ (deriveTrapSignature only forms a site from a match
- * between the two), so it is solid evidence the row belongs to the
- * reference solution, not just to some response.
- *
- * This is necessarily partial: a correct/ solution with more than one
- * object, only one of which carries the trap, never gets its other
- * object(s) confirmed this way. When no response's classification names
- * any site at all (every response is "avoided-the-mistake" or
- * "cannot-compare"), this set is empty and no row is ever flagged extra —
- * the safe direction to be wrong in, since QuickRun exposes no other signal
- * for which rows came from correct/ (MatrixRow carries no such flag, and
- * the API surface this UI consumes is limited to GET /api/drafts and
- * POST /api/run).
- */
-function collectConfirmedReferenceKeys(responses) {
-  const keys = new Set();
-  for (const response of responses) {
-    const site = response.classification && response.classification.decidingSite;
-    if (site && site.objectKey) {
-      keys.add(site.objectKey);
-    }
-  }
-  return keys;
-}
-
 function verdictLabel(verdict) {
   switch (verdict) {
     case "made-the-mistake":
@@ -180,7 +151,7 @@ function buildColumnHeader(response) {
 
 /** One (row, model) cell. Every cell is clickable and never throws, even
  * for an object a model never wrote. */
-function buildCell(row, response, confirmedRefKeys) {
+function buildCell(row, response) {
   const wrapper = el("div", "cell");
   wrapper.tabIndex = 0;
 
@@ -213,7 +184,7 @@ function buildCell(row, response, confirmedRefKeys) {
     return wrapper;
   }
 
-  const isExtra = confirmedRefKeys.size > 0 && !confirmedRefKeys.has(row.key);
+  const isExtra = !row.inReference;
   if (isExtra) {
     wrapper.classList.add("cell-extra");
     wrapper.appendChild(el("span", "extra-label", "Wrote extra object"));
@@ -244,8 +215,6 @@ function renderMatrix(run) {
     return;
   }
 
-  const confirmedRefKeys = collectConfirmedReferenceKeys(run.responses);
-
   const table = el("table", "matrix");
   const thead = el("thead");
   const headRow = el("tr");
@@ -267,7 +236,7 @@ function renderMatrix(run) {
 
     for (const response of run.responses) {
       const td = el("td");
-      td.appendChild(buildCell(row, response, confirmedRefKeys));
+      td.appendChild(buildCell(row, response));
       tr.appendChild(td);
     }
     tbody.appendChild(tr);
@@ -286,11 +255,22 @@ function renderFileList(draft) {
     "Right answer (correct/)",
     "Wrong answer (naive/)",
   ];
-  if (draft && draft.hasPrereq) {
-    items.push("Already exists (prereq)");
-  }
   for (const item of items) {
     list.appendChild(el("li", null, item));
+  }
+
+  if (draft && draft.hasPrereq) {
+    const heading = el("li", "file-list-heading", "Already exists (prereq)");
+    list.appendChild(heading);
+
+    const files = draft.prereqFiles || [];
+    if (files.length === 0) {
+      list.appendChild(el("li", "file-list-nested empty-state", "(empty)"));
+    } else {
+      for (const name of files) {
+        list.appendChild(el("li", "file-list-nested", name));
+      }
+    }
   }
 }
 
