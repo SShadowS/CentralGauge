@@ -45,6 +45,30 @@ export interface TrapSite {
 
 export interface TrapSignature {
   sites: TrapSite[];
+  /**
+   * Why `sites` is empty. Absent when `sites` is non-empty. Distinguishes
+   * "compared, found nothing different" (`no-divergence` — the author's
+   * naive/ needs work) from every shape of "couldn't actually compare"
+   * (a malformed side, or nothing on both sides to line up), which need the
+   * opposite action from an author. A parse failure has no reason of its
+   * own: `parseAlObjects` returns zero objects when a source has a syntax
+   * error, so it folds into `no-correct-objects`/`no-naive-objects` — a side
+   * that failed to parse looks identical to a side with nothing on it.
+   *
+   * Checked in this priority order (first match wins) when `sites` is
+   * empty: `no-correct-objects` (nothing parsed on the correct side) >
+   * `no-naive-objects` (same, naive side) > `no-matching-objects` (both
+   * sides parsed, but no `objectKey` is common to both) >
+   * `no-matching-procedures` (a matching object exists, but no member key
+   * is common to it on both sides) > `no-divergence` (matching members
+   * exist, and diffing every one of them found nothing different).
+   */
+  emptyReason?:
+    | "no-correct-objects"
+    | "no-naive-objects"
+    | "no-matching-objects"
+    | "no-matching-procedures"
+    | "no-divergence";
 }
 
 let parserPromise: Promise<Parser> | undefined;
@@ -487,8 +511,9 @@ function diffToSites(
  * divergence within a matched member, which has no natural TrapSite shape
  * for a member that does not exist on both sides.
  *
- * Returns an empty signature when either side has no objects, when no
- * objects match, or when no members match.
+ * Returns an empty signature (with `emptyReason` set — see `TrapSignature`)
+ * when either side has no objects, when no objects match, when no members
+ * match, or when every matched member's statement lists agree.
  */
 export async function deriveTrapSignature(
   correctSources: string[],
@@ -497,11 +522,21 @@ export async function deriveTrapSignature(
   const correctObjects = await extractObjectsByKey(correctSources);
   const naiveObjects = await extractObjectsByKey(naiveSources);
 
+  if (correctObjects.size === 0) {
+    return { sites: [], emptyReason: "no-correct-objects" };
+  }
+  if (naiveObjects.size === 0) {
+    return { sites: [], emptyReason: "no-naive-objects" };
+  }
+
   const sites: TrapSite[] = [];
+  let matchedAnyObject = false;
+  let matchedAnyMember = false;
 
   for (const [key, correctObj] of correctObjects) {
     const naiveObj = naiveObjects.get(key);
     if (!naiveObj) continue;
+    matchedAnyObject = true;
 
     const correctProcedures = await extractProcedures(correctObj.source);
     const naiveProcedures = await extractProcedures(naiveObj.source);
@@ -509,6 +544,7 @@ export async function deriveTrapSignature(
     for (const [memberKey, correctProc] of correctProcedures) {
       const naiveProc = naiveProcedures.get(memberKey);
       if (!naiveProc) continue;
+      matchedAnyMember = true;
 
       sites.push(
         ...diffToSites(
@@ -521,5 +557,12 @@ export async function deriveTrapSignature(
     }
   }
 
-  return { sites };
+  if (sites.length > 0) return { sites };
+  if (!matchedAnyObject) {
+    return { sites: [], emptyReason: "no-matching-objects" };
+  }
+  if (!matchedAnyMember) {
+    return { sites: [], emptyReason: "no-matching-procedures" };
+  }
+  return { sites: [], emptyReason: "no-divergence" };
 }

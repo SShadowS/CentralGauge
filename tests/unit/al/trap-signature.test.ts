@@ -162,11 +162,47 @@ const REPORT_SCOPE_NAIVE = `report 71423 "CG Report Scope"
     }
 }`;
 
+// Different id AND name on each side, so no objectKey can line up.
+const NO_MATCH_OBJECTS_CORRECT = `codeunit 71424 "CG No Match A"
+{
+    procedure Foo()
+    begin
+        A();
+    end;
+}`;
+
+const NO_MATCH_OBJECTS_NAIVE = `codeunit 71425 "CG No Match B"
+{
+    procedure Foo()
+    begin
+        A();
+    end;
+}`;
+
+// Same object on both sides (matches by objectKey), but no procedure name
+// is shared between them.
+const NO_MATCH_PROCS_CORRECT = `codeunit 71426 "CG No Match Procs"
+{
+    procedure Alpha()
+    begin
+        A();
+    end;
+}`;
+
+const NO_MATCH_PROCS_NAIVE = `codeunit 71426 "CG No Match Procs"
+{
+    procedure Beta()
+    begin
+        B();
+    end;
+}`;
+
 describe("al/trap-signature", () => {
   it("locates the diverging statements", async () => {
     const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
     assertEquals(sig.sites.length > 0, true);
     assertEquals(sig.sites[0]?.procedureName.toLowerCase(), "setterms");
+    assertEquals(sig.emptyReason, undefined);
   });
 
   it("records both forms at a site", async () => {
@@ -175,14 +211,38 @@ describe("al/trap-signature", () => {
     assertEquals(joinedNaive.includes(":="), true);
   });
 
-  it("yields no sites when correct and naive are identical", async () => {
+  it("yields no sites when correct and naive are identical, reason no-divergence", async () => {
     const sig = await deriveTrapSignature([CORRECT], [CORRECT]);
     assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-divergence");
   });
 
-  it("yields no sites when naive is missing entirely", async () => {
+  it("yields no sites when naive is missing entirely, reason no-naive-objects", async () => {
     const sig = await deriveTrapSignature([CORRECT], []);
     assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-naive-objects");
+  });
+
+  it("yields no sites when correct is missing entirely, reason no-correct-objects", async () => {
+    const sig = await deriveTrapSignature([], [CORRECT]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-correct-objects");
+  });
+
+  it("yields no sites when no object lines up, reason no-matching-objects", async () => {
+    const sig = await deriveTrapSignature([NO_MATCH_OBJECTS_CORRECT], [
+      NO_MATCH_OBJECTS_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-matching-objects");
+  });
+
+  it("yields no sites when the matched object shares no procedure, reason no-matching-procedures", async () => {
+    const sig = await deriveTrapSignature([NO_MATCH_PROCS_CORRECT], [
+      NO_MATCH_PROCS_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-matching-procedures");
   });
 
   it("ignores formatting and comment differences", async () => {
