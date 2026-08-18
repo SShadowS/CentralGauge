@@ -124,11 +124,13 @@ CentralGauge requires a Business Central container with the Test Toolkit install
 # Create credential for container access
 $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
 
-# Create BC27 container with test toolkit
+# Create BC28 container with test toolkit
 New-BcContainer `
+    -accept_eula `
     -containerName Cronus28 `
     -credential $cred `
-    -artifactUrl (Get-BCArtifactUrl -country us -version 27) `
+    -auth NavUserPassword `
+    -artifactUrl (Get-BCArtifactUrl -country us -version 28) `
     -includeTestToolkit
 ```
 
