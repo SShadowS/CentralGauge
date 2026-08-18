@@ -5,11 +5,11 @@
 **Live results:** https://ai.sshadows.dk/
 
 > [!IMPORTANT]
-> Currently only pre-made containers are supported. Create a BC27 container with TestToolkit installed before running benchmarks:
+> Currently only pre-made containers are supported. Create a BC28 container with TestToolkit installed before running benchmarks:
 >
 > ```powershell
 > $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
-> New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
+> New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 28) -includeTestToolkit
 > ```
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -101,7 +101,35 @@ deno run --allow-all cli/centralgauge.ts stats-cost              # Cost breakdow
 # Failure Analysis
 deno run --allow-all cli/centralgauge.ts verify debug/           # Analyze failures
 deno run --allow-all cli/centralgauge.ts verify debug/ --dry-run # Preview fixes only
+
+# Authoring new benchmark tasks
+deno task start task new --slug day-close       # Scaffold a draft under scratch/
+deno task start task probe CG-AL-X054           # Check the trap discriminates
+deno task start workbench serve                 # Dashboard: ask models, compare
+deno task start task promote CG-AL-X054 --difficulty hard
 ```
+
+## Authoring Tasks
+
+Benchmark tasks are "trap tasks": each pairs a reference solution that passes
+its test with a plausible-but-wrong one that fails it. A task is only useful if
+those two outcomes actually differ.
+
+`workbench serve` starts a local dashboard for judging a draft before it costs a
+benchmark run. Pick a draft, ask several models the same question, and read an
+object-per-row matrix showing which fell for the trap:
+
+```bash
+deno task start workbench serve --preset quick-test   # mock provider, costs nothing
+deno task start workbench serve --port 4173 --preset flagship-2026-q2
+```
+
+It binds `127.0.0.1` only and is structurally unable to publish to the
+scoreboard - quick runs are calibration, never benchmark results. Artifacts stay
+beside the draft in `scratch/<id>/.runs/`.
+
+See the [Trap Task Authoring Guide](docs/task-authoring-guide.md) for the full
+loop and the [workbench reference](docs/cli/commands.md#workbench) for options.
 
 ## Model Variants
 
