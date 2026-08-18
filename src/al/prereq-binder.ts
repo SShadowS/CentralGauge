@@ -21,6 +21,7 @@ import { collectRecordBindings } from "./record-bindings.ts";
 import { collectMemberRefs } from "./member-refs.ts";
 import type { MemberRef } from "./member-refs.ts";
 import { normalizeName } from "./object-identity.ts";
+import { parseAlObjects } from "./object-parser.ts";
 
 /** Confidence tier, per spec §5. Never render a soft label as an accusation. */
 export type BinderTier = "hard" | "soft" | "known";
@@ -83,10 +84,17 @@ function tierRef(
  * the spec's "Untracked" tier: silence, not a guess.
  *
  * Sets `degraded: true` (with no findings) when the index itself could not
- * be trusted (`index.hasError`), or when the response has content but
- * `collectRecordBindings` returns no procedures for it — both mean the
- * source didn't parse cleanly, and a partial tree is not a safe basis for
- * accusing a model of a hallucinated field.
+ * be trusted (`index.hasError`), or when `responseSource` itself failed to
+ * parse — `parseAlObjects` reports that as `hasError`, or (a non-empty
+ * source producing zero top-level objects) as an empty `objects` list. That
+ * is deliberately narrower than "found nothing to bind": a response that
+ * parses cleanly into one or more objects but simply declares no procedure
+ * or trigger (a table-only or enum-only candidate, which plenty of trap
+ * tasks legitimately ask for) is NOT degraded — analysis ran, and correctly
+ * found nothing to check. Conflating "couldn't analyse" with "analysed,
+ * found nothing" would render a permanent false "couldn't check the
+ * prereq" alarm across every task whose correct answer never references a
+ * prereq table at all.
  */
 export async function bindResponseToPrereqs(
   responseSource: string,
@@ -96,14 +104,17 @@ export async function bindResponseToPrereqs(
     return { findings: [], degraded: true };
   }
 
+  const parsed = await parseAlObjects(responseSource);
+  const failedToParse = parsed.hasError ||
+    (responseSource.trim().length > 0 && parsed.objects.length === 0);
+  if (failedToParse) {
+    return { findings: [], degraded: true };
+  }
+
   const [bindingsByProcedure, refs] = await Promise.all([
     collectRecordBindings(responseSource),
     collectMemberRefs(responseSource),
   ]);
-
-  if (responseSource.trim().length > 0 && bindingsByProcedure.length === 0) {
-    return { findings: [], degraded: true };
-  }
 
   const bindingsByName = new Map(
     bindingsByProcedure.map((p) => [p.procedureName, p.bindings]),

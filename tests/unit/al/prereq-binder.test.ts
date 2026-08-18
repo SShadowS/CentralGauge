@@ -79,6 +79,50 @@ describe("al/prereq-binder", () => {
     assertEquals(r.findings.length, 0);
   });
 
+  describe("degraded distinguishes 'could not analyse' from 'analysed, found nothing'", () => {
+    it("is NOT degraded for a valid response with no procedures at all", async () => {
+      // A table-only (or enum-only) candidate is exactly correct for plenty
+      // of trap tasks. Analysis ran fine and correctly found nothing to
+      // check — this must never render as "couldn't check the prereq".
+      const src = `table 70054 "CG Something"
+{
+    fields
+    {
+        field(1; Foo; Text[50]) { }
+    }
+}`;
+      const r = await bind(src);
+      assertEquals(r.degraded, false);
+      assertEquals(r.findings.length, 0);
+    });
+
+    it("is NOT degraded for a valid procedure that never references the prereq", async () => {
+      const src = `codeunit 70054 "A"
+{
+    procedure P()
+    begin
+    end;
+}`;
+      const r = await bind(src);
+      assertEquals(r.degraded, false);
+      assertEquals(r.findings.length, 0);
+    });
+
+    it("IS degraded for a genuinely unparseable response", async () => {
+      const r = await bind("codeunit {{{");
+      assertEquals(r.degraded, true);
+      assertEquals(r.findings.length, 0);
+    });
+
+    it("IS degraded for prose that is not AL at all", async () => {
+      const r = await bind(
+        "Here is my implementation of the feature you requested.",
+      );
+      assertEquals(r.degraded, true);
+      assertEquals(r.findings.length, 0);
+    });
+  });
+
   it("joins bindings to refs inside a quoted-named procedure", async () => {
     // Regression guard for the join contract: record-bindings.ts and
     // member-refs.ts both key procedureName via unquote(nameNode.text). If
