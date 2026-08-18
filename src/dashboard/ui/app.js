@@ -17,6 +17,9 @@ const state = {
   drafts: [],
   selectedDir: null,
   run: null,
+  /** Which response's `prereqBinding` the "Already exists (prereq)" rail is
+   *  scoped to. `null` until a run completes. */
+  selectedModel: null,
 };
 
 /**
@@ -249,6 +252,7 @@ function buildCell(row, response) {
     wrapper.classList.add("cell-empty");
     wrapper.textContent = "–";
     wrapper.addEventListener("click", () => {
+      selectModelForRail(response.model);
       // Same precedence as the column header: a thrown error outranks the
       // derived extraction string, which for a thrown error is always
       // "Model returned empty response".
@@ -272,6 +276,7 @@ function buildCell(row, response) {
     wrapper.classList.add("cell-unparsed");
     wrapper.textContent = "unreadable";
     wrapper.addEventListener("click", () => {
+      selectModelForRail(response.model);
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model}'s answer could not be parsed as AL, so there is ` +
@@ -286,6 +291,7 @@ function buildCell(row, response) {
     wrapper.classList.add("cell-absent");
     wrapper.textContent = "not written";
     wrapper.addEventListener("click", () => {
+      selectModelForRail(response.model);
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model} did not write this object.`,
@@ -304,6 +310,7 @@ function buildCell(row, response) {
   }
 
   wrapper.addEventListener("click", () => {
+    selectModelForRail(response.model);
     showDetail(`${response.model} — ${describeRow(row)}`, obj.source);
   });
 
@@ -465,13 +472,16 @@ function renderPrereqRail(binding) {
 /**
  * The "Files" rail, including the "Already exists (prereq)" section.
  * `binding` is `undefined` before any run — the plain per-draft static
- * listing (`draft.prereqFiles`), untouched. Once a run has completed and a
- * response's `prereqBinding` is passed in: `degraded` renders why analysis
- * couldn't run, plus the static listing beneath it (the spec's stated
- * fallback); otherwise `renderPrereqRail` replaces the static listing with
- * what that response actually touched.
+ * listing (`draft.prereqFiles`), untouched, heading unnamed. Once a run has
+ * completed and a response's `prereqBinding` is passed in (`model` names
+ * whose response it is — never left ambiguous, since a multi-model run
+ * silently describing one response as if it were the whole run is the same
+ * class of misinformation the tiers themselves exist to prevent):
+ * `degraded` renders why analysis couldn't run, plus the static listing
+ * beneath it (the spec's stated fallback); otherwise `renderPrereqRail`
+ * replaces the static listing with what that response actually touched.
  */
-function renderFileList(draft, binding) {
+function renderFileList(draft, binding, model) {
   const list = document.getElementById("file-list");
   list.innerHTML = "";
   const items = [
@@ -485,7 +495,10 @@ function renderFileList(draft, binding) {
   }
 
   if (draft && draft.hasPrereq) {
-    const heading = el("li", "file-list-heading", "Already exists (prereq)");
+    const headingText = binding
+      ? `Already exists (prereq) — as referenced by ${model}`
+      : "Already exists (prereq)";
+    const heading = el("li", "file-list-heading", headingText);
     list.appendChild(heading);
 
     if (binding) {
@@ -502,6 +515,41 @@ function renderFileList(draft, binding) {
       }
     }
   }
+}
+
+/**
+ * Re-renders the "Files" rail for the current draft, scoped to
+ * `state.selectedModel`'s `prereqBinding`. Centralised so a fresh run and
+ * every cell click share one "find the response, read its binding" instead
+ * of each copying it.
+ */
+function renderScopedFileList() {
+  const draft = selectedDraft();
+  if (!state.run) {
+    renderFileList(draft);
+    return;
+  }
+  const response = state.run.responses.find((r) =>
+    r.model === state.selectedModel
+  );
+  renderFileList(
+    draft,
+    response && response.prereqBinding,
+    state.selectedModel,
+  );
+}
+
+/**
+ * Scopes the prereq rail to `model`'s response. Wired to every cell click
+ * (`buildCell`) so browsing a model's column — the same click an author
+ * already makes to read that cell's detail — is what moves the rail onto
+ * that model. Without this, a four-model run's rail would silently keep
+ * describing whichever response happened to load first, with nothing on
+ * screen saying so.
+ */
+function selectModelForRail(model) {
+  state.selectedModel = model;
+  renderScopedFileList();
 }
 
 function draftLabel(draft) {
@@ -630,14 +678,17 @@ async function runQuick() {
       );
     }
     state.run = body;
+    // Defaults the rail to the first response (spec §5's "selected
+    // response" before any selection has been made). Now labelled — via
+    // renderScopedFileList/renderFileList — so this default is honest
+    // rather than silently standing in for the whole run. A cell click
+    // moves it via `selectModelForRail`.
+    const firstResponse = body.responses[0];
+    state.selectedModel = firstResponse && firstResponse.model;
     renderTrapSummary(body);
     renderMatrix(body);
     renderArtifactNote(body);
-    // Scoped to one response (spec §5). The common case here is exactly one
-    // model, so the first response is "the selected response" the spec
-    // describes; a multi-model run scopes the rail to the first column only.
-    const firstResponse = body.responses[0];
-    renderFileList(draft, firstResponse && firstResponse.prereqBinding);
+    renderScopedFileList();
     statusEl.textContent = `Last run: ${
       new Date(body.startedAt).toLocaleTimeString()
     }`;

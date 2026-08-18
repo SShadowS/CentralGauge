@@ -15,6 +15,10 @@ describe("dashboard/vocabulary", () => {
         "Wrote extra object",
         "not written",
         "Never published to the scoreboard",
+        "Made up this field",
+        "Unknown member",
+        "Couldn't check the prereq",
+        "Nothing from prereq/ referenced",
       ]
     ) {
       assertStringIncludes(src, label);

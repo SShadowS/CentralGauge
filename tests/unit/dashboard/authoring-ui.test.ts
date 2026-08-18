@@ -91,6 +91,17 @@ const stubDocument = {
 const detailTitle = node("detail-title");
 const detailSource = node("detail-source");
 
+/** The module's mutable client state — `drafts`/`selectedDir`/`run` seeded
+ *  directly by a test so `selectModelForRail` (fired by a cell click) has
+ *  something to resolve against, without going through the real
+ *  fetch-driven `loadDrafts`/`runQuick`. */
+interface DashboardState {
+  drafts: unknown[];
+  selectedDir: string | null;
+  run: { responses: unknown[] } | null;
+  selectedModel: string | null;
+}
+
 interface Ui {
   buildColumnHeader: (response: unknown) => StubNode;
   buildCell: (row: unknown, response: unknown) => StubNode;
@@ -98,6 +109,8 @@ interface Ui {
   renderArtifactNote: (run: unknown) => void;
   renderMatrix: (run: unknown) => void;
   renderPrereqRail: (binding: unknown) => StubNode;
+  renderFileList: (draft: unknown, binding?: unknown, model?: unknown) => void;
+  state: DashboardState;
 }
 
 async function loadUi(): Promise<Ui> {
@@ -107,7 +120,8 @@ async function loadUi(): Promise<Ui> {
     new URL("../../../src/dashboard/ui/app.js", import.meta.url),
   );
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
-    `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail };\n`;
+    `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail, ` +
+    `renderFileList, state };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -466,5 +480,81 @@ describe("dashboard/ui app.js", () => {
       ui.renderPrereqRail({ degraded: true, findings: [] }),
     );
     assertStringIncludes(rail, "Couldn't check the prereq");
+  });
+
+  // Fix round 1: the rail used to silently scope to the first response with
+  // nothing on screen saying so — indistinguishable from describing the
+  // whole run. The heading must name whose references it shows.
+  it("names the model in the rail heading once a binding is present", async () => {
+    const ui = await loadUi();
+    ui.renderFileList(
+      { hasPrereq: true, prereqFiles: ["Item.Table.al"] },
+      { degraded: false, findings: [] },
+      "anthropic/opus",
+    );
+    const text = allText(node("file-list"));
+    assertStringIncludes(text, "Already exists (prereq)");
+    assertStringIncludes(text, "anthropic/opus");
+  });
+
+  // Control: before any run there is no response to name, so the heading
+  // must stay exactly as it always has — no "undefined" leaking in.
+  it("leaves the heading unnamed before any run has produced a binding", async () => {
+    const ui = await loadUi();
+    ui.renderFileList({ hasPrereq: true, prereqFiles: ["Item.Table.al"] });
+    const heading = node("file-list").children.find((c) =>
+      c.className.includes("file-list-heading")
+    );
+    assertEquals(heading?.textContent, "Already exists (prereq)");
+  });
+
+  // Fix round 1: on a multi-model run the rail always described the first
+  // response, whichever model that happened to be. Clicking a different
+  // model's cell — the same click that already opens that cell's detail —
+  // must move the rail onto that model's own findings.
+  it("re-scopes the rail to the model whose cell was clicked", async () => {
+    const ui = await loadUi();
+    const responseA = {
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      prereqBinding: {
+        degraded: false,
+        findings: [
+          {
+            procedureName: "P",
+            table: "CG Quote",
+            member: "Discount",
+            tier: "hard",
+            line: 5,
+          },
+        ],
+      },
+    };
+    const responseB = {
+      model: "openai/gpt",
+      resolution: readyResolution,
+      prereqBinding: { degraded: false, findings: [] },
+    };
+    const row = {
+      key: "table|1",
+      kind: "table",
+      id: 1,
+      name: "X",
+      inReference: true,
+    };
+
+    ui.state.drafts = [
+      { dir: "d1", hasPrereq: true, prereqFiles: [] },
+    ];
+    ui.state.selectedDir = "d1";
+    ui.state.run = { responses: [responseA, responseB] };
+    ui.state.selectedModel = responseA.model;
+
+    const cellB = ui.buildCell(row, responseB);
+    cellB.listeners["click"]?.[0]?.();
+
+    const text = allText(node("file-list"));
+    assertStringIncludes(text, "openai/gpt");
+    assertEquals(text.includes("Discount"), false);
   });
 });
