@@ -326,6 +326,9 @@ export class AnthropicAdapter extends BaseLLMAdapter
         usage,
         finishReason: this.mapFinishReason(finalMessage.stop_reason),
         options,
+        // `finalMessage()` IS the full Anthropic.Message, so the streaming
+        // path logs the same payload the non-streaming path did.
+        rawResponse: finalMessage,
       });
 
       yield finalChunk;

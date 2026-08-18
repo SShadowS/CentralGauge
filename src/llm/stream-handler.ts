@@ -75,6 +75,11 @@ export interface FinalizeParams {
   finishReason: "stop" | "length" | "content_filter" | "error";
   /** Optional stream callbacks */
   options?: StreamOptions | undefined;
+  /**
+   * The provider's own final response object, when its streaming API exposes
+   * one. Threaded onto `StreamResult.rawResponse` for debug logging.
+   */
+  rawResponse?: unknown;
 }
 
 /**
@@ -108,7 +113,7 @@ export interface FinalizeResult {
  * ```
  */
 export function finalizeStream(params: FinalizeParams): FinalizeResult {
-  const { state, model, usage, finishReason, options } = params;
+  const { state, model, usage, finishReason, options, rawResponse } = params;
   const duration = Date.now() - state.startTime;
 
   const response: LLMResponse = {
@@ -123,6 +128,7 @@ export function finalizeStream(params: FinalizeParams): FinalizeResult {
     content: state.accumulatedText,
     response,
     chunkCount: state.chunkIndex,
+    ...(rawResponse !== undefined ? { rawResponse } : {}),
   };
 
   const finalChunk: StreamChunk = {

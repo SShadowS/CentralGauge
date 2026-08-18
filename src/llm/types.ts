@@ -185,6 +185,17 @@ export interface StreamResult {
   response: LLMResponse;
   /** Number of chunks streamed */
   chunkCount: number;
+  /**
+   * The provider's own final response object, when the streaming API exposes
+   * one (Anthropic's `stream.finalMessage()`, an OpenAI-shaped usage trailer,
+   * Gemini's last chunk).
+   *
+   * Exists for debug-log parity: `DebugLogger` records the raw provider
+   * payload on the non-streaming path, and since the bench now streams every
+   * call, omitting it here would mean no run ever logs one. Undefined when a
+   * provider's stream gives nothing equivalent.
+   */
+  rawResponse?: unknown;
 }
 
 /**

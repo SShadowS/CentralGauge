@@ -310,6 +310,13 @@ export class OpenAIAdapter extends BaseLLMAdapter
       const usage: TokenUsage = finalUsage ??
         createFallbackUsage(request.prompt, state.accumulatedText);
 
+      // No `rawResponse` here, deliberately. Anthropic's stream exposes
+      // `finalMessage()` - a real, complete `Message` - so its streaming path
+      // can log the same payload the non-streaming one did. The OpenAI-shaped
+      // stream is created with `.create({ stream: true })`, which yields raw
+      // delta chunks and never assembles a final response object. There is
+      // nothing equivalent to hand the debug logger, and synthesising one
+      // would be fabricating a payload the API never sent.
       const { finalChunk, result } = finalizeStream({
         state,
         model: this.config.model,

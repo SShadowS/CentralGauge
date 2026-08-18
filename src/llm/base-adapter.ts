@@ -316,7 +316,7 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
         extraction.code,
         extraction.extractedFromDelimiters,
         "al",
-        undefined, // No raw response for streaming
+        result.rawResponse,
       );
     }
 
@@ -357,7 +357,7 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
         extraction.code,
         extraction.extractedFromDelimiters,
         extraction.language === "unknown" ? "diff" : extraction.language,
-        undefined, // No raw response for streaming
+        result.rawResponse,
       );
     }
 
