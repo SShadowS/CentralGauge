@@ -3,7 +3,10 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
 import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
-import { runQuick } from "../../../src/dashboard/run-manager.ts";
+import {
+  runQuick,
+  writeRunArtifact,
+} from "../../../src/dashboard/run-manager.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -197,6 +200,7 @@ describe("dashboard/server", () => {
             });
           },
         runQuick,
+        writeRunArtifact,
       } as unknown as Parameters<typeof createHandler>[0];
 
       const res = await createHandler(runDeps)(
@@ -227,6 +231,72 @@ describe("dashboard/server", () => {
         "You are a Business Central AL expert developer.",
       );
       assertEquals(body.responses[0].prompt, asked[0]);
+
+      // writeRunArtifact was exported, documented and unit-tested but had no
+      // caller outside its own test, so no quick run was ever persisted and
+      // spec §7's artifact guarantee was satisfied only vacuously.
+      assertEquals(typeof body.artifactPath, "string");
+      assertEquals(
+        body.artifactPath.replaceAll("\\", "/").includes("/.runs/"),
+        true,
+      );
+      const saved = JSON.parse(await Deno.readTextFile(body.artifactPath));
+      assertEquals(saved.draftId, "CG-AL-X054");
+      assertEquals("results" in saved, false);
+      // The trap the run was judged against travels with it.
+      assertEquals(Array.isArray(saved.signature.sites), true);
+      assertEquals(body.signature.sites.length > 0, true);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // Losing the matrix because a directory could not be written would be worse
+  // than losing the file, so the write is best-effort — but reported, not
+  // swallowed.
+  it("still answers with the matrix when the artifact cannot be written", async () => {
+    const dir = await createTempDir("dashboard-server-artifact-fail-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: false,
+            },
+          ]),
+        loadTrapSources,
+        createModelCaller:
+          (_context: unknown) =>
+          (_model: string, _request: { prompt: string }) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+        writeRunArtifact: () => Promise.reject(new Error("permission denied")),
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            models: ["anthropic/m"],
+          }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.responses.length, 1);
+      assertEquals(body.artifactPath, undefined);
+      assertStringIncludes(body.artifactError, "permission denied");
     } finally {
       await cleanupTempDir(dir);
     }
@@ -296,6 +366,7 @@ describe("dashboard/server", () => {
             });
           },
         runQuick,
+        writeRunArtifact,
       } as unknown as Parameters<typeof createHandler>[0];
 
       const res = await createHandler(runDeps)(
@@ -352,6 +423,7 @@ describe("dashboard/server", () => {
               finishReason: "stop" as const,
             }),
         runQuick,
+        writeRunArtifact,
       } as unknown as Parameters<typeof createHandler>[0];
 
       const res = await createHandler(runDeps)(
@@ -425,6 +497,7 @@ describe("dashboard/server", () => {
               finishReason: "stop" as const,
             }),
         runQuick,
+        writeRunArtifact,
       } as unknown as Parameters<typeof createHandler>[0];
 
       const res = await createHandler(runDeps)(
@@ -493,6 +566,7 @@ describe("dashboard/server", () => {
               finishReason: "stop" as const,
             }),
         runQuick,
+        writeRunArtifact,
       } as unknown as Parameters<typeof createHandler>[0];
 
       const res = await createHandler(runDeps)(

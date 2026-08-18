@@ -406,6 +406,88 @@ describe("al/trap-signature", () => {
     assertEquals(sig.emptyReason, "no-matching-procedures");
   });
 
+  // `no-divergence` means "compared, found nothing different — the author's
+  // naive/ needs work", which is a confident WRONG instruction when the two
+  // sides plainly differ but not at statement level. "Forgot the OnValidate
+  // trigger entirely" and "forgot the helper codeunit" are ordinary trap
+  // shapes, so these are reachable authoring states, not constructed edges.
+  const OUTSIDE_BASE = `codeunit 71411 "Shared"
+{
+    procedure Alpha()
+    begin
+        Rec.Validate(Qty, 1);
+    end;
+
+    procedure Beta()
+    begin
+        Rec.Validate(Amt, 2);
+    end;
+}`;
+
+  it("distinguishes a member present on only one side from no divergence", async () => {
+    const naiveMissingBeta = `codeunit 71411 "Shared"
+{
+    procedure Alpha()
+    begin
+        Rec.Validate(Qty, 1);
+    end;
+}`;
+    const sig = await deriveTrapSignature([OUTSIDE_BASE], [naiveMissingBeta]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "divergence-outside-statements");
+  });
+
+  it("reports divergence-outside-statements when naive adds a member", async () => {
+    const naiveExtra = `${OUTSIDE_BASE.slice(0, -1)}
+    procedure Gamma()
+    begin
+        Rec.Validate(Disc, 3);
+    end;
+}`;
+    const sig = await deriveTrapSignature([OUTSIDE_BASE], [naiveExtra]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "divergence-outside-statements");
+  });
+
+  it("reports divergence-outside-statements when an object exists on one side only", async () => {
+    const extraObject = `codeunit 71412 "Helper"
+{
+    procedure Helped()
+    begin
+        Rec.Validate(Qty, 9);
+    end;
+}`;
+    const sig = await deriveTrapSignature(
+      [OUTSIDE_BASE, extraObject],
+      [OUTSIDE_BASE],
+    );
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "divergence-outside-statements");
+  });
+
+  // The discriminating control: identical sides must still say no-divergence,
+  // or the new reason would just be a rename of the old one.
+  it("still reports no-divergence when the two sides line up exactly", async () => {
+    const sig = await deriveTrapSignature([OUTSIDE_BASE], [OUTSIDE_BASE]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-divergence");
+  });
+
+  // A real statement-level divergence outranks both: an unmatched member
+  // elsewhere must not suppress the sites that ARE the trap.
+  it("still returns sites when a statement diverges and a member is unmatched", async () => {
+    const naive = `codeunit 71411 "Shared"
+{
+    procedure Alpha()
+    begin
+        Rec.Qty := 1;
+    end;
+}`;
+    const sig = await deriveTrapSignature([OUTSIDE_BASE], [naive]);
+    assertEquals(sig.sites.length > 0, true);
+    assertEquals(sig.emptyReason, undefined);
+  });
+
   it("ignores formatting and comment differences", async () => {
     const reformatted = CORRECT
       .replace(/\n/g, "\n  ")

@@ -269,6 +269,68 @@ table.matrix tbody th {
   color: var(--bad-text);
 }
 
+.badge-unparsed {
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+  white-space: normal;
+}
+
+.deciding-site {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: normal;
+}
+
+/* The trap this run was judged against, named above the grid. */
+.trap-summary:empty {
+  display: none;
+}
+
+.trap-summary {
+  padding: 12px 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.trap-heading {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.trap-reason {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trap-sites {
+  margin: 0;
+  padding-left: 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trap-more {
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-style: italic;
+}
+
+.artifact-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.artifact-note-failed {
+  color: var(--bad-text);
+}
+
 .cell {
   cursor: pointer;
   border-radius: 3px;
@@ -287,6 +349,12 @@ table.matrix tbody th {
 
 .cell-absent {
   color: var(--text-muted);
+  font-style: italic;
+}
+
+.cell-unparsed {
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
   font-style: italic;
 }
 

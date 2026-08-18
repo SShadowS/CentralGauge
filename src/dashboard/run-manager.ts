@@ -57,6 +57,18 @@ export interface ModelResponse {
   rawResponse: string;
   resolution: CandidateResolution;
   objects: AlObject[];
+  /**
+   * `ParsedAl.hasError`: the candidate resolved to code the bench would have
+   * written to `<taskId>.al`, but the AL grammar could not parse it.
+   * `parseAlObjects` returns `{objects: [], hasError: true}` for a syntax
+   * error ANYWHERE in the candidate, so without this flag an unparseable
+   * response is indistinguishable from one that wrote no objects — every
+   * cell reads "not written" for a model that plainly wrote the object. An
+   * ordinary prose-wrapped answer reaches this state: the extractor returns
+   * the whole response at confidence 0.7 (faithful to the bench), so
+   * `isReadyForCompile` is true and the parse then fails on the prose.
+   */
+  hasParseError: boolean;
   classification: TrapClassification;
   error?: string;
 }
@@ -64,6 +76,14 @@ export interface ModelResponse {
 export interface QuickRun {
   draftId: string;
   startedAt: string;
+  /**
+   * The trap the whole run was classified against. Carried out so the UI can
+   * name the deciding statements, and — when `sites` is empty — say WHY the
+   * comparison could not happen. "Couldn't compare yet" with no reason leaves
+   * an author unable to tell "fix your malformed naive/" from "this trap does
+   * not discriminate", which need opposite actions.
+   */
+  signature: TrapSignature;
   responses: ModelResponse[];
   rows: MatrixRow[];
 }
@@ -125,7 +145,7 @@ async function runOneModel(
         : {}),
     });
     const resolution = resolveCandidate(content, finishReason);
-    const { objects } = await parseAlObjects(resolution.cleanedCode);
+    const { objects, hasError } = await parseAlObjects(resolution.cleanedCode);
     const classification = await classifyAgainstSignature(
       signature,
       resolution.cleanedCode,
@@ -136,6 +156,7 @@ async function runOneModel(
       rawResponse: content,
       resolution,
       objects,
+      hasParseError: hasError,
       classification,
     };
   } catch (error) {
@@ -146,6 +167,7 @@ async function runOneModel(
       rawResponse: "",
       resolution: resolveCandidate("", "error"),
       objects: [],
+      hasParseError: false,
       classification: { verdict: "cannot-compare" },
       error: message,
     };
@@ -211,6 +233,7 @@ export async function runQuick(opts: {
   return {
     draftId: opts.draft.id,
     startedAt: new Date().toISOString(),
+    signature,
     responses,
     rows,
   };
@@ -269,6 +292,7 @@ export async function writeRunArtifact(
   const payload = {
     draftId: run.draftId,
     startedAt: run.startedAt,
+    signature: run.signature,
     responses: run.responses,
     rows: run.rows,
   };

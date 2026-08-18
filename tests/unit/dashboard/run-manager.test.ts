@@ -109,6 +109,64 @@ describe("dashboard/run-manager", () => {
     );
   });
 
+  // ParsedAl.hasError was destructured away, so an unparseable candidate was
+  // indistinguishable from one that wrote no objects and the matrix reported
+  // "not written" for every row. An ordinary prose-wrapped answer reaches
+  // this: the extractor returns the whole response at confidence 0.7, which
+  // IS ready for compile, and the parse then fails on the prose.
+  it("records that a resolved candidate failed to parse", async () => {
+    const run = await runQuick({
+      draft: { ...draft, dir },
+      models: ["anthropic/prose", "anthropic/clean"],
+      renderer,
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: (model) =>
+        Promise.resolve({
+          content: model === "anthropic/prose"
+            ? `Here is the codeunit you asked for:\n\n${CORRECT}\n\nLet me know if you want changes.`
+            : `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+
+    const prose = run.responses.find((r) => r.model === "anthropic/prose");
+    assertEquals(prose?.resolution.isReadyForCompile, true);
+    assertEquals(prose?.hasParseError, true);
+    assertEquals(prose?.objects.length, 0);
+
+    const clean = run.responses.find((r) => r.model === "anthropic/clean");
+    assertEquals(clean?.hasParseError, false);
+    assertEquals((clean?.objects.length ?? 0) > 0, true);
+  });
+
+  // The signature was derived and then thrown away, so the UI could not show
+  // emptyReason even if it wanted to — and "Couldn't compare yet" with no
+  // reason is the only state a half-written draft can reach.
+  it("returns the trap signature the run was judged against", async () => {
+    const withTrap = await runQuick({
+      draft: { ...draft, dir },
+      models: [],
+      renderer,
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: () => Promise.reject(new Error("unused")),
+    });
+    assertEquals(withTrap.signature.sites.length > 0, true);
+    assertEquals(withTrap.signature.emptyReason, undefined);
+
+    const withoutNaive = await runQuick({
+      draft: { ...draft, dir },
+      models: [],
+      renderer,
+      correctSources: [CORRECT],
+      naiveSources: [],
+      call: () => Promise.reject(new Error("unused")),
+    });
+    assertEquals(withoutNaive.signature.sites.length, 0);
+    assertEquals(withoutNaive.signature.emptyReason, "no-naive-objects");
+  });
+
   it("classifies as cannot-compare when there is no naive source", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
@@ -150,6 +208,9 @@ describe("dashboard/run-manager", () => {
     const parsed = JSON.parse(await Deno.readTextFile(path));
     assertEquals("results" in parsed, false);
     assertEquals(parsed.draftId, "CG-AL-X054");
+    // The trap travels with the run, so a saved artifact can be read back
+    // and understood without re-deriving anything.
+    assertEquals(Array.isArray(parsed.signature.sites), true);
   });
 
   // The defect this replaced: app.js posted {draftId, models}, server.ts

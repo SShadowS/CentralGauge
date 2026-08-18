@@ -77,14 +77,26 @@ export interface TrapSignature {
    * `no-naive-objects` (same, naive side) > `no-matching-objects` (both
    * sides parsed, but no `objectKey` is common to both) >
    * `no-matching-procedures` (a matching object exists, but no member key
-   * is common to it on both sides) > `no-divergence` (matching members
-   * exist, and diffing every one of them found nothing different).
+   * is common to it on both sides) > `divergence-outside-statements` (the
+   * two sides DO differ, but only by an object or member that exists on one
+   * side alone, which contributes no sites — see `deriveTrapSignature`) >
+   * `no-divergence` (every object and member lines up, and diffing them
+   * found nothing different).
+   *
+   * `divergence-outside-statements` exists because folding it into
+   * `no-divergence` inverted the instruction it gives the author. A naive/
+   * that forgot the `OnValidate` trigger entirely, or forgot a helper
+   * codeunit, differs from correct/ in an ordinary trap-shaped way; telling
+   * the author "compared, found nothing different, your naive/ needs work"
+   * is confidently wrong. What it actually needs is a divergence this
+   * statement-level classifier can see.
    */
   emptyReason?:
     | "no-correct-objects"
     | "no-naive-objects"
     | "no-matching-objects"
     | "no-matching-procedures"
+    | "divergence-outside-statements"
     | "no-divergence";
 }
 
@@ -546,11 +558,14 @@ function diffToSites(
  * for why a bare name is not enough. An object or member present on only one
  * side contributes no sites — this module locates *statement-level*
  * divergence within a matched member, which has no natural TrapSite shape
- * for a member that does not exist on both sides.
+ * for a member that does not exist on both sides. It IS still a divergence,
+ * though, so it is tracked and reported as `divergence-outside-statements`
+ * rather than folded into `no-divergence`, which claims the opposite.
  *
  * Returns an empty signature (with `emptyReason` set — see `TrapSignature`)
  * when either side has no objects, when no objects match, when no members
- * match, or when every matched member's statement lists agree.
+ * match, when the only difference is an unmatched object or member, or when
+ * every matched member's statement lists agree.
  */
 export async function deriveTrapSignature(
   correctSources: string[],
@@ -569,18 +584,35 @@ export async function deriveTrapSignature(
   const sites: TrapSite[] = [];
   let matchedAnyObject = false;
   let matchedAnyMember = false;
+  // Anything the two sides differ by that this statement-level diff cannot
+  // express as a site: an object or member that exists on one side alone.
+  let sawUnmatched = false;
+
+  for (const naiveKey of naiveObjects.keys()) {
+    if (!correctObjects.has(naiveKey)) sawUnmatched = true;
+  }
 
   for (const [key, correctObj] of correctObjects) {
     const naiveObj = naiveObjects.get(key);
-    if (!naiveObj) continue;
+    if (!naiveObj) {
+      sawUnmatched = true;
+      continue;
+    }
     matchedAnyObject = true;
 
     const correctProcedures = await extractProcedures(correctObj.source);
     const naiveProcedures = await extractProcedures(naiveObj.source);
 
+    for (const naiveMemberKey of naiveProcedures.keys()) {
+      if (!correctProcedures.has(naiveMemberKey)) sawUnmatched = true;
+    }
+
     for (const [memberKey, correctProc] of correctProcedures) {
       const naiveProc = naiveProcedures.get(memberKey);
-      if (!naiveProc) continue;
+      if (!naiveProc) {
+        sawUnmatched = true;
+        continue;
+      }
       matchedAnyMember = true;
 
       sites.push(
@@ -601,6 +633,9 @@ export async function deriveTrapSignature(
   }
   if (!matchedAnyMember) {
     return { sites: [], emptyReason: "no-matching-procedures" };
+  }
+  if (sawUnmatched) {
+    return { sites: [], emptyReason: "divergence-outside-statements" };
   }
   return { sites: [], emptyReason: "no-divergence" };
 }

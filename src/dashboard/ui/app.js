@@ -92,6 +92,96 @@ function verdictClass(verdict) {
   }
 }
 
+/**
+ * Author-facing wording for TrapSignature.emptyReason. Every one of these
+ * asks for a DIFFERENT action, which is the whole reason the discriminant
+ * exists: "Couldn't compare yet" on its own cannot tell an author whether to
+ * fix a malformed naive/ or to accept that the trap does not discriminate.
+ */
+function emptyReasonNote(reason) {
+  switch (reason) {
+    case "no-correct-objects":
+      return "Nothing readable in correct/. Write the right answer, or check that what is there parses as AL.";
+    case "no-naive-objects":
+      return "Nothing readable in naive/. Write the wrong answer before asking models.";
+    case "no-matching-objects":
+      return "correct/ and naive/ have no object in common. Check the object ids and names line up.";
+    case "no-matching-procedures":
+      return "The shared object has no procedure or trigger in common. Check the member names line up.";
+    case "divergence-outside-statements":
+      return "The two sides vary only by a whole object or member, which this comparison cannot use. Give naive/ the same shape as correct/ and change a statement inside it.";
+    case "no-divergence":
+      return "correct/ and naive/ are the same, statement for statement. naive/ needs a real mistake in it.";
+    default:
+      return "No trap could be derived from this draft.";
+  }
+}
+
+/** One trap site as a single line: where it is, and the two forms. */
+function describeSite(site) {
+  const parts = [`In ${site.procedureName}`];
+  if (site.correctForm) parts.push(`right: ${site.correctForm}`);
+  if (site.naiveForm) parts.push(`wrong: ${site.naiveForm}`);
+  return parts.join(" — ");
+}
+
+const MAX_LISTED_SITES = 3;
+
+/**
+ * The trap this run was judged against, named above the grid. Spec §4 lists
+ * explainability as one of three reasons the structural classifier is worth
+ * its cost: the UI names the deciding statement rather than showing a score.
+ */
+function renderTrapSummary(run) {
+  const container = document.getElementById("trap-summary");
+  container.innerHTML = "";
+  const signature = run.signature;
+
+  if (!signature) return;
+
+  if (!signature.sites || signature.sites.length === 0) {
+    container.appendChild(el("h2", "trap-heading", "Couldn't compare yet"));
+    container.appendChild(
+      el("p", "trap-reason", emptyReasonNote(signature.emptyReason)),
+    );
+    return;
+  }
+
+  const count = signature.sites.length;
+  container.appendChild(
+    el(
+      "h2",
+      "trap-heading",
+      count === 1 ? "The trap: 1 statement" : `The trap: ${count} statements`,
+    ),
+  );
+  const list = el("ul", "trap-sites");
+  for (const site of signature.sites.slice(0, MAX_LISTED_SITES)) {
+    list.appendChild(el("li", null, describeSite(site)));
+  }
+  if (count > MAX_LISTED_SITES) {
+    list.appendChild(
+      el("li", "trap-more", `…and ${count - MAX_LISTED_SITES} more`),
+    );
+  }
+  container.appendChild(list);
+}
+
+/** Where the run was saved, or why it was not. */
+function renderArtifactNote(run) {
+  const note = document.getElementById("artifact-note");
+  if (run.artifactPath) {
+    note.textContent = `Saved to ${run.artifactPath}`;
+    note.className = "artifact-note";
+  } else if (run.artifactError) {
+    note.textContent = `Could not save this run: ${run.artifactError}`;
+    note.className = "artifact-note artifact-note-failed";
+  } else {
+    note.textContent = "";
+    note.className = "artifact-note";
+  }
+}
+
 function describeRow(row) {
   const idPart = row.id !== undefined && row.id !== null ? ` ${row.id}` : "";
   const extendsPart = row.extendsTarget ? ` extends ${row.extendsTarget}` : "";
@@ -165,6 +255,21 @@ function buildColumnHeader(response) {
     el("div", `badge ${verdictClass(verdict)}`, verdictLabel(verdict)),
   );
 
+  // parseAlObjects yields zero objects for a syntax error ANYWHERE in the
+  // candidate, so without saying so the row cells below would all read
+  // "not written" for a model that plainly wrote the object — an ordinary
+  // prose-wrapped answer lands here.
+  if (response.hasParseError) {
+    frag.appendChild(
+      el("div", "badge badge-unparsed", "AL would not parse"),
+    );
+  }
+
+  const site = response.classification && response.classification.decidingSite;
+  if (site) {
+    frag.appendChild(el("div", "deciding-site", describeSite(site)));
+  }
+
   return frag;
 }
 
@@ -193,6 +298,23 @@ function buildCell(row, response) {
   }
 
   const obj = findObjectForRow(row, response.objects);
+
+  // Its own state, ahead of "not written": a parse failure means we do not
+  // KNOW whether the object was written, and saying "not written" about a
+  // response that contains the object is the lie this state exists to stop.
+  if (!obj && response.hasParseError) {
+    wrapper.classList.add("cell-unparsed");
+    wrapper.textContent = "unreadable";
+    wrapper.addEventListener("click", () => {
+      showDetail(
+        `${response.model} — ${describeRow(row)}`,
+        `${response.model}'s answer could not be parsed as AL, so there is ` +
+          `no per-object result for it. The raw answer is below.\n\n` +
+          response.rawResponse,
+      );
+    });
+    return wrapper;
+  }
 
   if (!obj) {
     wrapper.classList.add("cell-absent");
@@ -227,11 +349,18 @@ function renderMatrix(run) {
   container.innerHTML = "";
 
   if (run.rows.length === 0) {
+    const unparsed = run.responses.filter((r) => r.hasParseError);
     container.appendChild(
       el(
         "p",
         "empty-state",
-        "No objects found — nothing in the reference solution and no response produced any.",
+        unparsed.length > 0
+          ? `No objects found — nothing in the reference solution, and ${
+            unparsed.length === 1
+              ? "the one response that answered"
+              : `${unparsed.length} responses`
+          } could not be parsed as AL.`
+          : "No objects found — nothing in the reference solution and no response produced any.",
       ),
     );
     return;
@@ -422,7 +551,9 @@ async function runQuick() {
       );
     }
     state.run = body;
+    renderTrapSummary(body);
     renderMatrix(body);
+    renderArtifactNote(body);
     statusEl.textContent = `Last run: ${
       new Date(body.startedAt).toLocaleTimeString()
     }`;

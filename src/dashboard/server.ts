@@ -39,7 +39,7 @@ import type { DraftSummary } from "./drafts.ts";
 import type { QuickRun } from "./run-manager.ts";
 
 import { listDrafts } from "./drafts.ts";
-import { runQuick } from "./run-manager.ts";
+import { runQuick, writeRunArtifact } from "./run-manager.ts";
 import { createModelCaller } from "./model-caller.ts";
 import { loadTrapSources } from "./source-loader.ts";
 
@@ -152,13 +152,16 @@ function validateRunRequest(
  *
  * `POST /api/run`'s success path reads the draft's `correct/`/`naive/` AL
  * sources off disk (`deps.loadTrapSources`), builds a model caller scoped to
- * this run (`deps.createModelCaller`), and hands both to `deps.runQuick`.
+ * this run (`deps.createModelCaller`), hands both to `deps.runQuick`, and
+ * persists the result through `deps.writeRunArtifact`, answering with the
+ * run plus either `artifactPath` or `artifactError`.
  */
 export function createHandler(
   deps: {
     scratchDir: string;
     listDrafts: typeof listDrafts;
     runQuick: typeof runQuick;
+    writeRunArtifact: typeof writeRunArtifact;
     loadTrapSources: typeof loadTrapSources;
     createModelCaller: typeof createModelCaller;
     /** CLI-resolved `--preset` models (see the module doc comment), or
@@ -223,7 +226,27 @@ export function createHandler(
           naiveSources,
           call,
         });
-        return jsonResponse(200, run);
+
+        // Persist the run under `<draftDir>/.runs/` and tell the author
+        // where. Best-effort by design: the matrix is what the run is FOR,
+        // and losing it because a directory could not be created would be
+        // worse than losing the file. The failure is reported rather than
+        // swallowed — see spec §7 for why the artifact's shape and location
+        // are the two structural barriers against a stray ingest replay.
+        let artifact: { artifactPath: string } | { artifactError: string };
+        try {
+          artifact = {
+            artifactPath: await deps.writeRunArtifact(draft.dir, run),
+          };
+        } catch (error) {
+          artifact = {
+            artifactError: error instanceof Error
+              ? error.message
+              : String(error),
+          };
+        }
+
+        return jsonResponse(200, { ...run, ...artifact });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return jsonResponse(500, { error: message });
@@ -250,6 +273,7 @@ export function startServer(
     scratchDir: opts.scratchDir,
     listDrafts,
     runQuick,
+    writeRunArtifact,
     loadTrapSources,
     createModelCaller,
     defaultModels: opts.defaultModels ?? [],
