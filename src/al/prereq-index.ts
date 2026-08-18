@@ -97,12 +97,21 @@ function extractFieldName(node: Node): string | undefined {
   return undefined;
 }
 
-/** A `procedure` node's name is its first direct `identifier` child. */
+/**
+ * A `procedure` node's name is its first direct child that names something -
+ * a plain `identifier` (`Recalculate`) or a `quoted_identifier`
+ * (`"Recalc Totals"`, needed the moment a name has a space or another AL
+ * keyword collision). Matching only `identifier` would silently drop every
+ * quoted procedure name from the index.
+ */
 function extractProcedureName(node: Node): string | undefined {
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
-    if (child && child.type === "identifier") {
-      return child.text;
+    if (
+      child &&
+      (child.type === "identifier" || child.type === "quoted_identifier")
+    ) {
+      return unquote(child.text);
     }
   }
   return undefined;

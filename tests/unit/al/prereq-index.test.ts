@@ -39,6 +39,22 @@ const TABLE_EXTENSION =
 // chosen to collide by TEXT with what this module looks for, to prove
 // extraction matches on AST node type/position, not on token spelling, and
 // never descends into a matched field's or procedure's own body.
+const QUOTED_PROCEDURE_TABLE = `table 69001 "Product Category"
+{
+    fields
+    {
+        field(1; "Code"; Code[20]) { }
+    }
+
+    procedure "Recalc Totals"()
+    begin
+    end;
+
+    procedure Plain()
+    begin
+    end;
+}`;
+
 const HOSTILE_TABLE = `table 69001 "Product Category"
 {
     fields
@@ -112,5 +128,20 @@ describe("al/prereq-index", () => {
     assertEquals(t?.fields, ["Code", "Active"]);
     assertEquals(t?.procedures, ["Recalc", "Helper"]);
     assertEquals(idx.hasError, false);
+  });
+
+  it("indexes both a quoted and an unquoted procedure name", async () => {
+    const idx = await buildPrereqIndex([QUOTED_PROCEDURE_TABLE]);
+    const t = idx.tables.get("product category");
+    assertEquals(t?.procedures, ["Recalc Totals", "Plain"]);
+    assertEquals(
+      lookupProcedure(idx, "Product Category", "Recalc Totals"),
+      true,
+    );
+    assertEquals(
+      lookupProcedure(idx, "Product Category", '"recalc totals"'),
+      true,
+    );
+    assertEquals(lookupProcedure(idx, "Product Category", "Plain"), true);
   });
 });
