@@ -13,39 +13,31 @@
  */
 
 import { LLMAdapterRegistry } from "../llm/registry.ts";
+import { resolveProviderAndModel } from "../llm/model-aliases.ts";
 import type { ModelCaller } from "./run-manager.ts";
 
 /**
- * Splits a vendor-prefixed model slug (CLAUDE.md's "Slug rule": every model
- * is `<provider>/<model>` end-to-end, e.g. `anthropic/claude-opus-4-7`,
- * `openrouter/deepseek/deepseek-v4-pro`) into the provider name
- * `LLMAdapterRegistry.create` expects and the model id the adapter itself
- * expects. Only the FIRST `/` is significant — everything after it is the
- * model id, which for openrouter slugs contains its own `/`.
- */
-export function splitModelSlug(
-  slug: string,
-): { provider: string; model: string } {
-  const slashIndex = slug.indexOf("/");
-  if (slashIndex === -1) {
-    throw new Error(
-      `model must be vendor-prefixed as "<provider>/<model>" (got "${slug}")`,
-    );
-  }
-  return {
-    provider: slug.slice(0, slashIndex),
-    model: slug.slice(slashIndex + 1),
-  };
-}
-
-/**
- * The provider half of a model slug. `run-manager.ts` needs it to resolve
- * prompt injections, which the bench scopes by provider — imported from here
- * rather than re-derived there, because two implementations of the same
- * split is exactly the drift this plan keeps finding.
+ * Resolves a model spec the way the BENCH resolves it
+ * (`resolveProviderAndModel`, shared from `src/llm/model-aliases.ts`): the
+ * alias table first, then a `<provider>/<model>` split on the FIRST `/`
+ * only — everything after it is the model id, which for openrouter slugs
+ * contains its own `/` — then the spec itself as both halves.
+ *
+ * This used to be a private `splitModelSlug` that THREW on any spec without
+ * a `/`, which made the dashboard stricter than the bench and, concretely,
+ * made `.centralgauge.yml`'s `quick-test` preset (`llms: [mock]`) unusable:
+ * `workbench serve --preset quick-test` pre-filled a model every run then
+ * refused. That is the free calibration path, and this repo's standing rule
+ * is never to spend real money on calibration without explicit
+ * confirmation, so it has to work.
+ *
+ * `src/llm/model-aliases.ts` is a leaf with no imports of its own, which is
+ * what lets this module reach the alias table without pulling the config
+ * loader into `src/dashboard/server.ts`'s import graph —
+ * `tests/unit/dashboard/ingest-safety.test.ts` polices exactly that.
  */
 export function providerOfModelSlug(slug: string): string {
-  return splitModelSlug(slug).provider;
+  return resolveProviderAndModel(slug).provider;
 }
 
 /**
@@ -64,7 +56,7 @@ export function createModelCaller(
   context: { taskId: string; description: string },
 ): ModelCaller {
   return async (model, request) => {
-    const { provider, model: modelName } = splitModelSlug(model);
+    const { provider, model: modelName } = resolveProviderAndModel(model);
     const adapter = LLMAdapterRegistry.create(provider, {
       provider,
       model: modelName,

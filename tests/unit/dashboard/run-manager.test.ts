@@ -350,13 +350,55 @@ describe("dashboard/run-manager", () => {
     assertEquals(seen.get("openai/gpt")?.systemPrompt, undefined);
   });
 
-  // A slug with no vendor prefix cannot name a provider, so it cannot resolve
-  // injections either. That failure belongs to one column, not the run.
-  it("records a render failure as that model's error without failing the run", async () => {
+  // The dashboard resolves a model spec exactly as the bench does
+  // (resolveProviderAndModel, shared from src/llm/model-aliases.ts): the
+  // alias table first, then a provider/model split, then the spec itself as
+  // both halves. It used to demand a "/" and throw otherwise, which made
+  // .centralgauge.yml's quick-test preset (llms: [mock]) — the FREE
+  // calibration path — refuse every run it pre-filled.
+  it("accepts a bare alias and an unprefixed spec, resolving the provider like the bench", async () => {
+    const seen: string[] = [];
+    const run = await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        prompts: {
+          injections: { mock: { generation: { prefix: "MOCK-" } } },
+        },
+      },
+      models: ["mock", "not-a-known-model", "anthropic/opus"],
+      renderer: { render: () => Promise.resolve("BASE") },
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: (model, request) => {
+        seen.push(`${model}=${request.prompt}`);
+        return Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        });
+      },
+    });
+
+    assertEquals(run.responses.length, 3);
+    for (const response of run.responses) {
+      assertEquals(response.error, undefined);
+    }
+    // `mock` resolved to provider "mock" through the alias table, so the
+    // mock-scoped injection applied. The other two did not match it.
+    assertEquals(seen.includes("mock=MOCK-BASE"), true);
+    assertEquals(seen.includes("not-a-known-model=BASE"), true);
+    assertEquals(seen.includes("anthropic/opus=BASE"), true);
+  });
+
+  // A render CAN still fail — a missing or unreadable template is the real
+  // case — and when it does it belongs to the columns, not to the run.
+  it("records a render failure as the model's error without failing the run", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
-      models: ["no-vendor-prefix", "anthropic/opus"],
-      renderer,
+      models: ["anthropic/opus", "openai/gpt"],
+      renderer: {
+        render: () => Promise.reject(new Error("Template not found: nope.md")),
+      },
       correctSources: [CORRECT],
       naiveSources: [NAIVE],
       call: () =>
@@ -366,14 +408,12 @@ describe("dashboard/run-manager", () => {
         }),
     });
 
-    const bad = run.responses.find((r) => r.model === "no-vendor-prefix");
-    assertStringIncludes(bad?.error ?? "", "vendor-prefixed");
-    assertEquals(bad?.prompt, "");
-    assertEquals(
-      run.responses.find((r) => r.model === "anthropic/opus")?.classification
-        .verdict,
-      "avoided-the-mistake",
-    );
+    assertEquals(run.responses.length, 2);
+    for (const response of run.responses) {
+      assertStringIncludes(response.error ?? "", "Template not found");
+      assertEquals(response.prompt, "");
+      assertEquals(response.classification.verdict, "cannot-compare");
+    }
   });
 
   it("refuses a draftId that would escape the draft directory", async () => {
