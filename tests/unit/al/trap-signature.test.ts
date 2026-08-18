@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertNotEquals } from "@std/assert";
+import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 
 import { deriveTrapSignature } from "../../../src/al/trap-signature.ts";
 
@@ -23,6 +23,143 @@ const NAIVE = `codeunit 71410 "CG X054 Agent"
         Quote.Qty := Qty;
         Quote.Modify(true);
     end;
+}`;
+
+// A pure insertion at the top: the only real change is "Z(); is new. A
+// positional (index-for-index) compare would report 4 sites here (every
+// statement shifts down one slot and looks different from its counterpart);
+// an LCS compare reports exactly 1, because A/B/C are still recognizably the
+// same statements, just at different positions. This is the discriminating
+// case the brief itself names as the reason a positional compare is wrong.
+const INSERT_TOP_CORRECT = `codeunit 71420 "CG Insert Top"
+{
+    procedure Run()
+    begin
+        A();
+        B();
+        C();
+    end;
+}`;
+
+const INSERT_TOP_NAIVE = `codeunit 71420 "CG Insert Top"
+{
+    procedure Run()
+    begin
+        Z();
+        A();
+        B();
+        C();
+    end;
+}`;
+
+// A table trigger (not a procedure) carrying the divergence directly — the
+// shape of the xRec family of committed tasks (M042/M043/M044/X022), where
+// xRec is only in scope inside a table or page trigger and there is no
+// procedure-based authoring workaround.
+const TRIGGER_CORRECT = `table 71421 "CG Trigger Shape"
+{
+    fields
+    {
+        field(1; Balance; Decimal) { }
+        field(2; "Last Delta"; Decimal) { }
+    }
+
+    trigger OnModify()
+    begin
+        "Last Delta" := Balance - xRec.Balance;
+    end;
+}`;
+
+const TRIGGER_NAIVE = `table 71421 "CG Trigger Shape"
+{
+    fields
+    {
+        field(1; Balance; Decimal) { }
+        field(2; "Last Delta"; Decimal) { }
+    }
+
+    trigger OnModify()
+    begin
+        "Last Delta" := Balance;
+    end;
+}`;
+
+// Two fields with same-named OnValidate triggers; only the second field's
+// body diverges. A bare-name key would collide and drop this site.
+const FIELD_COLLISION_CORRECT = `table 71422 "CG Field Collision"
+{
+    fields
+    {
+        field(1; A; Integer)
+        {
+            trigger OnValidate()
+            begin
+                Message('a-shared');
+            end;
+        }
+        field(2; B; Integer)
+        {
+            trigger OnValidate()
+            begin
+                Message('b-correct');
+            end;
+        }
+    }
+}`;
+
+const FIELD_COLLISION_NAIVE = `table 71422 "CG Field Collision"
+{
+    fields
+    {
+        field(1; A; Integer)
+        {
+            trigger OnValidate()
+            begin
+                Message('a-shared');
+            end;
+        }
+        field(2; B; Integer)
+        {
+            trigger OnValidate()
+            begin
+                Message('b-naive');
+            end;
+        }
+    }
+}`;
+
+// A report-level `procedure Apply()` alongside a requestpage-scoped
+// `procedure Apply()` of the same name; only the inner one diverges.
+const REPORT_SCOPE_CORRECT = `report 71423 "CG Report Scope"
+{
+    procedure Apply()
+    begin
+        Message('outer-shared');
+    end;
+
+    requestpage
+    {
+        procedure Apply()
+        begin
+            Message('inner-correct');
+        end;
+    }
+}`;
+
+const REPORT_SCOPE_NAIVE = `report 71423 "CG Report Scope"
+{
+    procedure Apply()
+    begin
+        Message('outer-shared');
+    end;
+
+    requestpage
+    {
+        procedure Apply()
+        begin
+            Message('inner-naive');
+        end;
+    }
 }`;
 
 describe("al/trap-signature", () => {
@@ -70,9 +207,56 @@ describe("al/trap-signature", () => {
     assertEquals(selfSig.sites.length, 0);
 
     const perturbedSig = await deriveTrapSignature([real], [perturbed]);
-    assertEquals(
-      perturbedSig.sites.some((s) => s.naiveForm?.includes(":=")),
-      true,
-    );
+    // Bounded, not `.some(...)`: an unbounded existence check would also
+    // pass if the diff over-reported dozens of sites, which is exactly the
+    // over-reporting an LCS diff exists to prevent. The perturbation is a
+    // single in-place statement replacement, so it must land as exactly one
+    // substitution site carrying BOTH forms.
+    assertEquals(perturbedSig.sites.length, 1);
+    const site = perturbedSig.sites[0];
+    assertExists(site);
+    assertExists(site.correctForm);
+    assertEquals(site.correctForm.includes("validate"), true);
+    assertEquals(site.naiveForm?.includes(":="), true);
+  });
+
+  it("reports one site for a pure insertion at the top, not a shift of every later statement", async () => {
+    const sig = await deriveTrapSignature([INSERT_TOP_CORRECT], [
+      INSERT_TOP_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.naiveForm, "z()");
+    assertEquals(sig.sites[0]?.correctForm, undefined);
+    assertEquals(sig.sites[0]?.statementIndex, 0);
+  });
+
+  it("locates a divergence inside a table trigger, not just procedures", async () => {
+    const sig = await deriveTrapSignature([TRIGGER_CORRECT], [
+      TRIGGER_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.procedureName, "OnModify");
+    assertEquals(sig.sites[0]?.correctForm?.includes("xrec"), true);
+    assertEquals(sig.sites[0]?.naiveForm?.includes("xrec"), false);
+  });
+
+  it("keeps same-named field triggers in different fields distinct instead of colliding", async () => {
+    const sig = await deriveTrapSignature([FIELD_COLLISION_CORRECT], [
+      FIELD_COLLISION_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.procedureName, "B.OnValidate");
+    assertEquals(sig.sites[0]?.correctForm, "message('b-correct')");
+    assertEquals(sig.sites[0]?.naiveForm, "message('b-naive')");
+  });
+
+  it("keeps a report-level procedure distinct from a same-named requestpage-scoped one", async () => {
+    const sig = await deriveTrapSignature([REPORT_SCOPE_CORRECT], [
+      REPORT_SCOPE_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.procedureName, "requestpage.Apply");
+    assertEquals(sig.sites[0]?.correctForm, "message('inner-correct')");
+    assertEquals(sig.sites[0]?.naiveForm, "message('inner-naive')");
   });
 });

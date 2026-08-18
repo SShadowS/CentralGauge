@@ -72,30 +72,161 @@ function findDirectChild(node: Node, type: string): Node | undefined {
   return undefined;
 }
 
+/** Strip a leading and trailing `"` when both are present. */
+function unquote(text: string): string {
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
 /**
- * Collects procedure-shaped nodes (type contains `procedure`, e.g. the
- * grammar's `procedure` node — matched by substring rather than an exact
- * name for the same reason `object-parser.ts` treats `kind` as an open set:
- * a node whose type merely mentions "procedure", such as `procedure_keyword`
- * or `procedure_modifier`, has no `code_block` child and is rejected here,
- * then recursed through in case it wraps the real procedure node).
+ * True for a procedure- or trigger-shaped member node: type contains
+ * `procedure` (matched by substring rather than an exact name for the same
+ * reason `object-parser.ts` treats `kind` as an open set — this rejects
+ * `procedure_keyword`/`procedure_modifier`, which also contain the substring
+ * but have no `code_block` child) or is exactly `trigger_declaration`
+ * (table/page/field/report triggers — `OnValidate`, `OnModify`, `OnRun`,
+ * `OnOpenPage`, ... — carry the divergence for a whole class of tasks, most
+ * sharply the xRec family, where the trap cannot live anywhere else).
+ */
+function isMemberNode(node: Node): boolean {
+  return (
+    (node.type.includes("procedure") || node.type === "trigger_declaration") &&
+    findDirectChild(node, "code_block") !== undefined
+  );
+}
+
+/**
+ * The scope-path label a container node contributes, or undefined when the
+ * node is not itself a scope boundary. Only nodes whose type ends in
+ * `_section` or `_declaration` are considered (structural wrapper nodes like
+ * `declaration_body`/`fields_body` never are, so they contribute nothing and
+ * the path they're on passes through unchanged).
  *
- * Does not recurse into a matched procedure's own body — AL procedures do
- * not nest, and body statements can themselves contain nodes that merely
+ * Prefers the container's own name: a table/page field, a page action, and a
+ * page group all carry a direct `identifier`/`quoted_identifier` child (e.g.
+ * `field(2; Balance; Decimal)` names itself "Balance"). Falls back to the
+ * container's own leading keyword when it has no name of its own — a
+ * report's `requestpage` section is unique per report and never named, so
+ * its `requestpage_keyword` child names the scope instead.
+ *
+ * Known simplification: the keyword fallback takes the FIRST keyword-typed
+ * child, which for most container kinds is that node's own self-naming
+ * keyword (`requestpage_keyword`, `fields_keyword`, ...) — exactly what we
+ * want for a container that occurs once. A page can have multiple
+ * `area(...)` sections (`area(Content)`, `area(Factboxes)`, ...) where the
+ * qualifying keyword is the SECOND one (`content_keyword`, not the leading
+ * `area_keyword`), so those currently collapse to the same "area" label.
+ * Not disambiguated: no committed task's trap lives inside a page area, and
+ * the failure mode is a verbose-but-correct key, not a silent collision.
+ *
+ * `named` distinguishes the two forms for the display path built in
+ * `extractProcedures`: a container's OWN name (`named: true`) is always
+ * meaningful to show ("Balance.OnValidate" — which field), but a keyword
+ * fallback (`named: false`) is only worth showing when nothing more specific
+ * exists on the path — showing "fields.Balance.OnValidate" would be a
+ * redundant prefix (there is one `fields` section per table), while
+ * "requestpage.Apply" is not redundant (a requestpage section has no name
+ * of its own, so its keyword IS the only distinguishing information).
+ */
+function scopeLabel(
+  node: Node,
+): { normalized: string; raw: string; named: boolean } | undefined {
+  if (!node.type.endsWith("_section") && !node.type.endsWith("_declaration")) {
+    return undefined;
+  }
+
+  const nameNode = findDirectChild(node, "identifier") ??
+    findDirectChild(node, "quoted_identifier");
+  if (nameNode) {
+    const raw = unquote(nameNode.text);
+    return { normalized: normalizeName(raw), raw, named: true };
+  }
+
+  const KEYWORD_SUFFIX = "_keyword";
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child && child.type.endsWith(KEYWORD_SUFFIX)) {
+      const label = child.type.slice(0, -KEYWORD_SUFFIX.length);
+      return { normalized: label, raw: label, named: false };
+    }
+  }
+  return undefined;
+}
+
+interface ScopedMember {
+  node: Node;
+  /** Normalized (matching) scope segments, outermost first — every
+   * boundary, named or keyword-fallback. Empty for a top-level member. */
+  normalizedPath: string[];
+  /** Display-form scope segments, outermost first — every boundary, same
+   * set as `normalizedPath`. Empty for a top-level member. */
+  rawPathAll: string[];
+  /** Display-form scope segments, outermost first — named boundaries only
+   * (field/action/group names), excluding keyword fallbacks. Preferred for
+   * display when non-empty; see `scopeLabel`'s `named` doc for why. */
+  rawPathNamed: string[];
+}
+
+/**
+ * Walks an object's own parse tree collecting every procedure/trigger
+ * member, each tagged with the scope path of named/keyword-identified
+ * containers between the object root and the member (a table field, a page
+ * action, a report's requestpage section, ...).
+ *
+ * `depth < 2` never scope-labels: depth 0 is `source_file` and depth 1 is
+ * the object's own top-level declaration (e.g. `table_declaration`) — the
+ * latter's type also ends in `_declaration` and would otherwise contribute
+ * a redundant leading segment for information `objectKey` already carries.
+ *
+ * Does not recurse into a matched member's own body — AL members don't
+ * nest, and body statements can themselves contain nodes that merely
  * mention "procedure" in an unrelated way (none observed in the grammar
  * today, but nothing rules it out for expression subtrees).
  */
-function findProcedureNodes(node: Node, out: Node[]): void {
-  if (
-    node.type.includes("procedure") &&
-    findDirectChild(node, "code_block") !== undefined
-  ) {
-    out.push(node);
+function collectMembers(
+  node: Node,
+  depth: number,
+  normalizedPath: readonly string[],
+  rawPathAll: readonly string[],
+  rawPathNamed: readonly string[],
+  out: ScopedMember[],
+): void {
+  if (isMemberNode(node)) {
+    out.push({
+      node,
+      normalizedPath: [...normalizedPath],
+      rawPathAll: [...rawPathAll],
+      rawPathNamed: [...rawPathNamed],
+    });
     return;
   }
+
+  let nextNormalized: readonly string[] = normalizedPath;
+  let nextRawAll: readonly string[] = rawPathAll;
+  let nextRawNamed: readonly string[] = rawPathNamed;
+  if (depth >= 2) {
+    const label = scopeLabel(node);
+    if (label) {
+      nextNormalized = [...normalizedPath, label.normalized];
+      nextRawAll = [...rawPathAll, label.raw];
+      if (label.named) nextRawNamed = [...rawPathNamed, label.raw];
+    }
+  }
+
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
-    if (child) findProcedureNodes(child, out);
+    if (child) {
+      collectMembers(
+        child,
+        depth + 1,
+        nextNormalized,
+        nextRawAll,
+        nextRawNamed,
+        out,
+      );
+    }
   }
 }
 
@@ -118,6 +249,12 @@ function normalizeStatement(text: string): string {
 }
 
 interface ProcedureInfo {
+  /**
+   * Display form: the bare member name for a top-level procedure/trigger
+   * (`"SetTerms"`, `"OnModify"`), or the scope path joined onto the bare
+   * name for a nested one (`"Balance.OnValidate"`, `"requestpage.Apply"`) —
+   * a bare `OnValidate` gives no way to tell which field it belongs to.
+   */
   name: string;
   statements: string[];
 }
@@ -125,7 +262,16 @@ interface ProcedureInfo {
 /**
  * Parses a single object's own source text (e.g. an `AlObject.source`
  * snippet — a complete, self-contained top-level declaration) and returns
- * its procedures keyed by normalized name.
+ * its procedures/triggers keyed by a scope-qualified normalized path
+ * (`"fields.balance.onvalidate"`, `"onmodify"`, `"requestpage.apply"`).
+ *
+ * The key must be scope-qualified, not just the bare normalized name: AL
+ * permits the same member name in different scopes of one object (two table
+ * fields each with their own `OnValidate` trigger; a report-level
+ * `procedure Apply()` alongside a `requestpage`-scoped `procedure Apply()`),
+ * and a flat `Map` keyed on the bare name would let the second collide with
+ * and silently overwrite the first, dropping whatever divergence lived
+ * there with no signal.
  */
 async function extractProcedures(
   objectSource: string,
@@ -144,13 +290,15 @@ async function extractProcedures(
   try {
     if (tree.rootNode.hasError) return result;
 
-    const procedureNodes: Node[] = [];
-    findProcedureNodes(tree.rootNode, procedureNodes);
+    const members: ScopedMember[] = [];
+    collectMembers(tree.rootNode, 0, [], [], [], members);
 
-    for (const proc of procedureNodes) {
+    for (
+      const { node: proc, normalizedPath, rawPathAll, rawPathNamed } of members
+    ) {
       const nameNode = findDirectChild(proc, "identifier");
       if (!nameNode) continue;
-      const name = nameNode.text;
+      const bareName = nameNode.text;
 
       const statements: string[] = [];
       const codeBlock = findDirectChild(proc, "code_block");
@@ -168,7 +316,16 @@ async function extractProcedures(
         }
       }
 
-      result.set(normalizeName(name), { name, statements });
+      const key = [...normalizedPath, normalizeName(bareName)].join(".");
+      // Prefer named boundaries for display (which field/action/group);
+      // fall back to keyword boundaries only when nothing more specific
+      // exists on the path (e.g. a requestpage section, which has no name
+      // of its own). See `scopeLabel`'s `named` doc for the full rationale.
+      const displayPath = rawPathNamed.length > 0 ? rawPathNamed : rawPathAll;
+      const displayName = displayPath.length > 0
+        ? [...displayPath, bareName].join(".")
+        : bareName;
+      result.set(key, { name: displayName, statements });
     }
 
     return result;
@@ -320,15 +477,18 @@ function diffToSites(
  * Derives the trap signature between a correct and a naive reference
  * solution, each possibly spread across multiple source files.
  *
- * Objects are matched by `objectKey` (kind + id/name + extends target);
- * procedures within a matched object pair are matched by normalized name.
- * An object or procedure present on only one side contributes no sites —
- * this module locates *statement-level* divergence within a matched
- * procedure, which has no natural TrapSite shape for a procedure that does
- * not exist on both sides.
+ * Objects are matched by `objectKey` (kind + id/name + extends target).
+ * Procedures AND triggers within a matched object pair are matched by a
+ * scope-qualified key: the bare normalized name for a top-level member, or
+ * the normalized scope path (table/page field, page action, report
+ * requestpage, ...) joined onto it for a nested one — see `extractProcedures`
+ * for why a bare name is not enough. An object or member present on only one
+ * side contributes no sites — this module locates *statement-level*
+ * divergence within a matched member, which has no natural TrapSite shape
+ * for a member that does not exist on both sides.
  *
  * Returns an empty signature when either side has no objects, when no
- * objects match, or when no procedures match.
+ * objects match, or when no members match.
  */
 export async function deriveTrapSignature(
   correctSources: string[],
@@ -346,8 +506,8 @@ export async function deriveTrapSignature(
     const correctProcedures = await extractProcedures(correctObj.source);
     const naiveProcedures = await extractProcedures(naiveObj.source);
 
-    for (const [normalizedName, correctProc] of correctProcedures) {
-      const naiveProc = naiveProcedures.get(normalizedName);
+    for (const [memberKey, correctProc] of correctProcedures) {
+      const naiveProc = naiveProcedures.get(memberKey);
       if (!naiveProc) continue;
 
       sites.push(
