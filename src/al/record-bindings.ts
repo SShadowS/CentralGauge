@@ -74,6 +74,28 @@ function isMemberNode(node: Node): boolean {
 }
 
 /**
+ * The first direct child that names something - a plain `identifier`
+ * (`Line`) or a `quoted_identifier` (`"My Rec"`, needed the moment a name
+ * has a space or another AL keyword collision) - or undefined when neither
+ * is present. AL uses `quoted_identifier` for variable, parameter, and
+ * procedure/trigger names exactly as often as it does for table/field
+ * names elsewhere in this plan; treating only `identifier` as a name would
+ * silently drop every quoted one.
+ */
+function findNameNode(node: Node): Node | undefined {
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (
+      child &&
+      (child.type === "identifier" || child.type === "quoted_identifier")
+    ) {
+      return child;
+    }
+  }
+  return undefined;
+}
+
+/**
  * The Record table name a `type_specification` node binds to, as written
  * (quotes stripped), or undefined when it names anything else (a basic
  * type, an interface, an enum, ...).
@@ -95,15 +117,16 @@ function parameterBindings(node: Node): Array<[string, string]> {
   const typeSpec = findDirectChild(node, "type_specification");
   const table = typeSpec ? recordTableName(typeSpec) : undefined;
   if (table === undefined) return [];
-  const nameNode = findDirectChild(node, "identifier");
-  return nameNode ? [[nameNode.text.toLowerCase(), table]] : [];
+  const nameNode = findNameNode(node);
+  return nameNode ? [[unquote(nameNode.text).toLowerCase(), table]] : [];
 }
 
 /**
  * Every Record-typed name+table pair declared by a `variable_declaration`
  * node, or `[]` when its type is not a Record. A single declaration may
  * name several variables sharing one type (`A, B: Record "X";`) - every
- * `identifier` child is a separate name, not just the first.
+ * `identifier`/`quoted_identifier` child is a separate name, not just the
+ * first.
  */
 function variableDeclarationBindings(node: Node): Array<[string, string]> {
   const typeSpec = findDirectChild(node, "type_specification");
@@ -112,8 +135,11 @@ function variableDeclarationBindings(node: Node): Array<[string, string]> {
   const out: Array<[string, string]> = [];
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
-    if (child && child.type === "identifier") {
-      out.push([child.text.toLowerCase(), table]);
+    if (
+      child &&
+      (child.type === "identifier" || child.type === "quoted_identifier")
+    ) {
+      out.push([unquote(child.text).toLowerCase(), table]);
     }
   }
   return out;
@@ -178,11 +204,20 @@ function collect(
   }
 }
 
-/** A procedure/trigger member's own name, or "" when it has none (not
- * observed in valid AL, but keeps this total rather than throwing). */
+/**
+ * A procedure/trigger member's own name (quotes stripped when quoted), or
+ * "" when it has none. Every `procedure`/`trigger_declaration` in valid AL
+ * names itself, via either an `identifier` or a `quoted_identifier` - both
+ * are handled by `findNameNode`, so "" is not reachable from valid,
+ * cleanly-parsing AL. (It previously WAS reachable, silently, for any
+ * quoted procedure/trigger name, back when this only checked `identifier`
+ * - see the record-bindings review for task 2.) Kept as a total fallback
+ * rather than throwing, in case a future grammar revision adds a member
+ * shape this hasn't seen.
+ */
 function memberName(node: Node): string {
-  const nameNode = findDirectChild(node, "identifier");
-  return nameNode ? nameNode.text : "";
+  const nameNode = findNameNode(node);
+  return nameNode ? unquote(nameNode.text) : "";
 }
 
 /**

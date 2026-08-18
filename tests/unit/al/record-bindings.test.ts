@@ -22,6 +22,25 @@ const SRC = `codeunit 70054 "CG Agent"
     end;
 }`;
 
+const QUOTED_SRC = `codeunit 70055 "CG Quoted Agent"
+{
+    var
+        "My Rec": Record "CG Quote";
+
+    procedure "My Proc"("Some Param": Record "CG Quote")
+    begin
+    end;
+}`;
+
+const MULTI_SRC = `codeunit 70056 "CG Multi Agent"
+{
+    procedure Combo()
+    var
+        A, B: Record "CG Quote";
+    begin
+    end;
+}`;
+
 describe("al/record-bindings", () => {
   it("binds parameters and locals, and inherits globals", async () => {
     const procs = await collectRecordBindings(SRC);
@@ -46,5 +65,19 @@ describe("al/record-bindings", () => {
 
   it("returns an empty list when the source does not parse", async () => {
     assertEquals((await collectRecordBindings("codeunit {{{")).length, 0);
+  });
+
+  it("binds a quoted global, quoted parameter, and reports a quoted procedure name", async () => {
+    const procs = await collectRecordBindings(QUOTED_SRC);
+    const proc = procs.find((p) => p.procedureName === "My Proc");
+    assertEquals(proc?.bindings.get("my rec"), "CG Quote");
+    assertEquals(proc?.bindings.get("some param"), "CG Quote");
+  });
+
+  it("binds every name in a multi-name variable declaration", async () => {
+    const procs = await collectRecordBindings(MULTI_SRC);
+    const combo = procs.find((p) => p.procedureName === "Combo");
+    assertEquals(combo?.bindings.get("a"), "CG Quote");
+    assertEquals(combo?.bindings.get("b"), "CG Quote");
   });
 });
