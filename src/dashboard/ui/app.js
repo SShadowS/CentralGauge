@@ -144,10 +144,16 @@ function buildColumnHeader(response) {
       `No usable AL — method: ${response.resolution.method}, confidence: ${pct}%`,
     );
     frag.appendChild(diag);
-    if (response.resolution.failure && response.resolution.failure.error) {
-      frag.appendChild(
-        el("div", "diagnostic-error", response.resolution.failure.error),
-      );
+    // `response.error` first when there is one. A model that threw is routed
+    // through resolveCandidate("", "error"), so the derived string here is
+    // always "Model returned empty response" — which reads as a refusal when
+    // the truth may be a bad slug, a missing API key or a 401. The thrown
+    // message is strictly better information, and this used to be appended
+    // only in the branch below, which such a response can never reach.
+    const detail = response.error ||
+      (response.resolution.failure && response.resolution.failure.error);
+    if (detail) {
+      frag.appendChild(el("div", "diagnostic-error", detail));
     }
     return frag;
   }
@@ -158,10 +164,6 @@ function buildColumnHeader(response) {
   frag.appendChild(
     el("div", `badge ${verdictClass(verdict)}`, verdictLabel(verdict)),
   );
-
-  if (response.error) {
-    frag.appendChild(el("div", "diagnostic-error", response.error));
-  }
 
   return frag;
 }
@@ -176,10 +178,12 @@ function buildCell(row, response) {
     wrapper.classList.add("cell-empty");
     wrapper.textContent = "–";
     wrapper.addEventListener("click", () => {
-      const reason =
-        response.resolution.failure && response.resolution.failure.error
-          ? response.resolution.failure.error
-          : `extraction method: ${response.resolution.method}`;
+      // Same precedence as the column header: a thrown error outranks the
+      // derived extraction string, which for a thrown error is always
+      // "Model returned empty response".
+      const reason = response.error ||
+        (response.resolution.failure && response.resolution.failure.error) ||
+        `extraction method: ${response.resolution.method}`;
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model} produced no usable AL (${reason}).`,
@@ -311,9 +315,9 @@ function renderDraftOptions() {
   for (const draft of state.drafts) {
     const option = el("option", null, draftLabel(draft));
     // `dir` is the only field guaranteed unique across drafts — `id` alone
-    // can collide across two directories, so the select's value (and the
-    // draftId sent to /api/run) is keyed on `dir`, then resolved back to
-    // the matching draft's `id` at run time.
+    // can collide across two directories (a backup copy of a draft keeps the
+    // task id in its task.yml). So the select's value AND the draftDir sent
+    // to /api/run are both `dir`; `id` is display only.
     option.value = draft.dir;
     select.appendChild(option);
   }
@@ -409,7 +413,7 @@ async function runQuick() {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ draftId: draft.id, models }),
+      body: JSON.stringify({ draftDir: draft.dir, models }),
     });
     const body = await res.json();
     if (!res.ok) {

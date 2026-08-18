@@ -81,9 +81,17 @@ function jsonResponse(status: number, body: unknown): Response {
  * Runs before `deps.runQuick` is ever invoked, so a malformed or
  * unresolvable request never reaches it, and resolves the request to the
  * `DraftSummary` the run will actually read. Checks, all 400:
- * `models` must be a non-empty array of strings, `draftId` must name a draft
+ * `models` must be a non-empty array of strings, `draftDir` must name a draft
  * `listDrafts` actually returned (not merely a well-formed string), and that
  * draft's `task.yml` must carry a description.
+ *
+ * The request names a `draftDir`, NOT a task id. Task 8 fix round 2
+ * deliberately allows two directories to report one id — `scratch/CG-AL-X053/`
+ * and `scratch/pre-migration-backup_x053/` both say `id: CG-AL-X053` on this
+ * machine — and ruled that `dir` is the only guaranteed-unique field.
+ * Resolving on `id` returned whichever came first in `(id, dirName)` sort
+ * order, so selecting the backup ran against the other directory's sources
+ * and labelled the result with the backup's name.
  *
  * There is deliberately no `prompt` field. The question is rendered
  * server-side from the draft's `task.yml` through the bench's own attempt-1
@@ -104,7 +112,7 @@ function validateRunRequest(
   if (typeof body !== "object" || body === null) {
     return { ok: false, error: "request body must be a JSON object" };
   }
-  const { draftId, models } = body as Record<string, unknown>;
+  const { draftDir, models } = body as Record<string, unknown>;
 
   if (
     !Array.isArray(models) || models.length === 0 ||
@@ -112,12 +120,12 @@ function validateRunRequest(
   ) {
     return { ok: false, error: "models must be a non-empty array of strings" };
   }
-  if (typeof draftId !== "string") {
-    return { ok: false, error: "draftId must be a string" };
+  if (typeof draftDir !== "string") {
+    return { ok: false, error: "draftDir must be a string" };
   }
-  const draft = drafts.find((d) => d.id === draftId);
+  const draft = drafts.find((d) => d.dir === draftDir);
   if (!draft) {
-    return { ok: false, error: `unknown draft: ${draftId}` };
+    return { ok: false, error: `unknown draft directory: ${draftDir}` };
   }
   // `?? ""` rather than trusting the type: `deps.listDrafts` is injectable,
   // so a partially-shaped draft should 400 with a legible reason rather than
