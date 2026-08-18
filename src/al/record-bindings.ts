@@ -11,6 +11,16 @@
  * uses: globals, then that member's own parameters, then its own locals -
  * each later layer shadowing the one before it.
  *
+ * A `Record <id>` reference (a table named by numeric id, e.g. `Record 18`)
+ * is deliberately NOT resolved: `record_type`'s reference child is an
+ * `(integer)` node there, which `recordTableName()` doesn't match, so the
+ * variable is silently excluded rather than bound. This fails closed - a
+ * missed catch, never a wrong bind - and the realistic case (a base-app
+ * table referenced by id) is untracked by this plan's prereq index anyway.
+ * Supporting it would mean teaching the prereq index to key by table id as
+ * well as name, on a guessed model behaviour nobody has observed. Ruled out
+ * during task 2 review; revisit only with real evidence a model does this.
+ *
  * @module al/record-bindings
  */
 
