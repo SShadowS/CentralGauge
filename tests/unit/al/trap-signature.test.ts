@@ -1,6 +1,8 @@
 import { describe, it } from "@std/testing/bdd";
 import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 
+import { Language, Parser } from "web-tree-sitter";
+
 import { deriveTrapSignature } from "../../../src/al/trap-signature.ts";
 
 const CORRECT = `codeunit 71410 "CG X054 Agent"
@@ -415,5 +417,85 @@ describe("al/trap-signature", () => {
     assertEquals(sig.sites[0]?.procedureName, "General.A.OnValidate");
     assertEquals(sig.sites[0]?.correctForm, "message('a-correct')");
     assertEquals(sig.sites[0]?.naiveForm, "message('a-naive')");
+  });
+});
+
+const AL_WASM_URL = new URL(
+  "../../../vendor/tree-sitter-al/tree-sitter-al.wasm",
+  import.meta.url,
+);
+
+// Every node type in this grammar that exists solely to wrap a container's
+// children — as opposed to being a genuine named/keyword scope like
+// `field_declaration` or `requestpage_section` — ends in `_body`
+// (`declaration_body`, `fields_body`, `layout_body`, ...). That is the
+// invariant `scopeLabel`'s derived scope-boundary rule in
+// src/al/trap-signature.ts depends on: every non-member node that is NOT a
+// `_body` wrapper is treated as a scope boundary, so the rule's correctness
+// rests entirely on this set being exhaustive.
+//
+// This is not a hypothetical: vendor/tree-sitter-al was bumped 2.5.1 -> 4.0.1
+// in 77fbc7b1, and every defect this task went through fix rounds for was a
+// silent member collision a test did not catch. Pinning the exact set here
+// means a future grammar bump that adds, removes, or renames a wrapper type
+// fails LOUDLY, here, instead of silently changing which containers get
+// scope-labeled.
+//
+// Reading a failure after a grammar bump:
+//   - A NEW type in the actual set, not in this list: a wrapper node type
+//     was added. Confirm it is a pure wrapper (its children are the
+//     container's own declarations; it carries no name or identity of its
+//     own), then add it below.
+//   - An entry in this list MISSING from the actual set: a container was
+//     renamed (or removed). The renamed type no longer ends in `_body`, so
+//     `scopeLabel` will now treat it as a scope boundary — investigate
+//     whether that is correct (usually it means the type's replacement is a
+//     new wrapper, which loops back to the case above) before editing this
+//     list to match.
+const KNOWN_BODY_NODE_TYPES: readonly string[] = [
+  "_preproc_branch_body",
+  "_routine_regular_body",
+  "action_body",
+  "action_group_body",
+  "analysisviews_body",
+  "assembly_body",
+  "case_body",
+  "controladdin_body",
+  "dataset_body",
+  "dataset_mod_body",
+  "declaration_body",
+  "dotnet_body",
+  "elements_body",
+  "fieldgroups_body",
+  "fields_body",
+  "interface_body",
+  "keys_body",
+  "labels_body",
+  "layout_body",
+  "layout_container_body",
+  "preproc_split_complete_body",
+  "preproc_split_procedure_body",
+  "query_body",
+  "rendering_body",
+  "report_body",
+  "schema_body",
+  "var_body",
+  "views_body",
+  "views_mod_body",
+  "xmlport_body",
+].sort();
+
+describe("al/trap-signature: grammar invariant", () => {
+  it("pins the exact set of _body wrapper node types the derived scope-boundary rule relies on", async () => {
+    await Parser.init();
+    const language = await Language.load(await Deno.readFile(AL_WASM_URL));
+
+    const bodyTypes = new Set<string>();
+    for (let id = 0; id < language.nodeTypeCount; id++) {
+      const type = language.nodeTypeForId(id);
+      if (type && type.endsWith("_body")) bodyTypes.add(type);
+    }
+
+    assertEquals([...bodyTypes].sort(), KNOWN_BODY_NODE_TYPES);
   });
 });
