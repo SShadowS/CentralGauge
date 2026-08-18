@@ -14,6 +14,17 @@ const PREREQ = `table 69001 "CG Quote"
     procedure Recalculate() begin end;
 }`;
 
+/** A SECOND prereq table, so a mis-bind lands on a real table with real
+ *  fields rather than falling out of the index and being silently skipped —
+ *  which is what makes the wrong bind visible as a wrong `table` value. */
+const OTHER_PREREQ = `table 69002 "CG Other"
+{
+    fields
+    {
+        field(1; "Other Field"; Decimal) { }
+    }
+}`;
+
 async function bind(src: string) {
   return await bindResponseToPrereqs(src, await buildPrereqIndex([PREREQ]));
 }
@@ -140,5 +151,95 @@ describe("al/prereq-binder", () => {
     const f = r.findings.find((x) => x.member === "Discount");
     assertEquals(f?.tier, "hard");
     assertEquals(f?.procedureName, "My Proc");
+  });
+
+  // Both members below reference a field that provably exists on the table
+  // they are actually declared against. A `hard` tier on either one is the
+  // exact false accusation this whole module exists to prevent, and in both
+  // shapes the finding also NAMED THE WRONG TABLE, so an author could not
+  // have spotted the mistake from the rail. Every other fixture in this
+  // file is a single object with uniquely-named members, which is the one
+  // shape in which neither defect is observable.
+  describe("binds each member against its own scope, not a same-named one", () => {
+    async function bindTwoTables(src: string) {
+      return await bindResponseToPrereqs(
+        src,
+        await buildPrereqIndex([PREREQ, OTHER_PREREQ]),
+      );
+    }
+
+    it("keeps two same-named field triggers on one table apart", async () => {
+      // One table, two fields, each with its own `trigger OnValidate()` —
+      // the most ordinary shape in AL. `procedureName` collides, and a
+      // name-keyed `Map` keeps the LAST entry, so every ref in the first
+      // trigger used to be bound to the second trigger's table.
+      const src = `table 70001 "My Table"
+{
+    fields
+    {
+        field(1; A; Integer)
+        {
+            trigger OnValidate()
+            var
+                Q: Record "CG Quote";
+            begin
+                Q."Unit Price" := 1;
+            end;
+        }
+        field(2; B; Integer)
+        {
+            trigger OnValidate()
+            var
+                Q: Record "CG Other";
+            begin
+                Q."Other Field" := 2;
+            end;
+        }
+    }
+}`;
+      const r = await bindTwoTables(src);
+      const first = r.findings.find((x) => x.member === "Unit Price");
+      assertEquals(first?.table, "CG Quote");
+      assertEquals(first?.tier, "known");
+      const second = r.findings.find((x) => x.member === "Other Field");
+      assertEquals(second?.table, "CG Other");
+      assertEquals(second?.tier, "known");
+    });
+
+    it("keeps one object's global out of another object's procedures", async () => {
+      // Distinct procedure names, so the join is doing its job — this is
+      // the collection side: globals must be scoped to the object that
+      // declares them, never pooled across the whole file.
+      const src = `codeunit 70002 "A"
+{
+    var
+        Q: Record "CG Quote";
+
+    procedure DoA()
+    begin
+        Q."Unit Price" := 1;
+    end;
+}
+
+codeunit 70003 "B"
+{
+    var
+        Q: Record "CG Other";
+
+    procedure DoB()
+    begin
+        Q."Other Field" := 2;
+    end;
+}`;
+      const r = await bindTwoTables(src);
+      const a = r.findings.find((x) => x.procedureName === "DoA");
+      assertEquals(a?.table, "CG Quote");
+      assertEquals(a?.member, "Unit Price");
+      assertEquals(a?.tier, "known");
+      const b = r.findings.find((x) => x.procedureName === "DoB");
+      assertEquals(b?.table, "CG Other");
+      assertEquals(b?.member, "Other Field");
+      assertEquals(b?.tier, "known");
+    });
   });
 });

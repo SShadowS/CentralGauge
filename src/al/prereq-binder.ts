@@ -116,15 +116,26 @@ export async function bindResponseToPrereqs(
     collectMemberRefs(responseSource),
   ]);
 
-  const bindingsByName = new Map(
-    bindingsByProcedure.map((p) => [p.procedureName, p.bindings]),
+  // Joined on the enclosing member's BYTE OFFSET, never on its name.
+  // `procedureName` is not a unique identifier for a member — one table
+  // with two fields, each with its own `trigger OnValidate()`, already
+  // collides — and `Map` construction keeps the LAST entry for a duplicate
+  // key, so a name join silently gave every reference in the first member
+  // the last one's bindings. That reports a provably-correct field as
+  // `hard` ("Made up this field") against a table it was never declared
+  // against, and even names the wrong table in the finding, so the author
+  // cannot spot it from the rail. Both modules parse the same string with
+  // the same grammar and select member nodes with the identical predicate,
+  // so their offsets are identical by construction.
+  const bindingsByMember = new Map(
+    bindingsByProcedure.map((p) => [p.startIndex, p.bindings]),
   );
 
   const findings: BinderFinding[] = [];
   for (const ref of refs) {
     if (ref.position === "other") continue;
 
-    const bindings = bindingsByName.get(ref.procedureName);
+    const bindings = bindingsByMember.get(ref.startIndex);
     const table = bindings?.get(ref.variable);
     if (table === undefined) continue;
     if (!index.tables.has(normalizeName(table))) continue;

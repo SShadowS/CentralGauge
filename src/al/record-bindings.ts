@@ -38,7 +38,21 @@ const AL_WASM_URL = new URL(
 );
 
 export interface ProcedureBindings {
-  /** Display name of the procedure or trigger. */
+  /**
+   * Byte offset of the member node in the parsed source — the JOIN KEY
+   * `prereq-binder.ts` uses to tie these bindings to the member refs
+   * `member-refs.ts` collects from the SAME string with the SAME grammar,
+   * so the two offsets are identical by construction.
+   *
+   * `procedureName` is display-only and MUST NOT be joined on: it is not
+   * unique. Two `trigger OnValidate()`s on two fields of one table — the
+   * most ordinary shape in AL — share a name, and joining on it silently
+   * gave every reference in the first one the second one's bindings, i.e.
+   * a provably-correct field reported as invented against a table it was
+   * never declared against.
+   */
+  startIndex: number;
+  /** Display name of the procedure or trigger. NOT unique — see `startIndex`. */
   procedureName: string;
   /** Lowercased variable name -> table name as written. */
   bindings: Map<string, string>;
@@ -183,9 +197,17 @@ function parameterListBindings(paramList: Node): Array<[string, string]> {
 }
 
 /**
- * Walks the tree collecting object-level globals (bindings from every
- * `var_section` that is NOT inside a procedure/trigger) and every
- * procedure/trigger member node.
+ * Walks ONE top-level object's subtree collecting that object's globals
+ * (bindings from every `var_section` that is NOT inside a
+ * procedure/trigger) and every procedure/trigger member node it declares.
+ *
+ * Called once per top-level node by `collectRecordBindings`, with a FRESH
+ * `globals` array each time — never once over the whole root. AL scopes a
+ * global to the object that declares it, so a shared array let object B's
+ * global be in scope for a procedure in object A, binding a variable to a
+ * table it was never declared against. Locals and parameters are applied
+ * afterwards and so still shadowed correctly, which is exactly why the
+ * shadowing tests passed while that went unseen.
  *
  * Stops descending the instant a member node is found - AL members don't
  * nest, so nothing below one can itself be another member or an
@@ -234,11 +256,21 @@ function memberName(node: Node): string {
  * Parses `source` and returns Record-variable bindings scoped to each
  * procedure/trigger member.
  *
- * Each member's map is built by inserting, in order: object-level globals,
- * then that member's own parameters, then that member's own locals - a
- * later layer overwrites an earlier one for the same lowercased name, which
- * is exactly AL's own shadowing rule (a local or parameter reusing a
- * global's name binds to whatever table IT declares, not the global's).
+ * Each member's map is built by inserting, in order: the globals of the
+ * object THAT MEMBER BELONGS TO, then that member's own parameters, then
+ * that member's own locals - a later layer overwrites an earlier one for
+ * the same lowercased name, which is exactly AL's own shadowing rule (a
+ * local or parameter reusing a global's name binds to whatever table IT
+ * declares, not the global's).
+ *
+ * Scoping is per top-level node, not per file: each direct named child of
+ * the root gets its own `globals` array. Two objects in one response may
+ * each declare a global of the same name against a DIFFERENT table, and
+ * leaking one into the other's members is a wrong bind, not a missed one.
+ *
+ * Each entry carries the member node's `startIndex`, which is what
+ * `prereq-binder.ts` joins on - `procedureName` is not unique across a
+ * file, or even within one object.
  *
  * A variable/parameter whose type is not a Record (including one with no
  * declared type at all) is never inserted - a stray non-Record name colliding
@@ -265,29 +297,45 @@ export async function collectRecordBindings(
   try {
     if (tree.rootNode.hasError) return [];
 
-    const globals: Array<[string, string]> = [];
-    const members: Node[] = [];
-    collect(tree.rootNode, globals, members);
+    const out: ProcedureBindings[] = [];
+    const root = tree.rootNode;
+    // One scope per direct named child of the root — every top-level node,
+    // not only `*_declaration` ones, so the member set here stays exactly
+    // the set `member-refs.ts` walks (it walks the whole root) and no ref
+    // is left without an entry to join against.
+    for (let i = 0; i < root.namedChildCount; i++) {
+      const objectNode = root.namedChild(i);
+      if (!objectNode) continue;
 
-    return members.map((member) => {
-      const bindings = new Map<string, string>(globals);
+      const globals: Array<[string, string]> = [];
+      const members: Node[] = [];
+      collect(objectNode, globals, members);
 
-      const paramList = findDirectChild(member, "parameter_list");
-      if (paramList) {
-        for (const [name, table] of parameterListBindings(paramList)) {
-          bindings.set(name, table);
+      for (const member of members) {
+        const bindings = new Map<string, string>(globals);
+
+        const paramList = findDirectChild(member, "parameter_list");
+        if (paramList) {
+          for (const [name, table] of parameterListBindings(paramList)) {
+            bindings.set(name, table);
+          }
         }
-      }
 
-      const varSection = findDirectChild(member, "var_section");
-      if (varSection) {
-        for (const [name, table] of varSectionBindings(varSection)) {
-          bindings.set(name, table);
+        const varSection = findDirectChild(member, "var_section");
+        if (varSection) {
+          for (const [name, table] of varSectionBindings(varSection)) {
+            bindings.set(name, table);
+          }
         }
-      }
 
-      return { procedureName: memberName(member), bindings };
-    });
+        out.push({
+          startIndex: member.startIndex,
+          procedureName: memberName(member),
+          bindings,
+        });
+      }
+    }
+    return out;
   } finally {
     tree.delete();
   }

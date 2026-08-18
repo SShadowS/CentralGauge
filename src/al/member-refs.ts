@@ -49,7 +49,20 @@ export type RefPosition =
   | "other";
 
 export interface MemberRef {
-  /** Display name of the enclosing procedure or trigger. */
+  /**
+   * Byte offset of the ENCLOSING member node in the parsed source — the
+   * join key `prereq-binder.ts` uses against
+   * `ProcedureBindings.startIndex`. Both modules parse the same string with
+   * the same grammar and select member nodes with the identical predicate,
+   * so the offsets are equal by construction and the join is exact.
+   *
+   * It is the member's offset, not the ref's own, so every ref inside one
+   * procedure shares it.
+   */
+  startIndex: number;
+  /** Display name of the enclosing procedure or trigger. NOT unique across
+   *  a file (two fields may each declare `trigger OnValidate()`), so it is
+   *  display-only and must never be joined on. */
   procedureName: string;
   /** The `X` in `X.Y`, lowercased. */
   variable: string;
@@ -262,14 +275,19 @@ function collectMembers(node: Node, out: Node[]): void {
  * `identifier`/`quoted_identifier` children of `argument_list`, never a
  * nested `call_expression`.
  */
-function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
+/** The enclosing member's identity, stamped onto every ref it contains.
+ *  Carried as one object so `startIndex` (the join key) can never be
+ *  threaded to one push site and forgotten at another. */
+type MemberScope = Pick<MemberRef, "startIndex" | "procedureName">;
+
+function walkNode(node: Node, scope: MemberScope, out: MemberRef[]): void {
   if (node.type === "assignment_statement") {
     const first = node.namedChild(0);
     if (first && first.type === "member_expression") {
       const parts = extractMemberParts(first);
       if (parts) {
         out.push({
-          procedureName,
+          ...scope,
           variable: parts.variable,
           member: parts.member,
           position: "assignment-target",
@@ -278,7 +296,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
       }
       for (let i = 1; i < node.namedChildCount; i++) {
         const child = node.namedChild(i);
-        if (child) walkNode(child, procedureName, out);
+        if (child) walkNode(child, scope, out);
       }
       return;
     }
@@ -298,7 +316,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
           const firstArg = argList?.namedChild(0);
           if (firstArg && isNameNode(firstArg)) {
             out.push({
-              procedureName,
+              ...scope,
               variable: parts.variable,
               member: unquote(firstArg.text),
               position: "curated-method-arg",
@@ -311,7 +329,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
               const arg = argList.namedChild(i);
               if (arg && isNameNode(arg)) {
                 out.push({
-                  procedureName,
+                  ...scope,
                   variable: parts.variable,
                   member: unquote(arg.text),
                   position: "curated-method-arg",
@@ -322,7 +340,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
           }
         } else {
           out.push({
-            procedureName,
+            ...scope,
             variable: parts.variable,
             member: parts.member,
             position: "call",
@@ -335,7 +353,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
     if (argList) {
       for (let i = 0; i < argList.namedChildCount; i++) {
         const child = argList.namedChild(i);
-        if (child) walkNode(child, procedureName, out);
+        if (child) walkNode(child, scope, out);
       }
     }
     return;
@@ -345,7 +363,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
     const parts = extractMemberParts(node);
     if (parts) {
       out.push({
-        procedureName,
+        ...scope,
         variable: parts.variable,
         member: parts.member,
         position: "other",
@@ -357,7 +375,7 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
 
   for (let i = 0; i < node.namedChildCount; i++) {
     const child = node.namedChild(i);
-    if (child) walkNode(child, procedureName, out);
+    if (child) walkNode(child, scope, out);
   }
 }
 
@@ -388,10 +406,13 @@ export async function collectMemberRefs(source: string): Promise<MemberRef[]> {
 
     const out: MemberRef[] = [];
     for (const member of members) {
-      const procedureName = memberName(member);
+      const scope: MemberScope = {
+        startIndex: member.startIndex,
+        procedureName: memberName(member),
+      };
       const codeBlock = findDirectChild(member, "code_block");
       if (codeBlock) {
-        walkNode(codeBlock, procedureName, out);
+        walkNode(codeBlock, scope, out);
       }
     }
     return out;
