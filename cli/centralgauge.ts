@@ -43,6 +43,7 @@ import {
   registerTaskCommand,
   registerTaskSetCommand,
   registerVerifyCommand,
+  registerWorkbenchCommand,
 } from "./commands/mod.ts";
 
 const VERSION = "0.1.0";
@@ -125,6 +126,7 @@ registerSyncCatalogCommand(cliAny);
 registerSyncTaxonomyCommand(cliAny);
 registerTaskCommand(cliAny);
 registerTaskSetCommand(cliAny);
+registerWorkbenchCommand(cliAny);
 registerPopulateShortcomingsCommand(cliAny);
 registerPopulateTaskSetCommand(cliAny);
 registerRulesCommand(cliAny);
