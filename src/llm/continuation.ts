@@ -74,87 +74,26 @@ export type GenerateFn = (
 ) => Promise<CodeGenerationResult>;
 
 /**
- * Generate with automatic continuation support
- * If response is truncated (finishReason === "length"), automatically
- * request continuation until complete or max attempts reached.
+ * NOTE: the non-streaming `generateWithContinuation` was deleted here.
+ *
+ * The bench now routes every model call through the streaming transport
+ * (`LLMWorkPool.generateCodeWithContinuation` gates on `isStreamingAdapter`
+ * alone), so this merger had no production consumer. Keeping it would have
+ * meant maintaining two content-joining implementations that really did
+ * differ. The deleted one kept TWO accumulators: `response.content` by plain
+ * concatenation, and `result.code` through `mergeCode` (overlap-dedup, else
+ * newline-join). The streaming one keeps a single accumulator and applies the
+ * overlap-dedup/newline rule to it.
+ *
+ * That difference was scoring-relevant, not cosmetic: the pipeline runs
+ * `resolveCandidate` on `response.content`, so a continued (finishReason
+ * "length") response merged the two ways could yield different candidate text.
+ * Only continued responses were ever affected, and every published `--stream`
+ * run already used the surviving semantics.
+ *
+ * `generateWithContinuationStream` is the single surviving merger. The tests
+ * that covered this function were ported onto it rather than deleted.
  */
-export async function generateWithContinuation(
-  generateFn: GenerateFn,
-  request: LLMRequest,
-  context: GenerationContext,
-  config: ContinuationConfig = DEFAULT_CONTINUATION_CONFIG,
-): Promise<ContinuationResult> {
-  // First generation
-  let result = await generateFn(request, context);
-  let continuationCount = 0;
-  let accumulatedContent = result.response.content;
-  let accumulatedCode = result.code;
-  const totalUsage: TokenUsage = { ...result.response.usage };
-
-  // Check if continuation is needed and enabled
-  while (
-    config.enabled &&
-    result.response.finishReason === "length" &&
-    continuationCount < config.maxContinuations
-  ) {
-    continuationCount++;
-
-    // Get the last portion of content for context
-    const lastChunk = getLastChunk(accumulatedContent, 500);
-
-    // Create continuation request
-    const continuationRequest: LLMRequest = {
-      ...request,
-      prompt: buildContinuationPrompt(request.prompt, lastChunk),
-    };
-
-    // Generate continuation
-    const continuationContext: GenerationContext = {
-      ...context,
-      attempt: context.attempt,
-      metadata: {
-        ...context.metadata,
-        continuationAttempt: continuationCount,
-        previousContentLength: accumulatedContent.length,
-      },
-    };
-
-    result = await generateFn(continuationRequest, continuationContext);
-
-    // Accumulate content and code
-    accumulatedContent += result.response.content;
-    accumulatedCode = mergeCode(accumulatedCode, result.code, result.language);
-
-    // Accumulate token usage
-    totalUsage.promptTokens += result.response.usage.promptTokens;
-    totalUsage.completionTokens += result.response.usage.completionTokens;
-    totalUsage.totalTokens += result.response.usage.totalTokens;
-    if (result.response.usage.estimatedCost !== undefined) {
-      totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
-        result.response.usage.estimatedCost;
-    }
-    accumulateOptionalUsage(totalUsage, result.response.usage);
-  }
-
-  // Build final response
-  const finalResponse: LLMResponse = {
-    content: accumulatedContent,
-    model: result.response.model,
-    usage: totalUsage,
-    duration: result.response.duration, // Note: only last duration, not total
-    finishReason: result.response.finishReason,
-  };
-
-  return {
-    code: accumulatedCode,
-    language: result.language,
-    response: finalResponse,
-    extractedFromDelimiters: result.extractedFromDelimiters,
-    continuationCount,
-    wasTruncated: result.response.finishReason === "length",
-    totalUsage,
-  };
-}
 
 /**
  * Get the last N characters of content for continuation context
@@ -187,29 +126,6 @@ ${lastChunk}
 \`\`\`
 
 Continue from this exact point:`;
-}
-
-/**
- * Merge continuation code with accumulated code
- * Handles cases where the continuation might overlap slightly
- */
-function mergeCode(
-  accumulated: string,
-  continuation: string,
-  _language: "al" | "diff",
-): string {
-  // Simple concatenation - the continuation prompt asks to not repeat
-  // In practice, some overlap detection might be needed
-  const trimmedContinuation = continuation.trimStart();
-
-  // Check for obvious overlap at the boundary
-  const overlapLength = findOverlap(accumulated, trimmedContinuation);
-  if (overlapLength > 10) {
-    // Only dedupe if significant overlap detected
-    return accumulated + trimmedContinuation.slice(overlapLength);
-  }
-
-  return accumulated + "\n" + trimmedContinuation;
 }
 
 /**

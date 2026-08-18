@@ -37,7 +37,6 @@ import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
   type ContinuationResult,
   createTruncationWarning,
-  generateWithContinuation,
   generateWithContinuationStream,
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
@@ -383,42 +382,27 @@ export class LLMWorkPool {
     // every other provider, rather than waiting for each SDK to add its own
     // long-request guard. `onChunk` stays optional below: a run with no UI
     // attached simply streams and emits nothing.
-    if (isStreamingAdapter(adapter)) {
-      return this.generateCodeWithStreaming(
-        item,
-        adapter as StreamingLLMAdapter,
-        request,
-        context,
+    if (!isStreamingAdapter(adapter)) {
+      // Unreachable in practice: every adapter in the registry declares
+      // `supportsStreaming`, including the mock. Kept as a loud failure rather
+      // than a silent non-streaming fallback, because the fallback is exactly
+      // what was broken — at `maxTokens: 64000` the Anthropic SDK refuses a
+      // non-streaming request, so a quiet fallback would reintroduce the bug
+      // for whichever adapter forgot to declare the flag.
+      throw new LLMProviderError(
+        `Adapter "${adapter.name}" does not support streaming. The bench ` +
+          `requires a streaming transport: at the configured maxTokens a ` +
+          `non-streaming request is rejected by at least one provider SDK.`,
+        adapter.name,
+        false,
       );
     }
 
-    // Create the generation function for the continuation helper
-    const generateFn = async (
-      req: LLMRequest,
-      ctx: GenerationContext,
-    ) => {
-      const previousAttempt =
-        item.previousAttempts[item.previousAttempts.length - 1];
-
-      if (item.attemptNumber === 1 || !previousAttempt) {
-        return await adapter.generateCode(req, ctx);
-      } else {
-        const errors = this.extractErrors(previousAttempt);
-        return await adapter.generateFix(
-          previousAttempt.extractedCode,
-          errors,
-          req,
-          ctx,
-        );
-      }
-    };
-
-    // Use continuation helper for automatic handling of truncated responses
-    return generateWithContinuation(
-      generateFn,
+    return this.generateCodeWithStreaming(
+      item,
+      adapter as StreamingLLMAdapter,
       request,
       context,
-      this.continuationConfig,
     );
   }
 
@@ -489,9 +473,18 @@ export class LLMWorkPool {
       );
     }
 
-    // Convert StreamingContinuationResult to ContinuationResult
+    // Convert StreamingContinuationResult to ContinuationResult.
+    //
+    // `code`, `language` and `extractedFromDelimiters` are inherited from
+    // `CodeGenerationResult` and are NOT the source of truth here — nothing
+    // reads them off this value. The candidate the bench actually compiles is
+    // derived later by `resolveCandidate(continuationResult.response.content)`
+    // and assigned to `LLMWorkResult.code` (see `code: resolution.cleanedCode`
+    // above). Carrying the raw content in `code` and hardcoding
+    // `language: "al"` claimed an extraction that never happened, so they are
+    // filled with values that cannot be mistaken for a real one.
     return {
-      code: result.content,
+      code: "",
       language: "al",
       response: result.response,
       extractedFromDelimiters: false,

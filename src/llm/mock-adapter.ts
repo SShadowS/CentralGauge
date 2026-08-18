@@ -5,6 +5,8 @@ import type {
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
@@ -15,6 +17,8 @@ import { PricingService } from "./pricing-service.ts";
 const log = Logger.create("llm:mock");
 
 export class MockLLMAdapter implements LLMAdapter {
+  readonly supportsStreaming = true;
+
   readonly name = "mock";
 
   private config: LLMConfig = {
@@ -168,6 +172,46 @@ export class MockLLMAdapter implements LLMAdapter {
       response,
       extractedFromDelimiters: extraction.extractedFromDelimiters,
     };
+  }
+
+  /**
+   * Streaming is declared so the work pool has ONE transport and one
+   * continuation implementation to maintain. The mock has nothing to stream —
+   * it yields the whole response as a single chunk and returns the same
+   * result `generateCode` would.
+   *
+   * Without this the work pool would need to keep a mock-only non-streaming
+   * branch alive, which means keeping two continuation mergers with subtly
+   * different content-joining semantics. See
+   * `docs/superpowers/.../streaming-design-fable.md`.
+   */
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const result = await this.generateCode(request, context);
+    const content = result.response.content;
+    yield { text: content, accumulatedText: content, done: false, index: 0 };
+    yield { text: "", accumulatedText: content, done: true, index: 1 };
+    return { content, response: result.response, chunkCount: 1 };
+  }
+
+  async *generateFixStream(
+    originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const result = await this.generateFix(
+      originalCode,
+      errors,
+      request,
+      context,
+    );
+    const content = result.response.content;
+    yield { text: content, accumulatedText: content, done: false, index: 0 };
+    yield { text: "", accumulatedText: content, done: true, index: 1 };
+    return { content, response: result.response, chunkCount: 1 };
   }
 
   async generateFix(

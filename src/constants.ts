@@ -23,6 +23,23 @@ export const DEFAULT_TEMPERATURE = 0.1;
 export const DEFAULT_MAX_TOKENS = 64000;
 
 /**
+ * Largest `max_tokens` that may safely be sent on a NON-streaming request.
+ *
+ * The Anthropic SDK refuses a non-streaming request whose budget could exceed
+ * a 10-minute run ("Streaming is required for operations that may take longer
+ * than 10 minutes"), which in practice trips above ~21,333 tokens. The bench
+ * is unaffected because it always streams (`LLMWorkPool` routes on
+ * `isStreamingAdapter`), but the small-budget utility callers that still use
+ * `generateCode` directly — `src/verify/analyzer.ts`, `src/rules/generator.ts`
+ * — sit under this ceiling and must stay there.
+ *
+ * If you raise a budget at one of those sites past this value, switch that
+ * site to the streaming API instead. Raising it silently reintroduces a bug
+ * that took a live API call to find, in a corner nobody benchmarks.
+ */
+export const NONSTREAMING_SAFE_MAX_TOKENS = 21333;
+
+/**
  * Default max tokens for Gemini models, consistent with the global default.
  */
 export const GEMINI_DEFAULT_MAX_TOKENS = 64000;

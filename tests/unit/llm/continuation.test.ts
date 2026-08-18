@@ -6,13 +6,11 @@ import { assertEquals, assertExists } from "@std/assert";
 import { describe, it } from "@std/testing/bdd";
 import {
   createTruncationWarning,
-  generateWithContinuation,
   generateWithContinuationStream,
   wasTruncated,
 } from "../../../src/llm/continuation.ts";
 import type {
   CodeGenerationResult,
-  ContinuationConfig,
   GenerationContext,
   LLMRequest,
   StreamChunk,
@@ -71,350 +69,164 @@ function createMockRequest(): LLMRequest {
 }
 
 describe("continuation", () => {
-  describe("generateWithContinuation", () => {
-    it("should return result directly when response is complete", async () => {
-      const mockResult = createMockResult(
-        "procedure Test() begin end;",
-        "stop",
-      );
-      const generateFn = () => Promise.resolve(mockResult);
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      assertEquals(result.continuationCount, 0);
-      assertEquals(result.wasTruncated, false);
-      assertEquals(result.code, "procedure Test() begin end;");
-      assertEquals(result.response.finishReason, "stop");
-    });
-
-    it("should continue when response is truncated", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve(
-            createMockResult("procedure Test() begin", "length"),
-          );
-        }
-        return Promise.resolve(
-          createMockResult(" Message('Hello'); end;", "stop"),
-        );
+  function streamFnFrom(
+    parts: Array<{ content: string; finishReason: "length" | "stop" }>,
+    usage?: TokenUsage,
+  ) {
+    let call = 0;
+    const calls: GenerationContext[] = [];
+    const fn = async function* (
+      _request: LLMRequest,
+      context: GenerationContext,
+      _options?: StreamOptions,
+    ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+      calls.push(context);
+      const part = parts[Math.min(call, parts.length - 1)]!;
+      call++;
+      yield {
+        text: part.content,
+        accumulatedText: part.content,
+        done: false,
+        index: 0,
       };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      assertEquals(callCount, 2);
-      assertEquals(result.continuationCount, 1);
-      assertEquals(result.wasTruncated, false);
-      assertEquals(result.response.finishReason, "stop");
-    });
-
-    it("should respect maxContinuations limit", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        // Always return truncated
-        return Promise.resolve(createMockResult(`part${callCount}`, "length"));
-      };
-
-      const config: ContinuationConfig = {
-        enabled: true,
-        maxContinuations: 2,
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-        config,
-      );
-
-      assertEquals(callCount, 3); // Initial + 2 continuations
-      assertEquals(result.continuationCount, 2);
-      assertEquals(result.wasTruncated, true);
-    });
-
-    it("should not continue when disabled", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        return Promise.resolve(createMockResult("truncated code", "length"));
-      };
-
-      const config: ContinuationConfig = {
-        enabled: false,
-        maxContinuations: 3,
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-        config,
-      );
-
-      assertEquals(callCount, 1);
-      assertEquals(result.continuationCount, 0);
-      assertEquals(result.wasTruncated, true);
-    });
-
-    it("should accumulate token usage across continuations", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve(createMockResult("part1", "length", 100, 200));
-        }
-        if (callCount === 2) {
-          return Promise.resolve(createMockResult("part2", "length", 150, 250));
-        }
-        return Promise.resolve(createMockResult("part3", "stop", 120, 180));
-      };
-
-      const config: ContinuationConfig = {
-        enabled: true,
-        maxContinuations: 3,
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-        config,
-      );
-
-      assertEquals(result.totalUsage.promptTokens, 100 + 150 + 120);
-      assertEquals(result.totalUsage.completionTokens, 200 + 250 + 180);
-      assertEquals(result.totalUsage.totalTokens, 370 + 630);
-    });
-
-    it("should accumulate content across continuations", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve(
-            createMockResult("procedure Test()", "length"),
-          );
-        }
-        return Promise.resolve(
-          createMockResult("begin Message('Done'); end;", "stop"),
-        );
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      // Content should be concatenated
-      assertEquals(
-        result.response.content,
-        "procedure Test()begin Message('Done'); end;",
-      );
-    });
-
-    it("should handle overlap detection in code merge", async () => {
-      let callCount = 0;
-      const generateFn = () => {
-        callCount++;
-        if (callCount === 1) {
-          return Promise.resolve(createMockResult(
-            "procedure Test() begin\n    Message('Hello');",
-            "length",
-          ));
-        }
-        // Continuation that overlaps with end of first response
-        return Promise.resolve(createMockResult(
-          "Message('Hello');\n    Message('World');\nend;",
-          "stop",
-        ));
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      // Should detect overlap and not duplicate
-      assertEquals(result.code.includes("Message('Hello');"), true);
-      assertEquals(result.code.includes("Message('World');"), true);
-      // Should not have duplicate Message('Hello');
-      const helloCount =
-        (result.code.match(/Message\('Hello'\)/g) || []).length;
-      assertEquals(helloCount, 1);
-    });
-
-    it("should pass continuation context to generateFn", async () => {
-      let capturedContext: GenerationContext | undefined = undefined;
-      let callCount = 0;
-
-      const generateFn = (
-        _request: LLMRequest,
-        context: GenerationContext,
-      ) => {
-        callCount++;
-        if (callCount === 2) {
-          capturedContext = context;
-        }
-        if (callCount === 1) {
-          return Promise.resolve(createMockResult("part1", "length"));
-        }
-        return Promise.resolve(createMockResult("part2", "stop"));
-      };
-
-      await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      assertExists(capturedContext);
-      const ctx = capturedContext as GenerationContext;
-      assertEquals(ctx.metadata?.["continuationAttempt"], 1);
-      assertExists(ctx.metadata?.["previousContentLength"]);
-    });
-
-    it("should include continuation prompt with context", async () => {
-      let capturedRequest: LLMRequest | undefined = undefined;
-      let callCount = 0;
-
-      const generateFn = (request: LLMRequest) => {
-        callCount++;
-        if (callCount === 2) {
-          capturedRequest = request;
-        }
-        if (callCount === 1) {
-          return Promise.resolve(
-            createMockResult("some generated code here", "length"),
-          );
-        }
-        return Promise.resolve(createMockResult("more code", "stop"));
-      };
-
-      await generateWithContinuation(
-        generateFn,
-        createMockRequest(),
-        createMockContext(),
-      );
-
-      assertExists(capturedRequest);
-      const req = capturedRequest as LLMRequest;
-      // Should include continuation instructions
-      assertEquals(
-        req.prompt.includes("previous response was cut off"),
-        true,
-      );
-      // Should include last chunk of previous response
-      assertEquals(
-        req.prompt.includes("some generated code here"),
-        true,
-      );
-    });
-  });
-
-  describe("token field accumulation (L3)", () => {
-    function resultWithUsage(
-      content: string,
-      finishReason: "stop" | "length",
-      usage: TokenUsage,
-    ): CodeGenerationResult {
       return {
-        code: content,
-        language: "al",
+        content: part.content,
         response: {
-          content,
+          content: part.content,
           model: "test-model",
-          usage,
+          usage: usage ??
+            { promptTokens: 100, completionTokens: 200, totalTokens: 300 },
           duration: 1000,
-          finishReason,
+          finishReason: part.finishReason,
         },
-        extractedFromDelimiters: false,
+        chunkCount: 1,
       };
-    }
+    };
+    return {
+      fn,
+      calls,
+      get callCount() {
+        return call;
+      },
+    };
+  }
 
-    it("non-stream: sums reasoning/cache tokens across continuations", async () => {
-      let call = 0;
-      const generateFn = () => {
-        call++;
-        const finishReason = call === 1 ? "length" : "stop";
-        return Promise.resolve(
-          resultWithUsage(`part${call}`, finishReason, {
-            promptTokens: 100,
-            completionTokens: 200,
-            totalTokens: 300,
-            reasoningTokens: 10,
-            cacheReadTokens: 5,
-            cacheCreationTokens: 3,
-          }),
-        );
-      };
+  async function drain<T>(
+    gen: AsyncGenerator<unknown, T, undefined>,
+  ): Promise<T> {
+    // Manual iteration: the RETURN value is the result and `for await`
+    // discards it (.claude/rules/async-generators.md).
+    let iter = await gen.next();
+    while (!iter.done) iter = await gen.next();
+    return iter.value;
+  }
 
-      const result = await generateWithContinuation(
-        generateFn,
+  describe("generateWithContinuationStream", () => {
+    it("returns the result directly when the response is complete", async () => {
+      const h = streamFnFrom([{ content: "complete", finishReason: "stop" }]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
         createMockRequest(),
         createMockContext(),
-      );
-
-      assertEquals(result.continuationCount, 1);
-      assertEquals(result.totalUsage.reasoningTokens, 20);
-      assertEquals(result.totalUsage.cacheReadTokens, 10);
-      assertEquals(result.totalUsage.cacheCreationTokens, 6);
+      ));
+      assertEquals(h.callCount, 1);
+      assertEquals(r.continuationCount, 0);
+      assertEquals(r.wasTruncated, false);
     });
 
-    it("non-stream: keeps optional fields undefined when both segments omit them", async () => {
-      let call = 0;
-      const generateFn = () => {
-        call++;
-        const finishReason = call === 1 ? "length" : "stop";
-        return Promise.resolve(
-          resultWithUsage(`part${call}`, finishReason, {
-            promptTokens: 100,
-            completionTokens: 200,
-            totalTokens: 300,
-          }),
-        );
-      };
-
-      const result = await generateWithContinuation(
-        generateFn,
+    it("continues when the response is truncated", async () => {
+      const h = streamFnFrom([
+        { content: "procedure Test() begin", finishReason: "length" },
+        { content: " Message('Hello'); end;", finishReason: "stop" },
+      ]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
         createMockRequest(),
         createMockContext(),
-      );
-
-      assertEquals(result.totalUsage.reasoningTokens, undefined);
-      assertEquals(result.totalUsage.cacheReadTokens, undefined);
-      assertEquals(result.totalUsage.cacheCreationTokens, undefined);
+      ));
+      assertEquals(h.callCount, 2);
+      assertEquals(r.continuationCount, 1);
+      assertEquals(r.wasTruncated, false);
+      assertEquals(r.response.finishReason, "stop");
     });
 
-    it("streaming: sums reasoning/cache tokens across continuations", async () => {
+    it("respects the maxContinuations limit", async () => {
+      const h = streamFnFrom([{ content: "part", finishReason: "length" }]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+        { enabled: true, maxContinuations: 2 },
+      ));
+      assertEquals(h.callCount, 3);
+      assertEquals(r.continuationCount, 2);
+      assertEquals(r.wasTruncated, true);
+    });
+
+    it("does not continue when disabled", async () => {
+      const h = streamFnFrom([{ content: "trunc", finishReason: "length" }]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+        { enabled: false, maxContinuations: 2 },
+      ));
+      assertEquals(h.callCount, 1);
+      assertEquals(r.continuationCount, 0);
+      assertEquals(r.wasTruncated, true);
+    });
+
+    it("accumulates content across continuations", async () => {
+      const h = streamFnFrom([
+        { content: "first", finishReason: "length" },
+        { content: "second", finishReason: "stop" },
+      ]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+      ));
+      assertEquals(r.content.includes("first"), true);
+      assertEquals(r.content.includes("second"), true);
+    });
+
+    it("does not duplicate an overlapping continuation", async () => {
+      const lines = (...xs: string[]) => xs.join(String.fromCharCode(10));
+      const h = streamFnFrom([
+        {
+          content: lines("procedure Test() begin", "    Message('Hello');"),
+          finishReason: "length",
+        },
+        {
+          content: lines("Message('Hello');", "    Message('World');", "end;"),
+          finishReason: "stop",
+        },
+      ]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+      ));
+      assertEquals(r.content.includes("Message('World');"), true);
+      // The surviving merger dedupes a significant boundary overlap rather
+      // than concatenating blindly - this is the semantics the deleted
+      // non-streaming merger differed on, so it is worth pinning.
+      const hello = (r.content.match(/Message\('Hello'\)/g) || []).length;
+      assertEquals(hello, 1);
+    });
+
+    it("carries prior content into the continuation request", async () => {
+      const seen: LLMRequest[] = [];
       let call = 0;
-      const generateStreamFn = async function* (
-        _request: LLMRequest,
+      const fn = async function* (
+        request: LLMRequest,
         _context: GenerationContext,
         _options?: StreamOptions,
       ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+        seen.push(request);
         call++;
+        const content = call === 1 ? "first half" : "second half";
         const finishReason = call === 1 ? "length" : "stop";
-        const content = `part${call}`;
-        const usage: TokenUsage = {
-          promptTokens: 100,
-          completionTokens: 200,
-          totalTokens: 300,
-          reasoningTokens: 10,
-          cacheReadTokens: 5,
-          cacheCreationTokens: 3,
-        };
         yield {
           text: content,
           accumulatedText: content,
@@ -426,29 +238,81 @@ describe("continuation", () => {
           response: {
             content,
             model: "test-model",
-            usage,
-            duration: 1000,
+            usage: {
+              promptTokens: 1,
+              completionTokens: 1,
+              totalTokens: 2,
+            },
+            duration: 1,
             finishReason,
           },
           chunkCount: 1,
         };
       };
-
-      const gen = generateWithContinuationStream(
-        generateStreamFn,
+      await drain(generateWithContinuationStream(
+        fn,
         createMockRequest(),
         createMockContext(),
-      );
-      let iter = await gen.next();
-      while (!iter.done) {
-        iter = await gen.next();
-      }
-      const result = iter.value;
+      ));
+      assertEquals(seen.length, 2);
+      // The continuation prompt must differ from the original and reference
+      // what was already produced, or the model restarts from scratch.
+      assertEquals(seen[1]!.prompt === seen[0]!.prompt, false);
+      assertEquals(seen[1]!.prompt.includes("first half"), true);
+    });
 
-      assertEquals(result.continuationCount, 1);
-      assertEquals(result.totalUsage.reasoningTokens, 20);
-      assertEquals(result.totalUsage.cacheReadTokens, 10);
-      assertEquals(result.totalUsage.cacheCreationTokens, 6);
+    it("passes continuation context to the stream fn", async () => {
+      const h = streamFnFrom([
+        { content: "first", finishReason: "length" },
+        { content: "second", finishReason: "stop" },
+      ]);
+      await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+      ));
+      assertEquals(h.calls.length, 2);
+      assertEquals(h.calls[0]!.taskId, h.calls[1]!.taskId);
+    });
+  });
+
+  describe("token field accumulation (L3)", () => {
+    it("streaming: sums reasoning/cache tokens across continuations", async () => {
+      const h = streamFnFrom([
+        { content: "part1", finishReason: "length" },
+        { content: "part2", finishReason: "stop" },
+      ], {
+        promptTokens: 100,
+        completionTokens: 200,
+        totalTokens: 300,
+        reasoningTokens: 10,
+        cacheReadTokens: 5,
+        cacheCreationTokens: 3,
+      });
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+      ));
+      assertEquals(r.continuationCount, 1);
+      assertEquals(r.totalUsage.reasoningTokens, 20);
+      assertEquals(r.totalUsage.cacheReadTokens, 10);
+      assertEquals(r.totalUsage.cacheCreationTokens, 6);
+    });
+
+    it("streaming: keeps optional fields undefined when both segments omit them", async () => {
+      const h = streamFnFrom([
+        { content: "part1", finishReason: "length" },
+        { content: "part2", finishReason: "stop" },
+      ]);
+      const r = await drain(generateWithContinuationStream(
+        h.fn,
+        createMockRequest(),
+        createMockContext(),
+      ));
+      assertEquals(r.totalUsage.reasoningTokens, undefined);
+      assertEquals(r.totalUsage.cacheReadTokens, undefined);
+      assertEquals(r.totalUsage.cacheCreationTokens, undefined);
     });
   });
 
