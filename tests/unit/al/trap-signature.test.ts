@@ -84,8 +84,12 @@ const TRIGGER_NAIVE = `table 71421 "CG Trigger Shape"
     end;
 }`;
 
-// Two fields with same-named OnValidate triggers; only the second field's
-// body diverges. A bare-name key would collide and drop this site.
+// Two fields with same-named OnValidate triggers; only the FIRST field's
+// body diverges. A bare-name key collides last-write-wins — field(2; B) is
+// what survives the collision — so if the divergence lived only in field(1;
+// A) (the one the collision drops), a bare-key implementation would report
+// no divergence at all. Diverging the survivor instead would pass under
+// both the fixed and the broken implementation, proving nothing.
 const FIELD_COLLISION_CORRECT = `table 71422 "CG Field Collision"
 {
     fields
@@ -94,14 +98,14 @@ const FIELD_COLLISION_CORRECT = `table 71422 "CG Field Collision"
         {
             trigger OnValidate()
             begin
-                Message('a-shared');
+                Message('a-correct');
             end;
         }
         field(2; B; Integer)
         {
             trigger OnValidate()
             begin
-                Message('b-correct');
+                Message('b-shared');
             end;
         }
     }
@@ -115,33 +119,35 @@ const FIELD_COLLISION_NAIVE = `table 71422 "CG Field Collision"
         {
             trigger OnValidate()
             begin
-                Message('a-shared');
+                Message('a-naive');
             end;
         }
         field(2; B; Integer)
         {
             trigger OnValidate()
             begin
-                Message('b-naive');
+                Message('b-shared');
             end;
         }
     }
 }`;
 
 // A report-level `procedure Apply()` alongside a requestpage-scoped
-// `procedure Apply()` of the same name; only the inner one diverges.
+// `procedure Apply()` of the same name; only the OUTER (report-level, first
+// in source order) one diverges — the one a last-write-wins collision drops
+// in favor of the requestpage-scoped survivor. Same reasoning as above.
 const REPORT_SCOPE_CORRECT = `report 71423 "CG Report Scope"
 {
     procedure Apply()
     begin
-        Message('outer-shared');
+        Message('outer-correct');
     end;
 
     requestpage
     {
         procedure Apply()
         begin
-            Message('inner-correct');
+            Message('inner-shared');
         end;
     }
 }`;
@@ -150,15 +156,75 @@ const REPORT_SCOPE_NAIVE = `report 71423 "CG Report Scope"
 {
     procedure Apply()
     begin
-        Message('outer-shared');
+        Message('outer-naive');
     end;
 
     requestpage
     {
         procedure Apply()
         begin
-            Message('inner-naive');
+            Message('inner-shared');
         end;
+    }
+}`;
+
+// A page with two fields under one group, each with its own OnValidate;
+// only the FIRST field diverges. page_field carried no scope segment before
+// MUST-FIX A, so both fields' triggers collapsed onto one key exactly like
+// the table case above — this is the page-specific instance of that same
+// regression, and it independently catches a scopeLabel gate that stops
+// recognizing page_field even if the table-field fixture above still passes.
+const PAGE_FIELD_COLLISION_CORRECT = `page 71440 "CG Page Field Collision"
+{
+    layout
+    {
+        area(Content)
+        {
+            group(General)
+            {
+                field(A; Rec.A)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('a-correct');
+                    end;
+                }
+                field(B; Rec.B)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('b-shared');
+                    end;
+                }
+            }
+        }
+    }
+}`;
+
+const PAGE_FIELD_COLLISION_NAIVE = `page 71440 "CG Page Field Collision"
+{
+    layout
+    {
+        area(Content)
+        {
+            group(General)
+            {
+                field(A; Rec.A)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('a-naive');
+                    end;
+                }
+                field(B; Rec.B)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('b-shared');
+                    end;
+                }
+            }
+        }
     }
 }`;
 
@@ -225,6 +291,16 @@ describe("al/trap-signature", () => {
 
   it("yields no sites when correct is missing entirely, reason no-correct-objects", async () => {
     const sig = await deriveTrapSignature([], [CORRECT]);
+    assertEquals(sig.sites.length, 0);
+    assertEquals(sig.emptyReason, "no-correct-objects");
+  });
+
+  it("prioritizes no-correct-objects when both sides are missing", async () => {
+    // no-correct-objects and no-naive-objects only differ in outcome when
+    // BOTH sides are empty — either individually-missing test above would
+    // still pass if the two priority checks were swapped. This is the one
+    // case that pins the documented priority order (correct checked first).
+    const sig = await deriveTrapSignature([], []);
     assertEquals(sig.sites.length, 0);
     assertEquals(sig.emptyReason, "no-correct-objects");
   });
@@ -301,22 +377,43 @@ describe("al/trap-signature", () => {
   });
 
   it("keeps same-named field triggers in different fields distinct instead of colliding", async () => {
+    // The divergence is in field(1; A) — the one a last-write-wins bare-key
+    // collision drops in favor of field(2; B), which stays identical on
+    // both sides. A gutted bare-key implementation reports 0 sites here.
     const sig = await deriveTrapSignature([FIELD_COLLISION_CORRECT], [
       FIELD_COLLISION_NAIVE,
     ]);
     assertEquals(sig.sites.length, 1);
-    assertEquals(sig.sites[0]?.procedureName, "B.OnValidate");
-    assertEquals(sig.sites[0]?.correctForm, "message('b-correct')");
-    assertEquals(sig.sites[0]?.naiveForm, "message('b-naive')");
+    assertEquals(sig.sites[0]?.procedureName, "A.OnValidate");
+    assertEquals(sig.sites[0]?.correctForm, "message('a-correct')");
+    assertEquals(sig.sites[0]?.naiveForm, "message('a-naive')");
   });
 
   it("keeps a report-level procedure distinct from a same-named requestpage-scoped one", async () => {
+    // The divergence is in the OUTER (report-level) Apply — the one a
+    // last-write-wins bare-key collision drops in favor of the
+    // requestpage-scoped Apply, which stays identical on both sides.
     const sig = await deriveTrapSignature([REPORT_SCOPE_CORRECT], [
       REPORT_SCOPE_NAIVE,
     ]);
     assertEquals(sig.sites.length, 1);
-    assertEquals(sig.sites[0]?.procedureName, "requestpage.Apply");
-    assertEquals(sig.sites[0]?.correctForm, "message('inner-correct')");
-    assertEquals(sig.sites[0]?.naiveForm, "message('inner-naive')");
+    assertEquals(sig.sites[0]?.procedureName, "Apply");
+    assertEquals(sig.sites[0]?.correctForm, "message('outer-correct')");
+    assertEquals(sig.sites[0]?.naiveForm, "message('outer-naive')");
+  });
+
+  it("keeps same-named page field triggers distinct instead of colliding", async () => {
+    // page_field carried no scope segment before the derived-boundary rule
+    // (MUST-FIX A); this independently regression-guards that specific
+    // container kind, the same way the table-field test above guards
+    // field_declaration. Divergence is in the FIRST field for the same
+    // last-write-wins reason.
+    const sig = await deriveTrapSignature([PAGE_FIELD_COLLISION_CORRECT], [
+      PAGE_FIELD_COLLISION_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.procedureName, "General.A.OnValidate");
+    assertEquals(sig.sites[0]?.correctForm, "message('a-correct')");
+    assertEquals(sig.sites[0]?.naiveForm, "message('a-naive')");
   });
 });

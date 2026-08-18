@@ -123,17 +123,32 @@ function isMemberNode(node: Node): boolean {
 
 /**
  * The scope-path label a container node contributes, or undefined when the
- * node is not itself a scope boundary. Only nodes whose type ends in
- * `_section` or `_declaration` are considered (structural wrapper nodes like
- * `declaration_body`/`fields_body` never are, so they contribute nothing and
- * the path they're on passes through unchanged).
+ * node is not itself a scope boundary.
  *
- * Prefers the container's own name: a table/page field, a page action, and a
- * page group all carry a direct `identifier`/`quoted_identifier` child (e.g.
- * `field(2; Balance; Decimal)` names itself "Balance"). Falls back to the
- * container's own leading keyword when it has no name of its own — a
- * report's `requestpage` section is unique per report and never named, so
- * its `requestpage_keyword` child names the scope instead.
+ * Every node type in this grammar that wraps a member without itself BEING
+ * one is either a genuine named/keyword container (`field_declaration`,
+ * `requestpage_section`, `report_dataitem`, `page_field`, `xmlport_element`,
+ * ...) or a `*_body` node whose sole job is to hold that container's
+ * children (`declaration_body`, `fields_body`, `layout_body`,
+ * `layout_container_body`, `dataset_body`, `report_body`, `xmlport_body`,
+ * ...) — every one of the latter observed in this grammar ends in `_body`,
+ * and none of the former do. So rather than enumerate which container KINDS
+ * to recognize (a list that silently misses whatever wasn't tested — a
+ * table field is `field_declaration` and used to be recognized, a page
+ * field is `page_field` and used not to be, despite being the same
+ * authoring concept), this excludes only `_body` wrappers and treats every
+ * other non-member node between the object root and a member as a
+ * boundary. `collectMembers`'s `depth < 2` guard is what keeps this from
+ * also labeling `source_file` and the object's own top-level declaration
+ * (neither ends in `_body` either, but both are excluded by depth instead).
+ *
+ * Prefers the container's own name: a table/page field, a page action, a
+ * page group, and a report dataitem/xmlport element all carry a direct
+ * `identifier`/`quoted_identifier` child (e.g. `field(2; Balance; Decimal)`
+ * names itself "Balance", `dataitem(Cust; Customer)` names itself "Cust").
+ * Falls back to the container's own leading keyword when it has no name of
+ * its own — a report's `requestpage` section is unique per report and never
+ * named, so its `requestpage_keyword` child names the scope instead.
  *
  * Known simplification: the keyword fallback takes the FIRST keyword-typed
  * child, which for most container kinds is that node's own self-naming
@@ -143,7 +158,8 @@ function isMemberNode(node: Node): boolean {
  * qualifying keyword is the SECOND one (`content_keyword`, not the leading
  * `area_keyword`), so those currently collapse to the same "area" label.
  * Not disambiguated: no committed task's trap lives inside a page area, and
- * the failure mode is a verbose-but-correct key, not a silent collision.
+ * the failure mode is a verbose-but-correct key, not a silent collision —
+ * confirmed by construction, unlike the enumeration gap above.
  *
  * `named` distinguishes the two forms for the display path built in
  * `extractProcedures`: a container's OWN name (`named: true`) is always
@@ -157,7 +173,7 @@ function isMemberNode(node: Node): boolean {
 function scopeLabel(
   node: Node,
 ): { normalized: string; raw: string; named: boolean } | undefined {
-  if (!node.type.endsWith("_section") && !node.type.endsWith("_declaration")) {
+  if (node.type.endsWith("_body")) {
     return undefined;
   }
 
