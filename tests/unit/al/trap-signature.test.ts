@@ -3,7 +3,10 @@ import { assertEquals, assertExists, assertNotEquals } from "@std/assert";
 
 import { Language, Parser } from "web-tree-sitter";
 
-import { deriveTrapSignature } from "../../../src/al/trap-signature.ts";
+import {
+  classifyAgainstSignature,
+  deriveTrapSignature,
+} from "../../../src/al/trap-signature.ts";
 
 const CORRECT = `codeunit 71410 "CG X054 Agent"
 {
@@ -484,6 +487,66 @@ const KNOWN_BODY_NODE_TYPES: readonly string[] = [
   "views_mod_body",
   "xmlport_body",
 ].sort();
+
+describe("al/trap-signature: classification", () => {
+  it("returns cannot-compare for an empty signature", async () => {
+    const c = await classifyAgainstSignature({ sites: [] }, CORRECT);
+    assertEquals(c.verdict, "cannot-compare");
+  });
+
+  it("says avoided-the-mistake when every site takes the correct form", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    const c = await classifyAgainstSignature(sig, CORRECT);
+    assertEquals(c.verdict, "avoided-the-mistake");
+  });
+
+  it("says made-the-mistake when any site takes the naive form", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    const c = await classifyAgainstSignature(sig, NAIVE);
+    assertEquals(c.verdict, "made-the-mistake");
+    assertEquals(c.decidingSite?.procedureName.toLowerCase(), "setterms");
+  });
+
+  it("is unaffected by reformatting and comments", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    const reformatted = NAIVE
+      .replace(/\n/g, "\n   ")
+      .replace("begin", "begin // reformatted");
+    assertEquals(
+      (await classifyAgainstSignature(sig, reformatted)).verdict,
+      "made-the-mistake",
+    );
+  });
+
+  it("says different-approach when neither form appears", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    const other = CORRECT.replace(
+      "Quote.Validate(Qty, Qty);",
+      "Quote.SetQuantity(Qty);",
+    );
+    assertEquals(
+      (await classifyAgainstSignature(sig, other)).verdict,
+      "different-approach",
+    );
+  });
+
+  it("says different-approach when the procedure is absent", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    const empty = 'codeunit 71410 "CG X054 Agent"\n{\n}';
+    assertEquals(
+      (await classifyAgainstSignature(sig, empty)).verdict,
+      "different-approach",
+    );
+  });
+
+  it("says different-approach for prose", async () => {
+    const sig = await deriveTrapSignature([CORRECT], [NAIVE]);
+    assertEquals(
+      (await classifyAgainstSignature(sig, "I cannot help.")).verdict,
+      "different-approach",
+    );
+  });
+});
 
 describe("al/trap-signature: grammar invariant", () => {
   it("pins the exact set of _body wrapper node types the derived scope-boundary rule relies on", async () => {

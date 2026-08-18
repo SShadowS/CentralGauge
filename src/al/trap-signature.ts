@@ -582,3 +582,122 @@ export async function deriveTrapSignature(
   }
   return { sites: [], emptyReason: "no-divergence" };
 }
+
+export type TrapVerdict =
+  | "made-the-mistake"
+  | "avoided-the-mistake"
+  | "different-approach"
+  | "cannot-compare";
+
+export interface TrapClassification {
+  verdict: TrapVerdict;
+  /** The site that decided it, for the UI to name. Absent for cannot-compare. */
+  decidingSite?: TrapSite;
+}
+
+/**
+ * The normalized statement list for the procedure/trigger a site names,
+ * within a response already parsed into objects by `objectKey` — or
+ * `undefined` when the site's object or procedure doesn't exist in the
+ * response (an object the response never declares, or a member it never
+ * defines, has nothing to compare at that site).
+ *
+ * Locates the procedure through the same AST walk `deriveTrapSignature`
+ * itself uses (`extractProcedures`), then matches on the member's own
+ * display name — exactly the string `diffToSites` stored as
+ * `TrapSite.procedureName` when it built this site. That reuses Task 6's
+ * member-collection machinery (scope path, code-block/statement walk,
+ * comment stripping) instead of a raw text search for `procedureName` in
+ * the response source, which would not survive a member nested in a table
+ * field, page action, or requestpage section — `procedureName` is only a
+ * display path, not a location.
+ */
+async function statementsAtSite(
+  responseObjects: Map<string, AlObject>,
+  procedureCache: Map<string, Map<string, ProcedureInfo>>,
+  site: TrapSite,
+): Promise<string[] | undefined> {
+  const obj = responseObjects.get(site.objectKey);
+  if (!obj) return undefined;
+
+  let procedures = procedureCache.get(site.objectKey);
+  if (!procedures) {
+    procedures = await extractProcedures(obj.source);
+    procedureCache.set(site.objectKey, procedures);
+  }
+
+  for (const info of procedures.values()) {
+    if (info.name === site.procedureName) return info.statements;
+  }
+  return undefined;
+}
+
+/**
+ * Classifies a model response against a previously-derived trap signature.
+ *
+ * An empty signature (nothing to compare — see `TrapSignature.emptyReason`)
+ * is always `cannot-compare`, before the response is even parsed.
+ *
+ * Otherwise every site's NAIVE form is checked first, across the whole
+ * signature, before anything else is considered: any site whose naive form
+ * appears in the response is `made-the-mistake`, full stop — even when some
+ * other site in the same response looks correct. This is deliberate: the
+ * dangerous verdict is the one that requires positive evidence, not the safe
+ * one, so a response that is naive at one site and correct at another still
+ * reports the mistake.
+ *
+ * Only once no site has fired `made-the-mistake` does the response need
+ * every site *satisfied* to earn `avoided-the-mistake`: a site with a
+ * `correctForm` is satisfied when that form is present; a site with only a
+ * `naiveForm` (naive/ inserted a statement correct/ never had) is satisfied
+ * when that form is *absent*, since not writing it is what the correct
+ * solution does. A missing object, a missing procedure, or any unsatisfied
+ * site falls through to `different-approach`.
+ */
+export async function classifyAgainstSignature(
+  signature: TrapSignature,
+  responseSource: string,
+): Promise<TrapClassification> {
+  if (signature.sites.length === 0) {
+    return { verdict: "cannot-compare" };
+  }
+
+  const responseObjects = await extractObjectsByKey([responseSource]);
+  const procedureCache = new Map<string, Map<string, ProcedureInfo>>();
+
+  for (const site of signature.sites) {
+    if (site.naiveForm === undefined) continue;
+    const statements = await statementsAtSite(
+      responseObjects,
+      procedureCache,
+      site,
+    );
+    if (statements?.includes(site.naiveForm)) {
+      return { verdict: "made-the-mistake", decidingSite: site };
+    }
+  }
+
+  for (const site of signature.sites) {
+    const statements = await statementsAtSite(
+      responseObjects,
+      procedureCache,
+      site,
+    );
+    if (statements === undefined) {
+      return { verdict: "different-approach", decidingSite: site };
+    }
+    if (site.correctForm !== undefined) {
+      if (!statements.includes(site.correctForm)) {
+        return { verdict: "different-approach", decidingSite: site };
+      }
+    } else if (
+      site.naiveForm !== undefined && statements.includes(site.naiveForm)
+    ) {
+      // Already excluded by the naive-form pass above; kept so this rule
+      // reads correctly (and stays correct) on its own.
+      return { verdict: "different-approach", decidingSite: site };
+    }
+  }
+
+  return { verdict: "avoided-the-mistake" };
+}
