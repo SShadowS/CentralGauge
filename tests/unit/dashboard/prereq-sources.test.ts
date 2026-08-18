@@ -71,6 +71,41 @@ describe("dashboard/prereq-sources", () => {
     assertEquals(r.sources.length, 2);
   });
 
+  it("skips an unresolvable dependency id and still loads the resolvable one", async () => {
+    const draft = join(root, "CG-AL-X054");
+    await ensureDir(join(draft, "prereq"));
+    await Deno.writeTextFile(
+      join(draft, "prereq", "app.json"),
+      JSON.stringify({
+        id: "a1b2c3d4-0a54-0000-0000-000000000001",
+        dependencies: [
+          { id: "a1b2c3d4-0ff0-0000-0000-000000000022" },
+          { id: "437dbf0e-0000-0000-0000-000000000000" },
+        ],
+      }),
+    );
+    await Deno.writeTextFile(
+      join(draft, "prereq", "Own.Table.al"),
+      "table 1 Own { }",
+    );
+
+    const dep = join(root, "deps", "CG-AL-H022");
+    await ensureDir(dep);
+    await Deno.writeTextFile(
+      join(dep, "app.json"),
+      JSON.stringify({ id: "a1b2c3d4-0ff0-0000-0000-000000000022" }),
+    );
+    await Deno.writeTextFile(
+      join(dep, "Chained.Table.al"),
+      "table 9 Chained { }",
+    );
+
+    const r = await loadPrereqSources(draft, join(root, "deps"));
+    assertEquals(r.files.includes("Own.Table.al"), true);
+    assertEquals(r.files.includes("Chained.Table.al"), true);
+    assertEquals(r.sources.length, 2);
+  });
+
   it("does not loop forever on a circular dependency", async () => {
     const draft = join(root, "CG-AL-X054");
     await ensureDir(join(draft, "prereq"));
