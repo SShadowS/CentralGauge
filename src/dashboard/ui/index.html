@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CentralGauge Dashboard</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>CentralGauge Authoring Dashboard</h1>
+  <p id="standing-note" class="standing-note"></p>
+</header>
+
+<div class="layout">
+  <aside class="rail">
+    <section class="rail-section">
+      <h2>Draft</h2>
+      <label for="draft-select">Choose a draft</label>
+      <select id="draft-select">
+        <option value="">Loading drafts…</option>
+      </select>
+      <p id="draft-error" class="error-text" hidden></p>
+    </section>
+
+    <section class="rail-section">
+      <h2>Files</h2>
+      <ul id="file-list" class="file-list"></ul>
+    </section>
+
+    <section class="rail-section">
+      <h2>Ask models</h2>
+      <label for="model-input">Model slugs, comma-separated</label>
+      <textarea
+        id="model-input"
+        rows="3"
+        placeholder="anthropic/claude-opus-4-7, openai/gpt-5.5"
+      ></textarea>
+      <button id="run-button" type="button" disabled>Ask models</button>
+      <p id="run-status" class="run-status" aria-live="polite"></p>
+    </section>
+  </aside>
+
+  <main class="matrix-area">
+    <section id="trap-summary" class="trap-summary"></section>
+
+    <div id="matrix-container">
+      <p class="empty-state">
+        Pick a draft, enter model slugs, and ask models to see the matrix.
+      </p>
+    </div>
+
+    <p id="artifact-note" class="artifact-note"></p>
+
+    <section id="detail-panel" class="detail-panel" hidden>
+      <div class="detail-header">
+        <h2 id="detail-title"></h2>
+        <button id="detail-close" type="button" aria-label="Close">×</button>
+      </div>
+      <pre id="detail-source"></pre>
+    </section>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

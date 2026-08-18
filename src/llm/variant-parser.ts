@@ -17,6 +17,7 @@ import {
   MODEL_DISPLAY_NAMES,
   MODEL_GROUPS,
 } from "./model-presets.ts";
+import { resolveProviderAndModel } from "./model-aliases.ts";
 import { LiteLLMService } from "./litellm-service.ts";
 
 const log = Logger.create("llm:variant-parser");
@@ -99,35 +100,6 @@ function resolveBaseModelsToVariants(
   };
 
   return [variant];
-}
-
-/**
- * Resolve a base model spec to provider and model
- * Supports formats:
- * - "sonnet" → resolved via MODEL_ALIASES
- * - "openai/gpt-5.1" → provider: openai, model: gpt-5.1
- * - "openrouter/deepseek/deepseek-v3.2" → provider: openrouter, model: deepseek/deepseek-v3.2
- */
-function resolveProviderAndModel(
-  spec: string,
-): { provider: string; model: string } {
-  // Check aliases first (aliases like "sonnet", "opus", "gemini")
-  const alias = MODEL_ALIASES[spec];
-  if (alias) {
-    return { provider: alias.provider, model: alias.model };
-  }
-
-  // If provider/model format, split on FIRST "/" only
-  // This allows models like "openrouter/deepseek/deepseek-v3.2"
-  const firstSlash = spec.indexOf("/");
-  if (firstSlash !== -1) {
-    const provider = spec.substring(0, firstSlash);
-    const model = spec.substring(firstSlash + 1);
-    return { provider, model };
-  }
-
-  // Unknown - return as-is (will be handled downstream)
-  return { provider: spec, model: spec };
 }
 
 /**

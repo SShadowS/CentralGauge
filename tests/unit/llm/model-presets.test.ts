@@ -252,3 +252,41 @@ Deno.test("getModelDisplayName", async (t) => {
     assertEquals(result.length > 0, true);
   });
 });
+
+// The alias table now lives in the zero-import leaf src/llm/model-aliases.ts
+// and is re-exported from here. These assertions read it through
+// model-presets.ts on purpose: they pin BOTH that the values survived the
+// move byte-for-byte and that the re-export still serves every existing
+// importer. The rest of this file exercises the table only through
+// ModelPresetRegistry or by counting keys, so a wrong model id would have
+// gone unnoticed.
+Deno.test("MODEL_ALIASES entries survive the move to the leaf", async (t) => {
+  await t.step("pins representative aliases", () => {
+    assertEquals(MODEL_ALIASES["mock"], {
+      provider: "mock",
+      model: "mock-gpt-4",
+    });
+    assertEquals(MODEL_ALIASES["sonnet"], {
+      provider: "anthropic",
+      model: "claude-sonnet-4-5-20250929",
+    });
+    assertEquals(MODEL_ALIASES["opus"], {
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+    });
+    assertEquals(MODEL_ALIASES["gpt-4o"], {
+      provider: "openai",
+      model: "gpt-4o",
+    });
+    // An entry whose model id contains its own "/" — the case a naive split
+    // would mangle.
+    assertEquals(MODEL_ALIASES["openrouter-deepseek"], {
+      provider: "openrouter",
+      model: "deepseek/deepseek-v3.2",
+    });
+  });
+
+  await t.step("keeps every alias, so nothing was dropped in the move", () => {
+    assertEquals(Object.keys(MODEL_ALIASES).length, 26);
+  });
+});

@@ -112,6 +112,7 @@ scripts/*
 !scripts/weekly-cycle.ts
 !scripts/cycle-*.ps1
 !scripts/trap-probe.ts
+!scripts/harvest-candidate-corpus.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md

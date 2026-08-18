@@ -1,0 +1,402 @@
+/**
+ * HTTP server for the authoring dashboard.
+ *
+ * An author opens this in a browser, sees their scaffolded drafts
+ * (`scratch/<id>/`, via `listDrafts`), and fires a "quick run" that asks
+ * several models the same question (`runQuick`) to see which ones fall for
+ * the trap a draft is built around.
+ *
+ * That question is derived server-side from the selected draft's `task.yml`,
+ * through the same attempt-1 path the bench uses
+ * (`src/llm/prompt-building.ts`). It is never taken from the request body:
+ * spec §2b's reason is that an author must calibrate against the prompt the
+ * bench actually sends, and the practical one is that a `prompt` field the
+ * client never populated meant every model was asked the empty string.
+ *
+ * `createHandler` is the pure request router: it has no dependency on a
+ * bound socket, so route behavior (including validation) is unit-testable
+ * without ever calling `Deno.serve`. `startServer` is the thin listener
+ * shell around it.
+ *
+ * Binding is a security property, not an implementation detail: this server
+ * spends API money on every quick run, and in later plans will drive
+ * container publishes. It binds `127.0.0.1` only — never call
+ * `Deno.serve` here with any other hostname.
+ *
+ * `defaultModels` (surfaced at `GET /api/defaults`) pre-fills the UI's model
+ * input from a `--preset` name. It is resolved OUTSIDE this module, by the
+ * CLI (`cli/commands/workbench-command.ts`, via `resolvePresetModels` in
+ * `./drafts.ts`), and handed in as plain data. This module must never import
+ * the config loader itself: `tests/unit/dashboard/ingest-safety.test.ts`
+ * polices this file's whole import graph, and every module reached from
+ * here is one more thing a later change could accidentally widen into
+ * something the dashboard must never reach.
+ *
+ * @module dashboard/server
+ */
+
+import type { DraftSummary } from "./drafts.ts";
+import type { QuickRun } from "./run-manager.ts";
+
+import { listDrafts } from "./drafts.ts";
+import { runQuick, writeRunArtifact } from "./run-manager.ts";
+import { createModelCaller } from "./model-caller.ts";
+import { loadTrapSources } from "./source-loader.ts";
+
+export interface DashboardServer {
+  port: number;
+  /** The address actually bound. Exposed so the loopback-only guarantee is
+   *  assertable rather than merely intended. */
+  hostname: string;
+  shutdown(): Promise<void>;
+}
+
+const UI_DIR = new URL("./ui/", import.meta.url);
+
+/**
+ * The complete set of static files this server will ever serve, keyed by
+ * request path. Deliberately an explicit three-entry allowlist rather than
+ * a generic `url.pathname` -> filesystem-path mapper: a generic static
+ * handler is a path-traversal hole, and this server is not merely a file
+ * server — it holds provider credentials by way of the LLM registry and, in
+ * later plans, drives container publishes. Every path not listed here 404s.
+ */
+const STATIC_FILES: Record<string, { file: string; contentType: string }> = {
+  "/": { file: "index.html", contentType: "text/html; charset=utf-8" },
+  "/app.js": {
+    file: "app.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
+  "/style.css": { file: "style.css", contentType: "text/css; charset=utf-8" },
+};
+
+/**
+ * Hostnames a browser may legitimately have used to reach a loopback-bound
+ * server. Any other value in `Host` means the request arrived through a name
+ * that resolves here but is not ours — DNS rebinding.
+ */
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** Strips the `:port` suffix from a `Host`/`Origin` authority. */
+function hostnameOf(authority: string): string {
+  if (authority.startsWith("[")) {
+    const end = authority.indexOf("]");
+    return end === -1 ? authority : authority.slice(0, end + 1);
+  }
+  const colon = authority.lastIndexOf(":");
+  return colon === -1 ? authority : authority.slice(0, colon);
+}
+
+/**
+ * Rejects a request that a browser sent from somewhere other than this
+ * server's own loopback origin. Two headers, both only checked when present:
+ *
+ * - `Host`: an attacker who points `evil.example` at 127.0.0.1 gets the
+ *   victim's browser to send same-origin requests here, and the loopback
+ *   binding does nothing about it. Browsers always send `Host`, so a value
+ *   that is not loopback is proof of rebinding.
+ * - `Origin`: browsers attach it to every cross-origin POST, form
+ *   submissions included. That is what closes the CSRF hole the loopback
+ *   binding leaves open: `req.json()` parses a body whatever its
+ *   content-type, so a plain `<form enctype="text/plain">` on a page the
+ *   author visits is a simple request that would otherwise trigger a real
+ *   model fan-out. The attacker cannot read the answer; the spend happens
+ *   anyway.
+ *
+ * Absent headers pass. Non-browser callers (curl, the test suite) send
+ * neither, and they are not the threat this defends against — the attacker
+ * here is a page in the author's own browser, which cannot omit them.
+ */
+function isSameOriginRequest(
+  req: Request,
+  expectedPort: number | undefined,
+): boolean {
+  const host = req.headers.get("host");
+  if (host !== null && !LOOPBACK_HOSTNAMES.has(hostnameOf(host))) {
+    return false;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin !== null) {
+    let url: URL;
+    try {
+      url = new URL(origin);
+    } catch {
+      return false;
+    }
+    if (!LOOPBACK_HOSTNAMES.has(url.hostname)) return false;
+    // The hostname alone is not this server's origin: another local dev
+    // server on 127.0.0.1:3000 is a different origin and its pages must not
+    // be able to spend money here. `URL#port` is "" for a scheme's default
+    // port, so fill that in before comparing.
+    if (expectedPort !== undefined) {
+      const originPort = url.port ||
+        (url.protocol === "https:" ? "443" : "80");
+      if (originPort !== String(expectedPort)) return false;
+    }
+  }
+
+  return true;
+}
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/**
+ * Runs before `deps.runQuick` is ever invoked, so a malformed or
+ * unresolvable request never reaches it, and resolves the request to the
+ * `DraftSummary` the run will actually read. Checks, all 400:
+ * `models` must be a non-empty array of strings, `draftDir` must name a draft
+ * `listDrafts` actually returned (not merely a well-formed string), and that
+ * draft's `task.yml` must carry a description.
+ *
+ * The request names a `draftDir`, NOT a task id. Task 8 fix round 2
+ * deliberately allows two directories to report one id — `scratch/CG-AL-X053/`
+ * and `scratch/pre-migration-backup_x053/` both say `id: CG-AL-X053` on this
+ * machine — and ruled that `dir` is the only guaranteed-unique field.
+ * Resolving on `id` returned whichever came first in `(id, dirName)` sort
+ * order, so selecting the backup ran against the other directory's sources
+ * and labelled the result with the backup's name.
+ *
+ * There is deliberately no `prompt` field. The question is rendered
+ * server-side from the draft's `task.yml` through the bench's own attempt-1
+ * path — a client-supplied prompt is both how every model came to be asked
+ * the empty string and a way to calibrate against a prompt the bench never
+ * sends (spec §2b). The description check is the same guarantee from the
+ * other side: a draft still carrying no description is an authoring state,
+ * not a runnable one, and spending API money to ask N models "## Task\n\n"
+ * is exactly the failure this endpoint should refuse rather than report.
+ */
+function validateRunRequest(
+  body: unknown,
+  drafts: DraftSummary[],
+): { ok: true; draft: DraftSummary; models: string[] } | {
+  ok: false;
+  error: string;
+} {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "request body must be a JSON object" };
+  }
+  const { draftDir, models } = body as Record<string, unknown>;
+
+  if (
+    !Array.isArray(models) || models.length === 0 ||
+    !models.every((m) => typeof m === "string")
+  ) {
+    return { ok: false, error: "models must be a non-empty array of strings" };
+  }
+  if (typeof draftDir !== "string") {
+    return { ok: false, error: "draftDir must be a string" };
+  }
+  const draft = drafts.find((d) => d.dir === draftDir);
+  if (!draft) {
+    return { ok: false, error: `unknown draft directory: ${draftDir}` };
+  }
+  // `?? ""` rather than trusting the type: `deps.listDrafts` is injectable,
+  // so a partially-shaped draft should 400 with a legible reason rather than
+  // 500 on a TypeError.
+  if ((draft.description ?? "").trim().length === 0) {
+    return {
+      ok: false,
+      error: `draft ${draft.id} has no description in task.yml, so there is ` +
+        `nothing to ask the models`,
+    };
+  }
+
+  return { ok: true, draft, models };
+}
+
+/**
+ * Builds the pure request router. No socket, no side effects at call time —
+ * every route reads only from the injected `deps`, which is what lets the
+ * test suite exercise every status code — and, for `POST /api/run`'s
+ * success path, a real matrix result — without `Deno.serve` ever binding a
+ * port and without any test reaching a real model provider. Only
+ * `createModelCaller` needs faking in a test; `loadTrapSources` and
+ * `runQuick` are pure/local enough to use for real against a temp dir.
+ *
+ * `POST /api/run`'s success path reads the draft's `correct/`/`naive/` AL
+ * sources off disk (`deps.loadTrapSources`), builds a model caller scoped to
+ * this run (`deps.createModelCaller`), hands both to `deps.runQuick`, and
+ * persists the result through `deps.writeRunArtifact`, answering with the
+ * run plus either `artifactPath` or `artifactError`.
+ */
+export function createHandler(
+  deps: {
+    scratchDir: string;
+    listDrafts: typeof listDrafts;
+    runQuick: typeof runQuick;
+    writeRunArtifact: typeof writeRunArtifact;
+    loadTrapSources: typeof loadTrapSources;
+    createModelCaller: typeof createModelCaller;
+    /** CLI-resolved `--preset` models (see the module doc comment), or
+     *  empty when none were given. Served verbatim at `GET /api/defaults`. */
+    defaultModels: string[];
+    /**
+     * The port this server is actually bound to, for the `Origin` check.
+     * A THUNK, not a number, because `Deno.serve` needs the handler before
+     * it can report an address — `startServer` fills the value in once the
+     * listener exists. Returning `undefined` (before the listener is up, or
+     * in a router test with no socket at all) falls back to the
+     * hostname-only check rather than refusing everything.
+     */
+    boundPort?: () => number | undefined;
+  },
+): (req: Request) => Promise<Response> {
+  return async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+
+    // Before anything else, including the static files: a request that
+    // reached us through a rebound DNS name, or from another origin, is
+    // refused whatever it asked for.
+    if (!isSameOriginRequest(req, deps.boundPort?.())) {
+      return jsonResponse(403, {
+        error: "refused: request did not come from this server's own origin",
+      });
+    }
+
+    const staticEntry = req.method === "GET"
+      ? STATIC_FILES[url.pathname]
+      : undefined;
+    if (staticEntry) {
+      const content = await Deno.readTextFile(
+        new URL(staticEntry.file, UI_DIR),
+      );
+      return new Response(content, {
+        status: 200,
+        headers: { "content-type": staticEntry.contentType },
+      });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/drafts") {
+      const drafts = await deps.listDrafts(deps.scratchDir);
+      return jsonResponse(200, { drafts });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/defaults") {
+      return jsonResponse(200, { defaultModels: deps.defaultModels });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/run") {
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResponse(400, { error: "request body must be valid JSON" });
+      }
+
+      const drafts = await deps.listDrafts(deps.scratchDir);
+      const validated = validateRunRequest(body, drafts);
+      if (!validated.ok) {
+        return jsonResponse(400, { error: validated.error });
+      }
+
+      const draft = validated.draft;
+
+      try {
+        const { correctSources, naiveSources } = await deps.loadTrapSources(
+          draft.id,
+          draft.dir,
+        );
+        const call = deps.createModelCaller({
+          taskId: draft.id,
+          description: `Dashboard quick run for ${draft.id}`,
+        });
+        const run: QuickRun = await deps.runQuick({
+          draft,
+          models: validated.models,
+          correctSources,
+          naiveSources,
+          call,
+        });
+
+        // Persist the run under `<draftDir>/.runs/` and tell the author
+        // where. Best-effort by design: the matrix is what the run is FOR,
+        // and losing it because a directory could not be created would be
+        // worse than losing the file. The failure is reported rather than
+        // swallowed — see spec §7 for why the artifact's shape and location
+        // are the two structural barriers against a stray ingest replay.
+        let artifact: { artifactPath: string } | { artifactError: string };
+        try {
+          artifact = {
+            artifactPath: await deps.writeRunArtifact(draft.dir, run),
+          };
+        } catch (error) {
+          artifact = {
+            artifactError: error instanceof Error
+              ? error.message
+              : String(error),
+          };
+        }
+
+        return jsonResponse(200, { ...run, ...artifact });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse(500, { error: message });
+      }
+    }
+
+    return jsonResponse(404, { error: "not found" });
+  };
+}
+
+/**
+ * Binds the router to a loopback-only listener.
+ *
+ * `port: 0` (the default via `opts.port` being undefined) asks the OS for
+ * an ephemeral port. Either way, `port`/`hostname` on the returned
+ * `DashboardServer` are read back from `Deno.serve`'s own `addr`, not
+ * echoed from `opts` — an echo would make the loopback guarantee
+ * unfalsifiable by a test.
+ */
+export function startServer(
+  opts: { scratchDir: string; port?: number; defaultModels?: string[] },
+): Promise<DashboardServer> {
+  // Filled in below, once `Deno.serve` can tell us what it bound. Read
+  // lazily by the handler's `Origin` check — see `boundPort` on
+  // `createHandler`'s deps for why that is a thunk. A one-field holder
+  // rather than a bare `let`: the closure reads it before the assignment
+  // happens, which deno_lint's `prefer-const` cannot see, so a `let` here
+  // gets reported as never reassigned.
+  const listener: { port: number | undefined } = { port: undefined };
+
+  const handler = createHandler({
+    scratchDir: opts.scratchDir,
+    listDrafts,
+    runQuick,
+    writeRunArtifact,
+    loadTrapSources,
+    createModelCaller,
+    defaultModels: opts.defaultModels ?? [],
+    boundPort: () => listener.port,
+  });
+
+  const server = Deno.serve(
+    {
+      hostname: "127.0.0.1",
+      port: opts.port ?? 0,
+      onListen: () => {},
+    },
+    handler,
+  );
+
+  const addr = server.addr;
+  if (!("hostname" in addr) || !("port" in addr)) {
+    throw new Error(
+      `dashboard server bound to a non-network address: ${
+        JSON.stringify(addr)
+      }`,
+    );
+  }
+  listener.port = addr.port;
+
+  return Promise.resolve({
+    port: addr.port,
+    hostname: addr.hostname,
+    shutdown: () => server.shutdown(),
+  });
+}

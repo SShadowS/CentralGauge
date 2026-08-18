@@ -18,7 +18,6 @@ import {
   isStreamingAdapter,
   type LLMAdapter,
   type LLMRequest,
-  type LLMResponse,
   type StreamingLLMAdapter,
 } from "../llm/types.ts";
 import {
@@ -27,7 +26,12 @@ import {
 } from "../llm/empty-retry.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
-import { CodeExtractor } from "../llm/code-extractor.ts";
+import { resolveCandidate } from "../llm/candidate-resolution.ts";
+import {
+  buildFixPrompt,
+  buildGenerationPrompt,
+  DEFAULT_TEMPLATE_DIR,
+} from "../llm/prompt-building.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
@@ -38,57 +42,6 @@ import {
   type StreamingContinuationResult,
 } from "../llm/continuation.ts";
 import type { TokenUsage } from "../llm/types.ts";
-
-/**
- * Structured classification of why extraction of usable code from an LLM
- * response failed. Mirrors the operator-facing `error` string but gives
- * callers (e.g. the trap-task authoring loop's result matrix) a value to
- * switch on instead of string-matching. `empty_response` carries zero trap
- * signal and must not be read as a genuine catch.
- */
-export interface ExtractionFailureClassification {
-  error: string;
-  failureKind: "empty_response" | "safety_refusal" | "low_confidence";
-}
-
-/**
- * Classify why an extracted response is not ready for compilation. Callers
- * must only invoke this when extraction has already been determined to have
- * failed (empty code or confidence <= 0.5) — this function does not itself
- * decide readiness.
- *
- * Pure and side-effect free so it can be tested without standing up the
- * pool. Keep the three `error` strings byte-identical to their historical
- * values: they are operator-facing (bench output) and other code may match
- * on them.
- */
-export function classifyExtractionFailure(
-  finishReason: LLMResponse["finishReason"],
-  cleanedCode: string,
-  confidence: number,
-): ExtractionFailureClassification {
-  if (finishReason === "content_filter") {
-    // API safety-classifier refusal (stop_reason "refusal" on Fable-5+):
-    // HTTP 200, empty content, deterministic per prompt. Distinct label
-    // so bench matrices aren't misread as flaky-API noise.
-    return {
-      error: "API safety refusal (stop_reason=refusal)",
-      failureKind: "safety_refusal",
-    };
-  }
-  if (cleanedCode.trim().length === 0) {
-    return {
-      error: "Model returned empty response",
-      failureKind: "empty_response",
-    };
-  }
-  return {
-    error: `Insufficient code quality (confidence: ${
-      (confidence * 100).toFixed(0)
-    }%)`,
-    failureKind: "low_confidence",
-  };
-}
 
 /**
  * Fold token usage across every attempt of an empty-retry sequence onto
@@ -160,7 +113,7 @@ export class LLMWorkPool {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
     this.templateRenderer = new TemplateRenderer(
-      config.templateDir || "templates",
+      config.templateDir || DEFAULT_TEMPLATE_DIR,
     );
     this.continuationConfig = continuationConfig ?? DEFAULT_CONTINUATION_CONFIG;
     this.emptyRetryConfig = emptyRetryConfig ?? DEFAULT_EMPTY_RETRY_CONFIG;
@@ -282,13 +235,11 @@ export class LLMWorkPool {
       );
       const emptyRetryCount = retryOutcome.retryCount;
 
-      // Extract code from response and clean it
-      const extracted = CodeExtractor.extract(
+      // Extract code from response, clean it, and gate readiness — the same
+      // pipeline the authoring dashboard reviews (src/llm/candidate-resolution.ts).
+      const resolution = resolveCandidate(
         continuationResult.response.content,
-      );
-      const cleanedCode = CodeExtractor.cleanCode(
-        extracted.code,
-        extracted.language === "diff" ? "diff" : "al",
+        continuationResult.response.finishReason,
       );
 
       // Release lease with actual token count (sum across retries)
@@ -303,31 +254,21 @@ export class LLMWorkPool {
         continuationResult.wasTruncated,
       );
 
-      // Determine success based on extraction quality
-      // Empty code or low confidence indicates extraction failure
-      const isReadyForCompile = extracted.confidence > 0.5 &&
-        cleanedCode.trim().length > 0;
-
       const result: LLMWorkResult = {
         workItemId: item.id,
-        success: isReadyForCompile,
-        code: cleanedCode,
+        success: resolution.isReadyForCompile,
+        code: resolution.cleanedCode,
         llmResponse: continuationResult.response,
         duration: Date.now() - startTime,
-        readyForCompile: isReadyForCompile,
+        readyForCompile: resolution.isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
         emptyRetryCount,
       };
 
       // Set error message for extraction failures (categorizes as model failure, not transient)
-      if (!isReadyForCompile) {
-        const classification = classifyExtractionFailure(
-          continuationResult.response.finishReason,
-          cleanedCode,
-          extracted.confidence,
-        );
-        result.error = classification.error;
-        result.failureKind = classification.failureKind;
+      if (resolution.failure) {
+        result.error = resolution.failure.error;
+        result.failureKind = resolution.failure.failureKind;
       }
 
       if (truncationWarning) {
@@ -556,40 +497,45 @@ export class LLMWorkPool {
     const previousAttempt =
       item.previousAttempts[item.previousAttempts.length - 1];
 
-    let basePrompt: string;
     const stage = item.attemptNumber === 1 ? "generation" : "fix";
 
+    // Both branches render their base prompt AND apply prompt injections
+    // (knowledge bank, system prompt overrides) through `src/llm/
+    // prompt-building.ts`, which the authoring dashboard also calls — spec
+    // §2b: an author calibrates against the prompt the bench actually sends,
+    // so a second lookalike pipeline is not allowed to exist.
+    let applied;
     if (item.attemptNumber === 1 || !previousAttempt) {
       // First attempt - render template with task description
-      const promptTemplate = item.taskManifest.prompt_template || "code-gen.md";
-      basePrompt = await this.templateRenderer.render(
-        promptTemplate,
-        {
-          description: item.context.instructions,
-          task_id: item.taskManifest.id,
-          max_attempts: item.taskManifest.max_attempts,
-        },
-      );
+      applied = await buildGenerationPrompt({
+        renderer: this.templateRenderer,
+        promptTemplate: item.taskManifest.prompt_template,
+        description: item.context.instructions,
+        taskId: item.taskManifest.id,
+        maxAttempts: item.taskManifest.max_attempts,
+        taskPrompts: item.taskManifest.prompts,
+        cliOverrides: item.context.promptOverrides,
+        provider: item.llmProvider,
+        stage,
+      });
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
-      basePrompt = this.buildFixPrompt(
-        item.context.instructions,
-        previousAttempt.extractedCode,
+      const basePrompt = buildFixPrompt({
+        attemptNumber: item.attemptNumber,
+        originalInstructions: item.context.instructions,
+        previousCode: previousAttempt.extractedCode,
         errors,
-        item.attemptNumber,
+      });
+      applied = PromptInjectionResolver.resolveAndApply(
+        basePrompt,
+        undefined, // globalConfig.prompts - not needed here
+        item.taskManifest.prompts,
+        item.context.promptOverrides,
+        item.llmProvider,
+        stage,
       );
     }
-
-    // Apply prompt injections (knowledge bank, system prompt overrides)
-    const applied = PromptInjectionResolver.resolveAndApply(
-      basePrompt,
-      undefined, // globalConfig.prompts - not needed here
-      item.taskManifest.prompts,
-      item.context.promptOverrides,
-      item.llmProvider,
-      stage,
-    );
 
     const request: LLMRequest = {
       prompt: applied.prompt,
@@ -610,48 +556,6 @@ export class LLMWorkPool {
     }
 
     return request;
-  }
-
-  /**
-   * Build a fix prompt that includes the errors and previous code
-   */
-  private buildFixPrompt(
-    originalInstructions: string,
-    previousCode: string,
-    errors: string[],
-    attemptNumber: number,
-  ): string {
-    const errorSnippet = errors.slice(0, 20).join("\n"); // Limit errors
-    const truncatedCode = previousCode.length > 4000
-      ? previousCode.substring(0, 4000) + "\n... (truncated)"
-      : previousCode;
-
-    return `Your previous submission (attempt ${
-      attemptNumber - 1
-    }) failed to compile or pass tests.
-
-## Original Task
-${originalInstructions}
-
-## Your Previous Code
-\`\`\`al
-${truncatedCode}
-\`\`\`
-
-## Compilation/Test Errors
-${errorSnippet}
-
-## Instructions
-1. Analyze the compilation errors or test failures above
-2. Fix the issues in your code
-3. Provide the COMPLETE corrected AL code (not a diff)
-4. Ensure the fix addresses the root cause
-5. Do NOT add references to objects that don't exist (pages, codeunits, etc.) unless they are part of the task
-6. Output ONLY the corrected code inside the BEGIN-CODE/END-CODE fences below - no explanations, no markdown, no commentary
-
-BEGIN-CODE
-// Your corrected AL code here
-END-CODE`;
   }
 
   /**

@@ -71,8 +71,14 @@ export function companionPredicateMatches(
  * Pair with {@link companionPredicateMatches}, which is the case-SENSITIVE
  * copier-faithful matcher: a name that satisfies this one but not that one is
  * exactly the mis-cased case.
+ *
+ * Exported so any other reader of a draft's `correct/`/`naive/` directories
+ * (e.g. `src/dashboard/source-loader.ts`, which needs to leave oracle-side
+ * files out of the reference sources it hands to `runQuick`) can identify
+ * oracle-side files the same way this module does, rather than growing a
+ * second copy that drifts from this one.
  */
-function hasTaskPrefix(taskId: string, fileName: string): boolean {
+export function hasTaskPrefix(taskId: string, fileName: string): boolean {
   return fileName.toLowerCase().startsWith(`${taskId.toLowerCase()}.`);
 }
 

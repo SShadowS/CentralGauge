@@ -7,6 +7,8 @@
 
 import type { CentralGaugeConfig } from "../config/config.ts";
 import type { ModelVariant } from "./variant-types.ts";
+import type { ModelAlias } from "./model-aliases.ts";
+import { MODEL_ALIASES } from "./model-aliases.ts";
 import { resolveWithVariants as resolveVariants } from "./variant-parser.ts";
 
 // =============================================================================
@@ -14,70 +16,14 @@ import { resolveWithVariants as resolveVariants } from "./variant-parser.ts";
 // =============================================================================
 
 /**
- * Thin alias entry: maps a short name to provider + model ID.
+ * The alias table moved to the zero-import leaf `./model-aliases.ts` so that
+ * resolving a model alias no longer drags this module's config-loader type
+ * import along with it. Imported AND re-exported here: this file uses both
+ * names itself (`ModelPresetRegistry`, `MODEL_GROUPS.all`, `MODEL_PRESETS`),
+ * and every existing importer reads them from `model-presets.ts`.
  */
-export interface ModelAlias {
-  readonly provider: string;
-  readonly model: string;
-}
-
-/**
- * Primary alias map. Each key is a short CLI-friendly name.
- * Updated model IDs should be changed HERE only.
- */
-export const MODEL_ALIASES: Record<string, ModelAlias> = {
-  // OpenAI — GPT-5 family
-  "gpt-5": { provider: "openai", model: "gpt-5.2-2025-12-11" },
-  "gpt-5-pro": { provider: "openai", model: "gpt-5-pro" },
-  "codex": { provider: "openai", model: "gpt-5.3-codex" },
-  "codex-max": { provider: "openai", model: "gpt-5.1-codex-max" },
-  // OpenAI — GPT-4 + reasoning
-  "gpt-4o": { provider: "openai", model: "gpt-4o" },
-  "o1": { provider: "openai", model: "o1-preview" },
-  "o3": { provider: "openai", model: "o3" },
-
-  // Anthropic — Claude 4.6/4.5
-  "claude-4.5": { provider: "anthropic", model: "claude-opus-4-6" },
-  "sonnet-4.5": { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
-  "haiku-4.5": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-  // Short aliases → latest
-  "sonnet": { provider: "anthropic", model: "claude-sonnet-4-5-20250929" },
-  "haiku": { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
-  "opus": { provider: "anthropic", model: "claude-opus-4-6" },
-
-  // Google Gemini
-  "gemini-3": { provider: "gemini", model: "gemini-3-pro-preview" },
-  "gemini-2.5": { provider: "gemini", model: "gemini-2.5-pro" },
-  "gemini-2.5-flash": { provider: "gemini", model: "gemini-2.5-flash" },
-  "gemini": { provider: "gemini", model: "gemini-3-pro-preview" },
-  "gemini-flash": { provider: "gemini", model: "gemini-2.5-flash" },
-  "gemini-3-flash-preview": {
-    provider: "gemini",
-    model: "gemini-3-flash-preview",
-  },
-
-  // Local (Ollama)
-  "llama": { provider: "local", model: "llama3.2:latest" },
-  "codellama": { provider: "local", model: "codellama:latest" },
-
-  // OpenRouter
-  "openrouter-gpt4": { provider: "openrouter", model: "openai/gpt-4o" },
-  "openrouter-claude": {
-    provider: "openrouter",
-    model: "anthropic/claude-sonnet-4",
-  },
-  "openrouter-llama": {
-    provider: "openrouter",
-    model: "meta-llama/llama-3.3-70b-instruct",
-  },
-  "openrouter-deepseek": {
-    provider: "openrouter",
-    model: "deepseek/deepseek-v3.2",
-  },
-
-  // Mock (testing)
-  "mock": { provider: "mock", model: "mock-gpt-4" },
-};
+export type { ModelAlias };
+export { MODEL_ALIASES };
 
 // =============================================================================
 // Display Names — single source of truth for human-friendly model names
