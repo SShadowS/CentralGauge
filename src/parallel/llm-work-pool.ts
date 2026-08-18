@@ -368,8 +368,22 @@ export class LLMWorkPool {
     // Build the request
     const request = await this.buildRequest(item, context);
 
-    // Use streaming if callback provided and adapter supports it
-    if (item.onChunk && isStreamingAdapter(adapter)) {
+    // Transport is decided by adapter capability ALONE, never by whether the
+    // caller wants progress events. `item.onChunk` is a UI concern; streaming
+    // is a wire concern, and coupling them made `--stream` silently control
+    // both. That was not merely untidy: `.centralgauge.yml` sets
+    // `maxTokens: 64000`, and the Anthropic SDK refuses a NON-streaming
+    // request that large ("Streaming is required for operations that may take
+    // longer than 10 minutes"), so every Anthropic model failed on the
+    // default path. `centralgauge cycle` still spawns bench without
+    // `--stream` (`src/lifecycle/steps/bench-step.ts:106`), so model
+    // onboarding and the weekly CI were both hitting it.
+    //
+    // Routing on capability alone also fixes the same class pre-emptively for
+    // every other provider, rather than waiting for each SDK to add its own
+    // long-request guard. `onChunk` stays optional below: a run with no UI
+    // attached simply streams and emits nothing.
+    if (isStreamingAdapter(adapter)) {
       return this.generateCodeWithStreaming(
         item,
         adapter as StreamingLLMAdapter,
