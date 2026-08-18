@@ -2,7 +2,7 @@ import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 
 describe("dashboard/ingest-safety", () => {
-  it("never imports bench, ingest, or the ingest module tree", async () => {
+  it("never imports bench, ingest, the ingest module tree, or the config loader", async () => {
     const cmd = new Deno.Command("deno", {
       args: ["info", "--json", "src/dashboard/server.ts"],
       stdout: "piped",
@@ -40,6 +40,16 @@ describe("dashboard/ingest-safety", () => {
       "cli/commands/ingest-command.ts",
       "cli/commands/bench/",
       "/src/ingest/",
+      // The config loader. `server.ts` and `cli/commands/workbench-command.ts`
+      // both assert in their doc comments that the dashboard stays clear of
+      // it — `--preset` is resolved by the CLI and handed in as plain data —
+      // but until now that was enforced only by hand on review. It nearly
+      // slipped: resolving a model alias meant importing
+      // `src/llm/model-presets.ts`, which type-imports the config loader, and
+      // `deno info` counts type-only imports. This list would have stayed
+      // green through it. A hand-enforced invariant that outlives the
+      // reviewer's attention is what a test is for.
+      "/src/config/config.ts",
     ];
 
     // Windows path case is not stable — `deno info` emits the drive root as
@@ -51,7 +61,7 @@ describe("dashboard/ingest-safety", () => {
     assertEquals(
       violations,
       [],
-      `dashboard must not reach ingest paths: ${violations.join(", ")}`,
+      `dashboard must not reach these modules: ${violations.join(", ")}`,
     );
   });
 });
