@@ -185,14 +185,6 @@ async function runOneModel(
 }
 
 /**
- * The renderer used when a caller supplies none: the bench's own template
- * directory, resolved the way the bench resolves it (relative to the process
- * cwd). Module-level because `TemplateRenderer` caches template text per
- * instance and the constructor does no I/O.
- */
-const defaultRenderer = new TemplateRenderer(DEFAULT_TEMPLATE_DIR);
-
-/**
  * Runs every model concurrently against the same draft and trap signature,
  * then builds the matrix row universe from the reference objects (parsed
  * from `correctSources`) plus every response's own objects.
@@ -222,7 +214,14 @@ export async function runQuick(opts: {
     opts.correctSources,
     opts.naiveSources,
   );
-  const renderer = opts.renderer ?? defaultRenderer;
+  // A FRESH renderer per run, not one shared for the server's lifetime.
+  // `TemplateRenderer` caches template text per instance, so a long-lived one
+  // would read `templates/code-gen.md` once per process while the bench
+  // re-reads it every run: an author editing the template would see the
+  // dashboard keep showing the old prompt. That is precisely the fidelity
+  // claim this tool exists to make. One instance per run, so every model in
+  // a run is still asked from the same text.
+  const renderer = opts.renderer ?? new TemplateRenderer(DEFAULT_TEMPLATE_DIR);
 
   const responses = await Promise.all(
     opts.models.map((model) =>

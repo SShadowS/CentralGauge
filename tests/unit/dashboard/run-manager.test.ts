@@ -252,6 +252,64 @@ describe("dashboard/run-manager", () => {
     }
   });
 
+  // A long-lived TemplateRenderer caches template text per instance, so a
+  // module-level one read templates/code-gen.md once per process while the
+  // bench re-reads it every run. An author editing the template and seeing
+  // the dashboard keep showing the old prompt would be badly misled by the
+  // one thing this tool claims: prompt fidelity.
+  //
+  // No `renderer` is passed here, so the real fallback runs, which resolves
+  // the template directory relative to the process cwd exactly as the bench
+  // does. `Deno.chdir` is safe because this repo forbids `--parallel`, so
+  // test files run sequentially; the cwd is restored in `finally`.
+  it("re-reads the template between runs rather than caching it for the process", async () => {
+    const cwd = Deno.cwd();
+    const home = await createTempDir("dashboard-template-reread");
+    try {
+      await Deno.mkdir(`${home}/templates`, { recursive: true });
+      const template = `${home}/templates/code-gen.md`;
+      await Deno.writeTextFile(template, "V1: {{description}}");
+      Deno.chdir(home);
+
+      const first = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        correctSources: [CORRECT],
+        naiveSources: [NAIVE],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+      assertEquals(
+        first.responses[0]?.prompt,
+        "V1: Write a codeunit that validates quantity.",
+      );
+
+      await Deno.writeTextFile(template, "V2: {{description}}");
+
+      const second = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        correctSources: [CORRECT],
+        naiveSources: [NAIVE],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+      assertEquals(
+        second.responses[0]?.prompt,
+        "V2: Write a codeunit that validates quantity.",
+      );
+    } finally {
+      Deno.chdir(cwd);
+      await cleanupTempDir(home);
+    }
+  });
+
   // Prompt injections are provider-scoped in the bench
   // (PromptInjectionResolver.resolve takes a provider), so the prompt is
   // rendered per model rather than once per run. Rendering it once would send
