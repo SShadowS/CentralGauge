@@ -5,7 +5,20 @@
  * `naiveSources` as raw AL text, not file paths. This reads every `*.al`
  * file directly under `<draftDir>/correct/` and `<draftDir>/naive/` — the
  * two solution directories the workbench draft layout scaffolds (see
- * CLAUDE.md's "Workbench Draft Layout" section).
+ * CLAUDE.md's "Workbench Draft Layout" section) — EXCLUDING oracle-side
+ * files.
+ *
+ * The workbench draft layout puts the oracle test codeunit (`<id>.Test.al`)
+ * inside `correct/`, alongside the solution, so the AL Language extension
+ * sees one project. `<id>.`-prefixed files (the oracle itself, plus any
+ * companion mock/spy/subscriber/helper enum) are oracle-side, per the
+ * reserved-namespace convention `src/workbench/oracle-files.ts` owns
+ * (`hasTaskPrefix`, reused here rather than re-implemented). They are not
+ * reference solution sources: `runQuick` turns `correctSources` into
+ * `referenceObjects` and hands them to `buildRowUniverse`, which makes every
+ * reference object a matrix row unconditionally — an unfiltered oracle
+ * object would show up as a permanent "not written" row for an object no
+ * model was ever asked to write.
  *
  * A missing `naive/` is a legitimate authoring state, not an error: an
  * author may still be writing the wrong-answer half of a trap task before
@@ -22,18 +35,22 @@
 
 import { join } from "@std/path";
 
+import { hasTaskPrefix } from "../workbench/oracle-files.ts";
+
 /**
- * Reads every top-level `*.al` file in `dir`, sorted by filename for
- * deterministic ordering (`deriveTrapSignature` walks sources in order).
- * A missing directory yields `[]` rather than throwing.
+ * Reads every top-level `*.al` file in `dir`, excluding any `<taskId>.`
+ * prefixed (oracle-side) file, sorted by filename for deterministic
+ * ordering (`deriveTrapSignature` walks sources in order). A missing
+ * directory yields `[]` rather than throwing.
  */
-async function readAlSources(dir: string): Promise<string[]> {
+async function readAlSources(taskId: string, dir: string): Promise<string[]> {
   const names: string[] = [];
   try {
     for await (const entry of Deno.readDir(dir)) {
-      if (entry.isFile && entry.name.toLowerCase().endsWith(".al")) {
-        names.push(entry.name);
-      }
+      if (!entry.isFile) continue;
+      if (!entry.name.toLowerCase().endsWith(".al")) continue;
+      if (hasTaskPrefix(taskId, entry.name)) continue;
+      names.push(entry.name);
     }
   } catch (error) {
     if (error instanceof Deno.errors.NotFound) {
@@ -54,19 +71,20 @@ export interface TrapSources {
 }
 
 /**
- * Reads `<draftDir>/correct/*.al` and `<draftDir>/naive/*.al`.
- *
- * Reads every `.al` file present, including a reference oracle test
- * codeunit if the draft's `correct/` carries one alongside the solution
- * (per the workbench draft layout). `deriveTrapSignature` matches objects
- * by `objectKey` across both sides and silently skips anything unmatched,
- * so an oracle-only object present in `correct/` but not `naive/` is inert
- * rather than corrupting the derived signature.
+ * Reads `<draftDir>/correct/*.al` and `<draftDir>/naive/*.al`, excluding
+ * any file whose name carries the reserved `<taskId>.` prefix. Applied to
+ * both directories: `naive/` should never legitimately hold one either (the
+ * same reserved-prefix convention refuses it there), but filtering
+ * defensively rather than trusting that invariant costs nothing and covers
+ * a mid-edit draft that has not been probed yet.
  */
-export async function loadTrapSources(draftDir: string): Promise<TrapSources> {
+export async function loadTrapSources(
+  taskId: string,
+  draftDir: string,
+): Promise<TrapSources> {
   const [correctSources, naiveSources] = await Promise.all([
-    readAlSources(join(draftDir, "correct")),
-    readAlSources(join(draftDir, "naive")),
+    readAlSources(taskId, join(draftDir, "correct")),
+    readAlSources(taskId, join(draftDir, "naive")),
   ]);
   return { correctSources, naiveSources };
 }

@@ -154,6 +154,7 @@ export function createHandler(
 
       try {
         const { correctSources, naiveSources } = await deps.loadTrapSources(
+          draft.id,
           draft.dir,
         );
         const call = deps.createModelCaller({

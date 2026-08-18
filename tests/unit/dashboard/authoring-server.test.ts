@@ -20,6 +20,19 @@ const NAIVE = `codeunit 71410 "A"
         Q.Qty := 1;
     end;
 }`;
+// Stands in for the oracle the workbench draft layout scaffolds inside
+// correct/ (CLAUDE.md's "Workbench Draft Layout"): `<id>.Test.al`. A
+// distinct object id (80054) from the solution's (71410) so an unfiltered
+// read would produce a second, spurious matrix row.
+const ORACLE = `codeunit 80054 "CG-AL-X054 Test"
+{
+    Subtype = Test;
+
+    [Test]
+    procedure TestSomething()
+    begin
+    end;
+}`;
 
 const deps = {
   scratchDir: "/tmp/nope",
@@ -145,6 +158,52 @@ describe("dashboard/server", () => {
     }
   });
 
+  // The workbench draft layout puts the oracle test codeunit inside
+  // correct/, alongside the solution. buildRowUniverse turns every
+  // reference object into a row unconditionally, so an unfiltered read
+  // would add a permanent "not written" row for an object no model was
+  // ever asked to write. Confirmed live: scratch/CG-AL-X053/correct/
+  // contains CG-AL-X053.Test.al today.
+  it("excludes the oracle from correct/ so it produces no reference row", async () => {
+    const dir = await createTempDir("dashboard-server-oracle-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
+      await Deno.writeTextFile(`${dir}/correct/CG-AL-X054.Test.al`, ORACLE);
+      await Deno.writeTextFile(`${dir}/naive/A.al`, NAIVE);
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([{ id: "CG-AL-X054", dir, hasPrereq: false }]),
+        loadTrapSources,
+        createModelCaller:
+          (_context: unknown) => (_model: string, _prompt: string) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({ draftId: "CG-AL-X054", models: ["m"] }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      // Exactly one reference row (the solution, codeunit 71410) — none for
+      // the oracle (codeunit 80054).
+      assertEquals(body.rows.length, 1);
+      assertEquals(body.rows[0].key, "codeunit|71410");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
   it("a missing naive/ produces cannot-compare rather than an error", async () => {
     const dir = await createTempDir("dashboard-server-no-naive-test");
     try {
@@ -193,7 +252,7 @@ describe("dashboard/source-loader", () => {
       await Deno.writeTextFile(`${dir}/correct/app.json`, "{}");
       await Deno.writeTextFile(`${dir}/naive/C.al`, "content-C");
 
-      const sources = await loadTrapSources(dir);
+      const sources = await loadTrapSources("CG-AL-X999", dir);
       assertEquals(sources.correctSources, ["content-A", "content-B"]);
       assertEquals(sources.naiveSources, ["content-C"]);
     } finally {
@@ -208,9 +267,36 @@ describe("dashboard/source-loader", () => {
       await Deno.writeTextFile(`${dir}/correct/A.al`, "content-A");
       // Deliberately no naive/ directory.
 
-      const sources = await loadTrapSources(dir);
+      const sources = await loadTrapSources("CG-AL-X999", dir);
       assertEquals(sources.correctSources, ["content-A"]);
       assertEquals(sources.naiveSources, []);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // The oracle (<id>.Test.al) plus any companion (<id>.Mock.al, etc.) are
+  // oracle-side per the reserved "<id>." prefix (src/workbench/oracle-files.ts)
+  // and must not be treated as reference solution sources.
+  it("excludes <id>-prefixed oracle/companion files from both correct/ and naive/", async () => {
+    const dir = await createTempDir("dashboard-source-loader-oracle-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, "content-A");
+      await Deno.writeTextFile(
+        `${dir}/correct/CG-AL-X054.Test.al`,
+        "oracle-content",
+      );
+      await Deno.writeTextFile(
+        `${dir}/correct/CG-AL-X054.Mock.al`,
+        "companion-content",
+      );
+      await Deno.writeTextFile(`${dir}/naive/B.al`, "content-B");
+
+      const sources = await loadTrapSources("CG-AL-X054", dir);
+      assertEquals(sources.correctSources, ["content-A"]);
+      assertEquals(sources.naiveSources, ["content-B"]);
     } finally {
       await cleanupTempDir(dir);
     }
