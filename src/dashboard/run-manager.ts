@@ -262,10 +262,18 @@ export async function runQuick(opts: {
     responses.map((r) => ({ model: r.model, objects: r.objects })),
   );
 
-  // Built ONCE per run, not once per model — see the `prereqSources` doc
-  // comment above. `undefined` (rather than an index built from `[]`) is
-  // what makes "no prereq to check" and "checked, found nothing" two
-  // distinguishable states below.
+  // Deliberately built HERE, once for the whole run, and passed into every
+  // response's binding call below — NOT moved inside the `responses.map`
+  // loop that follows, even though nothing about correctness would change
+  // if it were: `buildPrereqIndex` is pure given the same `prereqSources`,
+  // so a per-response rebuild would produce identical `PrereqIndex` content
+  // every time, just re-parsed N times over. The reason to keep it hoisted
+  // is efficiency (no repeated parsing of the same prereq AL) and to keep
+  // every model in a run provably judged against one identical index rather
+  // than N independently-rebuilt ones that could in principle drift if this
+  // function is ever made non-deterministic. `undefined` (rather than an
+  // index built from `[]`) is what makes "no prereq to check" and "checked,
+  // found nothing" two distinguishable states below.
   const prereqIndex: PrereqIndex | undefined =
     opts.prereqSources && opts.prereqSources.length > 0
       ? await buildPrereqIndex(opts.prereqSources)

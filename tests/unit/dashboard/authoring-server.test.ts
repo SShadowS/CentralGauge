@@ -3,6 +3,7 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
 import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
+import { loadPrereqSources } from "../../../src/dashboard/prereq-sources.ts";
 import {
   runQuick,
   writeRunArtifact,
@@ -54,6 +55,7 @@ const deps = {
     ]),
   loadTrapSources: () =>
     Promise.resolve({ correctSources: [], naiveSources: [] }),
+  loadPrereqSources: () => Promise.resolve({ sources: [], files: [] }),
   createModelCaller: () => () =>
     Promise.reject(new Error("not called in this test")),
   runQuick: () => Promise.reject(new Error("not called in this test")),
@@ -342,6 +344,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, request: { prompt: string }) => {
@@ -424,6 +427,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -508,6 +512,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, request: { prompt: string }) => {
@@ -567,6 +572,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -641,6 +647,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -710,6 +717,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -733,6 +741,81 @@ describe("dashboard/server", () => {
       assertEquals(res.status, 200);
       const body = await res.json();
       assertEquals(body.responses[0].classification.verdict, "cannot-compare");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // Task 6 fix round 1: `loadPrereqSources` used to be called directly in
+  // server.ts rather than injected via `deps` — every other runDeps block
+  // above exercises the empty-`prereq/`-directory branch (none scaffold
+  // one), so the wiring from a REAL `prereq/` directory through to a
+  // response's `prereqBinding`, as an author's browser would actually
+  // trigger it, was never exercised at the handler level. This closes that
+  // gap: the draft's own `prereq/` carries a table the candidate invents a
+  // field on, and the assertion is that the finding reaches the HTTP
+  // response, not just the `runQuick` unit under test.
+  it("loads the draft's prereq/ off disk and attaches a binding to the response", async () => {
+    const dir = await createTempDir("dashboard-server-prereq-test");
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      // Deliberately no naive/ — this test is about prereqBinding reaching
+      // the response, not about classification, which a mismatched or
+      // absent naive/ leaves as "cannot-compare" harmlessly.
+      await Deno.mkdir(`${dir}/prereq`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CODE);
+      await Deno.writeTextFile(`${dir}/prereq/CGQuote.Table.al`, PREREQ);
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: true,
+            },
+          ]),
+        loadTrapSources,
+        loadPrereqSources,
+        createModelCaller:
+          (_context: unknown) =>
+          (_model: string, _request: { prompt: string }) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+        writeRunArtifact,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            models: ["anthropic/m"],
+          }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      const finding = body.responses[0]?.prereqBinding?.findings.find(
+        (f: { member: string }) => f.member === "Discount",
+      );
+      assertEquals(finding?.tier, "hard");
     } finally {
       await cleanupTempDir(dir);
     }

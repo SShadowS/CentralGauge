@@ -230,8 +230,9 @@ function validateRunRequest(
  * `runQuick` are pure/local enough to use for real against a temp dir.
  *
  * `POST /api/run`'s success path reads the draft's `correct/`/`naive/` AL
- * sources off disk (`deps.loadTrapSources`), builds a model caller scoped to
- * this run (`deps.createModelCaller`), hands both to `deps.runQuick`, and
+ * sources off disk (`deps.loadTrapSources`), loads its `prereq/` sources off
+ * disk (`deps.loadPrereqSources`), builds a model caller scoped to this run
+ * (`deps.createModelCaller`), hands all three to `deps.runQuick`, and
  * persists the result through `deps.writeRunArtifact`, answering with the
  * run plus either `artifactPath` or `artifactError`.
  */
@@ -242,6 +243,7 @@ export function createHandler(
     runQuick: typeof runQuick;
     writeRunArtifact: typeof writeRunArtifact;
     loadTrapSources: typeof loadTrapSources;
+    loadPrereqSources: typeof loadPrereqSources;
     createModelCaller: typeof createModelCaller;
     /** CLI-resolved `--preset` models (see the module doc comment), or
      *  empty when none were given. Served verbatim at `GET /api/defaults`. */
@@ -312,7 +314,7 @@ export function createHandler(
           draft.id,
           draft.dir,
         );
-        const { sources: prereqSources } = await loadPrereqSources(
+        const { sources: prereqSources } = await deps.loadPrereqSources(
           draft.dir,
           PREREQ_DEPENDENCIES_ROOT,
         );
@@ -385,6 +387,7 @@ export function startServer(
     runQuick,
     writeRunArtifact,
     loadTrapSources,
+    loadPrereqSources,
     createModelCaller,
     defaultModels: opts.defaultModels ?? [],
     boundPort: () => listener.port,
