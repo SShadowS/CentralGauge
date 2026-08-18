@@ -13,7 +13,9 @@
  */
 
 import { LLMAdapterRegistry } from "../llm/registry.ts";
+import { isStreamingAdapter } from "../llm/types.ts";
 import { resolveProviderAndModel } from "../llm/model-aliases.ts";
+import type { LLMRequest } from "../llm/types.ts";
 import type { ModelCaller } from "./run-manager.ts";
 
 /**
@@ -62,23 +64,50 @@ export function createModelCaller(
       model: modelName,
       apiKey: LLMAdapterRegistry.getApiKeyForProvider(provider),
     });
-    const result = await adapter.generateCode(
-      {
-        prompt: request.prompt,
-        // Forwarded because the bench forwards it: a task whose `prompts`
-        // block declares a system injection gets one at attempt 1, and a
-        // dashboard that dropped it would be calibrating against a
-        // different request than the bench sends.
-        ...(request.systemPrompt !== undefined
-          ? { systemPrompt: request.systemPrompt }
-          : {}),
-      },
-      {
-        taskId: context.taskId,
-        attempt: 1,
-        description: context.description,
-      },
-    );
+    const llmRequest: LLMRequest = {
+      prompt: request.prompt,
+      // Forwarded because the bench forwards it: a task whose `prompts`
+      // block declares a system injection gets one at attempt 1, and a
+      // dashboard that dropped it would be calibrating against a
+      // different request than the bench sends.
+      ...(request.systemPrompt !== undefined
+        ? { systemPrompt: request.systemPrompt }
+        : {}),
+    };
+    const genContext = {
+      taskId: context.taskId,
+      attempt: 1,
+      description: context.description,
+    };
+
+    // Stream when the adapter can, exactly as the bench does
+    // (`LLMWorkPool.generateCodeWithContinuation` gates on the same
+    // `isStreamingAdapter` check).
+    //
+    // This is not a preference — the non-streaming path is unusable for
+    // Anthropic here. `.centralgauge.yml` sets `maxTokens: 64000`, and the
+    // Anthropic SDK refuses a non-streaming request that large ("Streaming is
+    // required for operations that may take longer than 10 minutes"), so
+    // every Anthropic model failed before this. Lowering `maxTokens` instead
+    // would have been the wrong fix: the dashboard's whole point is sending
+    // the request the bench sends, and shrinking the budget changes it.
+    if (isStreamingAdapter(adapter)) {
+      // Manual iteration, NOT `for await`: the generator's RETURN value is
+      // the result, and `for await` discards it (see
+      // `.claude/rules/async-generators.md`).
+      const generator = adapter.generateCodeStream(llmRequest, genContext);
+      let step = await generator.next();
+      while (!step.done) {
+        step = await generator.next();
+      }
+      const streamed = step.value;
+      return {
+        content: streamed.response.content,
+        finishReason: streamed.response.finishReason,
+      };
+    }
+
+    const result = await adapter.generateCode(llmRequest, genContext);
     return {
       content: result.response.content,
       finishReason: result.response.finishReason,
