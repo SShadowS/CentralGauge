@@ -9,7 +9,7 @@
 >
 > ```powershell
 > $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
-> New-BcContainer -containerName Cronus28 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 28) -includeTestToolkit
+> New-BcContainer -accept_eula -containerName Cronus28 -credential $cred -auth NavUserPassword -artifactUrl (Get-BCArtifactUrl -country us -version 28) -includeTestToolkit
 > ```
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -24,7 +24,7 @@ CentralGauge evaluates large language models on their ability to generate, debug
 
 - **Two-pass evaluation** - Models get a second chance to fix compilation errors
 - **Containerized testing** - Isolated Business Central environments via Docker
-- **Parallel execution** - Run multiple models and tasks concurrently (enabled by default)
+- **Parallel execution** - Run multiple models and tasks concurrently
 - **Streaming support** - Real-time progress feedback during code generation
 - **Rich reporting** - JSON data + beautiful HTML reports
 - **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
@@ -59,6 +59,11 @@ deno task report results/ --html
 
 ## Commands
 
+All three forms below are the same program. `deno.json` defines `start` as
+`deno run --allow-all cli/centralgauge.ts`, so `deno task start bench ...` and
+`deno run --allow-all cli/centralgauge.ts bench ...` are identical, and
+`deno task bench` is a shorthand for that one subcommand.
+
 ```bash
 # Development
 deno task lint        # Lint code
@@ -71,17 +76,14 @@ deno task bench --llms flagship --tasks tasks/*.yml            # Use groups
 deno task bench --llms coding,budget --attempts 2              # Mix & match
 
 # Traditional provider/model syntax
-deno task bench --llms openai/gpt-5.2,anthropic/claude-4.5-opus
+deno task bench --llms openai/gpt-5.2,anthropic/claude-opus-4-8
 
 # OpenRouter models (access 200+ models)
-deno task bench --llms openrouter/anthropic/claude-4.5-opus
+deno task bench --llms openrouter/anthropic/claude-opus-4-8
 deno task bench --llms openrouter/google/gemini-3-pro-preview
 
 # Reasoning models comparison (recommended for complex tasks)
 deno task bench --llms "opus@reasoning=50000,gpt-5@reasoning=50000"
-
-# Sequential execution (parallel is default)
-deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --sequential
 
 # Configuration
 deno run --allow-all cli/centralgauge.ts config init           # Create config file
@@ -144,7 +146,7 @@ deno task bench --llms "gpt-5.2@temp=0.2;maxTokens=8000"
 
 # Compare different thinking budgets (for reasoning models)
 deno task bench --llms "opus@thinking=10000;tokens=16384,opus@thinking=16000;tokens=20000"
-deno task bench --llms "o3@reasoning=5000,o3@reasoning=20000"
+deno task bench --llms "gpt-5.2@reasoning=5000,gpt-5.2@reasoning=20000"
 
 # Use named profiles from config
 deno task bench --llms "opus@profile=conservative,opus@profile=creative"
@@ -162,8 +164,8 @@ deno task bench --llms "opus@profile=conservative,opus@profile=creative"
 
 **Thinking Budget** is supported on:
 
-- **Claude 4.5+**: Extended thinking token budget
-- **OpenAI o1/o3**: Maps to reasoning effort
+- **Claude Opus/Sonnet 4.x and later**: Extended thinking token budget
+- **OpenAI reasoning models**: Maps to reasoning effort
 - **Gemini**: Thinking token budget for supported models
 
 > **Note**: For Claude extended thinking without streaming, `max_tokens` must be ≤21,333.
@@ -420,10 +422,10 @@ Stats are stored in `results/centralgauge.db` by default. Use `--db <path>` to s
 | Provider       | Environment Variable   | Example                                |
 | -------------- | ---------------------- | -------------------------------------- |
 | OpenAI         | `OPENAI_API_KEY`       | `openai/gpt-5.2`                       |
-| Anthropic      | `ANTHROPIC_API_KEY`    | `anthropic/claude-4.5-opus`            |
+| Anthropic      | `ANTHROPIC_API_KEY`    | `anthropic/claude-opus-4-8`            |
 | Google Gemini  | `GOOGLE_API_KEY`       | `gemini/gemini-3-pro-preview`          |
 | Azure OpenAI   | `AZURE_OPENAI_API_KEY` | `azure/gpt-5.2`                        |
-| OpenRouter     | `OPENROUTER_API_KEY`   | `openrouter/anthropic/claude-4.5-opus` |
+| OpenRouter     | `OPENROUTER_API_KEY`   | `openrouter/anthropic/claude-opus-4-8` |
 | Local (Ollama) | -                      | `local/codellama`                      |
 
 ### Listing Available Models
