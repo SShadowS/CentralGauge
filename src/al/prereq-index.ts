@@ -146,7 +146,24 @@ function walk(node: Node, fields: string[], procedures: string[]): void {
 
 /**
  * Builds a lookup of every table/table-extension object across `sources`,
- * keyed by `normalizeName(table name)`.
+ * keyed by `normalizeName(table name)` — and for a `tableextension`, by the
+ * name of the table it EXTENDS, with its members merged into that table's
+ * entry rather than replacing it. That is the only key a `Record` variable
+ * can ever be declared against, so it is the only key the binder will ever
+ * look up.
+ *
+ * An extension whose target is NOT itself indexed — the committed
+ * `tableextension ... extends Customer` case — contributes nothing and
+ * creates no entry. Its fields are genuinely referenceable, so dropping
+ * them is a missed catch; giving `Customer` an entry holding ONLY those
+ * fields would instead make every real base-app field on it (`Name`,
+ * `"Post Code"`, ...) look invented, which is a false accusation. Between a
+ * missed catch and a false accusation this module always takes the missed
+ * catch.
+ *
+ * Two passes for exactly that reason: every `table` is indexed first, so
+ * whether an extension has a target to merge into never depends on which
+ * source happened to be read first.
  *
  * `hasError` is set when `parseAlObjects` itself fails on a source, or when
  * a table object's own re-parse yields a tree whose `rootNode.hasError` is
@@ -159,6 +176,16 @@ export async function buildPrereqIndex(
 ): Promise<PrereqIndex> {
   const tables = new Map<string, PrereqTable>();
   let hasError = false;
+
+  /** Members extracted from one object, awaiting placement in `tables`. */
+  interface PendingObject {
+    kind: string;
+    name: string;
+    extendsTarget: string | undefined;
+    fields: string[];
+    procedures: string[];
+  }
+  const pending: PendingObject[] = [];
 
   for (const source of sources) {
     const parsed = await parseAlObjects(source);
@@ -193,8 +220,10 @@ export async function buildPrereqIndex(
         const procedures: string[] = [];
         walk(tree.rootNode, fields, procedures);
 
-        tables.set(normalizeName(obj.name), {
+        pending.push({
+          kind: obj.kind,
           name: obj.name,
+          extendsTarget: obj.extendsTarget,
           fields,
           procedures,
         });
@@ -202,6 +231,41 @@ export async function buildPrereqIndex(
         tree.delete();
       }
     }
+  }
+
+  // Pass 1 — real tables. MERGED, not overwritten: two sources declaring
+  // the same table name (a draft prereq and a chained one) must not have
+  // the later erase the earlier's fields, since a lost field is a false
+  // accusation waiting to happen.
+  for (const obj of pending) {
+    if (obj.kind === "tableextension") continue;
+    const key = normalizeName(obj.name);
+    const existing = tables.get(key);
+    if (existing) {
+      existing.fields.push(...obj.fields);
+      existing.procedures.push(...obj.procedures);
+    } else {
+      tables.set(key, {
+        name: obj.name,
+        fields: [...obj.fields],
+        procedures: [...obj.procedures],
+      });
+    }
+  }
+
+  // Pass 2 — extensions, keyed by the table they EXTEND rather than by
+  // their own name. An extension's own name is a name no `Record` variable
+  // can ever be declared against, so keying by it filed the extension's
+  // fields under a key nothing would ever look up, and a model referencing
+  // a field the extension genuinely adds was reported as having made it up.
+  // `extendsTarget` arrives unquoted from `object-parser.ts`.
+  for (const obj of pending) {
+    if (obj.kind !== "tableextension") continue;
+    if (obj.extendsTarget === undefined) continue;
+    const target = tables.get(normalizeName(obj.extendsTarget));
+    if (!target) continue; // Extends something outside the index — see above.
+    target.fields.push(...obj.fields);
+    target.procedures.push(...obj.procedures);
   }
 
   return { tables, hasError };

@@ -113,13 +113,54 @@ describe("al/prereq-index", () => {
     assertEquals(lookupField(idx, "CG Related", "Ref"), true);
   });
 
-  it("indexes a tableextension the same way as a table", async () => {
-    const idx = await buildPrereqIndex([TABLE_EXTENSION]);
-    const t = idx.tables.get("cg category ext");
-    assertEquals(t?.name, "CG Category Ext");
-    assertEquals(t?.fields, ["Extra Field"]);
-    assertEquals(t?.procedures, ["ExtHelper"]);
+  // A `tableextension`'s own name is a name no `Record` variable can ever
+  // be declared against, so indexing under it filed the extension's fields
+  // where nothing would look them up, and a model referencing a field the
+  // extension genuinely adds was reported as having made it up. The
+  // contract is the LOOKUP, through the extended table's name.
+  it("finds an extension's field under the table it extends", async () => {
+    const idx = await buildPrereqIndex([TABLE, TABLE_EXTENSION]);
+    assertEquals(lookupField(idx, "Product Category", "Extra Field"), true);
+    assertEquals(lookupProcedure(idx, "Product Category", "ExtHelper"), true);
+    // The base table's own members survive the merge.
+    assertEquals(lookupField(idx, "Product Category", "Code"), true);
+    assertEquals(lookupProcedure(idx, "Product Category", "Recalculate"), true);
+    // And nothing is filed under the extension's own name.
+    assertEquals(idx.tables.has("cg category ext"), false);
     assertEquals(idx.hasError, false);
+  });
+
+  it("merges an extension read before the table it extends", async () => {
+    const idx = await buildPrereqIndex([TABLE_EXTENSION, TABLE]);
+    assertEquals(lookupField(idx, "Product Category", "Extra Field"), true);
+    assertEquals(lookupField(idx, "Product Category", "Code"), true);
+  });
+
+  // The one committed prereq extension in the repo extends the base-app
+  // `Customer`, which is not in the index. Giving it an entry holding only
+  // the extension's fields would make every real base-app field on it look
+  // invented — a false accusation. Dropping the extension is a missed
+  // catch, which is always the side this module errs on.
+  it("creates no entry for an extension over a table it does not index", async () => {
+    const idx = await buildPrereqIndex([TABLE_EXTENSION]);
+    assertEquals(idx.tables.size, 0);
+    assertEquals(lookupField(idx, "Product Category", "Extra Field"), false);
+    assertEquals(idx.hasError, false);
+  });
+
+  // Two sources declaring the same table name: the later must not erase
+  // the earlier's fields, since a lost field is a false accusation too.
+  it("merges two declarations of the same table name", async () => {
+    const second = `table 69001 "Product Category"
+{
+    fields
+    {
+        field(9; "Late Field"; Text[10]) { }
+    }
+}`;
+    const idx = await buildPrereqIndex([TABLE, second]);
+    assertEquals(lookupField(idx, "Product Category", "Code"), true);
+    assertEquals(lookupField(idx, "Product Category", "Late Field"), true);
   });
 
   it("does not let a trigger's or procedure's local variables contaminate extraction", async () => {
