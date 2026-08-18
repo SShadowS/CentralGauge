@@ -24,6 +24,8 @@ import type { QuickRun } from "./run-manager.ts";
 
 import { listDrafts } from "./drafts.ts";
 import { runQuick } from "./run-manager.ts";
+import { createModelCaller } from "./model-caller.ts";
+import { loadTrapSources } from "./source-loader.ts";
 
 export interface DashboardServer {
   port: number;
@@ -95,20 +97,23 @@ function validateRunRequest(
 /**
  * Builds the pure request router. No socket, no side effects at call time —
  * every route reads only from the injected `deps`, which is what lets the
- * test suite exercise every status code without `Deno.serve` ever binding a
- * port.
+ * test suite exercise every status code — and, for `POST /api/run`'s
+ * success path, a real matrix result — without `Deno.serve` ever binding a
+ * port and without any test reaching a real model provider. Only
+ * `createModelCaller` needs faking in a test; `loadTrapSources` and
+ * `runQuick` are pure/local enough to use for real against a temp dir.
  *
- * `POST /api/run`'s success path constructs a `runQuick` call with empty
- * `correctSources`/`naiveSources` and a `call` that rejects immediately.
- * Reading the draft's actual correct/naive AL sources and wiring a real
- * model caller is out of scope for this task (not described in its brief,
- * not covered by its tests) and is left for a follow-up task.
+ * `POST /api/run`'s success path reads the draft's `correct/`/`naive/` AL
+ * sources off disk (`deps.loadTrapSources`), builds a model caller scoped to
+ * this run (`deps.createModelCaller`), and hands both to `deps.runQuick`.
  */
 export function createHandler(
   deps: {
     scratchDir: string;
     listDrafts: typeof listDrafts;
     runQuick: typeof runQuick;
+    loadTrapSources: typeof loadTrapSources;
+    createModelCaller: typeof createModelCaller;
   },
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
@@ -148,16 +153,20 @@ export function createHandler(
       }
 
       try {
+        const { correctSources, naiveSources } = await deps.loadTrapSources(
+          draft.dir,
+        );
+        const call = deps.createModelCaller({
+          taskId: draft.id,
+          description: `Dashboard quick run for ${draft.id}`,
+        });
         const run: QuickRun = await deps.runQuick({
           draft,
           models: validated.models,
           prompt: validated.prompt,
-          correctSources: [],
-          naiveSources: [],
-          call: () =>
-            Promise.reject(
-              new Error("model calling is not wired up yet"),
-            ),
+          correctSources,
+          naiveSources,
+          call,
         });
         return jsonResponse(200, run);
       } catch (error) {
@@ -186,6 +195,8 @@ export function startServer(
     scratchDir: opts.scratchDir,
     listDrafts,
     runQuick,
+    loadTrapSources,
+    createModelCaller,
   });
 
   const server = Deno.serve(

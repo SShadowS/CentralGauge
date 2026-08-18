@@ -2,6 +2,24 @@ import { describe, it } from "@std/testing/bdd";
 import { assertEquals } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
+import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
+import { runQuick } from "../../../src/dashboard/run-manager.ts";
+import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+
+const CORRECT = `codeunit 71410 "A"
+{
+    procedure P()
+    begin
+        Q.Validate(Qty, 1);
+    end;
+}`;
+const NAIVE = `codeunit 71410 "A"
+{
+    procedure P()
+    begin
+        Q.Qty := 1;
+    end;
+}`;
 
 const deps = {
   scratchDir: "/tmp/nope",
@@ -9,6 +27,10 @@ const deps = {
     Promise.resolve([
       { id: "CG-AL-X054", dir: "/tmp/nope/CG-AL-X054", hasPrereq: false },
     ]),
+  loadTrapSources: () =>
+    Promise.resolve({ correctSources: [], naiveSources: [] }),
+  createModelCaller: () => () =>
+    Promise.reject(new Error("not called in this test")),
   runQuick: () => Promise.reject(new Error("not called in this test")),
 } as unknown as Parameters<typeof createHandler>[0];
 
@@ -76,6 +98,121 @@ describe("dashboard/server", () => {
       assertEquals(server.hostname, "127.0.0.1");
     } finally {
       await server.shutdown();
+    }
+  });
+
+  // Real runQuick + real loadTrapSources, fake (non-provider) caller: proves
+  // the wiring end to end without any test reaching an LLM provider.
+  it("a well-formed run reaches the injected caller and returns a matrix", async () => {
+    const dir = await createTempDir("dashboard-server-run-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
+      await Deno.writeTextFile(`${dir}/naive/A.al`, NAIVE);
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([{ id: "CG-AL-X054", dir, hasPrereq: false }]),
+        loadTrapSources,
+        createModelCaller:
+          (_context: unknown) => (_model: string, _prompt: string) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({ draftId: "CG-AL-X054", models: ["m"] }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.responses.length, 1);
+      assertEquals(
+        body.responses[0].classification.verdict,
+        "avoided-the-mistake",
+      );
+      assertEquals(Array.isArray(body.rows), true);
+      assertEquals(body.rows.length > 0, true);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("a missing naive/ produces cannot-compare rather than an error", async () => {
+    const dir = await createTempDir("dashboard-server-no-naive-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
+      // Deliberately no naive/ directory.
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([{ id: "CG-AL-X054", dir, hasPrereq: false }]),
+        loadTrapSources,
+        createModelCaller:
+          (_context: unknown) => (_model: string, _prompt: string) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({ draftId: "CG-AL-X054", models: ["m"] }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.responses[0].classification.verdict, "cannot-compare");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+});
+
+describe("dashboard/source-loader", () => {
+  it("reads multiple .al files from correct/ and naive/, sorted by filename", async () => {
+    const dir = await createTempDir("dashboard-source-loader-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, "content-A");
+      await Deno.writeTextFile(`${dir}/correct/B.al`, "content-B");
+      // A non-.al file must be ignored.
+      await Deno.writeTextFile(`${dir}/correct/app.json`, "{}");
+      await Deno.writeTextFile(`${dir}/naive/C.al`, "content-C");
+
+      const sources = await loadTrapSources(dir);
+      assertEquals(sources.correctSources, ["content-A", "content-B"]);
+      assertEquals(sources.naiveSources, ["content-C"]);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("treats a missing naive/ as an empty array, not an error", async () => {
+    const dir = await createTempDir("dashboard-source-loader-missing-test");
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, "content-A");
+      // Deliberately no naive/ directory.
+
+      const sources = await loadTrapSources(dir);
+      assertEquals(sources.correctSources, ["content-A"]);
+      assertEquals(sources.naiveSources, []);
+    } finally {
+      await cleanupTempDir(dir);
     }
   });
 });
