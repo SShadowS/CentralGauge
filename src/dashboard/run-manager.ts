@@ -30,7 +30,10 @@ import type { LLMResponse } from "../llm/types.ts";
 import type { DraftSummary } from "./drafts.ts";
 
 import { parseAlObjects } from "../al/object-parser.ts";
-import { buildRowUniverse } from "../al/object-identity.ts";
+import {
+  assignObjectsToRows,
+  buildRowUniverse,
+} from "../al/object-identity.ts";
 import {
   classifyAgainstSignature,
   deriveTrapSignature,
@@ -69,6 +72,13 @@ export interface ModelResponse {
    * `isReadyForCompile` is true and the parse then fails on the prose.
    */
   hasParseError: boolean;
+  /**
+   * Which of this response's `objects` fills each matrix row, as
+   * `row.key` -> index into `objects` (`assignObjectsToRows`). Computed here
+   * because the server holds both sides; the UI used to re-derive it from
+   * its own copy of the identity rules, which nothing could keep in sync.
+   */
+  rowAssignments: Record<string, number>;
   classification: TrapClassification;
   error?: string;
 }
@@ -124,7 +134,7 @@ async function runOneModel(
   renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
-): Promise<ModelResponse> {
+): Promise<Omit<ModelResponse, "rowAssignments">> {
   let prompt = "";
   try {
     const applied = await buildGenerationPrompt({
@@ -234,7 +244,12 @@ export async function runQuick(opts: {
     draftId: opts.draft.id,
     startedAt: new Date().toISOString(),
     signature,
-    responses,
+    // Cell placement is decided here, where both sides are in hand, rather
+    // than re-derived by the UI from a copy of the identity rules.
+    responses: responses.map((response) => ({
+      ...response,
+      rowAssignments: assignObjectsToRows(rows, response.objects),
+    })),
     rows,
   };
 }

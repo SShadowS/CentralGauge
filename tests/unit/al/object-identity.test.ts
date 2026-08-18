@@ -3,6 +3,7 @@ import { assertEquals } from "@std/assert";
 
 import type { AlObject } from "../../../src/al/object-parser.ts";
 import {
+  assignObjectsToRows,
   buildRowUniverse,
   normalizeName,
   objectKey,
@@ -147,5 +148,55 @@ describe("al/object-identity", () => {
       },
     ]);
     assertEquals(rows.length, 2);
+  });
+});
+
+describe("al/object-identity assignObjectsToRows", () => {
+  // Cell placement used to be re-derived in src/dashboard/ui/app.js from a
+  // hand-copied normalizeName/objectKey, with nothing able to notice when the
+  // copy drifted from this module. It is computed here instead.
+  const rows = buildRowUniverse(
+    [
+      obj({ kind: "codeunit", id: 71410, name: "CG Poster" }),
+      obj({ kind: "table", id: 71411, name: "CG Line" }),
+    ],
+    [],
+  );
+
+  it("places an object on the row its exact key names", () => {
+    const assignments = assignObjectsToRows(rows, [
+      obj({ kind: "table", id: 71411, name: "CG Line" }),
+      obj({ kind: "codeunit", id: 71410, name: "CG Poster" }),
+    ]);
+    assertEquals(assignments["codeunit|71410"], 1);
+    assertEquals(assignments["table|71411"], 0);
+  });
+
+  it("falls back to the name when the id does not line up", () => {
+    // Writing the right object under the wrong id is a classic model error;
+    // splitting it into a missing row plus an extra row would misread it.
+    const assignments = assignObjectsToRows(rows, [
+      obj({ kind: "codeunit", id: 99999, name: '"CG   poster"' }),
+    ]);
+    assertEquals(assignments["codeunit|71410"], 0);
+  });
+
+  it("prefers an exact key match over a name-only one, whatever the order", () => {
+    const assignments = assignObjectsToRows(rows, [
+      obj({ kind: "codeunit", id: 99999, name: "CG Poster" }),
+      obj({ kind: "codeunit", id: 71410, name: "Something Else" }),
+    ]);
+    assertEquals(assignments["codeunit|71410"], 1);
+  });
+
+  it("omits a row no object fills", () => {
+    const assignments = assignObjectsToRows(rows, [
+      obj({ kind: "codeunit", id: 71410, name: "CG Poster" }),
+    ]);
+    assertEquals("table|71411" in assignments, false);
+  });
+
+  it("returns an empty map for a response with no objects", () => {
+    assertEquals(assignObjectsToRows(rows, []), {});
   });
 });

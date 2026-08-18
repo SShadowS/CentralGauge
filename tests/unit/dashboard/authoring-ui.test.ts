@@ -244,6 +244,62 @@ describe("dashboard/ui app.js", () => {
     assertEquals(cell.textContent, "not written");
   });
 
+  // The client no longer computes object identity: it reads the server's own
+  // assignment. Index 0 is a legitimate answer, so a truthiness check here
+  // would drop the first object of every response.
+  it("fills a cell from the server's row assignment, index 0 included", async () => {
+    const ui = await loadUi();
+    const cell = ui.buildCell(
+      {
+        key: "codeunit|71410",
+        kind: "codeunit",
+        id: 71410,
+        name: "CG Poster",
+        inReference: true,
+      },
+      {
+        model: "anthropic/opus",
+        prompt: "p",
+        resolution: readyResolution,
+        classification: { verdict: "avoided-the-mistake" },
+        objects: [{
+          kind: "codeunit",
+          id: 71410,
+          name: "CG Poster",
+          source: 'codeunit 71410 "CG Poster" { }',
+        }],
+        rowAssignments: { "codeunit|71410": 0 },
+        hasParseError: false,
+      },
+    );
+    assertEquals(cell.textContent, "view source");
+    cell.listeners["click"]?.[0]?.();
+    assertEquals(detailSource.textContent, 'codeunit 71410 "CG Poster" { }');
+  });
+
+  it("says not written when the server assigned this response no object", async () => {
+    const ui = await loadUi();
+    const cell = ui.buildCell(
+      {
+        key: "codeunit|71410",
+        kind: "codeunit",
+        id: 71410,
+        name: "CG Poster",
+        inReference: true,
+      },
+      {
+        model: "anthropic/opus",
+        prompt: "p",
+        resolution: readyResolution,
+        classification: { verdict: "different-approach" },
+        objects: [{ kind: "table", id: 71411, name: "CG Line", source: "" }],
+        rowAssignments: {},
+        hasParseError: false,
+      },
+    );
+    assertEquals(cell.textContent, "not written");
+  });
+
   // Spec §4: "It is explainable. The UI names the deciding statement rather
   // than showing a score, which is what makes a glance sufficient."
   it("names the deciding statement in the column header", async () => {

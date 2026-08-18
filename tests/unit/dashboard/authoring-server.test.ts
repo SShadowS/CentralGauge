@@ -83,6 +83,89 @@ describe("dashboard/server", () => {
     assertEquals(res.status, 404);
   });
 
+  // The 404 above is also what a generic static handler would return for a
+  // file that does not exist, so on its own it does not pin STATIC_FILES as
+  // an ALLOWLIST. These do: a path-joining handler would answer the first
+  // two with this repo's own source, and this server holds provider
+  // credentials by way of the LLM registry.
+  it("404s a traversal attempt rather than serving repo files", async () => {
+    for (
+      const path of [
+        "/../../src/dashboard/server.ts",
+        "/%2e%2e%2f%2e%2e%2fsrc%2fdashboard%2fserver.ts",
+        "/..%2f..%2fsrc%2fdashboard%2fserver.ts",
+        "/app.js/../../server.ts",
+        "/src/dashboard/server.ts",
+        "/.env",
+      ]
+    ) {
+      const res = await createHandler(deps)(
+        new Request(`http://localhost${path}`),
+      );
+      assertEquals(res.status, 404, `${path} should 404`);
+      assertEquals(
+        (await res.text()).includes("createHandler"),
+        false,
+        `${path} must not return this repo's source`,
+      );
+    }
+  });
+
+  // The loopback binding stops a remote attacker; it does nothing about a
+  // name the attacker controls that resolves to 127.0.0.1, and nothing about
+  // a page in the author's own browser. Both send headers a real browser
+  // cannot omit, and /api/run spends API money on every call.
+  it("refuses a request whose Host is a rebound name", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        headers: { host: "evil.example:8080" },
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 403);
+  });
+
+  it("refuses a cross-origin POST, including a plain form submission", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        // What a <form method="POST" enctype="text/plain"> on another site
+        // sends: a simple request, no preflight, but Origin is attached.
+        headers: {
+          origin: "https://evil.example",
+          "content-type": "text/plain",
+        },
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 403);
+  });
+
+  // Positive controls: the two refusals above must not be "403 for
+  // everything with a header on it".
+  it("allows loopback Host and Origin, and a request carrying neither", async () => {
+    for (
+      const headers of [
+        { host: "127.0.0.1:8123", origin: "http://127.0.0.1:8123" },
+        { host: "localhost:8123", origin: "http://localhost:8123" },
+        { host: "[::1]:8123" },
+        {},
+      ]
+    ) {
+      const res = await createHandler(deps)(
+        new Request("http://localhost/api/drafts", { headers }),
+      );
+      assertEquals(res.status, 200, JSON.stringify(headers));
+    }
+  });
+
   it("rejects a run request with no models", async () => {
     const res = await createHandler(deps)(
       new Request("http://localhost/api/run", {

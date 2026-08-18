@@ -4,11 +4,13 @@
  * The matrix UI's client script. Plain browser JS, no build step, no
  * framework — served as-is by src/dashboard/server.ts.
  *
- * Object identity (`normalizeName`/`objectKey`) mirrors
- * src/al/object-identity.ts exactly, because a MatrixRow's `key` was
- * computed server-side by that module and this file has to re-derive the
- * same key for each response's own AL objects to know which one (if any)
- * fills a given cell. Keep the two in sync if the server-side rules change.
+ * This file does NOT compute object identity. It used to carry copies of
+ * normalizeName/objectKey from src/al/object-identity.ts, with a comment
+ * asking a future editor to keep them in sync and nothing able to notice
+ * when they stopped being so. The server, which holds both the rows and
+ * each response's objects, now answers the question directly: every
+ * response arrives with `rowAssignments`, a row key -> object index map
+ * (assignObjectsToRows).
  */
 
 const state = {
@@ -17,51 +19,15 @@ const state = {
   run: null,
 };
 
-function normalizeName(name) {
-  let text = name;
-  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
-    text = text.slice(1, -1);
-  }
-  return text.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function objectKey(obj) {
-  const parts = [obj.kind];
-  if (obj.id !== undefined && obj.id !== null) {
-    parts.push(String(obj.id));
-  } else {
-    parts.push("name:" + normalizeName(obj.name));
-  }
-  if (obj.extendsTarget !== undefined && obj.extendsTarget !== null) {
-    parts.push(normalizeName(obj.extendsTarget));
-  }
-  return parts.join("|");
-}
-
-function nameFallbackKey(obj) {
-  const parts = [obj.kind, normalizeName(obj.name)];
-  if (obj.extendsTarget !== undefined && obj.extendsTarget !== null) {
-    parts.push(normalizeName(obj.extendsTarget));
-  }
-  return parts.join("|");
-}
-
 /**
- * Finds the AL object (if any) in `objects` that fills `row`. Matches by
- * exact key first, then falls back to kind + normalized name (+ extends
- * target) — the same two-step rule buildRowUniverse uses server-side, so a
- * response that named the same object under a slightly different id still
- * lands on the right row instead of reading as "not written".
+ * The AL object (if any) from `response` that fills `row`, read off the
+ * server's own assignment. Index 0 is a legitimate answer, so this checks
+ * for `undefined` rather than truthiness.
  */
-function findObjectForRow(row, objects) {
-  for (const obj of objects) {
-    if (objectKey(obj) === row.key) return obj;
-  }
-  const rowKey = nameFallbackKey(row);
-  for (const obj of objects) {
-    if (nameFallbackKey(obj) === rowKey) return obj;
-  }
-  return undefined;
+function findObjectForRow(row, response) {
+  const assignments = response.rowAssignments || {};
+  const index = assignments[row.key];
+  return index === undefined ? undefined : response.objects[index];
 }
 
 function verdictLabel(verdict) {
@@ -297,7 +263,7 @@ function buildCell(row, response) {
     return wrapper;
   }
 
-  const obj = findObjectForRow(row, response.objects);
+  const obj = findObjectForRow(row, response);
 
   // Its own state, ahead of "not written": a parse failure means we do not
   // KNOW whether the object was written, and saying "not written" about a

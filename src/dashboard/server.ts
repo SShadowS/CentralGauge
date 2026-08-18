@@ -70,6 +70,63 @@ const STATIC_FILES: Record<string, { file: string; contentType: string }> = {
   "/style.css": { file: "style.css", contentType: "text/css; charset=utf-8" },
 };
 
+/**
+ * Hostnames a browser may legitimately have used to reach a loopback-bound
+ * server. Any other value in `Host` means the request arrived through a name
+ * that resolves here but is not ours — DNS rebinding.
+ */
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+
+/** Strips the `:port` suffix from a `Host`/`Origin` authority. */
+function hostnameOf(authority: string): string {
+  if (authority.startsWith("[")) {
+    const end = authority.indexOf("]");
+    return end === -1 ? authority : authority.slice(0, end + 1);
+  }
+  const colon = authority.lastIndexOf(":");
+  return colon === -1 ? authority : authority.slice(0, colon);
+}
+
+/**
+ * Rejects a request that a browser sent from somewhere other than this
+ * server's own loopback origin. Two headers, both only checked when present:
+ *
+ * - `Host`: an attacker who points `evil.example` at 127.0.0.1 gets the
+ *   victim's browser to send same-origin requests here, and the loopback
+ *   binding does nothing about it. Browsers always send `Host`, so a value
+ *   that is not loopback is proof of rebinding.
+ * - `Origin`: browsers attach it to every cross-origin POST, form
+ *   submissions included. That is what closes the CSRF hole the loopback
+ *   binding leaves open: `req.json()` parses a body whatever its
+ *   content-type, so a plain `<form enctype="text/plain">` on a page the
+ *   author visits is a simple request that would otherwise trigger a real
+ *   model fan-out. The attacker cannot read the answer; the spend happens
+ *   anyway.
+ *
+ * Absent headers pass. Non-browser callers (curl, the test suite) send
+ * neither, and they are not the threat this defends against — the attacker
+ * here is a page in the author's own browser, which cannot omit them.
+ */
+function isSameOriginRequest(req: Request): boolean {
+  const host = req.headers.get("host");
+  if (host !== null && !LOOPBACK_HOSTNAMES.has(hostnameOf(host))) {
+    return false;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin !== null) {
+    let originHost: string;
+    try {
+      originHost = new URL(origin).hostname;
+    } catch {
+      return false;
+    }
+    if (!LOOPBACK_HOSTNAMES.has(originHost)) return false;
+  }
+
+  return true;
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -171,6 +228,15 @@ export function createHandler(
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
+
+    // Before anything else, including the static files: a request that
+    // reached us through a rebound DNS name, or from another origin, is
+    // refused whatever it asked for.
+    if (!isSameOriginRequest(req)) {
+      return jsonResponse(403, {
+        error: "refused: request did not come from this server's own origin",
+      });
+    }
 
     const staticEntry = req.method === "GET"
       ? STATIC_FILES[url.pathname]
