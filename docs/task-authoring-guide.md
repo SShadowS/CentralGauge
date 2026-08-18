@@ -131,6 +131,47 @@ before promotion.
 Quick runs are **calibration, never benchmark results**: nothing here reaches the
 scoreboard, and each run is saved beside the draft at `scratch/<id>/.runs/`.
 
+**When the draft has a `prereq/`**, the "Files" rail also shows what each
+response actually referenced from it, so you can tell a hallucinated field
+apart from a model that genuinely fell for the trap. Those are two different
+failures, and telling them apart is what makes the run's calibration
+judgeable. The rail heading names whose response it is showing
+(`Already exists (prereq) — as referenced by <model>`), and clicking any cell
+in a model's column (the same click that opens the detail panel) moves the
+rail onto that model. Before you click anything it shows the first response,
+labelled; on a multi-model run an unlabelled rail would read as describing
+the whole run, and you need to know which model invented the field.
+
+Findings are grouped by table, then by procedure, and tiered:
+
+- **Made up this field** — the referenced name exists in no prereq table.
+  This is a hallucination, not a trap-avoidance signal.
+- **Unknown member** — the reference couldn't be resolved with enough
+  confidence to call it either invented or genuine; a soft flag, not an
+  accusation.
+- A reference that resolves cleanly to a real prereq field or procedure gets
+  no label at all — showing one would read as doubt about something that is
+  actually correct.
+
+Two more states are not findings, and mean opposite things:
+
+- **Nothing from prereq/ referenced** — the analysis ran and found nothing to
+  flag. The response is clean with respect to the prereq.
+- **Couldn't check the prereq** — the analysis could not run at all (a parse
+  failure on the response or the prereq itself). Go look at your draft; this
+  tells you nothing about the response.
+
+**Use as wrong answer.** Open a response's detail panel and click
+"Use as wrong answer (naive/)" to promote it into the draft's `naive/`
+directory. A model's genuine mistake is a more authentic wrong answer than
+one you invent by hand. Promotion **replaces** `naive/`'s AL files rather
+than merging with them, one file per top-level AL object in the response,
+and it refuses (leaving `naive/` untouched) rather than overwriting when
+two objects would collide on the same filename, or when an object's name
+would land on the reserved `<taskId>.` prefix (see "The `<id>.` filename
+prefix inside `correct/` is reserved" below; the same prefix rule applies
+to `naive/`).
+
 Full reference: [workbench command](./cli/commands.md#workbench).
 
 ### 5. Promote

@@ -611,6 +611,21 @@ verdict rather than a score:
 "Avoided the mistake" is scoped to the trap and claims nothing else — not that
 the response compiles, and not that the rest of it is correct.
 
+When the draft has a `prereq/`, the "Files" rail shows what the selected
+response actually referenced from it, scoped to whichever model's column you
+last clicked:
+
+| Label                                  | Meaning                                                              |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| **Made up this field**                  | The referenced name exists in no prereq table (a hallucination).      |
+| **Unknown member**                      | The reference couldn't be resolved confidently either way.            |
+| **Nothing from prereq/ referenced**     | Analysis ran and found nothing to flag; the response is clean.        |
+| **Couldn't check the prereq**           | Analysis could not run at all; this says nothing about the response.  |
+
+These four labels are pinned verbatim by
+`tests/unit/dashboard/vocabulary.test.ts`: keep this table and the UI
+identical.
+
 ### Safety properties
 
 - **Binds `127.0.0.1` only.** The server spends API money, so it is never
@@ -633,6 +648,7 @@ Served on the bound port for the page's own use:
 | `GET /api/drafts`   | Drafts discovered under `scratch/`         |
 | `GET /api/defaults` | Models resolved from `--preset`            |
 | `POST /api/run`     | Run the selected models against a draft    |
+| `POST /api/promote-naive` | Promote a response into the draft's `naive/`, replacing what's there |
 
 ## Exit Codes
 
