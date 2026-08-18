@@ -45,6 +45,7 @@ const deps = {
   createModelCaller: () => () =>
     Promise.reject(new Error("not called in this test")),
   runQuick: () => Promise.reject(new Error("not called in this test")),
+  defaultModels: [],
 } as unknown as Parameters<typeof createHandler>[0];
 
 describe("dashboard/server", () => {
@@ -103,6 +104,34 @@ describe("dashboard/server", () => {
       }),
     );
     assertEquals(res.status === 400, false);
+  });
+
+  it("serves an empty default-models list when none was resolved", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/defaults"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.defaultModels, []);
+  });
+
+  // The CLI resolves `--preset` against .centralgauge.yml (workbench-command.ts)
+  // and hands the result to startServer as plain data — this proves the
+  // handler passes that data straight through rather than re-deriving it.
+  it("serves the CLI-resolved default models as JSON", async () => {
+    const withDefaults = {
+      ...deps,
+      defaultModels: ["anthropic/claude-opus-4-7", "openai/gpt-5.5"],
+    } as unknown as Parameters<typeof createHandler>[0];
+    const res = await createHandler(withDefaults)(
+      new Request("http://localhost/api/defaults"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.defaultModels, [
+      "anthropic/claude-opus-4-7",
+      "openai/gpt-5.5",
+    ]);
   });
 
   it("binds loopback only", async () => {

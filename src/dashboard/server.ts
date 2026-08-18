@@ -16,6 +16,15 @@
  * container publishes. It binds `127.0.0.1` only — never call
  * `Deno.serve` here with any other hostname.
  *
+ * `defaultModels` (surfaced at `GET /api/defaults`) pre-fills the UI's model
+ * input from a `--preset` name. It is resolved OUTSIDE this module, by the
+ * CLI (`cli/commands/workbench-command.ts`, via `resolvePresetModels` in
+ * `./drafts.ts`), and handed in as plain data. This module must never import
+ * the config loader itself: `tests/unit/dashboard/ingest-safety.test.ts`
+ * polices this file's whole import graph, and every module reached from
+ * here is one more thing a later change could accidentally widen into
+ * something the dashboard must never reach.
+ *
  * @module dashboard/server
  */
 
@@ -120,6 +129,9 @@ export function createHandler(
     runQuick: typeof runQuick;
     loadTrapSources: typeof loadTrapSources;
     createModelCaller: typeof createModelCaller;
+    /** CLI-resolved `--preset` models (see the module doc comment), or
+     *  empty when none were given. Served verbatim at `GET /api/defaults`. */
+    defaultModels: string[];
   },
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
@@ -141,6 +153,10 @@ export function createHandler(
     if (req.method === "GET" && url.pathname === "/api/drafts") {
       const drafts = await deps.listDrafts(deps.scratchDir);
       return jsonResponse(200, { drafts });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/defaults") {
+      return jsonResponse(200, { defaultModels: deps.defaultModels });
     }
 
     if (req.method === "POST" && url.pathname === "/api/run") {
@@ -202,7 +218,7 @@ export function createHandler(
  * unfalsifiable by a test.
  */
 export function startServer(
-  opts: { scratchDir: string; port?: number },
+  opts: { scratchDir: string; port?: number; defaultModels?: string[] },
 ): Promise<DashboardServer> {
   const handler = createHandler({
     scratchDir: opts.scratchDir,
@@ -210,6 +226,7 @@ export function startServer(
     runQuick,
     loadTrapSources,
     createModelCaller,
+    defaultModels: opts.defaultModels ?? [],
   });
 
   const server = Deno.serve(

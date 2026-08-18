@@ -137,7 +137,9 @@ function buildColumnHeader(response) {
     return frag;
   }
 
-  const verdict = response.classification ? response.classification.verdict : undefined;
+  const verdict = response.classification
+    ? response.classification.verdict
+    : undefined;
   frag.appendChild(
     el("div", `badge ${verdictClass(verdict)}`, verdictLabel(verdict)),
   );
@@ -159,9 +161,10 @@ function buildCell(row, response) {
     wrapper.classList.add("cell-empty");
     wrapper.textContent = "–";
     wrapper.addEventListener("click", () => {
-      const reason = response.resolution.failure && response.resolution.failure.error
-        ? response.resolution.failure.error
-        : `extraction method: ${response.resolution.method}`;
+      const reason =
+        response.resolution.failure && response.resolution.failure.error
+          ? response.resolution.failure.error
+          : `extraction method: ${response.resolution.method}`;
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model} produced no usable AL (${reason}).`,
@@ -327,7 +330,30 @@ function updateRunButton() {
   }
 
   button.disabled = false;
-  button.textContent = models.length === 1 ? "Ask 1 model" : `Ask ${models.length} models`;
+  button.textContent = models.length === 1
+    ? "Ask 1 model"
+    : `Ask ${models.length} models`;
+}
+
+/**
+ * Pre-fills the model input from the CLI's `--preset` resolution
+ * (`GET /api/defaults`, wired by `cli/commands/workbench-command.ts`).
+ * Best-effort only: an empty list (no `--preset` given, an unknown name, or
+ * a fetch failure) leaves the field exactly as `loadDrafts` requires anyway
+ * — empty and ready for the author to type slugs into by hand.
+ */
+async function loadDefaultModels() {
+  try {
+    const res = await fetch("/api/defaults");
+    if (!res.ok) return;
+    const body = await res.json();
+    const models = Array.isArray(body.defaultModels) ? body.defaultModels : [];
+    if (models.length === 0) return;
+    document.getElementById("model-input").value = models.join(", ");
+    updateRunButton();
+  } catch {
+    // Silent — pre-fill is a convenience, not a requirement.
+  }
 }
 
 async function loadDrafts() {
@@ -359,7 +385,9 @@ async function runQuick() {
   if (!draft || models.length === 0) return;
 
   button.disabled = true;
-  statusEl.textContent = `Asking ${models.length === 1 ? "1 model" : `${models.length} models`}…`;
+  statusEl.textContent = `Asking ${
+    models.length === 1 ? "1 model" : `${models.length} models`
+  }…`;
   hideDetail();
 
   try {
@@ -370,11 +398,15 @@ async function runQuick() {
     });
     const body = await res.json();
     if (!res.ok) {
-      throw new Error(body.error || `POST /api/run failed with status ${res.status}`);
+      throw new Error(
+        body.error || `POST /api/run failed with status ${res.status}`,
+      );
     }
     state.run = body;
     renderMatrix(body);
-    statusEl.textContent = `Last run: ${new Date(body.startedAt).toLocaleTimeString()}`;
+    statusEl.textContent = `Last run: ${
+      new Date(body.startedAt).toLocaleTimeString()
+    }`;
   } catch (error) {
     statusEl.textContent = `Run failed: ${error.message}`;
   } finally {
@@ -383,13 +415,19 @@ async function runQuick() {
 }
 
 function wireEvents() {
-  document.getElementById("draft-select").addEventListener("change", (event) => {
-    state.selectedDir = event.target.value;
-    renderFileList(selectedDraft());
-    updateRunButton();
-  });
+  document.getElementById("draft-select").addEventListener(
+    "change",
+    (event) => {
+      state.selectedDir = event.target.value;
+      renderFileList(selectedDraft());
+      updateRunButton();
+    },
+  );
 
-  document.getElementById("model-input").addEventListener("input", updateRunButton);
+  document.getElementById("model-input").addEventListener(
+    "input",
+    updateRunButton,
+  );
 
   document.getElementById("run-button").addEventListener("click", () => {
     runQuick();
@@ -412,6 +450,7 @@ function init() {
   renderStandingNote();
   wireEvents();
   loadDrafts();
+  loadDefaultModels();
 }
 
 if (document.readyState === "loading") {
