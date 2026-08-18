@@ -62,6 +62,7 @@ nav:
       - Writing Tests: tasks/writing-tests.md
       - Task Categories: tasks/categories.md
       - Task Creation Guide: tasks/task-creation-prompt.md
+      - Trap Task Authoring Guide: task-authoring-guide.md
   - Architecture:
       - System Overview: architecture/overview.md
       - LLM Adapters: architecture/llm-adapters.md

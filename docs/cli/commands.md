@@ -27,6 +27,7 @@ These options are available for all commands:
 | `models`         | List and test model resolution                           |
 | `config`         | Configuration management                                 |
 | `stats-*`        | Historical statistics commands                           |
+| `workbench`      | Local authoring dashboard for draft trap-tasks           |
 | `container`      | Container management                                     |
 | `compile`        | Compile AL code                                          |
 | `test`           | Run AL tests                                             |
@@ -551,6 +552,88 @@ Run AL tests in a container.
 centralgauge test <project-path> --container <name> [--codeunit <id>]
 ```
 
+## workbench
+
+Local authoring dashboard for draft trap-tasks under `scratch/`.
+
+A trap task pairs a `correct/` reference solution that passes the oracle with a
+`naive/` one that fails it. The dashboard asks several models the same question
+and shows, per AL object, which of them fell for the trap — so an author can see
+at a glance whether a draft actually discriminates before spending a bench run
+on it.
+
+### Usage
+
+```bash
+centralgauge workbench serve [options]
+```
+
+### Options
+
+| Option            | Description                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| `--port <number>` | Port to listen on. Omit to let the OS assign an ephemeral one.                                        |
+| `--preset <name>` | Pre-fill the model input from a `benchmarkPresets` entry in `.centralgauge.yml`.                      |
+
+An unknown `--preset`, or one defining no models, prints a `[WARN]` and starts
+anyway with an empty model input. A typo in a preset name never stops the tool.
+
+### Examples
+
+```bash
+# Ephemeral port, empty model input
+centralgauge workbench serve
+
+# Fixed port
+centralgauge workbench serve --port 4173
+
+# Pre-fill from a preset — quick-test is the free one (mock provider)
+centralgauge workbench serve --preset quick-test
+
+# Pre-fill from a real preset (these calls cost money)
+centralgauge workbench serve --preset flagship-2026-q2
+```
+
+### What the screen shows
+
+One row per AL object, one column per model. Each cell carries a plain-language
+verdict rather than a score:
+
+| Label                    | Meaning                                                             |
+| ------------------------ | ------------------------------------------------------------------- |
+| **Made the mistake**     | The response takes the naive form at a trap site.                    |
+| **Avoided the mistake**  | The response takes the correct form at every trap site.              |
+| **Different approach**   | Neither form — not wrong, just not either reference.                 |
+| **Couldn't compare yet** | No trap sites to compare against; the panel names why.               |
+| **Wrote extra object**   | An object the task did not ask for.                                  |
+| **not written**          | The object is absent from this response.                             |
+
+"Avoided the mistake" is scoped to the trap and claims nothing else — not that
+the response compiles, and not that the rest of it is correct.
+
+### Safety properties
+
+- **Binds `127.0.0.1` only.** The server spends API money, so it is never
+  reachable off the machine. Cross-origin `POST`s are refused.
+- **Never publishes to the scoreboard.** No code path from the dashboard
+  reaches `bench`, `ingest`, `src/ingest/` or the config loader, and
+  `tests/unit/dashboard/ingest-safety.test.ts` fails the build if one ever does.
+  Quick runs are calibration, not benchmark results.
+- **Run artifacts stay with the draft**, at
+  `scratch/<id>/.runs/<id>-<timestamp>.json`. They deliberately do not use the
+  `benchmark-results-*` shape, so a stray `ingest` replay cannot pick one up.
+
+### HTTP endpoints
+
+Served on the bound port for the page's own use:
+
+| Route          | Purpose                                        |
+| -------------- | ---------------------------------------------- |
+| `GET /`        | The dashboard page                             |
+| `GET /api/drafts`   | Drafts discovered under `scratch/`         |
+| `GET /api/defaults` | Models resolved from `--preset`            |
+| `POST /api/run`     | Run the selected models against a draft    |
+
 ## Exit Codes
 
 | Code | Description         |
@@ -570,5 +653,6 @@ See [Configuration](../guides/configuration.md) for environment variable referen
 
 - [bench Command](./bench.md) - Detailed bench reference
 - [rules Command](./rules.md) - Rules generation reference
+- [Task Authoring Guide](../task-authoring-guide.md) - Writing trap tasks with `workbench serve`
 - [Running Benchmarks](../guides/running-benchmarks.md) - Usage guide
 - [Configuration](../guides/configuration.md) - Config reference

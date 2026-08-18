@@ -106,6 +106,33 @@ deno task start task probe CG-AL-X054
 Two more workspace tasks run one side only — useful while iterating, since each
 is one container round-trip instead of two.
 
+### 4b. See what models actually do (optional)
+
+The probe tells you the trap discriminates between *your two* solutions. It does
+not tell you whether real models fall for it. To check that before committing a
+bench run:
+
+```bash
+deno task start workbench serve --preset quick-test
+```
+
+Open the printed `127.0.0.1` URL, pick the draft, and ask. You get one row per
+AL object and one column per model, each cell saying **Made the mistake**,
+**Avoided the mistake**, **Different approach** or **Couldn't compare yet**.
+Click a cell to read that object's source.
+
+`quick-test` uses the `mock` provider and costs nothing — use it to confirm the
+dashboard works. Naming a real preset spends real money, so decide deliberately.
+
+A trap every model avoids is too easy; one every model falls for may be testing
+knowledge nobody has rather than a genuine discriminator. Both are worth knowing
+before promotion.
+
+Quick runs are **calibration, never benchmark results**: nothing here reaches the
+scoreboard, and each run is saved beside the draft at `scratch/<id>/.runs/`.
+
+Full reference: [workbench command](./cli/commands.md#workbench).
+
 ### 5. Promote
 
 ```bash
@@ -374,6 +401,7 @@ Worth knowing before they surprise you.
 | Path | What |
 |---|---|
 | `scratch/<id>/` | Your draft. Gitignored. |
+| `scratch/<id>/.runs/` | Quick-run artifacts from `workbench serve`. Gitignored, never ingested. |
 | `tasks/<difficulty>/<id>-<slug>.yml` | Promoted task manifest. |
 | `tests/al/<difficulty>/<id>.Test.al` | Promoted oracle and companions. |
 | `tests/al/dependencies/<id>/` | Promoted prereq app. |
