@@ -21,6 +21,50 @@ const TABLE = `table 69001 "Product Category"
     end;
 }`;
 
+const TABLE_EXTENSION =
+  `tableextension 69100 "CG Category Ext" extends "Product Category"
+{
+    fields
+    {
+        field(69101; "Extra Field"; Text[10]) { }
+    }
+
+    procedure ExtHelper()
+    begin
+    end;
+}`;
+
+// A field whose OnValidate trigger declares a local variable named "field",
+// and a procedure whose own local variable is named "procedure" - both
+// chosen to collide by TEXT with what this module looks for, to prove
+// extraction matches on AST node type/position, not on token spelling, and
+// never descends into a matched field's or procedure's own body.
+const HOSTILE_TABLE = `table 69001 "Product Category"
+{
+    fields
+    {
+        field(1; "Code"; Code[20]) { }
+        field(2; Active; Boolean)
+        {
+            trigger OnValidate()
+            var
+                field: Integer;
+            begin
+            end;
+        }
+    }
+
+    procedure Recalc()
+    var
+        procedure: Text;
+    begin
+    end;
+
+    procedure Helper()
+    begin
+    end;
+}`;
+
 describe("al/prereq-index", () => {
   it("indexes fields and procedures of a prereq table", async () => {
     const idx = await buildPrereqIndex([TABLE]);
@@ -51,5 +95,22 @@ describe("al/prereq-index", () => {
     const idx = await buildPrereqIndex([TABLE, other]);
     assertEquals(idx.tables.size, 2);
     assertEquals(lookupField(idx, "CG Related", "Ref"), true);
+  });
+
+  it("indexes a tableextension the same way as a table", async () => {
+    const idx = await buildPrereqIndex([TABLE_EXTENSION]);
+    const t = idx.tables.get("cg category ext");
+    assertEquals(t?.name, "CG Category Ext");
+    assertEquals(t?.fields, ["Extra Field"]);
+    assertEquals(t?.procedures, ["ExtHelper"]);
+    assertEquals(idx.hasError, false);
+  });
+
+  it("does not let a trigger's or procedure's local variables contaminate extraction", async () => {
+    const idx = await buildPrereqIndex([HOSTILE_TABLE]);
+    const t = idx.tables.get("product category");
+    assertEquals(t?.fields, ["Code", "Active"]);
+    assertEquals(t?.procedures, ["Recalc", "Helper"]);
+    assertEquals(idx.hasError, false);
   });
 });
