@@ -67,7 +67,9 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
     try {
       const metaContent = await Deno.readTextFile(metaJsonPath);
       const metaJson = JSON.parse(metaContent);
-      slug = metaJson.slug;
+      if (typeof metaJson.slug === "string") {
+        slug = metaJson.slug;
+      }
     } catch {
       // Malformed .meta.json - just skip slug, don't fail the listing
     }
@@ -100,6 +102,9 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
 
     drafts.push(summary);
   }
+
+  // Sort by id for deterministic ordering
+  drafts.sort((a, b) => a.id.localeCompare(b.id));
 
   return drafts;
 }

@@ -93,6 +93,36 @@ describe("dashboard/drafts", () => {
     assertEquals(drafts[0]?.testCodeunitId, undefined);
   });
 
+  it("ignores wrong-typed slug in .meta.json", async () => {
+    const dir = join(scratch, "CG-AL-X057");
+    await ensureDir(join(dir, "correct"));
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      `id: CG-AL-X057\nexpected:\n  testCodeunitId: 88803\n`,
+    );
+    await Deno.writeTextFile(
+      join(dir, ".meta.json"),
+      JSON.stringify({ id: "CG-AL-X057", slug: 123 }),
+    );
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts.length, 1);
+    assertEquals(drafts[0]?.id, "CG-AL-X057");
+    assertEquals(drafts[0]?.slug, undefined);
+    assertEquals(drafts[0]?.testCodeunitId, 88803);
+  });
+
+  it("returns drafts sorted by id", async () => {
+    await makeDraft("CG-AL-X055");
+    await makeDraft("CG-AL-X053");
+    await makeDraft("CG-AL-X054");
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts.map((d) => d.id), [
+      "CG-AL-X053",
+      "CG-AL-X054",
+      "CG-AL-X055",
+    ]);
+  });
+
   it("resolves models from a named preset", () => {
     const models = resolvePresetModels(
       { benchmarkPresets: { flagship: { llms: ["a/b", "c/d"] } } },
