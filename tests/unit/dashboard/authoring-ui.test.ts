@@ -61,6 +61,29 @@ function allClasses(node: StubNode): string[] {
   return [node.className, ...node.children.flatMap(allClasses)];
 }
 
+/**
+ * The first node at or under `node` whose own `className` includes `cls`
+ * and whose own `textContent` includes `text`. Matching on the node's OWN
+ * text, not its subtree's, is the point: an assertion made against the
+ * rail's flattened text cannot tell WHICH finding carries a label, which is
+ * precisely how a mutation that labelled every tier "Made up this field"
+ * survived the suite.
+ */
+function findNode(
+  node: StubNode,
+  cls: string,
+  text: string,
+): StubNode | undefined {
+  if (node.className.includes(cls) && node.textContent.includes(text)) {
+    return node;
+  }
+  for (const child of node.children) {
+    const hit = findNode(child, cls, text);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 /** Stable stand-ins for the ids app.js looks up, so a test can read back
  *  what a render wrote into them. `innerHTML = ""` (which app.js uses to
  *  clear a container) resets the stub's children. */
@@ -424,30 +447,45 @@ describe("dashboard/ui app.js", () => {
   // never picking up the accusation.
   it("labels a hard finding as a made-up field", async () => {
     const ui = await loadUi();
-    const rail = allText(
-      ui.renderPrereqRail({
-        degraded: false,
-        findings: [
-          {
-            procedureName: "P",
-            table: "CG Quote",
-            member: "Discount",
-            tier: "hard",
-            line: 5,
-          },
-          {
-            procedureName: "P",
-            table: "CG Quote",
-            member: "Unit Price",
-            tier: "known",
-            line: 6,
-          },
-        ],
-      }),
+    const rail = ui.renderPrereqRail({
+      degraded: false,
+      findings: [
+        {
+          procedureName: "P",
+          table: "CG Quote",
+          member: "Discount",
+          tier: "hard",
+          line: 5,
+        },
+        {
+          procedureName: "P",
+          table: "CG Quote",
+          member: "Unit Price",
+          tier: "known",
+          line: 6,
+        },
+      ],
+    });
+
+    // Asserted PER NODE, never against the rail's flattened text. Both
+    // labels appear somewhere in a rail carrying a hard finding, so a
+    // flattened-text assertion passes just as happily when the `known`
+    // reference is ALSO accused — which is the whole failure the tiers
+    // exist to prevent.
+    const hard = findNode(rail, "prereq-member", "Discount");
+    assertEquals(hard?.className.includes("prereq-tier-hard"), true);
+    assertStringIncludes(allText(hard!), "Made up this field");
+
+    const known = findNode(rail, "prereq-member", "Unit Price");
+    assertEquals(known?.className.includes("prereq-tier-known"), true);
+    // The correct reference carries NO label of any kind: not the hard
+    // one, not the soft one.
+    assertEquals(allText(known!).includes("Made up this field"), false);
+    assertEquals(allText(known!).includes("Unknown member"), false);
+    assertEquals(
+      allClasses(known!).some((c) => c.includes("prereq-label")),
+      false,
     );
-    assertStringIncludes(rail, "Made up this field");
-    assertStringIncludes(rail, "Discount");
-    assertStringIncludes(rail, "Unit Price");
   });
 
   // A `soft` finding is NOT provable — the member may be a Record built-in
@@ -456,22 +494,22 @@ describe("dashboard/ui app.js", () => {
   // that wrote correct code.
   it("labels a soft finding without accusing", async () => {
     const ui = await loadUi();
-    const rail = allText(
-      ui.renderPrereqRail({
-        degraded: false,
-        findings: [
-          {
-            procedureName: "P",
-            table: "CG Quote",
-            member: "Refresh",
-            tier: "soft",
-            line: 7,
-          },
-        ],
-      }),
-    );
-    assertStringIncludes(rail, "Unknown member");
-    assertEquals(rail.includes("Made up this field"), false);
+    const rail = ui.renderPrereqRail({
+      degraded: false,
+      findings: [
+        {
+          procedureName: "P",
+          table: "CG Quote",
+          member: "Refresh",
+          tier: "soft",
+          line: 7,
+        },
+      ],
+    });
+    const soft = findNode(rail, "prereq-member", "Refresh");
+    assertEquals(soft?.className.includes("prereq-tier-soft"), true);
+    assertStringIncludes(allText(soft!), "Unknown member");
+    assertEquals(allText(soft!).includes("Made up this field"), false);
   });
 
   it("says it could not check rather than showing an empty rail", async () => {
