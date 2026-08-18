@@ -73,7 +73,7 @@ centralgauge bench [options]
 | `--knowledge-dir`      | string   | -              | Directory of .md files to inject             |
 | `--run-label`          | string   | auto           | Custom label for this run                    |
 | `--no-continuation`    | boolean  | false          | Disable continuation                         |
-| `--stream`             | boolean  | false          | Enable streaming mode                        |
+| `--stream`             | boolean  | false          | Emit real-time progress events                |
 | `--json-events`        | boolean  | false          | Output JSON lines                            |
 | `--tui`                | boolean  | false          | Enable TUI mode                              |
 | `--retry`              | string   | -              | Retry from previous results                  |

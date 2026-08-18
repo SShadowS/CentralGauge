@@ -276,7 +276,7 @@ deno task bench --agents default --tasks tasks/*.yml --debug
 # Show detailed failure output
 deno task bench --agents default --tasks tasks/*.yml --verbose
 
-# Enable streaming
+# Emit real-time progress events (the wire transport already streams)
 deno task bench --agents default --tasks tasks/*.yml --stream
 ```
 

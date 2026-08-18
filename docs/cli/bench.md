@@ -135,8 +135,18 @@ centralgauge bench --agents default --sandbox --container Cronus28
 | `--sequential`      | boolean | false   | Disable parallelism     |
 | `--max-concurrency` | number  | 10      | Max concurrent calls    |
 | `--no-continuation` | boolean | false   | Disable continuation    |
-| `--stream`          | boolean | false   | Enable streaming        |
+| `--stream`          | boolean | false   | Emit progress events    |
 | `--retry`           | string  | -       | Retry from results file |
+
+> **`--stream` does not control the wire transport.** Model calls always use
+> the provider's streaming API, decided by adapter capability alone. The flag
+> only controls whether real-time progress events are emitted for a UI to
+> render, so it cannot change benchmark results.
+>
+> This used to be one setting for both, which made the default path
+> (`--stream` absent) send non-streaming requests. At the configured
+> `maxTokens: 64000` the Anthropic SDK rejects those outright, so every
+> Anthropic model failed unless streaming was switched on.
 
 ### Output Options
 
