@@ -116,10 +116,25 @@ function hideDetail() {
   document.getElementById("detail-panel").hidden = true;
 }
 
-/** The column header for one model: name, then verdict or no-code state. */
+/** The column header for one model: name, then verdict or no-code state.
+ *
+ * The name is a button: it opens the exact prompt this model was sent,
+ * rendered server-side from the draft's task.yml through the bench's own
+ * attempt-1 path. An author calibrating a draft needs to read the question,
+ * and prompt injections are provider-scoped, so two columns in one run can
+ * legitimately hold different text. */
 function buildColumnHeader(response) {
   const frag = document.createDocumentFragment();
-  frag.appendChild(el("div", "model-name", response.model));
+  const name = el("button", "model-name", response.model);
+  name.type = "button";
+  name.title = "Show the prompt this model was sent";
+  name.addEventListener("click", () => {
+    showDetail(
+      `${response.model} — prompt sent`,
+      response.prompt || "(no prompt was rendered — see the error below)",
+    );
+  });
+  frag.appendChild(name);
 
   if (!response.resolution.isReadyForCompile) {
     const pct = Math.round((response.resolution.confidence || 0) * 100);

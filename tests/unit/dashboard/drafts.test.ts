@@ -206,6 +206,72 @@ describe("dashboard/drafts", () => {
     );
   });
 
+  // The prompt inputs. `POST /api/run` renders the question from these
+  // through the bench's own attempt-1 path, so listDrafts is where they have
+  // to arrive — the alternative was the dashboard asking every model "".
+  it("reads the prompt inputs from task.yml", async () => {
+    const dir = join(scratch, "CG-AL-X059");
+    await ensureDir(join(dir, "correct"));
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      [
+        "id: CG-AL-X059",
+        "prompt_template: code-gen.md",
+        "max_attempts: 2",
+        "description: Write a codeunit that validates quantity.",
+        "prompts:",
+        "  injections:",
+        "    anthropic:",
+        "      generation:",
+        "        prefix: 'PRE '",
+        "",
+      ].join("\n"),
+    );
+    await Deno.writeTextFile(join(dir, ".meta.json"), "{}");
+
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(
+      draft?.description,
+      "Write a codeunit that validates quantity.",
+    );
+    assertEquals(draft?.promptTemplate, "code-gen.md");
+    assertEquals(draft?.maxAttempts, 2);
+    assertEquals(
+      draft?.prompts?.injections?.["anthropic"]?.generation?.prefix,
+      "PRE ",
+    );
+  });
+
+  // A draft scaffolded but not yet written up. It still lists (the author
+  // needs to see it); `POST /api/run` is what refuses to spend money on it.
+  it("reports an empty description when task.yml has none", async () => {
+    await makeDraft("CG-AL-X060");
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(draft?.description, "");
+    assertEquals(draft?.promptTemplate, undefined);
+    assertEquals(draft?.maxAttempts, undefined);
+    assertEquals(draft?.prompts, undefined);
+  });
+
+  // Wrong-typed fields fall back individually rather than failing the listing,
+  // the same tolerance already applied to `slug` and `id`.
+  it("ignores wrong-typed prompt inputs in task.yml", async () => {
+    const dir = join(scratch, "CG-AL-X061");
+    await ensureDir(join(dir, "correct"));
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      "id: CG-AL-X061\ndescription: 12\nprompt_template: 7\nmax_attempts: two\nprompts: nope\n",
+    );
+    await Deno.writeTextFile(join(dir, ".meta.json"), "{}");
+
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(draft?.id, "CG-AL-X061");
+    assertEquals(draft?.description, "");
+    assertEquals(draft?.promptTemplate, undefined);
+    assertEquals(draft?.maxAttempts, undefined);
+    assertEquals(draft?.prompts, undefined);
+  });
+
   it("resolves models from a named preset", () => {
     const models = resolvePresetModels(
       { benchmarkPresets: { flagship: { llms: ["a/b", "c/d"] } } },

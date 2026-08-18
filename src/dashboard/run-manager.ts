@@ -25,6 +25,7 @@ import type {
   TrapSignature,
 } from "../al/trap-signature.ts";
 import type { CandidateResolution } from "../llm/candidate-resolution.ts";
+import type { PromptTemplateRenderer } from "../llm/prompt-building.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { DraftSummary } from "./drafts.ts";
 
@@ -35,9 +36,24 @@ import {
   deriveTrapSignature,
 } from "../al/trap-signature.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
+import {
+  buildGenerationPrompt,
+  DEFAULT_TEMPLATE_DIR,
+} from "../llm/prompt-building.ts";
+import { TemplateRenderer } from "../templates/renderer.ts";
+import { providerOfModelSlug } from "./model-caller.ts";
 
 export interface ModelResponse {
   model: string;
+  /**
+   * The prompt this model was actually sent, rendered from the draft's
+   * `task.yml` through the bench's own attempt-1 path
+   * (`buildGenerationPrompt`). Recorded per model because prompt injections
+   * are provider-scoped, so two models in one run can legitimately be asked
+   * different things. `""` only when the render itself threw, in which case
+   * `error` says why.
+   */
+  prompt: string;
   rawResponse: string;
   resolution: CandidateResolution;
   objects: AlObject[];
@@ -52,29 +68,62 @@ export interface QuickRun {
   rows: MatrixRow[];
 }
 
+/** What a model is asked. Mirrors the `LLMRequest` fields the bench's
+ *  attempt-1 path produces (`AppliedPromptInjection`). */
+export interface ModelRequest {
+  prompt: string;
+  systemPrompt?: string;
+}
+
 export type ModelCaller = (
   model: string,
-  prompt: string,
+  request: ModelRequest,
 ) => Promise<{ content: string; finishReason: LLMResponse["finishReason"] }>;
 
 /**
- * Calls `call` for one model and turns the outcome into a `ModelResponse`.
+ * Renders the prompt for one model and calls `call` with it, turning the
+ * outcome into a `ModelResponse`.
  *
- * A rejection gets verdict `cannot-compare`, not `different-approach`: a
- * model that threw produced nothing to compare, and a resolved-looking cell
- * would misrepresent that in a UI whose whole point is judging responses at
- * a glance. `objects` is `[]` and the rejection's message lands in `error`,
- * which is what a caller uses to tell "no answer" apart from a genuine
- * empty-signature comparison.
+ * The prompt is rendered HERE, per model, rather than once for the run: the
+ * bench resolves prompt injections against the model's provider
+ * (`PromptInjectionResolver.resolve`'s `provider` argument), so two models
+ * in one run can legitimately be sent different text. Rendering it per model
+ * is what makes the dashboard's prompt equal to the bench's for every model,
+ * which is the whole point of spec §2b.
+ *
+ * A rejection — from the render or the provider — gets verdict
+ * `cannot-compare`, not `different-approach`: a model that threw produced
+ * nothing to compare, and a resolved-looking cell would misrepresent that in
+ * a UI whose whole point is judging responses at a glance. `objects` is `[]`
+ * and the rejection's message lands in `error`, which is what a caller uses
+ * to tell "no answer" apart from a genuine empty-signature comparison.
  */
 async function runOneModel(
   model: string,
-  prompt: string,
+  draft: DraftSummary,
+  renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
 ): Promise<ModelResponse> {
+  let prompt = "";
   try {
-    const { content, finishReason } = await call(model, prompt);
+    const applied = await buildGenerationPrompt({
+      renderer,
+      promptTemplate: draft.promptTemplate,
+      description: draft.description,
+      taskId: draft.id,
+      maxAttempts: draft.maxAttempts,
+      taskPrompts: draft.prompts,
+      provider: providerOfModelSlug(model),
+    });
+    prompt = applied.prompt;
+
+    const { content, finishReason } = await call(model, {
+      prompt: applied.prompt,
+      ...(applied.systemPrompt !== undefined
+        ? { systemPrompt: applied.systemPrompt }
+        : {}),
+    });
     const resolution = resolveCandidate(content, finishReason);
     const { objects } = await parseAlObjects(resolution.cleanedCode);
     const classification = await classifyAgainstSignature(
@@ -83,6 +132,7 @@ async function runOneModel(
     );
     return {
       model,
+      prompt,
       rawResponse: content,
       resolution,
       objects,
@@ -92,6 +142,7 @@ async function runOneModel(
     const message = error instanceof Error ? error.message : String(error);
     return {
       model,
+      prompt,
       rawResponse: "",
       resolution: resolveCandidate("", "error"),
       objects: [],
@@ -102,9 +153,24 @@ async function runOneModel(
 }
 
 /**
- * Runs every model concurrently against the same prompt and trap signature,
+ * The renderer used when a caller supplies none: the bench's own template
+ * directory, resolved the way the bench resolves it (relative to the process
+ * cwd). Module-level because `TemplateRenderer` caches template text per
+ * instance and the constructor does no I/O.
+ */
+const defaultRenderer = new TemplateRenderer(DEFAULT_TEMPLATE_DIR);
+
+/**
+ * Runs every model concurrently against the same draft and trap signature,
  * then builds the matrix row universe from the reference objects (parsed
  * from `correctSources`) plus every response's own objects.
+ *
+ * There is deliberately NO `prompt` parameter. The question every model is
+ * asked is rendered from the draft's own `task.yml` through the bench's
+ * attempt-1 path (see `runOneModel`) — accepting a prompt from the caller is
+ * how the dashboard came to ask every model the empty string, and accepting
+ * one from a browser would also mean the author was calibrating against a
+ * prompt the bench never sends (spec §2b).
  *
  * Each model call is independently caught inside `runOneModel`, so
  * `Promise.all` here never itself rejects on a single model's failure — one
@@ -113,19 +179,22 @@ async function runOneModel(
 export async function runQuick(opts: {
   draft: DraftSummary;
   models: string[];
-  prompt: string;
   correctSources: string[];
   naiveSources: string[];
   call: ModelCaller;
+  /** Overridable so a test can pin the rendered text without reading the
+   *  repo's real `templates/`. Production passes nothing. */
+  renderer?: PromptTemplateRenderer;
 }): Promise<QuickRun> {
   const signature = await deriveTrapSignature(
     opts.correctSources,
     opts.naiveSources,
   );
+  const renderer = opts.renderer ?? defaultRenderer;
 
   const responses = await Promise.all(
     opts.models.map((model) =>
-      runOneModel(model, opts.prompt, signature, opts.call)
+      runOneModel(model, opts.draft, renderer, signature, opts.call)
     ),
   );
 

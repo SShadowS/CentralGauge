@@ -6,6 +6,13 @@
  * several models the same question (`runQuick`) to see which ones fall for
  * the trap a draft is built around.
  *
+ * That question is derived server-side from the selected draft's `task.yml`,
+ * through the same attempt-1 path the bench uses
+ * (`src/llm/prompt-building.ts`). It is never taken from the request body:
+ * spec §2b's reason is that an author must calibrate against the prompt the
+ * bench actually sends, and the practical one is that a `prompt` field the
+ * client never populated meant every model was asked the empty string.
+ *
  * `createHandler` is the pure request router: it has no dependency on a
  * bound socket, so route behavior (including validation) is unit-testable
  * without ever calling `Deno.serve`. `startServer` is the thin listener
@@ -72,21 +79,32 @@ function jsonResponse(status: number, body: unknown): Response {
 
 /**
  * Runs before `deps.runQuick` is ever invoked, so a malformed or
- * unresolvable request never reaches it. Two checks, both 400:
- * `models` must be a non-empty array of strings, and `draftId` must name a
- * draft `listDrafts` actually returned — not merely a well-formed string.
+ * unresolvable request never reaches it, and resolves the request to the
+ * `DraftSummary` the run will actually read. Checks, all 400:
+ * `models` must be a non-empty array of strings, `draftId` must name a draft
+ * `listDrafts` actually returned (not merely a well-formed string), and that
+ * draft's `task.yml` must carry a description.
+ *
+ * There is deliberately no `prompt` field. The question is rendered
+ * server-side from the draft's `task.yml` through the bench's own attempt-1
+ * path — a client-supplied prompt is both how every model came to be asked
+ * the empty string and a way to calibrate against a prompt the bench never
+ * sends (spec §2b). The description check is the same guarantee from the
+ * other side: a draft still carrying no description is an authoring state,
+ * not a runnable one, and spending API money to ask N models "## Task\n\n"
+ * is exactly the failure this endpoint should refuse rather than report.
  */
 function validateRunRequest(
   body: unknown,
   drafts: DraftSummary[],
-): { ok: true; draftId: string; models: string[]; prompt: string } | {
+): { ok: true; draft: DraftSummary; models: string[] } | {
   ok: false;
   error: string;
 } {
   if (typeof body !== "object" || body === null) {
     return { ok: false, error: "request body must be a JSON object" };
   }
-  const { draftId, models, prompt } = body as Record<string, unknown>;
+  const { draftId, models } = body as Record<string, unknown>;
 
   if (
     !Array.isArray(models) || models.length === 0 ||
@@ -97,16 +115,22 @@ function validateRunRequest(
   if (typeof draftId !== "string") {
     return { ok: false, error: "draftId must be a string" };
   }
-  if (!drafts.some((d) => d.id === draftId)) {
+  const draft = drafts.find((d) => d.id === draftId);
+  if (!draft) {
     return { ok: false, error: `unknown draft: ${draftId}` };
   }
+  // `?? ""` rather than trusting the type: `deps.listDrafts` is injectable,
+  // so a partially-shaped draft should 400 with a legible reason rather than
+  // 500 on a TypeError.
+  if ((draft.description ?? "").trim().length === 0) {
+    return {
+      ok: false,
+      error: `draft ${draft.id} has no description in task.yml, so there is ` +
+        `nothing to ask the models`,
+    };
+  }
 
-  return {
-    ok: true,
-    draftId,
-    models,
-    prompt: typeof prompt === "string" ? prompt : "",
-  };
+  return { ok: true, draft, models };
 }
 
 /**
@@ -173,12 +197,7 @@ export function createHandler(
         return jsonResponse(400, { error: validated.error });
       }
 
-      const draft = drafts.find((d) => d.id === validated.draftId);
-      if (!draft) {
-        // Unreachable: validateRunRequest already confirmed a match against
-        // this same `drafts` array. Guards the non-null use below.
-        return jsonResponse(400, { error: "unknown draft" });
-      }
+      const draft = validated.draft;
 
       try {
         const { correctSources, naiveSources } = await deps.loadTrapSources(
@@ -192,7 +211,6 @@ export function createHandler(
         const run: QuickRun = await deps.runQuick({
           draft,
           models: validated.models,
-          prompt: validated.prompt,
           correctSources,
           naiveSources,
           call,

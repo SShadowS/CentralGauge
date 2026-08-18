@@ -7,11 +7,30 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 
+import type { PromptInjectionConfig } from "../prompts/types.ts";
+
 export interface DraftSummary {
   id: string;
   dir: string;
   dirName: string;
   slug?: string;
+  /**
+   * `task.yml`'s `description` — the question the models are actually
+   * asked, rendered through the bench's own attempt-1 template by
+   * `buildGenerationPrompt`. `""` when absent or malformed, which
+   * `validateRunRequest` refuses to start a run against rather than asking
+   * every model an empty question.
+   */
+  description: string;
+  /** `task.yml`'s `prompt_template`. Absent falls back to the bench default
+   *  (`DEFAULT_PROMPT_TEMPLATE`), which is where that decision belongs. */
+  promptTemplate?: string;
+  /** `task.yml`'s `max_attempts`, a template variable the bench substitutes. */
+  maxAttempts?: number;
+  /** `task.yml`'s `prompts` injection block, applied by the bench at
+   *  attempt 1. Carried so the dashboard's prompt cannot diverge from the
+   *  bench's for a task that declares injections. */
+  prompts?: PromptInjectionConfig;
   hasPrereq: boolean;
   /**
    * Filenames directly inside `prereq/`, sorted. `[]` when the directory
@@ -94,17 +113,40 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       continue;
     }
 
-    // Read id from task.yml (authoritative), fall back to directory name if missing
-    let id = dirName;
+    // Read task.yml ONCE. Everything below that comes out of it (the task id,
+    // the prompt inputs, the test codeunit id) reads from this single parse:
+    // an unreadable or malformed file degrades every field together, which is
+    // the honest behaviour, and each extra read was a chance for two blocks to
+    // disagree about the same file.
+    let taskYaml: Record<string, unknown> = {};
     try {
       const taskContent = await Deno.readTextFile(taskYmlPath);
-      const taskYaml = parseYaml(taskContent) as Record<string, unknown>;
-      if (typeof taskYaml["id"] === "string") {
-        id = taskYaml["id"];
-      }
+      taskYaml = (parseYaml(taskContent) ?? {}) as Record<string, unknown>;
     } catch {
-      // Malformed task.yml - use directory name as fallback
+      // Malformed task.yml - every field below falls back on its own terms.
     }
+
+    // id from task.yml (authoritative), falling back to the directory name.
+    const id = typeof taskYaml["id"] === "string" ? taskYaml["id"] : dirName;
+
+    // The prompt inputs the bench renders its attempt-1 request from.
+    const description = typeof taskYaml["description"] === "string"
+      ? taskYaml["description"]
+      : "";
+    const promptTemplate = typeof taskYaml["prompt_template"] === "string"
+      ? taskYaml["prompt_template"]
+      : undefined;
+    const maxAttempts = typeof taskYaml["max_attempts"] === "number"
+      ? taskYaml["max_attempts"]
+      : undefined;
+    // Shape-checked only as far as "an object": PromptInjectionResolver
+    // tolerates unknown provider/stage keys, and refusing a draft outright
+    // over an injection block it may still be editing would be worse than
+    // rendering what it says.
+    const prompts = typeof taskYaml["prompts"] === "object" &&
+        taskYaml["prompts"] !== null
+      ? taskYaml["prompts"] as PromptInjectionConfig
+      : undefined;
 
     // Read slug from .meta.json (optional, handle gracefully if malformed)
     let slug: string | undefined;
@@ -118,18 +160,14 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       // Malformed .meta.json - just skip slug, don't fail the listing
     }
 
-    // Read testCodeunitId from task.yml's expected block (optional, handle gracefully if malformed)
-    let testCodeunitId: number | undefined;
-    try {
-      const taskContent = await Deno.readTextFile(taskYmlPath);
-      const taskYaml = parseYaml(taskContent) as Record<string, unknown>;
-      const expected = taskYaml["expected"] as Record<string, unknown>;
-      if (expected && typeof expected["testCodeunitId"] === "number") {
-        testCodeunitId = expected["testCodeunitId"];
-      }
-    } catch {
-      // Malformed task.yml - just skip testCodeunitId, don't fail the listing
-    }
+    // testCodeunitId from task.yml's expected block (optional).
+    const expected = taskYaml["expected"] as
+      | Record<string, unknown>
+      | undefined;
+    const testCodeunitId = expected &&
+        typeof expected["testCodeunitId"] === "number"
+      ? expected["testCodeunitId"]
+      : undefined;
 
     // Check for prereq directory, and list its files when present
     const prereqPath = join(dir, "prereq");
@@ -141,9 +179,13 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       id,
       dir,
       dirName,
+      description,
       hasPrereq,
       prereqFiles,
       ...(slug !== undefined ? { slug } : {}),
+      ...(promptTemplate !== undefined ? { promptTemplate } : {}),
+      ...(maxAttempts !== undefined ? { maxAttempts } : {}),
+      ...(prompts !== undefined ? { prompts } : {}),
       ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
     };
 

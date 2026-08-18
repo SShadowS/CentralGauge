@@ -23,7 +23,9 @@ import type { ModelCaller } from "./run-manager.ts";
  * expects. Only the FIRST `/` is significant — everything after it is the
  * model id, which for openrouter slugs contains its own `/`.
  */
-function splitModelSlug(slug: string): { provider: string; model: string } {
+export function splitModelSlug(
+  slug: string,
+): { provider: string; model: string } {
   const slashIndex = slug.indexOf("/");
   if (slashIndex === -1) {
     throw new Error(
@@ -34,6 +36,16 @@ function splitModelSlug(slug: string): { provider: string; model: string } {
     provider: slug.slice(0, slashIndex),
     model: slug.slice(slashIndex + 1),
   };
+}
+
+/**
+ * The provider half of a model slug. `run-manager.ts` needs it to resolve
+ * prompt injections, which the bench scopes by provider — imported from here
+ * rather than re-derived there, because two implementations of the same
+ * split is exactly the drift this plan keeps finding.
+ */
+export function providerOfModelSlug(slug: string): string {
+  return splitModelSlug(slug).provider;
 }
 
 /**
@@ -51,7 +63,7 @@ function splitModelSlug(slug: string): { provider: string; model: string } {
 export function createModelCaller(
   context: { taskId: string; description: string },
 ): ModelCaller {
-  return async (model, prompt) => {
+  return async (model, request) => {
     const { provider, model: modelName } = splitModelSlug(model);
     const adapter = LLMAdapterRegistry.create(provider, {
       provider,
@@ -59,7 +71,16 @@ export function createModelCaller(
       apiKey: LLMAdapterRegistry.getApiKeyForProvider(provider),
     });
     const result = await adapter.generateCode(
-      { prompt },
+      {
+        prompt: request.prompt,
+        // Forwarded because the bench forwards it: a task whose `prompts`
+        // block declares a system injection gets one at attempt 1, and a
+        // dashboard that dropped it would be calibrating against a
+        // different request than the bench sends.
+        ...(request.systemPrompt !== undefined
+          ? { systemPrompt: request.systemPrompt }
+          : {}),
+      },
       {
         taskId: context.taskId,
         attempt: 1,

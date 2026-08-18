@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { basename } from "@std/path";
 
+import type { DraftSummary } from "../../../src/dashboard/drafts.ts";
 import {
   runQuick,
   writeRunArtifact,
@@ -32,25 +33,41 @@ describe("dashboard/run-manager", () => {
     await cleanupTempDir(dir);
   });
 
-  const draft = {
+  const draft: DraftSummary = {
     id: "CG-AL-X054",
     dir: "",
     dirName: "CG-AL-X054",
+    description: "Write a codeunit that validates quantity.",
     hasPrereq: false,
     prereqFiles: [],
+  };
+
+  /**
+   * Stands in for the real `templates/code-gen.md` so these tests assert the
+   * PLUMBING (which values reach the renderer, and that its output reaches
+   * the model) without also re-pinning the bench's prompt text — that is the
+   * golden-string test in `tests/unit/llm/prompt-building.test.ts`.
+   */
+  const renderer = {
+    render: (name: string, ctx: Record<string, unknown>) =>
+      Promise.resolve(
+        `[${name}] ${ctx["task_id"]}/${ctx["max_attempts"]}: ${
+          ctx["description"]
+        }`,
+      ),
   };
 
   it("collects one response per model and classifies each", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
-      models: ["m-correct", "m-naive"],
-      prompt: "p",
+      models: ["anthropic/correct", "anthropic/naive"],
+      renderer,
       correctSources: [CORRECT],
       naiveSources: [NAIVE],
       call: (model) =>
         Promise.resolve({
           content: `BEGIN-CODE\n${
-            model === "m-naive" ? NAIVE : CORRECT
+            model === "anthropic/naive" ? NAIVE : CORRECT
           }\nEND-CODE`,
           finishReason: "stop" as const,
         }),
@@ -58,11 +75,12 @@ describe("dashboard/run-manager", () => {
 
     assertEquals(run.responses.length, 2);
     assertEquals(
-      run.responses.find((r) => r.model === "m-naive")?.classification.verdict,
+      run.responses.find((r) => r.model === "anthropic/naive")?.classification
+        .verdict,
       "made-the-mistake",
     );
     assertEquals(
-      run.responses.find((r) => r.model === "m-correct")?.classification
+      run.responses.find((r) => r.model === "anthropic/correct")?.classification
         .verdict,
       "avoided-the-mistake",
     );
@@ -71,12 +89,12 @@ describe("dashboard/run-manager", () => {
   it("records a per-model failure without failing the run", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
-      models: ["ok", "boom"],
-      prompt: "p",
+      models: ["anthropic/ok", "anthropic/boom"],
+      renderer,
       correctSources: [CORRECT],
       naiveSources: [NAIVE],
       call: (model) =>
-        model === "boom"
+        model === "anthropic/boom"
           ? Promise.reject(new Error("model unavailable"))
           : Promise.resolve({
             content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
@@ -86,7 +104,7 @@ describe("dashboard/run-manager", () => {
 
     assertEquals(run.responses.length, 2);
     assertStringIncludes(
-      run.responses.find((r) => r.model === "boom")?.error ?? "",
+      run.responses.find((r) => r.model === "anthropic/boom")?.error ?? "",
       "model unavailable",
     );
   });
@@ -94,8 +112,8 @@ describe("dashboard/run-manager", () => {
   it("classifies as cannot-compare when there is no naive source", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
-      models: ["m"],
-      prompt: "p",
+      models: ["anthropic/m"],
+      renderer,
       correctSources: [CORRECT],
       naiveSources: [],
       call: () =>
@@ -110,8 +128,8 @@ describe("dashboard/run-manager", () => {
   it("writes the artifact under .runs/ and not as a bench results file", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
-      models: ["m"],
-      prompt: "p",
+      models: ["anthropic/m"],
+      renderer,
       correctSources: [CORRECT],
       naiveSources: [NAIVE],
       call: () =>
@@ -134,11 +152,116 @@ describe("dashboard/run-manager", () => {
     assertEquals(parsed.draftId, "CG-AL-X054");
   });
 
+  // The defect this replaced: app.js posted {draftId, models}, server.ts
+  // defaulted the absent `prompt` to "", and every model was asked the empty
+  // string. There is now no way to supply one — the question comes from the
+  // draft's task.yml, rendered through the bench's own attempt-1 path.
+  it("asks each model the draft's own description, not a caller-supplied prompt", async () => {
+    const seen: Array<{ model: string; prompt: string }> = [];
+    const run = await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        description: "Write a codeunit that validates quantity.",
+        maxAttempts: 2,
+      },
+      models: ["anthropic/opus", "openai/gpt"],
+      renderer,
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: (model, request) => {
+        seen.push({ model, prompt: request.prompt });
+        return Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        });
+      },
+    });
+
+    const expected =
+      "[code-gen.md] CG-AL-X054/2: Write a codeunit that validates quantity.";
+    assertEquals(seen.length, 2);
+    for (const call of seen) {
+      assertEquals(call.prompt, expected);
+    }
+    // Also recorded on the response, so the artifact and the UI can show the
+    // author exactly what was asked.
+    for (const response of run.responses) {
+      assertEquals(response.prompt, expected);
+    }
+  });
+
+  // Prompt injections are provider-scoped in the bench
+  // (PromptInjectionResolver.resolve takes a provider), so the prompt is
+  // rendered per model rather than once per run. Rendering it once would send
+  // one model the other's prompt.
+  it("resolves task.yml prompt injections against each model's own provider", async () => {
+    const seen = new Map<string, { prompt: string; systemPrompt?: string }>();
+    await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        prompts: {
+          injections: {
+            anthropic: { generation: { prefix: "ANTHROPIC-", system: "SYS" } },
+          },
+        },
+      },
+      models: ["anthropic/opus", "openai/gpt"],
+      renderer: { render: () => Promise.resolve("BASE") },
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: (model, request) => {
+        seen.set(model, {
+          prompt: request.prompt,
+          ...(request.systemPrompt !== undefined
+            ? { systemPrompt: request.systemPrompt }
+            : {}),
+        });
+        return Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        });
+      },
+    });
+
+    assertEquals(seen.get("anthropic/opus")?.prompt, "ANTHROPIC-BASE");
+    assertEquals(seen.get("anthropic/opus")?.systemPrompt, "SYS");
+    assertEquals(seen.get("openai/gpt")?.prompt, "BASE");
+    assertEquals(seen.get("openai/gpt")?.systemPrompt, undefined);
+  });
+
+  // A slug with no vendor prefix cannot name a provider, so it cannot resolve
+  // injections either. That failure belongs to one column, not the run.
+  it("records a render failure as that model's error without failing the run", async () => {
+    const run = await runQuick({
+      draft: { ...draft, dir },
+      models: ["no-vendor-prefix", "anthropic/opus"],
+      renderer,
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+
+    const bad = run.responses.find((r) => r.model === "no-vendor-prefix");
+    assertStringIncludes(bad?.error ?? "", "vendor-prefixed");
+    assertEquals(bad?.prompt, "");
+    assertEquals(
+      run.responses.find((r) => r.model === "anthropic/opus")?.classification
+        .verdict,
+      "avoided-the-mistake",
+    );
+  });
+
   it("refuses a draftId that would escape the draft directory", async () => {
     const run = await runQuick({
       draft: { ...draft, dir },
       models: [],
-      prompt: "p",
+      renderer,
       correctSources: [],
       naiveSources: [],
       call: () => Promise.reject(new Error("unused")),

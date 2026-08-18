@@ -206,9 +206,26 @@ table.matrix tbody th {
   background: var(--unknown-bg);
 }
 
+/* A button, not a heading: clicking it opens the prompt this model was sent.
+   Styled flat so the header still reads as a header. */
 .model-name {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-weight: 600;
   font-size: 13px;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.model-name:hover,
+.model-name:focus-visible {
+  text-decoration: underline solid;
 }
 
 .badge {
