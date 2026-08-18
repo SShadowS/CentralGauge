@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 
 /**
  * Behavioural coverage for `src/dashboard/ui/app.js`.
@@ -97,6 +97,7 @@ interface Ui {
   renderTrapSummary: (run: unknown) => void;
   renderArtifactNote: (run: unknown) => void;
   renderMatrix: (run: unknown) => void;
+  renderPrereqRail: (binding: unknown) => StubNode;
 }
 
 async function loadUi(): Promise<Ui> {
@@ -106,7 +107,7 @@ async function loadUi(): Promise<Ui> {
     new URL("../../../src/dashboard/ui/app.js", import.meta.url),
   );
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
-    `renderTrapSummary, renderArtifactNote, renderMatrix };\n`;
+    `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -400,5 +401,70 @@ describe("dashboard/ui app.js", () => {
       node("artifact-note").className.includes("artifact-note-failed"),
       true,
     );
+  });
+
+  // Spec §5: a `hard` finding is provable — an unknown member in
+  // assignment-target or curated-method-arg position cannot be a
+  // procedure — so it earns the strongest label. `known` findings are
+  // interleaved in the fixture to prove they render plainly alongside it,
+  // never picking up the accusation.
+  it("labels a hard finding as a made-up field", async () => {
+    const ui = await loadUi();
+    const rail = allText(
+      ui.renderPrereqRail({
+        degraded: false,
+        findings: [
+          {
+            procedureName: "P",
+            table: "CG Quote",
+            member: "Discount",
+            tier: "hard",
+            line: 5,
+          },
+          {
+            procedureName: "P",
+            table: "CG Quote",
+            member: "Unit Price",
+            tier: "known",
+            line: 6,
+          },
+        ],
+      }),
+    );
+    assertStringIncludes(rail, "Made up this field");
+    assertStringIncludes(rail, "Discount");
+    assertStringIncludes(rail, "Unit Price");
+  });
+
+  // A `soft` finding is NOT provable — the member may be a Record built-in
+  // nobody indexed — so it must never carry the `hard` label. Rendering it
+  // as "Made up this field" would be a false accusation against a model
+  // that wrote correct code.
+  it("labels a soft finding without accusing", async () => {
+    const ui = await loadUi();
+    const rail = allText(
+      ui.renderPrereqRail({
+        degraded: false,
+        findings: [
+          {
+            procedureName: "P",
+            table: "CG Quote",
+            member: "Refresh",
+            tier: "soft",
+            line: 7,
+          },
+        ],
+      }),
+    );
+    assertStringIncludes(rail, "Unknown member");
+    assertEquals(rail.includes("Made up this field"), false);
+  });
+
+  it("says it could not check rather than showing an empty rail", async () => {
+    const ui = await loadUi();
+    const rail = allText(
+      ui.renderPrereqRail({ degraded: true, findings: [] }),
+    );
+    assertStringIncludes(rail, "Couldn't check the prereq");
   });
 });

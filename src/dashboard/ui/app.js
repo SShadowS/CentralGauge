@@ -363,7 +363,115 @@ function renderMatrix(run) {
   container.appendChild(table);
 }
 
-function renderFileList(draft) {
+/** Author-facing label for a `hard`/`soft` prereq finding (spec §5/§6).
+ *  `known` gets no label — showing one would read as doubt about a
+ *  reference that is actually correct, the opposite of what the tiers exist
+ *  to convey. */
+function prereqTierLabel(tier) {
+  if (tier === "hard") return "Made up this field";
+  if (tier === "soft") return "Unknown member";
+  return null;
+}
+
+/** hard, then soft, then known — so the actionable findings sit at the top
+ *  of the rail instead of being buried under correct references. */
+const PREREQ_TIER_ORDER = { hard: 0, soft: 1, known: 2 };
+
+/**
+ * The prereq rail (spec §5), scoped to one response's `prereqBinding`
+ * (`bindResponseToPrereqs`, run-manager.ts). It shows WHICH prereq members
+ * the response actually referenced, tiered by how confidently an unknown
+ * one can be called invented — a `soft` finding rendered with the `hard`
+ * label would be a false accusation against a model that wrote correct
+ * code, so the two never share a class or a label, and `known` never gets
+ * one at all.
+ */
+function renderPrereqRail(binding) {
+  const frag = document.createDocumentFragment();
+
+  if (binding.degraded) {
+    frag.appendChild(
+      el(
+        "li",
+        "file-list-nested prereq-degraded",
+        "Couldn't check the prereq",
+      ),
+    );
+    return frag;
+  }
+
+  const findings = binding.findings.slice().sort((a, b) =>
+    PREREQ_TIER_ORDER[a.tier] - PREREQ_TIER_ORDER[b.tier]
+  );
+
+  if (findings.length === 0) {
+    frag.appendChild(
+      el(
+        "li",
+        "file-list-nested empty-state",
+        "Nothing from prereq/ referenced",
+      ),
+    );
+    return frag;
+  }
+
+  // table -> procedureName -> findings, insertion-ordered — since `findings`
+  // is already tier-sorted, the first table/procedure to hold a `hard`
+  // finding is also the first one inserted, so the grouping itself surfaces
+  // actionable tables ahead of ones with only `soft`/`known` references.
+  const byTable = new Map();
+  for (const finding of findings) {
+    let byProcedure = byTable.get(finding.table);
+    if (!byProcedure) {
+      byProcedure = new Map();
+      byTable.set(finding.table, byProcedure);
+    }
+    let members = byProcedure.get(finding.procedureName);
+    if (!members) {
+      members = [];
+      byProcedure.set(finding.procedureName, members);
+    }
+    members.push(finding);
+  }
+
+  for (const [table, byProcedure] of byTable) {
+    const tableItem = el("li", "file-list-nested prereq-table", table);
+    const procedureList = el("ul", "prereq-procedures");
+    for (const [procedureName, members] of byProcedure) {
+      const procedureItem = el("li", "prereq-procedure", procedureName);
+      const memberList = el("ul", "prereq-members");
+      for (const finding of members) {
+        const label = prereqTierLabel(finding.tier);
+        const memberItem = el(
+          "li",
+          `prereq-member prereq-tier-${finding.tier}`,
+          `${finding.member} — line ${finding.line}`,
+        );
+        if (label) {
+          memberItem.appendChild(el("span", "prereq-label", label));
+        }
+        memberList.appendChild(memberItem);
+      }
+      procedureItem.appendChild(memberList);
+      procedureList.appendChild(procedureItem);
+    }
+    tableItem.appendChild(procedureList);
+    frag.appendChild(tableItem);
+  }
+
+  return frag;
+}
+
+/**
+ * The "Files" rail, including the "Already exists (prereq)" section.
+ * `binding` is `undefined` before any run — the plain per-draft static
+ * listing (`draft.prereqFiles`), untouched. Once a run has completed and a
+ * response's `prereqBinding` is passed in: `degraded` renders why analysis
+ * couldn't run, plus the static listing beneath it (the spec's stated
+ * fallback); otherwise `renderPrereqRail` replaces the static listing with
+ * what that response actually touched.
+ */
+function renderFileList(draft, binding) {
   const list = document.getElementById("file-list");
   list.innerHTML = "";
   const items = [
@@ -379,6 +487,11 @@ function renderFileList(draft) {
   if (draft && draft.hasPrereq) {
     const heading = el("li", "file-list-heading", "Already exists (prereq)");
     list.appendChild(heading);
+
+    if (binding) {
+      list.appendChild(renderPrereqRail(binding));
+      if (!binding.degraded) return;
+    }
 
     const files = draft.prereqFiles || [];
     if (files.length === 0) {
@@ -520,6 +633,11 @@ async function runQuick() {
     renderTrapSummary(body);
     renderMatrix(body);
     renderArtifactNote(body);
+    // Scoped to one response (spec §5). The common case here is exactly one
+    // model, so the first response is "the selected response" the spec
+    // describes; a multi-model run scopes the rail to the first column only.
+    const firstResponse = body.responses[0];
+    renderFileList(draft, firstResponse && firstResponse.prereqBinding);
     statusEl.textContent = `Last run: ${
       new Date(body.startedAt).toLocaleTimeString()
     }`;
