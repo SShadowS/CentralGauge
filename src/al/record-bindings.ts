@@ -1,0 +1,249 @@
+/**
+ * Scoped Record-variable bindings per procedure/trigger.
+ *
+ * A model response referencing a field on a variable is only safe to flag
+ * as invented once we know which table that variable actually names. AL
+ * lets a local or parameter reuse a global's name while binding it to a
+ * DIFFERENT table (deliberate shadowing, or an unrelated coincidence), so
+ * naively taking "the global binding" for every occurrence of a name would
+ * turn a correct field reference into a false accusation. This module
+ * resolves that per procedure/trigger, in the same scoping order AL itself
+ * uses: globals, then that member's own parameters, then its own locals -
+ * each later layer shadowing the one before it.
+ *
+ * @module al/record-bindings
+ */
+
+import type { Node } from "web-tree-sitter";
+import { Language, Parser } from "web-tree-sitter";
+
+// Vendored tree-sitter-al grammar (@sshadows/tree-sitter-al). See
+// vendor/tree-sitter-al/README.md for provenance. `object-parser.ts` does not
+// export its parser instance, so this module loads the grammar the same way
+// (copied from `trap-signature.ts`'s lazy-init pattern) rather than inventing
+// a second mechanism, or a shared one, for it.
+const AL_WASM_URL = new URL(
+  "../../vendor/tree-sitter-al/tree-sitter-al.wasm",
+  import.meta.url,
+);
+
+export interface ProcedureBindings {
+  /** Display name of the procedure or trigger. */
+  procedureName: string;
+  /** Lowercased variable name -> table name as written. */
+  bindings: Map<string, string>;
+}
+
+let parserPromise: Promise<Parser> | undefined;
+
+/** Lazily initialise the tree-sitter AL parser (once per process). */
+function getAlParser(): Promise<Parser> {
+  if (!parserPromise) {
+    parserPromise = (async () => {
+      await Parser.init();
+      const language = await Language.load(await Deno.readFile(AL_WASM_URL));
+      const parser = new Parser();
+      parser.setLanguage(language);
+      return parser;
+    })();
+  }
+  return parserPromise;
+}
+
+/** First direct named child of the given type, or undefined. Never recurses. */
+function findDirectChild(node: Node, type: string): Node | undefined {
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child && child.type === type) return child;
+  }
+  return undefined;
+}
+
+/** Strip a leading and trailing `"` when both are present. */
+function unquote(text: string): string {
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+/** True for a procedure- or trigger-shaped member node. Members don't
+ * nest in AL, so this is an exact type match rather than a substring one. */
+function isMemberNode(node: Node): boolean {
+  return node.type === "procedure" || node.type === "trigger_declaration";
+}
+
+/**
+ * The Record table name a `type_specification` node binds to, as written
+ * (quotes stripped), or undefined when it names anything else (a basic
+ * type, an interface, an enum, ...).
+ */
+function recordTableName(typeSpec: Node): string | undefined {
+  const recordType = findDirectChild(typeSpec, "record_type");
+  if (!recordType) return undefined;
+  const reference = findDirectChild(recordType, "quoted_identifier") ??
+    findDirectChild(recordType, "identifier");
+  return reference ? unquote(reference.text) : undefined;
+}
+
+/**
+ * The single Record-typed name+table pair declared by a `parameter` node,
+ * or `[]` when its type is not a Record. AL parameters declare exactly one
+ * name each (`A, B: Record "X"` is a syntax error in a parameter list).
+ */
+function parameterBindings(node: Node): Array<[string, string]> {
+  const typeSpec = findDirectChild(node, "type_specification");
+  const table = typeSpec ? recordTableName(typeSpec) : undefined;
+  if (table === undefined) return [];
+  const nameNode = findDirectChild(node, "identifier");
+  return nameNode ? [[nameNode.text.toLowerCase(), table]] : [];
+}
+
+/**
+ * Every Record-typed name+table pair declared by a `variable_declaration`
+ * node, or `[]` when its type is not a Record. A single declaration may
+ * name several variables sharing one type (`A, B: Record "X";`) - every
+ * `identifier` child is a separate name, not just the first.
+ */
+function variableDeclarationBindings(node: Node): Array<[string, string]> {
+  const typeSpec = findDirectChild(node, "type_specification");
+  const table = typeSpec ? recordTableName(typeSpec) : undefined;
+  if (table === undefined) return [];
+  const out: Array<[string, string]> = [];
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child && child.type === "identifier") {
+      out.push([child.text.toLowerCase(), table]);
+    }
+  }
+  return out;
+}
+
+/** Record bindings from every `variable_declaration` under a `var_section`
+ * node's `var_body`. */
+function varSectionBindings(varSection: Node): Array<[string, string]> {
+  const body = findDirectChild(varSection, "var_body");
+  if (!body) return [];
+  const out: Array<[string, string]> = [];
+  for (let i = 0; i < body.namedChildCount; i++) {
+    const child = body.namedChild(i);
+    if (child && child.type === "variable_declaration") {
+      out.push(...variableDeclarationBindings(child));
+    }
+  }
+  return out;
+}
+
+/** Record bindings from every `parameter` under a `parameter_list` node. */
+function parameterListBindings(paramList: Node): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (let i = 0; i < paramList.namedChildCount; i++) {
+    const child = paramList.namedChild(i);
+    if (child && child.type === "parameter") {
+      out.push(...parameterBindings(child));
+    }
+  }
+  return out;
+}
+
+/**
+ * Walks the tree collecting object-level globals (bindings from every
+ * `var_section` that is NOT inside a procedure/trigger) and every
+ * procedure/trigger member node.
+ *
+ * Stops descending the instant a member node is found - AL members don't
+ * nest, so nothing below one can itself be another member or an
+ * object-level `var_section`. That early return is what makes "reaches the
+ * object's declaration_body without passing through a procedure or
+ * trigger_declaration" (the brief's definition of "global") automatic: a
+ * `var_section` belonging to a member is only ever visited via that
+ * member's own direct-child lookup in `collectRecordBindings`, never via
+ * this walk.
+ */
+function collect(
+  node: Node,
+  globals: Array<[string, string]>,
+  members: Node[],
+): void {
+  if (isMemberNode(node)) {
+    members.push(node);
+    return;
+  }
+  if (node.type === "var_section") {
+    globals.push(...varSectionBindings(node));
+  }
+  for (let i = 0; i < node.namedChildCount; i++) {
+    const child = node.namedChild(i);
+    if (child) collect(child, globals, members);
+  }
+}
+
+/** A procedure/trigger member's own name, or "" when it has none (not
+ * observed in valid AL, but keeps this total rather than throwing). */
+function memberName(node: Node): string {
+  const nameNode = findDirectChild(node, "identifier");
+  return nameNode ? nameNode.text : "";
+}
+
+/**
+ * Parses `source` and returns Record-variable bindings scoped to each
+ * procedure/trigger member.
+ *
+ * Each member's map is built by inserting, in order: object-level globals,
+ * then that member's own parameters, then that member's own locals - a
+ * later layer overwrites an earlier one for the same lowercased name, which
+ * is exactly AL's own shadowing rule (a local or parameter reusing a
+ * global's name binds to whatever table IT declares, not the global's).
+ *
+ * A variable/parameter whose type is not a Record (including one with no
+ * declared type at all) is never inserted - a stray non-Record name colliding
+ * with an unrelated global's spelling must not pull in a table binding that
+ * was never meant for it.
+ *
+ * Returns `[]` when the source fails to parse, or parses with an error -
+ * a partial tree is not a safe basis for accusing a model of a hallucinated
+ * field.
+ */
+export async function collectRecordBindings(
+  source: string,
+): Promise<ProcedureBindings[]> {
+  const parser = await getAlParser();
+
+  let tree: ReturnType<Parser["parse"]>;
+  try {
+    tree = parser.parse(source);
+  } catch {
+    return [];
+  }
+  if (!tree) return [];
+
+  try {
+    if (tree.rootNode.hasError) return [];
+
+    const globals: Array<[string, string]> = [];
+    const members: Node[] = [];
+    collect(tree.rootNode, globals, members);
+
+    return members.map((member) => {
+      const bindings = new Map<string, string>(globals);
+
+      const paramList = findDirectChild(member, "parameter_list");
+      if (paramList) {
+        for (const [name, table] of parameterListBindings(paramList)) {
+          bindings.set(name, table);
+        }
+      }
+
+      const varSection = findDirectChild(member, "var_section");
+      if (varSection) {
+        for (const [name, table] of varSectionBindings(varSection)) {
+          bindings.set(name, table);
+        }
+      }
+
+      return { procedureName: memberName(member), bindings };
+    });
+  } finally {
+    tree.delete();
+  }
+}
