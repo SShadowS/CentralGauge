@@ -233,6 +233,86 @@ const PAGE_FIELD_COLLISION_NAIVE = `page 71440 "CG Page Field Collision"
     }
 }`;
 
+// A page field named "A" exists TWICE with the exact same DISPLAY name --
+// once directly in `layout`, once inside `requestpage`'s own nested layout.
+// rawPathNamed (what `procedureName` is built from) only carries NAMED
+// boundaries, so both collapse to "A.OnValidate": the keyword-only `layout`,
+// `area`, and `requestpage` segments that make each member's INTERNAL
+// (scope-qualified) key distinct are exactly the segments the display name
+// drops. Classifying by re-deriving `.name === procedureName` picks
+// whichever member a `Map` happens to iterate to first (source order: the
+// plain `layout` field, inserted before the `requestpage` one) regardless of
+// which member a given TrapSite actually names. The trap lives ONLY in the
+// requestpage-scoped field (the second one inserted) -- the layout field is
+// byte-identical on both sides and contributes no site at all -- so a
+// display-name match silently substitutes the wrong (never-diverging)
+// member's statements for the one actually being classified.
+const SCOPE_COLLISION_CORRECT = `page 71441 "CG Scope Probe"
+{
+    layout
+    {
+        area(Content)
+        {
+            field(A; Rec.A)
+            {
+                trigger OnValidate()
+                begin
+                    Message('content-a');
+                end;
+            }
+        }
+    }
+    requestpage
+    {
+        layout
+        {
+            area(Content)
+            {
+                field(A; Rec.A)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('requestpage-correct');
+                    end;
+                }
+            }
+        }
+    }
+}`;
+
+const SCOPE_COLLISION_NAIVE = `page 71441 "CG Scope Probe"
+{
+    layout
+    {
+        area(Content)
+        {
+            field(A; Rec.A)
+            {
+                trigger OnValidate()
+                begin
+                    Message('content-a');
+                end;
+            }
+        }
+    }
+    requestpage
+    {
+        layout
+        {
+            area(Content)
+            {
+                field(A; Rec.A)
+                {
+                    trigger OnValidate()
+                    begin
+                        Message('requestpage-naive');
+                    end;
+                }
+            }
+        }
+    }
+}`;
+
 // Different id AND name on each side, so no objectKey can line up.
 const NO_MATCH_OBJECTS_CORRECT = `codeunit 71424 "CG No Match A"
 {
@@ -421,6 +501,22 @@ describe("al/trap-signature", () => {
     assertEquals(sig.sites[0]?.correctForm, "message('a-correct')");
     assertEquals(sig.sites[0]?.naiveForm, "message('a-naive')");
   });
+
+  it("gives the site a distinct scope-qualified memberKey even when procedureName collides", async () => {
+    // SCOPE_COLLISION's two "A.OnValidate" members are only distinguished by
+    // the keyword-only scope segments (layout/area/requestpage) that
+    // procedureName drops. memberKey must carry those segments so the two
+    // members never look like the same site to a consumer.
+    const sig = await deriveTrapSignature([SCOPE_COLLISION_CORRECT], [
+      SCOPE_COLLISION_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    assertEquals(sig.sites[0]?.procedureName, "A.OnValidate");
+    assertEquals(
+      sig.sites[0]?.memberKey,
+      "requestpage.layout.area.a.onvalidate",
+    );
+  });
 });
 
 const AL_WASM_URL = new URL(
@@ -545,6 +641,22 @@ describe("al/trap-signature: classification", () => {
       (await classifyAgainstSignature(sig, "I cannot help.")).verdict,
       "different-approach",
     );
+  });
+
+  it("matches a site to the exact member it names, not just any member sharing its display name", async () => {
+    // See SCOPE_COLLISION's own comment: the layout field and the
+    // requestpage field share the display name "A.OnValidate", but only the
+    // requestpage one actually diverges. A response that reproduces the
+    // naive requestpage body must be scored made-the-mistake -- a matcher
+    // that instead picks the (identical-on-both-sides, always-satisfied)
+    // layout field by display name would report different-approach here
+    // instead, silently comparing against the wrong member.
+    const sig = await deriveTrapSignature([SCOPE_COLLISION_CORRECT], [
+      SCOPE_COLLISION_NAIVE,
+    ]);
+    assertEquals(sig.sites.length, 1);
+    const c = await classifyAgainstSignature(sig, SCOPE_COLLISION_NAIVE);
+    assertEquals(c.verdict, "made-the-mistake");
   });
 });
 

@@ -30,6 +30,23 @@ const AL_WASM_URL = new URL(
 
 export interface TrapSite {
   objectKey: string;
+  /**
+   * The exact scope-qualified key `extractProcedures` uses as its own map
+   * key for this member (e.g. `"requestpage.layout.area.a.onvalidate"`).
+   * Load-bearing for re-locating this exact member in a different source
+   * (a model response): `procedureName` is a *display* path that only
+   * carries NAMED scope segments (a table/page field, a page action, a
+   * report dataitem, ...) and silently drops keyword-only ones (`layout`,
+   * `area`, `requestpage`, ...), so two different members can share the same
+   * `procedureName` while having different `memberKey`s — a page field
+   * named "A" placed directly in `layout` and the same-named field nested
+   * inside `requestpage`'s own layout both display as `"A.OnValidate"`, but
+   * only `memberKey` tells them apart. Consumers MUST look a member up by
+   * `memberKey`, never by re-deriving or string-comparing `procedureName`.
+   */
+  memberKey: string;
+  /** Display path for the UI only — see `memberKey` for why this is not
+   * safe to use for member lookup. */
   procedureName: string;
   /**
    * Index into the CORRECT procedure's normalized statement list where the
@@ -454,6 +471,7 @@ function lcsMatchPairs(
  */
 function diffToSites(
   key: string,
+  memberKey: string,
   procedureName: string,
   correctStatements: readonly string[],
   naiveStatements: readonly string[],
@@ -479,6 +497,7 @@ function diffToSites(
       if (correctForm === undefined || naiveForm === undefined) continue;
       sites.push({
         objectKey: key,
+        memberKey,
         procedureName,
         statementIndex: ci + k,
         correctForm,
@@ -490,6 +509,7 @@ function diffToSites(
       if (correctForm === undefined) continue;
       sites.push({
         objectKey: key,
+        memberKey,
         procedureName,
         statementIndex: ci + k,
         correctForm,
@@ -500,6 +520,7 @@ function diffToSites(
       if (naiveForm === undefined) continue;
       sites.push({
         objectKey: key,
+        memberKey,
         procedureName,
         statementIndex: mi,
         naiveForm,
@@ -565,6 +586,7 @@ export async function deriveTrapSignature(
       sites.push(
         ...diffToSites(
           key,
+          memberKey,
           correctProc.name,
           correctProc.statements,
           naiveProc.statements,
@@ -603,14 +625,16 @@ export interface TrapClassification {
  * defines, has nothing to compare at that site).
  *
  * Locates the procedure through the same AST walk `deriveTrapSignature`
- * itself uses (`extractProcedures`), then matches on the member's own
- * display name — exactly the string `diffToSites` stored as
- * `TrapSite.procedureName` when it built this site. That reuses Task 6's
- * member-collection machinery (scope path, code-block/statement walk,
- * comment stripping) instead of a raw text search for `procedureName` in
- * the response source, which would not survive a member nested in a table
- * field, page action, or requestpage section — `procedureName` is only a
- * display path, not a location.
+ * itself uses (`extractProcedures`), then does an EXACT lookup by
+ * `site.memberKey` — the same scope-qualified key `extractProcedures` uses
+ * as its own map key. This must NOT match on `TrapSite.procedureName`
+ * instead: `procedureName` is a display path that drops keyword-only scope
+ * segments (`layout`, `area`, `requestpage`, ...), so two distinct members
+ * can share one display name while having different `memberKey`s — see
+ * `TrapSite.memberKey`'s own doc comment. A display-name match would pick
+ * whichever member happens to come first in the response's own `Map`
+ * iteration order, silently comparing a site against the wrong member's
+ * statements.
  */
 async function statementsAtSite(
   responseObjects: Map<string, AlObject>,
@@ -626,10 +650,7 @@ async function statementsAtSite(
     procedureCache.set(site.objectKey, procedures);
   }
 
-  for (const info of procedures.values()) {
-    if (info.name === site.procedureName) return info.statements;
-  }
-  return undefined;
+  return procedures.get(site.memberKey)?.statements;
 }
 
 /**
