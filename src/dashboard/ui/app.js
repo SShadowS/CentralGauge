@@ -20,6 +20,19 @@ const state = {
   /** Which response's `prereqBinding` the "Already exists (prereq)" rail is
    *  scoped to. `null` until a run completes. */
   selectedModel: null,
+  /** The `dir` actually sent to `/api/run` for the current `run` — captured
+   *  when the request was made, not re-derived from `selectedDir` at promote
+   *  time. The author can change the draft selector after a run completes,
+   *  and re-deriving would then promote into the WRONG directory (the same
+   *  dir-vs-id lesson `/api/run`'s own validation is built around). `null`
+   *  until a run completes. */
+  runDraftDir: null,
+  /** The response currently shown in the detail panel, or `null` when the
+   *  panel is showing something that is not a per-(model, object) cell (the
+   *  "prompt sent" view). Backs "Use as wrong answer": the action promotes a
+   *  RESPONSE's whole code, not whichever single object's source happens to
+   *  be on screen, so it is keyed off this rather than off the row. */
+  detailResponse: null,
 };
 
 /**
@@ -164,10 +177,126 @@ function el(tag, className, text) {
   return node;
 }
 
-function showDetail(title, source) {
+/**
+ * The "Use as wrong answer" (naive/) action, spec §8. `index.html` carries no
+ * markup for it — the detail panel it lives in is a fixed section, but this
+ * action is built once, here, and appended into it, so it persists across
+ * `showDetail` calls instead of accumulating a fresh copy (and a fresh click
+ * listener) on every one.
+ */
+let promoteAction = null;
+
+function ensurePromoteAction() {
+  if (promoteAction) return promoteAction;
+
+  const wrapper = el("div", "detail-promote-action");
+  const button = el("button", null, "Use as wrong answer (naive/)");
+  button.type = "button";
+  button.addEventListener("click", () => promoteCurrentResponse());
+  const status = el("p", "detail-promote-status");
+
+  wrapper.appendChild(button);
+  wrapper.appendChild(status);
+  document.getElementById("detail-panel").appendChild(wrapper);
+
+  promoteAction = { wrapper, button, status };
+  return promoteAction;
+}
+
+/** Spec §8: "disabled when nothing extractable was produced" — the same
+ *  condition `promoteAsNaive` itself refuses on first (Task 8's "Nothing
+ *  extractable was produced" refusal), read here off the same `objects`
+ *  array the server already parsed rather than re-deriving it. */
+function hasPromotableCode(response) {
+  return Array.isArray(response.objects) && response.objects.length > 0;
+}
+
+/** Re-syncs the promote action to `state.detailResponse` on every
+ *  `showDetail` call: shown only for a per-(model, object) cell (not the
+ *  column header's "prompt sent" view, which passes no response), enabled
+ *  only when that response actually produced extractable AL. */
+function updatePromoteAction() {
+  const action = ensurePromoteAction();
+  const response = state.detailResponse;
+
+  if (!response) {
+    action.wrapper.hidden = true;
+    return;
+  }
+
+  action.wrapper.hidden = false;
+  const canPromote = hasPromotableCode(response);
+  action.button.disabled = !canPromote;
+  action.button.title = canPromote
+    ? "Write this response's AL into naive/, replacing what is there now"
+    : "This response produced no extractable AL code";
+  action.status.textContent = "";
+  action.status.className = "detail-promote-status";
+}
+
+/**
+ * POSTs the response shown in the detail panel to `/api/promote-naive`.
+ * `code` is `resolution.cleanedCode` — never `rawResponse` — matching
+ * `promoteAsNaive`'s own doc ("resolveCandidate's cleanedCode — never the
+ * raw response"). `draftDir` comes from `state.runDraftDir`, the directory
+ * the CURRENT run actually asked, not from re-reading the draft selector.
+ *
+ * A 400 covers both a validation failure and a `PromoteRefusal` — either way
+ * `body.error` is shown verbatim, unmodified: per spec §8 and the brief this
+ * feature exists to build against, the refusal message IS the point, not a
+ * generic "failed".
+ */
+async function promoteCurrentResponse() {
+  const action = ensurePromoteAction();
+  const response = state.detailResponse;
+  const draftDir = state.runDraftDir;
+  if (!response || !draftDir) return;
+
+  action.button.disabled = true;
+  action.status.className = "detail-promote-status";
+  action.status.textContent = "Promoting…";
+
+  try {
+    const res = await fetch("/api/promote-naive", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        draftDir,
+        code: response.resolution.cleanedCode,
+        model: response.model,
+        attempt: 1,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(
+        body.error ||
+          `POST /api/promote-naive failed with status ${res.status}`,
+      );
+    }
+    const removed = body.removed || [];
+    const removedNote = removed.length > 0
+      ? ` (replaced ${removed.length} existing file${
+        removed.length === 1 ? "" : "s"
+      })`
+      : "";
+    action.status.textContent = `Wrote to naive/: ${
+      (body.written || []).join(", ")
+    }${removedNote}`;
+  } catch (error) {
+    action.status.className = "detail-promote-status diagnostic-error";
+    action.status.textContent = error.message;
+  } finally {
+    action.button.disabled = !hasPromotableCode(response);
+  }
+}
+
+function showDetail(title, source, response) {
   const panel = document.getElementById("detail-panel");
   document.getElementById("detail-title").textContent = title;
   document.getElementById("detail-source").textContent = source;
+  state.detailResponse = response || null;
+  updatePromoteAction();
   panel.hidden = false;
 }
 
@@ -262,6 +391,7 @@ function buildCell(row, response) {
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model} produced no usable AL (${reason}).`,
+        response,
       );
     });
     return wrapper;
@@ -282,6 +412,7 @@ function buildCell(row, response) {
         `${response.model}'s answer could not be parsed as AL, so there is ` +
           `no per-object result for it. The raw answer is below.\n\n` +
           response.rawResponse,
+        response,
       );
     });
     return wrapper;
@@ -295,6 +426,7 @@ function buildCell(row, response) {
       showDetail(
         `${response.model} — ${describeRow(row)}`,
         `${response.model} did not write this object.`,
+        response,
       );
     });
     return wrapper;
@@ -311,7 +443,7 @@ function buildCell(row, response) {
 
   wrapper.addEventListener("click", () => {
     selectModelForRail(response.model);
-    showDetail(`${response.model} — ${describeRow(row)}`, obj.source);
+    showDetail(`${response.model} — ${describeRow(row)}`, obj.source, response);
   });
 
   return wrapper;
@@ -678,6 +810,11 @@ async function runQuick() {
       );
     }
     state.run = body;
+    // The directory this run actually asked, captured now rather than
+    // re-read from `selectedDir` later — see the `state.runDraftDir` doc
+    // comment for why "Use as wrong answer" depends on this being the
+    // request's own `draftDir`, not whatever the selector shows later.
+    state.runDraftDir = draft.dir;
     // Defaults the rail to the first response (spec §5's "selected
     // response" before any selection has been made). Now labelled — via
     // renderScopedFileList/renderFileList — so this default is honest

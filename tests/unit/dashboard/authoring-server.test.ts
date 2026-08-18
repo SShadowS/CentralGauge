@@ -8,6 +8,7 @@ import {
   runQuick,
   writeRunArtifact,
 } from "../../../src/dashboard/run-manager.ts";
+import { promoteAsNaive } from "../../../src/dashboard/promote-naive.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -279,6 +280,159 @@ describe("dashboard/server", () => {
       }),
     );
     assertEquals(res.status === 400, false);
+  });
+
+  it("rejects a promote request naming an unknown draft", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "nope",
+          code: "codeunit 1 A { }",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("rejects a promote request with no code", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          code: "",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("refuses a foreign origin on the promote route", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        headers: { Origin: "http://evil.example" },
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          code: "codeunit 1 A { }",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 403);
+  });
+
+  // Real promoteAsNaive against a real temp draft, wired through the route
+  // exactly as startServer would — proves the handler resolves `draftDir` to
+  // `draft.id`/`draft.dir` correctly and that the response the author sees
+  // (`written`) is what actually landed on disk, not a shape the route
+  // merely echoes back.
+  it("promotes a response into naive/ and reports what was written", async () => {
+    const dir = await createTempDir("dashboard-server-promote-test");
+    try {
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(
+        `${dir}/naive/Stale.Codeunit.al`,
+        "codeunit 1 S { }",
+      );
+
+      const promoteDeps = {
+        ...deps,
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: false,
+            },
+          ]),
+        promoteAsNaive,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(promoteDeps)(
+        new Request("http://localhost/api/promote-naive", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            code: CORRECT,
+            model: "anthropic/m",
+            attempt: 1,
+          }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.written, ["A.Codeunit.al"]);
+      // The prior naive/ content is replaced, not merged (Task 8's contract) —
+      // the route reports it, and it is really gone from disk.
+      assertEquals(body.removed, ["Stale.Codeunit.al"]);
+      const written = await Deno.readTextFile(`${dir}/naive/A.Codeunit.al`);
+      assertStringIncludes(written, "anthropic/m");
+      const staleGone = await Deno.stat(`${dir}/naive/Stale.Codeunit.al`)
+        .then(() => true)
+        .catch(() => false);
+      assertEquals(staleGone, false);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // The refusal message is the point of the feature (per the brief): an
+  // author needs to read WHY a promotion did not happen, not a generic
+  // "failed". Two objects sanitising to the same filename is one of
+  // promoteAsNaive's three refusal cases.
+  it("surfaces a PromoteRefusal message verbatim as a 400", async () => {
+    const dir = await createTempDir("dashboard-server-promote-refusal-test");
+    try {
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+
+      const promoteDeps = {
+        ...deps,
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: false,
+            },
+          ]),
+        promoteAsNaive,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const colliding = `codeunit 70060 "Q>Q" { }\ncodeunit 70061 "Q?Q" { }`;
+      const res = await createHandler(promoteDeps)(
+        new Request("http://localhost/api/promote-naive", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            code: colliding,
+            model: "anthropic/m",
+            attempt: 1,
+          }),
+        }),
+      );
+      assertEquals(res.status, 400);
+      const body = await res.json();
+      assertStringIncludes(body.error, "collide on the same filename");
+      // A refusal must leave naive/ untouched — nothing was written.
+      const files: string[] = [];
+      for await (const entry of Deno.readDir(`${dir}/naive`)) {
+        files.push(entry.name);
+      }
+      assertEquals(files, []);
+    } finally {
+      await cleanupTempDir(dir);
+    }
   });
 
   it("serves an empty default-models list when none was resolved", async () => {

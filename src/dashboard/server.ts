@@ -43,6 +43,7 @@ import { runQuick, writeRunArtifact } from "./run-manager.ts";
 import { createModelCaller } from "./model-caller.ts";
 import { loadPrereqSources } from "./prereq-sources.ts";
 import { loadTrapSources } from "./source-loader.ts";
+import { promoteAsNaive, PromoteRefusal } from "./promote-naive.ts";
 
 /**
  * Root a draft's `prereq/` chained dependencies resolve against
@@ -221,6 +222,55 @@ function validateRunRequest(
 }
 
 /**
+ * Runs before `deps.promoteAsNaive` is ever invoked — `promoteAsNaive` itself
+ * deletes `naive/`'s existing `*.al` files once it decides to write, so a
+ * malformed request must never reach it. Checks, all 400: `draftDir` must
+ * name a draft `listDrafts` actually returned (resolved by `d.dir`, same
+ * reasoning as `validateRunRequest` — `dir` is the only guaranteed-unique
+ * field), `code` must be a non-empty string, `model` must be a non-empty
+ * string, and `attempt` must be a finite number. The last two exist so a
+ * malformed body 400s here rather than throwing a `TypeError` out of
+ * `promoteAsNaive` and surfacing as an opaque 500.
+ */
+function validatePromoteRequest(
+  body: unknown,
+  drafts: DraftSummary[],
+): {
+  ok: true;
+  draft: DraftSummary;
+  code: string;
+  model: string;
+  attempt: number;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "request body must be a JSON object" };
+  }
+  const { draftDir, code, model, attempt } = body as Record<string, unknown>;
+
+  if (typeof draftDir !== "string") {
+    return { ok: false, error: "draftDir must be a string" };
+  }
+  const draft = drafts.find((d) => d.dir === draftDir);
+  if (!draft) {
+    return { ok: false, error: `unknown draft directory: ${draftDir}` };
+  }
+  if (typeof code !== "string" || code.trim().length === 0) {
+    return { ok: false, error: "code must be a non-empty string" };
+  }
+  if (typeof model !== "string" || model.trim().length === 0) {
+    return { ok: false, error: "model must be a non-empty string" };
+  }
+  if (typeof attempt !== "number" || !Number.isFinite(attempt)) {
+    return { ok: false, error: "attempt must be a number" };
+  }
+
+  return { ok: true, draft, code, model, attempt };
+}
+
+/**
  * Builds the pure request router. No socket, no side effects at call time —
  * every route reads only from the injected `deps`, which is what lets the
  * test suite exercise every status code — and, for `POST /api/run`'s
@@ -245,6 +295,7 @@ export function createHandler(
     loadTrapSources: typeof loadTrapSources;
     loadPrereqSources: typeof loadPrereqSources;
     createModelCaller: typeof createModelCaller;
+    promoteAsNaive: typeof promoteAsNaive;
     /** CLI-resolved `--preset` models (see the module doc comment), or
      *  empty when none were given. Served verbatim at `GET /api/defaults`. */
     defaultModels: string[];
@@ -357,6 +408,49 @@ export function createHandler(
       }
     }
 
+    // Promotes one model's response into the selected draft's `naive/` — a
+    // real mistake in place of an invented one (`./promote-naive.ts`'s module
+    // doc). Validated exactly like `/api/run`, above: an unknown `draftDir`
+    // or empty `code` 400s before `deps.promoteAsNaive` ever touches disk. A
+    // `PromoteRefusal` (a filename collision, the reserved `<taskId>.`
+    // prefix, or nothing extractable) becomes a 400 carrying its message
+    // verbatim — the author needs to read WHY, not a generic failure. Any
+    // other error is a 500.
+    if (req.method === "POST" && url.pathname === "/api/promote-naive") {
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResponse(400, { error: "request body must be valid JSON" });
+      }
+
+      const drafts = await deps.listDrafts(deps.scratchDir);
+      const validated = validatePromoteRequest(body, drafts);
+      if (!validated.ok) {
+        return jsonResponse(400, { error: validated.error });
+      }
+
+      const { draft, code, model, attempt } = validated;
+
+      try {
+        const result = await deps.promoteAsNaive({
+          draftDir: draft.dir,
+          taskId: draft.id,
+          code,
+          model,
+          attempt,
+          timestamp: new Date().toISOString(),
+        });
+        return jsonResponse(200, result);
+      } catch (error) {
+        if (error instanceof PromoteRefusal) {
+          return jsonResponse(400, { error: error.message });
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse(500, { error: message });
+      }
+    }
+
     return jsonResponse(404, { error: "not found" });
   };
 }
@@ -389,6 +483,7 @@ export function startServer(
     loadTrapSources,
     loadPrereqSources,
     createModelCaller,
+    promoteAsNaive,
     defaultModels: opts.defaultModels ?? [],
     boundPort: () => listener.port,
   });
