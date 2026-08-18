@@ -15,6 +15,15 @@
  * only "where does this reference sit"; tiering the confidence from that
  * position is a later task's job.
  *
+ * **Known, deliberate limitation: chained receivers yield no ref.** A
+ * `member_expression` whose object part is itself a `member_expression`
+ * (`Rec.SubRec.Modify()`) is not resolved — `extractMemberParts` requires
+ * both sides to be a plain name, so a chained receiver is silently excluded
+ * rather than misread. This fails closed, the same shape of parked decision
+ * `record-bindings.ts` documents for a `Record <id>` reference: a missed
+ * catch, never a wrong one. Revisit only with real evidence a model does
+ * this.
+ *
  * @module al/member-refs
  */
 
@@ -51,7 +60,14 @@ export interface MemberRef {
   line: number;
 }
 
-/** Methods whose first argument is a field name (spec §5). */
+/**
+ * Methods that take at least one field-name argument (spec §5). Kept as a
+ * flat display-cased list because the brief's own contract test enumerates
+ * exactly these nine names; which ARGUMENT POSITIONS actually count as
+ * field names for each is NOT uniform across the set — see
+ * `FIRST_ARG_ONLY_METHODS` / `ALL_ARGS_METHODS` below, which is what
+ * `walkNode` actually matches against.
+ */
 export const FIELD_NAME_METHODS: readonly string[] = [
   "Validate",
   "SetRange",
@@ -63,6 +79,45 @@ export const FIELD_NAME_METHODS: readonly string[] = [
   "GetRangeMin",
   "GetRangeMax",
 ];
+
+/**
+ * `Validate`/`SetRange`/`SetFilter`/`TestField`/`FieldError`/`GetRangeMin`/
+ * `GetRangeMax` each take exactly ONE field name, as their first argument —
+ * every argument after it is a value, a range bound, a filter string, or a
+ * message, never a field. Treating every identifier-shaped argument as a
+ * field (the bug this set exists to fix — see the module's fix-round note)
+ * hard-flags a model's genuinely correct Decimal/Text/Text parameters as
+ * "made up this field," which is exactly the false accusation this whole
+ * module exists to avoid.
+ *
+ * Lowercased for matching: AL identifiers are case-insensitive, and a
+ * model's own casing of a built-in method name (`line.validate(...)`) must
+ * still be recognised as curated rather than silently falling through to
+ * `"call"` and losing the field argument entirely.
+ */
+const FIRST_ARG_ONLY_METHODS = new Set(
+  [
+    "Validate",
+    "SetRange",
+    "SetFilter",
+    "TestField",
+    "FieldError",
+    "GetRangeMin",
+    "GetRangeMax",
+  ]
+    .map((m) => m.toLowerCase()),
+);
+
+/**
+ * `CalcFields`/`CalcSums` genuinely take a field LIST — every argument is a
+ * field name. This is the only shape in `FIELD_NAME_METHODS` where "every
+ * identifier-shaped argument is a field" actually holds; it's where that
+ * rule came from before it was (wrongly) generalised to the whole curated
+ * set.
+ */
+const ALL_ARGS_METHODS = new Set(
+  ["CalcFields", "CalcSums"].map((m) => m.toLowerCase()),
+);
 
 let parserPromise: Promise<Parser> | undefined;
 
@@ -185,11 +240,14 @@ function collectMembers(node: Node, out: Node[]): void {
  *    through to the generic branch, so the target isn't also emitted as
  *    `"other"`).
  * 2. `call_expression` whose callee `member_expression`'s member is in
- *    `FIELD_NAME_METHODS` — emits one ref **per identifier-shaped argument**
- *    (`identifier` or `quoted_identifier`; an `integer`/`boolean`/
- *    `string_literal`/nested expression is not a field name), each tagged
- *    `"curated-method-arg"` with `variable` from the call's own `X`. The
- *    method name itself is NOT emitted as a ref — only its arguments are.
+ *    `FIRST_ARG_ONLY_METHODS` (matched case-insensitively) — emits ONE ref
+ *    for the first argument only, when it's identifier-shaped (`identifier`
+ *    or `quoted_identifier`; an `integer`/`boolean`/`string_literal`/nested
+ *    expression is not a field name). A method in `ALL_ARGS_METHODS` instead
+ *    emits one ref per identifier-shaped argument, since every argument
+ *    genuinely is a field there. Either way `variable` comes from the
+ *    call's own `X`, position is `"curated-method-arg"`, and the method
+ *    name itself is NOT emitted as a ref — only its field argument(s) are.
  * 3. Any other `call_expression` on a `member_expression` — emits the
  *    method name itself as `"call"`.
  * 4. A `member_expression` reached by neither case above (e.g. the RHS of
@@ -235,7 +293,19 @@ function walkNode(node: Node, procedureName: string, out: MemberRef[]): void {
     if (memberExpr) {
       const parts = extractMemberParts(memberExpr);
       if (parts) {
-        if (FIELD_NAME_METHODS.includes(parts.member)) {
+        const lowerMember = parts.member.toLowerCase();
+        if (FIRST_ARG_ONLY_METHODS.has(lowerMember)) {
+          const firstArg = argList?.namedChild(0);
+          if (firstArg && isNameNode(firstArg)) {
+            out.push({
+              procedureName,
+              variable: parts.variable,
+              member: unquote(firstArg.text),
+              position: "curated-method-arg",
+              line: firstArg.startPosition.row + 1,
+            });
+          }
+        } else if (ALL_ARGS_METHODS.has(lowerMember)) {
           if (argList) {
             for (let i = 0; i < argList.namedChildCount; i++) {
               const arg = argList.namedChild(i);
