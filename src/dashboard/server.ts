@@ -35,18 +35,24 @@ export interface DashboardServer {
   shutdown(): Promise<void>;
 }
 
-const UI_HTML = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>CentralGauge Dashboard</title>
-</head>
-<body>
-<h1>CentralGauge Authoring Dashboard</h1>
-<p>Draft list and quick-run UI land in a later task.</p>
-</body>
-</html>
-`;
+const UI_DIR = new URL("./ui/", import.meta.url);
+
+/**
+ * The complete set of static files this server will ever serve, keyed by
+ * request path. Deliberately an explicit three-entry allowlist rather than
+ * a generic `url.pathname` -> filesystem-path mapper: a generic static
+ * handler is a path-traversal hole, and this server is not merely a file
+ * server — it holds provider credentials by way of the LLM registry and, in
+ * later plans, drives container publishes. Every path not listed here 404s.
+ */
+const STATIC_FILES: Record<string, { file: string; contentType: string }> = {
+  "/": { file: "index.html", contentType: "text/html; charset=utf-8" },
+  "/app.js": {
+    file: "app.js",
+    contentType: "text/javascript; charset=utf-8",
+  },
+  "/style.css": { file: "style.css", contentType: "text/css; charset=utf-8" },
+};
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -119,10 +125,16 @@ export function createHandler(
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
 
-    if (req.method === "GET" && url.pathname === "/") {
-      return new Response(UI_HTML, {
+    const staticEntry = req.method === "GET"
+      ? STATIC_FILES[url.pathname]
+      : undefined;
+    if (staticEntry) {
+      const content = await Deno.readTextFile(
+        new URL(staticEntry.file, UI_DIR),
+      );
+      return new Response(content, {
         status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
+        headers: { "content-type": staticEntry.contentType },
       });
     }
 
