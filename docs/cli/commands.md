@@ -619,12 +619,19 @@ last clicked:
 | --------------------------------------- | --------------------------------------------------------------------- |
 | **Made up this field**                  | The referenced name exists in no prereq table (a hallucination).      |
 | **Unknown member**                      | The reference couldn't be resolved confidently either way.            |
-| **Nothing from prereq/ referenced**     | Analysis ran and found nothing to flag; the response is clean.        |
+| **Nothing from prereq/ referenced**     | Analysis ran and found nothing to flag among the references it could resolve. |
 | **Couldn't check the prereq**           | Analysis could not run at all; this says nothing about the response.  |
 
 These four labels are pinned verbatim by
 `tests/unit/dashboard/vocabulary.test.ts`: keep this table and the UI
 identical.
+
+An empty rail is not a verdict that the response is correct. References the
+binder cannot resolve are never shown: an unbound variable, anything bound to
+a table outside the prereq, `Record <id>` and `array[N] of Record` variables,
+chained receivers (`Rec.SubRec.Modify()`), and prereq objects that are not
+tables or table extensions. See `docs/task-authoring-guide.md` for the full
+list.
 
 ### Safety properties
 

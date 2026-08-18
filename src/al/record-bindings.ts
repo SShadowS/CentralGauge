@@ -21,6 +21,12 @@
  * well as name, on a guessed model behaviour nobody has observed. Ruled out
  * during task 2 review; revisit only with real evidence a model does this.
  *
+ * An `array[N] of Record "T"` variable is excluded for the same reason and
+ * with the same consequence: verified to yield no binding at all, so it
+ * fails closed rather than binding to `T`. Grouped here rather than left
+ * undocumented so the module's set of deliberate silences is readable in
+ * one place.
+ *
  * @module al/record-bindings
  */
 

@@ -156,7 +156,14 @@ Findings are grouped by table, then by procedure, and tiered:
 Two more states are not findings, and mean opposite things:
 
 - **Nothing from prereq/ referenced** — the analysis ran and found nothing to
-  flag. The response is clean with respect to the prereq.
+  flag among the prereq references it could resolve. It is not a statement
+  that the response is correct, and references it cannot resolve are never
+  shown at all. By design it stays silent about: a variable it could not bind
+  to a table, anything bound to a table outside the prereq (a base-app record,
+  a `RecordRef`), `Record <id>` and `array[N] of Record` variables, chained
+  receivers like `Rec.SubRec.Modify()`, and prereq objects that are not tables
+  or table extensions — a model calling a prereq codeunit's procedure gets no
+  analysis. An empty rail is not coverage; read the response.
 - **Couldn't check the prereq** — the analysis could not run at all (a parse
   failure on the response or the prereq itself). Go look at your draft; this
   tells you nothing about the response.
