@@ -23,7 +23,11 @@
  *
  * A missing `prereq/`, a missing or unparseable `app.json`, and an
  * unreadable `.al` file all yield `[]` rather than throwing: an author
- * mid-edit is an ordinary state, and this feeds a read-only rail.
+ * mid-edit is an ordinary state, and this feeds a read-only rail. A
+ * shortfall in the two DISK paths (a directory that would not list, a file
+ * that would not read) additionally sets `hasError`, so the caller can
+ * degrade rather than treat an incomplete prereq as a complete one — see
+ * that field's own comment.
  *
  * @module dashboard/prereq-sources
  */
@@ -35,6 +39,24 @@ export interface PrereqSources {
   sources: string[];
   /** Filenames actually read, in load order, for the static-listing fallback. */
   files: string[];
+  /**
+   * True when a directory failed to list or a `.al` file failed to read, so
+   * `sources` is INCOMPLETE rather than merely small.
+   *
+   * Without this channel an incomplete load was indistinguishable from
+   * "there was nothing there": the missing fields simply vanished from the
+   * index, `index.hasError` stayed false, and every reference to one of
+   * them became a confident `hard` finding — a false accusation produced by
+   * a disk error rather than by anything the model wrote. The caller ORs
+   * this into the binder's degrade check, so a partial load WEAKENS the
+   * verdict instead of strengthening it.
+   *
+   * Two shortfalls do NOT set it, because neither is a failure to read
+   * something that was there: an unresolvable chained dependency id (the
+   * normal base-app/platform case this module documents above), and a
+   * `prereq/` directory that does not exist at all.
+   */
+  hasError: boolean;
 }
 
 interface DependencyRef {
@@ -65,13 +87,16 @@ async function readAppManifest(dir: string): Promise<AppManifest | undefined> {
 
 /**
  * Reads every `*.al` file directly under `dir`, sorted by filename for
- * deterministic load order. `{ sources: [], files: [] }` when `dir` is
- * missing or unreadable; an individual file that fails to read is skipped
- * rather than failing the whole load.
+ * deterministic load order. Empty when `dir` is missing or unreadable; an
+ * individual file that fails to read is skipped rather than failing the
+ * whole load.
+ *
+ * Either shortfall sets `hasError`. Skipping stays the right behaviour — an
+ * author mid-edit is an ordinary state and this feeds a read-only rail —
+ * but it must be SAID, because a field this never read is a field the
+ * binder will call invented.
  */
-async function readAlSources(
-  dir: string,
-): Promise<{ sources: string[]; files: string[] }> {
+async function readAlSources(dir: string): Promise<PrereqSources> {
   const names: string[] = [];
   try {
     for await (const entry of Deno.readDir(dir)) {
@@ -79,23 +104,35 @@ async function readAlSources(
       if (!entry.name.toLowerCase().endsWith(".al")) continue;
       names.push(entry.name);
     }
-  } catch {
-    return { sources: [], files: [] };
+  } catch (error) {
+    // A directory that is not there was never going to contribute anything
+    // — an author who has not scaffolded a `prereq/` is the ordinary state
+    // this module opens by documenting, and calling it a load failure would
+    // degrade every such draft's rail into a permanent false "couldn't
+    // check the prereq". A directory that IS there and will not list is a
+    // genuine shortfall.
+    return {
+      sources: [],
+      files: [],
+      hasError: !(error instanceof Deno.errors.NotFound),
+    };
   }
   names.sort();
 
   const sources: string[] = [];
   const files: string[] = [];
+  let hasError = false;
   for (const name of names) {
     try {
       sources.push(await Deno.readTextFile(join(dir, name)));
       files.push(name);
     } catch {
       // Unreadable mid-scan (e.g. a file removed between listing and read):
-      // skip it, not the whole directory.
+      // skip it, not the whole directory — but the load is now incomplete.
+      hasError = true;
     }
   }
-  return { sources, files };
+  return { sources, files, hasError };
 }
 
 /**
@@ -145,6 +182,7 @@ async function loadDirSources(
   const own = await readAlSources(dir);
   const sources = [...own.sources];
   const files = [...own.files];
+  let hasError = own.hasError;
 
   const manifest = await readAppManifest(dir);
   if (typeof manifest?.id === "string") {
@@ -168,9 +206,10 @@ async function loadDirSources(
     const nested = await loadDirSources(depDir, dependenciesRoot, visited);
     sources.push(...nested.sources);
     files.push(...nested.files);
+    hasError ||= nested.hasError;
   }
 
-  return { sources, files };
+  return { sources, files, hasError };
 }
 
 /**

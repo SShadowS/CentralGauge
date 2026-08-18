@@ -84,8 +84,9 @@ function tierRef(
  * the spec's "Untracked" tier: silence, not a guess.
  *
  * Sets `degraded: true` (with no findings) when the index itself could not
- * be trusted (`index.hasError`), or when `responseSource` itself failed to
- * parse — `parseAlObjects` reports that as `hasError`, or (a non-empty
+ * be trusted (`index.hasError`, or `opts.sourcesIncomplete` for an index
+ * built from a partial disk load), or when `responseSource` itself failed
+ * to parse — `parseAlObjects` reports that as `hasError`, or (a non-empty
  * source producing zero top-level objects) as an empty `objects` list. That
  * is deliberately narrower than "found nothing to bind": a response that
  * parses cleanly into one or more objects but simply declares no procedure
@@ -99,8 +100,19 @@ function tierRef(
 export async function bindResponseToPrereqs(
   responseSource: string,
   index: PrereqIndex,
+  opts: {
+    /**
+     * True when the prereq SOURCES the index was built from were themselves
+     * loaded incompletely (`PrereqSources.hasError`). The index parses
+     * cleanly and looks trustworthy in that case — it is simply missing
+     * whatever never reached it, so every reference to a missing member
+     * would be reported as a confident `hard` finding produced by a disk
+     * error rather than by anything the model wrote.
+     */
+    sourcesIncomplete?: boolean;
+  } = {},
 ): Promise<BinderResult> {
-  if (index.hasError) {
+  if (index.hasError || opts.sourcesIncomplete === true) {
     return { findings: [], degraded: true };
   }
 

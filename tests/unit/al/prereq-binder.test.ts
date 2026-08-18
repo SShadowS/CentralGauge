@@ -90,6 +90,35 @@ describe("al/prereq-binder", () => {
     assertEquals(r.findings.length, 0);
   });
 
+  // An index built from a PARTIAL disk load parses cleanly and looks
+  // entirely trustworthy: `hasError` is false and the tables it does hold
+  // are correct. It is simply missing whatever never reached it, so every
+  // reference to a missing member would be reported as invented on the
+  // strength of a disk error. The caller says so; this weakens rather than
+  // strengthens.
+  it("degrades when the prereq sources themselves loaded incompletely", async () => {
+    const index = await buildPrereqIndex([PREREQ]);
+    assertEquals(index.hasError, false);
+    const r = await bindResponseToPrereqs(
+      wrap(`        Line.Discount := 1;`),
+      index,
+      { sourcesIncomplete: true },
+    );
+    assertEquals(r.degraded, true);
+    assertEquals(r.findings.length, 0);
+  });
+
+  it("does not degrade when the sources loaded completely", async () => {
+    const index = await buildPrereqIndex([PREREQ]);
+    const r = await bindResponseToPrereqs(
+      wrap(`        Line.Discount := 1;`),
+      index,
+      { sourcesIncomplete: false },
+    );
+    assertEquals(r.degraded, false);
+    assertEquals(r.findings.find((x) => x.member === "Discount")?.tier, "hard");
+  });
+
   describe("degraded distinguishes 'could not analyse' from 'analysed, found nothing'", () => {
     it("is NOT degraded for a valid response with no procedures at all", async () => {
       // A table-only (or enum-only) candidate is exactly correct for plenty

@@ -9,6 +9,21 @@ describe("cli/workbench-command", () => {
     assertEquals(o.scratchDir.replaceAll("\\", "/"), "/repo/scratch");
   });
 
+  // It used to be the relative literal `"tests/al/dependencies"` inside
+  // server.ts, resolved against `Deno.cwd()` at request time: started from
+  // anywhere but the repo root, every chained prereq dependency silently
+  // failed to resolve, which is indistinguishable from the legitimate
+  // base-app case, so their fields vanished from the index and a model
+  // referencing one was told it made the field up. Absolutised here,
+  // against the same root as `scratchDir`.
+  it("absolutises the chained-prereq dependencies root against the repo root", () => {
+    const o = resolveServeOptions({}, "/repo");
+    assertEquals(
+      o.dependenciesRoot.replaceAll("\\", "/"),
+      "/repo/tests/al/dependencies",
+    );
+  });
+
   it("honours an explicit port", () => {
     assertEquals(resolveServeOptions({ port: 4321 }, "/repo").port, 4321);
   });

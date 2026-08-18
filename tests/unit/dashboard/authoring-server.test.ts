@@ -45,6 +45,7 @@ const DESCRIPTION = "Write a codeunit that validates quantity.";
 
 const deps = {
   scratchDir: "/tmp/nope",
+  dependenciesRoot: "/tmp/nope/deps",
   listDrafts: () =>
     Promise.resolve([
       {
@@ -56,7 +57,8 @@ const deps = {
     ]),
   loadTrapSources: () =>
     Promise.resolve({ correctSources: [], naiveSources: [] }),
-  loadPrereqSources: () => Promise.resolve({ sources: [], files: [] }),
+  loadPrereqSources: () =>
+    Promise.resolve({ sources: [], files: [], hasError: false }),
   createModelCaller: () => () =>
     Promise.reject(new Error("not called in this test")),
   runQuick: () => Promise.reject(new Error("not called in this test")),
@@ -219,7 +221,11 @@ describe("dashboard/server", () => {
   // handler through a thunk. This drives the real listener to prove the
   // thunk is actually wired, not merely accepted by the type.
   it("threads the bound port into the origin check on a real listener", async () => {
-    const server = await startServer({ scratchDir: "/tmp/nope", port: 0 });
+    const server = await startServer({
+      scratchDir: "/tmp/nope",
+      dependenciesRoot: "/tmp/nope/deps",
+      port: 0,
+    });
     try {
       const base = `http://127.0.0.1:${server.port}`;
       const ownOrigin = await fetch(`${base}/api/drafts`, {
@@ -464,7 +470,11 @@ describe("dashboard/server", () => {
   });
 
   it("binds loopback only", async () => {
-    const server = await startServer({ scratchDir: "/tmp/nope", port: 0 });
+    const server = await startServer({
+      scratchDir: "/tmp/nope",
+      dependenciesRoot: "/tmp/nope/deps",
+      port: 0,
+    });
     try {
       assertEquals(server.hostname, "127.0.0.1");
     } finally {
@@ -973,6 +983,97 @@ describe("dashboard/server", () => {
     } finally {
       await cleanupTempDir(dir);
     }
+  });
+
+  // The dependencies root used to be the relative literal
+  // `"tests/al/dependencies"` resolved against `Deno.cwd()`. Started from
+  // anywhere but the repo root, every chained dependency silently failed to
+  // resolve — indistinguishable from the legitimate base-app case — and
+  // their fields vanished from the index with no signal. It is a dep now,
+  // absolutised by the CLI, so this asserts the handler passes IT and not
+  // something of its own.
+  it("resolves chained prereqs against the injected dependencies root", async () => {
+    let seenRoot: string | undefined;
+    const handler = createHandler(
+      {
+        ...deps,
+        dependenciesRoot: "/abs/deps/root",
+        loadPrereqSources: (_draftDir: string, dependenciesRoot: string) => {
+          seenRoot = dependenciesRoot;
+          return Promise.resolve({ sources: [], files: [], hasError: false });
+        },
+        loadTrapSources: () =>
+          Promise.resolve({ correctSources: [], naiveSources: [] }),
+        createModelCaller: () => () =>
+          Promise.resolve({ content: "", finishReason: "stop" as const }),
+        runQuick: () =>
+          Promise.resolve({
+            draftId: "CG-AL-X054",
+            startedAt: "now",
+            signature: { sites: [] },
+            responses: [],
+            rows: [],
+          }),
+        writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
+      } as unknown as Parameters<typeof createHandler>[0],
+    );
+
+    const res = await handler(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(seenRoot, "/abs/deps/root");
+  });
+
+  // An incomplete prereq load must reach the binder, or a field that never
+  // made it into the index is reported as invented on the strength of a
+  // disk error.
+  it("forwards an incomplete prereq load through to the run", async () => {
+    let seenIncomplete: unknown;
+    const handler = createHandler(
+      {
+        ...deps,
+        loadPrereqSources: () =>
+          Promise.resolve({
+            sources: [`table 69001 "CG Quote" { }`],
+            files: ["CGQuote.Table.al"],
+            hasError: true,
+          }),
+        loadTrapSources: () =>
+          Promise.resolve({ correctSources: [], naiveSources: [] }),
+        createModelCaller: () => () =>
+          Promise.resolve({ content: "", finishReason: "stop" as const }),
+        runQuick: (opts: { prereqSourcesIncomplete?: boolean }) => {
+          seenIncomplete = opts.prereqSourcesIncomplete;
+          return Promise.resolve({
+            draftId: "CG-AL-X054",
+            startedAt: "now",
+            signature: { sites: [] },
+            responses: [],
+            rows: [],
+          });
+        },
+        writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
+      } as unknown as Parameters<typeof createHandler>[0],
+    );
+
+    const res = await handler(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(seenIncomplete, true);
   });
 });
 

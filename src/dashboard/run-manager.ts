@@ -228,6 +228,13 @@ export async function runQuick(opts: {
    * skipped entirely and every response's `prereqBinding` stays absent.
    */
   prereqSources?: string[];
+  /**
+   * `PrereqSources.hasError` — the loader could not read part of what it
+   * was asked for, so `prereqSources` is INCOMPLETE rather than merely
+   * small. Forwarded to `bindResponseToPrereqs`, which degrades instead of
+   * reporting every member that never reached the index as invented.
+   */
+  prereqSourcesIncomplete?: boolean;
   call: ModelCaller;
   /** Overridable so a test can pin the rendered text without reading the
    *  repo's real `templates/`. Production passes nothing. */
@@ -293,6 +300,7 @@ export async function runQuick(opts: {
       const prereqBinding = await bindResponseToPrereqs(
         response.resolution.cleanedCode,
         prereqIndex,
+        { sourcesIncomplete: opts.prereqSourcesIncomplete === true },
       );
       return { ...response, rowAssignments, prereqBinding };
     }),

@@ -39,6 +39,17 @@ export interface ServeOptions {
 
 export interface ResolvedServeOptions {
   scratchDir: string;
+  /**
+   * Absolute root the dashboard resolves a draft's chained prereq
+   * dependencies against. Absolutised HERE, against the same `cwd` as
+   * `scratchDir`, rather than left as the relative literal the server used
+   * to hold: resolved against `Deno.cwd()` at request time, starting the
+   * dashboard from anywhere but the repo root made every chained
+   * dependency fail to resolve, which is indistinguishable from the
+   * legitimate base-app case, so their fields silently vanished from the
+   * prereq index and a model referencing one was told it made the field up.
+   */
+  dependenciesRoot: string;
   /** Left `undefined` when not given, so `startServer` asks the OS for an
    *  ephemeral port rather than being handed a fabricated default. */
   port?: number;
@@ -61,6 +72,7 @@ export function resolveServeOptions(
 ): ResolvedServeOptions {
   return {
     scratchDir: join(cwd, "scratch"),
+    dependenciesRoot: join(cwd, "tests", "al", "dependencies"),
     ...(opts.port !== undefined ? { port: opts.port } : {}),
     defaultModels: opts.preset !== undefined
       ? resolvePresetModels(config, opts.preset)

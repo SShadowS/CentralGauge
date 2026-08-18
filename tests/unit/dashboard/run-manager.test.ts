@@ -490,4 +490,44 @@ describe("dashboard/run-manager", () => {
     });
     assertEquals(run.responses[0]?.prereqBinding, undefined);
   });
+
+  // Same draft, same response, same prereq as the hard-finding test above —
+  // the ONLY difference is that the loader could not read part of what it
+  // was asked for. A field that never reached the index must not be
+  // reported as invented on the strength of a disk error.
+  it("degrades every binding when the prereq sources loaded incompletely", async () => {
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: true,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [PREREQ],
+      prereqSourcesIncomplete: true,
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    assertEquals(run.responses[0]?.prereqBinding?.degraded, true);
+    assertEquals(run.responses[0]?.prereqBinding?.findings.length, 0);
+  });
 });

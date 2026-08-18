@@ -45,15 +45,6 @@ import { loadPrereqSources } from "./prereq-sources.ts";
 import { loadTrapSources } from "./source-loader.ts";
 import { promoteAsNaive, PromoteRefusal } from "./promote-naive.ts";
 
-/**
- * Root a draft's `prereq/` chained dependencies resolve against
- * (`loadPrereqSources`'s `dependenciesRoot`). A plain constant, not read
- * from `.centralgauge.yml` via the config loader — that module is exactly
- * what `tests/unit/dashboard/ingest-safety.test.ts` forbids this file from
- * reaching, per the module doc comment above.
- */
-const PREREQ_DEPENDENCIES_ROOT = "tests/al/dependencies";
-
 export interface DashboardServer {
   port: number;
   /** The address actually bound. Exposed so the loopback-only guarantee is
@@ -289,6 +280,22 @@ function validatePromoteRequest(
 export function createHandler(
   deps: {
     scratchDir: string;
+    /**
+     * Root a draft's `prereq/` chained dependencies resolve against
+     * (`loadPrereqSources`'s `dependenciesRoot`), ABSOLUTE.
+     *
+     * Handed in rather than read here, exactly like `scratchDir`, and for
+     * the same two reasons. This module must never import the config
+     * loader — `tests/unit/dashboard/ingest-safety.test.ts` polices its
+     * whole import graph. And it was previously the relative literal
+     * `"tests/al/dependencies"`, resolved against `Deno.cwd()`: started
+     * from anywhere but the repo root, every chained dependency silently
+     * failed to resolve, which is indistinguishable from the legitimate
+     * base-app case, and every one of their fields vanished from the index
+     * with no signal. `cli/commands/workbench-command.ts` absolutises it
+     * against the repo root.
+     */
+    dependenciesRoot: string;
     listDrafts: typeof listDrafts;
     runQuick: typeof runQuick;
     writeRunArtifact: typeof writeRunArtifact;
@@ -365,9 +372,12 @@ export function createHandler(
           draft.id,
           draft.dir,
         );
-        const { sources: prereqSources } = await deps.loadPrereqSources(
+        const {
+          sources: prereqSources,
+          hasError: prereqSourcesIncomplete,
+        } = await deps.loadPrereqSources(
           draft.dir,
-          PREREQ_DEPENDENCIES_ROOT,
+          deps.dependenciesRoot,
         );
         const call = deps.createModelCaller({
           taskId: draft.id,
@@ -379,6 +389,7 @@ export function createHandler(
           correctSources,
           naiveSources,
           prereqSources,
+          prereqSourcesIncomplete,
           call,
         });
 
@@ -465,7 +476,14 @@ export function createHandler(
  * unfalsifiable by a test.
  */
 export function startServer(
-  opts: { scratchDir: string; port?: number; defaultModels?: string[] },
+  opts: {
+    scratchDir: string;
+    /** Absolute root for chained prereq dependencies — see
+     *  `createHandler`'s dep of the same name. */
+    dependenciesRoot: string;
+    port?: number;
+    defaultModels?: string[];
+  },
 ): Promise<DashboardServer> {
   // Filled in below, once `Deno.serve` can tell us what it bound. Read
   // lazily by the handler's `Origin` check — see `boundPort` on
@@ -477,6 +495,7 @@ export function startServer(
 
   const handler = createHandler({
     scratchDir: opts.scratchDir,
+    dependenciesRoot: opts.dependenciesRoot,
     listDrafts,
     runQuick,
     writeRunArtifact,
