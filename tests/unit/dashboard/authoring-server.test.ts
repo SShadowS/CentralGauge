@@ -166,6 +166,75 @@ describe("dashboard/server", () => {
     }
   });
 
+  // Hostname alone is not an origin. Another dev server on 127.0.0.1:3000 is
+  // a different origin, and its pages must not be able to spend money here.
+  it("refuses a loopback Origin on a different port", async () => {
+    const onPort = {
+      ...deps,
+      boundPort: () => 8123,
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    for (
+      const origin of [
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        // No port at all means port 80, which is not ours either.
+        "http://localhost",
+      ]
+    ) {
+      const res = await createHandler(onPort)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          headers: { origin },
+          body: JSON.stringify({
+            draftDir: "/tmp/nope/CG-AL-X054",
+            models: ["anthropic/m"],
+          }),
+        }),
+      );
+      assertEquals(res.status, 403, origin);
+    }
+  });
+
+  it("allows the server's own loopback Origin, port included", async () => {
+    const onPort = {
+      ...deps,
+      boundPort: () => 8123,
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    for (
+      const origin of ["http://127.0.0.1:8123", "http://localhost:8123"]
+    ) {
+      const res = await createHandler(onPort)(
+        new Request("http://localhost/api/drafts", { headers: { origin } }),
+      );
+      assertEquals(res.status, 200, origin);
+    }
+  });
+
+  // The port is only knowable after Deno.serve binds, so it reaches the
+  // handler through a thunk. This drives the real listener to prove the
+  // thunk is actually wired, not merely accepted by the type.
+  it("threads the bound port into the origin check on a real listener", async () => {
+    const server = await startServer({ scratchDir: "/tmp/nope", port: 0 });
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      const ownOrigin = await fetch(`${base}/api/drafts`, {
+        headers: { origin: base },
+      });
+      assertEquals(ownOrigin.status, 200);
+      await ownOrigin.body?.cancel();
+
+      const otherPort = await fetch(`${base}/api/drafts`, {
+        headers: { origin: `http://127.0.0.1:${server.port + 1}` },
+      });
+      assertEquals(otherPort.status, 403);
+      await otherPort.body?.cancel();
+    } finally {
+      await server.shutdown();
+    }
+  });
+
   it("rejects a run request with no models", async () => {
     const res = await createHandler(deps)(
       new Request("http://localhost/api/run", {

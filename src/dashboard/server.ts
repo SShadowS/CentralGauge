@@ -107,7 +107,10 @@ function hostnameOf(authority: string): string {
  * neither, and they are not the threat this defends against — the attacker
  * here is a page in the author's own browser, which cannot omit them.
  */
-function isSameOriginRequest(req: Request): boolean {
+function isSameOriginRequest(
+  req: Request,
+  expectedPort: number | undefined,
+): boolean {
   const host = req.headers.get("host");
   if (host !== null && !LOOPBACK_HOSTNAMES.has(hostnameOf(host))) {
     return false;
@@ -115,13 +118,22 @@ function isSameOriginRequest(req: Request): boolean {
 
   const origin = req.headers.get("origin");
   if (origin !== null) {
-    let originHost: string;
+    let url: URL;
     try {
-      originHost = new URL(origin).hostname;
+      url = new URL(origin);
     } catch {
       return false;
     }
-    if (!LOOPBACK_HOSTNAMES.has(originHost)) return false;
+    if (!LOOPBACK_HOSTNAMES.has(url.hostname)) return false;
+    // The hostname alone is not this server's origin: another local dev
+    // server on 127.0.0.1:3000 is a different origin and its pages must not
+    // be able to spend money here. `URL#port` is "" for a scheme's default
+    // port, so fill that in before comparing.
+    if (expectedPort !== undefined) {
+      const originPort = url.port ||
+        (url.protocol === "https:" ? "443" : "80");
+      if (originPort !== String(expectedPort)) return false;
+    }
   }
 
   return true;
@@ -224,6 +236,15 @@ export function createHandler(
     /** CLI-resolved `--preset` models (see the module doc comment), or
      *  empty when none were given. Served verbatim at `GET /api/defaults`. */
     defaultModels: string[];
+    /**
+     * The port this server is actually bound to, for the `Origin` check.
+     * A THUNK, not a number, because `Deno.serve` needs the handler before
+     * it can report an address — `startServer` fills the value in once the
+     * listener exists. Returning `undefined` (before the listener is up, or
+     * in a router test with no socket at all) falls back to the
+     * hostname-only check rather than refusing everything.
+     */
+    boundPort?: () => number | undefined;
   },
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
@@ -232,7 +253,7 @@ export function createHandler(
     // Before anything else, including the static files: a request that
     // reached us through a rebound DNS name, or from another origin, is
     // refused whatever it asked for.
-    if (!isSameOriginRequest(req)) {
+    if (!isSameOriginRequest(req, deps.boundPort?.())) {
       return jsonResponse(403, {
         error: "refused: request did not come from this server's own origin",
       });
@@ -335,6 +356,14 @@ export function createHandler(
 export function startServer(
   opts: { scratchDir: string; port?: number; defaultModels?: string[] },
 ): Promise<DashboardServer> {
+  // Filled in below, once `Deno.serve` can tell us what it bound. Read
+  // lazily by the handler's `Origin` check — see `boundPort` on
+  // `createHandler`'s deps for why that is a thunk. A one-field holder
+  // rather than a bare `let`: the closure reads it before the assignment
+  // happens, which deno_lint's `prefer-const` cannot see, so a `let` here
+  // gets reported as never reassigned.
+  const listener: { port: number | undefined } = { port: undefined };
+
   const handler = createHandler({
     scratchDir: opts.scratchDir,
     listDrafts,
@@ -343,6 +372,7 @@ export function startServer(
     loadTrapSources,
     createModelCaller,
     defaultModels: opts.defaultModels ?? [],
+    boundPort: () => listener.port,
   });
 
   const server = Deno.serve(
@@ -362,6 +392,7 @@ export function startServer(
       }`,
     );
   }
+  listener.port = addr.port;
 
   return Promise.resolve({
     port: addr.port,
