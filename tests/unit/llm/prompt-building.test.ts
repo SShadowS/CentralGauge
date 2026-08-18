@@ -196,6 +196,43 @@ END-CODE
     assertEquals(applied.systemPrompt, "SYS");
   });
 
+  // THE load-bearing property of this function, and the reason the dashboard
+  // renders per model rather than once per run. Every other injection fixture
+  // here uses the `default` key, which any provider matches — so hardcoding
+  // `opts.provider` to a constant would leave them all green. This one is
+  // scoped to `anthropic` only, so it fails unless the caller's provider is
+  // the value actually forwarded to PromptInjectionResolver.
+  it("forwards the caller's provider, so provider-scoped injections do not leak", async () => {
+    const taskPrompts = {
+      injections: {
+        anthropic: {
+          generation: { prefix: "ANTHROPIC-ONLY ", system: "ANTHROPIC-SYS" },
+        },
+      },
+    };
+    const render = { render: () => Promise.resolve("BASE") };
+
+    const forAnthropic = await buildGenerationPrompt({
+      ...base,
+      renderer: render,
+      taskPrompts,
+      provider: "anthropic",
+    });
+    assertEquals(forAnthropic.prompt, "ANTHROPIC-ONLY BASE");
+    assertEquals(forAnthropic.systemPrompt, "ANTHROPIC-SYS");
+
+    for (const provider of ["openai", "gemini", "openrouter", "mock"]) {
+      const other = await buildGenerationPrompt({
+        ...base,
+        renderer: render,
+        taskPrompts,
+        provider,
+      });
+      assertEquals(other.prompt, "BASE", provider);
+      assertEquals(other.systemPrompt, undefined, provider);
+    }
+  });
+
   // The pool renders the GENERATION template but resolves FIX-stage
   // injections when attemptNumber > 1 with no previous attempt recorded
   // (`item.attemptNumber === 1 || !previousAttempt` vs `stage`). The stage is
