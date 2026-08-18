@@ -35,6 +35,7 @@ describe("dashboard/run-manager", () => {
   const draft = {
     id: "CG-AL-X054",
     dir: "",
+    dirName: "CG-AL-X054",
     hasPrereq: false,
   };
 

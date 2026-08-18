@@ -10,6 +10,7 @@ import { parse as parseYaml } from "@std/yaml";
 export interface DraftSummary {
   id: string;
   dir: string;
+  dirName: string;
   slug?: string;
   hasPrereq: boolean;
   testCodeunitId?: number;
@@ -48,7 +49,8 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
   for await (const entry of Deno.readDir(scratchDir)) {
     if (!entry.isDirectory) continue;
 
-    const dir = join(scratchDir, entry.name);
+    const dirName = entry.name;
+    const dir = join(scratchDir, dirName);
     const taskYmlPath = join(dir, "task.yml");
     const metaJsonPath = join(dir, ".meta.json");
     const correctPath = join(dir, "correct");
@@ -60,6 +62,18 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       !await isDirectory(correctPath)
     ) {
       continue;
+    }
+
+    // Read id from task.yml (authoritative), fall back to directory name if missing
+    let id = dirName;
+    try {
+      const taskContent = await Deno.readTextFile(taskYmlPath);
+      const taskYaml = parseYaml(taskContent) as Record<string, unknown>;
+      if (typeof taskYaml["id"] === "string") {
+        id = taskYaml["id"];
+      }
+    } catch {
+      // Malformed task.yml - use directory name as fallback
     }
 
     // Read slug from .meta.json (optional, handle gracefully if malformed)
@@ -93,8 +107,9 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
 
     // Build the summary object, spreading optional fields only when defined
     const summary: DraftSummary = {
-      id: entry.name,
+      id,
       dir,
+      dirName,
       hasPrereq,
       ...(slug !== undefined ? { slug } : {}),
       ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
@@ -103,8 +118,11 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
     drafts.push(summary);
   }
 
-  // Sort by id for deterministic ordering
-  drafts.sort((a, b) => a.id.localeCompare(b.id));
+  // Sort by id then dirName for deterministic ordering
+  drafts.sort((a, b) => {
+    const idCmp = a.id.localeCompare(b.id);
+    return idCmp !== 0 ? idCmp : a.dirName.localeCompare(b.dirName);
+  });
 
   return drafts;
 }

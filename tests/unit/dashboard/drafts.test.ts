@@ -123,6 +123,62 @@ describe("dashboard/drafts", () => {
     ]);
   });
 
+  it("reads task id from task.yml even when directory name differs", async () => {
+    const dir = join(scratch, "pre-migration-backup_x053");
+    await ensureDir(join(dir, "correct"));
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      "id: CG-AL-X053\nexpected:\n  testCodeunitId: 88804\n",
+    );
+    await Deno.writeTextFile(
+      join(dir, ".meta.json"),
+      JSON.stringify({ id: "CG-AL-X053", slug: "action-visibility" }),
+    );
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts.length, 1);
+    assertEquals(drafts[0]?.id, "CG-AL-X053");
+    assertEquals(drafts[0]?.dirName, "pre-migration-backup_x053");
+    assertEquals(drafts[0]?.slug, "action-visibility");
+  });
+
+  it("falls back to directory name when task.yml has no id", async () => {
+    const dir = join(scratch, "CG-AL-X058");
+    await ensureDir(join(dir, "correct"));
+    await Deno.writeTextFile(
+      join(dir, "task.yml"),
+      "description: test\nexpected:\n  testCodeunitId: 88805\n",
+    );
+    await Deno.writeTextFile(
+      join(dir, ".meta.json"),
+      JSON.stringify({ slug: "fallback-test" }),
+    );
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts.length, 1);
+    assertEquals(drafts[0]?.id, "CG-AL-X058");
+    assertEquals(drafts[0]?.dirName, "CG-AL-X058");
+  });
+
+  it("includes both drafts when directory names differ but task ids are same", async () => {
+    await makeDraft("CG-AL-X053");
+    const dir2 = join(scratch, "pre-migration-backup_x053");
+    await ensureDir(join(dir2, "correct"));
+    await Deno.writeTextFile(
+      join(dir2, "task.yml"),
+      "id: CG-AL-X053\nexpected:\n  testCodeunitId: 88804\n",
+    );
+    await Deno.writeTextFile(
+      join(dir2, ".meta.json"),
+      JSON.stringify({ slug: "action-visibility" }),
+    );
+    const drafts = await listDrafts(scratch);
+    assertEquals(drafts.length, 2);
+    assertEquals(drafts.every((d) => d.id === "CG-AL-X053"), true);
+    assertEquals(
+      drafts.map((d) => d.dirName),
+      ["CG-AL-X053", "pre-migration-backup_x053"],
+    );
+  });
+
   it("resolves models from a named preset", () => {
     const models = resolvePresetModels(
       { benchmarkPresets: { flagship: { llms: ["a/b", "c/d"] } } },
