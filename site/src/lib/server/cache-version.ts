@@ -13,9 +13,13 @@
  * cost_per_pass_usd now include cache-read/cache-write token terms (previously
  * input+output only). Cost-derived numbers and cost-sorted orderings change, so
  * v6 cached responses are retired.
+ * v8: leaderboard subqueries now bind the task-set hash (S2/S7). The response
+ * SHAPE is unchanged, but `tasks_passed_attempt_1` and the other subselect-fed
+ * counts were previously computed without that binding, so a v7 entry can hold
+ * values for the wrong task set. Retired rather than served for another TTL.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v7';
+export const CACHE_VERSION = 'v8';
