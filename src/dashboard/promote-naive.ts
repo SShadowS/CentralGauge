@@ -31,7 +31,12 @@ export interface PromoteResult {
 }
 
 /** Thrown for every promotion refusal. Named so callers can catch it precisely. */
-export class PromoteRefusal extends Error {}
+export class PromoteRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PromoteRefusal";
+  }
+}
 
 /**
  * AL's own object-name-to-filename convention is not a pure capitalisation
@@ -58,9 +63,17 @@ function suffixForKind(kind: string): string {
 /**
  * Strips surrounding quotes, replaces every character invalid in a Windows
  * filename (`< > : " / \ | ? *` and control characters) with `-`, then
- * collapses runs of `-`. This is cosmetic to the compiler — which reads
- * content and ignores filenames — but the author browses `naive/` beside
- * `correct/` and `prereq/`, so an odd name there reads as a bug in the tool.
+ * collapses runs of `-` and trims any that land at the edges. This is
+ * cosmetic to the compiler — which reads content and ignores filenames —
+ * but the author browses `naive/` beside `correct/` and `prereq/`, so an
+ * odd name there reads as a bug in the tool.
+ *
+ * A name that is entirely invalid characters (e.g. `"///"` — syntactically
+ * legal inside an AL quoted identifier) sanitises to nothing once the edges
+ * are trimmed. Rather than emit an unreadable bare `-` or a leading-dot-like
+ * filename, that case floors to `Unnamed`: a conventional placeholder (cf.
+ * "Untitled") that reads as an intentional fallback rather than a bug in
+ * the sanitiser.
  */
 function sanitizeName(rawName: string): string {
   let name = rawName;
@@ -70,7 +83,8 @@ function sanitizeName(rawName: string): string {
   // deno-lint-ignore no-control-regex
   name = name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "-");
   name = name.replace(/-+/g, "-");
-  return name;
+  name = name.replace(/^-+|-+$/g, "");
+  return name === "" ? "Unnamed" : name;
 }
 
 /**

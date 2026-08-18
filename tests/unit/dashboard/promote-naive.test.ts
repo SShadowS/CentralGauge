@@ -68,6 +68,18 @@ table 70055 "CG Thing" { }`;
     assertEquals(r.written[0]?.includes(":"), false);
   });
 
+  it("collapses runs of sanitised characters into a single hyphen", async () => {
+    const code = `codeunit 70054 "CG//Agent" { }`;
+    const r = await promoteAsNaive({ ...BASE, draftDir: dir, code });
+    assertEquals(r.written, ["CG-Agent.Codeunit.al"]);
+  });
+
+  it("floors a name that sanitises to nothing into a readable placeholder", async () => {
+    const code = `codeunit 70054 "///" { }`;
+    const r = await promoteAsNaive({ ...BASE, draftDir: dir, code });
+    assertEquals(r.written, ["Unnamed.Codeunit.al"]);
+  });
+
   it("refuses a name that would collide with the reserved task-id prefix", async () => {
     const code = `codeunit 70054 "CG-AL-X054.Helper" { }`;
     await assertRejects(
