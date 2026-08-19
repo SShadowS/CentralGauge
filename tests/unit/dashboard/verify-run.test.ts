@@ -490,4 +490,150 @@ Deno.test("verify-run fix attempt", async (t) => {
       }
     },
   );
+
+  await t.step(
+    "a bench that starts before the fix attempt stops its publish",
+    async () => {
+      // The gate is checked once at dispatch, and the job then publishes
+      // TWICE with a model call in between. This pins the second check:
+      // counts verifies (not just the final state), since an
+      // implementation that ran the fix anyway produces a `failed_both`
+      // that looks identical from the outside.
+      const draftDir = await draftWithOracle("CG-AL-X027");
+      try {
+        let n = 0;
+        let gateCalls = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X027",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          gate: () => {
+            gateCalls++;
+            return { allowed: false, reason: "`bench` is running" };
+          },
+          verify: () => {
+            n++;
+            return Promise.resolve({
+              success: false,
+              message: "fail",
+              totalTests: 3,
+              passed: 1,
+              failed: 2,
+              failures: ["T1", "T2"],
+            });
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1", "T2"],
+        });
+        assertEquals(n, 1, "the fix attempt must NOT have published");
+        assertEquals(gateCalls, 1, "the gate was consulted before attempt 2");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "an open gate lets the fix attempt through unchanged",
+    async () => {
+      const draftDir = await draftWithOracle("CG-AL-X028");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X028",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          gate: () => ({ allowed: true }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1"],
+                }
+                : {
+                  success: true,
+                  message: "ok",
+                  totalTests: 3,
+                  passed: 3,
+                  failed: 0,
+                },
+            );
+          },
+        });
+        assertEquals(outcome.state, "passed_second_try");
+        assertEquals(n, 2, "exactly two verifies");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a throwing gate leaves attempt 1's outcome standing",
+    async () => {
+      // `gate` is a generic injection seam. An unguarded throw here would
+      // propagate out of `verifyResponse` and be caught by the queue as
+      // `errored`, discarding attempt 1's real, measured counts.
+      const draftDir = await draftWithOracle("CG-AL-X029");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X029",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          gate: () => {
+            throw new Error("marker file unreadable");
+          },
+          verify: () => {
+            n++;
+            return Promise.resolve({
+              success: false,
+              message: "fail",
+              totalTests: 3,
+              passed: 1,
+              failed: 2,
+              failures: ["T1", "T2"],
+            });
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1", "T2"],
+        });
+        assertEquals(n, 1, "the fix attempt must NOT have published");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
 });

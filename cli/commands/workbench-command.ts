@@ -31,6 +31,7 @@ import type { CentralGaugeConfig } from "../../src/config/config.ts";
 import type { VerifyQueueVerifyFn } from "../../src/dashboard/verify-queue.ts";
 
 import { ConfigManager } from "../../src/config/config.ts";
+import { checkBenchGate } from "../../src/dashboard/bench-gate.ts";
 import { startServer } from "../../src/dashboard/server.ts";
 import { resolvePresetModels } from "../../src/dashboard/drafts.ts";
 import { verifyResponse } from "../../src/dashboard/verify-run.ts";
@@ -117,6 +118,12 @@ function createEscalationVerify(): VerifyQueueVerifyFn {
         description: `Dashboard escalation fix attempt for ${job.taskId}`,
       }),
       model: job.model,
+      // Re-checks bench liveness between the two publishes this job makes.
+      // `VerifyQueue` already gates at dispatch, but that check is minutes
+      // and one model call old by the time the fix attempt publishes; the
+      // same `checkBenchGate` the queue and `POST /api/verify` use is the
+      // right one, so a bench that starts mid-job is refused by all three.
+      gate: () => checkBenchGate(),
     });
 }
 

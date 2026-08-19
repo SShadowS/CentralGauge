@@ -49,6 +49,7 @@ import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 
 import type { CandidateResolution } from "../llm/candidate-resolution.ts";
+import type { GateDecision } from "./bench-gate.ts";
 import type { VerifyOutcome } from "./verify-types.ts";
 import type { ModelCaller } from "./run-manager.ts";
 
@@ -96,6 +97,28 @@ export interface VerifyResponseOptions {
   call?: ModelCaller;
   /** The model slug to escalate to. See `call`. */
   model?: string;
+  /**
+   * Re-checks bench liveness immediately before the FIX attempt's publish.
+   * Mirrors `checkBenchGate`'s shape (`./bench-gate.ts`) but takes no
+   * arguments — the caller closes over whatever directory it needs, same
+   * seam as `VerifyQueue`'s `gate`.
+   *
+   * `VerifyQueue` checks the gate once, right before dispatching a job.
+   * That job then publishes to a container TWICE, separated by a model
+   * call: attempt 1 (minutes), the fix prompt plus `call` (seconds to a
+   * minute), attempt 2 (minutes). Without a second check, a bench that
+   * starts anywhere in that window is refused for every queued job behind
+   * this one and completely ignored by THIS job's second publish — the
+   * exposure window the queue's per-job check was written to close, only
+   * longer. On refusal, attempt 1's real, measured outcome is returned
+   * unchanged, exactly as it already is for a `publish_defect` or
+   * `errored` attempt 2.
+   *
+   * Optional: omitted means no re-check, which is every existing caller's
+   * current behaviour. Production wires it in
+   * `cli/commands/workbench-command.ts`'s `createEscalationVerify`.
+   */
+  gate?: () => GateDecision;
 }
 
 /**
@@ -267,6 +290,10 @@ async function attemptOnce(params: {
  * model call) leaves attempt 1's outcome standing rather than becoming
  * `errored` — attempt 1's real result must not be discarded just because
  * the ESCALATION failed.
+ *
+ * When `opts.gate` is supplied it is re-checked immediately before the fix
+ * attempt's publish, and a refusal likewise leaves attempt 1 standing. See
+ * that option's doc for why one check at dispatch is not enough.
  */
 export async function verifyResponse(
   opts: VerifyResponseOptions,
@@ -309,6 +336,27 @@ export async function verifyResponse(
     resolution = resolveCandidate(response.content, response.finishReason);
   } catch {
     return first;
+  }
+
+  // Re-checked HERE, not only at dispatch: the gate's only other check ran
+  // before attempt 1, minutes and one model call ago, and what follows is a
+  // second publish to the same container. A bench that started in that
+  // window would otherwise be ignored entirely by this job. On refusal
+  // attempt 1's already-measured outcome stands — the same fallback the two
+  // infrastructure branches below apply, for the same reason: the fix
+  // attempt produced no signal, so it must not replace one that exists.
+  // Wrapped defensively because `gate` is a generic injection seam and a
+  // throw here would discard attempt 1's real result.
+  if (opts.gate) {
+    let decision: GateDecision;
+    try {
+      decision = opts.gate();
+    } catch {
+      return first;
+    }
+    if (!decision.allowed) {
+      return first;
+    }
   }
 
   const second = await attemptOnce({
