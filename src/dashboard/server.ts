@@ -812,6 +812,20 @@ export function startServer(
   return Promise.resolve({
     port: addr.port,
     hostname: addr.hostname,
-    shutdown: () => server.shutdown(),
+    // The queue is shut down FIRST, before the listener. `Deno.serve`'s
+    // `shutdown()` only stops accepting connections — it does not touch the
+    // queue's `pump` chain, so every job still `queued` would go on to
+    // dispatch, stage a temp directory and publish to a real container
+    // AFTER the caller had been told the server was down. `VerifyQueue`
+    // maintains that invariant carefully and had no production caller.
+    //
+    // Deliberately does NOT wait for an in-flight job: `shutdown()` leaves
+    // a running job alone by design (there is no cancellation seam), so
+    // awaiting `drain()` here would block the caller for the length of a
+    // real container publish. The latch means nothing NEW starts.
+    shutdown: async () => {
+      verifyQueue?.shutdown("dashboard server is shutting down");
+      await server.shutdown();
+    },
   });
 }

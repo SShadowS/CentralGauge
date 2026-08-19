@@ -1,4 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
+import { join } from "@std/path";
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
@@ -1429,6 +1430,90 @@ describe("dashboard/source-loader", () => {
       assertEquals(sources.naiveSources, ["content-B"]);
     } finally {
       await cleanupTempDir(dir);
+    }
+  });
+
+  // `Deno.serve`'s own `shutdown()` stops accepting connections; it does
+  // not touch the verify queue's pump chain. Before this was wired, every
+  // job still `queued` when the caller awaited `shutdown()` went on to
+  // dispatch, stage a temp directory and publish to a real BC container
+  // after the caller had been told the server was down. `VerifyQueue
+  // .shutdown` existed, was documented and tested, and had no production
+  // caller at all.
+  //
+  // Runs the REAL `startServer` (not `createHandler`) because the missing
+  // call site was in `startServer`'s returned object. Job 1 blocks inside
+  // the injected verifier, which holds job 2 in `queued` deterministically
+  // — no timing race. Note this exercises the real `checkBenchGate`, since
+  // `startServer` owns the queue's gate; a live bench would refuse both
+  // jobs, which is why the suite must not be run against one (CLAUDE.md).
+  it("shuts the verify queue down before the listener", async () => {
+    const scratchDir = await createTempDir("dashboard-shutdown-queue-test");
+    // join(), not a template literal: listDrafts builds each draft.dir with
+    // join() and validateVerifyRequest compares it by exact string, so a
+    // forward slash here would 400 on Windows.
+    const draftDir = join(scratchDir, "CG-AL-X060");
+    const entered: string[] = [];
+    let release: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    try {
+      await Deno.mkdir(`${draftDir}/correct`, { recursive: true });
+      await Deno.writeTextFile(
+        `${draftDir}/task.yml`,
+        "id: CG-AL-X060\ndescription: shutdown fixture\n",
+      );
+      await Deno.writeTextFile(`${draftDir}/.meta.json`, "{}");
+
+      const server = await startServer({
+        scratchDir,
+        dependenciesRoot: `${scratchDir}/deps`,
+        port: 0,
+        verify: async (job: VerifyQueueJob) => {
+          entered.push(job.model);
+          if (entered.length === 1) await blocked;
+          return { state: "errored" as const, message: "test stub" };
+        },
+      });
+
+      const base = `http://127.0.0.1:${server.port}`;
+      const res = await fetch(`${base}/api/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: base },
+        body: JSON.stringify({
+          draftDir,
+          responses: [
+            { model: "first", code: "table 70001 A { }" },
+            { model: "second", code: "table 70002 B { }" },
+          ],
+        }),
+      });
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.jobs.length, 2);
+
+      // Job 1 is inside the verifier and job 2 is still `queued`.
+      while (entered.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assertEquals(entered, ["first"], "only job 1 has been dispatched");
+
+      await server.shutdown();
+
+      // Let the pump run: job 1 finishes, and job 2's turn comes up.
+      release?.();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      assertEquals(
+        entered,
+        ["first"],
+        "a job still queued at shutdown must never reach a container",
+      );
+    } finally {
+      release?.();
+      await cleanupTempDir(scratchDir);
     }
   });
 });
