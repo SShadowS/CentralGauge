@@ -192,6 +192,37 @@ function el(tag, className, text) {
 }
 
 /**
+ * A `vscode://file/...` deep link for an absolute path (spec §1). Backslashes
+ * become forward slashes and the whole path is then URL-encoded, so a space
+ * in a draft's path — a username, a copied-in directory name — does not
+ * silently produce a link that looks fine and simply never opens.
+ * `encodeURI` (not `encodeURIComponent`) is deliberate: it leaves `/` and
+ * the drive letter's `:` alone while still escaping unsafe characters like
+ * a space, so the path's structure survives in the resulting URL.
+ */
+function vscodeFileLink(absolutePath) {
+  return `vscode://file/${encodeURI(absolutePath.replace(/\\/g, "/"))}`;
+}
+
+/**
+ * One "Files" rail row that jumps into VS Code at `relativePath`, joined
+ * onto `draft.dir` — the absolute path `listDrafts` (drafts.ts) already
+ * resolved server-side, never re-derived here. Plain, unlinked text when
+ * `draft` or `draft.dir` is unknown (the pre-selection "no drafts" render),
+ * so that render stays exactly as it was before this row could be a link.
+ */
+function fileLinkItem(draft, relativePath, label, className) {
+  if (!draft || !draft.dir) {
+    return el("li", className, label);
+  }
+  const li = el("li", className);
+  const link = el("a", "file-link", label);
+  link.href = vscodeFileLink(`${draft.dir}\\${relativePath}`);
+  li.appendChild(link);
+  return li;
+}
+
+/**
  * The in-cell badge for a genuine id-or-name conflict between `row`'s
  * identity and the object this response actually assigned to it — spec §3:
  * two objects that normalize to the same row (object-identity.ts's
@@ -916,15 +947,18 @@ function renderPrereqRail(binding) {
 function renderFileList(draft, binding, model) {
   const list = document.getElementById("file-list");
   list.innerHTML = "";
-  const items = [
-    "task.yml",
-    "Test (oracle)",
-    "Right answer (correct/)",
-    "Wrong answer (naive/)",
-  ];
-  for (const item of items) {
-    list.appendChild(el("li", null, item));
-  }
+  list.appendChild(fileLinkItem(draft, "task.yml", "task.yml"));
+  list.appendChild(
+    draft && draft.id
+      ? fileLinkItem(
+        draft,
+        `correct\\${draft.id}.Test.al`,
+        "Test (oracle)",
+      )
+      : el("li", null, "Test (oracle)"),
+  );
+  list.appendChild(fileLinkItem(draft, "correct", "Right answer (correct/)"));
+  list.appendChild(fileLinkItem(draft, "naive", "Wrong answer (naive/)"));
 
   if (draft && draft.hasPrereq) {
     const headingText = binding
@@ -943,7 +977,9 @@ function renderFileList(draft, binding, model) {
       list.appendChild(el("li", "file-list-nested empty-state", "(empty)"));
     } else {
       for (const name of files) {
-        list.appendChild(el("li", "file-list-nested", name));
+        list.appendChild(
+          fileLinkItem(draft, `prereq\\${name}`, name, "file-list-nested"),
+        );
       }
     }
   }

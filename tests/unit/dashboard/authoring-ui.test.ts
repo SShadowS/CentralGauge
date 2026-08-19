@@ -1195,4 +1195,59 @@ describe("dashboard/ui app.js", () => {
       (globalThis as any).fetch = originalFetch;
     }
   });
+
+  // Task 10 (spec §1): "deep-links into VS Code via `vscode://file/...`
+  // (forward slashes, URL-encoded)". `draft.dir` is the absolute Windows
+  // path the server already resolved (drafts.ts's `listDrafts`) — this
+  // pins that exact shape end to end, not a POSIX stand-in, because a
+  // POSIX path would never exercise the backslash conversion this repo
+  // actually needs.
+  it("deep-links the oracle test file with backslashes converted to forward slashes", async () => {
+    const ui = await loadUi();
+    const draft = {
+      id: "CG-AL-X053",
+      dir: "U:\\Git\\CentralGauge\\scratch\\CG-AL-X053",
+      hasPrereq: false,
+      prereqFiles: [],
+    };
+    ui.renderFileList(draft);
+    const link = findNode(node("file-list"), "file-link", "Test (oracle)");
+    assertEquals(
+      link?.["href"],
+      "vscode://file/U:/Git/CentralGauge/scratch/CG-AL-X053/correct/CG-AL-X053.Test.al",
+    );
+  });
+
+  // A space in the path (e.g. a username with a space in it) must not
+  // produce a link that looks fine and silently fails to open — the whole
+  // point of "URL-encoded" in the spec sentence above.
+  it("URL-encodes a space in the draft's path rather than leaving it raw", async () => {
+    const ui = await loadUi();
+    const draft = {
+      id: "CG-AL-X053",
+      dir: "C:\\Users\\S Shadows\\scratch\\CG-AL-X053",
+      hasPrereq: false,
+      prereqFiles: [],
+    };
+    ui.renderFileList(draft);
+    const link = findNode(node("file-list"), "file-link", "task.yml");
+    assertEquals(
+      link?.["href"],
+      "vscode://file/C:/Users/S%20Shadows/scratch/CG-AL-X053/task.yml",
+    );
+  });
+
+  // Before any draft is selected, `renderFileList(undefined)` is a real
+  // call path (`renderDraftOptions`'s "No drafts found" branch) — the
+  // fixed rows must degrade to plain text, never throw on a missing
+  // `draft.dir`.
+  it("renders the fixed rail as plain text when no draft is selected", async () => {
+    const ui = await loadUi();
+    ui.renderFileList(undefined);
+    const text = allText(node("file-list"));
+    assertStringIncludes(text, "task.yml");
+    assertStringIncludes(text, "Test (oracle)");
+    const link = findNode(node("file-list"), "file-link", "task.yml");
+    assertEquals(link, undefined);
+  });
 });
