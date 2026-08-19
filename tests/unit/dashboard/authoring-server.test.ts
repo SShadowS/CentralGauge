@@ -1346,6 +1346,65 @@ describe("dashboard/server", () => {
     assertStringIncludes(body.error, "escalation is not configured");
   });
 
+  // The readiness route exists so an author learns escalation is blocked
+  // BEFORE spending a click and a container round-trip. It must answer
+  // without touching a container, which is why it is safe for the UI to
+  // poll it.
+  it("GET /api/escalation-readiness reports ready when the gate is open", async () => {
+    // Both are required: the base `deps` fixture defines neither, and the
+    // `as unknown as` cast every fixture here uses means the compiler will
+    // not tell you that.
+    const readyDeps = {
+      ...deps,
+      verifyQueue: { enqueue: () => "j1", on: () => () => {}, snapshot: () => [] },
+      checkBenchGate: () => ({ allowed: true as const }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(readyDeps)(
+      new Request("http://localhost/api/escalation-readiness"),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(await res.json(), { ready: true });
+  });
+
+  it("GET /api/escalation-readiness reports the bench's reason verbatim", async () => {
+    const blockedDeps = {
+      ...deps,
+      verifyQueue: { enqueue: () => "j1", on: () => () => {}, snapshot: () => [] },
+      checkBenchGate: () => ({
+        allowed: false as const,
+        reason: "`bench --llms sonnet` is running",
+      }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(blockedDeps)(
+      new Request("http://localhost/api/escalation-readiness"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.ready, false);
+    // Verbatim: an author needs to know WHICH bench is blocking them.
+    assertStringIncludes(body.reason, "bench --llms sonnet");
+  });
+
+  it("GET /api/escalation-readiness reports unconfigured without consulting the gate", async () => {
+    const noVerifyDeps = {
+      ...deps,
+      verifyQueue: undefined,
+      checkBenchGate: () => {
+        throw new Error("the gate is irrelevant when nothing can run");
+      },
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(noVerifyDeps)(
+      new Request("http://localhost/api/escalation-readiness"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.ready, false);
+    assertStringIncludes(body.reason, "escalation is not configured");
+  });
+
   // Same unconfigured deps as above, proving the no-container "Ask N
   // models" mode is intact — the fix must not make escalation config a
   // prerequisite for the route that never needed it.

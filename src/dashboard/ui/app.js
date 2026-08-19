@@ -655,6 +655,35 @@ async function submitVerify(responses) {
   }
 }
 
+/**
+ * Asks the server whether "Compile & test" can run right now, and reflects
+ * the answer in `state.verify.blockedReason` so both actions render
+ * disabled with the reason BEFORE an author clicks.
+ *
+ * Until this existed, `blockedReason` was set only by a refused POST, so
+ * the buttons looked live until you spent a click finding out otherwise.
+ * The docs claimed they greyed out "the moment a bench is detected", which
+ * was not true of anything that shipped.
+ *
+ * Never clobbers a reason set by an actual refusal with a stale `ready`:
+ * the poll is a hint about the future, a refusal is a fact about the past.
+ * A poll that fails is ignored entirely rather than inventing a block.
+ */
+async function refreshEscalationReadiness() {
+  try {
+    const res = await fetch("/api/escalation-readiness");
+    if (!res.ok) return;
+    const body = await res.json();
+    const next = body.ready ? null : (body.reason ?? "escalation unavailable");
+    if (next === state.verify.blockedReason) return;
+    state.verify.blockedReason = next;
+    refreshVerifyDisplay();
+  } catch {
+    // Server gone or offline: leave whatever the UI already shows. A
+    // fetch failure says nothing about whether escalation is allowed.
+  }
+}
+
 function verifyOne(response) {
   return submitVerify([{
     model: response.model,
@@ -1256,11 +1285,20 @@ function renderStandingNote() {
     "Never published to the scoreboard.";
 }
 
+/** How often to re-ask whether escalation can run. The check is a file
+ *  stat and a dep lookup on the server, never a container round-trip, so
+ *  this is cheap; it is slow enough that an author starting a bench sees
+ *  the buttons disable within a few seconds rather than instantly. */
+const READINESS_POLL_MS = 5000;
+
 function init() {
   renderStandingNote();
   wireEvents();
   loadDrafts();
   loadDefaultModels();
+  // Before the first click, not after it.
+  refreshEscalationReadiness();
+  setInterval(refreshEscalationReadiness, READINESS_POLL_MS);
 }
 
 if (document.readyState === "loading") {

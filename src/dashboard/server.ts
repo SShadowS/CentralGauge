@@ -476,6 +476,37 @@ export function createHandler(
       return jsonResponse(200, { defaultModels: deps.defaultModels });
     }
 
+    // Whether "Compile & test" can run right now, answerable WITHOUT
+    // touching a container so the UI can poll it.
+    //
+    // Deliberately narrower than a full preflight. It reports the two
+    // states that are free to check and that change under an author's feet:
+    // escalation not configured on this server, and a benchmark holding the
+    // lock. It does NOT probe container reachability or harness presence,
+    // because each costs a container round-trip and polling one every few
+    // seconds from a dashboard would be both wasteful and, on a container
+    // a bench is using, actively unhelpful. Those two are checked by the
+    // real preflight at click time and reported as infrastructure outcomes
+    // with the container's own transcript.
+    //
+    // So a `ready: true` here means "nothing known is blocking you", never
+    // "this will succeed".
+    if (req.method === "GET" && url.pathname === "/api/escalation-readiness") {
+      if (!deps.verifyQueue) {
+        return jsonResponse(200, {
+          ready: false,
+          reason: ESCALATION_NOT_CONFIGURED,
+        });
+      }
+      const decision = deps.checkBenchGate();
+      return jsonResponse(
+        200,
+        decision.allowed
+          ? { ready: true }
+          : { ready: false, reason: decision.reason },
+      );
+    }
+
     if (req.method === "POST" && url.pathname === "/api/run") {
       let body: unknown;
       try {
