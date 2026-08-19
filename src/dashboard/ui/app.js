@@ -33,6 +33,19 @@ const state = {
    *  RESPONSE's whole code, not whichever single object's source happens to
    *  be on screen, so it is keyed off this rather than off the row. */
   detailResponse: null,
+  /** Escalation (spec §6/§9): per-model latest `VerifyOutcome` pushed over
+   *  `/api/verify-events`, keyed by `response.model` — every event names its
+   *  own column directly, so there is no job-id-to-model lookup to keep in
+   *  sync. `blockedReason` is set when the most recent `POST /api/verify`
+   *  was refused before any job was created (a live bench, or escalation
+   *  not configured); both "Compile & test" actions render disabled with
+   *  this text until a later attempt succeeds. `source` is the live
+   *  `EventSource`, opened lazily — see `ensureVerifyEvents`. */
+  verify: {
+    outcomes: {},
+    blockedReason: null,
+    source: null,
+  },
 };
 
 /**
@@ -117,6 +130,7 @@ const MAX_LISTED_SITES = 3;
 function renderTrapSummary(run) {
   const container = document.getElementById("trap-summary");
   container.innerHTML = "";
+  container.appendChild(buildVerifyAllAction(run));
   const signature = run.signature;
 
   if (!signature) return;
@@ -304,6 +318,230 @@ function hideDetail() {
   document.getElementById("detail-panel").hidden = true;
 }
 
+/**
+ * Escalation vocabulary (spec §6), plus the wording chosen here for the
+ * three states the spec's table did not anticipate — Task 1's
+ * `VerifyOutcome` widened past what section 6 enumerated. Centralising the
+ * mapping is what makes `passed_second_try` swapping labels with
+ * `passed_first_try` a one-line, one-test mutation instead of a silent
+ * divergence between whichever render sites happened to spell it out
+ * inline.
+ *
+ * `running`'s `phase` is deliberately never read here: it is frozen at
+ * `"staging"` for the whole verify call (Task 4/5's `handleAlVerify` does
+ * not report progress mid-call), so displaying it would assert compilation
+ * or testing is under way before either has actually started — a specific,
+ * wrong claim. The queue only knows the job started; that is all this says.
+ */
+function verifyOutcomeLabel(outcome) {
+  switch (outcome.state) {
+    case "queued":
+      return { text: "Queued to compile & test", cls: "verify-queued" };
+    case "running":
+      return { text: "In progress…", cls: "verify-running" };
+    case "passed_first_try":
+      return { text: "Passed first try", cls: "verify-pass" };
+    case "passed_second_try":
+      return { text: "Passed on 2nd try", cls: "verify-pass" };
+    case "failed_both":
+      return {
+        text: `Failed both tries (${outcome.passed} of ${outcome.total} tests)`,
+        cls: "verify-fail",
+      };
+    case "didnt_compile":
+      return { text: "Didn't compile", cls: "verify-fail" };
+    // Not in spec §6. `publish_defect` is a candidate that published or
+    // installed badly and ran ZERO tests — its pass/fail numbers are a
+    // scoring convention, not a measurement. Reusing "Failed both tries"
+    // would report a test result that never happened, so this names the
+    // real cause instead, verbatim from the outcome's own `message`.
+    case "publish_defect":
+      return {
+        text: `Didn't publish: ${outcome.message}`,
+        cls: "verify-infra",
+      };
+    // The gate's reason, verbatim — no added wording, so what renders here
+    // is exactly what `checkBenchGate`/the queue's own gate decided.
+    case "refused":
+      return { text: outcome.reason, cls: "verify-refused" };
+    // Not in spec §6. A genuine infrastructure failure — a thrown verify
+    // call, a dead container — with a real message. Must never render like
+    // a test result: no counts, worded as an error rather than a pass/fail
+    // label.
+    case "errored":
+      return {
+        text: `Verification error: ${outcome.message}`,
+        cls: "verify-error",
+      };
+    default:
+      return { text: String(outcome.state), cls: "verify-unknown" };
+  }
+}
+
+function isVerifyInFlight(outcome) {
+  return Boolean(outcome) &&
+    (outcome.state === "queued" || outcome.state === "running");
+}
+
+/**
+ * The per-response "Compile & test" control (spec §6), plus whatever this
+ * response's latest escalation outcome is. Built fresh on every
+ * `buildColumnHeader` call, same as every other piece of the column, so a
+ * live `/api/verify-events` push just needs to re-render — no separate
+ * patch path to keep in sync with the initial render.
+ */
+function buildVerifyAction(response) {
+  const wrapper = el("div", "verify-action");
+  const outcome = state.verify.outcomes[response.model];
+  const inFlight = isVerifyInFlight(outcome);
+  const blocked = state.verify.blockedReason;
+
+  const button = el("button", "verify-button", "Compile & test");
+  button.type = "button";
+  button.disabled = Boolean(blocked) || inFlight;
+  button.title = blocked
+    ? blocked
+    : inFlight
+    ? "Already compiling & testing"
+    : "Publish this response to the container and run its tests";
+  button.addEventListener("click", () => verifyOne(response));
+  wrapper.appendChild(button);
+
+  if (blocked) {
+    wrapper.appendChild(el("p", "verify-blocked diagnostic-error", blocked));
+  }
+
+  if (outcome) {
+    const mapped = verifyOutcomeLabel(outcome);
+    wrapper.appendChild(
+      el("div", `verify-status ${mapped.cls}`, mapped.text),
+    );
+  }
+
+  return wrapper;
+}
+
+/**
+ * "Compile & test all" (spec §6), scoped to every ready response in the
+ * CURRENT run. `index.html` carries no markup for it — same reasoning as
+ * `ensurePromoteAction`'s doc comment — but unlike that action this one is
+ * rebuilt fresh on every call rather than kept as a singleton:
+ * `renderTrapSummary` already runs on every new run and every escalation
+ * update, and this button needs no state that outlives those calls beyond
+ * what `state.verify` already holds.
+ */
+function buildVerifyAllAction(run) {
+  const wrapper = el("div", "verify-all-action");
+  const ready = (run.responses || []).filter((r) =>
+    r.resolution && r.resolution.isReadyForCompile
+  );
+  const blocked = state.verify.blockedReason;
+
+  const button = el("button", "verify-all-button", "Compile & test all");
+  button.type = "button";
+  button.disabled = Boolean(blocked) || ready.length === 0;
+  button.title = blocked
+    ? blocked
+    : ready.length === 0
+    ? "No response produced usable AL to compile"
+    : `Compile & test ${ready.length} response${ready.length === 1 ? "" : "s"}`;
+  button.addEventListener("click", () => verifyAll());
+  wrapper.appendChild(button);
+
+  if (blocked) {
+    wrapper.appendChild(el("p", "verify-blocked diagnostic-error", blocked));
+  }
+
+  return wrapper;
+}
+
+/**
+ * Escalation's live stream (Task 7). Opened lazily on the first verify
+ * request rather than at page load, so a session that never touches
+ * "Compile & test" never holds a connection open. Idempotent — a later call
+ * once `state.verify.source` is set is a no-op.
+ */
+function ensureVerifyEvents() {
+  if (state.verify.source) return;
+  if (typeof EventSource === "undefined") return;
+  const source = new EventSource("/api/verify-events");
+  source.onmessage = (event) => {
+    const payload = JSON.parse(event.data);
+    // Keyed off `payload.job.model` — every event names its own column
+    // directly (Task 7), so there is no job-id-to-model lookup to maintain.
+    state.verify.outcomes[payload.job.model] = payload.outcome;
+    refreshVerifyDisplay();
+  };
+  state.verify.source = source;
+}
+
+/**
+ * Re-renders whatever is currently on screen that reads `state.verify` —
+ * the matrix's column headers and the "Compile & test all" action — after
+ * either a live SSE push or a `POST /api/verify` response changes it. Full
+ * rebuild, the same idiom `renderMatrix`/`renderTrapSummary` already use
+ * everywhere else in this file; the matrix is small enough that this costs
+ * nothing worth optimising around.
+ */
+function refreshVerifyDisplay() {
+  if (!state.run) return;
+  renderTrapSummary(state.run);
+  renderMatrix(state.run);
+}
+
+/**
+ * POSTs one or more responses to `/api/verify`. A non-2xx response sets
+ * `state.verify.blockedReason` so both "Compile & test" actions render
+ * disabled with the reason visible instead of silently doing nothing — 409
+ * (a bench is live) and 501 (escalation not configured) are the two the
+ * gate can refuse with, but any other failure is treated the same way. A
+ * 200 clears it: the gate was open a moment ago, so stale blocked text must
+ * not linger over a run that just started fine.
+ */
+async function submitVerify(responses) {
+  const draftDir = state.runDraftDir;
+  if (!draftDir || responses.length === 0) return;
+
+  try {
+    const res = await fetch("/api/verify", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draftDir, responses }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      state.verify.blockedReason = body.error ||
+        `POST /api/verify failed with status ${res.status}`;
+      refreshVerifyDisplay();
+      return;
+    }
+    state.verify.blockedReason = null;
+    for (const { model } of body.jobs) {
+      state.verify.outcomes[model] = { state: "queued" };
+    }
+    ensureVerifyEvents();
+    refreshVerifyDisplay();
+  } catch (error) {
+    state.verify.blockedReason = error.message;
+    refreshVerifyDisplay();
+  }
+}
+
+function verifyOne(response) {
+  return submitVerify([{
+    model: response.model,
+    code: response.resolution.cleanedCode,
+  }]);
+}
+
+function verifyAll() {
+  if (!state.run) return;
+  const responses = state.run.responses
+    .filter((r) => r.resolution.isReadyForCompile)
+    .map((r) => ({ model: r.model, code: r.resolution.cleanedCode }));
+  return submitVerify(responses);
+}
+
 /** The column header for one model: name, then verdict or no-code state.
  *
  * The name is a button: it opens the exact prompt this model was sent,
@@ -367,6 +605,8 @@ function buildColumnHeader(response) {
   if (site) {
     frag.appendChild(el("div", "deciding-site", describeSite(site)));
   }
+
+  frag.appendChild(buildVerifyAction(response));
 
   return frag;
 }
@@ -815,6 +1055,11 @@ async function runQuick() {
     // comment for why "Use as wrong answer" depends on this being the
     // request's own `draftDir`, not whatever the selector shows later.
     state.runDraftDir = draft.dir;
+    // A new run means new response objects. Any escalation outcome kept
+    // from a PRIOR run, keyed by model, would otherwise go on describing
+    // code this run's column no longer holds if the same model is asked
+    // again.
+    state.verify.outcomes = {};
     // Defaults the rail to the first response (spec §5's "selected
     // response" before any selection has been made). Now labelled — via
     // renderScopedFileList/renderFileList — so this default is honest

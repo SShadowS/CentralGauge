@@ -114,6 +114,16 @@ const stubDocument = {
 const detailTitle = node("detail-title");
 const detailSource = node("detail-source");
 
+/** One model's latest escalation outcome (Task 1's `VerifyOutcome`), as read
+ *  back by `buildColumnHeader`/`buildVerifyAllAction`. Loosely typed here —
+ *  the shape varies by `state` — since the fixtures below build one
+ *  discriminant at a time. */
+interface VerifyState {
+  outcomes: Record<string, unknown>;
+  blockedReason: string | null;
+  source: unknown;
+}
+
 /** The module's mutable client state — `drafts`/`selectedDir`/`run` seeded
  *  directly by a test so `selectModelForRail` (fired by a cell click) has
  *  something to resolve against, without going through the real
@@ -121,8 +131,10 @@ const detailSource = node("detail-source");
 interface DashboardState {
   drafts: unknown[];
   selectedDir: string | null;
-  run: { responses: unknown[] } | null;
+  run: { responses: unknown[]; rows?: unknown[] } | null;
   selectedModel: string | null;
+  runDraftDir: string | null;
+  verify: VerifyState;
 }
 
 interface Ui {
@@ -594,5 +606,347 @@ describe("dashboard/ui app.js", () => {
     const text = allText(node("file-list"));
     assertStringIncludes(text, "openai/gpt");
     assertEquals(text.includes("Discount"), false);
+  });
+
+  // Task 8: escalation's terminal-state vocabulary (spec §6), plus the
+  // wording chosen for `publish_defect`, which the spec's table did not
+  // anticipate. Each state gets its OWN named `it()` — not one test with a
+  // loop of assertions inside it — precisely so a mutation that mismaps one
+  // state's label fails exactly one named test, per Step 5 of the brief.
+  const terminalLabelCases: Array<
+    { caseName: string; outcome: unknown; label: string }
+  > = [
+    {
+      caseName: "passed_first_try",
+      outcome: { state: "passed_first_try", passed: 3, total: 3 },
+      label: "Passed first try",
+    },
+    {
+      caseName: "passed_second_try",
+      outcome: {
+        state: "passed_second_try",
+        passed: 3,
+        total: 3,
+        fixPrompt: "fix the compile error",
+      },
+      label: "Passed on 2nd try",
+    },
+    {
+      caseName: "failed_both",
+      outcome: {
+        state: "failed_both",
+        passed: 1,
+        total: 3,
+        failures: ["TestFoo"],
+      },
+      label: "Failed both tries",
+    },
+    {
+      caseName: "didnt_compile",
+      outcome: { state: "didnt_compile", compileErrors: ["AL0118"] },
+      label: "Didn't compile",
+    },
+    {
+      caseName: "publish_defect",
+      outcome: {
+        state: "publish_defect",
+        message: "install failed: duplicate object id",
+      },
+      label: "Didn't publish",
+    },
+  ];
+
+  for (const { caseName, outcome, label } of terminalLabelCases) {
+    it(`renders "${label}" for ${caseName} in the right column`, async () => {
+      const ui = await loadUi();
+      ui.state.verify.outcomes["anthropic/opus"] = outcome;
+      const header = ui.buildColumnHeader({
+        model: "anthropic/opus",
+        resolution: readyResolution,
+        objects: [],
+        classification: { verdict: "different-approach" },
+      });
+      assertStringIncludes(allText(header), label);
+    });
+  }
+
+  it('renders failed_both\'s counts as "n of m tests"', async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes["anthropic/opus"] = {
+      state: "failed_both",
+      passed: 1,
+      total: 3,
+      failures: ["TestFoo"],
+    };
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    assertStringIncludes(allText(header), "1 of 3 tests");
+  });
+
+  // `publish_defect` ran ZERO tests — its pass/fail numbers are a scoring
+  // convention, not a measurement. Reusing "Failed both tries" would report
+  // a test result that never happened.
+  it("does not render publish_defect as Failed both tries", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes["anthropic/opus"] = {
+      state: "publish_defect",
+      message: "install failed: duplicate object id",
+    };
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    const text = allText(header);
+    assertStringIncludes(text, "Didn't publish");
+    assertEquals(text.includes("Failed both tries"), false);
+  });
+
+  // A genuine infrastructure failure — thrown verify call, dead container —
+  // must never look like a test result: no counts, no pass/fail wording.
+  it("renders errored as an error, not a test result", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes["anthropic/opus"] = {
+      state: "errored",
+      message: "container offline",
+    };
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    const text = allText(header);
+    assertStringIncludes(text, "Verification error: container offline");
+    assertEquals(text.includes("Failed both tries"), false);
+    assertEquals(text.includes("Passed"), false);
+    assertEquals(/\d+ of \d+ tests/.test(text), false);
+  });
+
+  // A `refused` outcome shows the gate's reason VERBATIM — nothing rewords
+  // it, so what renders is exactly what `checkBenchGate`/the queue decided.
+  it("shows a refused outcome's gate reason verbatim", async () => {
+    const ui = await loadUi();
+    const reason =
+      "A bench is running, started 2026-08-19T10:00:00Z. Compile and " +
+      "test publishes to the same container and would corrupt that run.";
+    ui.state.verify.outcomes["anthropic/opus"] = {
+      state: "refused",
+      reason,
+    };
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    assertStringIncludes(allText(header), reason);
+  });
+
+  // The phase is frozen at "staging" for the whole verify call, so showing
+  // it would claim compilation or testing is under way before either has
+  // started. Covers every phase value the type allows.
+  it("never surfaces the running phase word", async () => {
+    for (const phase of ["staging", "compiling", "testing", "fixing"]) {
+      const ui = await loadUi();
+      ui.state.verify.outcomes["anthropic/opus"] = { state: "running", phase };
+      const header = ui.buildColumnHeader({
+        model: "anthropic/opus",
+        resolution: readyResolution,
+        objects: [],
+        classification: { verdict: "different-approach" },
+      });
+      const text = allText(header);
+      assertStringIncludes(text, "In progress");
+      assertEquals(
+        text.toLowerCase().includes(phase),
+        false,
+        `header leaked the phase word "${phase}": ${text}`,
+      );
+    }
+  });
+
+  // The hole the Plan 3 final review found in the prereq rail: a test that
+  // only checks a label appears SOMEWHERE cannot tell a correct verdict
+  // from one attached to the wrong column. Two responses, two different
+  // outcomes, asserted on each response's OWN header subtree.
+  it("keeps each column's verify status scoped to its own model", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes["model-a"] = {
+      state: "failed_both",
+      passed: 1,
+      total: 4,
+      failures: [],
+    };
+    ui.state.verify.outcomes["model-b"] = {
+      state: "passed_first_try",
+      passed: 2,
+      total: 2,
+    };
+
+    const headerA = ui.buildColumnHeader({
+      model: "model-a",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    const headerB = ui.buildColumnHeader({
+      model: "model-b",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+
+    const textA = allText(headerA);
+    assertStringIncludes(textA, "Failed both tries");
+    assertStringIncludes(textA, "1 of 4 tests");
+    assertEquals(textA.includes("Passed first try"), false);
+
+    const textB = allText(headerB);
+    assertStringIncludes(textB, "Passed first try");
+    assertEquals(textB.includes("Failed both tries"), false);
+  });
+
+  // `loadUi()` re-imports app.js through a `data:` URL built from the SAME
+  // source text every call, so Deno's module cache resolves every call to
+  // one shared module instance — `state` is a de facto singleton across the
+  // whole test run, not a fresh one per test. Every test below that reads
+  // `state.verify` therefore resets it first, the same discipline the rest
+  // of this file already applies to `state.run`/`selectedDir` — a value no
+  // test sets explicitly must never be assumed clean.
+  it("offers Compile & test for a response ready to compile", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    const button = findNode(header, "verify-button", "Compile & test");
+    assertEquals(button?.["disabled"], false);
+  });
+
+  it("disables Compile & test while a job for this response is already in flight", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+    ui.state.verify.outcomes["anthropic/opus"] = {
+      state: "running",
+      phase: "compiling",
+    };
+    const header = ui.buildColumnHeader({
+      model: "anthropic/opus",
+      resolution: readyResolution,
+      objects: [],
+      classification: { verdict: "different-approach" },
+    });
+    const button = findNode(header, "verify-button", "Compile & test");
+    assertEquals(button?.["disabled"], true);
+  });
+
+  it("offers Compile & test all when at least one response is ready", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+    ui.renderTrapSummary({
+      signature: null,
+      rows: [],
+      responses: [{ model: "anthropic/opus", resolution: readyResolution }],
+    });
+    const button = findNode(
+      node("trap-summary"),
+      "verify-all-button",
+      "Compile & test all",
+    );
+    assertEquals(button?.["disabled"], false);
+  });
+
+  it("disables Compile & test all when nothing is ready to compile", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+    ui.renderTrapSummary({
+      signature: null,
+      rows: [],
+      responses: [{ model: "anthropic/opus", resolution: notReadyResolution }],
+    });
+    const button = findNode(
+      node("trap-summary"),
+      "verify-all-button",
+      "Compile & test all",
+    );
+    assertEquals(button?.["disabled"], true);
+  });
+
+  // Step 3's "disable both while the gate refuses, showing the reason":
+  // a POST /api/verify refusal (409/501, both surfaced identically through
+  // `body.error`) must disable BOTH actions and show the reason on both,
+  // not just record it invisibly in state.
+  it("disables both compile-and-test actions once the gate refuses, showing the reason", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+    const reason =
+      "A bench is running, started 2026-08-19T10:00:00Z. Compile and " +
+      "test publishes to the same container and would corrupt that run. " +
+      "Ask N models still works.";
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    // deno-lint-ignore no-explicit-any
+    (globalThis as any).fetch = () => {
+      calls++;
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        json: () => Promise.resolve({ error: reason }),
+      });
+    };
+
+    try {
+      const response = {
+        model: "anthropic/opus",
+        resolution: readyResolution,
+        objects: [],
+        classification: { verdict: "different-approach" },
+      };
+      ui.state.run = { responses: [response], rows: [] };
+      ui.state.runDraftDir = "d1";
+
+      const before = ui.buildColumnHeader(response);
+      const buttonBefore = findNode(before, "verify-button", "Compile & test");
+      assertEquals(buttonBefore?.["disabled"], false);
+
+      await (buttonBefore!.listeners["click"]![0]! as () => Promise<void>)();
+      assertEquals(calls, 1);
+      assertEquals(ui.state.verify.blockedReason, reason);
+
+      const after = ui.buildColumnHeader(response);
+      const buttonAfter = findNode(after, "verify-button", "Compile & test");
+      assertEquals(buttonAfter?.["disabled"], true);
+      assertStringIncludes(allText(after), reason);
+
+      ui.renderTrapSummary({
+        signature: null,
+        rows: [],
+        responses: [response],
+      });
+      const allButton = findNode(
+        node("trap-summary"),
+        "verify-all-button",
+        "Compile & test all",
+      );
+      assertEquals(allButton?.["disabled"], true);
+      assertStringIncludes(allText(node("trap-summary")), reason);
+    } finally {
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = originalFetch;
+    }
   });
 });
