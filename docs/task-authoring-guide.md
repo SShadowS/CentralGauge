@@ -179,6 +179,68 @@ would land on the reserved `<taskId>.` prefix (see "The `<id>.` filename
 prefix inside `correct/` is reserved" below; the same prefix rule applies
 to `naive/`).
 
+### 4c. Compile and test a response (optional)
+
+4b tells you whether a response fell for the trap, cheaply, because it never
+touches a container. It does not tell you whether the response actually
+compiles or passes the oracle. For that, click **Compile & test** next to a
+response, or **Compile & test all** to run every response in the run that
+produced usable AL.
+
+This is a different order of cost. It publishes the response to a real
+Business Central container and runs the oracle's tests, escalating to the
+bench's own fix attempt (the same `buildFixPrompt` the bench uses) when the
+first attempt fails to compile or fails a test. Expect minutes, not seconds,
+and expect a second model call when a fix attempt runs.
+
+It is also serial and single-container: candidates share publish state on one
+container, so only one compile-and-test job runs at a time. Clicking a second
+response while one is running queues it rather than racing it. And it is
+refused entirely while a bench is live, because publishing to the same
+container as a running bench would corrupt that bench's BC NST PSSession.
+Both buttons grey out with the reason the moment a bench is detected. "Ask N
+models" keeps working the whole time.
+
+Each response's column then shows one of:
+
+| Label | Meaning |
+|---|---|
+| **Passed first try** | The oracle's tests passed, first attempt. |
+| **Passed on 2nd try** | The first attempt failed; the bench's own fix attempt then passed. |
+| **Failed both tries (n of m tests)** | Both attempts failed the oracle. |
+| **Didn't compile** | The first attempt's code did not compile. |
+
+Read these exactly as narrowly as 4b's labels. **Passed first try** means the
+oracle's tests passed on this container, at this moment. It does not mean the
+response is good, and it says nothing about anything the oracle does not
+check.
+
+Two more labels can appear, and both describe the container rather than the
+model:
+
+- **Didn't publish: \<reason\>**: the candidate published or installed badly
+  and ran zero tests. Its pass/fail counts would be a scoring convention, not
+  a measurement, so none are shown.
+- **Verification error: \<reason\>**: a genuine infrastructure failure, a
+  dead container or a thrown call.
+
+Neither means the model failed. Treat both as "this response has not actually
+been checked yet," and re-run once the container is healthy.
+
+**The mismatch badge.** When a response writes the right kind of object but
+under the wrong id, or under a name that is not just a different spelling, the
+cell shows "Asked for: ..." against "Wrote: ...". Two spellings that differ
+only by case or whitespace do not trigger it: AL identifiers are
+case-insensitive, so that difference is not a defect.
+
+**Deep links.** Every entry in the Files rail opens in VS Code: `task.yml`,
+the oracle test, and every file under `prereq/` link to that exact file;
+`correct/` and `naive/` link to the directories themselves. Whether VS Code's
+URI handler opens a bare directory link as a folder has not been verified
+against a live install. If clicking "Right answer (correct/)" or
+"Wrong answer (naive/)" does nothing, that is a known gap, not a sign the
+link is broken.
+
 Full reference: [workbench command](./cli/commands.md#workbench).
 
 ### 5. Promote
@@ -443,6 +505,11 @@ Worth knowing before they surprise you.
 - **Opening the repo root in VS Code is untested.** The AL extension may
   discover both the root `tests/al` project and the per-difficulty ones and
   report duplicate diagnostics. Generated workspaces never open that folder.
+- **The `correct/` and `naive/` deep links point at directories, not files.**
+  Every other row in the Files rail links to one file, but those two link to
+  the directories themselves, and whether VS Code's URI handler opens a bare
+  directory as a folder has not been verified against a live install. If
+  clicking either does nothing, that is why.
 
 ## Where things live
 
