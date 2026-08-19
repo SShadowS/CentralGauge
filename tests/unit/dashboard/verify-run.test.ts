@@ -492,6 +492,111 @@ Deno.test("verify-run fix attempt", async (t) => {
   );
 
   await t.step(
+    "a fix attempt that fails to compile does not erase attempt 1's counts",
+    async () => {
+      // Attempt 1 MEASURED something (1 of 3, with failing test names); the
+      // rewrite measured nothing. Returning `second` would both discard the
+      // run's only measurement and label the response "Didn't compile",
+      // which the docs define as "The first attempt's code did not
+      // compile" — false here. Counts verifies too, so "the fix ran and
+      // failed to compile" is distinguishable from "the fix never ran".
+      const draftDir = await draftWithOracle("CG-AL-X030");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X030",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({ content: "not al", finishReason: "stop" }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1", "T2"],
+                }
+                : {
+                  success: false,
+                  message: "compilation failed",
+                  compileErrors: ["AL0118: syntax error"],
+                },
+            );
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1", "T2"],
+        });
+        assertEquals(n, 2, "the fix attempt actually ran");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "the mirror case still reports the fix attempt's measured result",
+    async () => {
+      // Attempt 1 `didnt_compile` -> attempt 2 `failed_both`. Here the fix
+      // attempt is the one that measured something, so it is returned. Pins
+      // that the fallback above is one-directional and did not become a
+      // blanket "attempt 1 always wins".
+      const draftDir = await draftWithOracle("CG-AL-X031");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X031",
+          code: "not al",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "compilation failed",
+                  compileErrors: ["AL0118: syntax error"],
+                }
+                : {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1"],
+                },
+            );
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1"],
+        });
+        assertEquals(n, 2, "the fix attempt actually ran");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
     "a bench that starts before the fix attempt stops its publish",
     async () => {
       // The gate is checked once at dispatch, and the job then publishes

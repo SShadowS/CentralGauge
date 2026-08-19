@@ -32,14 +32,16 @@
  * cleaned up as soon as its own attempt finishes.
  *
  * The SECOND attempt's own outcome is not always what gets returned. A
- * passing second attempt becomes `passed_second_try`. A `didnt_compile` or
- * `failed_both` second attempt IS returned as-is — a genuine model outcome
- * from the fix, same honesty rule as attempt 1. But `publish_defect` or
- * `errored` on the SECOND attempt carries no model signal at all (the
+ * passing second attempt becomes `passed_second_try`. But `publish_defect`
+ * or `errored` on the SECOND attempt carries no model signal at all (the
  * container that ran the fix died, or it published/installed badly), so
  * returning it would silently discard attempt 1's real, already-measured
  * result — the same loss the throwing-call catch below already refuses to
- * accept. Those two states fall back to `first` instead of replacing it.
+ * accept. Those two states fall back to `first` instead of replacing it,
+ * and so does a `didnt_compile` fix attempt after a `failed_both` attempt
+ * 1: a measured test result outranks an unmeasured compile failure on the
+ * rewrite. Every other second-attempt outcome IS returned as-is — a
+ * genuine model outcome from the fix, same honesty rule as attempt 1.
  *
  * @module dashboard/verify-run
  */
@@ -389,6 +391,24 @@ export async function verifyResponse(
     return first;
   }
   if (second.state === "errored") {
+    return first;
+  }
+
+  // A `didnt_compile` fix attempt after a `failed_both` attempt 1 is the
+  // third case of the same loss, arriving with a model outcome rather than
+  // an infrastructure one. Attempt 1 MEASURED something: real counts, real
+  // failing test names. The rewrite then failed to compile, which measured
+  // nothing at all. Returning `second` would discard the run's only actual
+  // measurement and label the whole response "Didn't compile" — and both
+  // `docs/task-authoring-guide.md` and `docs/cli/commands.md` define that
+  // label as "The first attempt's code did not compile", which in this
+  // sequence is false. So the measured result outranks the unmeasured one,
+  // consistent with the two fallbacks above.
+  //
+  // Only this direction. Attempt 1 `didnt_compile` -> attempt 2
+  // `failed_both` still returns `second`: there the fix attempt is the one
+  // that measured something, and reporting it is the honest read.
+  if (first.state === "failed_both" && second.state === "didnt_compile") {
     return first;
   }
 
