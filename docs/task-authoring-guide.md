@@ -198,8 +198,10 @@ container, so only one compile-and-test job runs at a time. Clicking a second
 response while one is running queues it rather than racing it. And it is
 refused entirely while a bench is live, because publishing to the same
 container as a running bench would corrupt that bench's BC NST PSSession.
-Both buttons grey out with the reason the moment a bench is detected. "Ask N
-models" keeps working the whole time.
+The page does not watch for that in the background, so the buttons stay
+looking live until you click: the first click after a bench starts is
+refused, and both buttons then grey out with the reason until a later
+attempt succeeds. "Ask N models" keeps working the whole time.
 
 Editing `prereq/` between two clicks is safe: the compiled and published
 prereq caches are cleared before every job, so each run compiles and

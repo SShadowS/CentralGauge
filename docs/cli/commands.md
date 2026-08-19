@@ -653,10 +653,14 @@ unless a caller of `/api/verify` supplies `containerName`, though the
 dashboard's own page has no control for that yet.
 
 **Refused entirely while a bench is live.** Publishing to the same container
-as a running bench would corrupt that bench's BC NST PSSession, so both
-"Compile & test" actions grey out with the reason the moment a bench marker is
-found, and `POST /api/verify` itself refuses with `409` carrying that reason.
-"Ask N models" is unaffected: it never touches a container.
+as a running bench would corrupt that bench's BC NST PSSession, so
+`POST /api/verify` refuses with `409` carrying the reason, the queue re-checks
+per job, and a job that has already started re-checks again before its fix
+attempt publishes. The page does not poll for that state: the first click
+after a bench starts is the one that is refused, and only then do both
+"Compile & test" actions grey out, showing the reason until a later attempt
+succeeds. Until that click they look live. "Ask N models" is unaffected: it
+never touches a container.
 
 The verdict an author sees, per response:
 
