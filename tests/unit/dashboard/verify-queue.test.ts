@@ -1,4 +1,5 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import { ContainerError } from "../../../src/errors.ts";
 import { VerifyQueue } from "../../../src/dashboard/verify-queue.ts";
 import type { VerifyOutcome } from "../../../src/dashboard/verify-types.ts";
 
@@ -114,6 +115,46 @@ Deno.test("verify-queue", async (t) => {
     await q.drain();
     assertEquals(ran, 2, "job b still ran");
   });
+
+  await t.step(
+    "a thrown ContainerError keeps its transcript",
+    async () => {
+      // The escalation adapter's container preflight runs BEFORE
+      // `verifyResponse`, so a failed harness publish reaches this catch as
+      // a raw `ContainerError` and never passes through the mapping that
+      // preserves transcripts elsewhere. Taking only `.message` here would
+      // make it exactly as unreadable as the publish failure that prompted
+      // all of this.
+      const q = new VerifyQueue({
+        gate: () => ({ allowed: true }),
+        verify: () =>
+          Promise.reject(
+            new ContainerError(
+              "ensureTestHarness failed",
+              "Cronus28",
+              "publish",
+              { rawOutput: "HARNESS_PUBLISH_FAILED:Unauthorized" },
+            ),
+          ),
+      });
+      q.enqueue({
+        draftDir: "d",
+        taskId: "CG-AL-X002",
+        model: "a",
+        code: "x",
+      });
+      await q.drain();
+      const view = q.snapshot()[0];
+      assertEquals(view?.outcome.state, "errored");
+      if (view?.outcome.state !== "errored") throw new Error("unreachable");
+      assertEquals(view.outcome.message, "ensureTestHarness failed");
+      assertStringIncludes(
+        view.outcome.detail ?? "",
+        "HARNESS_PUBLISH_FAILED",
+        "the transcript must reach the author, not be discarded",
+      );
+    },
+  );
 
   await t.step("shutdown is permanent: later jobs refuse too", async () => {
     let ran = 0;

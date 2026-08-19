@@ -105,4 +105,95 @@ describe("cli/workbench-command", () => {
       await Deno.remove(scratchDir, { recursive: true });
     }
   });
+
+  // CONTRACT TEST. Every other test of this pipeline injects a fake
+  // verifier, which is why the suite stayed green while escalation could
+  // not publish at all: nothing asserted that the pipeline is WIRED to the
+  // container preflight the bench runs. The real-container smoke test
+  // (`tests/integration/dashboard/escalation-smoke.test.ts`) proves the
+  // wiring end to end but is opt-in and needs hardware. This asserts the
+  // same wiring with a fake, so a refactor that drops the preflight fails
+  // in the default suite instead of in production.
+  it("prepares the container before verifying, once per container", async () => {
+    const scratchDir = await Deno.makeTempDir({ prefix: "cg-wb-" });
+    try {
+      const prepared: Array<
+        { container: string; username: string | undefined }
+      > = [];
+      const verify = createEscalationVerify({
+        clearCaches: () => {},
+        credentials: { username: "sshadows", password: "1234" },
+        defaultContainerName: "Cronus28",
+        prepareContainer: (containerName, creds) => {
+          prepared.push({
+            container: containerName,
+            username: creds?.username,
+          });
+          return Promise.resolve();
+        },
+      });
+
+      const job = {
+        draftDir: join(scratchDir, "CG-AL-X071"),
+        taskId: "CG-AL-X071",
+        model: "fake/model",
+        code: "table 70001 A { }",
+      };
+
+      await verify(job).catch(() => {});
+      assertEquals(
+        prepared.length,
+        1,
+        "the preflight must run before verifying",
+      );
+      assertEquals(prepared[0]?.container, "Cronus28");
+      assertEquals(
+        prepared[0]?.username,
+        "sshadows",
+        "credentials must reach the preflight; without them the provider " +
+          "falls back to admin/admin and every publish is unauthorized",
+      );
+
+      await verify(job).catch(() => {});
+      assertEquals(
+        prepared.length,
+        1,
+        "memoised per container: an author should not wait for a harness " +
+          "probe on every click",
+      );
+    } finally {
+      await Deno.remove(scratchDir, { recursive: true });
+    }
+  });
+
+  it("retries the preflight after it fails", async () => {
+    const scratchDir = await Deno.makeTempDir({ prefix: "cg-wb-" });
+    try {
+      let attempts = 0;
+      const verify = createEscalationVerify({
+        clearCaches: () => {},
+        credentials: { username: "sshadows", password: "1234" },
+        defaultContainerName: "Cronus28",
+        prepareContainer: () => {
+          attempts++;
+          return Promise.reject(new Error("container unreachable"));
+        },
+      });
+
+      const job = {
+        draftDir: join(scratchDir, "CG-AL-X072"),
+        taskId: "CG-AL-X072",
+        model: "fake/model",
+        code: "table 70001 A { }",
+      };
+
+      await verify(job).catch(() => {});
+      await verify(job).catch(() => {});
+      // A failed preflight must not be cached: an author who fixes the
+      // container should not have to restart the dashboard.
+      assertEquals(attempts, 2, "a failed preflight must be retried");
+    } finally {
+      await Deno.remove(scratchDir, { recursive: true });
+    }
+  });
 });

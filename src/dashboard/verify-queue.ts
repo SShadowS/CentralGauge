@@ -31,6 +31,8 @@ import * as colors from "@std/fmt/colors";
 import type { GateDecision } from "./bench-gate.ts";
 import type { VerifyOutcome } from "./verify-types.ts";
 
+import { ContainerError } from "../errors.ts";
+
 /** One unit of escalation work. */
 export interface VerifyQueueJob {
   /**
@@ -252,7 +254,21 @@ export class VerifyQueue {
       this.setOutcome(id, outcome);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.setOutcome(id, { state: "errored", message });
+      // Carry the container's transcript when there is one. `verifyResponse`
+      // already does this for failures it maps itself, but a throw that
+      // reaches HERE skipped that path entirely: the escalation adapter's
+      // container preflight runs before `verifyResponse` is ever called, so
+      // a failed harness publish arrives as a raw `ContainerError`. Taking
+      // only `.message` would make it exactly as unreadable as the publish
+      // failure this whole feature was just fixed for.
+      const detail = error instanceof ContainerError
+        ? error.rawOutput
+        : undefined;
+      this.setOutcome(id, {
+        state: "errored",
+        message,
+        ...(detail !== undefined && detail !== "" ? { detail } : {}),
+      });
     }
   }
 
