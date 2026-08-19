@@ -122,7 +122,7 @@ describe("cli/workbench-command", () => {
       > = [];
       const verify = createEscalationVerify({
         clearCaches: () => {},
-        credentials: { username: "sshadows", password: "1234" },
+        credentials: { username: "fixture-user", password: "fixture-pass" },
         defaultContainerName: "Cronus28",
         prepareContainer: (containerName, creds) => {
           prepared.push({
@@ -149,7 +149,7 @@ describe("cli/workbench-command", () => {
       assertEquals(prepared[0]?.container, "Cronus28");
       assertEquals(
         prepared[0]?.username,
-        "sshadows",
+        "fixture-user",
         "credentials must reach the preflight; without them the provider " +
           "falls back to admin/admin and every publish is unauthorized",
       );
@@ -172,7 +172,7 @@ describe("cli/workbench-command", () => {
       let attempts = 0;
       const verify = createEscalationVerify({
         clearCaches: () => {},
-        credentials: { username: "sshadows", password: "1234" },
+        credentials: { username: "fixture-user", password: "fixture-pass" },
         defaultContainerName: "Cronus28",
         prepareContainer: () => {
           attempts++;
