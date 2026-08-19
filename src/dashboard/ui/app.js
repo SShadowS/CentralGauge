@@ -202,17 +202,28 @@ function el(tag, className, text) {
  * between the row's first-seen identity and this particular object. That
  * disagreement is always shown here, in-cell, never as a second row.
  *
- * Compares the exact values the server already computed (`row.id`/`row.name`
- * vs `obj.id`/`obj.name`) — no re-implementation of `normalizeName` here,
- * the same lesson this file's header comment already states for `objectKey`.
- * Returns `null` when there is nothing to show, e.g. an exact match on both
- * fields, or two id-less objects (interface/controladdin) that only ever
- * merge on a normalized name match.
+ * The id check is a raw compare — a numeric id has no "spelling," so any
+ * difference is real. The name check is NOT a raw compare: AL identifiers are
+ * case-insensitive and `normalizeName` (object-identity.ts) deliberately
+ * erases case and collapses whitespace because those differences do not
+ * distinguish objects, so two spellings of the same name must never badge —
+ * that would assert a defect the run does not support. This file cannot
+ * reuse `normalizeName` directly (it is a classic script; `import` is as
+ * illegal here as the `export` this file's header comment already rules
+ * out), so the server does the normalized comparison once, for the same
+ * reason `rowAssignments` itself is server-computed: `response.rowNameConflicts`
+ * (`computeRowNameConflicts`, run-manager.ts) is `row.key` -> whether THIS
+ * response's assigned object's name is genuinely unlike the row's, already
+ * decided with the real `normalizeName`. Returns `null` when there is nothing
+ * to show, e.g. an exact match on both fields, or two names that differ only
+ * by case or whitespace.
  */
-function buildMismatchBadge(row, obj) {
+function buildMismatchBadge(row, obj, response) {
   const idMismatch = row.id !== undefined && obj.id !== undefined &&
     row.id !== obj.id;
-  const nameMismatch = row.name !== obj.name;
+  const nameMismatch = Boolean(
+    response.rowNameConflicts && response.rowNameConflicts[row.key],
+  );
   if (!idMismatch && !nameMismatch) return null;
 
   const badge = el("div", "mismatch-badge");
@@ -715,7 +726,7 @@ function buildCell(row, response) {
     wrapper.textContent = "view source";
   }
 
-  const mismatchBadge = buildMismatchBadge(row, obj);
+  const mismatchBadge = buildMismatchBadge(row, obj, response);
   if (mismatchBadge) {
     wrapper.classList.add("cell-mismatch");
     wrapper.appendChild(mismatchBadge);

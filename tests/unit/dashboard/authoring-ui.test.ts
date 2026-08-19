@@ -384,6 +384,7 @@ describe("dashboard/ui app.js", () => {
         source: 'codeunit 71410 "Agent" { }',
       }],
       rowAssignments: { "codeunit|71410": 0 },
+      rowNameConflicts: { "codeunit|71410": false },
       hasParseError: false,
     };
     const responseMismatched = {
@@ -398,6 +399,9 @@ describe("dashboard/ui app.js", () => {
         source: 'codeunit 71400 "Agent" { }',
       }],
       rowAssignments: { "codeunit|71410": 0 },
+      // Same name, so no NAME mismatch — only the id differs, which this
+      // test's own badge is about.
+      rowNameConflicts: { "codeunit|71410": false },
       hasParseError: false,
     };
 
@@ -450,6 +454,10 @@ describe("dashboard/ui app.js", () => {
         source: 'table 71411 "CG Line" { }',
       }],
       rowAssignments: { "table|71411": 0 },
+      // What the server's real normalizeName-based comparison
+      // (computeRowNameConflicts, run-manager.ts) would produce — false,
+      // since this response's name is identical to the row's.
+      rowNameConflicts: { "table|71411": false },
       hasParseError: false,
     };
     const responseMismatched = {
@@ -464,6 +472,9 @@ describe("dashboard/ui app.js", () => {
         source: 'table 71411 "CG Ledger" { }',
       }],
       rowAssignments: { "table|71411": 0 },
+      // "CG Line" vs "CG Ledger" is a genuine difference even after
+      // normalizeName — true, matching what the server would compute.
+      rowNameConflicts: { "table|71411": true },
       hasParseError: false,
     };
 
@@ -486,6 +497,79 @@ describe("dashboard/ui app.js", () => {
     const actual = findNode(cellMismatched, "mismatch-actual", "CG Ledger");
     assertStringIncludes(allText(expected!), 'table 71411 "CG Line"');
     assertStringIncludes(allText(actual!), 'table 71411 "CG Ledger"');
+  });
+
+  // Task 9 fix round 1. A pure case/whitespace difference is NOT a genuine
+  // mismatch: AL identifiers are case-insensitive, and `normalizeName`
+  // (object-identity.ts) deliberately erases case and collapses whitespace
+  // because those differences do not distinguish objects. Badging one would
+  // assert a defect the run does not support — the exact false positive
+  // that teaches an author to ignore the badge when it fires on a REAL
+  // mismatch. Pins the id-less path (interface/controladdin): `row.id` and
+  // `obj.id` are both absent, so only the name check is in play, and
+  // `rowNameConflicts` — what the server's real normalizeName-based
+  // comparison would produce — says `false` even though the raw names
+  // differ by case and internal whitespace.
+  it("does not badge two id-less objects whose names differ only by case or whitespace", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+
+    const row = {
+      key: "interface|name:cg agent",
+      kind: "interface",
+      name: "CG Agent",
+      inReference: true,
+    };
+    const responseExact = {
+      model: "model-a",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "interface",
+        name: "CG Agent",
+        source: 'interface "CG Agent" { }',
+      }],
+      rowAssignments: { "interface|name:cg agent": 0 },
+      rowNameConflicts: { "interface|name:cg agent": false },
+      hasParseError: false,
+    };
+    const responseDifferentSpelling = {
+      model: "model-b",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "interface",
+        // Different case, and doubled internal whitespace — raw string
+        // differs from the row's "CG Agent", but normalizeName erases both.
+        name: "cg  agent",
+        source: 'interface "cg  agent" { }',
+      }],
+      rowAssignments: { "interface|name:cg agent": 0 },
+      rowNameConflicts: { "interface|name:cg agent": false },
+      hasParseError: false,
+    };
+
+    ui.renderMatrix({
+      rows: [row],
+      responses: [responseExact, responseDifferentSpelling],
+    });
+
+    const table = node("matrix-container").children[0]!;
+    const tbody = table.children[1]!;
+    assertEquals(tbody.children.length, 1, "expected exactly one row");
+
+    const tr = tbody.children[0]!;
+    const cellExact = tr.children[1]!.children[0]!;
+    const cellDifferentSpelling = tr.children[2]!.children[0]!;
+
+    assertEquals(findNode(cellExact, "mismatch-badge", ""), undefined);
+    assertEquals(
+      findNode(cellDifferentSpelling, "mismatch-badge", ""),
+      undefined,
+    );
   });
 
   // Spec §4: "It is explainable. The UI names the deciding statement rather

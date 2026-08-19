@@ -35,6 +35,7 @@ import { parseAlObjects } from "../al/object-parser.ts";
 import {
   assignObjectsToRows,
   buildRowUniverse,
+  normalizeName,
 } from "../al/object-identity.ts";
 import { bindResponseToPrereqs } from "../al/prereq-binder.ts";
 import { buildPrereqIndex } from "../al/prereq-index.ts";
@@ -83,6 +84,19 @@ export interface ModelResponse {
    * its own copy of the identity rules, which nothing could keep in sync.
    */
   rowAssignments: Record<string, number>;
+  /**
+   * Which of `rowAssignments`' matches carry a GENUINE name difference,
+   * keyed the same way: `row.key` -> true when this response's assigned
+   * object's name differs from the row's after `normalizeName`
+   * (object-identity.ts, reused unmodified — never re-derived here or in
+   * the UI). Two objects can share one row via EITHER an exact id match or
+   * a normalized-name match (`buildRowUniverse`'s merge rule), so the row's
+   * displayed name and this object's actual name can still disagree — but
+   * only a difference `normalizeName` itself would not erase (case,
+   * internal whitespace) is a REAL mismatch worth flagging in the UI's
+   * badge (spec §3). Absent for a row this response has no assignment for.
+   */
+  rowNameConflicts: Record<string, boolean>;
   classification: TrapClassification;
   error?: string;
   /**
@@ -147,7 +161,7 @@ async function runOneModel(
   renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
-): Promise<Omit<ModelResponse, "rowAssignments">> {
+): Promise<Omit<ModelResponse, "rowAssignments" | "rowNameConflicts">> {
   let prompt = "";
   try {
     const applied = await buildGenerationPrompt({
@@ -195,6 +209,30 @@ async function runOneModel(
       error: message,
     };
   }
+}
+
+/**
+ * `ModelResponse.rowNameConflicts`: for each row `assignments` places an
+ * object on, whether that object's name genuinely differs from the row's —
+ * "genuinely" meaning after `normalizeName` (object-identity.ts, reused
+ * unmodified), not a raw string compare. Split out from `assignObjectsToRows`
+ * itself (which stays untouched) because this is presentation information
+ * about an already-decided assignment, not part of deciding the assignment.
+ */
+function computeRowNameConflicts(
+  rows: ReadonlyArray<MatrixRow>,
+  objects: ReadonlyArray<AlObject>,
+  assignments: Record<string, number>,
+): Record<string, boolean> {
+  const mismatches: Record<string, boolean> = {};
+  for (const row of rows) {
+    const index = assignments[row.key];
+    if (index === undefined) continue;
+    const obj = objects[index];
+    if (!obj) continue;
+    mismatches[row.key] = normalizeName(row.name) !== normalizeName(obj.name);
+  }
+  return mismatches;
 }
 
 /**
@@ -289,20 +327,25 @@ export async function runQuick(opts: {
   const boundResponses = await Promise.all(
     responses.map(async (response) => {
       const rowAssignments = assignObjectsToRows(rows, response.objects);
+      const rowNameConflicts = computeRowNameConflicts(
+        rows,
+        response.objects,
+        rowAssignments,
+      );
       // No index to check against, or this response errored before
       // producing any code to analyse (`runOneModel`'s catch path) — either
       // way there is nothing to bind, so `prereqBinding` stays genuinely
       // absent rather than present-and-empty (`exactOptionalPropertyTypes`
       // is why this is a conditional spread, not `prereqBinding: undefined`).
       if (!prereqIndex || response.error !== undefined) {
-        return { ...response, rowAssignments };
+        return { ...response, rowAssignments, rowNameConflicts };
       }
       const prereqBinding = await bindResponseToPrereqs(
         response.resolution.cleanedCode,
         prereqIndex,
         { sourcesIncomplete: opts.prereqSourcesIncomplete === true },
       );
-      return { ...response, rowAssignments, prereqBinding };
+      return { ...response, rowAssignments, rowNameConflicts, prereqBinding };
     }),
   );
 
