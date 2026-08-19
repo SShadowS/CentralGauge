@@ -46,6 +46,7 @@ import {
   ensureTestCodeunitRange,
   ensureTestDependencies,
 } from "../al/app-manifest.ts";
+import { classifyOracleFiles } from "../workbench/oracle-files.ts";
 
 /** Input to `stageResponse`. See the module doc for where callers typically
  *  source each field from. */
@@ -138,6 +139,29 @@ async function readTestCodeunitId(
  * Throws when `<draftDir>/correct/<taskId>.Test.al` does not exist: with no
  * oracle there is nothing to verify against, so staging a project for it
  * would be staging work no caller could ever score.
+ *
+ * Also throws `OracleFileError` when the draft's layout violates the
+ * reserved-prefix rules `classifyOracleFiles`
+ * (`src/workbench/oracle-files.ts`) enforces. That check is not optional
+ * housekeeping here — it is what stops this module reporting a verdict
+ * about code it never compiled. `handleAlVerify` copies `projectDir`'s AL
+ * files into its own verify directory FIRST (`copyAlFilesToDir`) and then
+ * copies every `<taskId>.`-prefixed `.al` file out of the ORACLE'S
+ * directory on top of them (`copyCompanionTestFiles`, later write wins).
+ * `stageResponse` writes the response to `<projectDir>/<taskId>.al`, and
+ * `"CG-AL-X053.al".startsWith("CG-AL-X053.")` is `true` — so a draft
+ * carrying `correct/<taskId>.al` (the author's own reference solution under
+ * the bare task id) would overwrite the model's candidate in the verify
+ * directory, and every response in the batch would be scored against the
+ * author's correct answer and report "Passed first try" without the
+ * model's code ever being compiled.
+ *
+ * `probeDraft` and `promoteDraft` both call `classifyOracleFiles` before
+ * doing anything for exactly this reason; this module is the third
+ * consumer of the same draft layout, and it serves the population that has
+ * neither probed nor promoted yet. A legitimate companion
+ * (`correct/<taskId>.Mock.al`) still stages — the classifier refuses only
+ * what is unambiguously wrong.
  */
 export async function stageResponse(
   opts: StageResponseOptions,
@@ -148,6 +172,13 @@ export async function stageResponse(
       `No oracle for ${opts.taskId}: expected ${testFile} to exist`,
     );
   }
+
+  // Filesystem reads only — never spawns container work, so it is safe as a
+  // pre-flight check and cheap enough to repeat per attempt. Deliberately
+  // NOT caught: `attemptOnce` (`verify-run.ts`) turns a throw into
+  // `{state: "errored", message}`, which surfaces the refusal verbatim in
+  // the author's column, which is the whole point.
+  await classifyOracleFiles({ id: opts.taskId, draftDir: opts.draftDir });
 
   const projectDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
 
