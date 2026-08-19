@@ -215,3 +215,179 @@ Deno.test("verify-run attempt 1", async (t) => {
     },
   );
 });
+
+Deno.test("verify-run fix attempt", async (t) => {
+  await t.step(
+    "a failing attempt 1 that the fix repairs is passed_second_try",
+    async () => {
+      const draftDir = await draftWithOracle("CG-AL-X020");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X020",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1"],
+                }
+                : {
+                  success: true,
+                  message: "ok",
+                  totalTests: 3,
+                  passed: 3,
+                  failed: 0,
+                },
+            );
+          },
+        });
+        assertEquals(outcome.state, "passed_second_try");
+        assertEquals(n, 2, "exactly two verifies");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step("no fix attempt is made after a publish defect", async () => {
+    const draftDir = await draftWithOracle("CG-AL-X021");
+    try {
+      let calls = 0;
+      const outcome = await verifyResponse({
+        draftDir,
+        taskId: "CG-AL-X021",
+        code: "table 70001 A { }",
+        model: "fake/model",
+        call: () => {
+          calls++;
+          return Promise.resolve({ content: "x", finishReason: "stop" });
+        },
+        verify: () =>
+          Promise.resolve({
+            success: false,
+            message: "zero tests",
+            syntheticNoTestsRan: true,
+          }),
+      });
+      assertEquals(outcome.state, "publish_defect");
+      assertEquals(calls, 0, "infra outcome must not consume a model call");
+    } finally {
+      await Deno.remove(draftDir, { recursive: true });
+    }
+  });
+
+  await t.step("still failing after the fix is failed_both", async () => {
+    // Counts verifies (not just the final state): an implementation that
+    // never runs the fix attempt at all produces the identical final state,
+    // so only the call count can tell "the fix ran and failed" apart from
+    // "the fix never ran".
+    const draftDir = await draftWithOracle("CG-AL-X022");
+    try {
+      let n = 0;
+      const outcome = await verifyResponse({
+        draftDir,
+        taskId: "CG-AL-X022",
+        code: "table 70001 A { }",
+        model: "fake/model",
+        call: () =>
+          Promise.resolve({
+            content: "table 70001 A { }",
+            finishReason: "stop",
+          }),
+        verify: () => {
+          n++;
+          return Promise.resolve({
+            success: false,
+            message: "fail",
+            totalTests: 3,
+            passed: 1,
+            failed: 2,
+            failures: ["T1", "T2"],
+          });
+        },
+      });
+      assertEquals(outcome.state, "failed_both");
+      assertEquals(n, 2, "exactly two verifies: the fix attempt ran");
+    } finally {
+      await Deno.remove(draftDir, { recursive: true });
+    }
+  });
+
+  await t.step(
+    "a throwing fix call leaves attempt 1's outcome standing",
+    async () => {
+      // Counts model calls: an implementation that never attempts the fix
+      // would produce the identical failed_both state, so only the call
+      // count proves the model was actually reached before it threw.
+      const draftDir = await draftWithOracle("CG-AL-X023");
+      try {
+        let calls = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X023",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () => {
+            calls++;
+            return Promise.reject(new Error("rate limited"));
+          },
+          verify: () =>
+            Promise.resolve({
+              success: false,
+              message: "fail",
+              totalTests: 3,
+              passed: 1,
+              failed: 2,
+              failures: ["T1"],
+            }),
+        });
+        assertEquals(outcome.state, "failed_both");
+        assertEquals(
+          calls,
+          1,
+          "the fix call was actually made before it threw",
+        );
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step("errored skips the fix attempt", async () => {
+    // `errored` is an infrastructure outcome, same rule as publish_defect,
+    // but reached via a thrown verifier rather than syntheticNoTestsRan.
+    const draftDir = await draftWithOracle("CG-AL-X024");
+    try {
+      let calls = 0;
+      const outcome = await verifyResponse({
+        draftDir,
+        taskId: "CG-AL-X024",
+        code: "table 70001 A { }",
+        model: "fake/model",
+        call: () => {
+          calls++;
+          return Promise.resolve({ content: "x", finishReason: "stop" });
+        },
+        verify: () => Promise.reject(new Error("container offline")),
+      });
+      assertEquals(outcome.state, "errored");
+      assertEquals(calls, 0, "an infra outcome must not consume a model call");
+    } finally {
+      await Deno.remove(draftDir, { recursive: true });
+    }
+  });
+});

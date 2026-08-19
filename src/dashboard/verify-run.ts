@@ -1,5 +1,7 @@
 /**
- * Verifies one model response against a draft's oracle, attempt 1.
+ * Verifies one model response against a draft's oracle, then — when the
+ * caller supplies a model to escalate to — runs the bench's own fix
+ * attempt on a genuine model mistake.
  *
  * Stages the response (`stageResponse`, Task 3), runs it through an
  * injected verifier, and maps the raw `VerifyResult` onto a `VerifyOutcome`
@@ -17,12 +19,31 @@
  * becomes `{state: "errored", message}` rather than propagating — one bad
  * response must not take down the queue Task 6 builds around this.
  *
+ * The fix attempt (Task 5) only runs for `didnt_compile` and `failed_both`
+ * — both genuine model mistakes. It is skipped for `passed_first_try`
+ * (nothing to fix), `publish_defect`, and `errored` (both infrastructure
+ * outcomes: asking a model to repair a container defect burns a paid call
+ * and misreports the result as though the model had another try at the
+ * actual task). It builds the fix prompt from the SAME `buildFixPrompt`
+ * the bench uses (`src/llm/prompt-building.ts`), so the dashboard measures
+ * what the bench measures, and stages/verifies the fix exactly like attempt
+ * 1 via a shared `attemptOnce` helper — one staging per attempt, so the fix
+ * attempt's temp directory is independent of attempt 1's and each is
+ * cleaned up as soon as its own attempt finishes.
+ *
  * @module dashboard/verify-run
  */
 
 import * as colors from "@std/fmt/colors";
+import { join } from "@std/path";
+import { parse as parseYaml } from "@std/yaml";
 
+import type { CandidateResolution } from "../llm/candidate-resolution.ts";
 import type { VerifyOutcome } from "./verify-types.ts";
+import type { ModelCaller } from "./run-manager.ts";
+
+import { resolveCandidate } from "../llm/candidate-resolution.ts";
+import { buildFixPrompt } from "../llm/prompt-building.ts";
 import { stageResponse } from "./verify-staging.ts";
 
 /** The subset of `VerifyResult` (`mcp/al-tools-server.ts`) this module maps. */
@@ -53,6 +74,18 @@ export interface VerifyResponseOptions {
   code: string;
   containerName?: string;
   verify: VerifyFn;
+  /**
+   * When both `call` and `model` are present AND attempt 1 lands on
+   * `didnt_compile` or `failed_both` (a genuine model mistake), runs
+   * exactly ONE fix attempt: builds the bench's own fix prompt
+   * (`buildFixPrompt`), calls the model once, stages and verifies the
+   * result. Either field absent, or attempt 1 landing on `passed_first_try`
+   * / `publish_defect` / `errored`, leaves attempt 1's outcome standing
+   * unchanged — identical to Task 4's behaviour.
+   */
+  call?: ModelCaller;
+  /** The model slug to escalate to. See `call`. */
+  model?: string;
 }
 
 /**
@@ -125,25 +158,58 @@ function mapResult(result: VerifyResultLike): VerifyOutcome {
 }
 
 /**
+ * Reads `task.yml`'s `description` for use as `buildFixPrompt`'s
+ * `originalInstructions`, tolerating a missing or malformed file the same
+ * way `verify-staging.ts`'s `readTestCodeunitId` does: a draft with no
+ * `task.yml` yet still gets a fix attempt, just with an empty original-task
+ * section in the prompt rather than a thrown error that would sink the
+ * whole escalation and leave attempt 1's outcome standing for the wrong
+ * reason.
+ */
+async function readDraftDescription(draftDir: string): Promise<string> {
+  try {
+    const content = await Deno.readTextFile(join(draftDir, "task.yml"));
+    const parsed = (parseYaml(content) ?? {}) as Record<string, unknown>;
+    const description = parsed["description"];
+    if (typeof description === "string") {
+      return description;
+    }
+  } catch {
+    // Missing or malformed task.yml - fall through to "".
+  }
+  return "";
+}
+
+/**
  * Stages `code`, verifies it against the draft's oracle, and returns the
  * mapped outcome. Cleans up the staged directory in a `finally` so it runs
  * on every path, including a thrown verifier.
+ *
+ * Shared by both attempts (Task 5): `verifyResponse` calls this once for
+ * attempt 1 and, when a fix attempt runs, once more for the fix. Each call
+ * owns and releases its own staged temp directory — nesting a second
+ * staging inside the first attempt's `try` would keep attempt 1's directory
+ * alive for the whole of attempt 2 and entangle the two cleanups.
  */
-export async function verifyResponse(
-  opts: VerifyResponseOptions,
-): Promise<VerifyOutcome> {
+async function attemptOnce(params: {
+  draftDir: string;
+  taskId: string;
+  code: string;
+  containerName?: string;
+  verify: VerifyFn;
+}): Promise<VerifyOutcome> {
   const staged = await stageResponse({
-    draftDir: opts.draftDir,
-    taskId: opts.taskId,
-    code: opts.code,
+    draftDir: params.draftDir,
+    taskId: params.taskId,
+    code: params.code,
   });
 
   try {
-    const result = await opts.verify({
+    const result = await params.verify({
       projectDir: staged.projectDir,
       testFile: staged.testFile,
-      ...(opts.containerName !== undefined
-        ? { containerName: opts.containerName }
+      ...(params.containerName !== undefined
+        ? { containerName: params.containerName }
         : {}),
       ...(staged.testCodeunitId !== undefined
         ? { testCodeunitId: staged.testCodeunitId }
@@ -174,4 +240,89 @@ export async function verifyResponse(
       );
     }
   }
+}
+
+/**
+ * Verifies `opts.code` against the draft's oracle, then — when eligible and
+ * a `call`/`model` pair is supplied — runs exactly one fix attempt using
+ * the bench's own fix prompt.
+ *
+ * Only `didnt_compile` and `failed_both` are eligible: both are genuine
+ * model mistakes. `passed_first_try` has nothing to fix; `publish_defect`
+ * and `errored` are infrastructure outcomes, and asking a model to repair a
+ * container defect would burn a paid call and misreport the result as
+ * though the model had another try at the actual task.
+ *
+ * A fix attempt that itself throws (prompt build, task.yml read, or the
+ * model call) leaves attempt 1's outcome standing rather than becoming
+ * `errored` — attempt 1's real result must not be discarded just because
+ * the ESCALATION failed.
+ */
+export async function verifyResponse(
+  opts: VerifyResponseOptions,
+): Promise<VerifyOutcome> {
+  const first = await attemptOnce({
+    draftDir: opts.draftDir,
+    taskId: opts.taskId,
+    code: opts.code,
+    ...(opts.containerName !== undefined
+      ? { containerName: opts.containerName }
+      : {}),
+    verify: opts.verify,
+  });
+
+  let errors: string[];
+  if (first.state === "didnt_compile") {
+    errors = first.compileErrors;
+  } else if (first.state === "failed_both") {
+    errors = first.failures;
+  } else {
+    // passed_first_try, publish_defect, or errored - not eligible for a fix.
+    return first;
+  }
+
+  if (!opts.call || !opts.model) {
+    return first;
+  }
+
+  let fixPrompt: string;
+  let resolution: CandidateResolution;
+  try {
+    const originalInstructions = await readDraftDescription(opts.draftDir);
+    fixPrompt = buildFixPrompt({
+      attemptNumber: 2,
+      originalInstructions,
+      previousCode: opts.code,
+      errors,
+    });
+    const response = await opts.call(opts.model, { prompt: fixPrompt });
+    resolution = resolveCandidate(response.content, response.finishReason);
+  } catch {
+    return first;
+  }
+
+  const second = await attemptOnce({
+    draftDir: opts.draftDir,
+    taskId: opts.taskId,
+    code: resolution.cleanedCode,
+    ...(opts.containerName !== undefined
+      ? { containerName: opts.containerName }
+      : {}),
+    verify: opts.verify,
+  });
+
+  if (second.state === "passed_first_try") {
+    return {
+      state: "passed_second_try",
+      passed: second.passed,
+      total: second.total,
+      fixPrompt,
+    };
+  }
+
+  // Whatever the second attempt actually landed on (failed_both,
+  // didnt_compile, publish_defect, or errored) is the honest final state -
+  // it describes what really happened on the fix attempt, same as attempt 1
+  // would report it standing alone.
+  return second;
 }
