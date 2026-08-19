@@ -50,7 +50,11 @@ Deno.test("bench-gate", async (t) => {
     const dir = await Deno.makeTempDir({ prefix: "cg-gate-" });
     try {
       await Deno.writeTextFile(join(dir, ".bench-running.json"), "{not json");
-      assertEquals(checkBenchGate(dir).allowed, false);
+      const decision = checkBenchGate(dir);
+      assertEquals(decision.allowed, false);
+      if (decision.allowed) throw new Error("unreachable");
+      assertStringIncludes(decision.reason, "A bench is running");
+      assertEquals(decision.reason.includes("undefined"), false);
     } finally {
       await Deno.remove(dir, { recursive: true });
     }
