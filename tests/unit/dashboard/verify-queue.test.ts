@@ -113,4 +113,30 @@ Deno.test("verify-queue", async (t) => {
     await q.drain();
     assertEquals(ran, 2, "job b still ran");
   });
+
+  await t.step("shutdown is permanent: later jobs refuse too", async () => {
+    let ran = 0;
+    const q = new VerifyQueue({
+      gate: () => ({ allowed: true }),
+      verify: () => {
+        ran++;
+        return Promise.resolve({
+          state: "passed_first_try",
+          passed: 1,
+          total: 1,
+        });
+      },
+    });
+    q.shutdown("stopping");
+    const id = q.enqueue({
+      draftDir: "d",
+      taskId: "CG-AL-X001",
+      model: "a",
+      code: "x",
+    });
+    await q.drain();
+    assertEquals(ran, 0, "the job never reached verify()");
+    const view = q.snapshot().find((j) => j.id === id);
+    assertEquals(view?.outcome, { state: "refused", reason: "stopping" });
+  });
 });

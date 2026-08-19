@@ -133,7 +133,7 @@ export class VerifyQueue {
     // Attach unconditionally, in enqueue order, BEFORE any await happens.
     // The gate re-check and abort check both live inside `runNext()`,
     // evaluated when THIS job's turn actually comes up — not here — so a
-    // bench that starts (or an abortAll()) after this line still refuses
+    // bench that starts (or a `shutdown()`) after this line still refuses
     // this job rather than letting it slip through on a stale decision.
     this.pump = this.pump.then(() => this.runNext());
     return id;
@@ -163,13 +163,20 @@ export class VerifyQueue {
   }
 
   /**
-   * Permanently stops the queue: every job still `queued` right now is
-   * refused immediately, and any job enqueued afterward is refused on its
-   * turn rather than ever reaching `verify()`. A job already in flight when
-   * this is called is not cancelled — its `verify()` call is left to
-   * settle normally, since there is no cooperative cancellation seam here.
+   * Stops the queue for server shutdown. This is PERMANENT and ONE-WAY, not
+   * a batch cancel: every job still `queued` right now is refused
+   * immediately, and — because the latch never clears — every job
+   * `enqueue()`d after this call is also refused on its turn, for the rest
+   * of this queue's lifetime. A job already in flight when this is called
+   * is not cancelled — its `verify()` call is left to settle normally,
+   * since there is no cooperative cancellation seam here.
+   *
+   * Do NOT wire this to a "cancel this batch" UI action: a user expecting
+   * to clear the current queue and keep working would instead get a queue
+   * that silently refuses every job from then on, with no obvious cause. A
+   * batch-cancel feature needs its own, non-latching method.
    */
-  abortAll(reason: string): void {
+  shutdown(reason: string): void {
     this.aborted = true;
     this.abortReason = reason;
     for (const view of this.jobs.values()) {
@@ -187,8 +194,8 @@ export class VerifyQueue {
     const view = this.jobs.get(id);
     if (!view) return;
 
-    // abortAll() may already have resolved this job (it was still `queued`
-    // when abortAll ran, marked `refused` there, and only reaches this
+    // shutdown() may already have resolved this job (it was still `queued`
+    // when shutdown ran, marked `refused` there, and only reaches this
     // shift() later because the pump had earlier jobs ahead of it). Don't
     // re-run or re-emit a job that already has a terminal outcome.
     if (view.outcome.state !== "queued") return;
