@@ -61,20 +61,36 @@ export interface VerifyResponseOptions {
  * counts-based branch, so a publish/install defect can never be reported
  * as a test failure regardless of what the counts say.
  *
- * A `failed_both` verdict requires POSITIVE EVIDENCE that tests actually
- * ran (`totalTests` is a defined, positive number). `handleAlVerify` has
- * three sites that return `{success: false, message}` with no `totalTests`
- * at all (`mcp/al-tools-server.ts:1407` app.json prep, `:1427` test-file
- * copy, `:1558-1560` the outer catch, which also absorbs a thrown infra
+ * Both the `passed_first_try` and `failed_both` verdicts require POSITIVE
+ * EVIDENCE that tests actually ran (`totalTests` is a defined, positive
+ * number) — a claim of success with no tests behind it is the same
+ * condition `syntheticNoTestsRan` describes, just arriving with
+ * `success: true` instead of `false`. This repo already treats
+ * zero-tests-after-successful-publish as infrastructure and throws
+ * `ContainerError("test")` for it upstream, but CLAUDE.md records that
+ * exact guarantee failing once already (GH #13: scoring it as a model
+ * result "hid a broken BCH version across an entire bench run") — this is
+ * the module whose whole purpose is that invariant, so it holds it locally
+ * rather than depending on a remote one with that history. Mapped to
+ * `publish_defect`, not `errored`: the message that comes with a
+ * `success: true` zero-tests result reads as a (false) success claim, not
+ * an error, and `publish_defect` already exists for exactly "published or
+ * installed badly, ran zero tests" regardless of which side of `success`
+ * it arrives on.
+ *
+ * On the `success: false` side, `handleAlVerify` has three sites that
+ * return `{success: false, message}` with no `totalTests` at all
+ * (`mcp/al-tools-server.ts:1407` app.json prep, `:1427` test-file copy,
+ * `:1558-1560` the outer catch, which also absorbs a thrown infra
  * `ContainerError`), and `createFailedTestResult`
  * (`src/container/bc-container-provider.ts:2478`) produces the legacy
  * `totalTests: 0, passed: 0, failed: 0` shape with no `syntheticNoTestsRan`
- * flag. Without this guard either shape falls through to `failed_both` with
+ * flag. Without a guard either shape falls through to `failed_both` with
  * fabricated `0/0` counts and an empty failures array — reporting an
- * infrastructure failure (the same class of lie `syntheticNoTestsRan`
- * exists to prevent) as though a model's tests ran and failed. Mapping both
- * to `errored` instead surfaces `result.message`, the real reason, to the
- * author.
+ * infrastructure failure as though a model's tests ran and failed. Mapped
+ * to `errored` instead, since the message here already describes a genuine
+ * failure/exception, so `result.message` reaching the author unchanged is
+ * the honest read.
  */
 function mapResult(result: VerifyResultLike): VerifyOutcome {
   if (result.syntheticNoTestsRan) {
@@ -86,10 +102,13 @@ function mapResult(result: VerifyResultLike): VerifyOutcome {
   }
 
   if (result.success) {
+    if (result.totalTests === undefined || result.totalTests === 0) {
+      return { state: "publish_defect", message: result.message };
+    }
     return {
       state: "passed_first_try",
       passed: result.passed ?? 0,
-      total: result.totalTests ?? 0,
+      total: result.totalTests,
     };
   }
 

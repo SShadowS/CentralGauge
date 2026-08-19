@@ -81,6 +81,40 @@ Deno.test("verify-run attempt 1", async (t) => {
   });
 
   await t.step(
+    "a success claim with zero tests behind it is not a pass",
+    async () => {
+      // Reachable shape: verifyResultFromTestResult propagates
+      // testResult.success and its counts straight through with no floor,
+      // so success:true + totalTests:0 is constructible even though this
+      // repo's infra layer is supposed to intercept a real
+      // zero-tests-after-successful-publish case upstream (GH #13). This
+      // module holds the invariant locally rather than trusting that.
+      const draftDir = await draftWithOracle("CG-AL-X016");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X016",
+          code: "table 70001 A { }",
+          verify: () =>
+            Promise.resolve({
+              success: true,
+              message: "All tests passed! (0/0)",
+              totalTests: 0,
+              passed: 0,
+              failed: 0,
+            }),
+        });
+        assertEquals(outcome, {
+          state: "publish_defect",
+          message: "All tests passed! (0/0)",
+        });
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
     "the staged directory is cleaned up even when verify throws",
     async () => {
       const draftDir = await draftWithOracle("CG-AL-X013");
