@@ -367,80 +367,94 @@ function validateVerifyRequest(
  * persists the result through `deps.writeRunArtifact`, answering with the
  * run plus either `artifactPath` or `artifactError`.
  */
+/**
+ * Everything `createHandler` needs, named so callers and tests can type
+ * a fixture instead of casting one.
+ *
+ * It was an inline anonymous type on the parameter, which forced every
+ * test fixture through `as unknown as Parameters<typeof createHandler>[0]`.
+ * That cast silences the compiler about the WHOLE object, so a fixture
+ * missing a dep type-checks cleanly and fails at runtime instead. It cost
+ * three separate debugging rounds in one session: `verifyQueue` and
+ * `checkBenchGate` are both absent from the shared base fixture, and
+ * nothing said so until a route reached for one.
+ */
+export interface DashboardHandlerDeps {
+  scratchDir: string;
+  /**
+   * Root a draft's `prereq/` chained dependencies resolve against
+   * (`loadPrereqSources`'s `dependenciesRoot`), ABSOLUTE.
+   *
+   * Handed in rather than read here, exactly like `scratchDir`, and for
+   * the same two reasons. This module must never import the config
+   * loader — `tests/unit/dashboard/ingest-safety.test.ts` polices its
+   * whole import graph. And it was previously the relative literal
+   * `"tests/al/dependencies"`, resolved against `Deno.cwd()`: started
+   * from anywhere but the repo root, every chained dependency silently
+   * failed to resolve, which is indistinguishable from the legitimate
+   * base-app case, and every one of their fields vanished from the index
+   * with no signal. `cli/commands/workbench-command.ts` absolutises it
+   * against the repo root.
+   */
+  dependenciesRoot: string;
+  listDrafts: typeof listDrafts;
+  runQuick: typeof runQuick;
+  writeRunArtifact: typeof writeRunArtifact;
+  loadTrapSources: typeof loadTrapSources;
+  loadPrereqSources: typeof loadPrereqSources;
+  createModelCaller: typeof createModelCaller;
+  promoteAsNaive: typeof promoteAsNaive;
+  /** CLI-resolved `--preset` models (see the module doc comment), or
+   *  empty when none were given. Served verbatim at `GET /api/defaults`. */
+  defaultModels: string[];
+  /**
+   * The serial escalation-verify queue (`./verify-queue.ts`, Task 6).
+   * Narrowed to the three methods this router actually calls — a fake in
+   * a test needs no `drain()`/`shutdown()` to stand in for it.
+   * `startServer` wires this to a real `VerifyQueue` whose `verify`
+   * function is the real container-touching adapter, built in
+   * `cli/commands/workbench-command.ts` — never imported here (see the
+   * module doc comment on why this file stays clear of `handleAlVerify`).
+   *
+   * `undefined` means escalation is NOT configured for this server
+   * instance (no `verify` adapter was supplied to `startServer`) — a
+   * legitimate mode, not an error: "Ask N models" must keep working with
+   * containers down or unconfigured. Both verify routes refuse up front
+   * in that case (`ESCALATION_NOT_CONFIGURED`), before touching anything
+   * that would need a queue. There used to be a fallback queue here whose
+   * `verify` unconditionally reported `errored` — that fabricated the
+   * exact false signal Task 4 spent two rounds removing from
+   * `mapResult`: a missing adapter would read as "the container died"
+   * (real infra outcome) rather than "escalation isn't configured"
+   * (config state), sending an author to chase an outage that never
+   * happened.
+   */
+  verifyQueue: Pick<VerifyQueue, "enqueue" | "on" | "snapshot"> | undefined;
+  /**
+   * Synchronous bench-liveness check for `POST /api/verify` itself,
+   * distinct from the queue's OWN per-job gate (re-checked at dispatch
+   * time, per `VerifyQueue`'s doc comment). A job at the back of a long
+   * queue might not dispatch for a while, so relying on the queue's
+   * internal check alone would silently accept work now and refuse it
+   * arbitrarily far in the future. This lets the route refuse
+   * IMMEDIATELY, with the gate's reason, before the queue is ever
+   * touched. Typed exactly like the real `checkBenchGate` so
+   * `startServer` can pass it straight through.
+   */
+  checkBenchGate: typeof checkBenchGate;
+  /**
+   * The port this server is actually bound to, for the `Origin` check.
+   * A THUNK, not a number, because `Deno.serve` needs the handler before
+   * it can report an address — `startServer` fills the value in once the
+   * listener exists. Returning `undefined` (before the listener is up, or
+   * in a router test with no socket at all) falls back to the
+   * hostname-only check rather than refusing everything.
+   */
+  boundPort?: () => number | undefined;
+}
+
 export function createHandler(
-  deps: {
-    scratchDir: string;
-    /**
-     * Root a draft's `prereq/` chained dependencies resolve against
-     * (`loadPrereqSources`'s `dependenciesRoot`), ABSOLUTE.
-     *
-     * Handed in rather than read here, exactly like `scratchDir`, and for
-     * the same two reasons. This module must never import the config
-     * loader — `tests/unit/dashboard/ingest-safety.test.ts` polices its
-     * whole import graph. And it was previously the relative literal
-     * `"tests/al/dependencies"`, resolved against `Deno.cwd()`: started
-     * from anywhere but the repo root, every chained dependency silently
-     * failed to resolve, which is indistinguishable from the legitimate
-     * base-app case, and every one of their fields vanished from the index
-     * with no signal. `cli/commands/workbench-command.ts` absolutises it
-     * against the repo root.
-     */
-    dependenciesRoot: string;
-    listDrafts: typeof listDrafts;
-    runQuick: typeof runQuick;
-    writeRunArtifact: typeof writeRunArtifact;
-    loadTrapSources: typeof loadTrapSources;
-    loadPrereqSources: typeof loadPrereqSources;
-    createModelCaller: typeof createModelCaller;
-    promoteAsNaive: typeof promoteAsNaive;
-    /** CLI-resolved `--preset` models (see the module doc comment), or
-     *  empty when none were given. Served verbatim at `GET /api/defaults`. */
-    defaultModels: string[];
-    /**
-     * The serial escalation-verify queue (`./verify-queue.ts`, Task 6).
-     * Narrowed to the three methods this router actually calls — a fake in
-     * a test needs no `drain()`/`shutdown()` to stand in for it.
-     * `startServer` wires this to a real `VerifyQueue` whose `verify`
-     * function is the real container-touching adapter, built in
-     * `cli/commands/workbench-command.ts` — never imported here (see the
-     * module doc comment on why this file stays clear of `handleAlVerify`).
-     *
-     * `undefined` means escalation is NOT configured for this server
-     * instance (no `verify` adapter was supplied to `startServer`) — a
-     * legitimate mode, not an error: "Ask N models" must keep working with
-     * containers down or unconfigured. Both verify routes refuse up front
-     * in that case (`ESCALATION_NOT_CONFIGURED`), before touching anything
-     * that would need a queue. There used to be a fallback queue here whose
-     * `verify` unconditionally reported `errored` — that fabricated the
-     * exact false signal Task 4 spent two rounds removing from
-     * `mapResult`: a missing adapter would read as "the container died"
-     * (real infra outcome) rather than "escalation isn't configured"
-     * (config state), sending an author to chase an outage that never
-     * happened.
-     */
-    verifyQueue: Pick<VerifyQueue, "enqueue" | "on" | "snapshot"> | undefined;
-    /**
-     * Synchronous bench-liveness check for `POST /api/verify` itself,
-     * distinct from the queue's OWN per-job gate (re-checked at dispatch
-     * time, per `VerifyQueue`'s doc comment). A job at the back of a long
-     * queue might not dispatch for a while, so relying on the queue's
-     * internal check alone would silently accept work now and refuse it
-     * arbitrarily far in the future. This lets the route refuse
-     * IMMEDIATELY, with the gate's reason, before the queue is ever
-     * touched. Typed exactly like the real `checkBenchGate` so
-     * `startServer` can pass it straight through.
-     */
-    checkBenchGate: typeof checkBenchGate;
-    /**
-     * The port this server is actually bound to, for the `Origin` check.
-     * A THUNK, not a number, because `Deno.serve` needs the handler before
-     * it can report an address — `startServer` fills the value in once the
-     * listener exists. Returning `undefined` (before the listener is up, or
-     * in a router test with no socket at all) falls back to the
-     * hostname-only check rather than refusing everything.
-     */
-    boundPort?: () => number | undefined;
-  },
+  deps: DashboardHandlerDeps,
 ): (req: Request) => Promise<Response> {
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);

@@ -3,6 +3,7 @@ import { join } from "@std/path";
 import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
+import type { DashboardHandlerDeps } from "../../../src/dashboard/server.ts";
 import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
 import { loadPrereqSources } from "../../../src/dashboard/prereq-sources.ts";
 import {
@@ -48,27 +49,57 @@ const ORACLE = `codeunit 80054 "CG-AL-X054 Test"
 // N models an empty question is what this endpoint used to do.
 const DESCRIPTION = "Write a codeunit that validates quantity.";
 
-const deps = {
-  scratchDir: "/tmp/nope",
-  dependenciesRoot: "/tmp/nope/deps",
-  listDrafts: () =>
-    Promise.resolve([
-      {
-        id: "CG-AL-X054",
-        dir: "/tmp/nope/CG-AL-X054",
-        description: DESCRIPTION,
-        hasPrereq: false,
-      },
-    ]),
-  loadTrapSources: () =>
-    Promise.resolve({ correctSources: [], naiveSources: [] }),
-  loadPrereqSources: () =>
-    Promise.resolve({ sources: [], files: [], hasError: false }),
-  createModelCaller: () => () =>
-    Promise.reject(new Error("not called in this test")),
-  runQuick: () => Promise.reject(new Error("not called in this test")),
-  defaultModels: [],
-} as unknown as Parameters<typeof createHandler>[0];
+/**
+ * A COMPLETE, correctly typed dependency set for `createHandler`.
+ *
+ * Every fixture here used to be `{...} as unknown as Parameters<typeof
+ * createHandler>[0]`. That cast silences the compiler about the whole
+ * object, so a fixture missing a dependency type-checked cleanly and failed
+ * at runtime instead. It cost three separate debugging rounds in one
+ * session: neither `verifyQueue` nor `checkBenchGate` was in the shared
+ * base, and nothing said so until a route reached for one.
+ *
+ * Overrides are `Partial<DashboardHandlerDeps>`, so a misspelled override
+ * name or a wrong shape is a compile error now instead of a silent
+ * `undefined` discovered by a failing assertion.
+ */
+function createDeps(
+  overrides: Partial<DashboardHandlerDeps> = {},
+): DashboardHandlerDeps {
+  return {
+    scratchDir: "/tmp/nope",
+    dependenciesRoot: "/tmp/nope/deps",
+    listDrafts: () =>
+      Promise.resolve([
+        {
+          id: "CG-AL-X054",
+          dir: "/tmp/nope/CG-AL-X054",
+          dirName: "CG-AL-X054",
+          description: DESCRIPTION,
+          hasPrereq: false,
+          prereqFiles: [],
+        },
+      ]),
+    loadTrapSources: () =>
+      Promise.resolve({ correctSources: [], naiveSources: [] }),
+    loadPrereqSources: () =>
+      Promise.resolve({ sources: [], files: [], hasError: false }),
+    createModelCaller: () => () =>
+      Promise.reject(new Error("not called in this test")),
+    runQuick: () => Promise.reject(new Error("not called in this test")),
+    writeRunArtifact: () =>
+      Promise.reject(new Error("not called in this test")),
+    promoteAsNaive: () => Promise.reject(new Error("not called in this test")),
+    defaultModels: [],
+    // Present and explicitly undefined. The field is REQUIRED, and its
+    // absence from the old shared fixture is what three tests tripped over.
+    verifyQueue: undefined,
+    checkBenchGate: () => ({ allowed: true }),
+    ...overrides,
+  };
+}
+
+const deps = createDeps();
 
 describe("dashboard/server", () => {
   it("serves the draft list as JSON", async () => {
@@ -179,10 +210,9 @@ describe("dashboard/server", () => {
   // Hostname alone is not an origin. Another dev server on 127.0.0.1:3000 is
   // a different origin, and its pages must not be able to spend money here.
   it("refuses a loopback Origin on a different port", async () => {
-    const onPort = {
-      ...deps,
+    const onPort = createDeps({
       boundPort: () => 8123,
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     for (
       const origin of [
@@ -207,10 +237,9 @@ describe("dashboard/server", () => {
   });
 
   it("allows the server's own loopback Origin, port included", async () => {
-    const onPort = {
-      ...deps,
+    const onPort = createDeps({
       boundPort: () => 8123,
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     for (
       const origin of ["http://127.0.0.1:8123", "http://localhost:8123"]
@@ -353,7 +382,7 @@ describe("dashboard/server", () => {
         "codeunit 1 S { }",
       );
 
-      const promoteDeps = {
+      const promoteDeps = createDeps({
         ...deps,
         scratchDir: dir,
         listDrafts: () =>
@@ -361,12 +390,14 @@ describe("dashboard/server", () => {
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         promoteAsNaive,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(promoteDeps)(
         new Request("http://localhost/api/promote-naive", {
@@ -405,7 +436,7 @@ describe("dashboard/server", () => {
     try {
       await Deno.mkdir(`${dir}/naive`, { recursive: true });
 
-      const promoteDeps = {
+      const promoteDeps = createDeps({
         ...deps,
         scratchDir: dir,
         listDrafts: () =>
@@ -413,12 +444,14 @@ describe("dashboard/server", () => {
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         promoteAsNaive,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const colliding = `codeunit 70060 "Q>Q" { }\ncodeunit 70061 "Q?Q" { }`;
       const res = await createHandler(promoteDeps)(
@@ -459,10 +492,9 @@ describe("dashboard/server", () => {
   // and hands the result to startServer as plain data — this proves the
   // handler passes that data straight through rather than re-deriving it.
   it("serves the CLI-resolved default models as JSON", async () => {
-    const withDefaults = {
-      ...deps,
+    const withDefaults = createDeps({
       defaultModels: ["anthropic/claude-opus-4-7", "openai/gpt-5.5"],
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
     const res = await createHandler(withDefaults)(
       new Request("http://localhost/api/defaults"),
     );
@@ -501,15 +533,17 @@ describe("dashboard/server", () => {
       await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
       await Deno.writeTextFile(`${dir}/naive/A.al`, NAIVE);
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -525,7 +559,7 @@ describe("dashboard/server", () => {
           },
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -584,15 +618,17 @@ describe("dashboard/server", () => {
       await Deno.mkdir(`${dir}/correct`, { recursive: true });
       await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -606,7 +642,7 @@ describe("dashboard/server", () => {
             }),
         runQuick,
         writeRunArtifact: () => Promise.reject(new Error("permission denied")),
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -632,18 +668,19 @@ describe("dashboard/server", () => {
   // at all, and refuses a draft that has nothing to ask rather than spending
   // API money on "## Task\n\n".
   it("refuses a run against a draft whose task.yml has no description", async () => {
-    const noDescription = {
-      ...deps,
+    const noDescription = createDeps({
       listDrafts: () =>
         Promise.resolve([
           {
             id: "CG-AL-X054",
             dir: "/tmp/nope/CG-AL-X054",
+            dirName: "CG-AL-X054",
             description: "   ",
             hasPrereq: false,
+            prereqFiles: [],
           },
         ]),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(noDescription)(
       new Request("http://localhost/api/run", {
@@ -669,15 +706,17 @@ describe("dashboard/server", () => {
       await Deno.mkdir(`${dir}/correct`, { recursive: true });
       await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -693,7 +732,7 @@ describe("dashboard/server", () => {
           },
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -729,15 +768,17 @@ describe("dashboard/server", () => {
       await Deno.writeTextFile(`${dir}/correct/CG-AL-X054.Test.al`, ORACLE);
       await Deno.writeTextFile(`${dir}/naive/A.al`, NAIVE);
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -751,7 +792,7 @@ describe("dashboard/server", () => {
             }),
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -796,7 +837,7 @@ describe("dashboard/server", () => {
         CORRECT.replace("71410", "71499"),
       );
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: root,
         listDrafts: () =>
           Promise.resolve([
@@ -806,6 +847,7 @@ describe("dashboard/server", () => {
               dirName: "CG-AL-X053",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
             {
               id: "CG-AL-X053",
@@ -813,6 +855,7 @@ describe("dashboard/server", () => {
               dirName: "pre-migration-backup_x053",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -826,7 +869,7 @@ describe("dashboard/server", () => {
             }),
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -874,15 +917,17 @@ describe("dashboard/server", () => {
       await Deno.writeTextFile(`${dir}/correct/A.al`, CORRECT);
       // Deliberately no naive/ directory.
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: false,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -896,7 +941,7 @@ describe("dashboard/server", () => {
             }),
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -946,15 +991,17 @@ describe("dashboard/server", () => {
       await Deno.writeTextFile(`${dir}/correct/A.al`, CODE);
       await Deno.writeTextFile(`${dir}/prereq/CGQuote.Table.al`, PREREQ);
 
-      const runDeps = {
+      const runDeps = createDeps({
         scratchDir: dir,
         listDrafts: () =>
           Promise.resolve([
             {
               id: "CG-AL-X054",
               dir,
+              dirName: "CG-AL-X054",
               description: DESCRIPTION,
               hasPrereq: true,
+              prereqFiles: [],
             },
           ]),
         loadTrapSources,
@@ -968,7 +1015,7 @@ describe("dashboard/server", () => {
             }),
         runQuick,
         writeRunArtifact,
-      } as unknown as Parameters<typeof createHandler>[0];
+      });
 
       const res = await createHandler(runDeps)(
         new Request("http://localhost/api/run", {
@@ -1000,7 +1047,7 @@ describe("dashboard/server", () => {
   it("resolves chained prereqs against the injected dependencies root", async () => {
     let seenRoot: string | undefined;
     const handler = createHandler(
-      {
+      createDeps({
         ...deps,
         dependenciesRoot: "/abs/deps/root",
         loadPrereqSources: (_draftDir: string, dependenciesRoot: string) => {
@@ -1020,7 +1067,7 @@ describe("dashboard/server", () => {
             rows: [],
           }),
         writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
-      } as unknown as Parameters<typeof createHandler>[0],
+      }),
     );
 
     const res = await handler(
@@ -1042,7 +1089,7 @@ describe("dashboard/server", () => {
   it("forwards an incomplete prereq load through to the run", async () => {
     let seenIncomplete: unknown;
     const handler = createHandler(
-      {
+      createDeps({
         ...deps,
         loadPrereqSources: () =>
           Promise.resolve({
@@ -1065,7 +1112,7 @@ describe("dashboard/server", () => {
           });
         },
         writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
-      } as unknown as Parameters<typeof createHandler>[0],
+      }),
     );
 
     const res = await handler(
@@ -1084,8 +1131,7 @@ describe("dashboard/server", () => {
   it("POST /api/verify enqueues and returns job ids", async () => {
     const enqueued: VerifyQueueJob[] = [];
     let nextId = 1;
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: (job: VerifyQueueJob) => {
           enqueued.push(job);
@@ -1095,7 +1141,7 @@ describe("dashboard/server", () => {
         snapshot: () => [],
       },
       checkBenchGate: () => ({ allowed: true }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify", {
@@ -1132,8 +1178,7 @@ describe("dashboard/server", () => {
 
   it("POST /api/verify 400s on an unknown draft directory", async () => {
     let touched = false;
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: () => {
           touched = true;
@@ -1143,7 +1188,7 @@ describe("dashboard/server", () => {
         snapshot: () => [],
       },
       checkBenchGate: () => ({ allowed: true }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify", {
@@ -1167,8 +1212,7 @@ describe("dashboard/server", () => {
       "`bench --llms x` is running, started 2026-08-19T00:00:00Z. " +
       "Compile and test publishes to the same container and would " +
       "corrupt that run. Ask N models still works.";
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: () => {
           touched = true;
@@ -1178,7 +1222,7 @@ describe("dashboard/server", () => {
         snapshot: () => [],
       },
       checkBenchGate: () => ({ allowed: false, reason }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify", {
@@ -1205,8 +1249,7 @@ describe("dashboard/server", () => {
       model: "anthropic/m",
       code: "codeunit 1 A { }",
     };
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: () => "verify-1",
         on: (l: (event: VerifyQueueEvent) => void) => {
@@ -1218,7 +1261,7 @@ describe("dashboard/server", () => {
         snapshot: () => [],
       },
       checkBenchGate: () => ({ allowed: true }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify-events"),
@@ -1258,8 +1301,7 @@ describe("dashboard/server", () => {
       model: "anthropic/m",
       code: "codeunit 1 A { }",
     };
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: () => "verify-1",
         on: () => () => {},
@@ -1273,7 +1315,7 @@ describe("dashboard/server", () => {
         ],
       },
       checkBenchGate: () => ({ allowed: true }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify-events"),
@@ -1288,8 +1330,7 @@ describe("dashboard/server", () => {
 
   it("GET /api/verify-events unsubscribes from the queue when the client disconnects", async () => {
     let unsubscribed = false;
-    const verifyDeps = {
-      ...deps,
+    const verifyDeps = createDeps({
       verifyQueue: {
         enqueue: () => "verify-1",
         on: () => () => {
@@ -1298,7 +1339,7 @@ describe("dashboard/server", () => {
         snapshot: () => [],
       },
       checkBenchGate: () => ({ allowed: true }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(verifyDeps)(
       new Request("http://localhost/api/verify-events"),
@@ -1317,8 +1358,7 @@ describe("dashboard/server", () => {
   // never enqueuing at all — `deps.verifyQueue` is `undefined` in this
   // mode, and the route refuses before touching anything.
   it("POST /api/verify refuses with 501 when escalation is not configured, without touching drafts, the gate, or a queue", async () => {
-    const noVerifyDeps = {
-      ...deps,
+    const noVerifyDeps = createDeps({
       verifyQueue: undefined,
       // Spies that prove the route returns BEFORE any of the normal
       // per-request work happens — not just before a (nonexistent) queue's
@@ -1330,7 +1370,7 @@ describe("dashboard/server", () => {
       checkBenchGate: () => {
         throw new Error("checkBenchGate must not be called when unconfigured");
       },
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(noVerifyDeps)(
       new Request("http://localhost/api/verify", {
@@ -1354,11 +1394,14 @@ describe("dashboard/server", () => {
     // Both are required: the base `deps` fixture defines neither, and the
     // `as unknown as` cast every fixture here uses means the compiler will
     // not tell you that.
-    const readyDeps = {
-      ...deps,
-      verifyQueue: { enqueue: () => "j1", on: () => () => {}, snapshot: () => [] },
+    const readyDeps = createDeps({
+      verifyQueue: {
+        enqueue: () => "j1",
+        on: () => () => {},
+        snapshot: () => [],
+      },
       checkBenchGate: () => ({ allowed: true as const }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(readyDeps)(
       new Request("http://localhost/api/escalation-readiness"),
@@ -1368,14 +1411,17 @@ describe("dashboard/server", () => {
   });
 
   it("GET /api/escalation-readiness reports the bench's reason verbatim", async () => {
-    const blockedDeps = {
-      ...deps,
-      verifyQueue: { enqueue: () => "j1", on: () => () => {}, snapshot: () => [] },
+    const blockedDeps = createDeps({
+      verifyQueue: {
+        enqueue: () => "j1",
+        on: () => () => {},
+        snapshot: () => [],
+      },
       checkBenchGate: () => ({
         allowed: false as const,
         reason: "`bench --llms sonnet` is running",
       }),
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(blockedDeps)(
       new Request("http://localhost/api/escalation-readiness"),
@@ -1388,13 +1434,12 @@ describe("dashboard/server", () => {
   });
 
   it("GET /api/escalation-readiness reports unconfigured without consulting the gate", async () => {
-    const noVerifyDeps = {
-      ...deps,
+    const noVerifyDeps = createDeps({
       verifyQueue: undefined,
       checkBenchGate: () => {
         throw new Error("the gate is irrelevant when nothing can run");
       },
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(noVerifyDeps)(
       new Request("http://localhost/api/escalation-readiness"),
@@ -1409,10 +1454,9 @@ describe("dashboard/server", () => {
   // models" mode is intact — the fix must not make escalation config a
   // prerequisite for the route that never needed it.
   it("the quick-run route still works when escalation is not configured", async () => {
-    const noVerifyDeps = {
-      ...deps,
+    const noVerifyDeps = createDeps({
       verifyQueue: undefined,
-    } as unknown as Parameters<typeof createHandler>[0];
+    });
 
     const res = await createHandler(noVerifyDeps)(
       new Request("http://localhost/api/run", {
