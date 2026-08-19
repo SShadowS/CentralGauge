@@ -20,6 +20,8 @@
  * @module dashboard/verify-run
  */
 
+import * as colors from "@std/fmt/colors";
+
 import type { VerifyOutcome } from "./verify-types.ts";
 import { stageResponse } from "./verify-staging.ts";
 
@@ -58,6 +60,21 @@ export interface VerifyResponseOptions {
  * Order matters: `syntheticNoTestsRan` is checked first, before any
  * counts-based branch, so a publish/install defect can never be reported
  * as a test failure regardless of what the counts say.
+ *
+ * A `failed_both` verdict requires POSITIVE EVIDENCE that tests actually
+ * ran (`totalTests` is a defined, positive number). `handleAlVerify` has
+ * three sites that return `{success: false, message}` with no `totalTests`
+ * at all (`mcp/al-tools-server.ts:1407` app.json prep, `:1427` test-file
+ * copy, `:1558-1560` the outer catch, which also absorbs a thrown infra
+ * `ContainerError`), and `createFailedTestResult`
+ * (`src/container/bc-container-provider.ts:2478`) produces the legacy
+ * `totalTests: 0, passed: 0, failed: 0` shape with no `syntheticNoTestsRan`
+ * flag. Without this guard either shape falls through to `failed_both` with
+ * fabricated `0/0` counts and an empty failures array — reporting an
+ * infrastructure failure (the same class of lie `syntheticNoTestsRan`
+ * exists to prevent) as though a model's tests ran and failed. Mapping both
+ * to `errored` instead surfaces `result.message`, the real reason, to the
+ * author.
  */
 function mapResult(result: VerifyResultLike): VerifyOutcome {
   if (result.syntheticNoTestsRan) {
@@ -76,10 +93,14 @@ function mapResult(result: VerifyResultLike): VerifyOutcome {
     };
   }
 
+  if (result.totalTests === undefined || result.totalTests === 0) {
+    return { state: "errored", message: result.message };
+  }
+
   return {
     state: "failed_both",
     passed: result.passed ?? 0,
-    total: result.totalTests ?? 0,
+    total: result.totalTests,
     failures: result.failures ?? [],
   };
 }
@@ -117,6 +138,21 @@ export async function verifyResponse(
     const message = error instanceof Error ? error.message : String(error);
     return { state: "errored", message };
   } finally {
-    await staged.cleanup();
+    // Never let a cleanup failure escape and discard an already-computed
+    // outcome: one bad response must not take down the queue Task 6 builds
+    // around this module. `staged.cleanup()` rethrows anything that is not
+    // `Deno.errors.NotFound` (correctly, in `verify-staging.ts`), so this is
+    // the deliberate last line of defense against a real cleanup error
+    // (permission denied, file busy) surfacing here instead.
+    try {
+      await staged.cleanup();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        colors.yellow(
+          `[verify-run] cleanup failed for ${staged.projectDir}: ${message}`,
+        ),
+      );
+    }
   }
 }

@@ -27,7 +27,10 @@ Deno.test("verify-run attempt 1", async (t) => {
             syntheticNoTestsRan: true,
           }),
       });
-      assertEquals(outcome.state, "publish_defect");
+      assertEquals(outcome, {
+        state: "publish_defect",
+        message: "zero tests ran",
+      });
     } finally {
       await Deno.remove(draftDir, { recursive: true });
     }
@@ -92,7 +95,10 @@ Deno.test("verify-run attempt 1", async (t) => {
             return Promise.reject(new Error("container offline"));
           },
         });
-        assertEquals(outcome.state, "errored");
+        assertEquals(outcome, {
+          state: "errored",
+          message: "container offline",
+        });
         assertEquals(
           seenProjectDir !== "",
           true,
@@ -105,6 +111,70 @@ Deno.test("verify-run attempt 1", async (t) => {
           exists = false;
         }
         assertEquals(exists, false, "cleanup must run in a finally");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a bare success:false with no totalTests is not a test failure",
+    async () => {
+      // Reachable shape: handleAlVerify's app.json-prep failure
+      // (mcp/al-tools-server.ts:1407), test-file-copy failure (:1427), and
+      // outer catch-all (:1558-1560, which also absorbs a thrown infra
+      // ContainerError) all return exactly this — no totalTests field at
+      // all, so there is no positive evidence any test ran.
+      const draftDir = await draftWithOracle("CG-AL-X014");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X014",
+          code: "table 70001 A { }",
+          verify: () =>
+            Promise.resolve({
+              success: false,
+              message: "Verification error: container offline",
+            }),
+        });
+        assertEquals(outcome, {
+          state: "errored",
+          message: "Verification error: container offline",
+        });
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a legacy zero-count test result is not a test failure",
+    async () => {
+      // Reachable shape: createFailedTestResult
+      // (src/container/bc-container-provider.ts:2478) produces
+      // {totalTests: 0, passedTests: 0, failedTests: 0} with no
+      // syntheticNoTestsRan flag; verifyResultFromTestResult carries that
+      // straight through to totalTests: 0 / passed: 0 / failed: 0.
+      const draftDir = await draftWithOracle("CG-AL-X015");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X015",
+          code: "table 70001 A { }",
+          verify: () =>
+            Promise.resolve({
+              success: false,
+              message: "Tests failed: 0 of 0 tests failed",
+              totalTests: 0,
+              passed: 0,
+              failed: 0,
+              failures: [],
+            }),
+        });
+        assertEquals(outcome, {
+          state: "errored",
+          message: "Tests failed: 0 of 0 tests failed",
+        });
       } finally {
         await Deno.remove(draftDir, { recursive: true });
       }
