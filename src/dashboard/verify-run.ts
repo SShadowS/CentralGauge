@@ -68,6 +68,8 @@ export interface VerifyResultLike {
   failed?: number;
   failures?: string[];
   compileErrors?: string[];
+  /** Whose `.al` files `compileErrors` came from. See `mapResult`. */
+  compileErrorsSource?: "candidate" | "prereq";
   syntheticNoTestsRan?: boolean;
 }
 
@@ -129,6 +131,22 @@ export interface VerifyResponseOptions {
  * counts-based branch, so a publish/install defect can never be reported
  * as a test failure regardless of what the counts say.
  *
+ * `compileErrors` alone does not say WHOSE code failed to compile.
+ * `handleAlVerify` populates it both for the candidate
+ * (`mcp/al-tools-server.ts`, "Verification compilation failed") and for one
+ * of the task's own PREREQ apps ("Prereq app compilation failed for ..."),
+ * and the only field that told them apart was `message`, which this mapper
+ * discards. So a draft with a half-written `prereq/` — an ordinary state
+ * for the unpromoted drafts this dashboard serves — showed every response
+ * in the batch as "Didn't compile" behind the AUTHOR'S own errors,
+ * indistinguishable from a model mistake, and then burned one paid model
+ * call per response asking each to fix AL it never saw and cannot reach.
+ * `compileErrorsSource` is the producer stating it structurally rather
+ * than a consumer matching on prose that a reword would silently break.
+ * The prereq case maps to `publish_defect` with the message intact: like
+ * every other infrastructure outcome it is not a model result, and
+ * `publish_defect` is already skipped for the fix attempt.
+ *
  * Both the `passed_first_try` and `failed_both` verdicts require POSITIVE
  * EVIDENCE that tests actually ran (`totalTests` is a defined, positive
  * number) — a claim of success with no tests behind it is the same
@@ -166,6 +184,9 @@ function mapResult(result: VerifyResultLike): VerifyOutcome {
   }
 
   if (result.compileErrors && result.compileErrors.length > 0) {
+    if (result.compileErrorsSource === "prereq") {
+      return { state: "publish_defect", message: result.message };
+    }
     return { state: "didnt_compile", compileErrors: result.compileErrors };
   }
 

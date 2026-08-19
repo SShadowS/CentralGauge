@@ -880,6 +880,25 @@ export interface VerifyResult {
   failures?: string[];
   compileErrors?: string[];
   /**
+   * Whose `.al` files `compileErrors` came from. `compileErrors` alone
+   * cannot say: `handleAlVerify` populates it both when the CANDIDATE fails
+   * to compile and when one of the task's own PREREQ apps does, and the
+   * only field that distinguished them was `message`, which consumers
+   * discard.
+   *
+   * That mattered once the dashboard's escalation path started mapping this
+   * shape onto an author-facing verdict: a half-written `prereq/` — an
+   * entirely ordinary state for an unpromoted draft — showed every response
+   * in the batch as "Didn't compile", indistinguishable from a model
+   * mistake, and then spent a real model call per response asking each one
+   * to fix compile errors in AL it never saw and cannot reach.
+   *
+   * Optional and purely additive: absent means "not stated", which every
+   * consumer should read the same way it read this shape before the field
+   * existed (as the candidate's errors).
+   */
+  compileErrorsSource?: "candidate" | "prereq";
+  /**
    * Passed through from `TestResult.syntheticNoTestsRan`: the counts above
    * are a scoring convention for a candidate publish/install defect, not a
    * measurement of tests that ran. `scripts/trap-probe.ts` needs it to keep
@@ -1330,6 +1349,11 @@ export async function handleAlVerify(params: {
                 (e) =>
                   `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
               ),
+              // These errors are in the TASK'S OWN prereq app, not in the
+              // candidate. Without saying so structurally, the only thing
+              // that carried it was `message` — and a consumer matching on
+              // that prose would break silently the day it is reworded.
+              compileErrorsSource: "prereq",
             };
           }
           if (prereqCompileResult.artifactPath) {
@@ -1485,6 +1509,10 @@ export async function handleAlVerify(params: {
         compileErrors: compileResult.errors.map(
           (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
         ),
+        // The candidate's own errors — stated explicitly so the field is
+        // meaningful in BOTH directions rather than only marking the
+        // exception.
+        compileErrorsSource: "candidate",
       };
     }
     logTiming("Compile project", compileStart);

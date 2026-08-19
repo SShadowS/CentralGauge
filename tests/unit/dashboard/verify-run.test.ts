@@ -58,6 +58,114 @@ Deno.test("verify-run attempt 1", async (t) => {
     }
   });
 
+  await t.step(
+    "a prereq that fails to compile is not the model's compile failure",
+    async () => {
+      // Reachable shape: `handleAlVerify` returns exactly this when one of
+      // the task's own prereq apps fails to compile
+      // (`mcp/al-tools-server.ts`, "Prereq app compilation failed for
+      // ..."), with the PREREQ'S errors in `compileErrors`. A half-written
+      // `prereq/` is an ordinary state for an unpromoted draft, and
+      // mapping it to `didnt_compile` showed the author their own errors
+      // as though a model had made them.
+      const draftDir = await draftWithOracle("CG-AL-X017");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X017",
+          code: "table 70001 A { }",
+          verify: () =>
+            Promise.resolve({
+              success: false,
+              message: "Prereq app compilation failed for CG-AL-X017 Prereq",
+              compileErrors: ["Foo.Table.al(3,1): AL0118 - syntax error"],
+              compileErrorsSource: "prereq" as const,
+            }),
+        });
+        assertEquals(outcome, {
+          state: "publish_defect",
+          message: "Prereq app compilation failed for CG-AL-X017 Prereq",
+        });
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a prereq compile failure does not burn a fix call",
+    async () => {
+      // `publish_defect` is already off the fix-attempt allowlist, but the
+      // point of routing the prereq case there is precisely that a batch of
+      // five responses must not spend five paid model calls asking each to
+      // repair AL it never saw and cannot reach.
+      const draftDir = await draftWithOracle("CG-AL-X018");
+      try {
+        let calls = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X018",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () => {
+            calls++;
+            return Promise.resolve({ content: "x", finishReason: "stop" });
+          },
+          verify: () =>
+            Promise.resolve({
+              success: false,
+              message: "Prereq app compilation failed for CG-AL-X018 Prereq",
+              compileErrors: ["Foo.Table.al(3,1): AL0118 - syntax error"],
+              compileErrorsSource: "prereq" as const,
+            }),
+        });
+        assertEquals(outcome.state, "publish_defect");
+        assertEquals(calls, 0, "the author's own prereq is not a model task");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "the candidate's own compile errors still report as didnt_compile",
+    async () => {
+      // The other half: `compileErrorsSource: "candidate"` (and, for any
+      // producer that does not set the field at all, its absence) must keep
+      // the pre-existing behaviour exactly.
+      const draftDir = await draftWithOracle("CG-AL-X019");
+      try {
+        for (
+          const source of [
+            "candidate" as const,
+            undefined,
+          ]
+        ) {
+          const outcome = await verifyResponse({
+            draftDir,
+            taskId: "CG-AL-X019",
+            code: "not al",
+            verify: () =>
+              Promise.resolve({
+                success: false,
+                message: "Verification compilation failed",
+                compileErrors: ["CG-AL-X019.al(1,1): AL0118 - syntax error"],
+                ...(source !== undefined
+                  ? { compileErrorsSource: source }
+                  : {}),
+              }),
+          });
+          assertEquals(outcome, {
+            state: "didnt_compile",
+            compileErrors: ["CG-AL-X019.al(1,1): AL0118 - syntax error"],
+          }, `source=${source}`);
+        }
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
   await t.step("all tests passing is passed_first_try", async () => {
     const draftDir = await draftWithOracle("CG-AL-X012");
     try {
