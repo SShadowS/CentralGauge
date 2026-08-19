@@ -1306,6 +1306,68 @@ describe("dashboard/server", () => {
     await reader.cancel();
     assertEquals(unsubscribed, true);
   });
+
+  // "Ask N models" must keep working with containers down or unconfigured
+  // (spec). A server with no `verify` adapter used to fall back to a stub
+  // that reported every job `errored` — the exact false signal Task 4
+  // spent two rounds removing from mapResult, arriving through
+  // configuration instead of through data: a missing adapter read as "the
+  // container died" rather than "escalation isn't configured". Fixed by
+  // never enqueuing at all — `deps.verifyQueue` is `undefined` in this
+  // mode, and the route refuses before touching anything.
+  it("POST /api/verify refuses with 501 when escalation is not configured, without touching drafts, the gate, or a queue", async () => {
+    const noVerifyDeps = {
+      ...deps,
+      verifyQueue: undefined,
+      // Spies that prove the route returns BEFORE any of the normal
+      // per-request work happens — not just before a (nonexistent) queue's
+      // enqueue. A route that fell through past the guard would hit one of
+      // these and throw, which is exactly the mutation-proof below.
+      listDrafts: () => {
+        throw new Error("listDrafts must not be called when unconfigured");
+      },
+      checkBenchGate: () => {
+        throw new Error("checkBenchGate must not be called when unconfigured");
+      },
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(noVerifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 501);
+    const body = await res.json();
+    assertStringIncludes(body.error, "escalation is not configured");
+  });
+
+  // Same unconfigured deps as above, proving the no-container "Ask N
+  // models" mode is intact — the fix must not make escalation config a
+  // prerequisite for the route that never needed it.
+  it("the quick-run route still works when escalation is not configured", async () => {
+    const noVerifyDeps = {
+      ...deps,
+      verifyQueue: undefined,
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(noVerifyDeps)(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    // deps.runQuick rejects with "not called in this test" — a non-400
+    // response proves validation passed and the route reached it, exactly
+    // like "accepts a well-formed run request" above.
+    assertEquals(res.status === 400, false);
+  });
 });
 
 describe("dashboard/source-loader", () => {

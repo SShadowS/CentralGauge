@@ -59,6 +59,18 @@ export interface DashboardServer {
 const UI_DIR = new URL("./ui/", import.meta.url);
 
 /**
+ * `POST /api/verify` and `GET /api/verify-events`'s refusal when
+ * `deps.verifyQueue` is `undefined` — no `verify` adapter was supplied to
+ * `startServer`. Deliberately worded like `checkBenchGate`'s own refusal
+ * reason (same "still works" reassurance), and deliberately NOT reusing
+ * `errored` or any `VerifyOutcome` state: those describe what happened to a
+ * JOB, and no job exists here — nothing was ever enqueued.
+ */
+const ESCALATION_NOT_CONFIGURED =
+  "escalation is not configured on this server: no verify adapter was " +
+  "supplied to startServer. Ask N models still works.";
+
+/**
  * The complete set of static files this server will ever serve, keyed by
  * request path. Deliberately an explicit three-entry allowlist rather than
  * a generic `url.pathname` -> filesystem-path mapper: a generic static
@@ -392,8 +404,21 @@ export function createHandler(
      * function is the real container-touching adapter, built in
      * `cli/commands/workbench-command.ts` — never imported here (see the
      * module doc comment on why this file stays clear of `handleAlVerify`).
+     *
+     * `undefined` means escalation is NOT configured for this server
+     * instance (no `verify` adapter was supplied to `startServer`) — a
+     * legitimate mode, not an error: "Ask N models" must keep working with
+     * containers down or unconfigured. Both verify routes refuse up front
+     * in that case (`ESCALATION_NOT_CONFIGURED`), before touching anything
+     * that would need a queue. There used to be a fallback queue here whose
+     * `verify` unconditionally reported `errored` — that fabricated the
+     * exact false signal Task 4 spent two rounds removing from
+     * `mapResult`: a missing adapter would read as "the container died"
+     * (real infra outcome) rather than "escalation isn't configured"
+     * (config state), sending an author to chase an outage that never
+     * happened.
      */
-    verifyQueue: Pick<VerifyQueue, "enqueue" | "on" | "snapshot">;
+    verifyQueue: Pick<VerifyQueue, "enqueue" | "on" | "snapshot"> | undefined;
     /**
      * Synchronous bench-liveness check for `POST /api/verify` itself,
      * distinct from the queue's OWN per-job gate (re-checked at dispatch
@@ -577,6 +602,18 @@ export function createHandler(
     // reason verbatim, rather than silently accepting work the queue will
     // only refuse one job at a time, later.
     if (req.method === "POST" && url.pathname === "/api/verify") {
+      // Checked FIRST, before the body is even parsed: escalation being
+      // unconfigured is a legitimate server mode (spec: "Ask N models"
+      // works with containers down), not a failure, so it must never reach
+      // the queue or produce a job at all — see `ESCALATION_NOT_CONFIGURED`.
+      if (!deps.verifyQueue) {
+        return jsonResponse(501, { error: ESCALATION_NOT_CONFIGURED });
+      }
+      // Re-bound to a local so the guard above narrows it for the rest of
+      // this block — TS drops narrowing on a property access across an
+      // intervening function/await, and there are several below.
+      const verifyQueue = deps.verifyQueue;
+
       let body: unknown;
       try {
         body = await req.json();
@@ -598,7 +635,7 @@ export function createHandler(
       const { draft, responses, containerName } = validated;
       const jobs = responses.map(({ model, code }) => ({
         model,
-        id: deps.verifyQueue.enqueue({
+        id: verifyQueue.enqueue({
           draftDir: draft.dir,
           taskId: draft.id,
           model,
@@ -631,6 +668,15 @@ export function createHandler(
     // only and enforces `isSameOriginRequest` globally, above, and a CORS
     // header here would needlessly widen who can read it.
     if (req.method === "GET" && url.pathname === "/api/verify-events") {
+      // Same refusal as `POST /api/verify`, and the same reason it must be
+      // checked here too rather than assumed from that route alone: a
+      // client can open this stream directly, with no prior `/api/verify`
+      // call in this process.
+      if (!deps.verifyQueue) {
+        return jsonResponse(501, { error: ESCALATION_NOT_CONFIGURED });
+      }
+      const verifyQueue = deps.verifyQueue;
+
       const encoder = new TextEncoder();
       let unsubscribe: (() => void) | undefined;
 
@@ -648,12 +694,12 @@ export function createHandler(
             }
           };
 
-          for (const view of deps.verifyQueue.snapshot()) {
+          for (const view of verifyQueue.snapshot()) {
             send({ id: view.id, job: view.job, outcome: view.outcome });
           }
 
           if (replayOk) {
-            unsubscribe = deps.verifyQueue.on(send);
+            unsubscribe = verifyQueue.on(send);
           }
         },
         cancel() {
@@ -698,10 +744,20 @@ export function startServer(
      * that adapter is built in `cli/commands/workbench-command.ts`, NOT
      * here: this module must never import `handleAlVerify` directly, same
      * reason it must never import the config loader (module doc comment;
-     * `tests/unit/dashboard/ingest-safety.test.ts` polices it). Left
-     * `undefined` — every test that does not exercise escalation, plus any
-     * caller that forgot to wire it — falls back to a stub that reports
-     * every job `errored` rather than silently doing nothing.
+     * `tests/unit/dashboard/ingest-safety.test.ts` polices it).
+     *
+     * Left `undefined` — every test that does not exercise escalation, plus
+     * any caller that omits it — means escalation is NOT configured for
+     * this server instance: `startServer` builds no `VerifyQueue` at all,
+     * and both verify routes refuse up front with
+     * `ESCALATION_NOT_CONFIGURED` rather than accepting a job. This used to
+     * fall back to a stub `verify` that reported every job `errored` —
+     * fabricating the exact false signal Task 4 spent two rounds removing
+     * from `mapResult`: a missing adapter would read as "the container
+     * died" (a real infra outcome) rather than "escalation isn't
+     * configured" (a config state), sending an author to chase an outage
+     * that never happened. "Ask N models" is a legitimate mode with
+     * containers down or unconfigured, so this must never be required.
      */
     verify?: VerifyQueueVerifyFn;
   },
@@ -714,14 +770,9 @@ export function startServer(
   // gets reported as never reassigned.
   const listener: { port: number | undefined } = { port: undefined };
 
-  const verifyQueue = new VerifyQueue({
-    gate: () => checkBenchGate(),
-    verify: opts.verify ?? (() =>
-      Promise.resolve({
-        state: "errored" as const,
-        message: "escalation verify is not configured for this server instance",
-      })),
-  });
+  const verifyQueue = opts.verify
+    ? new VerifyQueue({ gate: () => checkBenchGate(), verify: opts.verify })
+    : undefined;
 
   const handler = createHandler({
     scratchDir: opts.scratchDir,
