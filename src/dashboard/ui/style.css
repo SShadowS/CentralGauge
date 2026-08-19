@@ -431,6 +431,22 @@ table.matrix tbody th {
   font-weight: 600;
 }
 
+.mismatch-badge {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.mismatch-expected,
+.mismatch-actual {
+  display: block;
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
 .cell-empty {
   color: var(--text-muted);
   cursor: default;

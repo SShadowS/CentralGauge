@@ -192,6 +192,40 @@ function el(tag, className, text) {
 }
 
 /**
+ * The in-cell badge for a name-or-id mismatch between `row`'s identity and
+ * `obj`, the actual object this response's row-assignment points to. Spec
+ * §3: two objects that normalize to the same row (object-identity.ts's
+ * `buildRowUniverse`/`assignObjectsToRows`, via `nameFallbackKey`) merge into
+ * ONE row, never two — but that merge rule merges on kind plus EITHER id
+ * (when both objects have one, ignoring name — see `objectKey`) OR
+ * normalized name (ignoring id), so one of the two fields can still disagree
+ * between the row's first-seen identity and this particular object. That
+ * disagreement is always shown here, in-cell, never as a second row.
+ *
+ * Compares the exact values the server already computed (`row.id`/`row.name`
+ * vs `obj.id`/`obj.name`) — no re-implementation of `normalizeName` here,
+ * the same lesson this file's header comment already states for `objectKey`.
+ * Returns `null` when there is nothing to show, e.g. an exact match on both
+ * fields, or two id-less objects (interface/controladdin) that only ever
+ * merge on a normalized name match.
+ */
+function buildMismatchBadge(row, obj) {
+  const idMismatch = row.id !== undefined && obj.id !== undefined &&
+    row.id !== obj.id;
+  const nameMismatch = row.name !== obj.name;
+  if (!idMismatch && !nameMismatch) return null;
+
+  const badge = el("div", "mismatch-badge");
+  badge.appendChild(
+    el("span", "mismatch-expected", `Asked for: ${describeRow(row)}`),
+  );
+  badge.appendChild(
+    el("span", "mismatch-actual", `Wrote: ${describeRow(obj)}`),
+  );
+  return badge;
+}
+
+/**
  * The "Use as wrong answer" (naive/) action, spec §8. `index.html` carries no
  * markup for it — the detail panel it lives in is a fixed section, but this
  * action is built once, here, and appended into it, so it persists across
@@ -679,6 +713,12 @@ function buildCell(row, response) {
   } else {
     wrapper.classList.add("cell-present");
     wrapper.textContent = "view source";
+  }
+
+  const mismatchBadge = buildMismatchBadge(row, obj);
+  if (mismatchBadge) {
+    wrapper.classList.add("cell-mismatch");
+    wrapper.appendChild(mismatchBadge);
   }
 
   wrapper.addEventListener("click", () => {

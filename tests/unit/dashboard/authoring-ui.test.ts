@@ -350,6 +350,144 @@ describe("dashboard/ui app.js", () => {
     assertEquals(cell.textContent, "not written");
   });
 
+  // Task 9 / spec §3. object-identity.ts's buildRowUniverse already merges
+  // two objects that normalize to the same identity into ONE row (tested in
+  // object-identity.test.ts's "merges two responses' same-named objects
+  // with different ids into one row" — this fixture reuses those exact
+  // values), even when one field disagrees between them. That disagreement
+  // must render as an in-cell badge per response, never a second row —
+  // splitting it would report the asked-for object as missing and the
+  // near-miss as extra, which misreads the failure. Driven through the real
+  // renderMatrix pipeline so "one row" is checked at the level an author
+  // actually sees it (the table's own row count), not just an array length.
+  it("badges an id mismatch, without splitting into two rows, when two responses share a normalized name under different ids", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+
+    const row = {
+      key: "codeunit|71410",
+      kind: "codeunit",
+      id: 71410,
+      name: "Agent",
+      inReference: false,
+    };
+    const responseExact = {
+      model: "model-a",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "codeunit",
+        id: 71410,
+        name: "Agent",
+        source: 'codeunit 71410 "Agent" { }',
+      }],
+      rowAssignments: { "codeunit|71410": 0 },
+      hasParseError: false,
+    };
+    const responseMismatched = {
+      model: "model-b",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "codeunit",
+        id: 71400,
+        name: "Agent",
+        source: 'codeunit 71400 "Agent" { }',
+      }],
+      rowAssignments: { "codeunit|71410": 0 },
+      hasParseError: false,
+    };
+
+    ui.renderMatrix({
+      rows: [row],
+      responses: [responseExact, responseMismatched],
+    });
+
+    const table = node("matrix-container").children[0]!;
+    const tbody = table.children[1]!;
+    assertEquals(tbody.children.length, 1, "expected exactly one row");
+
+    const tr = tbody.children[0]!;
+    const cellExact = tr.children[1]!.children[0]!;
+    const cellMismatched = tr.children[2]!.children[0]!;
+
+    assertEquals(findNode(cellExact, "mismatch-badge", ""), undefined);
+
+    const expected = findNode(cellMismatched, "mismatch-expected", "71410");
+    const actual = findNode(cellMismatched, "mismatch-actual", "71400");
+    assertStringIncludes(allText(expected!), 'codeunit 71410 "Agent"');
+    assertStringIncludes(allText(actual!), 'codeunit 71400 "Agent"');
+  });
+
+  // The mirror direction: same id, different names. `objectKey` keys an
+  // object with an id purely by kind+id (name is only part of the key when
+  // id is ABSENT), so two objects sharing an id merge on the exact-key pass
+  // directly — no fallback needed — yet their names can still disagree.
+  it("badges a name mismatch, without splitting into two rows, when two responses share an id under different names", async () => {
+    const ui = await loadUi();
+    ui.state.verify.outcomes = {};
+    ui.state.verify.blockedReason = null;
+
+    const row = {
+      key: "table|71411",
+      kind: "table",
+      id: 71411,
+      name: "CG Line",
+      inReference: true,
+    };
+    const responseExact = {
+      model: "model-a",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "table",
+        id: 71411,
+        name: "CG Line",
+        source: 'table 71411 "CG Line" { }',
+      }],
+      rowAssignments: { "table|71411": 0 },
+      hasParseError: false,
+    };
+    const responseMismatched = {
+      model: "model-b",
+      prompt: "p",
+      resolution: readyResolution,
+      classification: { verdict: "different-approach" },
+      objects: [{
+        kind: "table",
+        id: 71411,
+        name: "CG Ledger",
+        source: 'table 71411 "CG Ledger" { }',
+      }],
+      rowAssignments: { "table|71411": 0 },
+      hasParseError: false,
+    };
+
+    ui.renderMatrix({
+      rows: [row],
+      responses: [responseExact, responseMismatched],
+    });
+
+    const table = node("matrix-container").children[0]!;
+    const tbody = table.children[1]!;
+    assertEquals(tbody.children.length, 1, "expected exactly one row");
+
+    const tr = tbody.children[0]!;
+    const cellExact = tr.children[1]!.children[0]!;
+    const cellMismatched = tr.children[2]!.children[0]!;
+
+    assertEquals(findNode(cellExact, "mismatch-badge", ""), undefined);
+
+    const expected = findNode(cellMismatched, "mismatch-expected", "CG Line");
+    const actual = findNode(cellMismatched, "mismatch-actual", "CG Ledger");
+    assertStringIncludes(allText(expected!), 'table 71411 "CG Line"');
+    assertStringIncludes(allText(actual!), 'table 71411 "CG Ledger"');
+  });
+
   // Spec §4: "It is explainable. The UI names the deciding statement rather
   // than showing a score, which is what makes a glance sufficient."
   it("names the deciding statement in the column header", async () => {
