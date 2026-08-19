@@ -178,6 +178,34 @@ const prereqCache = new Map<
  */
 const publishedPrereqCache = new Map<string, Promise<void>>();
 
+/**
+ * Empties both prereq caches.
+ *
+ * Both are module-level and therefore live as long as the process. In the
+ * bench and in `scripts/trap-probe.ts` that is one short CLI invocation, and
+ * the assumption behind them holds: prereqs do not change during a run.
+ * Under `workbench serve` the process is a long-lived dashboard, and the
+ * assumption is false in the most ordinary way possible — the author clicks
+ * "Compile & test", sees a failure caused by a missing field in their own
+ * prereq, edits `scratch/<id>/prereq/Foo.Table.al`, and clicks again. Without
+ * this, the container is still running the OLD compiled and OLD published
+ * prereq, the verdict is stale, and nothing says so; the only recovery is
+ * restarting the dashboard, which nothing tells the author to do. That is a
+ * direct attack on the edit-verify loop the dashboard exists for.
+ *
+ * Called once per job by the dashboard's escalation adapter
+ * (`cli/commands/workbench-command.ts`). The queue is serial, so there is no
+ * intra-job sharing to lose: the cost is one prereq recompile per job rather
+ * than per attempt. Safe to call when the caches are already empty.
+ *
+ * Additive: nothing else calls it, so the bench and `trap-probe.ts` keep
+ * their existing per-invocation caching untouched.
+ */
+export function clearPrereqCaches(): void {
+  prereqCache.clear();
+  publishedPrereqCache.clear();
+}
+
 // =============================================================================
 // Tool Definitions
 // =============================================================================
@@ -880,6 +908,25 @@ export interface VerifyResult {
   failures?: string[];
   compileErrors?: string[];
   /**
+   * Whose `.al` files `compileErrors` came from. `compileErrors` alone
+   * cannot say: `handleAlVerify` populates it both when the CANDIDATE fails
+   * to compile and when one of the task's own PREREQ apps does, and the
+   * only field that distinguished them was `message`, which consumers
+   * discard.
+   *
+   * That mattered once the dashboard's escalation path started mapping this
+   * shape onto an author-facing verdict: a half-written `prereq/` — an
+   * entirely ordinary state for an unpromoted draft — showed every response
+   * in the batch as "Didn't compile", indistinguishable from a model
+   * mistake, and then spent a real model call per response asking each one
+   * to fix compile errors in AL it never saw and cannot reach.
+   *
+   * Optional and purely additive: absent means "not stated", which every
+   * consumer should read the same way it read this shape before the field
+   * existed (as the candidate's errors).
+   */
+  compileErrorsSource?: "candidate" | "prereq";
+  /**
    * Passed through from `TestResult.syntheticNoTestsRan`: the counts above
    * are a scoring convention for a candidate publish/install defect, not a
    * measurement of tests that ran. `scripts/trap-probe.ts` needs it to keep
@@ -1330,6 +1377,11 @@ export async function handleAlVerify(params: {
                 (e) =>
                   `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
               ),
+              // These errors are in the TASK'S OWN prereq app, not in the
+              // candidate. Without saying so structurally, the only thing
+              // that carried it was `message` — and a consumer matching on
+              // that prose would break silently the day it is reworded.
+              compileErrorsSource: "prereq",
             };
           }
           if (prereqCompileResult.artifactPath) {
@@ -1485,6 +1537,10 @@ export async function handleAlVerify(params: {
         compileErrors: compileResult.errors.map(
           (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
         ),
+        // The candidate's own errors — stated explicitly so the field is
+        // meaningful in BOTH directions rather than only marking the
+        // exception.
+        compileErrorsSource: "candidate",
       };
     }
     logTiming("Compile project", compileStart);

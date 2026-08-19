@@ -1,12 +1,19 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { join } from "@std/path";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
 import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
+import { loadPrereqSources } from "../../../src/dashboard/prereq-sources.ts";
 import {
   runQuick,
   writeRunArtifact,
 } from "../../../src/dashboard/run-manager.ts";
+import { promoteAsNaive } from "../../../src/dashboard/promote-naive.ts";
+import type {
+  VerifyQueueEvent,
+  VerifyQueueJob,
+} from "../../../src/dashboard/verify-queue.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -43,6 +50,7 @@ const DESCRIPTION = "Write a codeunit that validates quantity.";
 
 const deps = {
   scratchDir: "/tmp/nope",
+  dependenciesRoot: "/tmp/nope/deps",
   listDrafts: () =>
     Promise.resolve([
       {
@@ -54,6 +62,8 @@ const deps = {
     ]),
   loadTrapSources: () =>
     Promise.resolve({ correctSources: [], naiveSources: [] }),
+  loadPrereqSources: () =>
+    Promise.resolve({ sources: [], files: [], hasError: false }),
   createModelCaller: () => () =>
     Promise.reject(new Error("not called in this test")),
   runQuick: () => Promise.reject(new Error("not called in this test")),
@@ -216,7 +226,11 @@ describe("dashboard/server", () => {
   // handler through a thunk. This drives the real listener to prove the
   // thunk is actually wired, not merely accepted by the type.
   it("threads the bound port into the origin check on a real listener", async () => {
-    const server = await startServer({ scratchDir: "/tmp/nope", port: 0 });
+    const server = await startServer({
+      scratchDir: "/tmp/nope",
+      dependenciesRoot: "/tmp/nope/deps",
+      port: 0,
+    });
     try {
       const base = `http://127.0.0.1:${server.port}`;
       const ownOrigin = await fetch(`${base}/api/drafts`, {
@@ -279,6 +293,159 @@ describe("dashboard/server", () => {
     assertEquals(res.status === 400, false);
   });
 
+  it("rejects a promote request naming an unknown draft", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "nope",
+          code: "codeunit 1 A { }",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("rejects a promote request with no code", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          code: "",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("refuses a foreign origin on the promote route", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/promote-naive", {
+        method: "POST",
+        headers: { Origin: "http://evil.example" },
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          code: "codeunit 1 A { }",
+          model: "m",
+          attempt: 1,
+        }),
+      }),
+    );
+    assertEquals(res.status, 403);
+  });
+
+  // Real promoteAsNaive against a real temp draft, wired through the route
+  // exactly as startServer would — proves the handler resolves `draftDir` to
+  // `draft.id`/`draft.dir` correctly and that the response the author sees
+  // (`written`) is what actually landed on disk, not a shape the route
+  // merely echoes back.
+  it("promotes a response into naive/ and reports what was written", async () => {
+    const dir = await createTempDir("dashboard-server-promote-test");
+    try {
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+      await Deno.writeTextFile(
+        `${dir}/naive/Stale.Codeunit.al`,
+        "codeunit 1 S { }",
+      );
+
+      const promoteDeps = {
+        ...deps,
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: false,
+            },
+          ]),
+        promoteAsNaive,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(promoteDeps)(
+        new Request("http://localhost/api/promote-naive", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            code: CORRECT,
+            model: "anthropic/m",
+            attempt: 1,
+          }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.written, ["A.Codeunit.al"]);
+      // The prior naive/ content is replaced, not merged (Task 8's contract) —
+      // the route reports it, and it is really gone from disk.
+      assertEquals(body.removed, ["Stale.Codeunit.al"]);
+      const written = await Deno.readTextFile(`${dir}/naive/A.Codeunit.al`);
+      assertStringIncludes(written, "anthropic/m");
+      const staleGone = await Deno.stat(`${dir}/naive/Stale.Codeunit.al`)
+        .then(() => true)
+        .catch(() => false);
+      assertEquals(staleGone, false);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // The refusal message is the point of the feature (per the brief): an
+  // author needs to read WHY a promotion did not happen, not a generic
+  // "failed". Two objects sanitising to the same filename is one of
+  // promoteAsNaive's three refusal cases.
+  it("surfaces a PromoteRefusal message verbatim as a 400", async () => {
+    const dir = await createTempDir("dashboard-server-promote-refusal-test");
+    try {
+      await Deno.mkdir(`${dir}/naive`, { recursive: true });
+
+      const promoteDeps = {
+        ...deps,
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: false,
+            },
+          ]),
+        promoteAsNaive,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const colliding = `codeunit 70060 "Q>Q" { }\ncodeunit 70061 "Q?Q" { }`;
+      const res = await createHandler(promoteDeps)(
+        new Request("http://localhost/api/promote-naive", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            code: colliding,
+            model: "anthropic/m",
+            attempt: 1,
+          }),
+        }),
+      );
+      assertEquals(res.status, 400);
+      const body = await res.json();
+      assertStringIncludes(body.error, "collide on the same filename");
+      // A refusal must leave naive/ untouched — nothing was written.
+      const files: string[] = [];
+      for await (const entry of Deno.readDir(`${dir}/naive`)) {
+        files.push(entry.name);
+      }
+      assertEquals(files, []);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
   it("serves an empty default-models list when none was resolved", async () => {
     const res = await createHandler(deps)(
       new Request("http://localhost/api/defaults"),
@@ -308,7 +475,11 @@ describe("dashboard/server", () => {
   });
 
   it("binds loopback only", async () => {
-    const server = await startServer({ scratchDir: "/tmp/nope", port: 0 });
+    const server = await startServer({
+      scratchDir: "/tmp/nope",
+      dependenciesRoot: "/tmp/nope/deps",
+      port: 0,
+    });
     try {
       assertEquals(server.hostname, "127.0.0.1");
     } finally {
@@ -342,6 +513,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, request: { prompt: string }) => {
@@ -424,6 +596,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -508,6 +681,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, request: { prompt: string }) => {
@@ -567,6 +741,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -641,6 +816,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -710,6 +886,7 @@ describe("dashboard/server", () => {
             },
           ]),
         loadTrapSources,
+        loadPrereqSources,
         createModelCaller:
           (_context: unknown) =>
           (_model: string, _request: { prompt: string }) =>
@@ -736,6 +913,461 @@ describe("dashboard/server", () => {
     } finally {
       await cleanupTempDir(dir);
     }
+  });
+
+  // Task 6 fix round 1: `loadPrereqSources` used to be called directly in
+  // server.ts rather than injected via `deps` — every other runDeps block
+  // above exercises the empty-`prereq/`-directory branch (none scaffold
+  // one), so the wiring from a REAL `prereq/` directory through to a
+  // response's `prereqBinding`, as an author's browser would actually
+  // trigger it, was never exercised at the handler level. This closes that
+  // gap: the draft's own `prereq/` carries a table the candidate invents a
+  // field on, and the assertion is that the finding reaches the HTTP
+  // response, not just the `runQuick` unit under test.
+  it("loads the draft's prereq/ off disk and attaches a binding to the response", async () => {
+    const dir = await createTempDir("dashboard-server-prereq-test");
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    try {
+      await Deno.mkdir(`${dir}/correct`, { recursive: true });
+      // Deliberately no naive/ — this test is about prereqBinding reaching
+      // the response, not about classification, which a mismatched or
+      // absent naive/ leaves as "cannot-compare" harmlessly.
+      await Deno.mkdir(`${dir}/prereq`, { recursive: true });
+      await Deno.writeTextFile(`${dir}/correct/A.al`, CODE);
+      await Deno.writeTextFile(`${dir}/prereq/CGQuote.Table.al`, PREREQ);
+
+      const runDeps = {
+        scratchDir: dir,
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X054",
+              dir,
+              description: DESCRIPTION,
+              hasPrereq: true,
+            },
+          ]),
+        loadTrapSources,
+        loadPrereqSources,
+        createModelCaller:
+          (_context: unknown) =>
+          (_model: string, _request: { prompt: string }) =>
+            Promise.resolve({
+              content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+              finishReason: "stop" as const,
+            }),
+        runQuick,
+        writeRunArtifact,
+      } as unknown as Parameters<typeof createHandler>[0];
+
+      const res = await createHandler(runDeps)(
+        new Request("http://localhost/api/run", {
+          method: "POST",
+          body: JSON.stringify({
+            draftDir: dir,
+            models: ["anthropic/m"],
+          }),
+        }),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      const finding = body.responses[0]?.prereqBinding?.findings.find(
+        (f: { member: string }) => f.member === "Discount",
+      );
+      assertEquals(finding?.tier, "hard");
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  // The dependencies root used to be the relative literal
+  // `"tests/al/dependencies"` resolved against `Deno.cwd()`. Started from
+  // anywhere but the repo root, every chained dependency silently failed to
+  // resolve — indistinguishable from the legitimate base-app case — and
+  // their fields vanished from the index with no signal. It is a dep now,
+  // absolutised by the CLI, so this asserts the handler passes IT and not
+  // something of its own.
+  it("resolves chained prereqs against the injected dependencies root", async () => {
+    let seenRoot: string | undefined;
+    const handler = createHandler(
+      {
+        ...deps,
+        dependenciesRoot: "/abs/deps/root",
+        loadPrereqSources: (_draftDir: string, dependenciesRoot: string) => {
+          seenRoot = dependenciesRoot;
+          return Promise.resolve({ sources: [], files: [], hasError: false });
+        },
+        loadTrapSources: () =>
+          Promise.resolve({ correctSources: [], naiveSources: [] }),
+        createModelCaller: () => () =>
+          Promise.resolve({ content: "", finishReason: "stop" as const }),
+        runQuick: () =>
+          Promise.resolve({
+            draftId: "CG-AL-X054",
+            startedAt: "now",
+            signature: { sites: [] },
+            responses: [],
+            rows: [],
+          }),
+        writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
+      } as unknown as Parameters<typeof createHandler>[0],
+    );
+
+    const res = await handler(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(seenRoot, "/abs/deps/root");
+  });
+
+  // An incomplete prereq load must reach the binder, or a field that never
+  // made it into the index is reported as invented on the strength of a
+  // disk error.
+  it("forwards an incomplete prereq load through to the run", async () => {
+    let seenIncomplete: unknown;
+    const handler = createHandler(
+      {
+        ...deps,
+        loadPrereqSources: () =>
+          Promise.resolve({
+            sources: [`table 69001 "CG Quote" { }`],
+            files: ["CGQuote.Table.al"],
+            hasError: true,
+          }),
+        loadTrapSources: () =>
+          Promise.resolve({ correctSources: [], naiveSources: [] }),
+        createModelCaller: () => () =>
+          Promise.resolve({ content: "", finishReason: "stop" as const }),
+        runQuick: (opts: { prereqSourcesIncomplete?: boolean }) => {
+          seenIncomplete = opts.prereqSourcesIncomplete;
+          return Promise.resolve({
+            draftId: "CG-AL-X054",
+            startedAt: "now",
+            signature: { sites: [] },
+            responses: [],
+            rows: [],
+          });
+        },
+        writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
+      } as unknown as Parameters<typeof createHandler>[0],
+    );
+
+    const res = await handler(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(seenIncomplete, true);
+  });
+
+  it("POST /api/verify enqueues and returns job ids", async () => {
+    const enqueued: VerifyQueueJob[] = [];
+    let nextId = 1;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: (job: VerifyQueueJob) => {
+          enqueued.push(job);
+          return `verify-${nextId++}`;
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [
+            { model: "anthropic/m", code: "codeunit 1 A { }" },
+            { model: "openai/o", code: "codeunit 2 B { }" },
+          ],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(
+      body.jobs.map((j: { model: string; id: string }) => j.model),
+      ["anthropic/m", "openai/o"],
+    );
+    assertEquals(
+      body.jobs.map((j: { id: string }) => j.id),
+      ["verify-1", "verify-2"],
+    );
+
+    // The queue receives the RESOLVED draft's id/dir — same guarantee
+    // /api/run enforces (see validateRunRequest's doc comment) — not
+    // whatever the request body happened to send.
+    assertEquals(enqueued.length, 2);
+    assertEquals(enqueued[0]?.draftDir, "/tmp/nope/CG-AL-X054");
+    assertEquals(enqueued[0]?.taskId, "CG-AL-X054");
+    assertEquals(enqueued[0]?.code, "codeunit 1 A { }");
+    assertEquals(enqueued[1]?.code, "codeunit 2 B { }");
+  });
+
+  it("POST /api/verify 400s on an unknown draft directory", async () => {
+    let touched = false;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => {
+          touched = true;
+          return "verify-1";
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-NOPE",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+    assertEquals(touched, false);
+  });
+
+  // The reason travels verbatim so the UI can show WHY a bench is blocking
+  // an escalation rather than a generic failure — same contract as
+  // checkBenchGate's own doc comment.
+  it("POST /api/verify refuses with 409 while a bench is live", async () => {
+    let touched = false;
+    const reason =
+      "`bench --llms x` is running, started 2026-08-19T00:00:00Z. " +
+      "Compile and test publishes to the same container and would " +
+      "corrupt that run. Ask N models still works.";
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => {
+          touched = true;
+          return "verify-1";
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: false, reason }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 409);
+    const body = await res.json();
+    assertEquals(body.error, reason);
+    // A live bench refuses the WHOLE batch up front — the queue must never
+    // see partial work from a request that was already refused.
+    assertEquals(touched, false);
+  });
+
+  it("GET /api/verify-events streams a live terminal outcome", async () => {
+    let listener: ((event: VerifyQueueEvent) => void) | undefined;
+    const job: VerifyQueueJob = {
+      draftDir: "/tmp/nope/CG-AL-X054",
+      taskId: "CG-AL-X054",
+      model: "anthropic/m",
+      code: "codeunit 1 A { }",
+    };
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: (l: (event: VerifyQueueEvent) => void) => {
+          listener = l;
+          return () => {
+            listener = undefined;
+          };
+        },
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(
+      res.headers.get("content-type")?.includes("text/event-stream"),
+      true,
+    );
+
+    // The route must have subscribed for live updates by the time the
+    // Response comes back — `start()` runs synchronously inside the
+    // ReadableStream constructor.
+    assert(listener !== undefined, "route did not subscribe to the queue");
+    const reader = res.body!.getReader();
+    listener!({
+      id: "verify-1",
+      job,
+      outcome: { state: "passed_first_try", passed: 1, total: 1 },
+    });
+
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    assertStringIncludes(text, "verify-1");
+    assertStringIncludes(text, "passed_first_try");
+    await reader.cancel();
+  });
+
+  // A UI connecting mid-run must see the job that is executing RIGHT NOW,
+  // not just what finished before it connected or what finishes after —
+  // `snapshot()` carries every job regardless of state, and the replay
+  // must forward all of it, unfiltered.
+  it("GET /api/verify-events replays a job that is currently running", async () => {
+    const job: VerifyQueueJob = {
+      draftDir: "/tmp/nope/CG-AL-X054",
+      taskId: "CG-AL-X054",
+      model: "anthropic/m",
+      code: "codeunit 1 A { }",
+    };
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: () => () => {},
+        snapshot: () => [
+          {
+            id: "verify-1",
+            job,
+            outcome: { state: "running", phase: "compiling" },
+            enqueuedAt: Date.now(),
+          },
+        ],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    assertStringIncludes(text, "verify-1");
+    assertStringIncludes(text, '"running"');
+    await reader.cancel();
+  });
+
+  it("GET /api/verify-events unsubscribes from the queue when the client disconnects", async () => {
+    let unsubscribed = false;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: () => () => {
+          unsubscribed = true;
+        },
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    const reader = res.body!.getReader();
+    await reader.cancel();
+    assertEquals(unsubscribed, true);
+  });
+
+  // "Ask N models" must keep working with containers down or unconfigured
+  // (spec). A server with no `verify` adapter used to fall back to a stub
+  // that reported every job `errored` — the exact false signal Task 4
+  // spent two rounds removing from mapResult, arriving through
+  // configuration instead of through data: a missing adapter read as "the
+  // container died" rather than "escalation isn't configured". Fixed by
+  // never enqueuing at all — `deps.verifyQueue` is `undefined` in this
+  // mode, and the route refuses before touching anything.
+  it("POST /api/verify refuses with 501 when escalation is not configured, without touching drafts, the gate, or a queue", async () => {
+    const noVerifyDeps = {
+      ...deps,
+      verifyQueue: undefined,
+      // Spies that prove the route returns BEFORE any of the normal
+      // per-request work happens — not just before a (nonexistent) queue's
+      // enqueue. A route that fell through past the guard would hit one of
+      // these and throw, which is exactly the mutation-proof below.
+      listDrafts: () => {
+        throw new Error("listDrafts must not be called when unconfigured");
+      },
+      checkBenchGate: () => {
+        throw new Error("checkBenchGate must not be called when unconfigured");
+      },
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(noVerifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 501);
+    const body = await res.json();
+    assertStringIncludes(body.error, "escalation is not configured");
+  });
+
+  // Same unconfigured deps as above, proving the no-container "Ask N
+  // models" mode is intact — the fix must not make escalation config a
+  // prerequisite for the route that never needed it.
+  it("the quick-run route still works when escalation is not configured", async () => {
+    const noVerifyDeps = {
+      ...deps,
+      verifyQueue: undefined,
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(noVerifyDeps)(
+      new Request("http://localhost/api/run", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          models: ["anthropic/m"],
+        }),
+      }),
+    );
+    // deps.runQuick rejects with "not called in this test" — a non-400
+    // response proves validation passed and the route reached it, exactly
+    // like "accepts a well-formed run request" above.
+    assertEquals(res.status === 400, false);
   });
 });
 
@@ -798,6 +1430,90 @@ describe("dashboard/source-loader", () => {
       assertEquals(sources.naiveSources, ["content-B"]);
     } finally {
       await cleanupTempDir(dir);
+    }
+  });
+
+  // `Deno.serve`'s own `shutdown()` stops accepting connections; it does
+  // not touch the verify queue's pump chain. Before this was wired, every
+  // job still `queued` when the caller awaited `shutdown()` went on to
+  // dispatch, stage a temp directory and publish to a real BC container
+  // after the caller had been told the server was down. `VerifyQueue
+  // .shutdown` existed, was documented and tested, and had no production
+  // caller at all.
+  //
+  // Runs the REAL `startServer` (not `createHandler`) because the missing
+  // call site was in `startServer`'s returned object. Job 1 blocks inside
+  // the injected verifier, which holds job 2 in `queued` deterministically
+  // — no timing race. Note this exercises the real `checkBenchGate`, since
+  // `startServer` owns the queue's gate; a live bench would refuse both
+  // jobs, which is why the suite must not be run against one (CLAUDE.md).
+  it("shuts the verify queue down before the listener", async () => {
+    const scratchDir = await createTempDir("dashboard-shutdown-queue-test");
+    // join(), not a template literal: listDrafts builds each draft.dir with
+    // join() and validateVerifyRequest compares it by exact string, so a
+    // forward slash here would 400 on Windows.
+    const draftDir = join(scratchDir, "CG-AL-X060");
+    const entered: string[] = [];
+    let release: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    try {
+      await Deno.mkdir(`${draftDir}/correct`, { recursive: true });
+      await Deno.writeTextFile(
+        `${draftDir}/task.yml`,
+        "id: CG-AL-X060\ndescription: shutdown fixture\n",
+      );
+      await Deno.writeTextFile(`${draftDir}/.meta.json`, "{}");
+
+      const server = await startServer({
+        scratchDir,
+        dependenciesRoot: `${scratchDir}/deps`,
+        port: 0,
+        verify: async (job: VerifyQueueJob) => {
+          entered.push(job.model);
+          if (entered.length === 1) await blocked;
+          return { state: "errored" as const, message: "test stub" };
+        },
+      });
+
+      const base = `http://127.0.0.1:${server.port}`;
+      const res = await fetch(`${base}/api/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: base },
+        body: JSON.stringify({
+          draftDir,
+          responses: [
+            { model: "first", code: "table 70001 A { }" },
+            { model: "second", code: "table 70002 B { }" },
+          ],
+        }),
+      });
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.jobs.length, 2);
+
+      // Job 1 is inside the verifier and job 2 is still `queued`.
+      while (entered.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      assertEquals(entered, ["first"], "only job 1 has been dispatched");
+
+      await server.shutdown();
+
+      // Let the pump run: job 1 finishes, and job 2's turn comes up.
+      release?.();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      assertEquals(
+        entered,
+        ["first"],
+        "a job still queued at shutdown must never reach a container",
+      );
+    } finally {
+      release?.();
+      await cleanupTempDir(scratchDir);
     }
   });
 });

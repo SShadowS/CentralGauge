@@ -429,4 +429,216 @@ describe("dashboard/run-manager", () => {
       writeRunArtifact(dir, { ...run, draftId: "../../escaped" })
     );
   });
+
+  it("attaches tiered prereq findings to each response", async () => {
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: true,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [PREREQ],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    const finding = run.responses[0]?.prereqBinding?.findings.find(
+      (f) => f.member === "Discount",
+    );
+    assertEquals(finding?.tier, "hard");
+  });
+
+  it("leaves the binding undefined when a draft has no prereq", async () => {
+    const CODE = `codeunit 70054 "A" { procedure P() begin end; }`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: false,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    assertEquals(run.responses[0]?.prereqBinding, undefined);
+  });
+
+  // Same draft, same response, same prereq as the hard-finding test above —
+  // the ONLY difference is that the loader could not read part of what it
+  // was asked for. A field that never reached the index must not be
+  // reported as invented on the strength of a disk error.
+  it("degrades every binding when the prereq sources loaded incompletely", async () => {
+    const PREREQ = `table 69001 "CG Quote"
+{
+    fields { field(1; "Unit Price"; Decimal) { } }
+}`;
+    const CODE = `codeunit 70054 "A"
+{
+    procedure P(var Line: Record "CG Quote")
+    begin
+        Line.Discount := 1;
+    end;
+}`;
+    const run = await runQuick({
+      draft: {
+        id: "CG-AL-X054",
+        dir,
+        dirName: "CG-AL-X054",
+        description: "Write a codeunit that applies a discount.",
+        hasPrereq: true,
+        prereqFiles: [],
+      },
+      models: ["m"],
+      correctSources: [CODE],
+      naiveSources: [],
+      prereqSources: [PREREQ],
+      prereqSourcesIncomplete: true,
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CODE}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+    assertEquals(run.responses[0]?.prereqBinding?.degraded, true);
+    assertEquals(run.responses[0]?.prereqBinding?.findings.length, 0);
+  });
+
+  // Task 9 fix round 2. `computeRowIdentityConflicts` is where the badge's
+  // identity-conflict decision actually lives now (spec §3) — the UI in
+  // app.js renders whatever this produces and performs no comparison of its
+  // own. Driven through the real `runQuick` pipeline, not called in
+  // isolation, so these tests exercise the same `normalizeName`/row-merge
+  // machinery a real run does.
+  describe("rowIdentityConflicts", () => {
+    it("flags a genuine id conflict when a response's object shares the reference's name under a different id", async () => {
+      const REFERENCE = `codeunit 71410 "CG Agent"
+{
+    procedure P()
+    begin
+    end;
+}`;
+      const RESPONSE = `codeunit 71400 "CG Agent"
+{
+    procedure P()
+    begin
+    end;
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      const conflict = run.responses[0]?.rowIdentityConflicts[row.key];
+      assertEquals(conflict?.expectedId, 71410);
+      assertEquals(conflict?.actualId, 71400);
+      assertEquals(conflict?.expectedName, "CG Agent");
+      assertEquals(conflict?.actualName, "CG Agent");
+    });
+
+    it("flags a genuine name conflict when a response's object shares the reference's id under a different name", async () => {
+      const REFERENCE = `table 71411 "CG Line"
+{
+    fields { field(1; "No."; Code[20]) { } }
+}`;
+      const RESPONSE = `table 71411 "CG Ledger"
+{
+    fields { field(1; "No."; Code[20]) { } }
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      const conflict = run.responses[0]?.rowIdentityConflicts[row.key];
+      assertEquals(conflict?.expectedId, 71411);
+      assertEquals(conflict?.actualId, 71411);
+      assertEquals(conflict?.expectedName, "CG Line");
+      assertEquals(conflict?.actualName, "CG Ledger");
+    });
+
+    // The false positive this round's fix removed: a case/whitespace-only
+    // difference is not a defect (AL identifiers are case-insensitive, and
+    // `normalizeName` erases both), so it must produce no conflict entry at
+    // all — not one that happens to render nothing. Uses the id-less
+    // interface path so only the name is ever in play.
+    it("does not flag a conflict when an id-less object's name differs from the reference only by case or whitespace", async () => {
+      const REFERENCE = `interface "CG Agent"
+{
+    procedure P();
+}`;
+      const RESPONSE = `interface "cg  agent"
+{
+    procedure P();
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      assertEquals(row.id, undefined);
+      assertEquals(
+        run.responses[0]?.rowIdentityConflicts[row.key],
+        undefined,
+        "a case/whitespace-only difference must not produce a conflict entry",
+      );
+    });
+  });
 });

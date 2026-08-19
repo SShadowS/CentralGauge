@@ -611,6 +611,104 @@ verdict rather than a score:
 "Avoided the mistake" is scoped to the trap and claims nothing else — not that
 the response compiles, and not that the rest of it is correct.
 
+When the draft has a `prereq/`, the "Files" rail shows what the selected
+response actually referenced from it, scoped to whichever model's column you
+last clicked:
+
+| Label                                  | Meaning                                                              |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| **Made up this field**                  | The referenced name exists in no prereq table (a hallucination).      |
+| **Unknown member**                      | The reference couldn't be resolved confidently either way.            |
+| **Nothing from prereq/ referenced**     | Analysis ran and found nothing to flag among the references it could resolve. |
+| **Couldn't check the prereq**           | Analysis could not run at all; this says nothing about the response.  |
+
+These four labels are pinned verbatim by
+`tests/unit/dashboard/vocabulary.test.ts`: keep this table and the UI
+identical.
+
+An empty rail is not a verdict that the response is correct. References the
+binder cannot resolve are never shown: an unbound variable, anything bound to
+a table outside the prereq, `Record <id>` and `array[N] of Record` variables,
+chained receivers (`Rec.SubRec.Modify()`), and prereq objects that are not
+tables or table extensions. See `docs/task-authoring-guide.md` for the full
+list.
+
+### Compiling and testing a response (escalation)
+
+Two ways to check a response, at very different cost:
+
+| Mode | What it does | Cost |
+|---|---|---|
+| **Ask N models** (above) | Calls each model's API and classifies the response against the trap. Never touches a container. | Seconds. Free with the `mock` provider. |
+| **Compile & test** | Publishes the response to a live Business Central container and runs the oracle's tests, escalating to the bench's own fix attempt on a genuine failure. | Minutes. Drives a real container. |
+
+"Compile & test" appears next to each response, and as "Compile & test all"
+scoped to every response that produced usable AL.
+
+**Serial and single-container.** Candidates share publish state on one
+container, so escalation verifies run one at a time, FIFO: a second click
+while one is running queues behind it rather than racing it. Runs target the
+default container (`Cronus28`; see CLAUDE.md's Local BC Container section)
+unless a caller of `/api/verify` supplies `containerName`, though the
+dashboard's own page has no control for that yet.
+
+**Refused entirely while a bench is live.** Publishing to the same container
+as a running bench would corrupt that bench's BC NST PSSession, so
+`POST /api/verify` refuses with `409` carrying the reason, the queue re-checks
+per job, and a job that has already started re-checks again before its fix
+attempt publishes. The page does not poll for that state: the first click
+after a bench starts is the one that is refused, and only then do both
+"Compile & test" actions grey out, showing the reason until a later attempt
+succeeds. Until that click they look live. "Ask N models" is unaffected: it
+never touches a container.
+
+The verdict an author sees, per response:
+
+| Label | Meaning |
+|---|---|
+| **Passed first try** | The oracle's tests passed on this container, first attempt. |
+| **Passed on 2nd try** | The first attempt failed to compile or failed a test; the bench's own fix attempt then passed. |
+| **Failed both tries (n of m tests)** | The first attempt failed, and so did the fix attempt (or none ran). |
+| **Didn't compile** | The first attempt's code did not compile. |
+
+None of these say the response is good. They say the oracle's tests passed or
+failed, on this container, at this moment (the same honesty rule as "Avoided
+the mistake" above), and they say nothing about anything the oracle does not
+exercise.
+
+Two more labels describe the container, not the model, and must never be read
+as a test result:
+
+| Label | Meaning |
+|---|---|
+| **Didn't publish: \<reason\>** | The candidate published or installed badly and ran zero tests. Its pass/fail counts would be a scoring convention, not a measurement, so none are shown. |
+| **Verification error: \<reason\>** | A genuine infrastructure failure: a dead container, a thrown call. |
+
+Neither means the model failed a test. Treat both as "this response has not
+actually been checked yet" and re-run once the container is healthy.
+
+While a job is in flight it shows **Queued to compile & test**, then
+**In progress…**. A job refused before it ever reached a container (a live
+bench, or escalation not configured) shows the gate's reason verbatim.
+
+**Mismatched identity badge.** Two objects merge into one matrix row when they
+share a kind and either the same id or the same normalized name. When they
+merge, the field that did NOT decide the merge can still disagree between what
+the row expects and what a response actually wrote: a model that wrote the
+right kind of object under the wrong id, or under a name that is not just a
+different spelling. That disagreement renders in-cell as "Asked for: ..."
+against "Wrote: ...". A difference only of letter case or whitespace does not
+trigger it: AL identifiers are case-insensitive, so that is not a defect.
+
+**Deep links.** Every row in the "Files" rail (`task.yml`, the oracle test,
+`correct/`, `naive/`, each file under `prereq/`) is a `vscode://file/...` link
+built from the draft's absolute path. Known limitation: the `correct/` and
+`naive/` rows link to the directories themselves, and whether VS Code's URI
+handler opens a bare directory as a folder has not been verified against a
+live install. If clicking one of those two does nothing, that is why. The
+file-level links (`task.yml`, the oracle test, each file under `prereq/`)
+point at actual files and do not carry this uncertainty.
+
 ### Safety properties
 
 - **Binds `127.0.0.1` only.** The server spends API money, so it is never
@@ -633,6 +731,26 @@ Served on the bound port for the page's own use:
 | `GET /api/drafts`   | Drafts discovered under `scratch/`         |
 | `GET /api/defaults` | Models resolved from `--preset`            |
 | `POST /api/run`     | Run the selected models against a draft    |
+| `POST /api/promote-naive` | Promote a response into the draft's `naive/`, replacing what's there |
+| `POST /api/verify` | Enqueue one compile-and-test job per response (see "Compiling and testing a response" above). Returns `{jobs: [{model, id}]}`. |
+| `GET /api/verify-events` | Server-sent events of every job's outcome, replaying every job this server instance has ever accepted before subscribing the client to live updates. |
+
+Both routes refuse with **`501`** when the server has no verify adapter wired
+at all. This is a legitimate mode, not a failure: "Ask N models" works with
+containers down or unconfigured. `centralgauge workbench serve` always
+supplies a real adapter (`createEscalationVerify`,
+`cli/commands/workbench-command.ts`), so this status is not something the
+CLI's own `workbench serve` produces today; it documents the endpoint's
+contract for any other caller that constructs the server without one.
+
+`POST /api/verify` additionally refuses with **`409`** when a bench is live,
+checked before any job is created. The body's `error` carries the gate's
+reason verbatim, naming which bench is blocking and when it started.
+Publishing to the same container as a running bench would corrupt that
+bench's BC NST PSSession. `GET /api/verify-events` does not repeat this
+check: opening the event stream is not itself container work, and jobs
+already queued are re-checked against the gate individually as their own
+turn comes up.
 
 ## Exit Codes
 

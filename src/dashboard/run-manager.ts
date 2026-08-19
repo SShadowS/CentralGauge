@@ -20,6 +20,8 @@ import { isAbsolute, relative, resolve } from "@std/path";
 
 import type { AlObject } from "../al/object-parser.ts";
 import type { MatrixRow } from "../al/object-identity.ts";
+import type { BinderResult } from "../al/prereq-binder.ts";
+import type { PrereqIndex } from "../al/prereq-index.ts";
 import type {
   TrapClassification,
   TrapSignature,
@@ -33,7 +35,10 @@ import { parseAlObjects } from "../al/object-parser.ts";
 import {
   assignObjectsToRows,
   buildRowUniverse,
+  normalizeName,
 } from "../al/object-identity.ts";
+import { bindResponseToPrereqs } from "../al/prereq-binder.ts";
+import { buildPrereqIndex } from "../al/prereq-index.ts";
 import {
   classifyAgainstSignature,
   deriveTrapSignature,
@@ -45,6 +50,33 @@ import {
 } from "../llm/prompt-building.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { providerOfModelSlug } from "./model-caller.ts";
+
+/**
+ * One row's genuine identity disagreement for one response — the server's
+ * full, ready-to-render answer, so the UI derives nothing. Two objects can
+ * share a matrix row via EITHER an exact id match (`objectKey`, name
+ * ignored) or a normalized-name match (`nameFallbackKey`, id ignored —
+ * `buildRowUniverse`'s merge rule), so the field the merge did NOT decide on
+ * can still disagree between the row's first-seen identity and this
+ * response's actual object. Present in `ModelResponse.rowIdentityConflicts`
+ * ONLY when that disagreement is real: the ids differ, or the NORMALIZED
+ * names differ (`normalizeName`, object-identity.ts — a case or whitespace
+ * difference alone is not a conflict, since AL identifiers are
+ * case-insensitive and `normalizeName` already erases both).
+ *
+ * `expectedId`/`actualId` are absent for id-less kinds
+ * (interface/controladdin, `AlObject.id`'s own doc comment). `kind` and
+ * `extendsTarget` are never carried here because they cannot disagree: both
+ * `objectKey` and `nameFallbackKey` include them in the identity itself, so
+ * anything assigned to a row already shares the row's `kind`/`extendsTarget`
+ * exactly — a caller renders this alongside `row.kind`/`row.extendsTarget`.
+ */
+export interface RowIdentityConflict {
+  expectedId?: number;
+  expectedName: string;
+  actualId?: number;
+  actualName: string;
+}
 
 export interface ModelResponse {
   model: string;
@@ -79,8 +111,24 @@ export interface ModelResponse {
    * its own copy of the identity rules, which nothing could keep in sync.
    */
   rowAssignments: Record<string, number>;
+  /**
+   * Which of `rowAssignments`' rows carry a genuine identity conflict
+   * worth badging in the UI (spec §3) — `row.key` -> {@link RowIdentityConflict}.
+   * Absent for a row this response has no assignment for, or where the
+   * assigned object's id and normalized name both agree with the row's.
+   */
+  rowIdentityConflicts: Record<string, RowIdentityConflict>;
   classification: TrapClassification;
   error?: string;
+  /**
+   * Tiered prereq-reference findings for this response, from
+   * `bindResponseToPrereqs`. Genuinely ABSENT — not present with an empty
+   * `findings` array — when the draft has no prereq/ sources to check
+   * against, or when this response errored before producing any code to
+   * analyse (`runOneModel`'s catch path). Present means analysis actually
+   * ran, even when `findings` came back empty.
+   */
+  prereqBinding?: BinderResult;
 }
 
 export interface QuickRun {
@@ -134,7 +182,7 @@ async function runOneModel(
   renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
-): Promise<Omit<ModelResponse, "rowAssignments">> {
+): Promise<Omit<ModelResponse, "rowAssignments" | "rowIdentityConflicts">> {
   let prompt = "";
   try {
     const applied = await buildGenerationPrompt({
@@ -185,6 +233,44 @@ async function runOneModel(
 }
 
 /**
+ * `ModelResponse.rowIdentityConflicts`: for each row `assignments` places an
+ * object on, the full {@link RowIdentityConflict} when the id or the
+ * NORMALIZED name (`normalizeName`, object-identity.ts, reused unmodified —
+ * never re-derived here, and never in the UI) genuinely disagrees between
+ * the row and the assigned object; absent from the result otherwise. Split
+ * out from `assignObjectsToRows` itself (which stays untouched) because this
+ * is presentation information about an already-decided assignment, not part
+ * of deciding the assignment. The UI renders this record as-is — it performs
+ * no comparison of its own, id or name, raw or normalized.
+ */
+function computeRowIdentityConflicts(
+  rows: ReadonlyArray<MatrixRow>,
+  objects: ReadonlyArray<AlObject>,
+  assignments: Record<string, number>,
+): Record<string, RowIdentityConflict> {
+  const conflicts: Record<string, RowIdentityConflict> = {};
+  for (const row of rows) {
+    const index = assignments[row.key];
+    if (index === undefined) continue;
+    const obj = objects[index];
+    if (!obj) continue;
+
+    const idConflict = row.id !== undefined && obj.id !== undefined &&
+      row.id !== obj.id;
+    const nameConflict = normalizeName(row.name) !== normalizeName(obj.name);
+    if (!idConflict && !nameConflict) continue;
+
+    conflicts[row.key] = {
+      expectedName: row.name,
+      actualName: obj.name,
+      ...(row.id !== undefined ? { expectedId: row.id } : {}),
+      ...(obj.id !== undefined ? { actualId: obj.id } : {}),
+    };
+  }
+  return conflicts;
+}
+
+/**
  * Runs every model concurrently against the same draft and trap signature,
  * then builds the matrix row universe from the reference objects (parsed
  * from `correctSources`) plus every response's own objects.
@@ -205,6 +291,23 @@ export async function runQuick(opts: {
   models: string[];
   correctSources: string[];
   naiveSources: string[];
+  /**
+   * Raw AL source of the draft's `prereq/` app plus its chained
+   * dependencies (`loadPrereqSources`'s `sources`). Built into a
+   * `PrereqIndex` ONCE per run, not once per model — every model in a run
+   * must be judged against the identical prereq, and rebuilding per
+   * response would both waste parsing and let the columns drift apart.
+   * Omitted or empty means the draft has no prereq to check: binding is
+   * skipped entirely and every response's `prereqBinding` stays absent.
+   */
+  prereqSources?: string[];
+  /**
+   * `PrereqSources.hasError` — the loader could not read part of what it
+   * was asked for, so `prereqSources` is INCOMPLETE rather than merely
+   * small. Forwarded to `bindResponseToPrereqs`, which degrades instead of
+   * reporting every member that never reached the index as invented.
+   */
+  prereqSourcesIncomplete?: boolean;
   call: ModelCaller;
   /** Overridable so a test can pin the rendered text without reading the
    *  repo's real `templates/`. Production passes nothing. */
@@ -239,16 +342,60 @@ export async function runQuick(opts: {
     responses.map((r) => ({ model: r.model, objects: r.objects })),
   );
 
+  // Deliberately built HERE, once for the whole run, and passed into every
+  // response's binding call below — NOT moved inside the `responses.map`
+  // loop that follows, even though nothing about correctness would change
+  // if it were: `buildPrereqIndex` is pure given the same `prereqSources`,
+  // so a per-response rebuild would produce identical `PrereqIndex` content
+  // every time, just re-parsed N times over. The reason to keep it hoisted
+  // is efficiency (no repeated parsing of the same prereq AL) and to keep
+  // every model in a run provably judged against one identical index rather
+  // than N independently-rebuilt ones that could in principle drift if this
+  // function is ever made non-deterministic. `undefined` (rather than an
+  // index built from `[]`) is what makes "no prereq to check" and "checked,
+  // found nothing" two distinguishable states below.
+  const prereqIndex: PrereqIndex | undefined =
+    opts.prereqSources && opts.prereqSources.length > 0
+      ? await buildPrereqIndex(opts.prereqSources)
+      : undefined;
+
+  const boundResponses = await Promise.all(
+    responses.map(async (response) => {
+      const rowAssignments = assignObjectsToRows(rows, response.objects);
+      const rowIdentityConflicts = computeRowIdentityConflicts(
+        rows,
+        response.objects,
+        rowAssignments,
+      );
+      // No index to check against, or this response errored before
+      // producing any code to analyse (`runOneModel`'s catch path) — either
+      // way there is nothing to bind, so `prereqBinding` stays genuinely
+      // absent rather than present-and-empty (`exactOptionalPropertyTypes`
+      // is why this is a conditional spread, not `prereqBinding: undefined`).
+      if (!prereqIndex || response.error !== undefined) {
+        return { ...response, rowAssignments, rowIdentityConflicts };
+      }
+      const prereqBinding = await bindResponseToPrereqs(
+        response.resolution.cleanedCode,
+        prereqIndex,
+        { sourcesIncomplete: opts.prereqSourcesIncomplete === true },
+      );
+      return {
+        ...response,
+        rowAssignments,
+        rowIdentityConflicts,
+        prereqBinding,
+      };
+    }),
+  );
+
   return {
     draftId: opts.draft.id,
     startedAt: new Date().toISOString(),
     signature,
     // Cell placement is decided here, where both sides are in hand, rather
     // than re-derived by the UI from a copy of the identity rules.
-    responses: responses.map((response) => ({
-      ...response,
-      rowAssignments: assignObjectsToRows(rows, response.objects),
-    })),
+    responses: boundResponses,
     rows,
   };
 }

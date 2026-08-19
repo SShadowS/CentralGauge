@@ -128,6 +128,74 @@ body {
   font-style: italic;
 }
 
+/* The prereq rail (spec §5) — nested under the "Already exists (prereq)"
+   heading, replacing (or, when degraded, supplementing) the static file
+   listing above. Tier colours reuse the existing cell-state tokens: `hard`
+   reads as `verdict-bad`/`diagnostic-error` does, `soft` as
+   `verdict-neutral`/`badge-unparsed` does, and the degraded fallback as
+   `verdict-unknown`/`badge-no-code` does — no new colours introduced. */
+.prereq-table {
+  padding-left: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.prereq-procedures,
+.prereq-members {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.file-list .prereq-procedure {
+  padding: 2px 0 2px 26px;
+  border-bottom: none;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.file-list .prereq-member {
+  padding: 2px 0 2px 38px;
+  border-bottom: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.prereq-tier-hard {
+  color: var(--bad-text);
+}
+
+.prereq-tier-soft {
+  color: var(--neutral-text);
+}
+
+.prereq-label {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.prereq-tier-hard .prereq-label {
+  background: var(--bad-bg);
+  color: var(--bad-text);
+}
+
+.prereq-tier-soft .prereq-label {
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+}
+
+.prereq-degraded {
+  font-style: italic;
+  color: var(--unknown-text);
+}
+
 #run-button {
   width: 100%;
   margin-top: 10px;
@@ -361,6 +429,26 @@ table.matrix tbody th {
 .cell-extra .extra-label {
   color: var(--neutral-text);
   font-weight: 600;
+}
+
+.cell-mismatch {
+  border-left: 2px solid var(--neutral-text);
+}
+
+.mismatch-badge {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.mismatch-expected,
+.mismatch-actual {
+  display: block;
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+  border-radius: 3px;
+  padding: 1px 4px;
 }
 
 .cell-empty {
