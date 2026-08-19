@@ -234,11 +234,14 @@ export function clearPrereqCaches(): void {
  */
 export async function prepareContainerForVerification(
   containerName: string,
-  credentials?: { username: string; password: string },
+  credentials: { username: string; password: string },
 ): Promise<void> {
-  if (credentials) {
-    containerProvider.setCredentials(containerName, credentials);
-  }
+  // REQUIRED, not optional. This was optional for one revision, and the
+  // first thing that happened was a caller omitting it and getting exactly
+  // the `Status Code Unauthorized` this function exists to prevent, with no
+  // warning: `getCredentials` silently falls back to `admin`/`admin`. A
+  // preflight you can forget half of is not a preflight.
+  containerProvider.setCredentials(containerName, credentials);
   await containerProvider.ensureTestHarness([containerName]);
 }
 

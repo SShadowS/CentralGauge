@@ -110,6 +110,34 @@ export function resolveServeOptions(
  * `clearPrereqCaches()` runs per job for the same "this process is
  * long-lived" reason — see that function's own doc.
  */
+
+/**
+ * Container credentials for escalation, from `.centralgauge.yml`'s
+ * `container.credentials` block.
+ *
+ * Warns loudly rather than falling back in silence: the provider's own
+ * default is `admin`/`admin`, and a container that does not use it answers
+ * every publish with `Status Code Unauthorized`. That failure used to
+ * arrive with no explanation at all, so an operator missing this block
+ * should hear about it before spending a container round-trip.
+ */
+export function resolveContainerCredentials(
+  config: { container?: { credentials?: { username?: string; password?: string } } },
+): { username: string; password: string } {
+  const creds = config.container?.credentials;
+  if (!creds?.username || !creds?.password) {
+    console.warn(
+      colors.yellow("[WARN]") +
+        " no container.credentials in .centralgauge.yml; escalation will" +
+        " publish as admin/admin and most containers reject that",
+    );
+  }
+  return {
+    username: creds?.username ?? "admin",
+    password: creds?.password ?? "admin",
+  };
+}
+
 export function createEscalationVerify(
   opts: {
     /**
@@ -124,7 +152,7 @@ export function createEscalationVerify(
      * fails with `Status Code Unauthorized`, which is exactly how the first
      * real-hardware run of this path failed.
      */
-    credentials?: { username: string; password: string };
+    credentials: { username: string; password: string };
     /** Container to prepare when a job does not name one. */
     defaultContainerName?: string;
     /**
@@ -135,7 +163,7 @@ export function createEscalationVerify(
       containerName: string,
       credentials?: { username: string; password: string },
     ) => Promise<void>;
-  } = {},
+  },
 ): VerifyQueueVerifyFn {
   const clearCaches = opts.clearCaches ?? clearPrereqCaches;
   const prepare = opts.prepareContainer ?? prepareContainerForVerification;
@@ -230,18 +258,11 @@ export function registerWorkbenchCommand(cli: Command): void {
       const server = await startServer({
         ...resolved,
         verify: createEscalationVerify({
-          // Without these the provider falls back to `admin`/`admin` and
-          // every dev-endpoint publish returns `Status Code Unauthorized`.
-          // The bench reads the same block during container setup.
-          ...(config.container?.credentials?.username !== undefined &&
-              config.container?.credentials?.password !== undefined
-            ? {
-              credentials: {
-                username: config.container.credentials.username,
-                password: config.container.credentials.password,
-              },
-            }
-            : {}),
+          // Required, never conditional. The provider falls back to
+          // `admin`/`admin` when nothing is set, and every dev-endpoint
+          // publish then returns `Status Code Unauthorized`. The bench
+          // reads this same block during container setup.
+          credentials: resolveContainerCredentials(config),
           ...(config.container?.name !== undefined
             ? { defaultContainerName: config.container.name }
             : {}),

@@ -83,6 +83,10 @@ describe("cli/workbench-command", () => {
         clearCaches: () => {
           cleared++;
         },
+        // Required so no caller can forget it. This job names no container
+        // and no `defaultContainerName` is given, so the preflight is
+        // skipped entirely and these never reach a provider.
+        credentials: { username: "test", password: "test" },
       });
 
       const job = {
