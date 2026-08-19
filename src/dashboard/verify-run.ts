@@ -55,6 +55,7 @@ import type { GateDecision } from "./bench-gate.ts";
 import type { VerifyOutcome } from "./verify-types.ts";
 import type { ModelCaller } from "./run-manager.ts";
 
+import { ContainerError } from "../errors.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
 import { buildFixPrompt } from "../llm/prompt-building.ts";
 import { stageResponse } from "./verify-staging.ts";
@@ -70,6 +71,13 @@ export interface VerifyResultLike {
   compileErrors?: string[];
   /** Whose `.al` files `compileErrors` came from. See `mapResult`. */
   compileErrorsSource?: "candidate" | "prereq";
+  /**
+   * The container's own transcript, when `handleAlVerify` caught a
+   * `ContainerError` that carried one. Surfaced as the `errored` outcome's
+   * `detail` so an author can see WHY a container operation failed rather
+   * than only that it did.
+   */
+  rawOutput?: string;
   syntheticNoTestsRan?: boolean;
 }
 
@@ -202,7 +210,13 @@ function mapResult(result: VerifyResultLike): VerifyOutcome {
   }
 
   if (result.totalTests === undefined || result.totalTests === 0) {
-    return { state: "errored", message: result.message };
+    return {
+      state: "errored",
+      message: result.message,
+      ...(result.rawOutput !== undefined && result.rawOutput !== ""
+        ? { detail: result.rawOutput }
+        : {}),
+    };
   }
 
   return {
@@ -277,7 +291,21 @@ async function attemptOnce(params: {
     return mapResult(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { state: "errored", message };
+    // Carry the container's own transcript when there is one. A
+    // `ContainerError` already holds a redacted, tail-captured `rawOutput`
+    // (`buildPwshError`), and taking only `.message` here threw it away:
+    // the first real-hardware run of this path reported "Verification
+    // error: prepareCandidateApp failed" and left an author no way to see
+    // WHY the publish failed. The provider was never the problem; this
+    // line was.
+    const detail = error instanceof ContainerError
+      ? error.rawOutput
+      : undefined;
+    return {
+      state: "errored",
+      message,
+      ...(detail !== undefined && detail !== "" ? { detail } : {}),
+    };
   } finally {
     // Never let a cleanup failure escape and discard an already-computed
     // outcome: one bad response must not take down the queue Task 6 builds

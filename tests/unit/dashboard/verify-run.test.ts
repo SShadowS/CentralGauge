@@ -1,5 +1,6 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { join } from "@std/path";
+import { ContainerError } from "../../../src/errors.ts";
 import { verifyResponse } from "../../../src/dashboard/verify-run.ts";
 
 async function draftWithOracle(taskId: string): Promise<string> {
@@ -317,6 +318,67 @@ Deno.test("verify-run attempt 1", async (t) => {
           state: "errored",
           message: "Tests failed: 0 of 0 tests failed",
         });
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a container failure carries the container's own transcript",
+    async () => {
+      // Recorded from the first real-hardware run of this path, which
+      // reported "Verification error: prepareCandidateApp failed" and left
+      // an author no way to see WHY the publish failed. `ContainerError`
+      // already carries a redacted, tail-captured `rawOutput`
+      // (`buildPwshError`); the dashboard was taking only `.message`.
+      const transcript = [
+        "[container:bc] Preparing candidate app on container: Cronus28",
+        "Publish-NAVApp : The following error occurred: ...",
+        "PREPARE_PUBLISH_FAILED",
+      ].join("\n");
+      const draftDir = await draftWithOracle("CG-AL-X015");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X015",
+          code: "table 70001 A { }",
+          verify: () =>
+            Promise.reject(
+              new ContainerError(
+                "prepareCandidateApp failed",
+                "Cronus28",
+                "publish",
+                { rawOutput: transcript },
+              ),
+            ),
+        });
+        assertEquals(outcome.state, "errored");
+        if (outcome.state !== "errored") throw new Error("unreachable");
+        assertEquals(outcome.message, "prepareCandidateApp failed");
+        assertStringIncludes(
+          outcome.detail ?? "",
+          "PREPARE_PUBLISH_FAILED",
+          "the transcript must reach the author, not be discarded",
+        );
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "a plain Error carries no transcript field",
+    async () => {
+      const draftDir = await draftWithOracle("CG-AL-X016");
+      try {
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X016",
+          code: "table 70001 A { }",
+          verify: () => Promise.reject(new Error("boom")),
+        });
+        assertEquals(outcome, { state: "errored", message: "boom" });
       } finally {
         await Deno.remove(draftDir, { recursive: true });
       }

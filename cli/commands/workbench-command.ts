@@ -38,6 +38,7 @@ import { verifyResponse } from "../../src/dashboard/verify-run.ts";
 import { createModelCaller } from "../../src/dashboard/model-caller.ts";
 import {
   clearPrereqCaches,
+  prepareContainerForVerification,
   handleAlVerify,
 } from "../../mcp/al-tools-server.ts";
 
@@ -117,10 +118,32 @@ export function createEscalationVerify(
      * always uses the default.
      */
     clearCaches?: () => void;
+    /**
+     * Container credentials from `.centralgauge.yml`. Without these the
+     * provider falls back to `admin`/`admin` and every dev-endpoint publish
+     * fails with `Status Code Unauthorized`, which is exactly how the first
+     * real-hardware run of this path failed.
+     */
+    credentials?: { username: string; password: string };
+    /** Container to prepare when a job does not name one. */
+    defaultContainerName?: string;
+    /**
+     * Runs the bench's own container preflight (credentials + test
+     * harness). Injectable ONLY so it can be asserted without a container.
+     */
+    prepareContainer?: (
+      containerName: string,
+      credentials?: { username: string; password: string },
+    ) => Promise<void>;
   } = {},
 ): VerifyQueueVerifyFn {
   const clearCaches = opts.clearCaches ?? clearPrereqCaches;
-  return (job) => {
+  const prepare = opts.prepareContainer ?? prepareContainerForVerification;
+  // One preflight per container for the life of the server, not per job:
+  // `ensureTestHarness` probes before publishing, but a probe per job is a
+  // container round-trip an author waits for on every click.
+  const prepared = new Map<string, Promise<void>>();
+  return async (job) => {
     // Once per job, before anything is staged. `prereqCache` (compiled
     // artifacts) and `publishedPrereqCache` (the publish promise) are
     // module-level and live for the whole `workbench serve` session, so
@@ -128,6 +151,26 @@ export function createEscalationVerify(
     // clicks is silently verified against the prereq from the first click.
     // The queue is serial, so nothing within a job shares them anyway.
     clearCaches();
+
+    // The bench does this at startup; escalation never did, so it published
+    // as `admin`/`admin` and got a 401. A failure here propagates to the
+    // queue's catch and becomes an `errored` outcome, which is an
+    // INFRASTRUCTURE state - it must never read as a test result.
+    const container = job.containerName ?? opts.defaultContainerName;
+    if (container !== undefined) {
+      const existing = prepared.get(container);
+      const pending = existing ?? prepare(container, opts.credentials);
+      if (existing === undefined) prepared.set(container, pending);
+      try {
+        await pending;
+      } catch (error) {
+        // Do not cache a failed preflight: an author who fixes the
+        // container should not have to restart the dashboard.
+        prepared.delete(container);
+        throw error;
+      }
+    }
+
     return verifyResponse({
       draftDir: job.draftDir,
       taskId: job.taskId,
@@ -186,7 +229,23 @@ export function registerWorkbenchCommand(cli: Command): void {
       }
       const server = await startServer({
         ...resolved,
-        verify: createEscalationVerify(),
+        verify: createEscalationVerify({
+          // Without these the provider falls back to `admin`/`admin` and
+          // every dev-endpoint publish returns `Status Code Unauthorized`.
+          // The bench reads the same block during container setup.
+          ...(config.container?.credentials?.username !== undefined &&
+              config.container?.credentials?.password !== undefined
+            ? {
+              credentials: {
+                username: config.container.credentials.username,
+                password: config.container.credentials.password,
+              },
+            }
+            : {}),
+          ...(config.container?.name !== undefined
+            ? { defaultContainerName: config.container.name }
+            : {}),
+        }),
       });
       console.log(
         colors.green("[OK]") +

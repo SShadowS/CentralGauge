@@ -41,6 +41,7 @@ function getProjectRoot(): string {
   // Script is at mcp/al-tools-server.ts, so project root is one level up
   return dirname(dirname(scriptPath));
 }
+import { ContainerError } from "../src/errors.ts";
 import { BcContainerProvider } from "../src/container/bc-container-provider.ts";
 import type { ALProject, TestResult } from "../src/container/types.ts";
 
@@ -204,6 +205,41 @@ const publishedPrereqCache = new Map<string, Promise<void>>();
 export function clearPrereqCaches(): void {
   prereqCache.clear();
   publishedPrereqCache.clear();
+}
+
+/**
+ * Prepares a container for verification the way the bench's own container
+ * setup does, on the module-level provider `handleAlVerify` uses.
+ *
+ * Two things, both of which the bench does at startup
+ * (`cli/commands/bench/container-setup.ts`) and the dashboard's escalation
+ * path did not:
+ *
+ * 1. **Credentials.** `BcContainerProvider.getCredentials` falls back to
+ *    `admin`/`admin` when nothing was ever set for a container. The bench
+ *    sets the real ones from `.centralgauge.yml` during setup; escalation
+ *    never called `setup`, so every dev-endpoint publish it attempted came
+ *    back `Status Code Unauthorized : Unauthorized`. That was the first
+ *    real-hardware failure of the escalation path, and it was invisible
+ *    because the transcript carrying it was being discarded.
+ * 2. **Test harness.** The SOAP test runner needs the harness app published
+ *    on the container. `ensureTestHarness` is idempotent and probes before
+ *    publishing, so calling it per container is cheap after the first time.
+ *
+ * Additive: the bench and `scripts/trap-probe.ts` do not call this and keep
+ * their existing setup path unchanged.
+ *
+ * Throws whatever the provider throws. The caller is expected to surface
+ * that as an INFRASTRUCTURE outcome, never as a test result.
+ */
+export async function prepareContainerForVerification(
+  containerName: string,
+  credentials?: { username: string; password: string },
+): Promise<void> {
+  if (credentials) {
+    containerProvider.setCredentials(containerName, credentials);
+  }
+  await containerProvider.ensureTestHarness([containerName]);
 }
 
 // =============================================================================
@@ -927,6 +963,22 @@ export interface VerifyResult {
    */
   compileErrorsSource?: "candidate" | "prereq";
   /**
+   * The container's own transcript, when this result came from a thrown
+   * `ContainerError` that carried one.
+   *
+   * `buildPwshError` (`bc-container-provider.ts`) already redacts and
+   * tail-captures the PowerShell output onto `ContainerError.rawOutput`,
+   * but the outer catch below flattened the error to its `message` alone.
+   * The first real-hardware run of the dashboard's escalation path
+   * reported "Verification error: prepareCandidateApp failed" with no way
+   * to learn WHY the publish failed. The evidence existed the whole time
+   * and was discarded one layer above where it was produced.
+   *
+   * Optional and purely additive: absent means "no transcript", exactly as
+   * every consumer read this shape before the field existed.
+   */
+  rawOutput?: string;
+  /**
    * Passed through from `TestResult.syntheticNoTestsRan`: the counts above
    * are a scoring convention for a candidate publish/install defect, not a
    * measurement of tests that ran. `scripts/trap-probe.ts` needs it to keep
@@ -1613,7 +1665,18 @@ export async function handleAlVerify(params: {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     debugLog("al_verify", "EXCEPTION", { error: errorMessage });
-    return { success: false, message: `Verification error: ${errorMessage}` };
+    // Preserve the container's transcript when there is one. Without this
+    // the message alone reaches the caller and `ContainerError.rawOutput`
+    // is dropped here, which is what made a real publish failure
+    // unreadable from the dashboard.
+    const rawOutput = error instanceof ContainerError
+      ? error.rawOutput
+      : undefined;
+    return {
+      success: false,
+      message: `Verification error: ${errorMessage}`,
+      ...(rawOutput !== undefined && rawOutput !== "" ? { rawOutput } : {}),
+    };
   } finally {
     // Best-effort removal of the host-side staging dir (belt-and-braces: it
     // lives in system temp outside any mount, but still holds the copied

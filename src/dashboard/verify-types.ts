@@ -34,7 +34,23 @@ export type VerifyOutcome =
   | { state: "publish_defect"; message: string }
   /** Refused before any container work: a bench is live, or no draft/response. */
   | { state: "refused"; reason: string }
-  | { state: "errored"; message: string };
+  | {
+    state: "errored";
+    message: string;
+    /**
+     * The container's own transcript for this failure, when there is one.
+     *
+     * `ContainerError` already carries a redacted, 4KB-tail-captured
+     * `rawOutput` (`buildPwshError` in `bc-container-provider.ts`), and the
+     * dashboard used to drop it: an author saw "Verification error:
+     * prepareCandidateApp failed" and had no way to learn WHY the publish
+     * failed. That is a message naming nothing, which is the same defect
+     * this module's states exist to prevent, one layer down.
+     *
+     * Absent when the failure did not come from a container operation.
+     */
+    detail?: string;
+  };
 
 export function isTerminal(o: VerifyOutcome): boolean {
   return o.state !== "queued" && o.state !== "running";
