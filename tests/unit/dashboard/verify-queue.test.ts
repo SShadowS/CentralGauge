@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { VerifyQueue } from "../../../src/dashboard/verify-queue.ts";
+import type { VerifyOutcome } from "../../../src/dashboard/verify-types.ts";
 
 Deno.test("verify-queue", async (t) => {
   await t.step("runs jobs one at a time, never overlapping", async () => {
@@ -139,4 +140,55 @@ Deno.test("verify-queue", async (t) => {
     const view = q.snapshot().find((j) => j.id === id);
     assertEquals(view?.outcome, { state: "refused", reason: "stopping" });
   });
+
+  await t.step(
+    "shutdown does not misreport an in-flight job as refused",
+    async () => {
+      let resolveVerify!: (outcome: VerifyOutcome) => void;
+      const pending = new Promise<VerifyOutcome>((resolve) => {
+        resolveVerify = resolve;
+      });
+      let markRunningSeen!: () => void;
+      const runningSeen = new Promise<void>((resolve) => {
+        markRunningSeen = resolve;
+      });
+      const states: string[] = [];
+      const q = new VerifyQueue({
+        gate: () => ({ allowed: true }),
+        verify: () => pending,
+      });
+      q.on((e) => {
+        states.push(e.outcome.state);
+        if (e.outcome.state === "running") markRunningSeen();
+      });
+
+      const id = q.enqueue({
+        draftDir: "d",
+        taskId: "CG-AL-X001",
+        model: "a",
+        code: "x",
+      });
+
+      // Wait until the pump has actually dispatched the job - verify() is
+      // observably in flight - before calling shutdown().
+      await runningSeen;
+
+      q.shutdown("server stopping");
+
+      // shutdown() must not touch a job that is already running.
+      const afterShutdown = q.snapshot().find((j) => j.id === id);
+      assertEquals(afterShutdown?.outcome.state, "running");
+
+      resolveVerify({ state: "passed_first_try", passed: 1, total: 1 });
+      await q.drain();
+
+      const finalView = q.snapshot().find((j) => j.id === id);
+      assertEquals(finalView?.outcome, {
+        state: "passed_first_try",
+        passed: 1,
+        total: 1,
+      });
+      assert(!states.includes("refused"), "job never reported refused");
+    },
+  );
 });

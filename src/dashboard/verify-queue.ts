@@ -164,12 +164,21 @@ export class VerifyQueue {
 
   /**
    * Stops the queue for server shutdown. This is PERMANENT and ONE-WAY, not
-   * a batch cancel: every job still `queued` right now is refused
-   * immediately, and — because the latch never clears — every job
-   * `enqueue()`d after this call is also refused on its turn, for the rest
-   * of this queue's lifetime. A job already in flight when this is called
-   * is not cancelled — its `verify()` call is left to settle normally,
-   * since there is no cooperative cancellation seam here.
+   * a batch cancel: every job still `queued` right now (never dispatched)
+   * is refused immediately, and — because the latch never clears — every
+   * job `enqueue()`d after this call is also refused on its turn, for the
+   * rest of this queue's lifetime.
+   *
+   * A job that is already `running` (mid-`verify()`) when this is called is
+   * left alone, NOT reported as `refused`: `runNext()` transitions a job's
+   * outcome to `running` before it ever awaits `verify()`, so this method's
+   * `state === "queued"` check is exactly how it tells "never dispatched"
+   * from "mid-verify" apart. There is no cooperative cancellation seam here,
+   * so an in-flight job settles normally and emits its own real terminal
+   * outcome — reporting it `refused` up front would have produced a
+   * self-contradicting sequence (`refused` immediately, then a genuine
+   * `passed_first_try`/`failed_both`/etc. for the SAME job once `verify()`
+   * actually resolves).
    *
    * Do NOT wire this to a "cancel this batch" UI action: a user expecting
    * to clear the current queue and keep working would instead get a queue
@@ -210,12 +219,33 @@ export class VerifyQueue {
 
     // Re-checked here, per job, deliberately not hoisted above enqueue's
     // loop-of-callers: a bench can start while several jobs still sit
-    // ahead of this one in the queue.
-    const decision = this.gate();
+    // ahead of this one in the queue. Wrapped defensively, same reasoning
+    // as `verify()` below: `gate` is a generic injection seam, and an
+    // unguarded throw here would permanently wedge the pump chain (every
+    // later job stays `queued` forever, and `drain()` rejects instead of
+    // resolving).
+    let decision: GateDecision;
+    try {
+      decision = this.gate();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setOutcome(id, { state: "refused", reason: message });
+      return;
+    }
     if (!decision.allowed) {
       this.setOutcome(id, { state: "refused", reason: decision.reason });
       return;
     }
+
+    // Transition to `running` BEFORE awaiting `verify()`, so `shutdown()`
+    // (and anything else keyed off `outcome.state === "queued"`) can tell
+    // "never dispatched" from "mid-verify" apart. `phase: "staging"` is
+    // deliberately coarse: `verify` is an injected seam that reports no
+    // progress of its own, so the queue only knows the job STARTED —
+    // staging is the first thing any verify does. A finer phase would
+    // require the seam itself to emit progress, which it does not today;
+    // don't invent a phase the queue cannot actually observe.
+    this.setOutcome(id, { state: "running", phase: "staging" });
 
     try {
       const outcome = await this.verify(view.job);
