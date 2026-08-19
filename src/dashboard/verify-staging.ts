@@ -175,8 +175,10 @@ export async function stageResponse(
 
   // Filesystem reads only — never spawns container work, so it is safe as a
   // pre-flight check and cheap enough to repeat per attempt. Deliberately
-  // NOT caught: `attemptOnce` (`verify-run.ts`) turns a throw into
-  // `{state: "errored", message}`, which surfaces the refusal verbatim in
+  // NOT caught: `attemptOnce` (`verify-run.ts`) calls `stageResponse`
+  // OUTSIDE its own try, so a throw here propagates all the way out of
+  // `verifyResponse` and is turned into `{state: "errored", message}` by
+  // `VerifyQueue.runNext`'s catch — which surfaces the refusal verbatim in
   // the author's column, which is the whole point.
   await classifyOracleFiles({ id: opts.taskId, draftDir: opts.draftDir });
 
