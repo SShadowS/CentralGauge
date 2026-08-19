@@ -40,9 +40,20 @@ const state = {
    *  was refused before any job was created (a live bench, or escalation
    *  not configured); both "Compile & test" actions render disabled with
    *  this text until a later attempt succeeds. `source` is the live
-   *  `EventSource`, opened lazily — see `ensureVerifyEvents`. */
+   *  `EventSource`, opened lazily — see `ensureVerifyEvents`.
+   *
+   *  `acceptedIds` holds the job ids THIS run asked for, as returned by
+   *  `POST /api/verify`. The server's SSE replay is deliberately
+   *  unfiltered — it replays every job the server process has ever
+   *  accepted, across every draft and every run — so without this set an
+   *  outcome from an earlier run, or from a different draft entirely, is
+   *  written into a column of the run now on screen. Since the outcome map
+   *  is keyed by model alone, that lands a real verdict (often "Passed
+   *  first try") on a response that was never compiled. Reset alongside
+   *  `outcomes` on every new run; see `handleVerifyEvent`. */
   verify: {
     outcomes: {},
+    acceptedIds: new Set(),
     blockedReason: null,
     source: null,
   },
@@ -541,6 +552,39 @@ function buildVerifyAllAction(run) {
 }
 
 /**
+ * Applies one `/api/verify-events` payload to `state.verify.outcomes`.
+ *
+ * Every event that survives is written under `payload.job.model` — an event
+ * names its own column directly (Task 7), so there is no job-id-to-model
+ * lookup to maintain. But the model name alone does NOT identify a run.
+ * `GET /api/verify-events` replays every job this server process has ever
+ * accepted, unfiltered and by design, so a plain model-keyed write accepts:
+ *
+ * - a terminal outcome from a DIFFERENT draft, after the author switches
+ *   drafts and clicks "Compile & test" (the stream opens, the replay lands,
+ *   and the old draft's verdicts fill the new draft's columns); and
+ * - a terminal outcome from an EARLIER batch on the same draft, when the
+ *   author re-runs the models and clicks again.
+ *
+ * Either way the author is shown a test result — "Passed first try" among
+ * them — for a response that was never compiled. So an event is applied
+ * only when its own `payload.id` is one THIS run asked for. `runQuick`
+ * empties `acceptedIds` with `outcomes`, and `submitVerify` fills it from
+ * the ids `POST /api/verify` hands back. Filtering on
+ * `payload.job.draftDir` instead would fix the cross-draft case and leave
+ * the same-draft re-run case standing.
+ *
+ * Exported to the test harness (`loadUi`) rather than left inline in the
+ * `onmessage` closure: this is the side that decides WHICH column an
+ * outcome is written to, and it had no coverage at all.
+ */
+function handleVerifyEvent(payload) {
+  if (!state.verify.acceptedIds.has(payload.id)) return;
+  state.verify.outcomes[payload.job.model] = payload.outcome;
+  refreshVerifyDisplay();
+}
+
+/**
  * Escalation's live stream (Task 7). Opened lazily on the first verify
  * request rather than at page load, so a session that never touches
  * "Compile & test" never holds a connection open. Idempotent — a later call
@@ -551,11 +595,7 @@ function ensureVerifyEvents() {
   if (typeof EventSource === "undefined") return;
   const source = new EventSource("/api/verify-events");
   source.onmessage = (event) => {
-    const payload = JSON.parse(event.data);
-    // Keyed off `payload.job.model` — every event names its own column
-    // directly (Task 7), so there is no job-id-to-model lookup to maintain.
-    state.verify.outcomes[payload.job.model] = payload.outcome;
-    refreshVerifyDisplay();
+    handleVerifyEvent(JSON.parse(event.data));
   };
   state.verify.source = source;
 }
@@ -601,7 +641,10 @@ async function submitVerify(responses) {
       return;
     }
     state.verify.blockedReason = null;
-    for (const { model } of body.jobs) {
+    for (const { model, id } of body.jobs) {
+      // Recorded BEFORE the stream is opened, so the replay that arrives
+      // the moment it opens already knows which ids belong to this run.
+      state.verify.acceptedIds.add(id);
       state.verify.outcomes[model] = { state: "queued" };
     }
     ensureVerifyEvents();
@@ -1154,8 +1197,12 @@ async function runQuick() {
     // A new run means new response objects. Any escalation outcome kept
     // from a PRIOR run, keyed by model, would otherwise go on describing
     // code this run's column no longer holds if the same model is asked
-    // again.
+    // again. Clearing the map alone is not enough: the server replays every
+    // job it has ever accepted, so the prior run's outcomes would simply be
+    // written back in. The accepted-id set is what keeps them out — see
+    // `handleVerifyEvent`.
     state.verify.outcomes = {};
+    state.verify.acceptedIds = new Set();
     // Defaults the rail to the first response (spec §5's "selected
     // response" before any selection has been made). Now labelled — via
     // renderScopedFileList/renderFileList — so this default is honest

@@ -120,6 +120,9 @@ const detailSource = node("detail-source");
  *  discriminant at a time. */
 interface VerifyState {
   outcomes: Record<string, unknown>;
+  /** Job ids `POST /api/verify` returned for the CURRENT run. See
+   *  `handleVerifyEvent`. */
+  acceptedIds: Set<string>;
   blockedReason: string | null;
   source: unknown;
 }
@@ -145,6 +148,7 @@ interface Ui {
   renderMatrix: (run: unknown) => void;
   renderPrereqRail: (binding: unknown) => StubNode;
   renderFileList: (draft: unknown, binding?: unknown, model?: unknown) => void;
+  handleVerifyEvent: (payload: unknown) => void;
   state: DashboardState;
 }
 
@@ -156,7 +160,7 @@ async function loadUi(): Promise<Ui> {
   );
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
     `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail, ` +
-    `renderFileList, state };\n`;
+    `renderFileList, handleVerifyEvent, state };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -1249,5 +1253,52 @@ describe("dashboard/ui app.js", () => {
     assertStringIncludes(text, "Test (oracle)");
     const link = findNode(node("file-list"), "file-link", "task.yml");
     assertEquals(link, undefined);
+  });
+
+  // `GET /api/verify-events` replays every job the server process has ever
+  // accepted, across every draft and every run — deliberately, and the docs
+  // commit to it. The outcome map is keyed by model alone, so a replayed
+  // terminal outcome from an earlier run (or a different draft entirely)
+  // used to be written straight into the column of the run on screen. The
+  // author was then shown "Passed first try" for a response that was never
+  // compiled: the exact claim this branch forbids, reached through the
+  // transport rather than through `mapResult`.
+  it("ignores a verify event from a job this run did not ask for", async () => {
+    const ui = await loadUi();
+    ui.state.run = null;
+    ui.state.verify.outcomes = {};
+    ui.state.verify.acceptedIds = new Set(["verify-7"]);
+
+    ui.handleVerifyEvent({
+      id: "verify-3",
+      job: { model: "sonnet", draftDir: "/scratch/CG-AL-X053" },
+      outcome: { state: "passed_first_try", passed: 3, total: 3 },
+    });
+
+    assertEquals(
+      ui.state.verify.outcomes["sonnet"],
+      undefined,
+      "an outcome from another run must not fill this run's column",
+    );
+  });
+
+  it("applies a verify event whose job id this run asked for", async () => {
+    const ui = await loadUi();
+    ui.state.run = null;
+    ui.state.verify.outcomes = {};
+    ui.state.verify.acceptedIds = new Set(["verify-7"]);
+
+    ui.handleVerifyEvent({
+      id: "verify-7",
+      job: { model: "sonnet", draftDir: "/scratch/CG-AL-X054" },
+      outcome: { state: "failed_both", passed: 1, total: 3, failures: ["x"] },
+    });
+
+    assertEquals(ui.state.verify.outcomes["sonnet"], {
+      state: "failed_both",
+      passed: 1,
+      total: 3,
+      failures: ["x"],
+    });
   });
 });
