@@ -28,9 +28,14 @@ import * as colors from "@std/fmt/colors";
 import { join } from "@std/path";
 
 import type { CentralGaugeConfig } from "../../src/config/config.ts";
+import type { VerifyQueueVerifyFn } from "../../src/dashboard/verify-queue.ts";
+
 import { ConfigManager } from "../../src/config/config.ts";
 import { startServer } from "../../src/dashboard/server.ts";
 import { resolvePresetModels } from "../../src/dashboard/drafts.ts";
+import { verifyResponse } from "../../src/dashboard/verify-run.ts";
+import { createModelCaller } from "../../src/dashboard/model-caller.ts";
+import { handleAlVerify } from "../../mcp/al-tools-server.ts";
 
 export interface ServeOptions {
   port?: number;
@@ -80,6 +85,41 @@ export function resolveServeOptions(
   };
 }
 
+/**
+ * Builds the real, container-touching `VerifyQueueVerifyFn` the dashboard's
+ * escalation queue (`src/dashboard/verify-queue.ts`, Task 6) dispatches
+ * against. Assembled HERE, not inside `src/dashboard/server.ts`: that module
+ * must never import `handleAlVerify` (`mcp/al-tools-server.ts`) or reach a
+ * real `ModelCaller` builder for the same reason it must never import the
+ * config loader — `tests/unit/dashboard/ingest-safety.test.ts` polices its
+ * whole import graph, and this is the one place in the codebase allowed to
+ * widen it. `startServer` accepts the finished function as `opts.verify` and
+ * wires it into a `VerifyQueue` it owns.
+ *
+ * A fresh `ModelCaller` is built PER JOB, scoped to that job's own
+ * `taskId` — jobs in one long-lived queue can target different drafts
+ * (different tasks) over the dashboard's lifetime, so a single caller built
+ * once at startup would carry the wrong `taskId` into `generateCode`'s
+ * context for every job after the first.
+ */
+function createEscalationVerify(): VerifyQueueVerifyFn {
+  return (job) =>
+    verifyResponse({
+      draftDir: job.draftDir,
+      taskId: job.taskId,
+      code: job.code,
+      ...(job.containerName !== undefined
+        ? { containerName: job.containerName }
+        : {}),
+      verify: handleAlVerify,
+      call: createModelCaller({
+        taskId: job.taskId,
+        description: `Dashboard escalation fix attempt for ${job.taskId}`,
+      }),
+      model: job.model,
+    });
+}
+
 export function registerWorkbenchCommand(cli: Command): void {
   const parent = new Command().description(
     "Local authoring dashboard for draft trap-tasks (scratch/).",
@@ -113,7 +153,10 @@ export function registerWorkbenchCommand(cli: Command): void {
             `it defines none) — starting with an empty model input`,
         );
       }
-      const server = await startServer(resolved);
+      const server = await startServer({
+        ...resolved,
+        verify: createEscalationVerify(),
+      });
       console.log(
         colors.green("[OK]") +
           ` Dashboard listening at http://${server.hostname}:${server.port}`,

@@ -37,6 +37,7 @@
 
 import type { DraftSummary } from "./drafts.ts";
 import type { QuickRun } from "./run-manager.ts";
+import type { VerifyQueueEvent, VerifyQueueVerifyFn } from "./verify-queue.ts";
 
 import { listDrafts } from "./drafts.ts";
 import { runQuick, writeRunArtifact } from "./run-manager.ts";
@@ -44,6 +45,8 @@ import { createModelCaller } from "./model-caller.ts";
 import { loadPrereqSources } from "./prereq-sources.ts";
 import { loadTrapSources } from "./source-loader.ts";
 import { promoteAsNaive, PromoteRefusal } from "./promote-naive.ts";
+import { VerifyQueue } from "./verify-queue.ts";
+import { checkBenchGate } from "./bench-gate.ts";
 
 export interface DashboardServer {
   port: number;
@@ -262,6 +265,81 @@ function validatePromoteRequest(
 }
 
 /**
+ * Runs before `deps.verifyQueue.enqueue` is ever invoked, so a malformed or
+ * unresolvable request never reaches the queue. Checks, all 400: `draftDir`
+ * must name a draft `listDrafts` actually returned (resolved by `d.dir`,
+ * same reasoning as `validateRunRequest` and `validatePromoteRequest` above
+ * — `dir` is the only guaranteed-unique field), and `responses` must be a
+ * non-empty array of `{model, code}` pairs, both non-empty strings.
+ * `containerName`, when present, must be a string — forwarded to every job
+ * in the batch.
+ */
+function validateVerifyRequest(
+  body: unknown,
+  drafts: DraftSummary[],
+): {
+  ok: true;
+  draft: DraftSummary;
+  responses: Array<{ model: string; code: string }>;
+  containerName?: string;
+} | {
+  ok: false;
+  error: string;
+} {
+  if (typeof body !== "object" || body === null) {
+    return { ok: false, error: "request body must be a JSON object" };
+  }
+  const { draftDir, responses, containerName } = body as Record<
+    string,
+    unknown
+  >;
+
+  if (typeof draftDir !== "string") {
+    return { ok: false, error: "draftDir must be a string" };
+  }
+  const draft = drafts.find((d) => d.dir === draftDir);
+  if (!draft) {
+    return { ok: false, error: `unknown draft directory: ${draftDir}` };
+  }
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return {
+      ok: false,
+      error: "responses must be a non-empty array of {model, code}",
+    };
+  }
+  const parsed: Array<{ model: string; code: string }> = [];
+  for (const entry of responses) {
+    if (typeof entry !== "object" || entry === null) {
+      return { ok: false, error: "each response must be an object" };
+    }
+    const { model, code } = entry as Record<string, unknown>;
+    if (typeof model !== "string" || model.trim().length === 0) {
+      return {
+        ok: false,
+        error: "each response's model must be a non-empty string",
+      };
+    }
+    if (typeof code !== "string" || code.trim().length === 0) {
+      return {
+        ok: false,
+        error: "each response's code must be a non-empty string",
+      };
+    }
+    parsed.push({ model, code });
+  }
+  if (containerName !== undefined && typeof containerName !== "string") {
+    return { ok: false, error: "containerName must be a string" };
+  }
+
+  return {
+    ok: true,
+    draft,
+    responses: parsed,
+    ...(typeof containerName === "string" ? { containerName } : {}),
+  };
+}
+
+/**
  * Builds the pure request router. No socket, no side effects at call time —
  * every route reads only from the injected `deps`, which is what lets the
  * test suite exercise every status code — and, for `POST /api/run`'s
@@ -306,6 +384,28 @@ export function createHandler(
     /** CLI-resolved `--preset` models (see the module doc comment), or
      *  empty when none were given. Served verbatim at `GET /api/defaults`. */
     defaultModels: string[];
+    /**
+     * The serial escalation-verify queue (`./verify-queue.ts`, Task 6).
+     * Narrowed to the three methods this router actually calls — a fake in
+     * a test needs no `drain()`/`shutdown()` to stand in for it.
+     * `startServer` wires this to a real `VerifyQueue` whose `verify`
+     * function is the real container-touching adapter, built in
+     * `cli/commands/workbench-command.ts` — never imported here (see the
+     * module doc comment on why this file stays clear of `handleAlVerify`).
+     */
+    verifyQueue: Pick<VerifyQueue, "enqueue" | "on" | "snapshot">;
+    /**
+     * Synchronous bench-liveness check for `POST /api/verify` itself,
+     * distinct from the queue's OWN per-job gate (re-checked at dispatch
+     * time, per `VerifyQueue`'s doc comment). A job at the back of a long
+     * queue might not dispatch for a while, so relying on the queue's
+     * internal check alone would silently accept work now and refuse it
+     * arbitrarily far in the future. This lets the route refuse
+     * IMMEDIATELY, with the gate's reason, before the queue is ever
+     * touched. Typed exactly like the real `checkBenchGate` so
+     * `startServer` can pass it straight through.
+     */
+    checkBenchGate: typeof checkBenchGate;
     /**
      * The port this server is actually bound to, for the `Origin` check.
      * A THUNK, not a number, because `Deno.serve` needs the handler before
@@ -462,6 +562,114 @@ export function createHandler(
       }
     }
 
+    // Enqueues one escalation-verify job per requested response against the
+    // selected draft's oracle (`VerifyQueue`, Task 6), and returns each
+    // job's id so the caller can correlate it with the outcomes that arrive
+    // on `GET /api/verify-events`. Validated exactly like `/api/run` and
+    // `/api/promote-naive`, above: an unknown `draftDir` or a malformed
+    // `responses` entry 400s before the queue is ever touched.
+    //
+    // The bench-liveness gate is checked HERE too, synchronously, in
+    // addition to the queue's own per-job re-check. The queue's check runs
+    // at DISPATCH time, which for a job at the back of a longer queue could
+    // be arbitrarily far in the future — a request that arrives while a
+    // bench is ALREADY live should 409 immediately, carrying the gate's
+    // reason verbatim, rather than silently accepting work the queue will
+    // only refuse one job at a time, later.
+    if (req.method === "POST" && url.pathname === "/api/verify") {
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResponse(400, { error: "request body must be valid JSON" });
+      }
+
+      const drafts = await deps.listDrafts(deps.scratchDir);
+      const validated = validateVerifyRequest(body, drafts);
+      if (!validated.ok) {
+        return jsonResponse(400, { error: validated.error });
+      }
+
+      const decision = deps.checkBenchGate();
+      if (!decision.allowed) {
+        return jsonResponse(409, { error: decision.reason });
+      }
+
+      const { draft, responses, containerName } = validated;
+      const jobs = responses.map(({ model, code }) => ({
+        model,
+        id: deps.verifyQueue.enqueue({
+          draftDir: draft.dir,
+          taskId: draft.id,
+          model,
+          code,
+          ...(containerName !== undefined ? { containerName } : {}),
+        }),
+      }));
+
+      return jsonResponse(200, { jobs });
+    }
+
+    // Server-sent events for the escalation queue: every outcome transition
+    // for every job this queue has ever accepted, as it happens.
+    //
+    // Precedent is `cli/dashboard/server.ts`'s SSE handler — replay current
+    // state to a newly connected client before subscribing it to live
+    // updates, so a browser that connects mid-run does not sit blank, or
+    // worse, miss the job that is executing RIGHT NOW: `snapshot()` returns
+    // every job regardless of state, so the replay below covers `queued`,
+    // `running`, AND terminal jobs alike — there is deliberately no filter.
+    // The controller is only subscribed for live updates once the replay
+    // actually landed (same reasoning as that precedent's CLI9 fix): one
+    // registered after a failed replay would sit dead, subscribed to an
+    // event source it can never forward to a closed stream. `cancel()`
+    // actively unsubscribes on disconnect rather than waiting for the
+    // queue's next emit to discover a broken pipe.
+    //
+    // Unlike that precedent, this response carries NO
+    // `access-control-allow-origin` header: this dashboard binds loopback
+    // only and enforces `isSameOriginRequest` globally, above, and a CORS
+    // header here would needlessly widen who can read it.
+    if (req.method === "GET" && url.pathname === "/api/verify-events") {
+      const encoder = new TextEncoder();
+      let unsubscribe: (() => void) | undefined;
+
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          let replayOk = true;
+          const send = (event: VerifyQueueEvent) => {
+            if (!replayOk) return;
+            try {
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+              );
+            } catch {
+              replayOk = false;
+            }
+          };
+
+          for (const view of deps.verifyQueue.snapshot()) {
+            send({ id: view.id, job: view.job, outcome: view.outcome });
+          }
+
+          if (replayOk) {
+            unsubscribe = deps.verifyQueue.on(send);
+          }
+        },
+        cancel() {
+          unsubscribe?.();
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+        },
+      });
+    }
+
     return jsonResponse(404, { error: "not found" });
   };
 }
@@ -483,6 +691,19 @@ export function startServer(
     dependenciesRoot: string;
     port?: number;
     defaultModels?: string[];
+    /**
+     * Maps one escalation job to its `VerifyOutcome`. Production wires this
+     * to `verifyResponse` (`./verify-run.ts`) backed by the real
+     * `handleAlVerify` (`mcp/al-tools-server.ts`) and a real `ModelCaller` —
+     * that adapter is built in `cli/commands/workbench-command.ts`, NOT
+     * here: this module must never import `handleAlVerify` directly, same
+     * reason it must never import the config loader (module doc comment;
+     * `tests/unit/dashboard/ingest-safety.test.ts` polices it). Left
+     * `undefined` — every test that does not exercise escalation, plus any
+     * caller that forgot to wire it — falls back to a stub that reports
+     * every job `errored` rather than silently doing nothing.
+     */
+    verify?: VerifyQueueVerifyFn;
   },
 ): Promise<DashboardServer> {
   // Filled in below, once `Deno.serve` can tell us what it bound. Read
@@ -492,6 +713,15 @@ export function startServer(
   // happens, which deno_lint's `prefer-const` cannot see, so a `let` here
   // gets reported as never reassigned.
   const listener: { port: number | undefined } = { port: undefined };
+
+  const verifyQueue = new VerifyQueue({
+    gate: () => checkBenchGate(),
+    verify: opts.verify ?? (() =>
+      Promise.resolve({
+        state: "errored" as const,
+        message: "escalation verify is not configured for this server instance",
+      })),
+  });
 
   const handler = createHandler({
     scratchDir: opts.scratchDir,
@@ -505,6 +735,8 @@ export function startServer(
     promoteAsNaive,
     defaultModels: opts.defaultModels ?? [],
     boundPort: () => listener.port,
+    verifyQueue,
+    checkBenchGate,
   });
 
   const server = Deno.serve(

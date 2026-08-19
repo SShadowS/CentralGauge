@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
 
 import { createHandler, startServer } from "../../../src/dashboard/server.ts";
 import { loadTrapSources } from "../../../src/dashboard/source-loader.ts";
@@ -9,6 +9,10 @@ import {
   writeRunArtifact,
 } from "../../../src/dashboard/run-manager.ts";
 import { promoteAsNaive } from "../../../src/dashboard/promote-naive.ts";
+import type {
+  VerifyQueueEvent,
+  VerifyQueueJob,
+} from "../../../src/dashboard/verify-queue.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -1074,6 +1078,233 @@ describe("dashboard/server", () => {
     );
     assertEquals(res.status, 200);
     assertEquals(seenIncomplete, true);
+  });
+
+  it("POST /api/verify enqueues and returns job ids", async () => {
+    const enqueued: VerifyQueueJob[] = [];
+    let nextId = 1;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: (job: VerifyQueueJob) => {
+          enqueued.push(job);
+          return `verify-${nextId++}`;
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [
+            { model: "anthropic/m", code: "codeunit 1 A { }" },
+            { model: "openai/o", code: "codeunit 2 B { }" },
+          ],
+        }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(
+      body.jobs.map((j: { model: string; id: string }) => j.model),
+      ["anthropic/m", "openai/o"],
+    );
+    assertEquals(
+      body.jobs.map((j: { id: string }) => j.id),
+      ["verify-1", "verify-2"],
+    );
+
+    // The queue receives the RESOLVED draft's id/dir — same guarantee
+    // /api/run enforces (see validateRunRequest's doc comment) — not
+    // whatever the request body happened to send.
+    assertEquals(enqueued.length, 2);
+    assertEquals(enqueued[0]?.draftDir, "/tmp/nope/CG-AL-X054");
+    assertEquals(enqueued[0]?.taskId, "CG-AL-X054");
+    assertEquals(enqueued[0]?.code, "codeunit 1 A { }");
+    assertEquals(enqueued[1]?.code, "codeunit 2 B { }");
+  });
+
+  it("POST /api/verify 400s on an unknown draft directory", async () => {
+    let touched = false;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => {
+          touched = true;
+          return "verify-1";
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-NOPE",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 400);
+    assertEquals(touched, false);
+  });
+
+  // The reason travels verbatim so the UI can show WHY a bench is blocking
+  // an escalation rather than a generic failure — same contract as
+  // checkBenchGate's own doc comment.
+  it("POST /api/verify refuses with 409 while a bench is live", async () => {
+    let touched = false;
+    const reason =
+      "`bench --llms x` is running, started 2026-08-19T00:00:00Z. " +
+      "Compile and test publishes to the same container and would " +
+      "corrupt that run. Ask N models still works.";
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => {
+          touched = true;
+          return "verify-1";
+        },
+        on: () => () => {},
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: false, reason }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          draftDir: "/tmp/nope/CG-AL-X054",
+          responses: [{ model: "anthropic/m", code: "codeunit 1 A { }" }],
+        }),
+      }),
+    );
+    assertEquals(res.status, 409);
+    const body = await res.json();
+    assertEquals(body.error, reason);
+    // A live bench refuses the WHOLE batch up front — the queue must never
+    // see partial work from a request that was already refused.
+    assertEquals(touched, false);
+  });
+
+  it("GET /api/verify-events streams a live terminal outcome", async () => {
+    let listener: ((event: VerifyQueueEvent) => void) | undefined;
+    const job: VerifyQueueJob = {
+      draftDir: "/tmp/nope/CG-AL-X054",
+      taskId: "CG-AL-X054",
+      model: "anthropic/m",
+      code: "codeunit 1 A { }",
+    };
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: (l: (event: VerifyQueueEvent) => void) => {
+          listener = l;
+          return () => {
+            listener = undefined;
+          };
+        },
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    assertEquals(res.status, 200);
+    assertEquals(
+      res.headers.get("content-type")?.includes("text/event-stream"),
+      true,
+    );
+
+    // The route must have subscribed for live updates by the time the
+    // Response comes back — `start()` runs synchronously inside the
+    // ReadableStream constructor.
+    assert(listener !== undefined, "route did not subscribe to the queue");
+    const reader = res.body!.getReader();
+    listener!({
+      id: "verify-1",
+      job,
+      outcome: { state: "passed_first_try", passed: 1, total: 1 },
+    });
+
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    assertStringIncludes(text, "verify-1");
+    assertStringIncludes(text, "passed_first_try");
+    await reader.cancel();
+  });
+
+  // A UI connecting mid-run must see the job that is executing RIGHT NOW,
+  // not just what finished before it connected or what finishes after —
+  // `snapshot()` carries every job regardless of state, and the replay
+  // must forward all of it, unfiltered.
+  it("GET /api/verify-events replays a job that is currently running", async () => {
+    const job: VerifyQueueJob = {
+      draftDir: "/tmp/nope/CG-AL-X054",
+      taskId: "CG-AL-X054",
+      model: "anthropic/m",
+      code: "codeunit 1 A { }",
+    };
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: () => () => {},
+        snapshot: () => [
+          {
+            id: "verify-1",
+            job,
+            outcome: { state: "running", phase: "compiling" },
+            enqueuedAt: Date.now(),
+          },
+        ],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    assertStringIncludes(text, "verify-1");
+    assertStringIncludes(text, '"running"');
+    await reader.cancel();
+  });
+
+  it("GET /api/verify-events unsubscribes from the queue when the client disconnects", async () => {
+    let unsubscribed = false;
+    const verifyDeps = {
+      ...deps,
+      verifyQueue: {
+        enqueue: () => "verify-1",
+        on: () => () => {
+          unsubscribed = true;
+        },
+        snapshot: () => [],
+      },
+      checkBenchGate: () => ({ allowed: true }),
+    } as unknown as Parameters<typeof createHandler>[0];
+
+    const res = await createHandler(verifyDeps)(
+      new Request("http://localhost/api/verify-events"),
+    );
+    const reader = res.body!.getReader();
+    await reader.cancel();
+    assertEquals(unsubscribed, true);
   });
 });
 
