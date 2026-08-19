@@ -390,4 +390,104 @@ Deno.test("verify-run fix attempt", async (t) => {
       await Deno.remove(draftDir, { recursive: true });
     }
   });
+
+  await t.step(
+    "an infra failure on the fix attempt does not erase attempt 1's failed_both",
+    async () => {
+      // attempt 1 is a genuine failed_both with real counts; attempt 2's
+      // container dies (errored). Losing attempt 1's measurement here would
+      // be the same loss the throwing-fix-call test already refuses to
+      // accept, just reached one verify later instead of at the model call.
+      const draftDir = await draftWithOracle("CG-AL-X025");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X025",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1", "T2"],
+                }
+                : { success: false, message: "container offline" },
+            );
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1", "T2"],
+        });
+        assertEquals(n, 2, "the fix attempt actually ran");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
+
+  await t.step(
+    "an infra failure on the fix attempt does not erase attempt 1's failed_both (publish_defect variant)",
+    async () => {
+      // Same claim as above, but attempt 2 publishes/installs badly
+      // (syntheticNoTestsRan) instead of throwing outright.
+      const draftDir = await draftWithOracle("CG-AL-X026");
+      try {
+        let n = 0;
+        const outcome = await verifyResponse({
+          draftDir,
+          taskId: "CG-AL-X026",
+          code: "table 70001 A { }",
+          model: "fake/model",
+          call: () =>
+            Promise.resolve({
+              content: "table 70001 A { }",
+              finishReason: "stop",
+            }),
+          verify: () => {
+            n++;
+            return Promise.resolve(
+              n === 1
+                ? {
+                  success: false,
+                  message: "fail",
+                  totalTests: 3,
+                  passed: 1,
+                  failed: 2,
+                  failures: ["T1", "T2"],
+                }
+                : {
+                  success: false,
+                  message: "zero tests",
+                  syntheticNoTestsRan: true,
+                },
+            );
+          },
+        });
+        assertEquals(outcome, {
+          state: "failed_both",
+          passed: 1,
+          total: 3,
+          failures: ["T1", "T2"],
+        });
+        assertEquals(n, 2, "the fix attempt actually ran");
+      } finally {
+        await Deno.remove(draftDir, { recursive: true });
+      }
+    },
+  );
 });

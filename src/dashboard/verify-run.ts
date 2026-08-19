@@ -31,6 +31,16 @@
  * attempt's temp directory is independent of attempt 1's and each is
  * cleaned up as soon as its own attempt finishes.
  *
+ * The SECOND attempt's own outcome is not always what gets returned. A
+ * passing second attempt becomes `passed_second_try`. A `didnt_compile` or
+ * `failed_both` second attempt IS returned as-is — a genuine model outcome
+ * from the fix, same honesty rule as attempt 1. But `publish_defect` or
+ * `errored` on the SECOND attempt carries no model signal at all (the
+ * container that ran the fix died, or it published/installed badly), so
+ * returning it would silently discard attempt 1's real, already-measured
+ * result — the same loss the throwing-call catch below already refuses to
+ * accept. Those two states fall back to `first` instead of replacing it.
+ *
  * @module dashboard/verify-run
  */
 
@@ -320,9 +330,23 @@ export async function verifyResponse(
     };
   }
 
-  // Whatever the second attempt actually landed on (failed_both,
-  // didnt_compile, publish_defect, or errored) is the honest final state -
-  // it describes what really happened on the fix attempt, same as attempt 1
+  // An infrastructure outcome on the fix attempt itself (the container that
+  // ran the fix died, or it published/installed badly) carries NO model
+  // signal - same reasoning as the throwing-call catch above, just reached
+  // one step later. Discarding attempt 1's real, already-measured result
+  // (e.g. a genuine `failed_both` with real counts) in favour of "container
+  // offline" would erase the only actual signal the run produced, so both
+  // fall back to `first` rather than replacing it.
+  if (second.state === "publish_defect") {
+    return first;
+  }
+  if (second.state === "errored") {
+    return first;
+  }
+
+  // second.state is didnt_compile or failed_both here: a genuine model
+  // outcome from the fix attempt itself, and the honest final state - it
+  // describes what really happened on the fix attempt, same as attempt 1
   // would report it standing alone.
   return second;
 }
