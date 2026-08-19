@@ -201,6 +201,11 @@ container as a running bench would corrupt that bench's BC NST PSSession.
 Both buttons grey out with the reason the moment a bench is detected. "Ask N
 models" keeps working the whole time.
 
+Editing `prereq/` between two clicks is safe: the compiled and published
+prereq caches are cleared before every job, so each run compiles and
+publishes whatever is on disk at the moment you click. The cost is one prereq
+recompile per job.
+
 Each response's column then shows one of:
 
 | Label | Meaning |

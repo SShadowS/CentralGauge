@@ -178,6 +178,34 @@ const prereqCache = new Map<
  */
 const publishedPrereqCache = new Map<string, Promise<void>>();
 
+/**
+ * Empties both prereq caches.
+ *
+ * Both are module-level and therefore live as long as the process. In the
+ * bench and in `scripts/trap-probe.ts` that is one short CLI invocation, and
+ * the assumption behind them holds: prereqs do not change during a run.
+ * Under `workbench serve` the process is a long-lived dashboard, and the
+ * assumption is false in the most ordinary way possible — the author clicks
+ * "Compile & test", sees a failure caused by a missing field in their own
+ * prereq, edits `scratch/<id>/prereq/Foo.Table.al`, and clicks again. Without
+ * this, the container is still running the OLD compiled and OLD published
+ * prereq, the verdict is stale, and nothing says so; the only recovery is
+ * restarting the dashboard, which nothing tells the author to do. That is a
+ * direct attack on the edit-verify loop the dashboard exists for.
+ *
+ * Called once per job by the dashboard's escalation adapter
+ * (`cli/commands/workbench-command.ts`). The queue is serial, so there is no
+ * intra-job sharing to lose: the cost is one prereq recompile per job rather
+ * than per attempt. Safe to call when the caches are already empty.
+ *
+ * Additive: nothing else calls it, so the bench and `trap-probe.ts` keep
+ * their existing per-invocation caching untouched.
+ */
+export function clearPrereqCaches(): void {
+  prereqCache.clear();
+  publishedPrereqCache.clear();
+}
+
 // =============================================================================
 // Tool Definitions
 // =============================================================================

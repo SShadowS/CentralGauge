@@ -36,7 +36,10 @@ import { startServer } from "../../src/dashboard/server.ts";
 import { resolvePresetModels } from "../../src/dashboard/drafts.ts";
 import { verifyResponse } from "../../src/dashboard/verify-run.ts";
 import { createModelCaller } from "../../src/dashboard/model-caller.ts";
-import { handleAlVerify } from "../../mcp/al-tools-server.ts";
+import {
+  clearPrereqCaches,
+  handleAlVerify,
+} from "../../mcp/al-tools-server.ts";
 
 export interface ServeOptions {
   port?: number;
@@ -102,10 +105,30 @@ export function resolveServeOptions(
  * (different tasks) over the dashboard's lifetime, so a single caller built
  * once at startup would carry the wrong `taskId` into `generateCode`'s
  * context for every job after the first.
+ *
+ * `clearPrereqCaches()` runs per job for the same "this process is
+ * long-lived" reason — see that function's own doc.
  */
-function createEscalationVerify(): VerifyQueueVerifyFn {
-  return (job) =>
-    verifyResponse({
+export function createEscalationVerify(
+  opts: {
+    /**
+     * Empties `mcp/al-tools-server.ts`'s prereq caches. Injectable ONLY so
+     * the per-job call can be asserted without a container; production
+     * always uses the default.
+     */
+    clearCaches?: () => void;
+  } = {},
+): VerifyQueueVerifyFn {
+  const clearCaches = opts.clearCaches ?? clearPrereqCaches;
+  return (job) => {
+    // Once per job, before anything is staged. `prereqCache` (compiled
+    // artifacts) and `publishedPrereqCache` (the publish promise) are
+    // module-level and live for the whole `workbench serve` session, so
+    // without this an author who edits `scratch/<id>/prereq/` between two
+    // clicks is silently verified against the prereq from the first click.
+    // The queue is serial, so nothing within a job shares them anyway.
+    clearCaches();
+    return verifyResponse({
       draftDir: job.draftDir,
       taskId: job.taskId,
       code: job.code,
@@ -125,6 +148,7 @@ function createEscalationVerify(): VerifyQueueVerifyFn {
       // right one, so a bench that starts mid-job is refused by all three.
       gate: () => checkBenchGate(),
     });
+  };
 }
 
 export function registerWorkbenchCommand(cli: Command): void {
