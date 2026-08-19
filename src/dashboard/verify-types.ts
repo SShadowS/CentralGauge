@@ -52,7 +52,17 @@ export function testCounts(
     case "passed_second_try":
     case "failed_both":
       return { passed: o.passed, total: o.total };
-    default:
+    case "queued":
+    case "running":
+    case "didnt_compile":
+    case "publish_defect":
+    case "refused":
+    case "errored":
       return undefined;
+    default: {
+      const _exhaustive: never = o;
+      void _exhaustive;
+      return undefined;
+    }
   }
 }
