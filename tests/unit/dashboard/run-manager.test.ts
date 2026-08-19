@@ -530,4 +530,115 @@ describe("dashboard/run-manager", () => {
     assertEquals(run.responses[0]?.prereqBinding?.degraded, true);
     assertEquals(run.responses[0]?.prereqBinding?.findings.length, 0);
   });
+
+  // Task 9 fix round 2. `computeRowIdentityConflicts` is where the badge's
+  // identity-conflict decision actually lives now (spec §3) — the UI in
+  // app.js renders whatever this produces and performs no comparison of its
+  // own. Driven through the real `runQuick` pipeline, not called in
+  // isolation, so these tests exercise the same `normalizeName`/row-merge
+  // machinery a real run does.
+  describe("rowIdentityConflicts", () => {
+    it("flags a genuine id conflict when a response's object shares the reference's name under a different id", async () => {
+      const REFERENCE = `codeunit 71410 "CG Agent"
+{
+    procedure P()
+    begin
+    end;
+}`;
+      const RESPONSE = `codeunit 71400 "CG Agent"
+{
+    procedure P()
+    begin
+    end;
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      const conflict = run.responses[0]?.rowIdentityConflicts[row.key];
+      assertEquals(conflict?.expectedId, 71410);
+      assertEquals(conflict?.actualId, 71400);
+      assertEquals(conflict?.expectedName, "CG Agent");
+      assertEquals(conflict?.actualName, "CG Agent");
+    });
+
+    it("flags a genuine name conflict when a response's object shares the reference's id under a different name", async () => {
+      const REFERENCE = `table 71411 "CG Line"
+{
+    fields { field(1; "No."; Code[20]) { } }
+}`;
+      const RESPONSE = `table 71411 "CG Ledger"
+{
+    fields { field(1; "No."; Code[20]) { } }
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      const conflict = run.responses[0]?.rowIdentityConflicts[row.key];
+      assertEquals(conflict?.expectedId, 71411);
+      assertEquals(conflict?.actualId, 71411);
+      assertEquals(conflict?.expectedName, "CG Line");
+      assertEquals(conflict?.actualName, "CG Ledger");
+    });
+
+    // The false positive this round's fix removed: a case/whitespace-only
+    // difference is not a defect (AL identifiers are case-insensitive, and
+    // `normalizeName` erases both), so it must produce no conflict entry at
+    // all — not one that happens to render nothing. Uses the id-less
+    // interface path so only the name is ever in play.
+    it("does not flag a conflict when an id-less object's name differs from the reference only by case or whitespace", async () => {
+      const REFERENCE = `interface "CG Agent"
+{
+    procedure P();
+}`;
+      const RESPONSE = `interface "cg  agent"
+{
+    procedure P();
+}`;
+      const run = await runQuick({
+        draft: { ...draft, dir },
+        models: ["anthropic/m"],
+        renderer,
+        correctSources: [REFERENCE],
+        naiveSources: [],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${RESPONSE}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertEquals(run.rows.length, 1, "expected exactly one row");
+      const row = run.rows[0]!;
+      assertEquals(row.id, undefined);
+      assertEquals(
+        run.responses[0]?.rowIdentityConflicts[row.key],
+        undefined,
+        "a case/whitespace-only difference must not produce a conflict entry",
+      );
+    });
+  });
 });

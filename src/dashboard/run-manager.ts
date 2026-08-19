@@ -51,6 +51,33 @@ import {
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { providerOfModelSlug } from "./model-caller.ts";
 
+/**
+ * One row's genuine identity disagreement for one response — the server's
+ * full, ready-to-render answer, so the UI derives nothing. Two objects can
+ * share a matrix row via EITHER an exact id match (`objectKey`, name
+ * ignored) or a normalized-name match (`nameFallbackKey`, id ignored —
+ * `buildRowUniverse`'s merge rule), so the field the merge did NOT decide on
+ * can still disagree between the row's first-seen identity and this
+ * response's actual object. Present in `ModelResponse.rowIdentityConflicts`
+ * ONLY when that disagreement is real: the ids differ, or the NORMALIZED
+ * names differ (`normalizeName`, object-identity.ts — a case or whitespace
+ * difference alone is not a conflict, since AL identifiers are
+ * case-insensitive and `normalizeName` already erases both).
+ *
+ * `expectedId`/`actualId` are absent for id-less kinds
+ * (interface/controladdin, `AlObject.id`'s own doc comment). `kind` and
+ * `extendsTarget` are never carried here because they cannot disagree: both
+ * `objectKey` and `nameFallbackKey` include them in the identity itself, so
+ * anything assigned to a row already shares the row's `kind`/`extendsTarget`
+ * exactly — a caller renders this alongside `row.kind`/`row.extendsTarget`.
+ */
+export interface RowIdentityConflict {
+  expectedId?: number;
+  expectedName: string;
+  actualId?: number;
+  actualName: string;
+}
+
 export interface ModelResponse {
   model: string;
   /**
@@ -85,18 +112,12 @@ export interface ModelResponse {
    */
   rowAssignments: Record<string, number>;
   /**
-   * Which of `rowAssignments`' matches carry a GENUINE name difference,
-   * keyed the same way: `row.key` -> true when this response's assigned
-   * object's name differs from the row's after `normalizeName`
-   * (object-identity.ts, reused unmodified — never re-derived here or in
-   * the UI). Two objects can share one row via EITHER an exact id match or
-   * a normalized-name match (`buildRowUniverse`'s merge rule), so the row's
-   * displayed name and this object's actual name can still disagree — but
-   * only a difference `normalizeName` itself would not erase (case,
-   * internal whitespace) is a REAL mismatch worth flagging in the UI's
-   * badge (spec §3). Absent for a row this response has no assignment for.
+   * Which of `rowAssignments`' rows carry a genuine identity conflict
+   * worth badging in the UI (spec §3) — `row.key` -> {@link RowIdentityConflict}.
+   * Absent for a row this response has no assignment for, or where the
+   * assigned object's id and normalized name both agree with the row's.
    */
-  rowNameConflicts: Record<string, boolean>;
+  rowIdentityConflicts: Record<string, RowIdentityConflict>;
   classification: TrapClassification;
   error?: string;
   /**
@@ -161,7 +182,7 @@ async function runOneModel(
   renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
-): Promise<Omit<ModelResponse, "rowAssignments" | "rowNameConflicts">> {
+): Promise<Omit<ModelResponse, "rowAssignments" | "rowIdentityConflicts">> {
   let prompt = "";
   try {
     const applied = await buildGenerationPrompt({
@@ -212,27 +233,41 @@ async function runOneModel(
 }
 
 /**
- * `ModelResponse.rowNameConflicts`: for each row `assignments` places an
- * object on, whether that object's name genuinely differs from the row's —
- * "genuinely" meaning after `normalizeName` (object-identity.ts, reused
- * unmodified), not a raw string compare. Split out from `assignObjectsToRows`
- * itself (which stays untouched) because this is presentation information
- * about an already-decided assignment, not part of deciding the assignment.
+ * `ModelResponse.rowIdentityConflicts`: for each row `assignments` places an
+ * object on, the full {@link RowIdentityConflict} when the id or the
+ * NORMALIZED name (`normalizeName`, object-identity.ts, reused unmodified —
+ * never re-derived here, and never in the UI) genuinely disagrees between
+ * the row and the assigned object; absent from the result otherwise. Split
+ * out from `assignObjectsToRows` itself (which stays untouched) because this
+ * is presentation information about an already-decided assignment, not part
+ * of deciding the assignment. The UI renders this record as-is — it performs
+ * no comparison of its own, id or name, raw or normalized.
  */
-function computeRowNameConflicts(
+function computeRowIdentityConflicts(
   rows: ReadonlyArray<MatrixRow>,
   objects: ReadonlyArray<AlObject>,
   assignments: Record<string, number>,
-): Record<string, boolean> {
-  const mismatches: Record<string, boolean> = {};
+): Record<string, RowIdentityConflict> {
+  const conflicts: Record<string, RowIdentityConflict> = {};
   for (const row of rows) {
     const index = assignments[row.key];
     if (index === undefined) continue;
     const obj = objects[index];
     if (!obj) continue;
-    mismatches[row.key] = normalizeName(row.name) !== normalizeName(obj.name);
+
+    const idConflict = row.id !== undefined && obj.id !== undefined &&
+      row.id !== obj.id;
+    const nameConflict = normalizeName(row.name) !== normalizeName(obj.name);
+    if (!idConflict && !nameConflict) continue;
+
+    conflicts[row.key] = {
+      expectedName: row.name,
+      actualName: obj.name,
+      ...(row.id !== undefined ? { expectedId: row.id } : {}),
+      ...(obj.id !== undefined ? { actualId: obj.id } : {}),
+    };
   }
-  return mismatches;
+  return conflicts;
 }
 
 /**
@@ -327,7 +362,7 @@ export async function runQuick(opts: {
   const boundResponses = await Promise.all(
     responses.map(async (response) => {
       const rowAssignments = assignObjectsToRows(rows, response.objects);
-      const rowNameConflicts = computeRowNameConflicts(
+      const rowIdentityConflicts = computeRowIdentityConflicts(
         rows,
         response.objects,
         rowAssignments,
@@ -338,14 +373,19 @@ export async function runQuick(opts: {
       // absent rather than present-and-empty (`exactOptionalPropertyTypes`
       // is why this is a conditional spread, not `prereqBinding: undefined`).
       if (!prereqIndex || response.error !== undefined) {
-        return { ...response, rowAssignments, rowNameConflicts };
+        return { ...response, rowAssignments, rowIdentityConflicts };
       }
       const prereqBinding = await bindResponseToPrereqs(
         response.resolution.cleanedCode,
         prereqIndex,
         { sourcesIncomplete: opts.prereqSourcesIncomplete === true },
       );
-      return { ...response, rowAssignments, rowNameConflicts, prereqBinding };
+      return {
+        ...response,
+        rowAssignments,
+        rowIdentityConflicts,
+        prereqBinding,
+      };
     }),
   );
 

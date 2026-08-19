@@ -384,7 +384,9 @@ describe("dashboard/ui app.js", () => {
         source: 'codeunit 71410 "Agent" { }',
       }],
       rowAssignments: { "codeunit|71410": 0 },
-      rowNameConflicts: { "codeunit|71410": false },
+      // What the server's real computeRowIdentityConflicts (run-manager.ts)
+      // would produce for an exact match — no entry at all.
+      rowIdentityConflicts: {},
       hasParseError: false,
     };
     const responseMismatched = {
@@ -399,9 +401,16 @@ describe("dashboard/ui app.js", () => {
         source: 'codeunit 71400 "Agent" { }',
       }],
       rowAssignments: { "codeunit|71410": 0 },
-      // Same name, so no NAME mismatch — only the id differs, which this
-      // test's own badge is about.
-      rowNameConflicts: { "codeunit|71410": false },
+      // Same name, only the id genuinely differs — matching what the
+      // server's real computation would produce.
+      rowIdentityConflicts: {
+        "codeunit|71410": {
+          expectedId: 71410,
+          expectedName: "Agent",
+          actualId: 71400,
+          actualName: "Agent",
+        },
+      },
       hasParseError: false,
     };
 
@@ -454,10 +463,9 @@ describe("dashboard/ui app.js", () => {
         source: 'table 71411 "CG Line" { }',
       }],
       rowAssignments: { "table|71411": 0 },
-      // What the server's real normalizeName-based comparison
-      // (computeRowNameConflicts, run-manager.ts) would produce — false,
-      // since this response's name is identical to the row's.
-      rowNameConflicts: { "table|71411": false },
+      // Exact match on both fields — no entry, matching what the server's
+      // real computeRowIdentityConflicts (run-manager.ts) would produce.
+      rowIdentityConflicts: {},
       hasParseError: false,
     };
     const responseMismatched = {
@@ -472,9 +480,16 @@ describe("dashboard/ui app.js", () => {
         source: 'table 71411 "CG Ledger" { }',
       }],
       rowAssignments: { "table|71411": 0 },
-      // "CG Line" vs "CG Ledger" is a genuine difference even after
-      // normalizeName — true, matching what the server would compute.
-      rowNameConflicts: { "table|71411": true },
+      // Same id, only the name genuinely differs even after normalizeName —
+      // matching what the server's real computation would produce.
+      rowIdentityConflicts: {
+        "table|71411": {
+          expectedId: 71411,
+          expectedName: "CG Line",
+          actualId: 71411,
+          actualName: "CG Ledger",
+        },
+      },
       hasParseError: false,
     };
 
@@ -499,17 +514,17 @@ describe("dashboard/ui app.js", () => {
     assertStringIncludes(allText(actual!), 'table 71411 "CG Ledger"');
   });
 
-  // Task 9 fix round 1. A pure case/whitespace difference is NOT a genuine
-  // mismatch: AL identifiers are case-insensitive, and `normalizeName`
+  // Task 9 fix round 2. A pure case/whitespace difference is NOT a genuine
+  // conflict: AL identifiers are case-insensitive, and `normalizeName`
   // (object-identity.ts) deliberately erases case and collapses whitespace
   // because those differences do not distinguish objects. Badging one would
   // assert a defect the run does not support — the exact false positive
   // that teaches an author to ignore the badge when it fires on a REAL
-  // mismatch. Pins the id-less path (interface/controladdin): `row.id` and
-  // `obj.id` are both absent, so only the name check is in play, and
-  // `rowNameConflicts` — what the server's real normalizeName-based
-  // comparison would produce — says `false` even though the raw names
-  // differ by case and internal whitespace.
+  // conflict. Pins the id-less path (interface/controladdin): `row.id` and
+  // `obj.id` are both absent, so only the name is in play, and
+  // `rowIdentityConflicts` carries no entry at all for this row — what the
+  // server's real `computeRowIdentityConflicts` would produce — even though
+  // the raw names differ by case and internal whitespace.
   it("does not badge two id-less objects whose names differ only by case or whitespace", async () => {
     const ui = await loadUi();
     ui.state.verify.outcomes = {};
@@ -532,7 +547,7 @@ describe("dashboard/ui app.js", () => {
         source: 'interface "CG Agent" { }',
       }],
       rowAssignments: { "interface|name:cg agent": 0 },
-      rowNameConflicts: { "interface|name:cg agent": false },
+      rowIdentityConflicts: {},
       hasParseError: false,
     };
     const responseDifferentSpelling = {
@@ -548,7 +563,7 @@ describe("dashboard/ui app.js", () => {
         source: 'interface "cg  agent" { }',
       }],
       rowAssignments: { "interface|name:cg agent": 0 },
-      rowNameConflicts: { "interface|name:cg agent": false },
+      rowIdentityConflicts: {},
       hasParseError: false,
     };
 

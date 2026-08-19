@@ -192,46 +192,55 @@ function el(tag, className, text) {
 }
 
 /**
- * The in-cell badge for a name-or-id mismatch between `row`'s identity and
- * `obj`, the actual object this response's row-assignment points to. Spec
- * §3: two objects that normalize to the same row (object-identity.ts's
+ * The in-cell badge for a genuine id-or-name conflict between `row`'s
+ * identity and the object this response actually assigned to it — spec §3:
+ * two objects that normalize to the same row (object-identity.ts's
  * `buildRowUniverse`/`assignObjectsToRows`, via `nameFallbackKey`) merge into
- * ONE row, never two — but that merge rule merges on kind plus EITHER id
- * (when both objects have one, ignoring name — see `objectKey`) OR
- * normalized name (ignoring id), so one of the two fields can still disagree
- * between the row's first-seen identity and this particular object. That
- * disagreement is always shown here, in-cell, never as a second row.
+ * ONE row, never two, but the field the merge did NOT decide on (id when
+ * merged by name, name when merged by id) can still disagree, and that
+ * disagreement is shown here, in-cell, never as a second row.
  *
- * The id check is a raw compare — a numeric id has no "spelling," so any
- * difference is real. The name check is NOT a raw compare: AL identifiers are
- * case-insensitive and `normalizeName` (object-identity.ts) deliberately
- * erases case and collapses whitespace because those differences do not
- * distinguish objects, so two spellings of the same name must never badge —
- * that would assert a defect the run does not support. This file cannot
- * reuse `normalizeName` directly (it is a classic script; `import` is as
- * illegal here as the `export` this file's header comment already rules
- * out), so the server does the normalized comparison once, for the same
- * reason `rowAssignments` itself is server-computed: `response.rowNameConflicts`
- * (`computeRowNameConflicts`, run-manager.ts) is `row.key` -> whether THIS
- * response's assigned object's name is genuinely unlike the row's, already
- * decided with the real `normalizeName`. Returns `null` when there is nothing
- * to show, e.g. an exact match on both fields, or two names that differ only
- * by case or whitespace.
+ * This function performs NO comparison, id or name, raw or normalized. It
+ * renders `response.rowIdentityConflicts[row.key]` — a server-computed
+ * `RowIdentityConflict` (run-manager.ts) that is present ONLY when the
+ * conflict is real, i.e. the ids genuinely differ, or the NORMALIZED names
+ * genuinely differ (`normalizeName`, object-identity.ts). This file cannot
+ * hold that logic itself: it is a classic script, so `import` is as illegal
+ * here as the `export` this file's header comment already rules out, and
+ * this file's own history is why the rule is never re-derived here either —
+ * it used to carry copies of `normalizeName`/`objectKey` with nothing able
+ * to notice when they drifted from the original, which is exactly what
+ * `rowAssignments` being server-computed already fixed for cell placement.
+ * Returns `null` when the server sent no entry for this row, e.g. an exact
+ * match on both fields, or two names that differ only by case or whitespace.
  */
-function buildMismatchBadge(row, obj, response) {
-  const idMismatch = row.id !== undefined && obj.id !== undefined &&
-    row.id !== obj.id;
-  const nameMismatch = Boolean(
-    response.rowNameConflicts && response.rowNameConflicts[row.key],
-  );
-  if (!idMismatch && !nameMismatch) return null;
+function buildMismatchBadge(row, response) {
+  const conflicts = response.rowIdentityConflicts;
+  const conflict = conflicts && conflicts[row.key];
+  if (!conflict) return null;
+
+  // `kind`/`extendsTarget` are never part of a conflict (see the type's own
+  // doc comment: both are part of the row's identity key, so they can never
+  // disagree), so they come from `row` here — only id/name are per-side.
+  const expected = {
+    kind: row.kind,
+    id: conflict.expectedId,
+    name: conflict.expectedName,
+    extendsTarget: row.extendsTarget,
+  };
+  const actual = {
+    kind: row.kind,
+    id: conflict.actualId,
+    name: conflict.actualName,
+    extendsTarget: row.extendsTarget,
+  };
 
   const badge = el("div", "mismatch-badge");
   badge.appendChild(
-    el("span", "mismatch-expected", `Asked for: ${describeRow(row)}`),
+    el("span", "mismatch-expected", `Asked for: ${describeRow(expected)}`),
   );
   badge.appendChild(
-    el("span", "mismatch-actual", `Wrote: ${describeRow(obj)}`),
+    el("span", "mismatch-actual", `Wrote: ${describeRow(actual)}`),
   );
   return badge;
 }
@@ -726,7 +735,7 @@ function buildCell(row, response) {
     wrapper.textContent = "view source";
   }
 
-  const mismatchBadge = buildMismatchBadge(row, obj, response);
+  const mismatchBadge = buildMismatchBadge(row, response);
   if (mismatchBadge) {
     wrapper.classList.add("cell-mismatch");
     wrapper.appendChild(mismatchBadge);
