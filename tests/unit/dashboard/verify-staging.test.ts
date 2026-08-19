@@ -1,4 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
+import { exists as pathExists } from "@std/fs";
 import { join } from "@std/path";
 import { stageResponse } from "../../../src/dashboard/verify-staging.ts";
 
@@ -62,6 +63,11 @@ Deno.test("verify-staging", async (t) => {
         } finally {
           await staged.cleanup();
         }
+
+        assert(
+          await pathExists(join(draftDir, "prereq", "app.json")),
+          "cleanup must not touch the draft's prereq/",
+        );
       } finally {
         await Deno.remove(draftDir, { recursive: true });
       }
@@ -90,6 +96,35 @@ Deno.test("verify-staging", async (t) => {
         exists = false;
       }
       assertEquals(exists, false);
+
+      assert(
+        await pathExists(join(draftDir, "correct", "CG-AL-X003.Test.al")),
+        "cleanup must not delete the draft's oracle",
+      );
+      assert(
+        await pathExists(draftDir),
+        "cleanup must not delete the draft directory itself",
+      );
+    } finally {
+      await Deno.remove(draftDir, { recursive: true });
+    }
+  });
+
+  await t.step("cleanup is idempotent", async () => {
+    const draftDir = await Deno.makeTempDir({ prefix: "cg-stage-" });
+    try {
+      await Deno.mkdir(join(draftDir, "correct"), { recursive: true });
+      await Deno.writeTextFile(
+        join(draftDir, "correct", "CG-AL-X005.Test.al"),
+        "x",
+      );
+      const staged = await stageResponse({
+        draftDir,
+        taskId: "CG-AL-X005",
+        code: "table 70001 A { }",
+      });
+      await staged.cleanup();
+      await staged.cleanup();
     } finally {
       await Deno.remove(draftDir, { recursive: true });
     }

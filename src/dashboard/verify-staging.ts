@@ -161,8 +161,20 @@ export async function stageResponse(
   const prereqDir = await exists(prereqCandidate) ? prereqCandidate : undefined;
   const testCodeunitId = await readTestCodeunitId(opts.draftDir);
 
+  // Idempotent: Task 5 stages twice (an attempt-1 project, then a second for
+  // the fix attempt), so two cleanups run per verify with error paths
+  // between them. A second call finding `projectDir` already gone must be a
+  // no-op, not a `Deno.errors.NotFound` thrown out of a `finally` that would
+  // mask whatever real error sent the caller there. Only `NotFound` is
+  // swallowed - a permission or busy-file error still surfaces.
   const cleanup = async (): Promise<void> => {
-    await Deno.remove(projectDir, { recursive: true });
+    try {
+      await Deno.remove(projectDir, { recursive: true });
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        throw error;
+      }
+    }
   };
 
   return {
