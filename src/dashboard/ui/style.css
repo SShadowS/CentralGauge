@@ -431,6 +431,10 @@ table.matrix tbody th {
   font-weight: 600;
 }
 
+.cell-mismatch {
+  border-left: 2px solid var(--neutral-text);
+}
+
 .mismatch-badge {
   display: block;
   margin-top: 2px;

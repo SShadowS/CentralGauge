@@ -428,6 +428,8 @@ describe("dashboard/ui app.js", () => {
     const cellMismatched = tr.children[2]!.children[0]!;
 
     assertEquals(findNode(cellExact, "mismatch-badge", ""), undefined);
+    assertEquals(cellExact.className.includes("cell-mismatch"), false);
+    assertEquals(cellMismatched.className.includes("cell-mismatch"), true);
 
     const expected = findNode(cellMismatched, "mismatch-expected", "71410");
     const actual = findNode(cellMismatched, "mismatch-actual", "71400");
@@ -507,6 +509,8 @@ describe("dashboard/ui app.js", () => {
     const cellMismatched = tr.children[2]!.children[0]!;
 
     assertEquals(findNode(cellExact, "mismatch-badge", ""), undefined);
+    assertEquals(cellExact.className.includes("cell-mismatch"), false);
+    assertEquals(cellMismatched.className.includes("cell-mismatch"), true);
 
     const expected = findNode(cellMismatched, "mismatch-expected", "CG Line");
     const actual = findNode(cellMismatched, "mismatch-actual", "CG Ledger");
@@ -584,6 +588,11 @@ describe("dashboard/ui app.js", () => {
     assertEquals(
       findNode(cellDifferentSpelling, "mismatch-badge", ""),
       undefined,
+    );
+    assertEquals(cellExact.className.includes("cell-mismatch"), false);
+    assertEquals(
+      cellDifferentSpelling.className.includes("cell-mismatch"),
+      false,
     );
   });
 
