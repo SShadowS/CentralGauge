@@ -1,0 +1,36 @@
+id: CG-AL-X062
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X062 Listener" (ID 71490) with EventSubscriberInstance = Manual and:
+
+      procedure ListenToAuditOnly()
+      procedure ListenToBoth()
+      procedure AuditCount(): Integer
+      procedure NotifyCount(): Integer
+
+  The codeunit "CG X062 Publisher" (ID 69007) already exists and publishes two integration events, OnAudit and OnNotify, both raised by its Run procedure.
+  "CG X062 Listener" subscribes to both events and counts how many times each has reached it. AuditCount and NotifyCount report those counts.
+  The two Listen procedures choose what the listener responds to for every later Run: after ListenToAuditOnly, only OnAudit is counted; after ListenToBoth, both are counted. A listener that has had neither called counts nothing.
+domains:
+  - codeunits
+  - events
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - bindsubscription
+    - event-subscriber
+    - manual-instance
+    - per-instance-binding
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X062.Test.al
+  testCodeunitId: 88815

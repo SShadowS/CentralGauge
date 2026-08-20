@@ -1,0 +1,35 @@
+id: CG-AL-X055
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X055 Runner" (ID 71420) with Access = Internal and:
+
+      procedure Start()
+      procedure Continue()
+      procedure Stop()
+      procedure State(): Integer
+      procedure Collect(Items: List of [Integer]): List of [Integer]
+
+  The runner holds a state value. Start sets it to 1, Continue sets it to 2, and Stop sets it to 0. State returns the current value, which is 0 before Start has been called.
+  Collect returns the acceptable members of Items, in the order they appear in Items. A member is acceptable when it is greater than zero, is not greater than 100, and has not already appeared earlier in Items. Collect reports on the items it is given and must leave the value returned by State unchanged.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - control-flow
+    - continue-statement
+    - name-resolution
+    - list-of
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X055.Test.al
+  testCodeunitId: 88808

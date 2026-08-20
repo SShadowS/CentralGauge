@@ -1,0 +1,32 @@
+id: CG-AL-X061
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X061 Counter" (ID 71480) with Access = Internal and:
+
+      procedure TaskCountOf(ProjectCode: Code[20]): Integer
+
+  The table "CG X061 Project" (ID 69005) already exists, with fields "Code" (Code[20], primary key) and "Task Count", a FlowField counting the rows of "CG X061 Task" (ID 69006) whose "Project Code" matches. "CG X061 Task" has fields "Entry No." (Integer, primary key) and "Project Code" (Code[20]).
+  TaskCountOf returns the value of the "Task Count" FlowField for the project identified by ProjectCode, and 0 when no such project exists. It must read that value from the "CG X061 Project" record rather than counting "CG X061 Task" rows itself.
+domains:
+  - codeunits
+  - flowfields
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - flowfield
+    - setautocalcfields
+    - calcfields
+    - record-buffer
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X061.Test.al
+  testCodeunitId: 88814

@@ -1,0 +1,32 @@
+id: CG-AL-X058
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X058 Deduper" (ID 71450) with Access = Internal and:
+
+      procedure DistinctCount(Labels: List of [Text]): Integer
+
+  The table "CG X058 Buffer" (ID 69001, fields "Entry No." (Integer, primary key) and "Label" (Text[50])) already exists and is empty when DistinctCount is called.
+  DistinctCount records each label it has not seen before as a row in "CG X058 Buffer", using that table to decide whether a label is new, and returns how many distinct labels Labels contained. Labels may contain repeats in any order.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - find
+    - current-key
+    - non-key-field
+    - dedup
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X058.Test.al
+  testCodeunitId: 88811

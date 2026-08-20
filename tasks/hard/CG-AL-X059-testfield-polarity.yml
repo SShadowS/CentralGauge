@@ -1,0 +1,32 @@
+id: CG-AL-X059
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X059 Gate" (ID 71460) with Access = Internal and:
+
+      procedure RequireDraft(var Order: Record "CG X059 Order")
+
+  The table "CG X059 Order" (ID 69003, fields "No." (Code[20], primary key) and Status (Enum "CG X059 Status")) and the enum "CG X059 Status" (ID 69002, values Draft, Released and Closed) already exist.
+  RequireDraft must return normally when the order's Status is Draft, and must raise an error when it is anything else. Use the platform's standard field-check error for this, so the message names the Status field and the value it required.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - testfield
+    - enum-ordinal
+    - field-validation
+    - polarity
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X059.Test.al
+  testCodeunitId: 88812

@@ -1,0 +1,32 @@
+id: CG-AL-X063
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X063 Describer" (ID 71500) with Access = Internal and:
+
+      procedure DescribeOf(TableNo: Integer; EntryNo: Integer): Text
+
+  Two tables already exist. "CG X063 Wide" (ID 69009) has fields "Entry No." (Integer, primary key) and "Label" (Text[50], field number 2). "CG X063 Narrow" (ID 69008) has only "Entry No." (Integer, primary key).
+  DescribeOf opens the table identified by TableNo, finds the row whose "Entry No." is EntryNo, and returns that row's field number 2 as text. It returns an empty string, without raising an error, when the table has no field number 2 and when no such row exists. TableNo will be one of the two tables above.
+domains:
+  - codeunits
+  - reflection
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - recordref
+    - fieldref
+    - fieldexist
+    - reflection
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X063.Test.al
+  testCodeunitId: 88816

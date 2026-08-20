@@ -1,0 +1,30 @@
+id: CG-AL-X056
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X056 Reader" (ID 71430) with Access = Internal and:
+
+      procedure ReadText(Source: JsonObject; PropertyName: Text): Text
+
+  ReadText returns the text of the property named PropertyName. It returns an empty string, without raising an error, whenever that text cannot be produced: when Source has no such property, when the property holds a JSON object or a JSON array, and when the property is present but holds JSON null.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - json
+    - jsontoken
+    - null-handling
+    - guard-clause
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X056.Test.al
+  testCodeunitId: 88809

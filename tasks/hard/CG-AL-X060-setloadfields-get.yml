@@ -1,0 +1,32 @@
+id: CG-AL-X060
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X060 Fetcher" (ID 71470) with Access = Internal and:
+
+      procedure Fetch(ItemNo: Code[20]; var Item: Record "CG X060 Item")
+
+  The table "CG X060 Item" (ID 69004, fields "No." (Code[20], primary key), Description (Text[100]), Amount (Integer) and Note (Text[250])) already exists.
+  Fetch retrieves the row identified by ItemNo into Item. It must bring back only the Description column from the database; Amount and Note must not be fetched.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - setloadfields
+    - partial-records
+    - get
+    - primary-key
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X060.Test.al
+  testCodeunitId: 88813

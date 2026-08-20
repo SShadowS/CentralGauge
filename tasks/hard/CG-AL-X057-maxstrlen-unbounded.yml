@@ -1,0 +1,30 @@
+id: CG-AL-X057
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X057 Fitter" (ID 71440) with Access = Internal and:
+
+      procedure Fit(Source: Text): Text[30]
+
+  Fit returns Source unchanged when it is 30 characters or shorter, and its first 30 characters otherwise. Fit must never raise an error, whatever the length of Source.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - text-length
+    - maxstrlen
+    - copystr
+    - overflow
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X057.Test.al
+  testCodeunitId: 88810
