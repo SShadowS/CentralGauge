@@ -156,10 +156,38 @@ export const PREREQ_APP_ID_RANGE = {
 
 /**
  * ID range for benchmark-generated app objects.
- * Range: 70000-79999
+ * Range: 70000-74999 (authoring band)
+ *
+ * 75000-79999 is a deliberate BUFFER and must stay unassigned. Another product
+ * on these shared Cronus containers (LethAL) publishes fixture apps occupying
+ * 79000-79450. Object ids only collide per (object type, id), so an overlap is
+ * not automatically fatal, but the two suites previously coincided at 71000 and
+ * 71010 and survived only because the object types happened to differ. That was
+ * luck, not design. Keeping authored ids at or below 74999 makes convergence
+ * structurally impossible instead of merely unlikely.
+ *
+ * Highest id actually assigned as of 2026-08-20 is 72000, so the band is not
+ * tight. Revisit only if authoring genuinely approaches 74999.
+ *
+ * Note this is the AUTHORING convention, not the manifest range. Generated
+ * app.json files still declare a wider `idRanges` (70000-79999 for solution
+ * drafts, 70000-89999 for the bench candidate app, which must also span the
+ * test-codeunit band). Narrowing those would change what compiles at bench time
+ * and could turn a model's off-spec id choice into a compile error, so it is
+ * intentionally left alone.
  */
 export const BENCHMARK_APP_ID_RANGE = {
   start: 70000,
+  end: 74999,
+} as const;
+
+/**
+ * Reserved buffer between CentralGauge's authored objects and LethAL's fixture
+ * apps on the shared containers. Never assign task object ids from this range.
+ * See BENCHMARK_APP_ID_RANGE above.
+ */
+export const BENCHMARK_APP_ID_BUFFER = {
+  start: 75000,
   end: 79999,
 } as const;
 
@@ -170,6 +198,30 @@ export const BENCHMARK_APP_ID_RANGE = {
 export const TEST_CODEUNIT_ID_RANGE = {
   start: 80000,
   end: 89999,
+} as const;
+
+/**
+ * ID range for the SOAP test harness app (`infra/cg-test-harness`).
+ * Range: 50500-50599, matching its own app.json idRanges.
+ *
+ * The harness is published Global scope and stays resident on a container
+ * between runs, so this range is occupied permanently rather than per-task.
+ */
+export const HARNESS_APP_ID_RANGE = {
+  start: 50500,
+  end: 50599,
+} as const;
+
+/**
+ * ID range for tracked spike apps under `spikes/`.
+ * Range: 90000-90099
+ *
+ * Called out because it is easy to assume everything at or above 90000 is free.
+ * It is not: `spikes/xrec` occupies 90000-90099.
+ */
+export const SPIKE_APP_ID_RANGE = {
+  start: 90000,
+  end: 90099,
 } as const;
 
 /**

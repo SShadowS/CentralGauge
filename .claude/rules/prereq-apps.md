@@ -74,11 +74,33 @@ grep -rh '"id"' tests/al/dependencies/*/app.json | sort
 
 To avoid conflicts between prereqs, generated code, and tests:
 
-| Range       | Purpose                    |
-| ----------- | -------------------------- |
-| 69000-69999 | Prereq app objects         |
-| 70000-79999 | Generated code (benchmark) |
-| 80000-89999 | Test codeunits             |
+| Range       | Purpose                                        |
+| ----------- | ---------------------------------------------- |
+| 69000-69999 | Prereq app objects                             |
+| 70000-74999 | Generated code (benchmark) — assign from here  |
+| 75000-79999 | **RESERVED buffer — never assign**             |
+| 80000-89999 | Test codeunits                                 |
+
+**Check it mechanically:** `deno task id-audit` (add `--list` for a histogram).
+It validates every committed AL object against the band its location implies,
+fails on anything in the reserved buffer, and fails on a new same-unit duplicate
+id. Bands are imported from `src/constants.ts` so the check cannot drift from
+this table.
+
+**Why 75000-79999 is off limits.** These Cronus containers are shared with
+another product (LethAL), whose fixture apps publish objects at 79000-79450 and
+are permanently resident on Cronus281 and Cronus283. Object ids collide only per
+(object type, id), so an overlapping band is not automatically fatal — but the
+two suites already coincided at 71000 and 71010 and survived purely because the
+object types happened to be opposite. Keeping authored ids at or below 74999
+makes convergence structurally impossible. Highest id assigned as of 2026-08-20
+is 72000, so this costs nothing today.
+
+This is the AUTHORING convention. Generated `app.json` manifests still declare a
+wider `idRanges` (70000-79999 for drafts, 70000-89999 for the bench candidate,
+which must span the test band too) and are deliberately NOT narrowed: doing so
+would change what compiles at bench time and could turn a model's off-spec id
+choice into a compile error rather than a wrong answer.
 
 ## How It Works
 
@@ -276,11 +298,27 @@ it does not buy a clean Problems panel. Expect an unresolved-reference
 diagnostic for the object each oracle exercises.
 
 One more pre-existing condition worth knowing before assuming a Problems
-panel finding is new: `tests/al/hard/` carries two pairs of duplicate test
-codeunit ids - 80015 (`CG-AL-H014.Test.al` and `CG-AL-H015.Test.al`) and
-80021 (`CG-AL-H020.Test.al` and `CG-AL-H021.Test.al`). Harmless to the
-benchmark itself, which compiles and publishes one task's app at a time, but
-the `tests/al/hard` AL project will permanently show `AL0264` duplicate-object
-errors on top of the unresolved-reference ones above. Deliberately not
-renumbered: changing a committed test codeunit id would edit `tests/al/**`
-content and move the task-set hash for no benchmark-visible benefit.
+panel finding is new: **four** pairs of duplicate test codeunit ids exist,
+across two difficulty folders. Full list, audited 2026-08-20:
+
+| Folder | Id | Files |
+| --- | --- | --- |
+| `tests/al/hard/` | 80015 | `CG-AL-H014.Test.al`, `CG-AL-H015.Test.al` |
+| `tests/al/hard/` | 80021 | `CG-AL-H020.Test.al`, `CG-AL-H021.Test.al` |
+| `tests/al/medium/` | 80012 | `CG-AL-M002.Test.al`, `CG-AL-M112.Test.al` |
+| `tests/al/medium/` | 80020 | `CG-AL-M010.Test.al`, `CG-AL-M020.Test.al` |
+
+In every case the task YAML's `expected.testCodeunitId` agrees with both sides,
+so this is deliberate id reuse across tasks rather than a typo in one place.
+
+Harmless to the benchmark itself, which compiles and publishes one task's app
+at a time, but the `tests/al/hard` **and `tests/al/medium`** AL projects will
+permanently show `AL0264` duplicate-object errors on top of the
+unresolved-reference ones above. Deliberately not renumbered: changing a
+committed test codeunit id would edit `tests/al/**` content and move the
+task-set hash for no benchmark-visible benefit.
+
+Duplicates ACROSS folders (for example `easy/CG-AL-E002.Test.al` and
+`hard/CG-AL-H002.Test.al` both at 80002) are not listed and are not a problem:
+those folders are separate AL projects, so they never compile together. 24 ids
+are reused that way. Only same-folder collisions produce `AL0264`.

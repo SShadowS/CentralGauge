@@ -164,8 +164,11 @@ Difficulty comes from the directory + `metadata.difficulty`, not the id letter.
 - Prereq app UUIDs must be valid hex — use a hex-safe suffix (`0a01`, not `x001`).
 - Test codeunit shape: `Subtype = Test; TestPermissions = Disabled;` and
   `Assert: Codeunit Assert` (base-app Assert, not "Library Assert").
-- Object-ID bands: prereq `69000-69999`, generated/model `70000-79999`, tests
-  `80000-89999`. Collision-check before assigning.
+- Object-ID bands: prereq `69000-69999`, generated/model `70000-74999`, tests
+  `80000-89999`. Collision-check before assigning. **`75000-79999` is a reserved
+  buffer — never assign from it** (these containers are shared with another
+  product whose fixtures occupy 79000-79450). Highest id assigned as of
+  2026-08-20 is 72000.
 
 ## Test isolation & shared-container hygiene (batch-2 learnings)
 

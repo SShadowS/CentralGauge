@@ -113,6 +113,7 @@ scripts/*
 !scripts/cycle-*.ps1
 !scripts/trap-probe.ts
 !scripts/harvest-candidate-corpus.ts
+!scripts/id-audit.ts
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
