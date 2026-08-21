@@ -34,6 +34,33 @@ const DIFFICULTIES: readonly Difficulty[] = ["easy", "medium", "hard"];
 /** `<id>-<slug>.yml` filename shape, e.g. `CG-AL-X052-day-close.yml`. */
 const TASK_FILENAME_PATTERN = /^(CG-AL-[A-Z]\d{3})-(.+)\.yml$/;
 
+/**
+ * The workbench (scaffold, ids, probe, promote) only ever operates on the
+ * `CG-AL-X###` ado-trap-2026 cohort - see `scaffold.ts`'s own
+ * `TASK_ID_PATTERN` and `ids.ts`'s collision tracking, both X-only by
+ * design. Import must match that scoping: `renderSolutionAppJson` (reused
+ * below to regenerate `correct/`/`naive/` app.json) can only derive a
+ * solution app id for `CG-AL-X*`, so an E/M/H id would reach it and throw a
+ * renderer-internal message that has nothing to do with why the import
+ * actually failed.
+ */
+const X_SERIES_ID_PATTERN = /^CG-AL-X\d{2,3}$/;
+
+/**
+ * Throws before any filesystem access when `id` is not an X-series id -
+ * the workbench has nothing to import an E/M/H task INTO (there is no
+ * `correct/`/`naive/` app id scheme for them), so the earliest possible
+ * refusal is also the clearest one.
+ */
+function assertXSeriesId(id: string): void {
+  if (!X_SERIES_ID_PATTERN.test(id)) {
+    throw new Error(
+      `Only X-series tasks (CG-AL-Xnn) can be imported into the workbench; ` +
+        `${id} is a legacy task - edit it directly under tests/al/.`,
+    );
+  }
+}
+
 /** Repo-relative paths a re-imported draft's `promote` may later overwrite. */
 export interface ImportedFrom {
   /** Repo-relative, forward-slash paths this draft's promote may overwrite. */
@@ -121,6 +148,8 @@ export async function importPromotedTask(
   id: string,
   opts?: { repoRoot?: string; scratchRoot?: string },
 ): Promise<ImportResult> {
+  assertXSeriesId(id);
+
   const repoRoot = opts?.repoRoot ?? Deno.cwd();
   const scratchRoot = opts?.scratchRoot ?? join(repoRoot, "scratch");
 
@@ -263,6 +292,10 @@ export async function listPromotedTasks(
   ) {
     const match = TASK_FILENAME_PATTERN.exec(entry.name);
     if (!match) continue;
+    // Legacy (E/M/H) tasks are filtered out, not surfaced-then-refused: the
+    // dashboard's Import list (Task 4/5) must never offer a row that would
+    // reject on click. See X_SERIES_ID_PATTERN / assertXSeriesId above.
+    if (!X_SERIES_ID_PATTERN.test(match[1]!)) continue;
     results.push({
       id: match[1]!,
       slug: match[2]!,

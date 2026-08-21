@@ -29,7 +29,7 @@ expected:
 
 async function seedRepo(
   root: string,
-  opts?: { prereq?: boolean; companion?: boolean },
+  opts?: { prereq?: boolean; companion?: boolean; legacy?: boolean },
 ) {
   await Deno.mkdir(join(root, "tasks/hard"), { recursive: true });
   await Deno.mkdir(join(root, "tests/al/hard"), { recursive: true });
@@ -54,6 +54,15 @@ async function seedRepo(
     await Deno.writeTextFile(
       join(root, "tests/al/dependencies/CG-AL-X090/app.json"),
       "{}",
+    );
+  }
+  if (opts?.legacy) {
+    // A legacy (non-X-series) promoted task - listPromotedTasks must omit
+    // it, and importPromotedTask must refuse it early.
+    await Deno.mkdir(join(root, "tasks/easy"), { recursive: true });
+    await Deno.writeTextFile(
+      join(root, "tasks/easy/CG-AL-E900-legacy-fixture.yml"),
+      "id: CG-AL-E900\n",
     );
   }
 }
@@ -169,12 +178,38 @@ Deno.test("importPromotedTask", async (t) => {
       await cleanupTempDir(root);
     }
   });
+
+  await t.step(
+    "rejects a legacy (non-X-series) id before touching the filesystem, without creating a scratch dir",
+    async () => {
+      const root = await createTempDir("wb-import");
+      try {
+        await seedRepo(root, { legacy: true });
+        const scratch = join(root, "scratch");
+        await assertRejects(
+          () =>
+            importPromotedTask("CG-AL-E900", {
+              repoRoot: root,
+              scratchRoot: scratch,
+            }),
+          Error,
+          "Only X-series",
+        );
+        await assertRejects(
+          () => Deno.stat(join(scratch, "CG-AL-E900")),
+          Deno.errors.NotFound,
+        );
+      } finally {
+        await cleanupTempDir(root);
+      }
+    },
+  );
 });
 
 Deno.test("listPromotedTasks returns id/slug/difficulty from tasks/**", async () => {
   const root = await createTempDir("wb-import");
   try {
-    await seedRepo(root);
+    await seedRepo(root, { legacy: true });
     const list = await listPromotedTasks(root);
     assertEquals(list, [{
       id: "CG-AL-X090",
