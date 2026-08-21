@@ -146,14 +146,18 @@ export interface LeaderboardRow {
    */
   denominator?: number;
   /**
-   * Count of result rows in the active task-set scope that a FALLBACK model
+   * Count of result rows across the row's task set that a FALLBACK model
    * served because the requested model refused (`results.served_model IS NOT
-   * NULL`, migration 0015). A plain count, not a rate: 0 means every attempt
-   * on this row was answered by the model the row names.
+   * NULL`, migration 0015). A plain count, not a rate, and per ATTEMPT ROW:
+   * a task whose attempt 1 and attempt 2 were both fallback-served counts 2.
    *
    * Scoped to the task set only, NOT to the row's other active filters
-   * (tier / since / family / category / difficulty). It is a caveat badge on
-   * the model, not a filtered metric.
+   * (tier / since / family / category / difficulty). So 0 means the model
+   * never had a fallback-served result anywhere in the task set, but a
+   * non-zero value does NOT imply any of those results are inside the
+   * currently filtered scope: under `?difficulty=easy` a model whose refusals
+   * were all on hard tasks still reports them here. It is a caveat badge on
+   * the model, not a filtered metric, and renderers must say as much.
    */
   fallback_count: number;
   latency_p95_ms: number;

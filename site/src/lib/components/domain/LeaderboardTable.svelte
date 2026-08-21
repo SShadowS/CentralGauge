@@ -141,15 +141,21 @@
               <span class="auc text-mono">{headlineValue(row)}</span>
               {#if row.fallback_count > 0}
                 <!--
-                  Refusal-fallback caveat: some of this score was produced by a
-                  DIFFERENT model after the named one refused. Muted, never
+                  Refusal-fallback caveat: some of this model's work was done by
+                  a DIFFERENT model after the named one refused. Muted, never
                   colour-coded: it qualifies the number, it does not rank it.
+
+                  The count is per ATTEMPT ROW and spans the WHOLE task set, so
+                  it is not narrowed by the filters the adjacent score honours.
+                  Both attributes must say so: under `?difficulty=easy` a model
+                  whose refusals were all on hard tasks still shows this badge
+                  beside a score containing zero fallback-served results.
                 -->
                 <span
                   class="fallback-badge"
                   data-test="fallback-badge"
-                  aria-label="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} served by a fallback model"
-                  title="{row.fallback_count} task result{row.fallback_count === 1 ? '' : 's'} served by a fallback model after a refusal. See the model detail."
+                  aria-label="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} across the full task set served by a fallback model"
+                  title="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} across the full task set {row.fallback_count === 1 ? 'was' : 'were'} served by a fallback model after a refusal. Not narrowed by the active filters. See the model detail."
                 >⤵{row.fallback_count}</span>
               {/if}
             </span>

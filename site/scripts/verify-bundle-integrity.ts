@@ -54,6 +54,8 @@ const REQUIRED_FIELDS: readonly string[] = [
   // A.4 new fields: strict denominator + pass@1
   "denominator",
   "pass_at_1",
+  // Refusal-fallback recording: per-model count of fallback-served results.
+  "fallback_count",
 ];
 
 function walkAndConcat(dir: string): string {

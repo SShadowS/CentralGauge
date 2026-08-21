@@ -40,7 +40,7 @@ describe('LeaderboardTable fallback badge', () => {
     expect(badge).not.toBeNull();
     expect(badge?.textContent).toContain('3');
     // The caveat must be reachable without hover-only affordances.
-    expect(badge?.getAttribute('aria-label')).toMatch(/3 results served by a fallback model/);
+    expect(badge?.getAttribute('aria-label')).toMatch(/3 results across the full task set served by a fallback model/);
   });
 
   it('renders no badge when fallback_count is 0', () => {
@@ -63,6 +63,23 @@ describe('LeaderboardTable fallback badge', () => {
       props: { rows: [row({ fallback_count: 1 })], sort: 'auc_2:desc' },
     });
     const badge = container.querySelector('[data-test="fallback-badge"]');
-    expect(badge?.getAttribute('aria-label')).toMatch(/1 result served by a fallback model/);
+    expect(badge?.getAttribute('aria-label')).toMatch(/1 result across the full task set served by a fallback model/);
+  });
+
+  it('title and aria-label agree on granularity and scope (review I-1)', () => {
+    // The number counts ATTEMPT ROWS over the WHOLE task set, while the score
+    // it sits beside honours the active filters. Neither attribute may imply
+    // per-task granularity ("task result") or filtered scope.
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: 2 })], sort: 'auc_2:desc' },
+    });
+    const badge = container.querySelector('[data-test="fallback-badge"]');
+    const title = badge?.getAttribute('title') ?? '';
+    const label = badge?.getAttribute('aria-label') ?? '';
+    expect(title).toMatch(/across the full task set/);
+    expect(title).toMatch(/Not narrowed by the active filters/);
+    expect(title).not.toMatch(/task result/);
+    expect(label).toMatch(/across the full task set/);
+    expect(label).not.toMatch(/task result/);
   });
 });
