@@ -95,6 +95,18 @@ export interface LLMResponse {
   usage: TokenUsage;
   duration: number; // milliseconds
   finishReason: "stop" | "length" | "content_filter" | "error";
+  /**
+   * Model that actually served the response, when the server-side refusal
+   * fallback rerouted it (bare API id, e.g. "claude-opus-4-8"). Absent when
+   * the requested model answered. See refusal-fallback recording plan.
+   */
+  servedModel?: string | undefined;
+  /**
+   * Present when the primary model's safety classifier refused.
+   * recovered=true: a fallback model answered (response content is real).
+   * recovered=false: the whole chain refused (finishReason="content_filter").
+   */
+  refusal?: { category: string | null; recovered: boolean } | undefined;
 }
 
 export interface TokenUsage {

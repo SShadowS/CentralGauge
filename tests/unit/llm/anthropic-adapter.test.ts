@@ -11,8 +11,10 @@
 import { assertEquals } from "@std/assert";
 import {
   AnthropicAdapter,
+  extractFallbackInfo,
   mapAnthropicModelEntry,
   modelRejectsTemperature,
+  modelSupportsServerFallback,
 } from "../../../src/llm/anthropic-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
@@ -829,5 +831,84 @@ Deno.test("mapAnthropicModelEntry - adopts API metadata", async (t) => {
       capabilities: { thinking: { supported: false } },
     });
     assertEquals(m.capabilities?.thinking, false);
+  });
+});
+
+// ============================================================================
+// Server-side refusal fallback (see docs/superpowers plan: refusal-fallback
+// recording). Pure helpers, so no PricingService bootstrap is needed.
+// ============================================================================
+
+Deno.test("modelSupportsServerFallback - 5-series and fable only", () => {
+  for (
+    const m of [
+      "claude-fable-5",
+      "claude-opus-5",
+      "claude-sonnet-5",
+      "claude-opus-5-20260601",
+    ]
+  ) {
+    assertEquals(modelSupportsServerFallback(m), true, m);
+  }
+  for (
+    const m of [
+      "claude-opus-4-8",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+      "gpt-5",
+    ]
+  ) {
+    assertEquals(modelSupportsServerFallback(m), false, m);
+  }
+});
+
+Deno.test("extractFallbackInfo", async (t) => {
+  await t.step("no fallback: served == requested, no refusal", () => {
+    const info = extractFallbackInfo(
+      { model: "claude-fable-5", stop_reason: "end_turn" },
+      "claude-fable-5",
+    );
+    assertEquals(info.servedModel, undefined);
+    assertEquals(info.refusal, undefined);
+  });
+
+  await t.step("recovered fallback via fallback content block", () => {
+    const info = extractFallbackInfo({
+      model: "claude-opus-4-8",
+      stop_reason: "end_turn",
+      content: [
+        {
+          type: "fallback",
+          from: { model: "claude-fable-5" },
+          to: { model: "claude-opus-4-8" },
+        },
+        { type: "text", text: "x" },
+      ],
+    }, "claude-fable-5");
+    assertEquals(info.servedModel, "claude-opus-4-8");
+    assertEquals(info.refusal, { category: null, recovered: true });
+  });
+
+  await t.step(
+    "sticky turn: served differs, no fallback block, iterations signal",
+    () => {
+      const info = extractFallbackInfo({
+        model: "claude-opus-4-8",
+        stop_reason: "end_turn",
+        usage: { iterations: [{ type: "fallback_message" }] },
+      }, "claude-fable-5");
+      assertEquals(info.servedModel, "claude-opus-4-8");
+      assertEquals(info.refusal?.recovered, true);
+    },
+  );
+
+  await t.step("whole chain refused: category recorded, not recovered", () => {
+    const info = extractFallbackInfo({
+      model: "claude-fable-5",
+      stop_reason: "refusal",
+      stop_details: { type: "refusal", category: "cyber" },
+    }, "claude-fable-5");
+    assertEquals(info.servedModel, undefined);
+    assertEquals(info.refusal, { category: "cyber", recovered: false });
   });
 });

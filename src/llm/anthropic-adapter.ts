@@ -85,6 +85,89 @@ export function modelRejectsTemperature(model: string): boolean {
   return false;
 }
 
+/** Beta flag for the server-side refusal-fallback (category-routed form). */
+const SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01";
+
+/**
+ * Server-side refusal fallback is requested only where the refusal classifier
+ * exists: Fable/Mythos, and Opus/Sonnet gen >= 5. Off-switch:
+ * CENTRALGAUGE_REFUSAL_FALLBACK=0.
+ *
+ * Exported for unit testing.
+ */
+export function modelSupportsServerFallback(model: string): boolean {
+  if (/^claude-(fable|mythos)-\d/.test(model)) return true;
+  const m = model.match(/^claude-(opus|sonnet)-(\d+)/);
+  return m !== null && Number(m[2]) >= 5;
+}
+
+/**
+ * Minimal structural view of the fields {@link extractFallbackInfo} reads.
+ * Deliberately a supertype of both `Anthropic.Message` and the beta
+ * `BetaMessage`: only the beta response actually carries the `fallback`
+ * content block and the `usage.iterations` entries, but reading them
+ * structurally means the non-beta path needs no separate mapping.
+ */
+interface FallbackSourceMessage {
+  model: string;
+  stop_reason?: string | null;
+  stop_details?:
+    | { type?: string; category?: string | null; explanation?: string | null }
+    | null;
+  content?: ReadonlyArray<
+    {
+      type?: string;
+      text?: string;
+      from?: { model?: string };
+      to?: { model?: string };
+    }
+  >;
+  // `input_tokens` is not read here; it is named so this shape shares a
+  // property with the SDK's `Usage` and TypeScript's weak-type check accepts
+  // an `Anthropic.Message` (whose `Usage` has no `iterations`) as a source.
+  usage?: {
+    input_tokens?: number;
+    iterations?: ReadonlyArray<{ type?: string }>;
+  };
+}
+
+/** Pure extraction of served-model + refusal info from an API response. */
+export function extractFallbackInfo(
+  msg: FallbackSourceMessage,
+  requestedModel: string,
+): {
+  servedModel?: string;
+  refusal?: { category: string | null; recovered: boolean };
+} {
+  const hasFallbackBlock = (msg.content ?? []).some((b) =>
+    b.type === "fallback"
+  );
+  const hasFallbackIteration = (msg.usage?.iterations ?? []).some(
+    (it) => it.type === "fallback_message",
+  );
+  const served = msg.model !== requestedModel ? msg.model : undefined;
+
+  if (msg.stop_reason === "refusal") {
+    // Final answer is a refusal: whole chain declined (or fallback not requested).
+    return {
+      refusal: {
+        category: msg.stop_details?.category ?? null,
+        recovered: false,
+      },
+    };
+  }
+  if (served !== undefined || hasFallbackBlock || hasFallbackIteration) {
+    // Deliberate asymmetry: on a recovered fallback the category is `null` --
+    // the category of the refusal that TRIGGERED it is not carried on the
+    // success response. `recovered: true` is the signal that matters.
+    return {
+      servedModel: served ?? msg.model,
+      refusal: { category: null, recovered: true },
+    };
+  }
+  return {};
+}
+
 /** A capability node in the Anthropic /v1/models response: `{ supported: bool }`. */
 interface AnthropicCapability {
   supported?: boolean;
@@ -276,7 +359,7 @@ export class AnthropicAdapter extends BaseLLMAdapter
     const client = this.ensureClient();
     const params = this.buildRequestParams(request);
 
-    const message = await client.messages.create(params);
+    const message = await this.createMessage(client, params);
 
     const duration = Date.now() - startTime;
 
@@ -310,6 +393,8 @@ export class AnthropicAdapter extends BaseLLMAdapter
       ),
     };
 
+    const fb = extractFallbackInfo(message, params.model);
+
     return {
       response: {
         content: contentText,
@@ -317,6 +402,10 @@ export class AnthropicAdapter extends BaseLLMAdapter
         usage,
         duration,
         finishReason: this.mapFinishReason(message.stop_reason),
+        ...(fb.servedModel !== undefined
+          ? { servedModel: fb.servedModel }
+          : {}),
+        ...(fb.refusal !== undefined ? { refusal: fb.refusal } : {}),
       },
       rawResponse: includeRaw ? message : undefined,
     };
@@ -331,7 +420,7 @@ export class AnthropicAdapter extends BaseLLMAdapter
     const params = this.buildRequestParams(request);
 
     try {
-      const stream = client.messages.stream(params);
+      const stream = this.createStream(client, params);
       this.setupAbortHandler(stream, options);
 
       yield* this.processStreamEvents(stream, state, options);
@@ -350,6 +439,16 @@ export class AnthropicAdapter extends BaseLLMAdapter
         rawResponse: finalMessage,
       });
 
+      // `finalizeStream` owns the LLMResponse assembly and lives in the shared
+      // stream-handler, so the fallback fields are attached here instead. The
+      // object is the same reference `onComplete` received, so a listener that
+      // holds it sees these; one that copied the response eagerly does not.
+      const fb = extractFallbackInfo(finalMessage, params.model);
+      if (fb.servedModel !== undefined) {
+        result.response.servedModel = fb.servedModel;
+      }
+      if (fb.refusal !== undefined) result.response.refusal = fb.refusal;
+
       yield finalChunk;
       return result;
     } catch (error) {
@@ -360,6 +459,53 @@ export class AnthropicAdapter extends BaseLLMAdapter
   // ============================================================================
   // Private Anthropic-specific helpers
   // ============================================================================
+
+  /**
+   * Whether to ask the API for a server-side refusal fallback on this request.
+   * Off-switch: CENTRALGAUGE_REFUSAL_FALLBACK=0.
+   */
+  private fallbackActive(model: string): boolean {
+    return modelSupportsServerFallback(model) &&
+      Deno.env.get("CENTRALGAUGE_REFUSAL_FALLBACK") !== "0";
+  }
+
+  /**
+   * Non-streaming request. When the fallback is active the call routes through
+   * the beta namespace so `betas` + `fallbacks` are accepted; the response is
+   * a `BetaMessage`, which is structurally the `Anthropic.Message` this
+   * adapter reads (plus the fallback-only fields
+   * {@link extractFallbackInfo} picks up).
+   */
+  private async createMessage(
+    client: Anthropic,
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): Promise<Anthropic.Message> {
+    if (!this.fallbackActive(params.model)) {
+      return await client.messages.create(params);
+    }
+    const beta = await client.beta.messages.create({
+      ...params,
+      betas: [SERVER_FALLBACK_BETA],
+      fallbacks: "default",
+    });
+    return beta as unknown as Anthropic.Message;
+  }
+
+  /** Streaming counterpart of {@link createMessage}. */
+  private createStream(
+    client: Anthropic,
+    params: Anthropic.MessageCreateParamsNonStreaming,
+  ): ReturnType<Anthropic["messages"]["stream"]> {
+    if (!this.fallbackActive(params.model)) {
+      return client.messages.stream(params);
+    }
+    const beta = client.beta.messages.stream({
+      ...params,
+      betas: [SERVER_FALLBACK_BETA],
+      fallbacks: "default",
+    });
+    return beta as unknown as ReturnType<Anthropic["messages"]["stream"]>;
+  }
 
   private mapFinishReason(
     reason: string | null,
