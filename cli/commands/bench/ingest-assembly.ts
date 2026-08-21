@@ -211,6 +211,8 @@ function attemptToItem(
     tokens_reasoning: a.llmResponse.usage.reasoningTokens ?? 0,
     tokens_cache_read: a.llmResponse.usage.cacheReadTokens ?? 0,
     tokens_cache_write: a.llmResponse.usage.cacheCreationTokens ?? 0,
+    served_model: a.llmResponse.servedModel ?? null,
+    refusal_category: a.llmResponse.refusal?.category ?? null,
     durations_ms,
     failure_reasons: a.failureReasons,
     transcript_bytes: encoder.encode(transcriptText),

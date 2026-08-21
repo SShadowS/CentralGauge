@@ -40,6 +40,19 @@ export interface BenchResultItem {
   tokens_reasoning: number;
   tokens_cache_read: number;
   tokens_cache_write: number;
+  /**
+   * Bare API model id actually served, when it differs from the requested
+   * model (server-side fallback). null when the requested model answered —
+   * analytics/transparency only, never used for scoring or pricing lookup.
+   */
+  served_model: string | null;
+  /**
+   * Refusal category of a chain refusal on this attempt, when the provider
+   * classified one. null on a plain attempt AND on a recovered fallback (the
+   * success response carries no triggering category) — analytics/transparency
+   * only, never re-scored.
+   */
+  refusal_category: string | null;
   durations_ms: { llm?: number; compile?: number; test?: number };
   failure_reasons: string[];
   transcript_bytes?: Uint8Array;
@@ -137,6 +150,8 @@ export async function ingestRun(
       tokens_reasoning: r.tokens_reasoning,
       tokens_cache_read: r.tokens_cache_read,
       tokens_cache_write: r.tokens_cache_write,
+      served_model: r.served_model,
+      refusal_category: r.refusal_category,
       durations_ms: r.durations_ms,
       failure_reasons: r.failure_reasons,
     };

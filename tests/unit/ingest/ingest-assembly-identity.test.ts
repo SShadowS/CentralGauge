@@ -19,6 +19,7 @@ import { assembleBenchResultsForVariant } from "../../../cli/commands/bench/inge
 import { ValidationError } from "../../../src/errors.ts";
 import {
   createMockExecutionAttempt,
+  createMockLLMResponse,
   createMockTaskExecutionContext,
 } from "../../utils/test-helpers.ts";
 
@@ -156,6 +157,51 @@ Deno.test("T5: attemptNumber <= 2 still assembles (attempt 0/1 map to 1)", async
     assertEquals(outcome.kind, "assembled");
     if (outcome.kind !== "assembled") return;
     assertEquals(outcome.benchResults.results.length, 2);
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
+Deno.test("T5 ingest: served_model + refusal_category carry through from llmResponse", async () => {
+  const dir = await Deno.makeTempDir({ prefix: "cg-t5-refusal-" });
+  try {
+    const path = await writeResultsFile(dir, [
+      makeResult("CG-AL-X063", [
+        createMockExecutionAttempt({
+          attemptNumber: 1,
+          llmResponse: createMockLLMResponse({
+            servedModel: "claude-opus-4-8",
+          }),
+        }),
+        createMockExecutionAttempt({
+          attemptNumber: 2,
+          llmResponse: createMockLLMResponse({
+            refusal: { category: "cyber", recovered: false },
+          }),
+        }),
+      ]),
+      makeResult("CG-AL-X001", [
+        createMockExecutionAttempt({ attemptNumber: 1 }),
+      ]),
+    ]);
+    const outcome = await assembleBenchResultsForVariant(path, VARIANT, {
+      pricingVersion: "2026-07-01",
+      runId: "persisted-run",
+    });
+    assertEquals(outcome.kind, "assembled");
+    if (outcome.kind !== "assembled") return;
+
+    assertEquals(outcome.benchResults.results.length, 3);
+    const [served, refused, plain] = outcome.benchResults.results;
+    if (!served || !refused || !plain) {
+      throw new Error("expected 3 assembled result items");
+    }
+    assertEquals(served.served_model, "claude-opus-4-8");
+    assertEquals(served.refusal_category, null);
+    assertEquals(refused.served_model, null);
+    assertEquals(refused.refusal_category, "cyber");
+    assertEquals(plain.served_model, null);
+    assertEquals(plain.refusal_category, null);
   } finally {
     await Deno.remove(dir, { recursive: true });
   }
