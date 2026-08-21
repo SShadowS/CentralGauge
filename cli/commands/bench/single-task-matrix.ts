@@ -138,19 +138,31 @@ function colorCategory(category: AttemptCategory): string {
   }
 }
 
+/**
+ * Fallback-served marker for a matrix cell. `*` when this attempt's score
+ * came from a server-side fallback model rather than the requested one
+ * (`llmResponse.servedModel` set — see refusal-fallback recording plan,
+ * task #1). A chain-refusal attempt is already a fail and needs no marker;
+ * only a served, scoring attempt earns one.
+ */
+function fallbackMarker(attempt: ExecutionAttempt): string {
+  return attempt.llmResponse?.servedModel !== undefined ? "*" : "";
+}
+
 /** Render one attempt cell: colored category plus a short detail suffix. */
 function formatAttemptCell(
   attempt: ExecutionAttempt,
   category: AttemptCategory,
 ): string {
   const label = colorCategory(category);
+  const marker = fallbackMarker(attempt);
   if (category === "PASS") {
-    return `${label} (${attempt.score.toFixed(0)})`;
+    return `${label} (${attempt.score.toFixed(0)})${marker}`;
   }
   if (category === "TEST" && attempt.testResult) {
-    return `${label} (${attempt.testResult.passedTests}/${attempt.testResult.totalTests})`;
+    return `${label} (${attempt.testResult.passedTests}/${attempt.testResult.totalTests})${marker}`;
   }
-  return label;
+  return `${label}${marker}`;
 }
 
 /**
@@ -181,11 +193,20 @@ export function formatSingleTaskMatrix(input: SingleTaskMatrixInput): string {
   ];
   const table = new Table().header(header).border(true);
 
+  let anyFallback = false;
   for (const result of results) {
     table.push(buildModelRow(result, maxAttempts));
+    if (result.attempts.some((a) => fallbackMarker(a) !== "")) {
+      anyFallback = true;
+    }
   }
 
-  return "\n=== TASK RESULT ===\n" + table.toString();
+  let output = "\n=== TASK RESULT ===\n" + table.toString();
+  if (anyFallback) {
+    output +=
+      "\n* score served by a fallback model — see # Fallbacks in the scores file";
+  }
+  return output;
 }
 
 /** Build a single model row: one cell per attempt slot, plus overall result. */

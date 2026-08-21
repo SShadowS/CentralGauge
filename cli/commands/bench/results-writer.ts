@@ -101,22 +101,50 @@ export function collectFallbackEvents(
 }
 
 /**
- * Save benchmark results to JSON file
+ * Render the `# Fallbacks` scores-file block for a set of fallback events.
+ * Returns `[]` when there are none, so callers can conditional-emit with the
+ * same `length > 0` gate used by `# Drain Events` / `# Recovery Events`.
  */
-export async function saveResultsJson(
-  resultsFile: string,
+export function renderFallbackBlock(events: FallbackEvent[]): string[] {
+  if (events.length === 0) return [];
+  const recovered = events.filter((e) => e.recovered);
+  const lines: string[] = [];
+  lines.push(`# Fallbacks`);
+  lines.push(`total_refusal_events: ${events.length}`);
+  lines.push(`recovered_via_fallback: ${recovered.length}`);
+  lines.push(`chain_refusals: ${events.length - recovered.length}`);
+  lines.push(`by_event:`);
+  for (const e of events) {
+    const detail = e.recovered
+      ? `served=${e.served}`
+      : `REFUSED category=${e.category ?? "unknown"}`;
+    lines.push(`  ${e.model} ${e.taskId} a${e.attempt}: ${detail}`);
+  }
+  return lines;
+}
+
+/**
+ * Group a flat `TaskExecutionResult[]` by model into the shape
+ * `collectFallbackEvents` expects. Shared by `saveResultsJson` (JSON
+ * persistence) and `buildScoreLines` (`# Fallbacks` block) so there is one
+ * grouping implementation, not two independently-derived ones.
+ */
+function groupResultsForFallback(
   results: TaskExecutionResult[],
-  stats: AggregateStats,
-  comparisons: TaskComparison[],
-  hashResult: HashResult,
-  drainEvents?:
-    import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
-  recoveryEvents?:
-    import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
-  ingestMeta?: import("./ingest-meta.ts").IngestMeta,
-): Promise<void> {
-  // Build per-model results structure for fallback event collection
-  const perModelResults: Map<
+): Array<{
+  model: string;
+  results: Array<{
+    taskId: string;
+    attempts: Array<{
+      attemptNumber: number;
+      llmResponse?: {
+        servedModel?: string;
+        refusal?: { category: string | null; recovered: boolean };
+      };
+    }>;
+  }>;
+}> {
+  const perModelResults = new Map<
     string,
     Array<{
       taskId: string;
@@ -128,7 +156,7 @@ export async function saveResultsJson(
         };
       }>;
     }>
-  > = new Map();
+  >();
 
   for (const r of results) {
     const model = r.context.variantId;
@@ -164,12 +192,30 @@ export async function saveResultsJson(
     });
   }
 
-  const perModelArray = Array.from(perModelResults).map(([model, results]) => ({
+  return Array.from(perModelResults).map(([model, results]) => ({
     model,
     results,
   }));
+}
 
-  const fallbackEvents = collectFallbackEvents(perModelArray);
+/**
+ * Save benchmark results to JSON file
+ */
+export async function saveResultsJson(
+  resultsFile: string,
+  results: TaskExecutionResult[],
+  stats: AggregateStats,
+  comparisons: TaskComparison[],
+  hashResult: HashResult,
+  drainEvents?:
+    import("../../../src/parallel/compile-queue-pool.ts").RebalanceOutcome[],
+  recoveryEvents?:
+    import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
+  ingestMeta?: import("./ingest-meta.ts").IngestMeta,
+): Promise<void> {
+  const fallbackEvents = collectFallbackEvents(
+    groupResultsForFallback(results),
+  );
 
   await Deno.writeTextFile(
     resultsFile,
@@ -521,6 +567,22 @@ export function buildScoreLines(input: ScoreLineInput): string[] {
           `drained=${ev.drained} requeued=${ev.requeued} parked=${ev.parked} ` +
           `targets=[${targets}]`,
       );
+    }
+  }
+
+  // # Fallbacks block — server-side refusal / fallback-model activity
+  // (refusal-fallback recording plan, task #3). Derived from `input.results`
+  // via the same `collectFallbackEvents` used by `saveResultsJson`'s JSON
+  // `fallbackEvents` field, so the two never drift. Emitted only when at
+  // least one refusal or fallback-served attempt occurred this run.
+  if (input.results && input.results.length > 0) {
+    const fallbackEvents = collectFallbackEvents(
+      groupResultsForFallback(input.results),
+    );
+    const fallbackLines = renderFallbackBlock(fallbackEvents);
+    if (fallbackLines.length > 0) {
+      lines.push(``);
+      lines.push(...fallbackLines);
     }
   }
 
