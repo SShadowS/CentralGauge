@@ -32,6 +32,19 @@ import { copyToClipboard } from "../../../src/utils/clipboard.ts";
 import { formatDurationMs, log } from "../../helpers/mod.ts";
 
 /**
+ * Fallback event recorded when an LLM attempt encounters a refusal or uses a fallback model
+ */
+export interface FallbackEvent {
+  model: string;
+  taskId: string;
+  attempt: number;
+  /** Bare API id of the model that served, null when the whole chain refused. */
+  served: string | null;
+  category: string | null;
+  recovered: boolean;
+}
+
+/**
  * Hash information for run comparability
  */
 export interface HashResult {
@@ -44,6 +57,47 @@ export interface HashResult {
     combinedHash: string;
     testFiles: string[];
   }>;
+}
+
+/**
+ * Collect fallback events from per-model results.
+ * Records attempts where an LLM encountered a refusal or used a fallback model.
+ */
+export function collectFallbackEvents(
+  perModel: ReadonlyArray<{
+    model: string;
+    results: ReadonlyArray<{
+      taskId: string;
+      attempts: ReadonlyArray<{
+        attemptNumber: number;
+        llmResponse?: {
+          servedModel?: string;
+          refusal?: { category: string | null; recovered: boolean };
+        };
+      }>;
+    }>;
+  }>,
+): FallbackEvent[] {
+  const events: FallbackEvent[] = [];
+  for (const m of perModel) {
+    for (const r of m.results) {
+      for (const a of r.attempts) {
+        const fb = a.llmResponse;
+        if (fb?.refusal === undefined && fb?.servedModel === undefined) {
+          continue;
+        }
+        events.push({
+          model: m.model,
+          taskId: r.taskId,
+          attempt: a.attemptNumber,
+          served: fb?.servedModel ?? null,
+          category: fb?.refusal?.category ?? null,
+          recovered: fb?.refusal?.recovered ?? true,
+        });
+      }
+    }
+  }
+  return events;
 }
 
 /**
@@ -61,6 +115,62 @@ export async function saveResultsJson(
     import("../../../src/health/recovery-prober.ts").RecoveryEvent[],
   ingestMeta?: import("./ingest-meta.ts").IngestMeta,
 ): Promise<void> {
+  // Build per-model results structure for fallback event collection
+  const perModelResults: Map<
+    string,
+    Array<{
+      taskId: string;
+      attempts: Array<{
+        attemptNumber: number;
+        llmResponse?: {
+          servedModel?: string;
+          refusal?: { category: string | null; recovered: boolean };
+        };
+      }>;
+    }>
+  > = new Map();
+
+  for (const r of results) {
+    const model = r.context.variantId;
+    if (!perModelResults.has(model)) {
+      perModelResults.set(model, []);
+    }
+    perModelResults.get(model)!.push({
+      taskId: r.taskId,
+      attempts: r.attempts.map((a) => {
+        const attempt: {
+          attemptNumber: number;
+          llmResponse?: {
+            servedModel?: string;
+            refusal?: { category: string | null; recovered: boolean };
+          };
+        } = {
+          attemptNumber: a.attemptNumber,
+        };
+        if (
+          a.llmResponse?.servedModel !== undefined ||
+          a.llmResponse?.refusal !== undefined
+        ) {
+          attempt.llmResponse = {};
+          if (a.llmResponse?.servedModel !== undefined) {
+            attempt.llmResponse.servedModel = a.llmResponse.servedModel;
+          }
+          if (a.llmResponse?.refusal !== undefined) {
+            attempt.llmResponse.refusal = a.llmResponse.refusal;
+          }
+        }
+        return attempt;
+      }),
+    });
+  }
+
+  const perModelArray = Array.from(perModelResults).map(([model, results]) => ({
+    model,
+    results,
+  }));
+
+  const fallbackEvents = collectFallbackEvents(perModelArray);
+
   await Deno.writeTextFile(
     resultsFile,
     JSON.stringify(
@@ -104,6 +214,10 @@ export async function saveResultsJson(
         ...(recoveryEvents !== undefined && recoveryEvents.length > 0
           ? { recoveryEvents }
           : {}),
+        // Fallback events (task #2). Top-level so analyzers can detect runs
+        // with refusals or fallback model usage without walking attempts.
+        // Optional field — omitted from runs with zero fallback activity.
+        ...(fallbackEvents.length > 0 ? { fallbackEvents } : {}),
       },
       null,
       2,
