@@ -102,6 +102,21 @@ export function modelSupportsServerFallback(model: string): boolean {
 }
 
 /**
+ * Whether a request for `model` should carry the server-side refusal fallback.
+ * Pure so the operator kill switch is testable: `envValue` is the raw
+ * `CENTRALGAUGE_REFUSAL_FALLBACK` value (`undefined` when unset), and only the
+ * exact string `"0"` disables the fallback.
+ *
+ * Exported for unit testing.
+ */
+export function shouldRequestServerFallback(
+  model: string,
+  envValue: string | undefined,
+): boolean {
+  return modelSupportsServerFallback(model) && envValue !== "0";
+}
+
+/**
  * Minimal structural view of the fields {@link extractFallbackInfo} reads.
  * Deliberately a supertype of both `Anthropic.Message` and the beta
  * `BetaMessage`: only the beta response actually carries the `fallback`
@@ -156,12 +171,21 @@ export function extractFallbackInfo(
       },
     };
   }
-  if (served !== undefined || hasFallbackBlock || hasFallbackIteration) {
+  // A recovered fallback REQUIRES a positive signal from the API -- either the
+  // `fallback` content block or a `fallback_message` usage iteration. A bare
+  // `msg.model !== requestedModel` is NOT enough: if the API ever echoes a
+  // dated snapshot id (request `claude-opus-5`, response
+  // `claude-opus-5-20260601`, or a `-latest` alias resolving to a concrete id)
+  // every single response would be stamped `recovered: true` -- fabricated
+  // refusal data on a request that was never refused.
+  if (hasFallbackBlock || hasFallbackIteration) {
     // Deliberate asymmetry: on a recovered fallback the category is `null` --
     // the category of the refusal that TRIGGERED it is not carried on the
     // success response. `recovered: true` is the signal that matters.
     return {
-      servedModel: served ?? msg.model,
+      // Only when it actually differs, per the plan's invariant: absent
+      // `servedModel` means "the requested model answered".
+      ...(served !== undefined ? { servedModel: served } : {}),
       refusal: { category: null, recovered: true },
     };
   }
@@ -462,11 +486,15 @@ export class AnthropicAdapter extends BaseLLMAdapter
 
   /**
    * Whether to ask the API for a server-side refusal fallback on this request.
+   * Thin wrapper over the pure {@link shouldRequestServerFallback}; the env var
+   * is read per request so the kill switch takes effect without a restart.
    * Off-switch: CENTRALGAUGE_REFUSAL_FALLBACK=0.
    */
   private fallbackActive(model: string): boolean {
-    return modelSupportsServerFallback(model) &&
-      Deno.env.get("CENTRALGAUGE_REFUSAL_FALLBACK") !== "0";
+    return shouldRequestServerFallback(
+      model,
+      Deno.env.get("CENTRALGAUGE_REFUSAL_FALLBACK"),
+    );
   }
 
   /**

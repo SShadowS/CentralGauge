@@ -274,6 +274,123 @@ describe("continuation", () => {
       assertEquals(h.calls.length, 2);
       assertEquals(h.calls[0]!.taskId, h.calls[1]!.taskId);
     });
+
+    // The bench reaches every adapter through this generator (LLMWorkPool
+    // wraps all streaming calls in it), so anything it drops while rebuilding
+    // the final LLMResponse is invisible downstream. These pin the
+    // server-side refusal-fallback fields to that contract.
+    describe("refusal-fallback fields survive the rebuild", () => {
+      function fallbackStreamFn(
+        parts: Array<
+          {
+            content: string;
+            finishReason: "length" | "stop";
+            servedModel?: string;
+            refusal?: { category: string | null; recovered: boolean };
+          }
+        >,
+      ) {
+        let call = 0;
+        return async function* (
+          _request: LLMRequest,
+          _context: GenerationContext,
+          _options?: StreamOptions,
+        ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+          const part = parts[Math.min(call, parts.length - 1)]!;
+          call++;
+          yield {
+            text: part.content,
+            accumulatedText: part.content,
+            done: false,
+            index: 0,
+          };
+          return {
+            content: part.content,
+            response: {
+              content: part.content,
+              model: "test-model",
+              usage: {
+                promptTokens: 100,
+                completionTokens: 200,
+                totalTokens: 300,
+              },
+              duration: 1000,
+              finishReason: part.finishReason,
+              ...(part.servedModel !== undefined
+                ? { servedModel: part.servedModel }
+                : {}),
+              ...(part.refusal !== undefined ? { refusal: part.refusal } : {}),
+            },
+            chunkCount: 1,
+          };
+        };
+      }
+
+      it("carries servedModel + refusal through a single response", async () => {
+        const r = await drain(generateWithContinuationStream(
+          fallbackStreamFn([{
+            content: "done",
+            finishReason: "stop",
+            servedModel: "claude-opus-4-8",
+            refusal: { category: null, recovered: true },
+          }]),
+          createMockRequest(),
+          createMockContext(),
+        ));
+        assertEquals(r.response.servedModel, "claude-opus-4-8");
+        assertEquals(r.response.refusal, { category: null, recovered: true });
+      });
+
+      it("is last-attempt-wins across a continuation", async () => {
+        const r = await drain(generateWithContinuationStream(
+          fallbackStreamFn([
+            { content: "first", finishReason: "length" },
+            {
+              content: " second",
+              finishReason: "stop",
+              servedModel: "claude-opus-4-8",
+              refusal: { category: null, recovered: true },
+            },
+          ]),
+          createMockRequest(),
+          createMockContext(),
+        ));
+        assertEquals(r.continuationCount, 1);
+        assertEquals(r.response.servedModel, "claude-opus-4-8");
+        assertEquals(r.response.refusal, { category: null, recovered: true });
+      });
+
+      it("leaves both absent when no attempt reports a fallback", async () => {
+        const r = await drain(generateWithContinuationStream(
+          fallbackStreamFn([{ content: "plain", finishReason: "stop" }]),
+          createMockRequest(),
+          createMockContext(),
+        ));
+        assertEquals(r.response.servedModel, undefined);
+        assertEquals(r.response.refusal, undefined);
+      });
+
+      // A fallback on an EARLIER attempt does not stick: the final response
+      // describes the last attempt, the same rule `finishReason` follows.
+      it("drops a fallback reported only by an earlier attempt", async () => {
+        const r = await drain(generateWithContinuationStream(
+          fallbackStreamFn([
+            {
+              content: "first",
+              finishReason: "length",
+              servedModel: "claude-opus-4-8",
+              refusal: { category: null, recovered: true },
+            },
+            { content: " second", finishReason: "stop" },
+          ]),
+          createMockRequest(),
+          createMockContext(),
+        ));
+        assertEquals(r.continuationCount, 1);
+        assertEquals(r.response.servedModel, undefined);
+        assertEquals(r.response.refusal, undefined);
+      });
+    });
   });
 
   describe("token field accumulation (L3)", () => {

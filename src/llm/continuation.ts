@@ -340,6 +340,17 @@ export async function* generateWithContinuationStream(
     usage: totalUsage,
     duration: lastResult.response.duration, // Note: only last duration, not total
     finishReason: lastResult.response.finishReason,
+    // Server-side refusal-fallback signals are LAST-ATTEMPT-WINS, the same rule
+    // `finishReason` above already follows. This is the only route the bench
+    // takes (LLMWorkPool wraps every adapter call in this generator), so
+    // rebuilding the response by explicit field list here would silently drop
+    // both fields before anything downstream could record them.
+    ...(lastResult.response.servedModel !== undefined
+      ? { servedModel: lastResult.response.servedModel }
+      : {}),
+    ...(lastResult.response.refusal !== undefined
+      ? { refusal: lastResult.response.refusal }
+      : {}),
   };
 
   const result: StreamingContinuationResult = {

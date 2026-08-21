@@ -15,6 +15,7 @@ import {
   mapAnthropicModelEntry,
   modelRejectsTemperature,
   modelSupportsServerFallback,
+  shouldRequestServerFallback,
 } from "../../../src/llm/anthropic-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
 
@@ -902,6 +903,38 @@ Deno.test("extractFallbackInfo", async (t) => {
     },
   );
 
+  // A dated-snapshot echo (or a `-latest` alias resolving to a concrete id) is
+  // NOT a fallback. Without this rule every response from such a model would be
+  // stamped `recovered: true`, fabricating refusal data for a request that was
+  // never refused. Corroboration from the API is required.
+  await t.step(
+    "served differs but no fallback signal: dated echo, not a fallback",
+    () => {
+      const info = extractFallbackInfo(
+        { model: "claude-opus-5-20260601", stop_reason: "end_turn" },
+        "claude-opus-5",
+      );
+      assertEquals(info.servedModel, undefined);
+      assertEquals(info.refusal, undefined);
+    },
+  );
+
+  // Signal present but the SAME model served: a fallback ran and the chain came
+  // back to the requested model. `servedModel` stays absent -- the plan's
+  // invariant is that it is set ONLY when it differs from the requested model.
+  await t.step(
+    "fallback signal but served == requested: no servedModel",
+    () => {
+      const info = extractFallbackInfo({
+        model: "claude-fable-5",
+        stop_reason: "end_turn",
+        usage: { iterations: [{ type: "fallback_message" }] },
+      }, "claude-fable-5");
+      assertEquals(info.servedModel, undefined);
+      assertEquals(info.refusal, { category: null, recovered: true });
+    },
+  );
+
   await t.step("whole chain refused: category recorded, not recovered", () => {
     const info = extractFallbackInfo({
       model: "claude-fable-5",
@@ -910,5 +943,40 @@ Deno.test("extractFallbackInfo", async (t) => {
     }, "claude-fable-5");
     assertEquals(info.servedModel, undefined);
     assertEquals(info.refusal, { category: "cyber", recovered: false });
+  });
+});
+
+Deno.test("shouldRequestServerFallback - model gate x kill switch", async (t) => {
+  await t.step("supported model, switch unset -> on", () => {
+    assertEquals(
+      shouldRequestServerFallback("claude-fable-5", undefined),
+      true,
+    );
+    assertEquals(shouldRequestServerFallback("claude-opus-5", undefined), true);
+  });
+
+  await t.step("supported model, switch '0' -> off", () => {
+    assertEquals(shouldRequestServerFallback("claude-fable-5", "0"), false);
+    assertEquals(shouldRequestServerFallback("claude-opus-5", "0"), false);
+  });
+
+  await t.step("unsupported model, switch unset -> off", () => {
+    assertEquals(
+      shouldRequestServerFallback("claude-opus-4-8", undefined),
+      false,
+    );
+    assertEquals(shouldRequestServerFallback("gpt-5", undefined), false);
+  });
+
+  await t.step("unsupported model, switch '0' -> off", () => {
+    assertEquals(shouldRequestServerFallback("claude-opus-4-8", "0"), false);
+    assertEquals(shouldRequestServerFallback("gpt-5", "0"), false);
+  });
+
+  // Only the exact string "0" disables it; anything else is not an off-switch.
+  await t.step("non-'0' values do not disable", () => {
+    for (const v of ["1", "", "false", "no", "00"]) {
+      assertEquals(shouldRequestServerFallback("claude-fable-5", v), true, v);
+    }
   });
 });
