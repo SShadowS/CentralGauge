@@ -52,6 +52,26 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
     + dashboard share one monitor (rolling-window state stays consistent).
   - Telemetry: scores file `# Drain Events` block + JSON top-level `drainEvents[]`.
   - See `.claude/rules/alert-drain-rebalance.md` for the full flow.
+- **Refusal fallbacks (5-series).** Bench requests opt into the server-side
+  refusal-fallback beta (`fallbacks: "default"` + beta header
+  `server-side-fallback-2026-07-01`) for Fable/Mythos and Opus/Sonnet gen 5+
+  (`shouldRequestServerFallback` in `src/llm/anthropic-adapter.ts`). A
+  rescued attempt records `LLMResponse.servedModel` and scores normally but
+  is annotated everywhere: results JSON `fallbackEvents[]`, scores file
+  `# Fallbacks` block, matrix `*` + footnote, D1 `results.served_model` /
+  `refusal_category` (migration `0015`), leaderboard `fallback_count` +
+  `⤵N` badge (`_cv=v9`, whole-task-set scope, not narrowed by other active
+  filters), and a live `⤵N` badge on the bench dashboard. Chain refusals
+  (whole fallback chain declined) stay scored failures with
+  `refusal_category` recorded; a recovered fallback's own category is always
+  `null` (only the triggering refusal had one, and it isn't carried
+  forward). Fallback-served attempts bill at the served model's rates via
+  `pricingSlugForAttempt` on the bench path only — the executor-v2
+  dashboard/workbench path and D1's `rowCostUsd()` still price by the
+  requested model (known, deliberately deferred gaps; `served_model` is
+  already recorded so both can be fixed later without a backfill).
+  Off-switch: `CENTRALGAUGE_REFUSAL_FALLBACK=0`. See
+  `docs/refusal-fallback.md`.
 
 ## Technology Stack
 

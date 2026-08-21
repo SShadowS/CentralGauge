@@ -169,6 +169,7 @@ export class DashboardStateManager {
         totalTokens: 0,
         attempt1Passes: 0,
         attempt2Passes: 0,
+        fallbackCount: 0,
       });
     }
 
@@ -188,6 +189,7 @@ export class DashboardStateManager {
         stats.failed++;
         if (cell.cost) stats.totalCost += cell.cost;
       }
+      if (cell.fallbackAttempts) stats.fallbackCount += cell.fallbackAttempts;
     }
 
     // Calculate pass rates

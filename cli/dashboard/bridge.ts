@@ -246,6 +246,12 @@ export class DashboardEventBridge {
       cost += attempt.cost;
     }
 
+    // Count attempts a server-side refusal fallback rescued onto a
+    // different model. See docs/refusal-fallback.md.
+    const fallbackAttempts = result.attempts.filter(
+      (a) => a.llmResponse?.servedModel !== undefined,
+    ).length;
+
     const cellUpdate = this.state.updateCell(key, {
       state: result.success ? "pass" : "fail",
       score: result.finalScore,
@@ -257,6 +263,7 @@ export class DashboardEventBridge {
       ...(testResult?.totalTests !== undefined
         ? { testsTotal: testResult.totalTests }
         : {}),
+      ...(fallbackAttempts > 0 ? { fallbackAttempts } : {}),
     });
 
     if (cellUpdate) {

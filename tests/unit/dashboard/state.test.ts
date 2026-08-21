@@ -115,7 +115,42 @@ Deno.test("DashboardStateManager", async (t) => {
     assertEquals(modelB.passRate, 1);
     assertEquals(modelB.attempt1Passes, 1);
     assertEquals(modelB.attempt2Passes, 1);
+
+    // No cell carried fallbackAttempts above — absent should read as 0, not
+    // undefined, so the dashboard's ⤵N badge stays hidden by default.
+    assertEquals(modelA.fallbackCount, 0);
+    assertEquals(modelB.fallbackCount, 0);
   });
+
+  await t.step(
+    "recalculateModelStats sums fallbackAttempts across a model's cells",
+    () => {
+      const state = new DashboardStateManager(createConfig());
+      state.initializeCells(["task-1", "task-2"], ["model-a", "model-b"], 1);
+
+      // model-a: two cells each contributed a fallback-served attempt.
+      state.updateCell("task-1|model-a|1", {
+        state: "pass",
+        attempt: 1,
+        fallbackAttempts: 1,
+      });
+      state.updateCell("task-2|model-a|1", {
+        state: "fail",
+        fallbackAttempts: 2,
+      });
+
+      // model-b: no fallback involvement.
+      state.updateCell("task-1|model-b|1", { state: "pass", attempt: 1 });
+      state.updateCell("task-2|model-b|1", { state: "fail" });
+
+      const stats = state.recalculateModelStats();
+      const modelA = stats.find((s) => s.model === "model-a")!;
+      const modelB = stats.find((s) => s.model === "model-b")!;
+
+      assertEquals(modelA.fallbackCount, 3);
+      assertEquals(modelB.fallbackCount, 0);
+    },
+  );
 
   await t.step("getProgress computes from cell states", () => {
     const state = new DashboardStateManager(createConfig());

@@ -1039,6 +1039,10 @@ const DASHBOARD_JS = `
           '<span>1st:' + s.attempt1Passes + '</span>' +
           '<span>2nd:' + s.attempt2Passes + '</span>' +
           '<span>$' + s.totalCost.toFixed(2) + '</span>' +
+          (s.fallbackCount > 0
+            ? '<span title="' + s.fallbackCount + ' attempt' + (s.fallbackCount === 1 ? '' : 's') +
+              ' rescued by a server-side refusal fallback">⤵' + s.fallbackCount + '</span>'
+            : '') +
         '</div>';
       container.appendChild(card);
     }

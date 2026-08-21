@@ -372,6 +372,96 @@ Deno.test("DashboardEventBridge", async (t) => {
     }
   });
 
+  await t.step(
+    "result event counts a fallback-served attempt into the cell",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      const fallbackResult = {
+        ...createMockResult(),
+        attempts: [{
+          ...createMockResult().attempts[0],
+          llmResponse: createMockLLMResponse({
+            servedModel: "claude-opus-5-20260601",
+          }),
+        }],
+      } as TaskExecutionResult;
+      bridge.handleEvent({ type: "result", result: fallbackResult });
+
+      const cellUpdate = events.find((e) => e.type === "cell-update");
+      assertExists(cellUpdate);
+      if (cellUpdate.type === "cell-update") {
+        assertEquals(cellUpdate.cell.fallbackAttempts, 1);
+      }
+
+      const statsEvent = events.find((e) => e.type === "model-stats");
+      assertExists(statsEvent);
+      if (statsEvent.type === "model-stats") {
+        const modelA = statsEvent.stats.find((s) => s.model === "model-a");
+        assertExists(modelA);
+        assertEquals(modelA.fallbackCount, 1);
+      }
+    },
+  );
+
+  await t.step(
+    "result event without a served model leaves fallbackAttempts unset",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      bridge.handleEvent({ type: "result", result: createMockResult() });
+
+      const cellUpdate = events.find((e) => e.type === "cell-update");
+      assertExists(cellUpdate);
+      if (cellUpdate.type === "cell-update") {
+        assertEquals(cellUpdate.cell.fallbackAttempts, undefined);
+      }
+
+      const statsEvent = events.find((e) => e.type === "model-stats");
+      assertExists(statsEvent);
+      if (statsEvent.type === "model-stats") {
+        const modelA = statsEvent.stats.find((s) => s.model === "model-a");
+        assertExists(modelA);
+        assertEquals(modelA.fallbackCount, 0);
+      }
+    },
+  );
+
+  await t.step(
+    "result event counts only the attempts that carry a served model",
+    () => {
+      const { bridge, events } = setupBridge();
+      bridge.setRun(1);
+      events.length = 0;
+
+      const base = createMockResult().attempts[0];
+      const mixedResult = {
+        ...createMockResult(),
+        attempts: [
+          { ...base, attemptNumber: 1 },
+          {
+            ...base,
+            attemptNumber: 2,
+            llmResponse: createMockLLMResponse({
+              servedModel: "claude-opus-5-20260601",
+            }),
+          },
+        ],
+      } as TaskExecutionResult;
+      bridge.handleEvent({ type: "result", result: mixedResult });
+
+      const cellUpdate = events.find((e) => e.type === "cell-update");
+      assertExists(cellUpdate);
+      if (cellUpdate.type === "cell-update") {
+        assertEquals(cellUpdate.cell.fallbackAttempts, 1);
+      }
+    },
+  );
+
   await t.step("cost point is tracked and broadcast", () => {
     const { bridge, events } = setupBridge();
     bridge.setRun(1);

@@ -40,6 +40,14 @@ export interface MatrixCell {
   signatureLabel?: string;
   errorMessageTail?: string;
   artifactPath?: string;
+
+  /**
+   * Count of attempts in this cell's final result whose `llmResponse`
+   * carried a `servedModel` (server-side refusal fallback rescued the
+   * request onto a different model). Absent/0 = no fallback involvement.
+   * See docs/refusal-fallback.md.
+   */
+  fallbackAttempts?: number;
 }
 
 /**
@@ -54,6 +62,8 @@ export interface DashboardModelStats {
   totalTokens: number;
   attempt1Passes: number;
   attempt2Passes: number;
+  /** Sum of completed cells' `fallbackAttempts` for this model. See docs/refusal-fallback.md. */
+  fallbackCount: number;
 }
 
 /**
