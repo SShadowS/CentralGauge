@@ -20,8 +20,10 @@ beta server-side fallback on every call to a model the classifier applies to:
 Gating is pure and unit-tested (`shouldRequestServerFallback`,
 `modelSupportsServerFallback`): the fallback is requested only for
 `claude-fable-*`, `claude-mythos-*`, and `claude-opus-*`/`claude-sonnet-*`
-generation 5 and above (plus Opus 4.7+, which also began rejecting).
-Anything older never sends the beta param.
+generation 5 and above. Anything older never sends the beta param. (Opus
+4.7+ has its own, unrelated generational gate in the same adapter file —
+`modelRejectsTemperature`, for the `temperature` request param — not part of
+the refusal-fallback gate.)
 
 ### Off-switch
 
