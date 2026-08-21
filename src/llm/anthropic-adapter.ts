@@ -56,12 +56,31 @@ export function modelRejectsTemperature(model: string): boolean {
   ) {
     return true;
   }
-  // claude-opus-<gen>-<minor>(-<date>) >= 4.7
-  const m = model.match(/^claude-opus-(\d+)-(\d+)/);
+  // claude-<family>-<gen>[-<minor>][-<date>]
+  //
+  // The minor component is OPTIONAL: the 4 series is `claude-opus-4-8`, but
+  // the 5 series drops it entirely (`claude-opus-5`, `claude-sonnet-5`). An
+  // earlier version of this regex required two numeric groups, so `-5` slugs
+  // fell through and were sent a temperature the API rejects with 400
+  // "`temperature` is deprecated for this model."
+  //
+  // A bare `claude-opus-5-20260601` is a DATE suffix, not a minor. Treating it
+  // as a minor is harmless here because every gen >= 5 rejects regardless of
+  // minor, and gen 4 dated slugs always carry a real minor first.
+  const m = model.match(/^claude-(opus|sonnet)-(\d+)(?:-(\d+))?/);
   if (m) {
-    const gen = Number(m[1]);
-    const minor = Number(m[2]);
-    return gen > 4 || (gen === 4 && minor >= 7);
+    const family = m[1];
+    const gen = Number(m[2]);
+    const minor = m[3] === undefined ? undefined : Number(m[3]);
+
+    // Everything from gen 5 onward rejects, both families. Measured on
+    // claude-opus-5 and claude-sonnet-5 (2026-08-21).
+    if (gen >= 5) return true;
+
+    // Within gen 4 only Opus 4.7+ rejects; Sonnet 4.x still accepts.
+    if (family === "opus" && gen === 4) {
+      return minor !== undefined && minor >= 7;
+    }
   }
   return false;
 }

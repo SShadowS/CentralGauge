@@ -33,12 +33,30 @@ Deno.test("modelRejectsTemperature - Opus 4.7+ rejects, others accept", async (t
     }
   });
 
-  await t.step("Opus <= 4.6 and non-Opus accept", () => {
+  // The 5 series drops the minor component: the live slugs are
+  // `claude-opus-5` and `claude-sonnet-5`, not `claude-opus-5-0`. Both were
+  // measured returning 400 "`temperature` is deprecated for this model."
+  await t.step("5 series rejects, with or without a minor component", () => {
+    for (
+      const m of [
+        "claude-opus-5",
+        "claude-opus-5-20260601",
+        "claude-sonnet-5",
+        "claude-sonnet-5-20260601",
+        "claude-sonnet-6",
+      ]
+    ) {
+      assertEquals(modelRejectsTemperature(m), true, m);
+    }
+  });
+
+  await t.step("Opus <= 4.6 and older non-Opus accept", () => {
     for (
       const m of [
         "claude-opus-4-6",
         "claude-opus-4-1",
         "claude-sonnet-4-6",
+        "claude-sonnet-4-5",
         "claude-haiku-4-5-20251001",
       ]
     ) {
