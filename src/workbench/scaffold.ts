@@ -38,6 +38,7 @@ import {
 import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
 import type { SymbolPathResolver } from "./workspace.ts";
 import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
+import type { ImportedFrom } from "./import.ts";
 
 /** Metadata recorded for a scaffolded draft, both returned and written to `.meta.json`. */
 export interface DraftMeta {
@@ -46,6 +47,8 @@ export interface DraftMeta {
   testCodeunitId: number;
   createdAt: string;
   withPrereq: boolean;
+  /** Present only for a draft re-imported from a promoted task via `importPromotedTask`. */
+  importedFrom?: ImportedFrom;
 }
 
 /**
@@ -357,7 +360,7 @@ const NAIVE_APP_SEGMENT = "0e";
  * overwritten with `BENCHMARK_APP_ID` by the probe regardless - it only needs
  * to be stable and distinct per side.
  */
-function renderSolutionAppJson(
+export function renderSolutionAppJson(
   id: string,
   side: "correct" | "naive",
   prereqAppJson?: AppJson,
