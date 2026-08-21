@@ -1,6 +1,6 @@
 # Refusal-Fallback Recording
 
-Some Claude models (Fable/Mythos, and Opus/Sonnet generation 5+) run behind a
+Some Claude models (Fable/Mythos, and Opus generation 5+ — not Sonnet, whose API rejects the `fallbacks` parameter) run behind a
 server-side safety classifier that can refuse a request outright. Anthropic's
 API offers a **server-side refusal fallback**: on a refusal, the API itself
 retries the request against a different, more permissive model in the same

@@ -54,7 +54,7 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   - See `.claude/rules/alert-drain-rebalance.md` for the full flow.
 - **Refusal fallbacks (5-series).** Bench requests opt into the server-side
   refusal-fallback beta (`fallbacks: "default"` + beta header
-  `server-side-fallback-2026-07-01`) for Fable/Mythos and Opus/Sonnet gen 5+
+  `server-side-fallback-2026-07-01`) for Fable/Mythos and Opus gen 5+ (Sonnet rejects the param)
   (`shouldRequestServerFallback` in `src/llm/anthropic-adapter.ts`). A
   rescued attempt records `LLMResponse.servedModel` and scores normally but
   is annotated everywhere: results JSON `fallbackEvents[]`, scores file

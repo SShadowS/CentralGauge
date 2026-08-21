@@ -89,16 +89,18 @@ export function modelRejectsTemperature(model: string): boolean {
 const SERVER_FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 /**
- * Server-side refusal fallback is requested only where the refusal classifier
- * exists: Fable/Mythos, and Opus/Sonnet gen >= 5. Off-switch:
- * CENTRALGAUGE_REFUSAL_FALLBACK=0.
+ * Server-side refusal fallback is requested only where the API accepts the
+ * `fallbacks` parameter: Fable/Mythos (any gen) and Opus gen >= 5. Sonnet is
+ * deliberately EXCLUDED — measured live 2026-08-22, the API rejects it with
+ * 400 "'claude-sonnet-5' does not support the `fallbacks` parameter", which
+ * fails every request outright. Off-switch: CENTRALGAUGE_REFUSAL_FALLBACK=0.
  *
  * Exported for unit testing.
  */
 export function modelSupportsServerFallback(model: string): boolean {
   if (/^claude-(fable|mythos)-\d/.test(model)) return true;
-  const m = model.match(/^claude-(opus|sonnet)-(\d+)/);
-  return m !== null && Number(m[2]) >= 5;
+  const m = model.match(/^claude-opus-(\d+)/);
+  return m !== null && Number(m[1]) >= 5;
 }
 
 /**

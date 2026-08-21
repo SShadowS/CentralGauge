@@ -841,19 +841,24 @@ Deno.test("mapAnthropicModelEntry - adopts API metadata", async (t) => {
 // recording). Pure helpers, so no PricingService bootstrap is needed.
 // ============================================================================
 
-Deno.test("modelSupportsServerFallback - 5-series and fable only", () => {
+// Sonnet is EXCLUDED: measured live 2026-08-22 — the API rejects the param
+// with 400 "'claude-sonnet-5' does not support the `fallbacks` parameter."
+// Only Fable/Mythos (any gen) and Opus gen >= 5 accept it.
+Deno.test("modelSupportsServerFallback - fable/mythos and opus 5+ only", () => {
   for (
     const m of [
       "claude-fable-5",
       "claude-opus-5",
-      "claude-sonnet-5",
       "claude-opus-5-20260601",
+      "claude-mythos-5",
     ]
   ) {
     assertEquals(modelSupportsServerFallback(m), true, m);
   }
   for (
     const m of [
+      "claude-sonnet-5",
+      "claude-sonnet-5-20260601",
       "claude-opus-4-8",
       "claude-sonnet-4-6",
       "claude-haiku-4-5",
