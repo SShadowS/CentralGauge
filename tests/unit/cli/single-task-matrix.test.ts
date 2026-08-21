@@ -15,6 +15,7 @@ import {
 import { synthesizeInfraFailureResult } from "../../../src/health/mod.ts";
 import {
   createMockExecutionAttempt,
+  createMockLLMResponse,
   createMockTaskExecutionContext,
   createMockTaskManifest,
 } from "../../utils/test-helpers.ts";
@@ -648,6 +649,166 @@ Deno.test("formatSingleTaskMatrix", async (t) => {
       // Attempt 2 column must be exactly "-" — not blank, not merged with
       // the Result column, not the incidental hyphen inside a display name.
       assertEquals(rows[2], ["Model B", "PASS (100)", "-", "PASS"]);
+    },
+  );
+
+  // ===========================================================================
+  // Fallback-served marker (`*`) + footnote — refusal-fallback recording
+  // plan, task #3.
+  // ===========================================================================
+
+  await t.step(
+    "a fallback-served attempt gets a `*` suffix on its cell",
+    () => {
+      const fallbackAttempt = createMockExecutionAttempt({
+        success: true,
+        compilationResult: {
+          success: true,
+          errors: [],
+          warnings: [],
+          output: "",
+          duration: 100,
+        },
+        testResult: {
+          success: true,
+          totalTests: 2,
+          passedTests: 2,
+          failedTests: 0,
+          duration: 20,
+          results: [],
+          output: "",
+        },
+        llmResponse: createMockLLMResponse({
+          servedModel: "claude-opus-4-8",
+          refusal: { category: null, recovered: true },
+        }),
+      });
+
+      const results: TaskExecutionResult[] = [
+        resultFor("anthropic/claude-opus-4-6", "claude-opus-4-6", [
+          fallbackAttempt,
+        ], true),
+      ];
+
+      const output = formatSingleTaskMatrix({ results });
+      const rows = parseTableRows(output);
+
+      assertEquals(rows[1], ["Claude Opus 4.6", "PASS (100)*", "PASS"]);
+    },
+  );
+
+  await t.step(
+    "a normal (non-fallback) attempt gets no marker and no footnote",
+    () => {
+      const passAttempt = createMockExecutionAttempt({
+        success: true,
+        compilationResult: {
+          success: true,
+          errors: [],
+          warnings: [],
+          output: "",
+          duration: 100,
+        },
+        testResult: {
+          success: true,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          duration: 20,
+          results: [],
+          output: "",
+        },
+        // llmResponse defaults to createMockLLMResponse() — no servedModel,
+        // no refusal.
+      });
+
+      const results: TaskExecutionResult[] = [
+        resultFor("anthropic/claude-opus-4-6", "claude-opus-4-6", [
+          passAttempt,
+        ], true),
+      ];
+
+      const output = formatSingleTaskMatrix({ results });
+      const rows = parseTableRows(output);
+
+      assertEquals(rows[1], ["Claude Opus 4.6", "PASS (100)", "PASS"]);
+      assertEquals(output.includes("score served by a fallback model"), false);
+    },
+  );
+
+  await t.step(
+    "a chain-refusal attempt (refused, never served) gets no marker",
+    () => {
+      // recovered === false and no servedModel: the whole retry chain
+      // refused. This attempt is already a fail on its own terms — a
+      // servedModel-only marker must not fire for it.
+      const refusedAttempt = createMockExecutionAttempt({
+        success: false,
+        extractedCode: "",
+        failureReasons: ["API safety refusal (stop_reason=refusal)"],
+        failureKind: "safety_refusal",
+        llmResponse: createMockLLMResponse({
+          refusal: { category: "cyber", recovered: false },
+        }),
+      });
+
+      const results: TaskExecutionResult[] = [
+        resultFor("anthropic/claude-opus-4-6", "claude-opus-4-6", [
+          refusedAttempt,
+        ], false),
+      ];
+
+      const output = formatSingleTaskMatrix({ results });
+      const rows = parseTableRows(output);
+
+      assertEquals(rows[1], ["Claude Opus 4.6", "COMPILE", "FAIL"]);
+      assertEquals(output.includes("score served by a fallback model"), false);
+    },
+  );
+
+  await t.step(
+    "footnote appears exactly once when at least one cell is marked",
+    () => {
+      const fallbackAttempt = createMockExecutionAttempt({
+        success: true,
+        compilationResult: {
+          success: true,
+          errors: [],
+          warnings: [],
+          output: "",
+          duration: 100,
+        },
+        testResult: {
+          success: true,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          duration: 20,
+          results: [],
+          output: "",
+        },
+        llmResponse: createMockLLMResponse({
+          servedModel: "claude-opus-4-8",
+          refusal: { category: null, recovered: true },
+        }),
+      });
+
+      const results: TaskExecutionResult[] = [
+        resultFor("anthropic/claude-opus-4-6", "claude-opus-4-6", [
+          fallbackAttempt,
+          fallbackAttempt,
+        ], true),
+      ];
+
+      const output = formatSingleTaskMatrix({ results });
+      const occurrences =
+        output.split("score served by a fallback model").length - 1;
+
+      assertEquals(occurrences, 1);
+      assertStringIncludes(
+        output,
+        "* score served by a fallback model — see # Fallbacks in the scores file",
+      );
     },
   );
 });
