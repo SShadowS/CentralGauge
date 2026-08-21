@@ -24,6 +24,7 @@ function makeRow(overrides: Partial<LeaderboardRow> & { slug: string }): Leaderb
     cost_per_pass_usd: null,
     denominator: 1,
     ...overrides,
+    fallback_count: overrides.fallback_count ?? 0,
     model: {
       slug: overrides.slug,
       display_name: overrides.slug,
@@ -61,6 +62,7 @@ const sampleRows: LeaderboardRow[] = [
     auc_2: 0.85,
     repair_rate: 0.2,
     denominator: 24,
+    fallback_count: 0,
   },
   {
     rank: 2,
@@ -89,6 +91,7 @@ const sampleRows: LeaderboardRow[] = [
     auc_2: 0.6,
     repair_rate: 0.0667,
     denominator: 24,
+    fallback_count: 0,
   },
 ];
 

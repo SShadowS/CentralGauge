@@ -120,10 +120,17 @@ export async function computeLeaderboard(
   let taskSetParamsA2: string[] = [];
   let taskSetParamsA2NotExists: string[] = [];
 
+  // The outer WHERE's task-set predicate, captured verbatim so the
+  // fallback_count merge query further down can reuse the SAME clause text
+  // and bind values instead of maintaining a second, drift-prone copy. Both
+  // queries alias the table as `runs`, so the text is portable as-is.
+  let taskSetWhere = "";
+  let taskSetWhereParams: string[] = [];
+
   if (q.set === "current") {
-    wheres.push(
-      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`,
-    );
+    taskSetWhere =
+      `runs.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
+    wheres.push(taskSetWhere);
     taskSetClauseSubA1 = `AND ru1.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
     taskSetClauseSubA2NotExists = `AND ru1b.task_set_hash IN (SELECT hash FROM task_sets WHERE is_current = 1)`;
@@ -131,7 +138,9 @@ export async function computeLeaderboard(
     // Specific task_set hash — every WHERE and correlated subquery slot
     // must scope to it so cross-hash data does not bleed into per-task
     // best-attempt aggregations (CR-5 invariant).
-    wheres.push(`runs.task_set_hash = ?`);
+    taskSetWhere = `runs.task_set_hash = ?`;
+    taskSetWhereParams = [q.set];
+    wheres.push(taskSetWhere);
     params.push(q.set);
     taskSetClauseSubA1 = `AND ru1.task_set_hash = ?`;
     taskSetClauseSubA2 = `AND ru2.task_set_hash = ?`;
@@ -565,6 +574,60 @@ export async function computeLeaderboard(
           timer,
         });
 
+  // ---------------------------------------------------------------------------
+  // fallback_count: how many result rows a FALLBACK model served because the
+  // requested model refused (`results.served_model IS NOT NULL`, migration
+  // 0015).
+  //
+  // Deliberately a SEPARATE query rather than another correlated subquery in
+  // the ranked SQL above. That statement's SELECT/ORDER BY bind order is
+  // positional and hand-maintained (see the allParams comment); adding a
+  // fourth subquery site would mean threading yet another param group through
+  // it for a number that has no bearing on ranking.
+  //
+  // Scope: the ranked query's task-set predicate, reused verbatim via
+  // `taskSetWhere`, plus the model ids that actually made the page. The row's
+  // OTHER filters (tier / family / since / category / difficulty) are NOT
+  // applied — this is a per-model caveat count, not a filtered metric, and
+  // api-types.ts documents it as such.
+  const fallbackByModel = new Map<number, number>();
+  if (modelIds.length > 0) {
+    const fallbackWheres = ["results.served_model IS NOT NULL"];
+    const fallbackParams: Array<string | number> = [];
+    if (taskSetWhere) {
+      fallbackWheres.push(taskSetWhere);
+      fallbackParams.push(...taskSetWhereParams);
+    }
+    fallbackWheres.push(
+      `runs.model_id IN (${modelIds.map(() => "?").join(",")})`,
+    );
+    fallbackParams.push(...modelIds);
+
+    const fallbackSql = `
+      SELECT runs.model_id AS model_id, COUNT(*) AS n
+      FROM results
+      JOIN runs ON runs.id = results.run_id
+      WHERE ${fallbackWheres.join(" AND ")}
+      GROUP BY runs.model_id
+    `;
+    const fallbackRows = await (timer
+      ? timer.measure("leaderboard_fallback", () =>
+          getAll<{ model_id: number; n: number }>(
+            db,
+            fallbackSql,
+            fallbackParams,
+          ),
+        )
+      : getAll<{ model_id: number; n: number }>(
+          db,
+          fallbackSql,
+          fallbackParams,
+        ));
+    for (const fr of fallbackRows) {
+      fallbackByModel.set(Number(fr.model_id), Number(fr.n ?? 0));
+    }
+  }
+
   const mapped: LeaderboardRow[] = rows.map((r, idx) => {
     const passedA1 = Number(r.tasks_passed_attempt_1 ?? 0);
     const passedA2Only = Number(r.tasks_passed_attempt_2_only ?? 0);
@@ -612,6 +675,7 @@ export async function computeLeaderboard(
       auc_2: Math.round(aucStrict * 1e6) / 1e6,
       repair_rate: Math.round(repairRate * 1e6) / 1e6,
       denominator,
+      fallback_count: fallbackByModel.get(r.model_id) ?? 0,
       avg_score: Math.round(+(r.avg_score ?? 0) * 1e6) / 1e6,
       avg_cost_usd: Math.round(+(r.avg_cost_usd ?? 0) * 1e6) / 1e6,
       verified_runs: aggMap.get(r.model_id)?.verified_runs ?? 0,

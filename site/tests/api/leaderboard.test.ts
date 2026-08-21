@@ -145,6 +145,7 @@ describe("LeaderboardRow — contract completeness", () => {
     // Task 3: added auc_2, repair_rate (emitted by row mapper).
     // Task 12: added tier. Now attached under ANY sort with a concrete hash
     // (tier is intrinsic to the AUC matrix); this contract test uses the default.
+    // Refusal-fallback Task 7: added fallback_count (merge query, always emitted).
     const requiredRowKeys: ReadonlyArray<keyof LeaderboardRow> = [
       "rank",
       "model",
@@ -162,6 +163,7 @@ describe("LeaderboardRow — contract completeness", () => {
       "repair_rate",
       "tier",
       "denominator",
+      "fallback_count",
       "latency_p95_ms",
       "pass_rate_ci",
       "pass_hat_at_n",

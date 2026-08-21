@@ -145,6 +145,17 @@ export interface LeaderboardRow {
    * From PR1 onward. Optional during PR1 until A.4 lands server-side emission.
    */
   denominator?: number;
+  /**
+   * Count of result rows in the active task-set scope that a FALLBACK model
+   * served because the requested model refused (`results.served_model IS NOT
+   * NULL`, migration 0015). A plain count, not a rate: 0 means every attempt
+   * on this row was answered by the model the row names.
+   *
+   * Scoped to the task set only, NOT to the row's other active filters
+   * (tier / since / family / category / difficulty). It is a caveat badge on
+   * the model, not a filtered metric.
+   */
+  fallback_count: number;
   latency_p95_ms: number;
   pass_rate_ci: { lower: number; upper: number };
   pass_hat_at_n: number;

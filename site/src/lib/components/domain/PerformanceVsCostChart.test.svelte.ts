@@ -18,6 +18,7 @@ function row(
       settings_suffix: "",
     },
     family_slug: "fam",
+    fallback_count: 0,
     run_count: 1,
     tasks_attempted: 0,
     tasks_passed: 0,

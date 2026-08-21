@@ -17,9 +17,12 @@
  * SHAPE is unchanged, but `tasks_passed_attempt_1` and the other subselect-fed
  * counts were previously computed without that binding, so a v7 entry can hold
  * values for the wrong task set. Retired rather than served for another TTL.
+ * v9: fallback_count added to leaderboard rows. A v8 entry has no such key,
+ * so the client would read every model as having zero refusal-fallback
+ * results until the entry aged out.
  *
  * Cloudflare named caches are per-colo, so a global purge is impossible.
  * Bumping this constant on deploy effectively retires old cached
  * responses (they age out within 60s TTL). New requests hit the new key.
  */
-export const CACHE_VERSION = 'v8';
+export const CACHE_VERSION = 'v9';

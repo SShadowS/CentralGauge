@@ -25,6 +25,9 @@
       <div><dt>Solve@2 <MetricInfo id="pass_at_n" /></dt><dd>{pct(row.pass_at_n)}</dd></div>
       <div><dt>Repair <MetricInfo id="repair_rate" /></dt><dd>{pct(row.repair_rate)}</dd></div>
       <div><dt>Solved</dt><dd>{passedTotal}/{denom}</dd></div>
+      {#if row.fallback_count > 0}
+        <div><dt>Fallback-served results</dt><dd>{row.fallback_count}</dd></div>
+      {/if}
     </dl>
   </div>
   <div class="grp">

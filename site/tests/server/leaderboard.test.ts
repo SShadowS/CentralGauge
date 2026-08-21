@@ -1988,3 +1988,127 @@ describe("cost includes cache-read/cache-write tokens", () => {
     expect(rows[0].avg_cost_usd).toBeCloseTo(0.0014, 9);
   });
 });
+
+// ---------------------------------------------------------------------------
+// fallback_count on leaderboard rows (refusal-fallback recording, Task 7)
+//
+// `results.served_model` (migration 0015) is non-NULL only when the requested
+// model refused and a fallback model actually served that attempt. The
+// leaderboard surfaces a per-model COUNT of such result rows so a headline
+// score visibly carries the caveat "some of this was answered by someone else".
+//
+// Seed shape:
+//   M-FB   - two results in the current set, ONE with served_model set.
+//   M-NONE - one result in the current set, served_model NULL.
+//
+// The count is produced by a SEPARATE merge query (the ranked SQL is
+// deliberately untouched), so it needs its own proof that it is scoped to the
+// same task set as the ranked rows: a third M-FB result lives under a
+// different, non-current task_set hash and must NOT be counted.
+// ---------------------------------------------------------------------------
+
+describe("fallback_count on leaderboard rows (Task 7)", () => {
+  /** 64-hex hash for the non-current set used by the scope-isolation tests. */
+  const OTHER_HASH = "c".repeat(64);
+
+  beforeAll(async () => {
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+    // seedScaffold gives us family 1, model 1 (M-A), task_set 'aaaa'
+    // (current, task_count 10), settings profile 's', cost snapshot for
+    // model 1 and machine key 1. Rename model 1 so the intent reads clearly.
+    await seedScaffold();
+    await env.DB.prepare(
+      `UPDATE models SET slug='M-FB', api_model_id='m-fb', display_name='Model Fallback' WHERE id=1`,
+    ).run();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO models(id,family_id,slug,api_model_id,display_name,generation)
+         VALUES (2,1,'M-NONE','m-none','Model No Fallback',1)`,
+      ),
+      env.DB.prepare(
+        `INSERT INTO cost_snapshots(pricing_version,model_id,input_per_mtoken,output_per_mtoken,effective_from)
+         VALUES ('v1',2,1.0,2.0,'2026-01-01')`,
+      ),
+      // Non-current sibling set, used to prove the merge query is scoped.
+      env.DB.prepare(
+        `INSERT INTO task_sets(hash,created_at,task_count,is_current) VALUES (?,'2026-01-01T00:00:00Z',10,0)`,
+      ).bind(OTHER_HASH),
+    ]);
+    await insertTasks(["t1", "t2"], "easy", 1);
+
+    // M-FB run in the current set 'aaaa'.
+    await insertRun("run-fb");
+    // M-NONE run in the current set 'aaaa'.
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('run-none','aaaa',2,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+    ).bind(new Uint8Array([0])).run();
+    // M-FB run in the OTHER (non-current) set.
+    await env.DB.prepare(
+      `INSERT INTO runs(id,task_set_hash,model_id,settings_hash,machine_id,started_at,completed_at,status,tier,pricing_version,ingest_signature,ingest_signed_at,ingest_public_key_id,ingest_signed_payload)
+       VALUES ('run-other',?,1,'s','rig','2026-04-01T00:00:00Z','2026-04-01T01:00:00Z','completed','claimed','v1','sig','2026-04-01T00:00:00Z',1,?)`,
+    ).bind(OTHER_HASH, new Uint8Array([0])).run();
+
+    await env.DB.batch([
+      // M-FB, t1: served by a fallback model.
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,served_model,refusal_category)
+         VALUES ('run-fb','t1',1,1,1.0,1,1,1,100,50,'claude-opus-4-8','cyber')`,
+      ),
+      // M-FB, t2: the requested model answered.
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('run-fb','t2',1,1,1.0,1,1,1,100,50)`,
+      ),
+      // M-NONE: no fallback anywhere.
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out)
+         VALUES ('run-none','t1',1,1,1.0,1,1,1,100,50)`,
+      ),
+      // M-FB under the NON-current set: also fallback-served, must not count.
+      env.DB.prepare(
+        `INSERT INTO results(run_id,task_id,attempt,passed,score,compile_success,tests_total,tests_passed,tokens_in,tokens_out,served_model)
+         VALUES ('run-other','t1',1,1,1.0,1,1,1,100,50,'claude-opus-4-8')`,
+      ),
+    ]);
+  });
+
+  it("counts result rows with a non-NULL served_model per model", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const fb = rows.find((r) => r.model.slug === "M-FB");
+    expect(fb, "M-FB row should be present").toBeDefined();
+    expect(fb!.fallback_count).toBe(1);
+  });
+
+  it("reports 0 for a model with no fallback-served results", async () => {
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const none = rows.find((r) => r.model.slug === "M-NONE");
+    expect(none, "M-NONE row should be present").toBeDefined();
+    expect(none!.fallback_count).toBe(0);
+  });
+
+  it("set=current excludes fallback results from non-current task sets", async () => {
+    // M-FB has TWO fallback-served results overall (one per task set). Only
+    // the one under the current set 'aaaa' may be counted; an unscoped merge
+    // query would report 2 here.
+    const rows = await computeLeaderboard(env.DB, baseQuery);
+    const fb = rows.find((r) => r.model.slug === "M-FB")!;
+    expect(fb.fallback_count).toBe(1);
+  });
+
+  it("a specific task-set hash counts only that set's fallback results", async () => {
+    const rows = await computeLeaderboard(env.DB, {
+      ...baseQuery,
+      set: OTHER_HASH,
+    });
+    const fb = rows.find((r) => r.model.slug === "M-FB");
+    expect(fb, "M-FB row should be present under the other hash").toBeDefined();
+    expect(fb!.fallback_count).toBe(1);
+    // M-NONE has no runs under OTHER_HASH at all, so it is absent entirely.
+    expect(rows.find((r) => r.model.slug === "M-NONE")).toBeUndefined();
+  });
+});

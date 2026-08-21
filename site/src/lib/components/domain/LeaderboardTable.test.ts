@@ -12,6 +12,7 @@ function row(p: Partial<LeaderboardRow>): LeaderboardRow {
     cost_per_pass_usd: 0.27, avg_score: 70, avg_cost_usd: 0.21, verified_runs: 1,
     pass_hat_at_n: 0.79,
     pass_rate_ci: { lower: 0.64, upper: 0.70 }, latency_p95_ms: 8400,
+    fallback_count: 0,
     last_run_at: '2026-05-30T00:00:00Z', ...p,
   } as LeaderboardRow;
 }
@@ -27,5 +28,41 @@ describe('LeaderboardTable headline', () => {
   it('renders inline CI as a half-width ± value', () => {
     const { container } = render(LeaderboardTable, { props: { rows: [row({})], sort: 'auc_2:desc' } });
     expect(container.textContent).toContain('±3.0');
+  });
+});
+
+describe('LeaderboardTable fallback badge', () => {
+  it('shows a fallback badge carrying the count when fallback_count > 0', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: 3 })], sort: 'auc_2:desc' },
+    });
+    const badge = container.querySelector('[data-test="fallback-badge"]');
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toContain('3');
+    // The caveat must be reachable without hover-only affordances.
+    expect(badge?.getAttribute('aria-label')).toMatch(/3 results served by a fallback model/);
+  });
+
+  it('renders no badge when fallback_count is 0', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: 0 })], sort: 'auc_2:desc' },
+    });
+    expect(container.querySelector('[data-test="fallback-badge"]')).toBeNull();
+  });
+
+  it('renders no badge when the row predates the field entirely', () => {
+    // A response cached under an older `_cv` has no fallback_count key.
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: undefined as unknown as number })], sort: 'auc_2:desc' },
+    });
+    expect(container.querySelector('[data-test="fallback-badge"]')).toBeNull();
+  });
+
+  it('uses the singular noun for a count of one', () => {
+    const { container } = render(LeaderboardTable, {
+      props: { rows: [row({ fallback_count: 1 })], sort: 'auc_2:desc' },
+    });
+    const badge = container.querySelector('[data-test="fallback-badge"]');
+    expect(badge?.getAttribute('aria-label')).toMatch(/1 result served by a fallback model/);
   });
 });

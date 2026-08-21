@@ -137,7 +137,22 @@
             /><SettingsBadge suffix={row.model.settings_suffix} />
           </th>
           <td class="score" data-test="auc-cell">
-            <span class="auc text-mono">{headlineValue(row)}</span>
+            <span class="headline">
+              <span class="auc text-mono">{headlineValue(row)}</span>
+              {#if row.fallback_count > 0}
+                <!--
+                  Refusal-fallback caveat: some of this score was produced by a
+                  DIFFERENT model after the named one refused. Muted, never
+                  colour-coded: it qualifies the number, it does not rank it.
+                -->
+                <span
+                  class="fallback-badge"
+                  data-test="fallback-badge"
+                  aria-label="{row.fallback_count} result{row.fallback_count === 1 ? '' : 's'} served by a fallback model"
+                  title="{row.fallback_count} task result{row.fallback_count === 1 ? '' : 's'} served by a fallback model after a refusal. See the model detail."
+                >⤵{row.fallback_count}</span>
+              {/if}
+            </span>
             <OutcomeMixBar firstTryPct={mix.firstTryPct} retryPct={mix.retryPct} failedPct={mix.failedPct} />
           </td>
           <td class="ci text-mono" title="95% CI: {(row.pass_rate_ci.lower * 100).toFixed(1)}–{(row.pass_rate_ci.upper * 100).toFixed(1)}%">±{(((row.pass_rate_ci.upper - row.pass_rate_ci.lower) / 2) * 100).toFixed(1)}</td>
@@ -220,7 +235,11 @@
     font-weight: var(--weight-semi);
   }
   .score { display: flex; flex-direction: column; gap: var(--space-2); min-width: 130px; }
+  .headline { display: inline-flex; align-items: baseline; gap: var(--space-2); }
   .auc { font-weight: var(--weight-semi); }
+  /* Same muted register as SettingsBadge — a qualifier on the value, not a
+   * competing signal. */
+  .fallback-badge { color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .legend { display: flex; gap: var(--space-4); padding: var(--space-3); font-size: var(--text-xs); color: var(--text-muted); border-top: 1px solid var(--border); }
   .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: var(--space-2); }
   .legend .sw.a1 { background: var(--chart-success); }

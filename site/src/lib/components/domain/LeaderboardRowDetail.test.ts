@@ -12,6 +12,7 @@ function row(p: Partial<LeaderboardRow> = {}): LeaderboardRow {
     cost_per_pass_usd: 0.27, avg_score: 70, avg_cost_usd: 0.21, verified_runs: 2,
     pass_rate_ci: { lower: 0.64, upper: 0.70 }, latency_p95_ms: 8400,
     last_run_at: '2026-05-30T00:00:00Z', open_weight: false, pass_hat_at_n: 0.79,
+    fallback_count: 0,
     ...p,
   } as LeaderboardRow;
 }
@@ -38,5 +39,19 @@ describe('LeaderboardRowDetail', () => {
     // Reliability group still renders; repair shows the dash.
     expect(container.textContent).toMatch(/repair/i);
     expect(container.textContent).toContain('—');
+  });
+});
+
+describe('LeaderboardRowDetail fallback line', () => {
+  it('lists the fallback-served count when there is one', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ fallback_count: 4 }) } });
+    const text = container.textContent ?? '';
+    expect(text).toMatch(/Fallback-served results/);
+    expect(text).toMatch(/4/);
+  });
+
+  it('omits the line entirely when nothing was fallback-served', () => {
+    const { container } = render(LeaderboardRowDetail, { props: { row: row({ fallback_count: 0 }) } });
+    expect(container.textContent ?? '').not.toMatch(/Fallback-served/);
   });
 });
