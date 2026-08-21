@@ -64,6 +64,33 @@ this data later:
 These fields survive multi-turn continuation (`src/llm/continuation.ts`)
 unchanged.
 
+### Two definitions of "a fallback happened", and where they part
+
+Two different predicates drive the annotation surfaces, and they are not the
+same test:
+
+| Predicate | Drives |
+|---|---|
+| `refusal.recovered === true` | results-JSON `fallbackEvents[]` entry, scores file `# Fallbacks` block's `total_refusal_events` / `recovered_via_fallback` counts |
+| `servedModel !== undefined` | console matrix `*` (single-task only), dashboard `⤵N`, D1 `results.served_model`, leaderboard `fallback_count` |
+
+They agree in every case except one: a fallback ran (the API returned a
+positive fallback signal, a `fallback` content block or a
+`fallback_message` usage iteration) and the chain came back to the
+*requested* model. In that shape, `refusal = { category: null, recovered:
+true }` but `servedModel` stays absent, per the rule above that
+`servedModel` is only set when it actually differs from the requested
+model. The result: the scores file reports `recovered_via_fallback: 1` for
+that attempt while the leaderboard shows `fallback_count: 0`, the matrix
+shows no `*`, the dashboard shows no `⤵`, and D1 stores `served_model =
+NULL`. An operator comparing the scores file against the leaderboard for
+that run sees a contradiction with no explanation on either surface unless
+they know this rule.
+
+Whether the Anthropic API can actually produce this shape in practice is
+unknown. This is written down precisely so the mismatch is explainable
+rather than rediscovered from scratch if it ever shows up.
+
 ## Scoring semantics
 
 A fallback-rescued attempt is scored exactly like any other attempt — it
@@ -88,7 +115,7 @@ for whoever owns the scoring model.
 | `LLMResponse` (in-process) | `servedModel?: string`, `refusal?: { category: string \| null; recovered: boolean }` |
 | Results JSON | top-level `fallbackEvents[]` (omitted entirely when empty) — `{ model, taskId, attempt, served, category, recovered }` |
 | Scores file (`.txt`) | `# Fallbacks` block: `total_refusal_events`, `recovered_via_fallback`, `chain_refusals`, `by_event:` listing |
-| Scores file matrix | a `*` suffix on any attempt cell whose score came from a fallback-served model, plus one footnote line |
+| Console matrix (single-task runs only) | a `*` suffix on any attempt cell whose score came from a fallback-served model, plus one footnote line |
 | D1 (`results` table) | `served_model TEXT`, `refusal_category TEXT` — both nullable (migration `0015_results_fallback.sql`) |
 | Ingest endpoint | `POST /api/v1/runs` rejects a payload with `400 invalid_served_model` if `served_model` exceeds 128 characters |
 | Leaderboard API/UI | `fallback_count` per model row, `⤵N` badge, row-detail line |
@@ -105,6 +132,16 @@ absent entirely when there is nothing to report.
 The matrix `*` marker lives in `cli/commands/bench/single-task-matrix.ts`
 (`fallbackMarker`) — it only marks a PASS/scoring cell; a chain refusal is
 already visually a fail and needs no separate marker.
+
+**The matrix marker is console-only and single-task-only.** `formatSingleTaskMatrix`
+is only ever `console.log`ed from `displayFormattedOutput`
+(`cli/commands/bench/results-writer.ts`); it never appears in the scores
+`.txt` file, which carries the `# Fallbacks` block instead. It is also only
+invoked when `taskCount === 1`; every multi-task bench (i.e. every real
+bench) renders `formatTaskMatrix` (`src/utils/formatters.ts`) instead, which
+this feature does not touch and which carries no `*` marker or footnote at
+all. The `# Fallbacks` block and the leaderboard/dashboard surfaces below
+are the only annotations a multi-task run actually gets.
 
 ### Leaderboard `fallback_count` scope
 
@@ -127,6 +164,17 @@ with a title/aria-label spelling out the "not narrowed by filters" caveat,
 and a plain "Fallback-served results: N" line in the row-detail expansion
 (`LeaderboardRowDetail.svelte`). Hidden entirely at `fallback_count === 0`.
 
+### Deploy order
+
+`leaderboard.ts` runs `SELECT ... FROM results ... WHERE
+results.served_model IS NOT NULL` unconditionally whenever a model list is
+supplied, the same failure mode as migration `0011` and `mf.open_weight`
+(see CLAUDE.md's "Migrations BEFORE deploy — strict ordering"). Apply
+`site/migrations/0015_results_fallback.sql` with `wrangler d1 migrations
+apply <db> --remote` **before** `cd site && npm run deploy`. Deploying the
+worker first 500s the leaderboard on every request until the migration
+lands.
+
 ## Billing note
 
 A fallback-served attempt is billed by the **served model's rates**, not the
@@ -138,9 +186,17 @@ bills.
   `src/llm/anthropic-adapter.ts`) swaps the model segment of the
   vendor-prefixed pricing slug to the served model when `servedModel` is
   set, and is called at both cost-computation sites in the adapter
-  (streaming and non-streaming). An unrecognized served model falls back to
-  the requested model's slug rather than hard-failing pricing lookup — the
-  discrepancy stays visible in `fallbackEvents[]` if that ever happens.
+  (streaming and non-streaming). `pricingSlugForAttempt` itself has no
+  visibility into the pricing catalog and never falls back to the requested
+  model's slug. A served model that is absent from
+  `site/catalog/models.yml` instead falls through
+  `PricingService.getPriceSync`'s own lookup chain: catalog, then API
+  cache, then JSON config, then the provider's `default` rate, or the
+  global $3/$15-per-MTok fallback if the service was never initialized.
+  This happens silently, no throw, no log. The resulting price is what
+  lands in `attempt.cost`, the bench summary's total cost, and the ingested
+  `cost_snapshots`-derived numbers. It is **not** the requested model's
+  rate, despite the served model sharing its vendor prefix.
 - **Known gap — executor-v2 path.** The dashboard/workbench executor-v2 path
   does not call `pricingSlugForAttempt`; only the `bench` CLI path prices
   fallback-served attempts correctly. Deliberately left uncovered for this

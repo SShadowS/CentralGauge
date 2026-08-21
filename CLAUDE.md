@@ -58,10 +58,16 @@ CentralGauge is an open-source benchmark for evaluating LLMs on AL (Application 
   (`shouldRequestServerFallback` in `src/llm/anthropic-adapter.ts`). A
   rescued attempt records `LLMResponse.servedModel` and scores normally but
   is annotated everywhere: results JSON `fallbackEvents[]`, scores file
-  `# Fallbacks` block, matrix `*` + footnote, D1 `results.served_model` /
+  `# Fallbacks` block, console matrix `*` + footnote (single-task runs
+  only, not in the scores `.txt`, and the multi-task matrix carries no
+  marker), D1 `results.served_model` /
   `refusal_category` (migration `0015`), leaderboard `fallback_count` +
   `⤵N` badge (`_cv=v9`, whole-task-set scope, not narrowed by other active
-  filters), and a live `⤵N` badge on the bench dashboard. Chain refusals
+  filters), and a live `⤵N` badge on the bench dashboard. The leaderboard
+  query reads `served_model` unconditionally, so at release apply
+  `0015_results_fallback.sql` (`wrangler d1 migrations apply <db>
+  --remote`) BEFORE `cd site && npm run deploy`, same failure mode as
+  migration `0011`/`open_weight`. Chain refusals
   (whole fallback chain declined) stay scored failures with
   `refusal_category` recorded; a recovered fallback's own category is always
   `null` (only the triggering refusal had one, and it isn't carried

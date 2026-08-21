@@ -195,8 +195,13 @@ export function extractFallbackInfo(
 /**
  * Fallback-served attempts bill at the SERVED model's rates (API contract).
  * Swap the model segment of the vendor-prefixed slug when a servedModel is
- * recorded; unknown served models fall back to the requested slug so pricing
- * never hard-fails (the discrepancy is visible in fallbackEvents[]).
+ * recorded. This function has no visibility into the pricing catalog and
+ * never falls back to the requested slug -- a served model absent from
+ * `site/catalog/models.yml` silently resolves through
+ * `PricingService.getPriceSync`'s own fallthrough (API cache, then JSON
+ * config, then the provider default, or the global $3/$15-per-MTok default
+ * if the service was never initialized). No throw, no log; the resulting
+ * price lands in `attempt.cost` as-is.
  */
 export function pricingSlugForAttempt(
   requestedSlug: string,
