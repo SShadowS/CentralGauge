@@ -192,6 +192,21 @@ export function extractFallbackInfo(
   return {};
 }
 
+/**
+ * Fallback-served attempts bill at the SERVED model's rates (API contract).
+ * Swap the model segment of the vendor-prefixed slug when a servedModel is
+ * recorded; unknown served models fall back to the requested slug so pricing
+ * never hard-fails (the discrepancy is visible in fallbackEvents[]).
+ */
+export function pricingSlugForAttempt(
+  requestedSlug: string,
+  servedModel?: string,
+): string {
+  if (servedModel === undefined) return requestedSlug;
+  const vendor = requestedSlug.split("/")[0];
+  return `${vendor}/${servedModel}`;
+}
+
 /** A capability node in the Anthropic /v1/models response: `{ supported: bool }`. */
 interface AnthropicCapability {
   supported?: boolean;
@@ -401,6 +416,16 @@ export class AnthropicAdapter extends BaseLLMAdapter
     const cacheReadTokens = usageAny?.cache_read_input_tokens as
       | number
       | undefined;
+
+    // Extracted before pricing so a fallback-served attempt bills at the
+    // SERVED model's rates, not the requested model's (see
+    // pricingSlugForAttempt).
+    const fb = extractFallbackInfo(message, params.model);
+    const pricingModel = pricingSlugForAttempt(
+      `${this.name}/${this.config.model}`,
+      fb.servedModel,
+    ).slice(this.name.length + 1);
+
     const usage: TokenUsage = {
       promptTokens: message.usage.input_tokens,
       completionTokens: message.usage.output_tokens,
@@ -409,15 +434,13 @@ export class AnthropicAdapter extends BaseLLMAdapter
       ...(cacheReadTokens ? { cacheReadTokens } : {}),
       estimatedCost: PricingService.estimateCostWithCacheSync(
         this.name,
-        this.config.model,
+        pricingModel,
         message.usage.input_tokens,
         message.usage.output_tokens,
         cacheCreationTokens,
         cacheReadTokens,
       ),
     };
-
-    const fb = extractFallbackInfo(message, params.model);
 
     return {
       response: {
@@ -450,7 +473,15 @@ export class AnthropicAdapter extends BaseLLMAdapter
       yield* this.processStreamEvents(stream, state, options);
 
       const finalMessage = await stream.finalMessage();
-      const usage = this.buildUsageFromMessage(finalMessage);
+      // Extracted before pricing so a fallback-served attempt bills at the
+      // SERVED model's rates, not the requested model's (see
+      // pricingSlugForAttempt). `finalizeStream` owns the LLMResponse
+      // assembly and lives in the shared stream-handler, so the fallback
+      // fields are attached below instead. The object is the same reference
+      // `onComplete` received, so a listener that holds it sees these; one
+      // that copied the response eagerly does not.
+      const fb = extractFallbackInfo(finalMessage, params.model);
+      const usage = this.buildUsageFromMessage(finalMessage, fb.servedModel);
 
       const { finalChunk, result } = finalizeStream({
         state,
@@ -463,11 +494,6 @@ export class AnthropicAdapter extends BaseLLMAdapter
         rawResponse: finalMessage,
       });
 
-      // `finalizeStream` owns the LLMResponse assembly and lives in the shared
-      // stream-handler, so the fallback fields are attached here instead. The
-      // object is the same reference `onComplete` received, so a listener that
-      // holds it sees these; one that copied the response eagerly does not.
-      const fb = extractFallbackInfo(finalMessage, params.model);
       if (fb.servedModel !== undefined) {
         result.response.servedModel = fb.servedModel;
       }
@@ -683,10 +709,13 @@ export class AnthropicAdapter extends BaseLLMAdapter
   }
 
   /**
-   * Builds token usage from final message.
+   * Builds token usage from final message. `servedModel` (when the call was
+   * server-side fallback-served, see `extractFallbackInfo`) bills the
+   * attempt at the served model's rates rather than the requested model's.
    */
   private buildUsageFromMessage(
     message: Anthropic.Message,
+    servedModel?: string,
   ): TokenUsage {
     // deno-lint-ignore no-explicit-any
     const usageAny = message.usage as any;
@@ -696,6 +725,10 @@ export class AnthropicAdapter extends BaseLLMAdapter
     const cacheReadTokens = usageAny?.cache_read_input_tokens as
       | number
       | undefined;
+    const pricingModel = pricingSlugForAttempt(
+      `${this.name}/${this.config.model}`,
+      servedModel,
+    ).slice(this.name.length + 1);
     return {
       promptTokens: message.usage.input_tokens,
       completionTokens: message.usage.output_tokens,
@@ -704,7 +737,7 @@ export class AnthropicAdapter extends BaseLLMAdapter
       ...(cacheReadTokens ? { cacheReadTokens } : {}),
       estimatedCost: PricingService.estimateCostWithCacheSync(
         this.name,
-        this.config.model,
+        pricingModel,
         message.usage.input_tokens,
         message.usage.output_tokens,
         cacheCreationTokens,

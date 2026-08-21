@@ -15,6 +15,7 @@ import {
   mapAnthropicModelEntry,
   modelRejectsTemperature,
   modelSupportsServerFallback,
+  pricingSlugForAttempt,
   shouldRequestServerFallback,
 } from "../../../src/llm/anthropic-adapter.ts";
 import { PricingService } from "../../../src/llm/pricing-service.ts";
@@ -979,4 +980,20 @@ Deno.test("shouldRequestServerFallback - model gate x kill switch", async (t) =>
       assertEquals(shouldRequestServerFallback("claude-fable-5", v), true, v);
     }
   });
+});
+
+Deno.test("pricingSlugForAttempt maps served model into the vendor prefix", () => {
+  assertEquals(
+    pricingSlugForAttempt("anthropic/claude-fable-5", "claude-opus-4-8"),
+    "anthropic/claude-opus-4-8",
+  );
+  assertEquals(
+    pricingSlugForAttempt("anthropic/claude-fable-5", undefined),
+    "anthropic/claude-fable-5",
+  );
+  // Non-anthropic prefix stays untouched even if servedModel appears
+  assertEquals(
+    pricingSlugForAttempt("openrouter/deepseek/deepseek-v4", undefined),
+    "openrouter/deepseek/deepseek-v4",
+  );
 });
