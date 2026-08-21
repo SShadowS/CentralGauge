@@ -374,6 +374,24 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           `tokens_reasoning must be <= tokens_out (task ${r.task_id} attempt ${r.attempt})`,
         );
       }
+      // Refusal-fallback fields (Task 5/6): optional on the wire, absent/null
+      // means no fallback occurred. Bound served_model's length so a
+      // misbehaving client can't stuff arbitrary data into the column.
+      const servedModel =
+        typeof r.served_model === "string" && r.served_model.length > 0
+          ? r.served_model
+          : null;
+      if (servedModel !== null && servedModel.length > 128) {
+        throw new ApiError(
+          400,
+          "invalid_served_model",
+          `served_model must be <= 128 characters (task ${r.task_id} attempt ${r.attempt})`,
+        );
+      }
+      const refusalCategory =
+        typeof r.refusal_category === "string" && r.refusal_category.length > 0
+          ? r.refusal_category
+          : null;
       statements.push(
         db.prepare(`
           INSERT INTO results(
@@ -381,8 +399,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
             tests_total, tests_passed,
             tokens_in, tokens_out, tokens_reasoning, tokens_cache_read, tokens_cache_write,
             llm_duration_ms, compile_duration_ms, test_duration_ms,
-            failure_reasons_json, transcript_r2_key, code_r2_key
-          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?)
+            failure_reasons_json, transcript_r2_key, code_r2_key,
+            served_model, refusal_category
+          ) VALUES (?,?,?,?,?,?,?, ?,?, ?,?,?,?,?, ?,?,?, ?,?,?, ?,?)
         `).bind(
           signed.run_id,
           r.task_id,
@@ -404,6 +423,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           JSON.stringify(r.failure_reasons),
           r.transcript_sha256 ? `blobs/${r.transcript_sha256}` : null,
           r.code_sha256 ? `blobs/${r.code_sha256}` : null,
+          servedModel,
+          refusalCategory,
         ),
       );
     }

@@ -179,6 +179,98 @@ describe("POST /api/v1/runs", () => {
     expect(body.code).toBe("invalid_tokens");
   });
 
+  it("stores served_model/refusal_category when present on the wire", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const base = makeRunPayload();
+    const payload = makeRunPayload({
+      results: [
+        {
+          ...base.results[0],
+          served_model: "claude-opus-4-8",
+          refusal_category: null,
+        },
+      ],
+    });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-fallback-1";
+
+    const res = await SELF.fetch("http://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(202);
+
+    const row = await env.DB.prepare(
+      `SELECT served_model, refusal_category FROM results WHERE run_id = ?`,
+    ).bind("run-fallback-1").first<
+      { served_model: string | null; refusal_category: string | null }
+    >();
+    expect(row?.served_model).toBe("claude-opus-4-8");
+    expect(row?.refusal_category).toBeNull();
+  });
+
+  it("stores nulls when served_model/refusal_category are omitted (old CLI)", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const payload = makeRunPayload();
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-fallback-omitted";
+
+    const res = await SELF.fetch("http://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(202);
+
+    const row = await env.DB.prepare(
+      `SELECT served_model, refusal_category FROM results WHERE run_id = ?`,
+    ).bind("run-fallback-omitted").first<
+      { served_model: string | null; refusal_category: string | null }
+    >();
+    expect(row?.served_model).toBeNull();
+    expect(row?.refusal_category).toBeNull();
+  });
+
+  it("rejects served_model longer than 128 chars", async () => {
+    const { keyId, keypair } = await registerIngestKey();
+    const base = makeRunPayload();
+    const payload = makeRunPayload({
+      results: [
+        { ...base.results[0], served_model: "x".repeat(129) },
+      ],
+    });
+    const { signedRequest } = await createSignedPayload(
+      payload as unknown as Record<string, unknown>,
+      keyId,
+      undefined,
+      keypair,
+    );
+    signedRequest.signature.key_id = keyId;
+    signedRequest.run_id = "run-bad-served-model";
+
+    const res = await SELF.fetch("http://x/api/v1/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(signedRequest),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json<{ code: string }>();
+    expect(body.code).toBe("invalid_served_model");
+  });
+
   it("logs an ingest_event on success", async () => {
     const { keyId, keypair } = await registerIngestKey();
     const payload = makeRunPayload();

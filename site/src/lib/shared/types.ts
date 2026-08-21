@@ -35,6 +35,17 @@ export interface ResultInput {
   failure_reasons: string[];
   transcript_sha256?: string;
   code_sha256?: string;
+  /**
+   * Bare API id of the model that actually served this attempt, when a
+   * refusal-fallback rescued it. Optional/absent = requested model answered
+   * (old CLIs predating this field omit it; treated as null on insert).
+   */
+  served_model?: string | null;
+  /**
+   * Safety category when the primary model refused before a fallback was
+   * attempted (or when no fallback rescued it). Optional/absent = no refusal.
+   */
+  refusal_category?: string | null;
 }
 
 export interface ModelRef {
