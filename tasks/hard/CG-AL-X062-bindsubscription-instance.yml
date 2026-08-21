@@ -12,7 +12,7 @@ description: |-
 
   The codeunit "CG X062 Publisher" (ID 69007) already exists and publishes two integration events, OnAudit and OnNotify, both raised by its Run procedure.
   "CG X062 Listener" subscribes to both events and counts how many times each has reached it. AuditCount and NotifyCount report those counts.
-  The two Listen procedures choose what the listener responds to for every later Run: after ListenToAuditOnly, only OnAudit is counted; after ListenToBoth, both are counted. A listener that has had neither called counts nothing.
+  The caller activates and deactivates the listener itself. Neither Listen procedure activates it; they only determine what is counted while it is active. After ListenToAuditOnly, only OnAudit is counted; after ListenToBoth, both are counted. A listener that has had neither called counts nothing.
 domains:
   - codeunits
   - events
