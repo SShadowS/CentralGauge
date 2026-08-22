@@ -209,6 +209,21 @@ codeunit lives at `correct/<id>.Test.al` - inside the reference solution's own
 directory, so the AL Language extension sees one project containing solution
 + test rather than two projects that don't resolve each other's symbols.
 
+**A draft can also originate from `task import <id>` instead of `task new`.**
+`importPromotedTask` (`src/workbench/import.ts`) reconstructs this same
+`scratch/<id>/` layout from an already-promoted (committed) X-series task -
+`correct/`'s oracle and companions copied from `tests/al/<difficulty>/`,
+`prereq/` copied from `tests/al/dependencies/<id>/` when present, and
+`correct/app.json`/`naive/app.json` regenerated fresh (they are never
+committed anywhere, so there is nothing to copy). Its `.meta.json` carries an
+extra `importedFrom` block recording exactly which repo paths it came from
+(`taskYml`, `testFile`, `companions[]`, `prereqDir`). `promoteDraft` reads
+that block and is allowed to overwrite *only* those recorded paths on
+re-promote - every other destination still refuses unconditionally, with no
+`--force` override, same as a draft that was hand-scaffolded and has no
+`importedFrom` at all. Re-promoting an imported draft still moves
+`task_sets.hash` like any other promotion.
+
 **The `<id>.` prefix inside `correct/` is a reserved namespace.** Any
 `<id>.*.al` file there besides the oracle itself (a mock, a spy, an event
 subscriber, a helper enum the oracle references) is treated as oracle-side.

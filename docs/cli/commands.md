@@ -594,6 +594,88 @@ centralgauge workbench serve --preset quick-test
 centralgauge workbench serve --preset flagship-2026-q2
 ```
 
+### task import
+
+Pulls an already-promoted (committed) task back into `scratch/<id>/` as an
+editable draft, so it can be fixed or refined through the same workbench loop
+(edit → probe → promote) a brand-new task uses, instead of hand-editing files
+across `tasks/` and `tests/al/`.
+
+```bash
+centralgauge task import <id> [options]
+```
+
+#### Arguments
+
+| Argument | Description                                    |
+| -------- | ----------------------------------------------- |
+| `id`     | The promoted task's id, e.g. `CG-AL-X052`.       |
+
+#### Options
+
+| Option               | Description                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `--container <name>` | BC container the regenerated workspace's symbol resolution targets. Defaults to `Cronus28`.            |
+
+#### Examples
+
+```bash
+# Pull CG-AL-X052 back into scratch/CG-AL-X052/
+centralgauge task import CG-AL-X052
+
+# Target a different container's symbols
+centralgauge task import CG-AL-X052 --container Cronus281
+```
+
+**X-series only.** Import only understands the `ado-trap-2026` cohort
+(`CG-AL-X<nn>`, matching `/^CG-AL-X\d{2,3}$/`) — that is the only id shape the
+workbench's `correct/`/`naive/` app-id renderer can regenerate a solution
+`app.json` for. A legacy `E`/`M`/`H` id refuses with a message saying so;
+those tasks are still editable, just directly under `tests/al/`, not through
+the workbench. The dashboard's "Promoted tasks" rail (below) never offers a
+legacy id in the first place, so this refusal is reached only from the CLI.
+
+**What it copies.** The committed `task.yml`, the oracle test codeunit and
+its companions, and `prereq/` when the task has one, into a fresh
+`scratch/<id>/`. `correct/app.json` and `naive/app.json` are never committed
+anywhere, so they are regenerated with the same renderer `task new` uses,
+rather than copied. A `<id>.code-workspace` is written exactly like a fresh
+scaffold. Refuses outright if `scratch/<id>/` already exists — this never
+overwrites in-progress work — or if the committed manifest or its test
+codeunit can't be found.
+
+**The probe gate is unchanged.** Edit `task.yml` / `correct/` / `naive/` as
+needed, then run `centralgauge task probe <id>` (or the workspace's "probe"
+build task) exactly as for a freshly scaffolded draft.
+
+**Re-promoting overwrites only where it came from.** `task promote <id>
+--difficulty <difficulty>` normally refuses if any destination path already
+exists, with no `--force` override — silently overwriting a shipped task has
+no legitimate use case. An imported draft is the one deliberate exception:
+its promote may overwrite *exactly* the paths recorded in that draft's own
+`scratch/<id>/.meta.json` (`importedFrom.taskYml`, `.testFile`, each entry in
+`.companions`, and `.prereqDir` when present) — nothing else. A draft that was
+hand-scaffolded, or never imported, has no `importedFrom`, so every
+destination for it still refuses unconditionally, exactly as before this
+command existed. Promoting under a different `--slug` or `--difficulty` than
+the draft was imported under moves the recorded old files to the new
+destination and deletes the stale copies at the old paths (best-effort — a
+failure here is reported as a warning, not a rollback, since the promotion
+itself already succeeded); a companion present at import time but since
+removed from `correct/` is deleted the same way, so the committed suite never
+keeps compiling in a companion the draft no longer contains. **Re-promoting
+still moves `task_sets.hash`** like any other promotion, and still prints the
+same hash-change warning: an edited, re-promoted task is new content and
+needs the models that matter re-benched, same as a first-time promotion ever
+did.
+
+The dashboard's "Promoted tasks" rail (`GET /api/promoted`, `POST
+/api/import` — see "HTTP endpoints" below) offers the same import as a
+per-row button, already filtered to exclude any id that has a `scratch/<id>`
+draft, so it never offers a row that would fail on click. See
+[Workbench](../workbench.md) for the end-to-end walkthrough, including the
+model-slug picker and the "Open in VS Code" button.
+
 ### What the screen shows
 
 One row per AL object, one column per model. Each cell carries a plain-language
@@ -735,10 +817,14 @@ Served on the bound port for the page's own use:
 | `GET /`        | The dashboard page                             |
 | `GET /api/drafts`   | Drafts discovered under `scratch/`         |
 | `GET /api/defaults` | Models resolved from `--preset`            |
+| `GET /api/promoted` | Promoted X-series tasks not yet imported as a draft — the "Promoted tasks" rail |
+| `POST /api/import` | Reimport one promoted task into `scratch/<id>` (see "task import" above). `{id}` in, `{id, draftDir}` out, or a `400` with the rejection message verbatim |
+| `GET /api/models` | Known model slugs for the picker's `<datalist>` — `--preset` defaults, then `site/catalog/models.yml`, deduped |
 | `POST /api/run`     | Run the selected models against a draft    |
 | `POST /api/promote-naive` | Promote a response into the draft's `naive/`, replacing what's there |
 | `POST /api/verify` | Enqueue one compile-and-test job per response (see "Compiling and testing a response" above). Returns `{jobs: [{model, id}]}`. |
 | `GET /api/verify-events` | Server-sent events of every job's outcome, replaying every job this server instance has ever accepted before subscribing the client to live updates. |
+| `POST /api/open-vscode` | Launch VS Code on one draft's `.code-workspace` (see "Open in VS Code" in [Workbench](../workbench.md)). `{id}` in — never a path; the server resolves the workspace file itself. `404` unknown id, `409` missing workspace file, `500` JSON if the `code` CLI launch fails. |
 
 Both routes refuse with **`501`** when the server has no verify adapter wired
 at all. This is a legitimate mode, not a failure: "Ask N models" works with
@@ -777,5 +863,6 @@ See [Configuration](../guides/configuration.md) for environment variable referen
 - [bench Command](./bench.md) - Detailed bench reference
 - [rules Command](./rules.md) - Rules generation reference
 - [Task Authoring Guide](../task-authoring-guide.md) - Writing trap tasks with `workbench serve`
+- [Workbench](../workbench.md) - Importing a promoted task, the model-slug picker, and the VS Code button
 - [Running Benchmarks](../guides/running-benchmarks.md) - Usage guide
 - [Configuration](../guides/configuration.md) - Config reference
