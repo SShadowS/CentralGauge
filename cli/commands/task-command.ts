@@ -45,10 +45,15 @@ import type {
   PromoteDifficulty,
   PromoteResult,
 } from "../../src/workbench/promote.ts";
+import type { ImportResult } from "../../src/workbench/import.ts";
 import type { SymbolPathResolver } from "../../src/workbench/workspace.ts";
-import { scaffoldDraft } from "../../src/workbench/scaffold.ts";
+import {
+  DEFAULT_PROBE_CONTAINER,
+  scaffoldDraft,
+} from "../../src/workbench/scaffold.ts";
 import { probeDraft } from "../../src/workbench/probe.ts";
 import { promoteDraft } from "../../src/workbench/promote.ts";
+import { importPromotedTask } from "../../src/workbench/import.ts";
 
 /** Repo-layout roots for the workbench, resolved relative to the process cwd. */
 function defaultRoots(): IdRoots {
@@ -372,6 +377,82 @@ export async function runTaskPromote(
   return result;
 }
 
+/** `CG-AL-<letter><3 digits>` — a general task-id shape check, not the X-series-only one `importPromotedTask` applies internally. */
+const TASK_IMPORT_ID_PATTERN = /^CG-AL-[A-Z]\d{3}$/;
+
+export interface TaskImportOptions {
+  id: string;
+  container?: string;
+  /** Override for tests; defaults to the real repo tree under `Deno.cwd()`. */
+  repoRoot?: string;
+  /** Override for tests; defaults to `scratch/` under `repoRoot`. */
+  scratchRoot?: string;
+  /**
+   * Override for tests; defaults to the real `docker inspect` resolver.
+   * Forwarded to `importPromotedTask` — see `SymbolPathResolver`.
+   */
+  resolveSymbols?: SymbolPathResolver;
+}
+
+/**
+ * Re-imports a promoted task with id `opts.id` back into `scratch/<id>/` as
+ * an editable draft, mirroring `runTaskNew`'s output style, then warns that
+ * re-promoting will overwrite the committed files it came from.
+ *
+ * Checks `opts.id`'s general shape here, before any filesystem access — a
+ * fast, clear refusal for a mistyped id. This is deliberately looser than
+ * (and does not replace) `importPromotedTask`'s own X-series-only refusal
+ * (`src/workbench/import.ts`), which still applies to a well-formed but
+ * non-X id such as `CG-AL-E900` — the workbench only has an X-series
+ * `correct/`/`naive/` app-id scheme to import into.
+ */
+export async function runTaskImport(
+  opts: TaskImportOptions,
+): Promise<ImportResult> {
+  if (!TASK_IMPORT_ID_PATTERN.test(opts.id)) {
+    throw new Error(
+      `Invalid id "${opts.id}": must match CG-AL-<letter><3 digits> ` +
+        `(e.g. CG-AL-X052).`,
+    );
+  }
+
+  const result = await importPromotedTask(opts.id, {
+    ...(opts.repoRoot !== undefined ? { repoRoot: opts.repoRoot } : {}),
+    ...(opts.scratchRoot !== undefined
+      ? { scratchRoot: opts.scratchRoot }
+      : {}),
+    ...(opts.container !== undefined ? { container: opts.container } : {}),
+    ...(opts.resolveSymbols !== undefined
+      ? { resolveSymbols: opts.resolveSymbols }
+      : {}),
+  });
+
+  const displayPath = relative(Deno.cwd(), result.draftDir).replaceAll(
+    "\\",
+    "/",
+  );
+
+  console.log(
+    colors.green("[OK]") + ` Imported ${result.id} into the workbench`,
+  );
+  console.log(`     ${displayPath}/`);
+  console.log(
+    `Next: open ${displayPath}/${result.id}.code-workspace in VS Code,`,
+  );
+  console.log(
+    "      edit task.yml / correct / naive as needed, then run the",
+  );
+  console.log('      "probe" build task (or:');
+  console.log(`      centralgauge task probe ${result.id})`);
+  console.log(
+    colors.yellow("[!]") +
+      "  Re-promoting this draft will OVERWRITE the committed task files " +
+      "it was imported from and move the task-set hash.",
+  );
+
+  return result;
+}
+
 export function registerTaskCommand(cli: Command): void {
   const parent = new Command().description(
     "Author new benchmark trap-tasks (workbench).",
@@ -471,6 +552,24 @@ export function registerTaskCommand(cli: Command): void {
         difficulty,
         ...(opts.slug !== undefined ? { slug: opts.slug } : {}),
         force: opts.force,
+      });
+    });
+
+  parent
+    .command(
+      "import",
+      "Pull a promoted task back into scratch/<id>/ as an editable draft",
+    )
+    .arguments("<id:string>")
+    .option(
+      "--container <container:string>",
+      "BC container the regenerated workspace's symbol resolution and " +
+        `single-side probe tasks target (default: ${DEFAULT_PROBE_CONTAINER})`,
+    )
+    .action(async (opts, id) => {
+      await runTaskImport({
+        id,
+        ...(opts.container !== undefined ? { container: opts.container } : {}),
       });
     });
 

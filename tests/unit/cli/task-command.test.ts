@@ -28,6 +28,7 @@ import type {
 import {
   probeExitCode,
   registerTaskCommand,
+  runTaskImport as realRunTaskImport,
   runTaskNew as realRunTaskNew,
   runTaskProbe as realRunTaskProbe,
   runTaskPromote,
@@ -40,7 +41,7 @@ import {
 } from "../../utils/test-helpers.ts";
 
 /**
- * The three entry points that reach `resolveSymbolPaths`, each shadowing its
+ * The four entry points that reach `resolveSymbolPaths`, each shadowing its
  * real import with the `docker inspect` seam stubbed. An explicit
  * `resolveSymbols` in `opts` still wins.
  */
@@ -48,6 +49,8 @@ const runTaskNew: typeof realRunTaskNew = (opts) =>
   realRunTaskNew({ resolveSymbols: stubSymbolResolver, ...opts });
 const runTaskProbe: typeof realRunTaskProbe = (opts) =>
   realRunTaskProbe({ resolveSymbols: stubSymbolResolver, ...opts });
+const runTaskImport: typeof realRunTaskImport = (opts) =>
+  realRunTaskImport({ resolveSymbols: stubSymbolResolver, ...opts });
 const scaffoldDraft: typeof realScaffoldDraft = (opts) =>
   realScaffoldDraft({ resolveSymbols: stubSymbolResolver, ...opts });
 
@@ -96,6 +99,16 @@ Deno.test("task registers a promote subcommand under the task parent", () => {
   assertEquals(names.includes("difficulty"), true);
   assertEquals(names.includes("slug"), true);
   assertEquals(names.includes("force"), true);
+});
+
+Deno.test("task registers an import subcommand under the task parent", () => {
+  const cli = new Command();
+  registerTaskCommand(cli);
+  const sub = cli.getCommand("task")?.getCommand("import");
+  assertEquals(sub?.getName(), "import");
+
+  const names = (sub?.getOptions() ?? []).map((o) => o.name);
+  assertEquals(names.includes("container"), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -657,4 +670,129 @@ Deno.test("runTaskPromote", async (t) => {
       await teardown();
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+// runTaskImport
+// ---------------------------------------------------------------------------
+
+const IMPORT_FIXTURE_TASK_YML = `id: CG-AL-X090
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: test fixture
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+metadata:
+  category: business-logic
+  tags: []
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X090.Test.al
+  testCodeunitId: 88900
+`;
+
+/** Seeds a minimal promoted task under `repoRoot` for `runTaskImport` to pull back into the workbench. */
+async function seedPromotedTask(repoRoot: string): Promise<void> {
+  await ensureDir(join(repoRoot, "tasks", "hard"));
+  await ensureDir(join(repoRoot, "tests", "al", "hard"));
+  await Deno.writeTextFile(
+    join(repoRoot, "tasks", "hard", "CG-AL-X090-fixture-slug.yml"),
+    IMPORT_FIXTURE_TASK_YML,
+  );
+  await Deno.writeTextFile(
+    join(repoRoot, "tests", "al", "hard", "CG-AL-X090.Test.al"),
+    'codeunit 88900 "T" {}',
+  );
+}
+
+Deno.test("runTaskImport", async (t) => {
+  let repoRoot: string;
+  let scratchRoot: string;
+
+  async function setup() {
+    repoRoot = await createTempDir("task-command-import-test");
+    scratchRoot = join(repoRoot, "scratch");
+    await seedPromotedTask(repoRoot);
+  }
+  async function teardown() {
+    await cleanupTempDir(repoRoot);
+  }
+
+  await t.step(
+    "imports the draft, writes a workspace file, and prints next steps " +
+      "plus the overwrite warning",
+    async () => {
+      await setup();
+      try {
+        const { value: result, logs } = await withCapturedLog(() =>
+          runTaskImport({ id: "CG-AL-X090", repoRoot, scratchRoot })
+        );
+
+        assertEquals(result.id, "CG-AL-X090");
+        assertEquals(
+          await exists(
+            join(scratchRoot, "CG-AL-X090", "CG-AL-X090.code-workspace"),
+          ),
+          true,
+        );
+        assertEquals(
+          await exists(join(scratchRoot, "CG-AL-X090", "CHECKLIST.md")),
+          true,
+        );
+
+        const joined = logs.join("\n");
+        assertStringIncludes(joined, "CG-AL-X090");
+        assertStringIncludes(joined, "centralgauge task probe CG-AL-X090");
+        assertStringIncludes(joined, "OVERWRITE the committed task files");
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "rejects an id that doesn't match CG-AL-<letter><3 digits> before " +
+      "touching the filesystem",
+    async () => {
+      await setup();
+      try {
+        await assertRejects(
+          () => runTaskImport({ id: "not-an-id", repoRoot, scratchRoot }),
+          Error,
+          "must match CG-AL-",
+        );
+        assertEquals(await exists(scratchRoot), false);
+      } finally {
+        await teardown();
+      }
+    },
+  );
+
+  await t.step(
+    "propagates importPromotedTask's X-series-only refusal for a " +
+      "well-formed non-X id",
+    async () => {
+      await setup();
+      try {
+        await ensureDir(join(repoRoot, "tasks", "easy"));
+        await Deno.writeTextFile(
+          join(repoRoot, "tasks", "easy", "CG-AL-E900-legacy-fixture.yml"),
+          "id: CG-AL-E900\n",
+        );
+        await assertRejects(
+          () => runTaskImport({ id: "CG-AL-E900", repoRoot, scratchRoot }),
+          Error,
+          "Only X-series",
+        );
+      } finally {
+        await teardown();
+      }
+    },
+  );
 });

@@ -1,10 +1,23 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import {
-  importPromotedTask,
+  importPromotedTask as realImportPromotedTask,
   listPromotedTasks,
 } from "../../../src/workbench/import.ts";
-import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
+import {
+  cleanupTempDir,
+  createTempDir,
+  stubSymbolResolver,
+} from "../../utils/test-helpers.ts";
+
+/**
+ * `importPromotedTask` with the `docker inspect` seam stubbed, shadowing
+ * the real import - mirrors `scaffold.test.ts`'s own wrapper. Without it
+ * every step here would shell out to `docker inspect` via `writeWorkspace`'s
+ * symbol resolution.
+ */
+const importPromotedTask: typeof realImportPromotedTask = (id, opts) =>
+  realImportPromotedTask(id, { resolveSymbols: stubSymbolResolver, ...opts });
 
 const TASK_YML = `id: CG-AL-X090
 prompt_template: code-gen.md
@@ -95,6 +108,12 @@ Deno.test("importPromotedTask", async (t) => {
         assert(await Deno.stat(join(scratch, "CG-AL-X090/correct/app.json")));
         assert(await Deno.stat(join(scratch, "CG-AL-X090/naive/app.json")));
         assert(await Deno.stat(join(scratch, "CG-AL-X090/prereq/app.json")));
+        assert(
+          await Deno.stat(
+            join(scratch, "CG-AL-X090/CG-AL-X090.code-workspace"),
+          ),
+        );
+        assert(await Deno.stat(join(scratch, "CG-AL-X090/CHECKLIST.md")));
 
         const meta = JSON.parse(
           await Deno.readTextFile(join(scratch, "CG-AL-X090/.meta.json")),

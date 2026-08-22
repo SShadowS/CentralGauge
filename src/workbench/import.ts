@@ -24,7 +24,9 @@ import { parse as parseYaml } from "@std/yaml";
 
 import type { AppJson } from "../al/app-manifest.ts";
 import type { DraftMeta } from "./scaffold.ts";
-import { renderSolutionAppJson } from "./scaffold.ts";
+import type { SymbolPathResolver } from "./workspace.ts";
+import { DEFAULT_PROBE_CONTAINER, renderSolutionAppJson } from "./scaffold.ts";
+import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 import { companionPredicateMatches } from "./oracle-files.ts";
 
 /** Difficulties tasks are organized under - the three `tasks/<difficulty>/` and `tests/al/<difficulty>/` folders. */
@@ -146,7 +148,17 @@ async function findTaskYml(
  */
 export async function importPromotedTask(
   id: string,
-  opts?: { repoRoot?: string; scratchRoot?: string },
+  opts?: {
+    repoRoot?: string;
+    scratchRoot?: string;
+    /** BC container the regenerated workspace targets. Defaults to `DEFAULT_PROBE_CONTAINER`. */
+    container?: string;
+    /**
+     * Override for tests; defaults to the real `docker inspect` resolver.
+     * Forwarded to `writeWorkspace` — see `SymbolPathResolver`.
+     */
+    resolveSymbols?: SymbolPathResolver;
+  },
 ): Promise<ImportResult> {
   assertXSeriesId(id);
 
@@ -263,6 +275,29 @@ export async function importPromotedTask(
     join(draftDir, ".meta.json"),
     JSON.stringify(meta, null, 2) + "\n",
   );
+
+  // Same context construction as scaffoldDraft's own writeWorkspace call
+  // (src/workbench/scaffold.ts) - state is "draft" because that is what
+  // scratch/<id>/ now holds, even though it was reconstructed from a
+  // promoted task. Symbol resolution is best-effort for the same reason it
+  // is there: a container that is down at import time must not block
+  // authoring.
+  const symbolPaths = await (opts?.resolveSymbols ?? resolveSymbolPaths)({
+    container: opts?.container ?? DEFAULT_PROBE_CONTAINER,
+    draftDir,
+    hasPrereq,
+  });
+  await writeWorkspace({
+    id,
+    slug,
+    draftDir,
+    repoRoot,
+    hasPrereq,
+    testCodeunitId,
+    container: opts?.container ?? DEFAULT_PROBE_CONTAINER,
+    symbolPaths,
+    state: "draft",
+  });
 
   return { id, draftDir, importedFrom };
 }
