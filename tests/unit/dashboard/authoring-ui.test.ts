@@ -1822,6 +1822,51 @@ describe("dashboard/ui app.js", () => {
       );
     });
 
+    // Fix round 1: the server now wraps a thrown openInEditor (e.g. the
+    // `code` CLI missing from PATH) as a structured 500 JSON error instead
+    // of an unhandled throw — the client-side handling is the same `!res.ok`
+    // branch as the 409 case above, but the 500 path deserves its own
+    // assertion so a regression in either status is caught by name.
+    it("surfaces a 500 response's error text near the button", async () => {
+      const ui = await loadUi();
+      const button = node("open-vscode-btn");
+      button.listeners = {};
+      ui.wireOpenVsCodeButton();
+      button.dataset["id"] = "CG-AL-X060";
+      button["disabled"] = false;
+
+      const errorEl = node("open-vscode-error");
+      errorEl["hidden"] = true;
+      errorEl.textContent = "";
+
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = () =>
+        Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () =>
+            Promise.resolve({
+              error: "'code' is not recognized",
+            }),
+        });
+
+      try {
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      assertEquals(errorEl["hidden"], false);
+      assertStringIncludes(errorEl.textContent, "'code' is not recognized");
+      assertEquals(
+        button["disabled"],
+        false,
+        "the button re-enables after a failure so a retry is possible",
+      );
+    });
+
     it("a click with no data-id is a no-op (does not fetch)", async () => {
       const ui = await loadUi();
       const button = node("open-vscode-btn");

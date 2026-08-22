@@ -1717,6 +1717,47 @@ describe("dashboard/server", () => {
       }
     });
 
+    // Fix round 1: a thrown openInEditor (e.g. the `code` CLI missing from
+    // PATH — a plausible first-run failure) must land as a structured JSON
+    // 500, not an unhandled throw that `Deno.serve` turns into a plain-text
+    // response the UI's `res.json()` cannot parse.
+    it("500s with the thrown message when openInEditor rejects", async () => {
+      const dir = await createTempDir("dashboard-open-vscode-throw-test");
+      try {
+        await Deno.writeTextFile(
+          join(dir, "CG-AL-X062.code-workspace"),
+          "{}",
+        );
+        const openDeps = createDeps({
+          listDrafts: () =>
+            Promise.resolve([
+              {
+                id: "CG-AL-X062",
+                dir,
+                dirName: "CG-AL-X062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+            ]),
+          openInEditor: () =>
+            Promise.reject(new Error("'code' is not recognized")),
+        });
+
+        const res = await createHandler(openDeps)(
+          new Request("http://localhost/api/open-vscode", {
+            method: "POST",
+            body: JSON.stringify({ id: "CG-AL-X062" }),
+          }),
+        );
+        assertEquals(res.status, 500);
+        const body = await res.json();
+        assertStringIncludes(body.error, "'code' is not recognized");
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
     it("400s on a malformed body", async () => {
       const res = await createHandler(deps)(
         new Request("http://localhost/api/open-vscode", {

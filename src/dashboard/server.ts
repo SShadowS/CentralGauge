@@ -903,7 +903,20 @@ export function createHandler(
         });
       }
 
-      await deps.openInEditor(workspaceFile);
+      try {
+        await deps.openInEditor(workspaceFile);
+      } catch (error) {
+        // Same posture as /api/run's catch-all: a dep failure here (e.g. the
+        // `code` CLI not on PATH — a plausible first-run state) is an
+        // infrastructure problem, not something the request body got wrong,
+        // so it is a 500 with the thrown message, not a 400. Unlike an
+        // unhandled throw, `createHandler`'s caller gets a structured JSON
+        // body instead of Deno.serve's plain-text 500 — the UI's
+        // `res.json()` would otherwise throw a confusing parse error on top
+        // of the real one.
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse(500, { error: message });
+      }
       return jsonResponse(200, { ok: true });
     }
 
