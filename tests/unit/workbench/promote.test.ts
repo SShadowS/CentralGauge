@@ -1546,6 +1546,125 @@ describe("workbench/promote", () => {
           );
         },
       );
+
+      it(
+        "deletes the OLD oracle and companion when re-promoting under a " +
+          "--difficulty different from importedFrom.difficulty",
+        async () => {
+          const id = "CG-AL-X090";
+          const slug = "fixture-slug";
+          await seedImportedDraft({
+            id,
+            slug,
+            difficulty: "hard",
+            companions: ["Mock"],
+          });
+
+          // Pre-seed the "already shipped" files under the OLD difficulty -
+          // exactly what importedFrom points at.
+          await ensureDir(join(roots.tasksDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.tasksDir, "hard", `${id}-${slug}.yml`),
+            "id: placeholder-old-manifest\n",
+          );
+          await ensureDir(join(roots.testsDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.Test.al`),
+            'codeunit 1 "placeholder-old-test" { }\n',
+          );
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.Mock.al`),
+            `codeunit 80090 "${id} Mock" { }\n`,
+          );
+
+          const result = await promoteDraft(id, {
+            difficulty: "easy",
+            roots,
+            verdict: passingVerdict(),
+          });
+
+          assertEquals(result.movedTask, `tasks/easy/${id}-${slug}.yml`);
+          assertEquals(result.movedTest, `tests/al/easy/${id}.Test.al`);
+          assertEquals(result.movedCompanions, [
+            `tests/al/easy/${id}.Mock.al`,
+          ]);
+
+          // New files exist under the NEW difficulty...
+          assertEquals(
+            await exists(join(roots.tasksDir, "easy", `${id}-${slug}.yml`)),
+            true,
+          );
+          assertEquals(
+            await exists(join(roots.testsDir, "easy", `${id}.Test.al`)),
+            true,
+          );
+          assertEquals(
+            await exists(join(roots.testsDir, "easy", `${id}.Mock.al`)),
+            true,
+          );
+          // ...and the OLD difficulty's files - all three, the oracle AND
+          // its companion - are gone, not left as stale duplicates.
+          assertEquals(
+            await exists(join(roots.tasksDir, "hard", `${id}-${slug}.yml`)),
+            false,
+          );
+          assertEquals(
+            await exists(join(roots.testsDir, "hard", `${id}.Test.al`)),
+            false,
+          );
+          assertEquals(
+            await exists(join(roots.testsDir, "hard", `${id}.Mock.al`)),
+            false,
+          );
+        },
+      );
+
+      it(
+        "deletes a companion the draft DROPPED since import, even with " +
+          "no rename at all (same --slug, same --difficulty)",
+        async () => {
+          const id = "CG-AL-X090";
+          const slug = "fixture-slug";
+          await seedImportedDraft({
+            id,
+            slug,
+            difficulty: "hard",
+            companions: ["Mock"],
+          });
+
+          // Simulate the companion having already been shipped by the
+          // earlier promote importedFrom points back at.
+          await ensureDir(join(roots.testsDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.Mock.al`),
+            `codeunit 80090 "${id} Mock" { }\n`,
+          );
+
+          // The operator deletes the companion from the draft's correct/
+          // before re-promoting - oracleSet.companions no longer includes
+          // it, so the rename-matching loop (which only visits CURRENT
+          // companions) would never revisit this file on its own.
+          await Deno.remove(
+            join(roots.scratchDir, id, "correct", `${id}.Mock.al`),
+          );
+
+          const result = await promoteDraft(id, {
+            difficulty: "hard",
+            roots,
+            verdict: passingVerdict(),
+          });
+
+          assertEquals(result.movedCompanions, []);
+          // The dropped companion's previously-shipped file must not
+          // survive - left alone it would keep being compiled into every
+          // candidate build via the `${taskId}.`-prefix convention
+          // (.claude/rules/prereq-apps.md).
+          assertEquals(
+            await exists(join(roots.testsDir, "hard", `${id}.Mock.al`)),
+            false,
+          );
+        },
+      );
     });
   });
 });

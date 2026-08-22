@@ -399,6 +399,42 @@ async function removeStaleImportedFile(
 }
 
 /**
+ * Deletes a companion the draft DROPPED between import and re-promote -
+ * present in `meta.importedFrom.companions` but absent from the current
+ * draft's oracle-side file set (`oracleSet.companions`). Unlike
+ * {@link removeStaleImportedFile} (a rename, where a NEW destination
+ * exists to compare `oldRel` against), a dropped companion has no new
+ * destination at all: the move step above never writes one, because
+ * `classifyOracleFiles` never found it in `correct/`. Left alone, the
+ * committed file would silently survive - and per
+ * `.claude/rules/prereq-apps.md`, `compile-queue.ts` copies every
+ * `${taskId}.`-prefixed `.al` file into every candidate build, so an
+ * orphaned companion keeps being compiled in for every model despite no
+ * longer being part of what the operator intended to ship. Same
+ * non-fatal, `postCommitWarnings`-collecting contract as the rest of this
+ * block.
+ */
+async function removeDroppedImportedFile(
+  roots: IdRoots,
+  oldRel: string,
+  postCommitWarnings: string[],
+): Promise<void> {
+  const oldAbs = resolveCanonicalRel(roots, oldRel);
+  try {
+    if (await exists(oldAbs)) {
+      await Deno.remove(oldAbs);
+    }
+  } catch (error) {
+    postCommitWarnings.push(
+      `could not remove the dropped re-imported companion at ${oldAbs} ` +
+        `(no longer present in the draft's correct/): ${
+          error instanceof Error ? error.message : String(error)
+        } - delete it by hand.`,
+    );
+  }
+}
+
+/**
  * True if `id` appears as a whole token in some filename under `dir` (any
  * subdirectory, any difficulty) - i.e. not immediately followed by another
  * digit, so a filename for `CG-AL-X005` cannot false-positive against one
@@ -775,6 +811,7 @@ export async function promoteDraft(
       movedTest,
       postCommitWarnings,
     );
+    const currentCompanionNames = new Set(oracleSet.companions);
     for (const name of oracleSet.companions) {
       const oldCompanionRel = meta.importedFrom.companions.find(
         (c) => c.split("/").pop() === name,
@@ -784,6 +821,20 @@ export async function promoteDraft(
           roots,
           oldCompanionRel,
           `tests/al/${difficulty}/${name}`,
+          postCommitWarnings,
+        );
+      }
+    }
+    // A companion the draft DROPPED since import (present in importedFrom,
+    // absent from oracleSet.companions above) never matches a "name" in
+    // that loop, so it would otherwise never be visited at all - not a
+    // rename, an outright removal. See removeDroppedImportedFile's doc.
+    for (const oldCompanionRel of meta.importedFrom.companions) {
+      const name = oldCompanionRel.split("/").pop();
+      if (name !== undefined && !currentCompanionNames.has(name)) {
+        await removeDroppedImportedFile(
+          roots,
+          oldCompanionRel,
           postCommitWarnings,
         );
       }
