@@ -35,14 +35,23 @@
 
     <section class="rail-section">
       <h2>Ask models</h2>
+      <label for="model-picker">Add a known model</label>
+      <div class="model-picker-row">
+        <input
+          id="model-picker"
+          type="text"
+          list="model-slugs"
+          placeholder="Pick or type a slug"
+        >
+        <button id="model-picker-add" type="button">Add</button>
+      </div>
+      <datalist id="model-slugs"></datalist>
       <label for="model-input">Model slugs, comma-separated</label>
       <textarea
         id="model-input"
         rows="3"
         placeholder="anthropic/claude-opus-4-7, openai/gpt-5.5"
-        list="model-slugs"
       ></textarea>
-      <datalist id="model-slugs"></datalist>
       <button id="run-button" type="button" disabled>Ask models</button>
       <p id="run-status" class="run-status" aria-live="polite"></p>
     </section>

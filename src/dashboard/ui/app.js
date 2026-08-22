@@ -1393,6 +1393,56 @@ async function runQuick() {
   }
 }
 
+/**
+ * Appends the model-picker's (`#model-picker`) current value onto the
+ * model textarea (`#model-input`), which stays the source of truth — it is
+ * the field `runQuick`/`updateRunButton` actually read, and the one that
+ * carries multiple comma-separated slugs. A `list` attribute only
+ * activates a `<datalist>` dropdown on an `<input>`, never on a
+ * `<textarea>`, which is why this picker is a separate control rather than
+ * an attribute on the textarea itself.
+ *
+ * An empty (or whitespace-only) picker is a no-op. An exact duplicate of a
+ * slug already in the textarea is also a no-op on the textarea — but the
+ * picker still clears, so repeatedly picking the same suggestion never
+ * leaves stale text sitting in the field.
+ */
+function addPickedModel() {
+  const picker = document.getElementById("model-picker");
+  const slug = picker.value.trim();
+  if (slug.length === 0) return;
+
+  const textarea = document.getElementById("model-input");
+  const existing = parseModelList(textarea.value);
+  picker.value = "";
+  if (existing.includes(slug)) return;
+
+  textarea.value = existing.length === 0
+    ? slug
+    : `${textarea.value}, ${slug}`;
+  updateRunButton();
+}
+
+/**
+ * Wires the model picker's "Add" button and its Enter-key shortcut. Split
+ * out of `wireEvents` so a test can re-wire just these two listeners
+ * without re-registering the whole page's static listeners on every call.
+ */
+function wireModelPicker() {
+  document.getElementById("model-picker-add").addEventListener(
+    "click",
+    addPickedModel,
+  );
+  document.getElementById("model-picker").addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      addPickedModel();
+    },
+  );
+}
+
 function wireEvents() {
   document.getElementById("draft-select").addEventListener(
     "change",
@@ -1407,6 +1457,8 @@ function wireEvents() {
     "input",
     updateRunButton,
   );
+
+  wireModelPicker();
 
   document.getElementById("run-button").addEventListener("click", () => {
     runQuick();

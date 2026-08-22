@@ -21,7 +21,11 @@ interface StubNode {
   className: string;
   textContent: string;
   children: StubNode[];
-  listeners: Record<string, Array<() => void>>;
+  /** A listener may take a fake event object (the keydown handler reads
+   *  `.key`/`.preventDefault()`), so this is untyped-arg rather than
+   *  `() => void` — every existing zero-arg listener remains callable, since
+   *  a function accepting an optional argument accepts zero arguments too. */
+  listeners: Record<string, Array<(event?: unknown) => void>>;
   classList: { add: (name: string) => void };
   /** Real `HTMLElement.dataset`: a plain string-keyed bag, camelCase in JS
    *  mapping to `data-kebab-case` attributes in a real DOM. The stub only
@@ -30,7 +34,7 @@ interface StubNode {
    *  same way it does in a real browser instead of throwing on `undefined`. */
   dataset: Record<string, string>;
   appendChild: (child: StubNode) => StubNode;
-  addEventListener: (type: string, fn: () => void) => void;
+  addEventListener: (type: string, fn: (event?: unknown) => void) => void;
   [key: string]: unknown;
 }
 
@@ -40,7 +44,7 @@ function createNode(tag: string): StubNode {
     className: "",
     textContent: "",
     children: [] as StubNode[],
-    listeners: {} as Record<string, Array<() => void>>,
+    listeners: {} as Record<string, Array<(event?: unknown) => void>>,
     classList: {
       add(name: string) {
         node.className = node.className ? `${node.className} ${name}` : name;
@@ -51,7 +55,7 @@ function createNode(tag: string): StubNode {
       node.children.push(child);
       return child;
     },
-    addEventListener(type: string, fn: () => void) {
+    addEventListener(type: string, fn: (event?: unknown) => void) {
       (node.listeners[type] ??= []).push(fn);
     },
   } as StubNode;
@@ -159,6 +163,7 @@ interface Ui {
   loadPromotedTasks: () => Promise<void>;
   renderPromotedTasks: () => void;
   loadModelSlugs: () => Promise<void>;
+  wireModelPicker: () => void;
   state: DashboardState;
 }
 
@@ -171,7 +176,7 @@ async function loadUi(): Promise<Ui> {
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
     `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail, ` +
     `renderFileList, handleVerifyEvent, loadPromotedTasks, ` +
-    `renderPromotedTasks, loadModelSlugs, state };\n`;
+    `renderPromotedTasks, loadModelSlugs, wireModelPicker, state };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -1540,13 +1545,31 @@ describe("dashboard/ui app.js", () => {
       }
     });
 
-    it('carries list="model-slugs" on the model input and a #model-slugs datalist in index.html', async () => {
+    // Fix round: a `list` attribute only activates a <datalist> dropdown on
+    // an <input> — it is inert on the multi-slug <textarea>, so the real
+    // slug picker is this separate #model-picker input + #model-picker-add
+    // button. The textarea stays the source of truth and must NOT carry
+    // the dead attribute back (dead markup invites confusion).
+    it('adds a #model-picker input (list="model-slugs") and #model-picker-add button, and drops the dead list attribute from the model-input textarea', async () => {
       const html = await Deno.readTextFile(
         new URL("../../../src/dashboard/ui/index.html", import.meta.url),
       );
-      assertStringIncludes(html, 'id="model-input"');
+      assertStringIncludes(html, 'id="model-picker"');
       assertStringIncludes(html, 'list="model-slugs"');
+      assertStringIncludes(html, 'id="model-picker-add"');
       assertStringIncludes(html, '<datalist id="model-slugs">');
+
+      const textareaMatch = html.match(/<textarea[^>]*id="model-input"[^>]*>/);
+      assertEquals(
+        textareaMatch !== null,
+        true,
+        "model-input textarea not found in index.html",
+      );
+      assertEquals(
+        textareaMatch![0].includes("list="),
+        false,
+        "the inert list attribute must not be on the textarea",
+      );
     });
 
     it("populates the model-slugs datalist from /api/models", async () => {
@@ -1576,6 +1599,90 @@ describe("dashboard/ui app.js", () => {
       const datalist = node("model-slugs");
       const values = datalist.children.map((c) => c["value"]);
       assertEquals(values, ["anthropic/claude-opus-4-7", "openai/gpt-5.5"]);
+    });
+
+    // `wireModelPicker` is exported (rather than the full `wireEvents`)
+    // specifically so a test can re-wire just these two listeners.
+    // `wireEvents` fetches every id via `getElementById`, which returns the
+    // SAME cached stub node across every `it()` in this file (see `node()`
+    // above) — a second full `wireEvents()` call would stack a second
+    // listener onto every static id it touches, not just these two, and a
+    // later `listeners["click"][0]` would then fire whichever was attached
+    // FIRST rather than the current test's own module. Resetting
+    // `.listeners` on just the picker's two nodes before each re-wire keeps
+    // these tests isolated from each other without that risk.
+    it("adds the picked slug to the model textarea when Add is clicked, clearing the picker", async () => {
+      const ui = await loadUi();
+      node("model-picker-add").listeners = {};
+      node("model-picker").listeners = {};
+      ui.wireModelPicker();
+
+      node("model-input")["value"] = "";
+      node("model-picker")["value"] = "anthropic/claude-opus-4-7";
+
+      node("model-picker-add").listeners["click"]![0]!();
+
+      assertEquals(node("model-input")["value"], "anthropic/claude-opus-4-7");
+      assertEquals(node("model-picker")["value"], "");
+    });
+
+    it("appends onto an existing textarea value with the comma separator, and skips an exact duplicate", async () => {
+      const ui = await loadUi();
+      node("model-picker-add").listeners = {};
+      node("model-picker").listeners = {};
+      ui.wireModelPicker();
+
+      node("model-input")["value"] = "anthropic/claude-opus-4-7";
+      node("model-picker")["value"] = "openai/gpt-5.5";
+      node("model-picker-add").listeners["click"]![0]!();
+      assertEquals(
+        node("model-input")["value"],
+        "anthropic/claude-opus-4-7, openai/gpt-5.5",
+      );
+
+      // Exact duplicate of an already-listed slug: no-op on the textarea.
+      node("model-picker")["value"] = "openai/gpt-5.5";
+      node("model-picker-add").listeners["click"]![0]!();
+      assertEquals(
+        node("model-input")["value"],
+        "anthropic/claude-opus-4-7, openai/gpt-5.5",
+      );
+    });
+
+    it("pressing Enter in the picker adds the slug; other keys do nothing", async () => {
+      const ui = await loadUi();
+      node("model-picker-add").listeners = {};
+      node("model-picker").listeners = {};
+      ui.wireModelPicker();
+
+      node("model-input")["value"] = "";
+      node("model-picker")["value"] = "anthropic/claude-opus-4-7";
+
+      node("model-picker").listeners["keydown"]![0]!(
+        { key: "Tab", preventDefault: () => {} },
+      );
+      assertEquals(
+        node("model-input")["value"],
+        "",
+        "a non-Enter key must not add",
+      );
+
+      node("model-picker").listeners["keydown"]![0]!(
+        { key: "Enter", preventDefault: () => {} },
+      );
+      assertEquals(node("model-input")["value"], "anthropic/claude-opus-4-7");
+    });
+
+    it("an empty (or whitespace-only) picker value is a no-op", async () => {
+      const ui = await loadUi();
+      node("model-picker-add").listeners = {};
+      node("model-picker").listeners = {};
+      ui.wireModelPicker();
+
+      node("model-input")["value"] = "anthropic/claude-opus-4-7";
+      node("model-picker")["value"] = "   ";
+      node("model-picker-add").listeners["click"]![0]!();
+      assertEquals(node("model-input")["value"], "anthropic/claude-opus-4-7");
     });
   });
 });
