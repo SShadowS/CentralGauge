@@ -1,0 +1,31 @@
+id: CG-AL-X064
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Create codeunit "CG X064 Log Parser" (ID 71510) with:
+
+      procedure SumOf(Log: Text): Integer
+      procedure CountOf(Log: Text): Integer
+
+  Log holds tokens separated by ';'. SumOf returns the sum of the tokens that are valid integers. CountOf returns how many of the tokens are valid integers. A token that is not a valid integer contributes nothing to either result. Both procedures return 0 for an empty Log.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: error-transactions
+  tags:
+    - evaluate
+    - return-value
+    - error-suppression
+    - text-parsing
+  difficulty: hard
+  cohort: ado-trap-2026
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X064.Test.al
+  testCodeunitId: 88817

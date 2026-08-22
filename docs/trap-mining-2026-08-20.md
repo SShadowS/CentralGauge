@@ -455,18 +455,28 @@ exactly that structure: `tests/al/dependencies/<task-id>/` is a real prereq app 
 published ahead of the candidate. A task can have the candidate reference a prereq codeunit
 by name and assert behaviour that would differ under id binding.
 
-**GATE BEFORE AUTHORING — this is not yet verified.** The run that produced it was not
-designed to isolate the question; passing gates are *consistent* with name binding but were
-not a controlled test of it, and the finding covers one reference shape (a cross-app codeunit
-call through a declared dependency) rather than the general case. Before any AL is written:
+**RESOLVED BY MEASUREMENT (2026-08-22) — the premise is TRUE and broader than hoped,
+but the candidate is REJECTED as structurally untestable.** The deliberate reproduction
+was run on Cronus28 (probe kept at `scratch/probe-namebind/`, results in
+`phase3b.log`): a candidate compiled against prereq v1 (codeunit 69080, table 69090)
+was left unrecompiled while the prereq was renumbered and republished as v2
+(codeunit 69081, table 69091). Every measured shape rebinds by name:
 
-1. Reproduce deliberately: publish a prereq app, compile a candidate against its symbols,
-   renumber the prereq's objects, republish the prereq only, and re-run the candidate.
-2. Establish the boundary. `Codeunit::"X"` / `Database::"X"` literals, `RecordRef.Open(id)`,
-   event subscriber bindings, and permission-set `tabledata` references may each behave
-   differently. A trap built on the wrong one measures nothing.
+- The cross-app codeunit call executed the v2 code (`tag=V2-id69081`).
+- `Codeunit::"CG X10 Svc"` reported **69081** and `Database::"CG X10 Data"` reported
+  **69091** — the `::` literals are runtime name lookups, not compile-time constants.
+- Table access (DeleteAll/Insert/Count) worked against the renumbered table.
+- Publish/install of the stale-compiled dependent succeeded — dependency validation
+  does not check object ids.
 
-Treat this as the most promising unverified lead in the file, not as a settled fact.
+Why rejected anyway: the divergence only exists when a dependency is renumbered
+BETWEEN a dependent's compile and its run. The bench compiles prereq and candidate
+fresh in every task cycle, so no committed task can stage stale symbols, and a naive
+id-assuming solution and a correct one produce identical results in any single run.
+Same category as internal-event subscription: real knowledge, no reachable oracle.
+The measurement itself is durable operational knowledge (renumbering a prereq does
+not break dependents; `::` literals track the running app, so they can never be used
+to detect a renumber).
 
 **Dedup:** no task covers cross-extension binding semantics. `X001` (manual subscription) and
 `X041` (protected residue) are the nearest neighbours and are unrelated.
