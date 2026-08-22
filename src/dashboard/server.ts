@@ -39,6 +39,9 @@ import type { DraftSummary } from "./drafts.ts";
 import type { QuickRun } from "./run-manager.ts";
 import type { VerifyQueueEvent, VerifyQueueVerifyFn } from "./verify-queue.ts";
 
+import { exists } from "@std/fs";
+import { join } from "@std/path";
+
 import { listDrafts } from "./drafts.ts";
 import { runQuick, writeRunArtifact } from "./run-manager.ts";
 import { createModelCaller } from "./model-caller.ts";
@@ -472,6 +475,16 @@ export interface DashboardHandlerDeps {
    */
   checkBenchGate: typeof checkBenchGate;
   /**
+   * Launches an external editor against one draft's `.code-workspace` file
+   * (`POST /api/open-vscode`, Task 6). Defaults to `launchVsCode`, which
+   * shells out to the `code` CLI and detaches (`child.unref()`) so the
+   * route's response does not wait for VS Code itself to exit — spawning is
+   * fire-and-forget by design. Injectable so a test can assert on the
+   * server-RESOLVED path (`<draftDir>/<id>.code-workspace`) without
+   * actually spawning an editor process.
+   */
+  openInEditor: (workspaceFile: string) => Promise<void>;
+  /**
    * The port this server is actually bound to, for the `Origin` check.
    * A THUNK, not a number, because `Deno.serve` needs the handler before
    * it can report an address — `startServer` fills the value in once the
@@ -853,8 +866,74 @@ export function createHandler(
       });
     }
 
+    // Launches VS Code against one draft's scaffolded `.code-workspace`
+    // file (Task 6). The request names an id, NEVER a path — a client that
+    // could hand this route a filesystem path would turn `deps.openInEditor`
+    // (a real `Deno.Command` spawn) into an arbitrary-command launcher.
+    // `id` is validated against `deps.listDrafts` exactly like every other
+    // route above, and the workspace path is resolved HERE, server-side,
+    // from that draft's own `dir` — any `path` key on the request body is
+    // silently ignored.
+    if (req.method === "POST" && url.pathname === "/api/open-vscode") {
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResponse(400, { error: "request body must be valid JSON" });
+      }
+
+      const id = (body as Record<string, unknown> | null)?.["id"];
+      if (typeof id !== "string" || id.length === 0) {
+        return jsonResponse(400, { error: "id is required" });
+      }
+
+      const drafts = await deps.listDrafts(deps.scratchDir);
+      const draft = drafts.find((d) => d.id === id);
+      if (!draft) {
+        return jsonResponse(404, { error: `unknown draft id: ${id}` });
+      }
+
+      // Every scaffold and import writes `<id>.code-workspace` (Task 3), but
+      // a draft predating that, or one an author moved by hand, may not have
+      // one — a 409 (not a 500) with a fix an author can act on.
+      const workspaceFile = join(draft.dir, `${draft.id}.code-workspace`);
+      if (!await exists(workspaceFile)) {
+        return jsonResponse(409, {
+          error: "workspace file missing — re-run task new/import",
+        });
+      }
+
+      await deps.openInEditor(workspaceFile);
+      return jsonResponse(200, { ok: true });
+    }
+
     return jsonResponse(404, { error: "not found" });
   };
+}
+
+/**
+ * `POST /api/open-vscode`'s default `openInEditor`: shells out to the `code`
+ * CLI against one workspace file and detaches immediately.
+ *
+ * On Windows, `code` is a `.cmd` shim — `Deno.Command` cannot exec a `.cmd`
+ * directly (no shell involved), so it is launched via `cmd /c` exactly like
+ * every other `.cmd`-shim tool in this codebase. `--` before the path stops
+ * `code` from parsing a workspace file that happens to start with `-` as a
+ * flag. `child.unref()` lets the response return without waiting for VS
+ * Code itself to exit — this route's job is "start the editor", not "wait
+ * for the author to close it".
+ */
+function launchVsCode(workspaceFile: string): Promise<void> {
+  const [cmd, args]: [string, string[]] = Deno.build.os === "windows"
+    ? ["cmd", ["/c", "code", "--", workspaceFile]]
+    : ["code", ["--", workspaceFile]];
+  const child = new Deno.Command(cmd, {
+    args,
+    stdout: "null",
+    stderr: "null",
+  }).spawn();
+  child.unref();
+  return Promise.resolve();
 }
 
 /**
@@ -928,6 +1007,7 @@ export function startServer(
         { id, draftDir },
       ) => ({ id, draftDir })),
     modelSlugs: () => catalogModelSlugs(),
+    openInEditor: launchVsCode,
     boundPort: () => listener.port,
     verifyQueue,
     checkBenchGate,

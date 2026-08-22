@@ -164,6 +164,9 @@ interface Ui {
   renderPromotedTasks: () => void;
   loadModelSlugs: () => Promise<void>;
   wireModelPicker: () => void;
+  updateOpenVsCodeButton: () => void;
+  openInVsCode: () => Promise<void>;
+  wireOpenVsCodeButton: () => void;
   state: DashboardState;
 }
 
@@ -176,7 +179,8 @@ async function loadUi(): Promise<Ui> {
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
     `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail, ` +
     `renderFileList, handleVerifyEvent, loadPromotedTasks, ` +
-    `renderPromotedTasks, loadModelSlugs, wireModelPicker, state };\n`;
+    `renderPromotedTasks, loadModelSlugs, wireModelPicker, ` +
+    `updateOpenVsCodeButton, openInVsCode, wireOpenVsCodeButton, state };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -1683,6 +1687,164 @@ describe("dashboard/ui app.js", () => {
       node("model-picker")["value"] = "   ";
       node("model-picker-add").listeners["click"]![0]!();
       assertEquals(node("model-input")["value"], "anthropic/claude-opus-4-7");
+    });
+  });
+
+  // Task 6: "Open in VS Code". The dashboard shows one draft at a time (the
+  // `draft-select` dropdown, not a list of per-draft rows), so there is one
+  // `#open-vscode-btn` — `updateOpenVsCodeButton` keeps its `data-id` in
+  // sync with `state.selectedDir`, the same way `updateRunButton` tracks
+  // the model textarea. That is the "draft row" this task's button belongs
+  // to for this codebase.
+  describe("open-vscode button", () => {
+    it("sets data-id to the selected draft's id and enables the button", async () => {
+      const ui = await loadUi();
+      ui.state.drafts = [
+        {
+          id: "CG-AL-X060",
+          dir: "d1",
+          dirName: "d1",
+          hasPrereq: false,
+          prereqFiles: [],
+        },
+      ];
+      ui.state.selectedDir = "d1";
+
+      ui.updateOpenVsCodeButton();
+
+      const button = node("open-vscode-btn");
+      assertEquals(button.dataset["id"], "CG-AL-X060");
+      assertEquals(button["disabled"], false);
+    });
+
+    it("disables the button and clears data-id when no draft is selected", async () => {
+      const ui = await loadUi();
+      ui.state.drafts = [];
+      ui.state.selectedDir = null;
+
+      ui.updateOpenVsCodeButton();
+
+      const button = node("open-vscode-btn");
+      assertEquals(button["disabled"], true);
+      assertEquals(button.dataset["id"], "");
+    });
+
+    it("clicking posts the button's data-id to /api/open-vscode", async () => {
+      const ui = await loadUi();
+      const button = node("open-vscode-btn");
+      button.listeners = {};
+      ui.wireOpenVsCodeButton();
+      button.dataset["id"] = "CG-AL-X060";
+      button["disabled"] = false;
+
+      const errorEl = node("open-vscode-error");
+      errorEl["hidden"] = false;
+      errorEl.textContent = "stale";
+
+      const calls: Array<
+        { url: string; method: string; body: string | undefined }
+      > = [];
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = (url: string, init?: RequestInit) => {
+        calls.push({
+          url,
+          method: init?.method ?? "GET",
+          body: init?.body as string | undefined,
+        });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ ok: true }),
+        });
+      };
+
+      try {
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      assertEquals(calls.length, 1);
+      assertEquals(calls[0]!.url, "/api/open-vscode");
+      assertEquals(calls[0]!.method, "POST");
+      assertEquals(JSON.parse(calls[0]!.body!), { id: "CG-AL-X060" });
+      assertEquals(
+        errorEl["hidden"],
+        true,
+        "a prior error clears on a fresh click",
+      );
+      assertEquals(
+        button["disabled"],
+        false,
+        "the button re-enables after success",
+      );
+    });
+
+    it("surfaces a 409 response's error text near the button", async () => {
+      const ui = await loadUi();
+      const button = node("open-vscode-btn");
+      button.listeners = {};
+      ui.wireOpenVsCodeButton();
+      button.dataset["id"] = "CG-AL-X060";
+      button["disabled"] = false;
+
+      const errorEl = node("open-vscode-error");
+      errorEl["hidden"] = true;
+      errorEl.textContent = "";
+
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = () =>
+        Promise.resolve({
+          ok: false,
+          status: 409,
+          json: () =>
+            Promise.resolve({
+              error: "workspace file missing — re-run task new/import",
+            }),
+        });
+
+      try {
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      assertEquals(errorEl["hidden"], false);
+      assertStringIncludes(errorEl.textContent, "workspace file missing");
+      assertEquals(
+        button["disabled"],
+        false,
+        "the button re-enables after a failure so a retry is possible",
+      );
+    });
+
+    it("a click with no data-id is a no-op (does not fetch)", async () => {
+      const ui = await loadUi();
+      const button = node("open-vscode-btn");
+      button.listeners = {};
+      ui.wireOpenVsCodeButton();
+      button.dataset["id"] = "";
+
+      const originalFetch = globalThis.fetch;
+      let fetchCalled = false;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = () => {
+        fetchCalled = true;
+        throw new Error("must not be called");
+      };
+
+      try {
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      assertEquals(fetchCalled, false);
     });
   });
 });

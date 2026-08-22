@@ -95,6 +95,7 @@ function createDeps(
     listPromoted: () => Promise.resolve([]),
     importTask: () => Promise.reject(new Error("not called in this test")),
     modelSlugs: () => Promise.resolve([]),
+    openInEditor: () => Promise.reject(new Error("not called in this test")),
     // Present and explicitly undefined. The field is REQUIRED, and its
     // absence from the old shared fixture is what three tests tripped over.
     verifyQueue: undefined,
@@ -1579,6 +1580,162 @@ describe("dashboard/server", () => {
     // response proves validation passed and the route reached it, exactly
     // like "accepts a well-formed run request" above.
     assertEquals(res.status === 400, false);
+  });
+
+  // Task 6: "Open in VS Code". Real temp dirs are used (not the `/tmp/nope`
+  // base fixture) because the route's own 409 check does a real
+  // `Deno.stat` — a fixture path that cannot possibly exist would make the
+  // 409 path untestable as a distinct case from the happy path.
+  describe("POST /api/open-vscode", () => {
+    it("calls the injected openInEditor with the server-resolved workspace path", async () => {
+      const dir = await createTempDir("dashboard-open-vscode-test");
+      try {
+        await Deno.writeTextFile(
+          join(dir, "CG-AL-X062.code-workspace"),
+          "{}",
+        );
+        let calledWith: string | undefined;
+        const openDeps = createDeps({
+          listDrafts: () =>
+            Promise.resolve([
+              {
+                id: "CG-AL-X062",
+                dir,
+                dirName: "CG-AL-X062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+            ]),
+          openInEditor: (workspaceFile: string) => {
+            calledWith = workspaceFile;
+            return Promise.resolve();
+          },
+        });
+
+        const res = await createHandler(openDeps)(
+          new Request("http://localhost/api/open-vscode", {
+            method: "POST",
+            body: JSON.stringify({ id: "CG-AL-X062" }),
+          }),
+        );
+        assertEquals(res.status, 200);
+        assertEquals(await res.json(), { ok: true });
+        assertEquals(calledWith, join(dir, "CG-AL-X062.code-workspace"));
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    // NEVER accept a path from the client — only the id. A `path` key must
+    // be silently ignored, not merely unused: the assertion is that
+    // `openInEditor` still receives the server-RESOLVED path, proving the
+    // route never even reads the client's value.
+    it("ignores a client-supplied path key, using the server-resolved path", async () => {
+      const dir = await createTempDir("dashboard-open-vscode-path-test");
+      try {
+        await Deno.writeTextFile(
+          join(dir, "CG-AL-X062.code-workspace"),
+          "{}",
+        );
+        let calledWith: string | undefined;
+        const openDeps = createDeps({
+          listDrafts: () =>
+            Promise.resolve([
+              {
+                id: "CG-AL-X062",
+                dir,
+                dirName: "CG-AL-X062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+            ]),
+          openInEditor: (workspaceFile: string) => {
+            calledWith = workspaceFile;
+            return Promise.resolve();
+          },
+        });
+
+        const res = await createHandler(openDeps)(
+          new Request("http://localhost/api/open-vscode", {
+            method: "POST",
+            body: JSON.stringify({
+              id: "CG-AL-X062",
+              path: "C:\\Windows\\System32\\evil.exe",
+            }),
+          }),
+        );
+        assertEquals(res.status, 200);
+        assertEquals(calledWith, join(dir, "CG-AL-X062.code-workspace"));
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    it("404s for an id listDrafts does not report", async () => {
+      const res = await createHandler(deps)(
+        new Request("http://localhost/api/open-vscode", {
+          method: "POST",
+          body: JSON.stringify({ id: "CG-AL-UNKNOWN" }),
+        }),
+      );
+      assertEquals(res.status, 404);
+      const body = await res.json();
+      assertStringIncludes(body.error, "CG-AL-UNKNOWN");
+    });
+
+    it("409s when the draft has no <id>.code-workspace file", async () => {
+      const dir = await createTempDir("dashboard-open-vscode-missing-test");
+      try {
+        // Deliberately no `.code-workspace` file written.
+        const openDeps = createDeps({
+          listDrafts: () =>
+            Promise.resolve([
+              {
+                id: "CG-AL-X062",
+                dir,
+                dirName: "CG-AL-X062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+            ]),
+        });
+
+        const res = await createHandler(openDeps)(
+          new Request("http://localhost/api/open-vscode", {
+            method: "POST",
+            body: JSON.stringify({ id: "CG-AL-X062" }),
+          }),
+        );
+        assertEquals(res.status, 409);
+        const body = await res.json();
+        assertStringIncludes(body.error, "re-run task new/import");
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    });
+
+    it("400s on a malformed body", async () => {
+      const res = await createHandler(deps)(
+        new Request("http://localhost/api/open-vscode", {
+          method: "POST",
+          body: "not json",
+        }),
+      );
+      assertEquals(res.status, 400);
+    });
+
+    it("400s when id is missing", async () => {
+      const res = await createHandler(deps)(
+        new Request("http://localhost/api/open-vscode", {
+          method: "POST",
+          body: JSON.stringify({}),
+        }),
+      );
+      assertEquals(res.status, 400);
+    });
   });
 });
 

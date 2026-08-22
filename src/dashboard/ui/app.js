@@ -1108,6 +1108,7 @@ function renderDraftOptions() {
     select.appendChild(el("option", null, "No drafts found in scratch/"));
     select.disabled = true;
     renderFileList(undefined);
+    updateOpenVsCodeButton();
     return;
   }
 
@@ -1124,6 +1125,7 @@ function renderDraftOptions() {
   state.selectedDir = state.drafts[0].dir;
   select.value = state.selectedDir;
   renderFileList(state.drafts[0]);
+  updateOpenVsCodeButton();
 }
 
 function selectedDraft() {
@@ -1307,6 +1309,79 @@ async function importPromotedTask(id, button, errorEl) {
 }
 
 /**
+ * "Open in VS Code" button state (`#open-vscode-btn`, Task 6), scoped to
+ * `state.selectedDir` — the dashboard shows one draft at a time (the
+ * `draft-select` dropdown), so there is one button, not one per draft,
+ * kept in sync with whichever draft is currently selected.
+ *
+ * Called after every `renderDraftOptions()` (a fresh `loadDrafts()`, or the
+ * `draft-select` change handler), so `data-id` always names the draft the
+ * button is about to open, never a stale one left over from before the
+ * selection changed.
+ */
+function updateOpenVsCodeButton() {
+  const button = document.getElementById("open-vscode-btn");
+  const draft = selectedDraft();
+  if (!draft) {
+    button.disabled = true;
+    button.dataset.id = "";
+    return;
+  }
+  button.disabled = false;
+  button.dataset.id = draft.id;
+}
+
+/**
+ * Opens the selected draft's `<id>.code-workspace` in VS Code
+ * (`POST /api/open-vscode`, Task 6). The id is read from the button's own
+ * `data-id` — set by `updateOpenVsCodeButton` — rather than re-read from
+ * `selectedDraft()` at click time, so the request always names the draft
+ * the button was showing when it was clicked, not whatever the selection
+ * has moved on to by the time the response comes back.
+ */
+async function openInVsCode() {
+  const button = document.getElementById("open-vscode-btn");
+  const errorEl = document.getElementById("open-vscode-error");
+  const id = button.dataset.id;
+  if (!id) return;
+
+  button.disabled = true;
+  errorEl.hidden = true;
+  errorEl.textContent = "";
+
+  try {
+    const res = await fetch("/api/open-vscode", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(
+        body.error || `POST /api/open-vscode failed with status ${res.status}`,
+      );
+    }
+  } catch (error) {
+    errorEl.textContent = error.message;
+    errorEl.hidden = false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/**
+ * Wires the "Open in VS Code" button. Split out of `wireEvents` the same
+ * way `wireModelPicker` is, so a test can re-wire just this one listener
+ * without registering the whole page's static listeners.
+ */
+function wireOpenVsCodeButton() {
+  document.getElementById("open-vscode-btn").addEventListener(
+    "click",
+    () => openInVsCode(),
+  );
+}
+
+/**
  * Populates the model-slugs `<datalist>` (`#model-slugs`) so the model
  * input (`index.html`'s `list="model-slugs"`) offers known slugs while
  * still accepting free text — `GET /api/models` already merges CLI
@@ -1450,6 +1525,7 @@ function wireEvents() {
       state.selectedDir = event.target.value;
       renderFileList(selectedDraft());
       updateRunButton();
+      updateOpenVsCodeButton();
     },
   );
 
@@ -1459,6 +1535,7 @@ function wireEvents() {
   );
 
   wireModelPicker();
+  wireOpenVsCodeButton();
 
   document.getElementById("run-button").addEventListener("click", () => {
     runQuick();
