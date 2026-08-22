@@ -437,13 +437,27 @@ export async function runTaskImport(
   );
   console.log(`     ${displayPath}/`);
   console.log(
-    `Next: open ${displayPath}/${result.id}.code-workspace in VS Code,`,
+    `Next: open ${displayPath}/${result.id}.code-workspace in VS Code.`,
   );
   console.log(
-    "      edit task.yml / correct / naive as needed, then run the",
+    colors.yellow("[!]") +
+      "  Only the oracle was imported — correct/ has no reference solution " +
+      "and naive/ has only an app.json. Write a real solution in correct/ " +
+      "and a plausible-wrong one in naive/ before probing, or " +
+      '"task probe" will report correct=compile_fail and "task promote" ' +
+      "will refuse the gate.",
   );
-  console.log('      "probe" build task (or:');
+  console.log(
+    '      Then run the "probe" build task (or:',
+  );
   console.log(`      centralgauge task probe ${result.id})`);
+  console.log(
+    "      Only editing task.yml or the oracle and not touching either " +
+      "solution? Skip the gate with:",
+  );
+  console.log(
+    `      centralgauge task promote ${result.id} --difficulty <difficulty> --force`,
+  );
   console.log(
     colors.yellow("[!]") +
       "  Re-promoting this draft will OVERWRITE the committed task files " +

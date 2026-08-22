@@ -1692,12 +1692,16 @@ describe("dashboard/ui app.js", () => {
 
   // Task 6: "Open in VS Code". The dashboard shows one draft at a time (the
   // `draft-select` dropdown, not a list of per-draft rows), so there is one
-  // `#open-vscode-btn` — `updateOpenVsCodeButton` keeps its `data-id` in
+  // `#open-vscode-btn` — `updateOpenVsCodeButton` keeps its `data-dir` in
   // sync with `state.selectedDir`, the same way `updateRunButton` tracks
   // the model textarea. That is the "draft row" this task's button belongs
   // to for this codebase.
+  //
+  // Keyed on `dir` (Important-1 fix), not `id`: `id` alone is not
+  // guaranteed unique across drafts — see the server-side collision test in
+  // `authoring-server.test.ts`'s `POST /api/open-vscode` suite.
   describe("open-vscode button", () => {
-    it("sets data-id to the selected draft's id and enables the button", async () => {
+    it("sets data-dir to the selected draft's dir and enables the button", async () => {
       const ui = await loadUi();
       ui.state.drafts = [
         {
@@ -1713,11 +1717,11 @@ describe("dashboard/ui app.js", () => {
       ui.updateOpenVsCodeButton();
 
       const button = node("open-vscode-btn");
-      assertEquals(button.dataset["id"], "CG-AL-X060");
+      assertEquals(button.dataset["dir"], "d1");
       assertEquals(button["disabled"], false);
     });
 
-    it("disables the button and clears data-id when no draft is selected", async () => {
+    it("disables the button and clears data-dir when no draft is selected", async () => {
       const ui = await loadUi();
       ui.state.drafts = [];
       ui.state.selectedDir = null;
@@ -1726,15 +1730,15 @@ describe("dashboard/ui app.js", () => {
 
       const button = node("open-vscode-btn");
       assertEquals(button["disabled"], true);
-      assertEquals(button.dataset["id"], "");
+      assertEquals(button.dataset["dir"], "");
     });
 
-    it("clicking posts the button's data-id to /api/open-vscode", async () => {
+    it("clicking posts the button's data-dir to /api/open-vscode", async () => {
       const ui = await loadUi();
       const button = node("open-vscode-btn");
       button.listeners = {};
       ui.wireOpenVsCodeButton();
-      button.dataset["id"] = "CG-AL-X060";
+      button.dataset["dir"] = "d1";
       button["disabled"] = false;
 
       const errorEl = node("open-vscode-error");
@@ -1769,7 +1773,7 @@ describe("dashboard/ui app.js", () => {
       assertEquals(calls.length, 1);
       assertEquals(calls[0]!.url, "/api/open-vscode");
       assertEquals(calls[0]!.method, "POST");
-      assertEquals(JSON.parse(calls[0]!.body!), { id: "CG-AL-X060" });
+      assertEquals(JSON.parse(calls[0]!.body!), { draftDir: "d1" });
       assertEquals(
         errorEl["hidden"],
         true,
@@ -1787,7 +1791,7 @@ describe("dashboard/ui app.js", () => {
       const button = node("open-vscode-btn");
       button.listeners = {};
       ui.wireOpenVsCodeButton();
-      button.dataset["id"] = "CG-AL-X060";
+      button.dataset["dir"] = "d1";
       button["disabled"] = false;
 
       const errorEl = node("open-vscode-error");
@@ -1832,7 +1836,7 @@ describe("dashboard/ui app.js", () => {
       const button = node("open-vscode-btn");
       button.listeners = {};
       ui.wireOpenVsCodeButton();
-      button.dataset["id"] = "CG-AL-X060";
+      button.dataset["dir"] = "d1";
       button["disabled"] = false;
 
       const errorEl = node("open-vscode-error");
@@ -1867,12 +1871,12 @@ describe("dashboard/ui app.js", () => {
       );
     });
 
-    it("a click with no data-id is a no-op (does not fetch)", async () => {
+    it("a click with no data-dir is a no-op (does not fetch)", async () => {
       const ui = await loadUi();
       const button = node("open-vscode-btn");
       button.listeners = {};
       ui.wireOpenVsCodeButton();
-      button.dataset["id"] = "";
+      button.dataset["dir"] = "";
 
       const originalFetch = globalThis.fetch;
       let fetchCalled = false;

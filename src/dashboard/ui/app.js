@@ -1315,35 +1315,42 @@ async function importPromotedTask(id, button, errorEl) {
  * kept in sync with whichever draft is currently selected.
  *
  * Called after every `renderDraftOptions()` (a fresh `loadDrafts()`, or the
- * `draft-select` change handler), so `data-id` always names the draft the
+ * `draft-select` change handler), so `data-dir` always names the draft the
  * button is about to open, never a stale one left over from before the
  * selection changed.
+ *
+ * Keyed on `dir`, not `id` (Important-1 fix): `id` alone is not guaranteed
+ * unique across drafts — two directories can report the same `task.yml` id
+ * (e.g. a backup copy of a draft). `dir` is the field `renderDraftOptions`
+ * already uses as the `draft-select` option's value for exactly this
+ * reason, so `selectedDraft()` and this button now resolve the same way
+ * `/api/run` and `/api/promote-naive` do.
  */
 function updateOpenVsCodeButton() {
   const button = document.getElementById("open-vscode-btn");
   const draft = selectedDraft();
   if (!draft) {
     button.disabled = true;
-    button.dataset.id = "";
+    button.dataset.dir = "";
     return;
   }
   button.disabled = false;
-  button.dataset.id = draft.id;
+  button.dataset.dir = draft.dir;
 }
 
 /**
  * Opens the selected draft's `<id>.code-workspace` in VS Code
- * (`POST /api/open-vscode`, Task 6). The id is read from the button's own
- * `data-id` — set by `updateOpenVsCodeButton` — rather than re-read from
- * `selectedDraft()` at click time, so the request always names the draft
- * the button was showing when it was clicked, not whatever the selection
- * has moved on to by the time the response comes back.
+ * (`POST /api/open-vscode`, Task 6). The directory is read from the
+ * button's own `data-dir` — set by `updateOpenVsCodeButton` — rather than
+ * re-read from `selectedDraft()` at click time, so the request always names
+ * the draft the button was showing when it was clicked, not whatever the
+ * selection has moved on to by the time the response comes back.
  */
 async function openInVsCode() {
   const button = document.getElementById("open-vscode-btn");
   const errorEl = document.getElementById("open-vscode-error");
-  const id = button.dataset.id;
-  if (!id) return;
+  const draftDir = button.dataset.dir;
+  if (!draftDir) return;
 
   button.disabled = true;
   errorEl.hidden = true;
@@ -1353,7 +1360,7 @@ async function openInVsCode() {
     const res = await fetch("/api/open-vscode", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ draftDir }),
     });
     const body = await res.json();
     if (!res.ok) {
@@ -1492,9 +1499,7 @@ function addPickedModel() {
   picker.value = "";
   if (existing.includes(slug)) return;
 
-  textarea.value = existing.length === 0
-    ? slug
-    : `${textarea.value}, ${slug}`;
+  textarea.value = existing.length === 0 ? slug : `${textarea.value}, ${slug}`;
   updateRunButton();
 }
 

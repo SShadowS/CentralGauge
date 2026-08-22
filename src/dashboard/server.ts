@@ -416,9 +416,15 @@ export interface DashboardHandlerDeps {
    * Every promoted (committed) X-series task, already scoped to that
    * cohort by `listPromotedTasks` (`src/workbench/import.ts`) — legacy
    * E/M/H tasks never appear, because the workbench has nothing to import
-   * them into. `GET /api/promoted` further filters this against
-   * `listDrafts` before serving it, so the result the UI actually sees
-   * excludes any id that already has a `scratch/<id>` draft.
+   * them into. `GET /api/promoted` further filters this against BOTH
+   * `listDrafts`' ids AND a direct `scratch/<id>` existence check before
+   * serving it — the second check matters because `listDrafts` resolves
+   * `id` from `task.yml` (falling back to the directory name), so a draft
+   * whose `task.yml` id differs from its directory name would otherwise
+   * leave `scratch/<id>` occupied while no `listDrafts` entry reports that
+   * id. `importPromotedTask` refuses on the directory's existence, not on
+   * any id match, so filtering on id alone could offer a row that still
+   * 400s on click.
    */
   listPromoted: () => Promise<
     Array<{ id: string; slug: string; difficulty: string }>
@@ -538,13 +544,29 @@ export function createHandler(
     // `deps.listDrafts` rather than left for `importTask` to refuse, so the
     // UI never offers an id that would 400 on click because a draft already
     // exists for it.
+    //
+    // Two independent checks, not one: a `listDrafts` id match (the common
+    // case) OR a direct `scratch/<id>` existence check that mirrors
+    // `importPromotedTask`'s own refusal condition
+    // (`await exists(join(scratchRoot, id))`, `src/workbench/import.ts`)
+    // exactly. `listDrafts` resolves `id` from `task.yml`, falling back to
+    // the directory name when parsing fails — so a directory named `<id>`
+    // whose `task.yml` reports a different id (or fails to parse) would
+    // occupy `scratch/<id>` without ever appearing in `draftIds`. Filtering
+    // on id alone would then offer that id for import, and `importTask`
+    // would 400 it on click.
     if (req.method === "GET" && url.pathname === "/api/promoted") {
       const [promoted, drafts] = await Promise.all([
         deps.listPromoted(),
         deps.listDrafts(deps.scratchDir),
       ]);
       const draftIds = new Set(drafts.map((draft) => draft.id));
-      const tasks = promoted.filter((task) => !draftIds.has(task.id));
+      const tasks: typeof promoted = [];
+      for (const task of promoted) {
+        if (draftIds.has(task.id)) continue;
+        if (await exists(join(deps.scratchDir, task.id))) continue;
+        tasks.push(task);
+      }
       return jsonResponse(200, { tasks });
     }
 
@@ -867,13 +889,24 @@ export function createHandler(
     }
 
     // Launches VS Code against one draft's scaffolded `.code-workspace`
-    // file (Task 6). The request names an id, NEVER a path — a client that
-    // could hand this route a filesystem path would turn `deps.openInEditor`
-    // (a real `Deno.Command` spawn) into an arbitrary-command launcher.
-    // `id` is validated against `deps.listDrafts` exactly like every other
-    // route above, and the workspace path is resolved HERE, server-side,
-    // from that draft's own `dir` — any `path` key on the request body is
-    // silently ignored.
+    // file (Task 6). The request names a `draftDir`, NEVER a filesystem
+    // path chosen by the client — a client that could hand this route an
+    // arbitrary path would turn `deps.openInEditor` (a real `Deno.Command`
+    // spawn) into an arbitrary-command launcher. `draftDir` is validated
+    // against `deps.listDrafts` exactly like `/api/run`, `/api/promote-naive`
+    // and `/api/verify` above, and the workspace filename is resolved HERE,
+    // server-side, from that same matched draft's `id` — any `path` key on
+    // the request body is silently ignored.
+    //
+    // Keyed on `dir`, not `id`: `id` alone is NOT guaranteed unique across
+    // drafts — `listDrafts` reads it from `task.yml`, and two directories
+    // can report the same one (e.g. a backup copy of a draft that kept the
+    // original task id). Resolving by `id` would silently open whichever
+    // directory happened to sort first, not the one the author selected.
+    // `dir` is the field the UI's draft picker actually carries as its
+    // option value (see `renderDraftOptions` in `src/dashboard/ui/app.js`)
+    // for exactly this reason — matches the same `d.dir === draftDir`
+    // resolution `validateRunRequest` and `validatePromoteRequest` use.
     if (req.method === "POST" && url.pathname === "/api/open-vscode") {
       let body: unknown;
       try {
@@ -882,15 +915,17 @@ export function createHandler(
         return jsonResponse(400, { error: "request body must be valid JSON" });
       }
 
-      const id = (body as Record<string, unknown> | null)?.["id"];
-      if (typeof id !== "string" || id.length === 0) {
-        return jsonResponse(400, { error: "id is required" });
+      const draftDir = (body as Record<string, unknown> | null)?.["draftDir"];
+      if (typeof draftDir !== "string" || draftDir.length === 0) {
+        return jsonResponse(400, { error: "draftDir is required" });
       }
 
       const drafts = await deps.listDrafts(deps.scratchDir);
-      const draft = drafts.find((d) => d.id === id);
+      const draft = drafts.find((d) => d.dir === draftDir);
       if (!draft) {
-        return jsonResponse(404, { error: `unknown draft id: ${id}` });
+        return jsonResponse(404, {
+          error: `unknown draft directory: ${draftDir}`,
+        });
       }
 
       // Every scaffold and import writes `<id>.code-workspace` (Task 3), but

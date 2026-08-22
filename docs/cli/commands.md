@@ -644,9 +644,18 @@ scaffold. Refuses outright if `scratch/<id>/` already exists — this never
 overwrites in-progress work — or if the committed manifest or its test
 codeunit can't be found.
 
-**The probe gate is unchanged.** Edit `task.yml` / `correct/` / `naive/` as
-needed, then run `centralgauge task probe <id>` (or the workspace's "probe"
-build task) exactly as for a freshly scaffolded draft.
+**The probe gate is unchanged — but an imported draft is not probe-ready as
+imported.** Only the oracle is committed anywhere; there is no committed
+reference solution or naive solution to restore, so a freshly imported
+`correct/` holds the oracle alone (no solution that compiles against it) and
+`naive/` holds a bare `app.json`. `task probe` on a fresh import reports
+`correct=compile_fail`, and `task promote` refuses on that verdict like it
+would for any other never-solved draft. Write a real solution in `correct/`
+and a plausible-wrong one in `naive/` first — exactly as for a freshly
+scaffolded draft — then run `centralgauge task probe <id>` (or the
+workspace's "probe" build task). If you are only editing `task.yml` or the
+oracle and not touching either solution, `centralgauge task promote <id>
+--difficulty <difficulty> --force` skips the gate instead.
 
 **Re-promoting overwrites only where it came from.** `task promote <id>
 --difficulty <difficulty>` normally refuses if any destination path already
@@ -817,14 +826,14 @@ Served on the bound port for the page's own use:
 | `GET /`        | The dashboard page                             |
 | `GET /api/drafts`   | Drafts discovered under `scratch/`         |
 | `GET /api/defaults` | Models resolved from `--preset`            |
-| `GET /api/promoted` | Promoted X-series tasks not yet imported as a draft — the "Promoted tasks" rail |
+| `GET /api/promoted` | Promoted X-series tasks not yet imported as a draft — the "Promoted tasks" rail. Excludes an id when EITHER a `listDrafts` entry reports that id OR `scratch/<id>` exists on disk, matching `importPromotedTask`'s own refusal condition |
 | `POST /api/import` | Reimport one promoted task into `scratch/<id>` (see "task import" above). `{id}` in, `{id, draftDir}` out, or a `400` with the rejection message verbatim |
 | `GET /api/models` | Known model slugs for the picker's `<datalist>` — `--preset` defaults, then `site/catalog/models.yml`, deduped |
 | `POST /api/run`     | Run the selected models against a draft    |
 | `POST /api/promote-naive` | Promote a response into the draft's `naive/`, replacing what's there |
 | `POST /api/verify` | Enqueue one compile-and-test job per response (see "Compiling and testing a response" above). Returns `{jobs: [{model, id}]}`. |
 | `GET /api/verify-events` | Server-sent events of every job's outcome, replaying every job this server instance has ever accepted before subscribing the client to live updates. |
-| `POST /api/open-vscode` | Launch VS Code on one draft's `.code-workspace` (see "Open in VS Code" in [Workbench](../workbench.md)). `{id}` in — never a path; the server resolves the workspace file itself. `404` unknown id, `409` missing workspace file, `500` JSON if the `code` CLI launch fails. |
+| `POST /api/open-vscode` | Launch VS Code on one draft's `.code-workspace` (see "Open in VS Code" in [Workbench](../workbench.md)). `{draftDir}` in — never a path; the server resolves the workspace file itself from the matched draft's `id`. Keyed on `dir`, not `id`, since `id` alone is not guaranteed unique across drafts. `404` unknown directory, `409` missing workspace file, `500` JSON if the `code` CLI launch fails. |
 
 Both routes refuse with **`501`** when the server has no verify adapter wired
 at all. This is a legitimate mode, not a failure: "Ask N models" works with

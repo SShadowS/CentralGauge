@@ -533,6 +533,56 @@ describe("dashboard/server", () => {
     ]);
   });
 
+  // Important-1 fix: `importPromotedTask` refuses on `scratch/<id>`
+  // DIRECTORY existence (`src/workbench/import.ts`), not on any `listDrafts`
+  // id match. A directory named `<id>` whose `task.yml` reports a different
+  // id (or fails to parse, falling back to the dirname) would occupy that
+  // path without ever appearing in `listDrafts`' id set — filtering on id
+  // alone would still offer it for import and 400 on click. `scratchDir`
+  // must be a REAL temp dir here (not the fake `/tmp/nope` base fixture) so
+  // the route's `exists()` check has something real to stat.
+  it("also excludes an id whose scratch/<id> directory exists with no matching listDrafts id", async () => {
+    const scratchDir = await createTempDir(
+      "dashboard-promoted-dir-collision-test",
+    );
+    try {
+      await Deno.mkdir(join(scratchDir, "CG-AL-X060"), { recursive: true });
+      const promotedDeps = createDeps({
+        scratchDir,
+        // Deliberately reports a DIFFERENT id for the directory named
+        // CG-AL-X060 (as if its task.yml carries a stale/foreign id), so the
+        // id-set check alone would miss the collision.
+        listDrafts: () =>
+          Promise.resolve([
+            {
+              id: "CG-AL-X999",
+              dir: join(scratchDir, "CG-AL-X060"),
+              dirName: "CG-AL-X060",
+              description: DESCRIPTION,
+              hasPrereq: false,
+              prereqFiles: [],
+            },
+          ]),
+        listPromoted: () =>
+          Promise.resolve([
+            { id: "CG-AL-X060", slug: "day-close", difficulty: "medium" },
+            { id: "CG-AL-X061", slug: "still-open", difficulty: "easy" },
+          ]),
+      });
+
+      const res = await createHandler(promotedDeps)(
+        new Request("http://localhost/api/promoted"),
+      );
+      assertEquals(res.status, 200);
+      const body = await res.json();
+      assertEquals(body.tasks, [
+        { id: "CG-AL-X061", slug: "still-open", difficulty: "easy" },
+      ]);
+    } finally {
+      await cleanupTempDir(scratchDir);
+    }
+  });
+
   it("imports a promoted task via the injected importTask", async () => {
     let calledWith: string | undefined;
     const importDeps = createDeps({
@@ -1616,7 +1666,7 @@ describe("dashboard/server", () => {
         const res = await createHandler(openDeps)(
           new Request("http://localhost/api/open-vscode", {
             method: "POST",
-            body: JSON.stringify({ id: "CG-AL-X062" }),
+            body: JSON.stringify({ draftDir: dir }),
           }),
         );
         assertEquals(res.status, 200);
@@ -1627,10 +1677,11 @@ describe("dashboard/server", () => {
       }
     });
 
-    // NEVER accept a path from the client — only the id. A `path` key must
-    // be silently ignored, not merely unused: the assertion is that
-    // `openInEditor` still receives the server-RESOLVED path, proving the
-    // route never even reads the client's value.
+    // NEVER accept a path from the client — only a `draftDir` that
+    // `listDrafts` itself reported. A `path` key must be silently ignored,
+    // not merely unused: the assertion is that `openInEditor` still
+    // receives the server-RESOLVED path, proving the route never even reads
+    // the client's value.
     it("ignores a client-supplied path key, using the server-resolved path", async () => {
       const dir = await createTempDir("dashboard-open-vscode-path-test");
       try {
@@ -1661,7 +1712,7 @@ describe("dashboard/server", () => {
           new Request("http://localhost/api/open-vscode", {
             method: "POST",
             body: JSON.stringify({
-              id: "CG-AL-X062",
+              draftDir: dir,
               path: "C:\\Windows\\System32\\evil.exe",
             }),
           }),
@@ -1673,11 +1724,70 @@ describe("dashboard/server", () => {
       }
     });
 
-    it("404s for an id listDrafts does not report", async () => {
+    // Important-1 fix: `id` alone is not unique across drafts — `listDrafts`
+    // reads it from `task.yml`, and a backup copy of a draft directory keeps
+    // the original task id. Two directories reporting `CG-AL-X062` must
+    // resolve independently by `dir`, so selecting the SECOND one opens ITS
+    // workspace, not the first (which is what `drafts.find(d => d.id ===
+    // id)` used to do — see final-review.md I1).
+    it("resolves the correct workspace when two drafts share one id", async () => {
+      const primary = await createTempDir("dashboard-open-vscode-collide-a");
+      const backup = await createTempDir("dashboard-open-vscode-collide-b");
+      try {
+        await Deno.writeTextFile(
+          join(primary, "CG-AL-X062.code-workspace"),
+          '{"folders":[{"path":"primary"}]}',
+        );
+        await Deno.writeTextFile(
+          join(backup, "CG-AL-X062.code-workspace"),
+          '{"folders":[{"path":"backup"}]}',
+        );
+        const calls: string[] = [];
+        const openDeps = createDeps({
+          listDrafts: () =>
+            Promise.resolve([
+              {
+                id: "CG-AL-X062",
+                dir: primary,
+                dirName: "CG-AL-X062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+              {
+                id: "CG-AL-X062",
+                dir: backup,
+                dirName: "pre-migration-backup_x062",
+                description: DESCRIPTION,
+                hasPrereq: false,
+                prereqFiles: [],
+              },
+            ]),
+          openInEditor: (workspaceFile: string) => {
+            calls.push(workspaceFile);
+            return Promise.resolve();
+          },
+        });
+
+        const res = await createHandler(openDeps)(
+          new Request("http://localhost/api/open-vscode", {
+            method: "POST",
+            body: JSON.stringify({ draftDir: backup }),
+          }),
+        );
+        assertEquals(res.status, 200);
+        assertEquals(calls, [join(backup, "CG-AL-X062.code-workspace")]);
+      } finally {
+        await cleanupTempDir(primary);
+        await cleanupTempDir(backup);
+      }
+    });
+
+    it("404s for a draftDir listDrafts does not report", async () => {
       const res = await createHandler(deps)(
         new Request("http://localhost/api/open-vscode", {
           method: "POST",
-          body: JSON.stringify({ id: "CG-AL-UNKNOWN" }),
+          body: JSON.stringify({ draftDir: "/tmp/nope/CG-AL-UNKNOWN" }),
         }),
       );
       assertEquals(res.status, 404);
@@ -1706,7 +1816,7 @@ describe("dashboard/server", () => {
         const res = await createHandler(openDeps)(
           new Request("http://localhost/api/open-vscode", {
             method: "POST",
-            body: JSON.stringify({ id: "CG-AL-X062" }),
+            body: JSON.stringify({ draftDir: dir }),
           }),
         );
         assertEquals(res.status, 409);
@@ -1747,7 +1857,7 @@ describe("dashboard/server", () => {
         const res = await createHandler(openDeps)(
           new Request("http://localhost/api/open-vscode", {
             method: "POST",
-            body: JSON.stringify({ id: "CG-AL-X062" }),
+            body: JSON.stringify({ draftDir: dir }),
           }),
         );
         assertEquals(res.status, 500);
@@ -1768,7 +1878,7 @@ describe("dashboard/server", () => {
       assertEquals(res.status, 400);
     });
 
-    it("400s when id is missing", async () => {
+    it("400s when draftDir is missing", async () => {
       const res = await createHandler(deps)(
         new Request("http://localhost/api/open-vscode", {
           method: "POST",

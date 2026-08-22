@@ -65,10 +65,24 @@ refuses if no committed manifest can be found for the id, if more than one
 matches (a task promoted twice under different difficulties would be
 ambiguous), or if the manifest's test codeunit file is missing.
 
-**The probe gate does not change.** Edit `task.yml`, `correct/`, and `naive/`
-exactly as you would for a new draft, then run `centralgauge task probe <id>`
-(or the workspace's "probe" build task). Import buys you an editable copy of
-what is already live; it does not relax anything about what counts as
+**The probe gate does not change** — but an imported draft does not start
+probe-ready. Only the oracle is committed anywhere (`promoteDraft` only ever
+moves `task.yml`, the oracle-side files, and the prereq — see "What gets
+copied in" above); there is no committed reference solution or naive
+solution to restore. So a freshly imported `correct/` holds the oracle, its
+companions, and a regenerated `app.json`, and `naive/` holds an `app.json`
+alone — nothing that compiles against the oracle. Running `task probe`
+immediately after import reports `correct=compile_fail`, and the promote gate
+refuses on that verdict exactly as it would for any other draft that has
+never had a real solution written.
+
+To close the loop: write a reference solution in `correct/` and a
+plausible-wrong one in `naive/` — exactly as you would for a new draft — then
+`centralgauge task probe <id>` (or the workspace's "probe" build task). If
+you are only editing `task.yml` or the oracle test itself and do not intend
+to touch either solution, skip the probe gate with `centralgauge task promote
+<id> --difficulty <difficulty> --force` instead. Import buys you an editable
+copy of what is already live; it does not relax anything about what counts as
 discriminating.
 
 ## Re-promoting: overwrite only where it came from
@@ -148,14 +162,18 @@ list of drafts in the UI (unlike the Promoted-tasks rail above), so the
 button is bound to the current selection rather than to a row. It is
 disabled until a draft is selected.
 
-The request names only the draft's `id`, never a filesystem path: `POST
-/api/open-vscode` resolves `<id>.code-workspace` itself, server-side, from
-that draft's own directory, and silently ignores any path a client might
-send. Failure modes:
+The request names only the draft's `draftDir`, never a filesystem path chosen
+by the client: `POST /api/open-vscode` resolves `<id>.code-workspace` itself,
+server-side, from that same matched draft's `id`, and silently ignores any
+path a client might send. It is keyed on `dir`, not `id` — a draft's `id`
+alone is not guaranteed unique (two directories can report the same
+`task.yml` id, e.g. a backup copy of a draft), so `dir` is what the "Choose a
+draft" dropdown's option value actually carries, and it is what
+`updateOpenVsCodeButton` stores on the button's `data-dir`. Failure modes:
 
 | Status | Meaning |
 |---|---|
-| `404` | No draft with that id. |
+| `404` | No draft with that directory. |
 | `409` | The draft has no `.code-workspace` file yet — re-run `task new` or `task import` to generate one. |
 | `500` (JSON body) | Launching the editor itself failed — most commonly, the `code` CLI is not on `PATH`. |
 
