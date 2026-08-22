@@ -15,6 +15,7 @@ import type {
   VerifyQueueEvent,
   VerifyQueueJob,
 } from "../../../src/dashboard/verify-queue.ts";
+import { catalogModelSlugs } from "../../../src/dashboard/model-slugs.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -91,6 +92,9 @@ function createDeps(
       Promise.reject(new Error("not called in this test")),
     promoteAsNaive: () => Promise.reject(new Error("not called in this test")),
     defaultModels: [],
+    listPromoted: () => Promise.resolve([]),
+    importTask: () => Promise.reject(new Error("not called in this test")),
+    modelSlugs: () => Promise.resolve([]),
     // Present and explicitly undefined. The field is REQUIRED, and its
     // absence from the old shared fixture is what three tests tripped over.
     verifyQueue: undefined,
@@ -503,6 +507,110 @@ describe("dashboard/server", () => {
     assertEquals(body.defaultModels, [
       "anthropic/claude-opus-4-7",
       "openai/gpt-5.5",
+    ]);
+  });
+
+  // `createDeps()`'s base `listDrafts` already has a draft for CG-AL-X054 —
+  // this proves the route filters the injected promoted list against it
+  // rather than echoing `listPromoted` verbatim, so the UI never offers an
+  // import that `importPromotedTask` would refuse for an existing draft.
+  it("serves promoted tasks minus ids that already have a draft", async () => {
+    const promotedDeps = createDeps({
+      listPromoted: () =>
+        Promise.resolve([
+          { id: "CG-AL-X054", slug: "already-drafted", difficulty: "hard" },
+          { id: "CG-AL-X060", slug: "day-close", difficulty: "medium" },
+        ]),
+    });
+    const res = await createHandler(promotedDeps)(
+      new Request("http://localhost/api/promoted"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.tasks, [
+      { id: "CG-AL-X060", slug: "day-close", difficulty: "medium" },
+    ]);
+  });
+
+  it("imports a promoted task via the injected importTask", async () => {
+    let calledWith: string | undefined;
+    const importDeps = createDeps({
+      importTask: (id: string) => {
+        calledWith = id;
+        return Promise.resolve({
+          id,
+          draftDir: "/tmp/nope/scratch/CG-AL-X062",
+        });
+      },
+    });
+    const res = await createHandler(importDeps)(
+      new Request("http://localhost/api/import", {
+        method: "POST",
+        body: JSON.stringify({ id: "CG-AL-X062" }),
+      }),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body, {
+      id: "CG-AL-X062",
+      draftDir: "/tmp/nope/scratch/CG-AL-X062",
+    });
+    assertEquals(calledWith, "CG-AL-X062");
+  });
+
+  it("400s /api/import on a malformed body", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/import", {
+        method: "POST",
+        body: "not json",
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("400s /api/import when id is missing", async () => {
+    const res = await createHandler(deps)(
+      new Request("http://localhost/api/import", {
+        method: "POST",
+        body: JSON.stringify({}),
+      }),
+    );
+    assertEquals(res.status, 400);
+  });
+
+  it("400s /api/import with the thrown message when importTask fails", async () => {
+    const importDeps = createDeps({
+      importTask: () =>
+        Promise.reject(
+          new Error("Draft already exists at /tmp/nope/scratch/CG-AL-X054"),
+        ),
+    });
+    const res = await createHandler(importDeps)(
+      new Request("http://localhost/api/import", {
+        method: "POST",
+        body: JSON.stringify({ id: "CG-AL-X054" }),
+      }),
+    );
+    assertEquals(res.status, 400);
+    const body = await res.json();
+    assertStringIncludes(body.error, "Draft already exists");
+  });
+
+  it("merges default models and catalog slugs, defaults first, deduped", async () => {
+    const modelsDeps = createDeps({
+      defaultModels: ["anthropic/claude-opus-4-7", "openai/gpt-5.5"],
+      modelSlugs: () =>
+        Promise.resolve(["openai/gpt-5.5", "anthropic/claude-fable-5"]),
+    });
+    const res = await createHandler(modelsDeps)(
+      new Request("http://localhost/api/models"),
+    );
+    assertEquals(res.status, 200);
+    const body = await res.json();
+    assertEquals(body.slugs, [
+      "anthropic/claude-opus-4-7",
+      "openai/gpt-5.5",
+      "anthropic/claude-fable-5",
     ]);
   });
 
@@ -1471,6 +1579,36 @@ describe("dashboard/server", () => {
     // response proves validation passed and the route reached it, exactly
     // like "accepts a well-formed run request" above.
     assertEquals(res.status === 400, false);
+  });
+});
+
+describe("dashboard/model-slugs", () => {
+  it("reads slug entries from a catalog yaml file", async () => {
+    const dir = await createTempDir("dashboard-model-slugs-test");
+    try {
+      await Deno.mkdir(join(dir, "site", "catalog"), { recursive: true });
+      await Deno.writeTextFile(
+        join(dir, "site", "catalog", "models.yml"),
+        "- slug: anthropic/claude-opus-4-7\n" +
+          "  family: claude\n" +
+          "- slug: openai/gpt-5.5\n" +
+          "  family: gpt\n",
+      );
+      const slugs = await catalogModelSlugs(dir);
+      assertEquals(slugs, ["anthropic/claude-opus-4-7", "openai/gpt-5.5"]);
+    } finally {
+      await cleanupTempDir(dir);
+    }
+  });
+
+  it("returns an empty array when the catalog file does not exist", async () => {
+    const dir = await createTempDir("dashboard-model-slugs-missing-test");
+    try {
+      const slugs = await catalogModelSlugs(dir);
+      assertEquals(slugs, []);
+    } finally {
+      await cleanupTempDir(dir);
+    }
   });
 });
 

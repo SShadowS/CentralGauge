@@ -47,6 +47,8 @@ import { loadTrapSources } from "./source-loader.ts";
 import { promoteAsNaive, PromoteRefusal } from "./promote-naive.ts";
 import { VerifyQueue } from "./verify-queue.ts";
 import { checkBenchGate } from "./bench-gate.ts";
+import { catalogModelSlugs } from "./model-slugs.ts";
+import { importPromotedTask, listPromotedTasks } from "../workbench/import.ts";
 
 export interface DashboardServer {
   port: number;
@@ -408,6 +410,33 @@ export interface DashboardHandlerDeps {
    *  empty when none were given. Served verbatim at `GET /api/defaults`. */
   defaultModels: string[];
   /**
+   * Every promoted (committed) X-series task, already scoped to that
+   * cohort by `listPromotedTasks` (`src/workbench/import.ts`) — legacy
+   * E/M/H tasks never appear, because the workbench has nothing to import
+   * them into. `GET /api/promoted` further filters this against
+   * `listDrafts` before serving it, so the result the UI actually sees
+   * excludes any id that already has a `scratch/<id>` draft.
+   */
+  listPromoted: () => Promise<
+    Array<{ id: string; slug: string; difficulty: string }>
+  >;
+  /**
+   * Reimports one promoted task into `scratch/<id>` as an editable draft
+   * (`importPromotedTask`). Narrowed to the two fields `POST /api/import`
+   * relays to the caller — the full `ImportResult.importedFrom` is
+   * bookkeeping the route has no use for. Rejects (with a message meant to
+   * be shown verbatim) for a non-X-series id or an id that already has a
+   * draft; the route turns that rejection into a 400.
+   */
+  importTask: (id: string) => Promise<{ id: string; draftDir: string }>;
+  /**
+   * Known model slugs from the site catalog (`./model-slugs.ts`), for
+   * `GET /api/models`. Caching lives inside the implementation
+   * (`catalogModelSlugs`), not here — this thunk exists only so a test can
+   * inject a fake list without touching `site/catalog/models.yml`.
+   */
+  modelSlugs: () => Promise<string[]>;
+  /**
    * The serial escalation-verify queue (`./verify-queue.ts`, Task 6).
    * Narrowed to the three methods this router actually calls — a fake in
    * a test needs no `drain()`/`shutdown()` to stand in for it.
@@ -488,6 +517,69 @@ export function createHandler(
 
     if (req.method === "GET" && url.pathname === "/api/defaults") {
       return jsonResponse(200, { defaultModels: deps.defaultModels });
+    }
+
+    // Promoted tasks available to reimport as an editable draft — the
+    // dashboard's Import picker. `deps.listPromoted` is already scoped to
+    // the X-series cohort (`listPromotedTasks`); filtered HERE against
+    // `deps.listDrafts` rather than left for `importTask` to refuse, so the
+    // UI never offers an id that would 400 on click because a draft already
+    // exists for it.
+    if (req.method === "GET" && url.pathname === "/api/promoted") {
+      const [promoted, drafts] = await Promise.all([
+        deps.listPromoted(),
+        deps.listDrafts(deps.scratchDir),
+      ]);
+      const draftIds = new Set(drafts.map((draft) => draft.id));
+      const tasks = promoted.filter((task) => !draftIds.has(task.id));
+      return jsonResponse(200, { tasks });
+    }
+
+    // Reimports one promoted task into `scratch/<id>` as an editable draft
+    // (`importPromotedTask`, `src/workbench/import.ts`). Validated like
+    // `/api/run` and `/api/promote-naive` above: a malformed body or a
+    // missing `id` 400s before `deps.importTask` is ever called. Any
+    // rejection from `deps.importTask` — an unknown id, a legacy E/M/H id,
+    // or an existing draft — is relayed verbatim as the 400 body: the
+    // author needs to read WHY, not a generic failure.
+    if (req.method === "POST" && url.pathname === "/api/import") {
+      let body: unknown;
+      try {
+        body = await req.json();
+      } catch {
+        return jsonResponse(400, { error: "request body must be valid JSON" });
+      }
+
+      const id = (body as Record<string, unknown> | null)?.["id"];
+      if (typeof id !== "string" || id.length === 0) {
+        return jsonResponse(400, { error: "id is required" });
+      }
+
+      try {
+        const result = await deps.importTask(id);
+        return jsonResponse(200, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return jsonResponse(400, { error: message });
+      }
+    }
+
+    // Known model slugs for the dashboard's model picker: CLI-resolved
+    // `--preset` defaults first (see `/api/defaults`), then the site
+    // catalog's slugs, deduped. Defaults lead so a `--preset` model is
+    // never pushed below the fold by an alphabetically-earlier catalog
+    // entry.
+    if (req.method === "GET" && url.pathname === "/api/models") {
+      const catalogSlugs = await deps.modelSlugs();
+      const seen = new Set<string>();
+      const slugs: string[] = [];
+      for (const slug of [...deps.defaultModels, ...catalogSlugs]) {
+        if (!seen.has(slug)) {
+          seen.add(slug);
+          slugs.push(slug);
+        }
+      }
+      return jsonResponse(200, { slugs });
     }
 
     // Whether "Compile & test" can run right now, answerable WITHOUT
@@ -830,6 +922,12 @@ export function startServer(
     createModelCaller,
     promoteAsNaive,
     defaultModels: opts.defaultModels ?? [],
+    listPromoted: () => listPromotedTasks(),
+    importTask: (id: string) =>
+      importPromotedTask(id, { scratchRoot: opts.scratchDir }).then((
+        { id, draftDir },
+      ) => ({ id, draftDir })),
+    modelSlugs: () => catalogModelSlugs(),
     boundPort: () => listener.port,
     verifyQueue,
     checkBenchGate,
