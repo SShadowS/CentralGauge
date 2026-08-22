@@ -228,6 +228,64 @@ body {
   color: var(--bad-text);
 }
 
+.promoted-list {
+  font-size: 13px;
+}
+
+.promoted-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.promoted-row:last-child {
+  border-bottom: none;
+}
+
+.promoted-id {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+/* The rail is a fixed 260px, too narrow for id + difficulty + slug + button
+   on one line without breaking the slug mid-word. `order` (not a markup
+   change) drops the slug onto its own full-width line below id/badge/button,
+   and the error message (when shown) onto a further line below that — DOM
+   order stays id, badge, slug, button, error throughout. */
+.promoted-slug {
+  order: 1;
+  flex-basis: 100%;
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+}
+
+.promoted-import-btn {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.promoted-import-btn:disabled {
+  background: var(--unknown-bg);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.promoted-import-error {
+  order: 2;
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .matrix-area {
   flex: 1;
   min-width: 0;

@@ -23,6 +23,12 @@ interface StubNode {
   children: StubNode[];
   listeners: Record<string, Array<() => void>>;
   classList: { add: (name: string) => void };
+  /** Real `HTMLElement.dataset`: a plain string-keyed bag, camelCase in JS
+   *  mapping to `data-kebab-case` attributes in a real DOM. The stub only
+   *  needs the JS side — nothing here reads it back as an attribute string
+   *  — so a bare object is enough to let `button.dataset.id = ...` work the
+   *  same way it does in a real browser instead of throwing on `undefined`. */
+  dataset: Record<string, string>;
   appendChild: (child: StubNode) => StubNode;
   addEventListener: (type: string, fn: () => void) => void;
   [key: string]: unknown;
@@ -40,6 +46,7 @@ function createNode(tag: string): StubNode {
         node.className = node.className ? `${node.className} ${name}` : name;
       },
     },
+    dataset: {} as Record<string, string>,
     appendChild(child: StubNode) {
       node.children.push(child);
       return child;
@@ -149,6 +156,9 @@ interface Ui {
   renderPrereqRail: (binding: unknown) => StubNode;
   renderFileList: (draft: unknown, binding?: unknown, model?: unknown) => void;
   handleVerifyEvent: (payload: unknown) => void;
+  loadPromotedTasks: () => Promise<void>;
+  renderPromotedTasks: () => void;
+  loadModelSlugs: () => Promise<void>;
   state: DashboardState;
 }
 
@@ -160,7 +170,8 @@ async function loadUi(): Promise<Ui> {
   );
   const module = `${src}\nexport { buildColumnHeader, buildCell, ` +
     `renderTrapSummary, renderArtifactNote, renderMatrix, renderPrereqRail, ` +
-    `renderFileList, handleVerifyEvent, state };\n`;
+    `renderFileList, handleVerifyEvent, loadPromotedTasks, ` +
+    `renderPromotedTasks, loadModelSlugs, state };\n`;
   return await import(
     `data:text/javascript;charset=utf-8,${encodeURIComponent(module)}`
   ) as Ui;
@@ -1299,6 +1310,272 @@ describe("dashboard/ui app.js", () => {
       passed: 1,
       total: 3,
       failures: ["x"],
+    });
+  });
+
+  // Task 5 (workbench-import-models-vscode spec): the "Promoted tasks" rail
+  // and the model-slugs datalist, both fed by Task 4's routes.
+  describe("promoted-task import + model-slug datalist", () => {
+    // `loadDrafts()` — invoked by a successful import below to refresh the
+    // draft picker — reads `document.getElementById("model-input").value`
+    // via `updateRunButton()`. A real `<textarea>` defaults `.value` to
+    // `""`; this stub node has no such default, so `undefined.split(",")`
+    // would throw and `loadDrafts()`'s catch would silently wipe the drafts
+    // it just loaded. Seeding it once here is a workaround for the stub,
+    // not a production concern.
+    node("model-input")["value"] = "";
+
+    it("renders one row per /api/promoted task with id + slug, each with an Import button", async () => {
+      const ui = await loadUi();
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = (url: string) => {
+        if (url === "/api/promoted") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                tasks: [
+                  {
+                    id: "CG-AL-X060",
+                    slug: "hard/CG-AL-X060",
+                    difficulty: "hard",
+                  },
+                  {
+                    id: "CG-AL-X061",
+                    slug: "hard/CG-AL-X061",
+                    difficulty: "hard",
+                  },
+                ],
+              }),
+          });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      };
+
+      try {
+        await ui.loadPromotedTasks();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      const list = node("promoted-list");
+      assertEquals(list.children.length, 2);
+
+      const text = allText(list);
+      assertStringIncludes(text, "CG-AL-X060");
+      assertStringIncludes(text, "hard/CG-AL-X060");
+      assertStringIncludes(text, "CG-AL-X061");
+      assertStringIncludes(text, "hard/CG-AL-X061");
+
+      const firstButton = list.children[0]!.children.find((c) =>
+        c.className.includes("promoted-import-btn")
+      );
+      assertEquals(firstButton?.textContent, "Import");
+      assertEquals(firstButton?.dataset["id"], "CG-AL-X060");
+
+      const secondButton = list.children[1]!.children.find((c) =>
+        c.className.includes("promoted-import-btn")
+      );
+      assertEquals(secondButton?.dataset["id"], "CG-AL-X061");
+    });
+
+    it("clicking Import posts the id, then refreshes drafts and promoted (imported id disappears from promoted, appears in drafts)", async () => {
+      const ui = await loadUi();
+      const calls: Array<
+        { url: string; method: string; body: string | undefined }
+      > = [];
+      let promotedCallCount = 0;
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = (url: string, init?: RequestInit) => {
+        calls.push({
+          url,
+          method: init?.method ?? "GET",
+          body: init?.body as string | undefined,
+        });
+
+        if (url === "/api/promoted") {
+          promotedCallCount++;
+          // Server-side, `GET /api/promoted` filters out any id that
+          // already has a draft (Task 4) — so the re-fetch after a
+          // successful import naturally comes back without CG-AL-X060.
+          // No client-side array surgery to get wrong.
+          const tasks = promotedCallCount === 1
+            ? [{
+              id: "CG-AL-X060",
+              slug: "hard/CG-AL-X060",
+              difficulty: "hard",
+            }]
+            : [];
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ tasks }),
+          });
+        }
+        if (url === "/api/import") {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                id: "CG-AL-X060",
+                draftDir: "U:\\scratch\\CG-AL-X060",
+              }),
+          });
+        }
+        if (url === "/api/drafts") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                drafts: [{
+                  id: "CG-AL-X060",
+                  dir: "U:\\scratch\\CG-AL-X060",
+                  dirName: "CG-AL-X060",
+                  hasPrereq: false,
+                  prereqFiles: [],
+                }],
+              }),
+          });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      };
+
+      try {
+        await ui.loadPromotedTasks();
+        const button = node("promoted-list").children[0]!.children.find((
+          c,
+        ) => c.className.includes("promoted-import-btn"))!;
+
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+
+        const importCall = calls.find((c) => c.url === "/api/import");
+        assertEquals(importCall?.method, "POST");
+        assertEquals(JSON.parse(importCall!.body!), { id: "CG-AL-X060" });
+
+        assertEquals(
+          promotedCallCount,
+          2,
+          "the promoted list must be re-fetched after a successful import",
+        );
+        assertEquals(
+          allText(node("promoted-list")).includes("CG-AL-X060"),
+          false,
+          "the imported id must disappear from the promoted list",
+        );
+
+        assertStringIncludes(
+          allText(node("draft-select")),
+          "CG-AL-X060",
+          "the imported id must appear in the drafts list",
+        );
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+    });
+
+    it("shows an import failure inline near the row without clearing the promoted list", async () => {
+      const ui = await loadUi();
+      let promotedCallCount = 0;
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = (url: string) => {
+        if (url === "/api/promoted") {
+          promotedCallCount++;
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                tasks: [{
+                  id: "CG-AL-X060",
+                  slug: "hard/CG-AL-X060",
+                  difficulty: "hard",
+                }],
+              }),
+          });
+        }
+        if (url === "/api/import") {
+          return Promise.resolve({
+            ok: false,
+            status: 400,
+            json: () =>
+              Promise.resolve({
+                error: "a draft already exists for CG-AL-X060",
+              }),
+          });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      };
+
+      try {
+        await ui.loadPromotedTasks();
+        const list = node("promoted-list");
+        const button = list.children[0]!.children.find((c) =>
+          c.className.includes("promoted-import-btn")
+        )!;
+
+        await (button.listeners["click"]![0]! as () => Promise<void>)();
+
+        assertEquals(
+          promotedCallCount,
+          1,
+          "a failed import must not re-fetch the promoted list",
+        );
+        assertEquals(
+          node("promoted-list").children.length,
+          1,
+          "the row must stay after a failed import",
+        );
+        assertStringIncludes(
+          allText(node("promoted-list")),
+          "a draft already exists for CG-AL-X060",
+        );
+        assertEquals(button["disabled"], false, "the button must re-enable");
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+    });
+
+    it('carries list="model-slugs" on the model input and a #model-slugs datalist in index.html', async () => {
+      const html = await Deno.readTextFile(
+        new URL("../../../src/dashboard/ui/index.html", import.meta.url),
+      );
+      assertStringIncludes(html, 'id="model-input"');
+      assertStringIncludes(html, 'list="model-slugs"');
+      assertStringIncludes(html, '<datalist id="model-slugs">');
+    });
+
+    it("populates the model-slugs datalist from /api/models", async () => {
+      const ui = await loadUi();
+      const originalFetch = globalThis.fetch;
+      // deno-lint-ignore no-explicit-any
+      (globalThis as any).fetch = (url: string) => {
+        if (url === "/api/models") {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                slugs: ["anthropic/claude-opus-4-7", "openai/gpt-5.5"],
+              }),
+          });
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      };
+
+      try {
+        await ui.loadModelSlugs();
+      } finally {
+        // deno-lint-ignore no-explicit-any
+        (globalThis as any).fetch = originalFetch;
+      }
+
+      const datalist = node("model-slugs");
+      const values = datalist.children.map((c) => c["value"]);
+      assertEquals(values, ["anthropic/claude-opus-4-7", "openai/gpt-5.5"]);
     });
   });
 });

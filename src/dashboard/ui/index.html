@@ -24,6 +24,11 @@
     </section>
 
     <section class="rail-section">
+      <h2>Promoted tasks</h2>
+      <div id="promoted-list" class="promoted-list"></div>
+    </section>
+
+    <section class="rail-section">
       <h2>Files</h2>
       <ul id="file-list" class="file-list"></ul>
     </section>
@@ -35,7 +40,9 @@
         id="model-input"
         rows="3"
         placeholder="anthropic/claude-opus-4-7, openai/gpt-5.5"
+        list="model-slugs"
       ></textarea>
+      <datalist id="model-slugs"></datalist>
       <button id="run-button" type="button" disabled>Ask models</button>
       <p id="run-status" class="run-status" aria-live="polite"></p>
     </section>

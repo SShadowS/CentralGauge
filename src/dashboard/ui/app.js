@@ -15,6 +15,10 @@
 
 const state = {
   drafts: [],
+  /** Promoted (committed) X-series tasks available to reimport as an
+   *  editable draft — `GET /api/promoted`'s response, already excluding any
+   *  id that already has a `scratch/<id>` draft (server-side filter). */
+  promotedTasks: [],
   selectedDir: null,
   run: null,
   /** Which response's `prereqBinding` the "Already exists (prereq)" rail is
@@ -1191,6 +1195,142 @@ async function loadDrafts() {
   }
 }
 
+/**
+ * One "Promoted tasks" row: id, difficulty, slug, and an "Import" button
+ * that reimports it into `scratch/<id>` (`POST /api/import`). The error
+ * slot lives PER ROW, not shared across the list — two imports can be
+ * attempted in quick succession, and a failure on one must not clobber a
+ * message already showing on another.
+ */
+function buildPromotedTaskRow(task) {
+  const row = el("div", "promoted-row");
+  row.appendChild(el("span", "promoted-id", task.id));
+  row.appendChild(el("span", "badge verdict-unknown", task.difficulty));
+  row.appendChild(el("span", "promoted-slug", task.slug));
+
+  const button = el("button", "promoted-import-btn", "Import");
+  button.type = "button";
+  button.dataset.id = task.id;
+
+  const errorEl = el("p", "error-text promoted-import-error");
+  errorEl.hidden = true;
+
+  button.addEventListener(
+    "click",
+    () => importPromotedTask(task.id, button, errorEl),
+  );
+
+  row.appendChild(button);
+  row.appendChild(errorEl);
+  return row;
+}
+
+/**
+ * Renders `state.promotedTasks` into the "Promoted tasks" rail
+ * (`#promoted-list`). Called after every `loadPromotedTasks()` — including
+ * the re-fetch a successful import triggers, which is what makes an
+ * imported id disappear from this list without any client-side array
+ * surgery: the server's own filter (already excluding ids with a draft)
+ * does the removal.
+ */
+function renderPromotedTasks() {
+  const container = document.getElementById("promoted-list");
+  container.innerHTML = "";
+
+  if (state.promotedTasks.length === 0) {
+    container.appendChild(
+      el("p", "empty-state", "No promoted tasks pending import."),
+    );
+    return;
+  }
+
+  for (const task of state.promotedTasks) {
+    container.appendChild(buildPromotedTaskRow(task));
+  }
+}
+
+/**
+ * Fetches the promoted-task cohort not yet imported as a draft
+ * (`GET /api/promoted`). Failure degrades to an empty list rather than
+ * surfacing an error — same posture as `loadDefaultModels`: this section
+ * is a convenience picker, not something the rest of the dashboard depends
+ * on.
+ */
+async function loadPromotedTasks() {
+  try {
+    const res = await fetch("/api/promoted");
+    if (!res.ok) {
+      state.promotedTasks = [];
+      renderPromotedTasks();
+      return;
+    }
+    const body = await res.json();
+    state.promotedTasks = Array.isArray(body.tasks) ? body.tasks : [];
+  } catch {
+    state.promotedTasks = [];
+  }
+  renderPromotedTasks();
+}
+
+/**
+ * Reimports one promoted task (`POST /api/import`) and, on success,
+ * refreshes both lists it affects: drafts (the new `scratch/<id>` now
+ * exists) and promoted (the server's own filter drops the id it just
+ * imported). A failure shows the server's message inline on `errorEl`
+ * WITHOUT touching `state.promotedTasks` — the row stays exactly as it
+ * was, so a retry (after acting on whatever the message says) has the
+ * same button to click.
+ */
+async function importPromotedTask(id, button, errorEl) {
+  button.disabled = true;
+  errorEl.hidden = true;
+  errorEl.textContent = "";
+
+  try {
+    const res = await fetch("/api/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(
+        body.error || `POST /api/import failed with status ${res.status}`,
+      );
+    }
+    await Promise.all([loadDrafts(), loadPromotedTasks()]);
+  } catch (error) {
+    errorEl.textContent = error.message;
+    errorEl.hidden = false;
+    button.disabled = false;
+  }
+}
+
+/**
+ * Populates the model-slugs `<datalist>` (`#model-slugs`) so the model
+ * input (`index.html`'s `list="model-slugs"`) offers known slugs while
+ * still accepting free text — `GET /api/models` already merges CLI
+ * `--preset` defaults with the site catalog. Failure leaves the datalist
+ * empty; the input keeps working as plain free text either way.
+ */
+async function loadModelSlugs() {
+  try {
+    const res = await fetch("/api/models");
+    if (!res.ok) return;
+    const body = await res.json();
+    const slugs = Array.isArray(body.slugs) ? body.slugs : [];
+    const datalist = document.getElementById("model-slugs");
+    datalist.innerHTML = "";
+    for (const slug of slugs) {
+      const option = el("option");
+      option.value = slug;
+      datalist.appendChild(option);
+    }
+  } catch {
+    // Silent — the datalist is a convenience only; free text still works.
+  }
+}
+
 async function runQuick() {
   const draft = selectedDraft();
   const models = parseModelList(document.getElementById("model-input").value);
@@ -1296,6 +1436,8 @@ function init() {
   wireEvents();
   loadDrafts();
   loadDefaultModels();
+  loadPromotedTasks();
+  loadModelSlugs();
   // Before the first click, not after it.
   refreshEscalationReadiness();
   setInterval(refreshEscalationReadiness, READINESS_POLL_MS);
