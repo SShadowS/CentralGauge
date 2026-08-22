@@ -50,6 +50,7 @@ import { parse, stringify } from "@std/yaml";
 
 import type { IdRoots } from "./ids.ts";
 import type { DraftMeta } from "./scaffold.ts";
+import type { ImportedFrom } from "./import.ts";
 import type { ProbeVerdict } from "./probe.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
 import { DEFAULT_PROBE_CONTAINER } from "./scaffold.ts";
@@ -264,16 +265,135 @@ async function assertVerdictIsFresh(
   }
 }
 
-/** Throws unless `targetPath` does not yet exist. No `--force` override exists for this check. */
+/**
+ * Repo-relative, forward-slash destination paths this promote may overwrite
+ * without refusing - exactly the file set `meta.importedFrom` (Task 1) says
+ * this draft came from, via `importPromotedTask`. A draft with no
+ * `importedFrom` (never imported, or hand-scaffolded) gets the empty set,
+ * so every destination still refuses unconditionally - the pre-Task-2
+ * behavior is the default, not a special case.
+ */
+function buildAllowedOverwrites(
+  importedFrom: ImportedFrom | undefined,
+): Set<string> {
+  if (!importedFrom) return new Set();
+  const allowed = new Set<string>([
+    importedFrom.taskYml,
+    importedFrom.testFile,
+    ...importedFrom.companions,
+  ]);
+  if (importedFrom.prereqDir !== null) {
+    allowed.add(importedFrom.prereqDir);
+  }
+  return allowed;
+}
+
+/**
+ * `undefined` unless `target` is under `root`, in which case the forward-slash
+ * path of `target` relative to `root`. `relative()` returning exactly `".."`
+ * or anything starting with `"../"`/`"..\\"` means `target` escaped `root`
+ * entirely - both are "not within", not "within at the parent".
+ */
+function relIfWithin(root: string, target: string): string | undefined {
+  const rel = relative(root, target);
+  if (rel === ".." || rel.startsWith("../") || rel.startsWith("..\\")) {
+    return undefined;
+  }
+  return rel.replaceAll("\\", "/");
+}
+
+/**
+ * Converts an absolute destination path under `roots.tasksDir` or
+ * `roots.testsDir` back to the canonical repo-relative, forward-slash form
+ * `ImportedFrom` stores (`tasks/hard/...`, `tests/al/hard/...`,
+ * `tests/al/dependencies/<id>`) - the shape every entry in
+ * `allowedOverwrites` is compared against, and the same shape `movedTask`/
+ * `movedTest` below are built in directly (deliberately not derived from
+ * this function - see their own comment). `undefined` for a path under
+ * neither root; callers treat that as "not overwrite-eligible", never as an
+ * error.
+ */
+function toCanonicalRel(roots: IdRoots, absPath: string): string | undefined {
+  const underTasks = relIfWithin(roots.tasksDir, absPath);
+  if (underTasks !== undefined) return `tasks/${underTasks}`;
+  const underTests = relIfWithin(roots.testsDir, absPath);
+  if (underTests !== undefined) return `tests/al/${underTests}`;
+  return undefined;
+}
+
+/**
+ * Inverse of {@link toCanonicalRel}: resolves a canonical repo-relative path
+ * (as `ImportedFrom` stores it) back to an absolute path under `roots`.
+ */
+function resolveCanonicalRel(roots: IdRoots, rel: string): string {
+  if (rel.startsWith("tasks/")) {
+    return join(roots.tasksDir, rel.slice("tasks/".length));
+  }
+  if (rel.startsWith("tests/al/")) {
+    return join(roots.testsDir, rel.slice("tests/al/".length));
+  }
+  throw new Error(
+    `Cannot resolve "${rel}" to a path under tasksDir/testsDir - expected ` +
+      `it to start with "tasks/" or "tests/al/".`,
+  );
+}
+
+/**
+ * Throws unless `targetPath` does not yet exist - UNLESS its canonical
+ * repo-relative form is listed in `allowedOverwrites` (Task 2), in which
+ * case the existing file is exactly the one this draft was imported from and
+ * re-promoting over it is the whole point. There is still no `--force`
+ * override: a path not in `allowedOverwrites` refuses unconditionally, same
+ * as before Task 2.
+ */
 async function refuseIfExists(
   targetPath: string,
   kind: string,
+  roots: IdRoots,
+  allowedOverwrites: Set<string>,
 ): Promise<void> {
-  if (await exists(targetPath)) {
-    throw new Error(
-      `Refusing to promote: ${kind} already exists at ${targetPath} - ` +
-        `overwriting a shipped task silently is never wanted. There is no ` +
-        `--force for this check.`,
+  if (!(await exists(targetPath))) return;
+  const rel = toCanonicalRel(roots, targetPath);
+  if (rel !== undefined && allowedOverwrites.has(rel)) return;
+  throw new Error(
+    `Refusing to promote: ${kind} already exists at ${targetPath} - ` +
+      `overwriting a shipped task silently is never wanted. There is no ` +
+      `--force for this check.`,
+  );
+}
+
+/**
+ * Deletes the OLD file a re-imported draft's promote no longer targets -
+ * relevant only when `oldRel` (an entry from `meta.importedFrom`) differs
+ * from `newRel` (the destination this promote just wrote). That happens
+ * when the caller passes a `--slug` different from the one the task manifest
+ * was imported under (only the manifest's filename carries the slug; the
+ * test file, companions and prereq dir are named from `id` alone) or a
+ * `--difficulty` different from `importedFrom.difficulty` (moves all four).
+ * Without this, a renamed re-promote would leave a stale duplicate at the
+ * old path alongside the new one. Runs after the move has committed, so a
+ * failure here is collected into `postCommitWarnings` rather than thrown -
+ * same non-fatal contract as the rest of that block, since the promotion
+ * itself already succeeded.
+ */
+async function removeStaleImportedFile(
+  roots: IdRoots,
+  oldRel: string,
+  newRel: string,
+  postCommitWarnings: string[],
+): Promise<void> {
+  if (oldRel === newRel) return;
+  const oldAbs = resolveCanonicalRel(roots, oldRel);
+  try {
+    if (await exists(oldAbs)) {
+      await Deno.remove(oldAbs);
+    }
+  } catch (error) {
+    postCommitWarnings.push(
+      `could not remove the stale re-imported file at ${oldAbs} (now at ` +
+        `${newRel}): ${
+          error instanceof Error ? error.message : String(error)
+        } - delete it by hand.`,
     );
   }
 }
@@ -292,19 +412,29 @@ function filenameMatchesId(name: string, id: string): boolean {
 }
 
 /**
- * True if some file anywhere under `dir` already carries `id` in its name.
- * Path-based checks alone (exact `tasks/<difficulty>/<id>-<slug>.yml` /
- * `tests/al/<difficulty>/<id>.Test.al`) miss the case where the SAME id is
+ * True if some file anywhere under `dir` already carries `id` in its name,
+ * OTHER than a match whose canonical repo-relative form is listed in
+ * `allowedOverwrites` (Task 2) - the exact files this draft was imported
+ * from. Path-based checks alone (exact `tasks/<difficulty>/<id>-<slug>.yml`
+ * / `tests/al/<difficulty>/<id>.Test.al`) miss the case where the SAME id is
  * being re-promoted under a *different* `--difficulty` - a different
  * destination path, but still two manifests sharing one id in the suite.
+ * Without the allow-list exception, re-promoting an imported draft over its
+ * own files would always trip this check first, since the very file being
+ * legitimately overwritten also "already carries id in its name".
  */
 async function idExistsAnywhereUnder(
   dir: string,
   id: string,
+  roots: IdRoots,
+  allowedOverwrites: Set<string>,
 ): Promise<boolean> {
   if (!(await exists(dir))) return false;
   for await (const entry of walk(dir, { includeDirs: false })) {
-    if (filenameMatchesId(entry.name, id)) return true;
+    if (!filenameMatchesId(entry.name, id)) continue;
+    const rel = toCanonicalRel(roots, entry.path);
+    if (rel !== undefined && allowedOverwrites.has(rel)) continue;
+    return true;
   }
   return false;
 }
@@ -350,7 +480,14 @@ export async function promoteDraft(
     join(draftDir, "correct", name)
   );
 
-  // --- check every destination path is free (never overridable) ---
+  // --- Task 2: the set of destination paths this draft is allowed to
+  // overwrite - exactly the files `meta.importedFrom` says it came from.
+  // Empty for a draft that was never imported, so every check below refuses
+  // unconditionally in that case, exactly as before Task 2. ---
+  const allowedOverwrites = buildAllowedOverwrites(meta?.importedFrom);
+
+  // --- check every destination path is free (never overridable, except for
+  // the importedFrom allow-list above) ---
   const taskTargetPath = join(
     roots.tasksDir,
     difficulty,
@@ -359,17 +496,31 @@ export async function promoteDraft(
   const testTargetPath = join(roots.testsDir, difficulty, `${id}.Test.al`);
   const prereqTargetDir = join(roots.testsDir, "dependencies", id);
 
-  await refuseIfExists(taskTargetPath, "task manifest");
-  await refuseIfExists(testTargetPath, "test codeunit");
-  await refuseIfExists(prereqTargetDir, "prereq dir");
+  await refuseIfExists(
+    taskTargetPath,
+    "task manifest",
+    roots,
+    allowedOverwrites,
+  );
+  await refuseIfExists(
+    testTargetPath,
+    "test codeunit",
+    roots,
+    allowedOverwrites,
+  );
+  await refuseIfExists(prereqTargetDir, "prereq dir", roots, allowedOverwrites);
   for (const name of oracleSet.companions) {
     await refuseIfExists(
       join(roots.testsDir, difficulty, name),
       `companion file ${name}`,
+      roots,
+      allowedOverwrites,
     );
   }
 
-  if (await idExistsAnywhereUnder(roots.tasksDir, id)) {
+  if (
+    await idExistsAnywhereUnder(roots.tasksDir, id, roots, allowedOverwrites)
+  ) {
     throw new Error(
       `Refusing to promote ${id}: a task manifest for this id already ` +
         `exists somewhere under ${roots.tasksDir} - promoting under a ` +
@@ -377,7 +528,9 @@ export async function promoteDraft(
         `id. There is no --force for this check.`,
     );
   }
-  if (await idExistsAnywhereUnder(roots.testsDir, id)) {
+  if (
+    await idExistsAnywhereUnder(roots.testsDir, id, roots, allowedOverwrites)
+  ) {
     throw new Error(
       `Refusing to promote ${id}: a test codeunit for this id already ` +
         `exists somewhere under ${roots.testsDir} - promoting under a ` +
@@ -482,18 +635,39 @@ export async function promoteDraft(
     await Deno.writeTextFile(taskTargetPath, finalYamlText);
     taskWritten = true;
 
-    await move(draftTestAlPath, testTargetPath);
+    // `overwrite` is keyed off whether the destination CURRENTLY exists,
+    // not passed unconditionally: by this point every destination has
+    // already passed refuseIfExists (task manifest, test codeunit, prereq
+    // dir, each companion) above, so one that still exists here is
+    // guaranteed to be an importedFrom-allow-listed overwrite (Task 2).
+    // Passing `overwrite: true` unconditionally would be equivalent in
+    // that case, but NOT in the common (non-overwrite) one - @std/fs's
+    // move() calls `Deno.remove(dest, ...)` up front whenever `overwrite`
+    // is true, even when `dest` doesn't exist (it just swallows the
+    // resulting NotFound). That extra call is harmless in production, but
+    // it changes which mocked `Deno.*` call fires first in the rollback
+    // tests below - keying `overwrite` off `exists()` keeps the
+    // non-overwrite path byte-for-byte the same as before Task 2.
+    await move(draftTestAlPath, testTargetPath, {
+      overwrite: await exists(testTargetPath),
+    });
     movedPairs.push({ from: draftTestAlPath, to: testTargetPath });
 
     for (const from of draftCompanionPaths) {
       const to = join(roots.testsDir, difficulty, basename(from));
-      await move(from, to);
+      await move(from, to, { overwrite: await exists(to) });
       movedPairs.push({ from, to });
     }
 
     if (meta?.withPrereq) {
       await ensureDir(dirname(prereqTargetDir));
-      await move(draftPrereqDir, prereqTargetDir);
+      // Recursive replace, not a merge - move()'s overwrite path removes
+      // the whole existing prereqTargetDir before renaming the draft's
+      // prereq/ into place, so a file dropped from the draft's prereq/
+      // since the earlier import doesn't survive as an orphan.
+      await move(draftPrereqDir, prereqTargetDir, {
+        overwrite: await exists(prereqTargetDir),
+      });
       prereqMoved = true;
     }
 
@@ -580,6 +754,41 @@ export async function promoteDraft(
   // So each is guarded and its failure is REPORTED, never swallowed, via
   // `postCommitWarnings` - the CLI prints them under a `[!]` line.
   const postCommitWarnings: string[] = [];
+
+  // Task 2: a re-imported draft whose --slug or --difficulty differs from
+  // what it was imported under just wrote to a NEW destination above,
+  // leaving the OLD file (the one `refuseIfExists`/`idExistsAnywhereUnder`
+  // allow-listed via importedFrom) still sitting at its original path.
+  // Clean it up so a renamed re-promote doesn't ship a stale duplicate
+  // alongside the new file. No-op for the common case (same slug, same
+  // difficulty), where oldRel === newRel for every one of these.
+  if (meta?.importedFrom) {
+    await removeStaleImportedFile(
+      roots,
+      meta.importedFrom.taskYml,
+      movedTask,
+      postCommitWarnings,
+    );
+    await removeStaleImportedFile(
+      roots,
+      meta.importedFrom.testFile,
+      movedTest,
+      postCommitWarnings,
+    );
+    for (const name of oracleSet.companions) {
+      const oldCompanionRel = meta.importedFrom.companions.find(
+        (c) => c.split("/").pop() === name,
+      );
+      if (oldCompanionRel !== undefined) {
+        await removeStaleImportedFile(
+          roots,
+          oldCompanionRel,
+          `tests/al/${difficulty}/${name}`,
+          postCommitWarnings,
+        );
+      }
+    }
+  }
 
   // Only remove the draft's task.yml once the promoted copy is confirmed
   // good - keeps scratch/ as the rollback source until that's certain.

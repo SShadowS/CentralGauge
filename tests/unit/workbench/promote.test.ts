@@ -15,6 +15,7 @@ import { parse } from "@std/yaml";
 import type { IdRoots } from "../../../src/workbench/ids.ts";
 import type { ProbeVerdict } from "../../../src/workbench/probe.ts";
 import { scaffoldDraft as realScaffoldDraft } from "../../../src/workbench/scaffold.ts";
+import type { PromoteDifficulty } from "../../../src/workbench/promote.ts";
 import { promoteDraft } from "../../../src/workbench/promote.ts";
 import { writeWorkspace } from "../../../src/workbench/workspace.ts";
 import {
@@ -103,6 +104,47 @@ describe("workbench/promote", () => {
         symbolPaths: [],
         state: "draft",
       });
+    }
+
+    /**
+     * Scaffolds `scratch/<id>/` via the real `scaffoldDraft`, then rewrites
+     * `.meta.json` to carry an `importedFrom` block naming the given
+     * (id, slug, difficulty) - exactly the shape `importPromotedTask`
+     * (`src/workbench/import.ts`) would have written had this draft really
+     * been re-imported from a promoted task. `scaffoldDraft` itself never
+     * populates `importedFrom` (only `import.ts` does), so these tests fake
+     * the re-import by hand rather than requiring a full promote -> import
+     * round trip just to get a fixture.
+     */
+    async function seedImportedDraft(opts: {
+      id: string;
+      slug: string;
+      difficulty: PromoteDifficulty;
+      companions?: string[];
+    }): Promise<void> {
+      const { id, slug, difficulty, companions = [] } = opts;
+      await scaffoldDraft({ id, slug, roots });
+      for (const name of companions) {
+        await Deno.writeTextFile(
+          join(roots.scratchDir, id, "correct", `${id}.${name}.al`),
+          `codeunit 80090 "${id} ${name}" { }\n`,
+        );
+      }
+      const metaPath = join(roots.scratchDir, id, ".meta.json");
+      const meta = JSON.parse(await Deno.readTextFile(metaPath)) as Record<
+        string,
+        unknown
+      >;
+      meta["importedFrom"] = {
+        taskYml: `tasks/${difficulty}/${id}-${slug}.yml`,
+        testFile: `tests/al/${difficulty}/${id}.Test.al`,
+        companions: companions.map((name) =>
+          `tests/al/${difficulty}/${id}.${name}.al`
+        ),
+        prereqDir: null,
+        difficulty,
+      };
+      await Deno.writeTextFile(metaPath, JSON.stringify(meta, null, 2) + "\n");
     }
 
     /**
@@ -1347,6 +1389,163 @@ describe("workbench/promote", () => {
         ),
       ) as { folders: Array<{ path: string }> };
       assertEquals(ws.folders.some((f) => f.path === "correct"), true);
+    });
+
+    describe("re-promote honors importedFrom (Task 2)", () => {
+      it(
+        "re-promotes over the exact files listed in importedFrom, " +
+          "overwriting them with the draft's current content",
+        async () => {
+          const id = "CG-AL-X090";
+          const slug = "fixture-slug";
+          await seedImportedDraft({ id, slug, difficulty: "hard" });
+
+          // Pre-seed the "already shipped" destination files that
+          // importedFrom points at - without Task 2 these would trip
+          // refuseIfExists exactly like any other pre-existing destination.
+          const expectedTestContent = await Deno.readTextFile(
+            join(roots.scratchDir, id, "correct", `${id}.Test.al`),
+          );
+          await ensureDir(join(roots.tasksDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.tasksDir, "hard", `${id}-${slug}.yml`),
+            "id: placeholder-old-manifest\n",
+          );
+          await ensureDir(join(roots.testsDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.Test.al`),
+            'codeunit 1 "placeholder-old-test" { }\n',
+          );
+
+          const result = await promoteDraft(id, {
+            difficulty: "hard",
+            roots,
+            verdict: passingVerdict(),
+          });
+
+          assertEquals(result.movedTask, `tasks/hard/${id}-${slug}.yml`);
+          assertEquals(result.movedTest, `tests/al/hard/${id}.Test.al`);
+
+          // Genuinely overwritten, not refused: the placeholder content is
+          // gone and the test codeunit now holds exactly the draft's own
+          // (pre-move) content.
+          const taskText = await Deno.readTextFile(
+            join(roots.tasksDir, "hard", `${id}-${slug}.yml`),
+          );
+          assertEquals(taskText.includes("placeholder-old-manifest"), false);
+          const testText = await Deno.readTextFile(
+            join(roots.testsDir, "hard", `${id}.Test.al`),
+          );
+          assertEquals(testText, expectedTestContent);
+        },
+      );
+
+      it(
+        "deletes the OLD task manifest when re-promoting under a --slug " +
+          "different from importedFrom.taskYml (rename-on-reimport)",
+        async () => {
+          // Decision (see task-2-report.md for the full reasoning): promote's
+          // slug resolution is `opts.slug ?? meta?.slug` (promote.ts) - an
+          // operator CAN pass an explicit --slug that differs from the slug
+          // the draft was imported under (meta.slug, which import.ts derives
+          // from the shipped filename). That makes the "destination differs
+          // from the old importedFrom path" case reachable in practice, not
+          // just in theory - re-promoting a re-imported draft under a
+          // corrected slug is a real workflow. So this pins deletion of the
+          // stale old-slug file, not slug-stability.
+          const id = "CG-AL-X090";
+          const oldSlug = "fixture-slug";
+          const newSlug = "DIFFERENT-slug";
+          await seedImportedDraft({ id, slug: oldSlug, difficulty: "hard" });
+
+          await ensureDir(join(roots.tasksDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.tasksDir, "hard", `${id}-${oldSlug}.yml`),
+            "id: placeholder-old-manifest\n",
+          );
+          await ensureDir(join(roots.testsDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.Test.al`),
+            'codeunit 1 "placeholder-old-test" { }\n',
+          );
+
+          const result = await promoteDraft(id, {
+            difficulty: "hard",
+            slug: newSlug,
+            roots,
+            verdict: passingVerdict(),
+          });
+
+          assertEquals(result.movedTask, `tasks/hard/${id}-${newSlug}.yml`);
+          assertEquals(
+            await exists(join(roots.tasksDir, "hard", `${id}-${newSlug}.yml`)),
+            true,
+          );
+          // The old file at the ORIGINAL importedFrom path must not survive
+          // as a stale duplicate task manifest.
+          assertEquals(
+            await exists(join(roots.tasksDir, "hard", `${id}-${oldSlug}.yml`)),
+            false,
+          );
+        },
+      );
+
+      it(
+        "still refuses to overwrite an existing destination when the " +
+          "draft has no importedFrom (regression guard)",
+        async () => {
+          const meta = await scaffoldDraft({ slug: "day-close", roots });
+          await ensureDir(join(roots.tasksDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.tasksDir, "hard", `${meta.id}-day-close.yml`),
+            "id: placeholder\n",
+          );
+
+          await assertRejects(
+            () =>
+              promoteDraft(meta.id, {
+                difficulty: "hard",
+                roots,
+                verdict: passingVerdict(),
+              }),
+            Error,
+            "task manifest already exists",
+          );
+        },
+      );
+
+      it(
+        "refuses when a companion exists at a destination NOT listed in " +
+          "importedFrom.companions, even though the draft has importedFrom",
+        async () => {
+          const id = "CG-AL-X090";
+          const slug = "fixture-slug";
+          // Imported with no companions recorded.
+          await seedImportedDraft({ id, slug, difficulty: "hard" });
+          // The CURRENT draft has grown a companion the import never saw.
+          await Deno.writeTextFile(
+            join(roots.scratchDir, id, "correct", `${id}.NewMock.al`),
+            `codeunit 80091 "${id} NewMock" { }\n`,
+          );
+          // Something already occupies that companion's destination.
+          await ensureDir(join(roots.testsDir, "hard"));
+          await Deno.writeTextFile(
+            join(roots.testsDir, "hard", `${id}.NewMock.al`),
+            'codeunit 80091 "Existing" { }',
+          );
+
+          await assertRejects(
+            () =>
+              promoteDraft(id, {
+                difficulty: "hard",
+                roots,
+                verdict: passingVerdict(),
+              }),
+            Error,
+            `companion file ${id}.NewMock.al already exists`,
+          );
+        },
+      );
     });
   });
 });
