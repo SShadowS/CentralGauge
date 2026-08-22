@@ -8,6 +8,26 @@
   max_output_tokens: 128000
   capabilities: [thinking, image, pdf, structured, batch]
 
+- slug: anthropic/claude-opus-5
+  api_model_id: claude-opus-5
+  family: claude
+  display_name: Claude Opus 5
+  generation: 5
+  released_at: "2026-06-09"
+  max_input_tokens: 1000000
+  max_output_tokens: 128000
+  capabilities: [thinking, image, pdf, structured, batch]
+
+- slug: anthropic/claude-sonnet-5
+  api_model_id: claude-sonnet-5
+  family: claude
+  display_name: Claude Sonnet 5
+  generation: 5
+  released_at: "2026-06-09"
+  max_input_tokens: 1000000
+  max_output_tokens: 128000
+  capabilities: [thinking, image, pdf, structured, batch]
+
 - slug: anthropic/claude-opus-4-8
   api_model_id: claude-opus-4-8
   family: claude

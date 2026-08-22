@@ -708,3 +708,23 @@
   cache_write_per_mtoken: 12.5
   source: manual
   fetched_at: "2026-06-09T00:00:00.000Z"
+- pricing_version: "2026-08-22"
+  model_slug: anthropic/claude-opus-5
+  effective_from: "2026-08-22T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 5
+  output_per_mtoken: 25
+  cache_read_per_mtoken: 0.5
+  cache_write_per_mtoken: 6.25
+  source: anthropic-api
+  fetched_at: "2026-08-22T00:00:00.000Z"
+- pricing_version: "2026-08-22"
+  model_slug: anthropic/claude-sonnet-5
+  effective_from: "2026-08-22T00:00:00.000Z"
+  effective_until: null
+  input_per_mtoken: 2
+  output_per_mtoken: 10
+  cache_read_per_mtoken: 0.2
+  cache_write_per_mtoken: 2.5
+  source: anthropic-api
+  fetched_at: "2026-08-22T00:00:00.000Z"
