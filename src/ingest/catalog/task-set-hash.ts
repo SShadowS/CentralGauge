@@ -25,6 +25,24 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
   return /^(easy|medium|hard)\/app\.json$/.test(relUnderTestsAl);
 }
 
+const TASKS_STARTER_PREFIX = "starter/";
+
+/**
+ * True for a path relative to `tasks/` that lives under `tasks/starter/**`
+ * — the per-task starter-code tree for "diagnose" benchmark tasks (see
+ * `src/tasks/starter-code.ts`).
+ *
+ * Only files under this prefix get the widened {@link TEXT_EXTENSIONS}
+ * treatment in {@link computeTaskSetHash}; everywhere else under `tasks/`
+ * keeps the original `.yml`-only rule. Without this scoping, dropping a
+ * `README.md` or notes file anywhere under `tasks/` would silently move
+ * `task_sets.hash` and force a re-bench for content that isn't a manifest
+ * or starter code.
+ */
+function isUnderTasksStarter(relUnderTasks: string): boolean {
+  return relUnderTasks.startsWith(TASKS_STARTER_PREFIX);
+}
+
 /**
  * Version tag for the prompt-construction policy used when assembling
  * "diagnose" task prompts (starter code + task description -> LLM prompt).
@@ -42,9 +60,10 @@ export const PROMPT_POLICY_VERSION = "pp1-diagnose-2026-08-23";
  * Compute a deterministic content hash that defines a task_set snapshot.
  *
  * Scope (relative to projectRoot):
- *   - tasks/**\/* matching {@link TEXT_EXTENSIONS}  (manifests, and starter
- *                                       code for "diagnose" tasks under
- *                                       tasks/starter/<id>/**, e.g. .al files)
+ *   - tasks/**\/*.yml                  (manifests)
+ *   - tasks/starter/<id>/** matching {@link TEXT_EXTENSIONS}, case-insensitive
+ *                                       (starter code for "diagnose" tasks —
+ *                                       see {@link isUnderTasksStarter})
  *   - tests/al/**                      (test codeunits, prereq apps,
  *                                       support files — RDLC, layouts, etc.)
  *   - the literal {@link PROMPT_POLICY_VERSION} string (not file content —
@@ -57,7 +76,10 @@ export const PROMPT_POLICY_VERSION = "pp1-diagnose-2026-08-23";
  *   - files matching cache_*.json  (alpackages cache manifests)
  *   - rad.json and Thumbs.db  (dot-less editor/OS droppings — see SKIP_FILE_RE)
  *   - tests/al/app.json and tests/al/<difficulty>/app.json (editor configuration)
- *   - files under tasks/** whose extension is not in TEXT_EXTENSIONS
+ *   - non-.yml files anywhere under tasks/** OUTSIDE tasks/starter/ (e.g. a
+ *     README dropped into tasks/ — deliberately narrow so it can't silently
+ *     move the hash and force a re-bench)
+ *   - files under tasks/starter/** whose extension is not in TEXT_EXTENSIONS
  *
  * Framing (binary-safe):
  *   For each file, compute its SHA-256 separately, then feed
@@ -87,7 +109,12 @@ export async function computeTaskSetHash(
   const tasksFiles = await collectFiles(
     projectRoot,
     "tasks",
-    (rel) => TEXT_EXTENSIONS.some((ext) => rel.endsWith(ext)),
+    (rel) => {
+      if (rel.endsWith(".yml")) return true;
+      if (!isUnderTasksStarter(rel)) return false;
+      const basename = rel.split("/").pop() ?? "";
+      return isTextExtension(basename);
+    },
   );
   const alFiles = await collectFiles(
     projectRoot,

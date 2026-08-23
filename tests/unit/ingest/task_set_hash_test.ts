@@ -56,14 +56,38 @@ Deno.test("hash ignores files with unrecognized extensions inside tasks/", async
   }
 });
 
-Deno.test("hash now covers non-.yml TEXT_EXTENSIONS files inside tasks/ (widened for starter files)", async () => {
+Deno.test("hash ignores tasks/README.md — non-.yml files outside tasks/starter/ stay excluded", async () => {
   const root = await makeProjectRoot();
   try {
     await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
     const h1 = await computeTaskSetHash(root);
-    // .md is in TEXT_EXTENSIONS — the tasks-side filter is no longer
-    // .yml-only, so this must move the hash.
-    await Deno.writeTextFile(`${root}/tasks/easy/readme.md`, "docs");
+    // .md is in TEXT_EXTENSIONS, but the widening only applies under
+    // tasks/starter/ — everywhere else under tasks/ stays .yml-only, so a
+    // README (or any other text file) dropped anywhere else in tasks/ must
+    // not move the hash.
+    await Deno.writeTextFile(`${root}/tasks/README.md`, "docs");
+    const h2 = await computeTaskSetHash(root);
+    assertEquals(h1, h2);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash includes a .md file placed under tasks/starter/<id>/ (widening scoped to starter)", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const h1 = await computeTaskSetHash(root);
+    // Same .md extension as the excluded case above, but this time under
+    // tasks/starter/ — the widened TEXT_EXTENSIONS rule applies there, so
+    // this DOES move the hash.
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/README.md`,
+      "docs",
+    );
     const h2 = await computeTaskSetHash(root);
     assertNotEquals(h1, h2);
   } finally {
@@ -638,6 +662,34 @@ Deno.test("hash changes again when a starter file's content is edited", async ()
     );
     const h2 = await computeTaskSetHash(root);
     assertNotEquals(h1, h2);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash includes a tasks/starter/<id> file with an uppercase extension (case-insensitive)", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const before = await computeTaskSetHash(root);
+
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070`, {
+      recursive: true,
+    });
+    // Starter filenames are free-form (not repo-authored), so an uppercase
+    // .AL extension must still be recognized as text content — matching
+    // isTextExtension's case-insensitive comparison used elsewhere in this
+    // module for CRLF normalization.
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/App.AL`,
+      "codeunit 70070 App { }",
+    );
+    const after = await computeTaskSetHash(root);
+    assertNotEquals(
+      before,
+      after,
+      "an uppercase .AL extension under tasks/starter/ must be hashed like .al",
+    );
   } finally {
     await Deno.remove(root, { recursive: true });
   }
