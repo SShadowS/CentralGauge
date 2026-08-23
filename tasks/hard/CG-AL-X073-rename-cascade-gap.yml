@@ -1,0 +1,26 @@
+id: CG-AL-X073
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages product categories, the products assigned to them, and saved report filters that summarize a category''s products. Codeunit "CG X073 Category Rename Mgt." renames a product category via RenameCategory and updates every affected product''s "Category Code" to match. Users report that after renaming a category, a report filter that was previously counting that category''s products (via CountMatchingProducts) now returns zero, even though the same products are still assigned to the category and nothing about the filter itself was touched. Fix the application so a category rename keeps every report filter that references it in sync with the category''s current code.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - rename
+    - cascade
+    - table-relation
+    - sibling-table
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X073.Test.al
+  testCodeunitId: 88826

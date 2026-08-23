@@ -1,0 +1,25 @@
+id: CG-AL-X066
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Codeunit "CG X066 Costing Engine" recomputes the Shipment Cost of every outbound entry for an item from that item''s receipts, consuming them strictly oldest-first, and stores one "CG X066 Shipment Cost" row per outbound entry. Finance has noticed that for some items an outbound entry''s recorded Shipment Cost is a cent higher or lower than what the receipts it drew on actually cost, so the item''s shipment-cost total no longer reconciles to the value of what was received. The mismatch only appears on an outbound entry that draws stock from two or more receipts in the same run, and only when the item is priced to several decimal places; an outbound entry served entirely from one receipt always reconciles correctly. Fix the application so every outbound entry''s Shipment Cost reconciles exactly to the value of the receipts it drew on.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: rounding-allocation
+  tags:
+    - diagnose
+    - rounding
+    - fifo-costing
+    - cost-layers
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X066.Test.al
+  testCodeunitId: 88819

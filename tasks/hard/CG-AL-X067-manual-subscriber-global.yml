@@ -1,0 +1,27 @@
+id: CG-AL-X067
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application calculates freight charges. Codeunit "CG X067 Freight Calculator" computes a default freight charge of 10% of the order amount, rounded to the nearest cent. Codeunit "CG X067 Free Freight Promotion" is meant to override that default with a charge of 0, but only for the one process that has explicitly turned the promotion on for its own call; every other caller should still see the standard 10% charge, even for a very large order. Users report the promotion overriding the charge for every order of 1000 or more, everywhere in the system, all the time - nothing in the application ever turns it off, and no process has to turn it on for it to apply. Fix the application so the promotion only takes effect while a caller has explicitly turned it on for that call; when nothing has turned it on, CalculateFreight must return the standard charge no matter how large the order is.'
+domains:
+  - codeunits
+  - events
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - event-subscriber
+    - manual-instance
+    - bindsubscription
+    - ishandled-pattern
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X067.Test.al
+  testCodeunitId: 88820

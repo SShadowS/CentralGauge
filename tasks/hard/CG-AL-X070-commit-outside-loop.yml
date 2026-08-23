@@ -1,0 +1,27 @@
+id: CG-AL-X070
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application imports batches of pending orders into permanent records. Codeunit "CG X070 Import Batch" exposes ImportBatch(BatchCode: Code[20]), which is meant to process every pending line of the given batch, in ascending Line No. order: a line with a blank Customer No. must fail with the standard field-guard error, a line whose Quantity is zero or negative must fail with an error mentioning it must be positive, and every other line gets its own imported-order record (copying Customer No. and Quantity) with its own status flipped to Imported. Callers rely on one guarantee above all: when a line partway through a run turns out to be bad, every line already imported earlier in that same run keeps its imported-order record and its Imported status - only the bad line and whatever comes after it in the run are affected. Users report this guarantee is not holding. Whenever a batch import run hits a bad line, the lines imported earlier in that same run lose their imported-order records too and their status reverts to Pending, exactly as if ImportBatch never touched them - and this happens whether the bad line fails one of its own guard checks or instead fails later while its own imported-order record is being written. Rerunning the batch after fixing the bad line then reprocesses every line in the batch from the start, including the ones the log says were already imported on the failed run. A batch where every line is valid always imports correctly, exactly once, and importing one batch never affects another batch or a line already marked Imported. Fix the application so a bad line''s failure can never undo the lines already imported earlier in the same run.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: error-transactions
+  tags:
+    - diagnose
+    - commit-placement
+    - transaction-boundary
+    - batch-processing
+    - error-recovery
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X070.Test.al
+  testCodeunitId: 88823

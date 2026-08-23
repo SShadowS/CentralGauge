@@ -1,0 +1,28 @@
+id: CG-AL-X069
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application queues outbound Annual and Quarterly reference reports in table "CG X069 Queue Entry", each entry pointing back at the source record in table "CG X069 Report Source" that it reports on. Before closing an accounting period, codeunit "CG X069 Reference Process" calls HasPendingReferenceUpToPeriodEnd to check whether any Annual or Quarterly reference is still outstanding as of the period-end date. The check used to return almost instantly. It has gotten progressively slower as the queue has grown, even in periods where the true answer is "nothing outstanding" and at most one queue entry is actually overdue - the slowdown tracks the total size of the queue, not how many references are genuinely pending as of the cutoff date. Fix the application so the check''s cost no longer grows with the size of the queue, while still answering correctly.'
+domains:
+  - tables
+  - codeunits
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - n-plus-one
+    - sql-counters
+    - denormalization
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X069.Test.al
+  testCodeunitId: 88822

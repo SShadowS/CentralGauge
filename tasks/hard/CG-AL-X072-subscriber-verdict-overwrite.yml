@@ -1,0 +1,27 @@
+id: CG-AL-X072
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages a loyalty program''s priority-support eligibility. Table "CG X072 Loyalty Candidate" records each candidate''s lifetime spend, a manual VIP override, and the "Priority Support Approved" verdict; codeunit "CG X072 Loyalty Gatekeeper"''s EvaluateAllPending procedure runs every candidate that has not yet been decided through EvaluateCandidate and writes the verdict back onto the record. A candidate is meant to qualify for priority support either by reaching the lifetime-spend threshold or by having the VIP override switched on. Users report that after EvaluateAllPending runs, several candidates whose lifetime spend clearly reaches the threshold are left with "Priority Support Approved" unchecked, while other candidates with similar or even lower spend do get approved - the pattern does not line up with the spend amount at all. On the unapproved candidates the VIP override shows off, and switching it on does get them approved, but candidates are supposed to also qualify on spend alone. Fix the application so every candidate that qualifies on spend alone, on the VIP override alone, or on both, ends up approved.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - event-subscriber
+    - shared-var-parameter
+    - monotonic-contract
+    - subscriber-order
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X072.Test.al
+  testCodeunitId: 88825

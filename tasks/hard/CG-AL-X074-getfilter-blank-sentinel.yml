@@ -1,0 +1,27 @@
+id: CG-AL-X074
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages expense reports and their comment lines. Codeunit "CG X074 Comment Mgt."''s CountRelatedComments procedure is meant to report how many comment lines belong to whichever expense report is currently open in the Comments list. Users report that opening a brand-new, not-yet-saved expense report and viewing its Comments list takes a long time to respond, and the count it eventually shows is not the zero comments a fresh report should have - it''s some large number unrelated to the report being opened, and that number changes over time as more of other people''s in-progress, unsaved expense reports accumulate elsewhere in the system. One user described it as "counting every comment in the company, not just this report''s." Fix the application so opening a brand-new expense report''s Comments list reports zero related comments, while an existing, saved report''s comment count keeps working exactly as before.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - getfilter
+    - blank-value
+    - evaluate
+    - scoping
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X074.Test.al
+  testCodeunitId: 88827
