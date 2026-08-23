@@ -55,3 +55,22 @@ Append-only. Each entry: date, decision, why.
    - Oracle recipe locked in: seed, ONE warm-up call of the procedure
      under test, snapshot counters, run, assert delta under budget. Set
      budgets ≥10x the measured correct cost and ≤1/10 the naive cost.
+
+9. **Difficulty-filter batch 1 calibration (2026-08-23).** 24 top
+   candidates, built as single-defect small apps (2-4 objects, precise
+   symptom), filtered reasoning-only: Sonnet solved 20, partial 3, failed
+   1 (fifo-costing); Fable solved all 4 escalations. Ruling: STOP
+   filtering the remaining raw candidates in this packaging - the answer
+   is already known (nothing survives Fable as a single-defect small
+   app), and each batch costs real money. The mechanics themselves are
+   validated: builders produced coherent buggy apps and judges graded
+   cleanly against ground truth. Difficulty for Phase 3 comes from
+   PACKAGING, exactly as categories.md #3 and the operator's composite
+   instruction anticipated: multiple apps per prompt, distractor code,
+   vaguer symptoms, interacting defects, larger code bodies. The filter
+   returns for spot-checks of PACKAGED tasks (a composite prompt through
+   a Fable solver before promotion), not for raw-candidate triage. The
+   4 Sonnet-resistant candidates (fifo-costing, ishandled-event,
+   cross-column-search, queue-scan) seed the hard tier; single-defect
+   tasks still have leaderboard value for the mid-field, so solved-by-
+   Sonnet does NOT disqualify a candidate, it tiers it.
