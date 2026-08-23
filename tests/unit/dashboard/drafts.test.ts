@@ -272,6 +272,46 @@ describe("dashboard/drafts", () => {
     assertEquals(draft?.prompts, undefined);
   });
 
+  it("reports starterDir as an absolute path when starter/ has a .al file", async () => {
+    await makeDraft("CG-AL-X062");
+    const starterDir = join(scratch, "CG-AL-X062", "starter");
+    await ensureDir(starterDir);
+    await Deno.writeTextFile(
+      join(starterDir, "App.Codeunit.al"),
+      "codeunit 1 A { }",
+    );
+
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(draft?.starterDir, starterDir);
+  });
+
+  it("omits starterDir when starter/ is absent or has no .al files", async () => {
+    await makeDraft("CG-AL-X063");
+    const withoutDraft = (await listDrafts(scratch))[0];
+    assertEquals(withoutDraft?.starterDir, undefined);
+
+    await ensureDir(join(scratch, "CG-AL-X063", "starter"));
+    await Deno.writeTextFile(
+      join(scratch, "CG-AL-X063", "starter", "notes.txt"),
+      "not al",
+    );
+    const withEmptyStarter = (await listDrafts(scratch))[0];
+    assertEquals(withEmptyStarter?.starterDir, undefined);
+  });
+
+  it("reports starterDir when starter/ has only an uppercase .AL file", async () => {
+    await makeDraft("CG-AL-X064");
+    const starterDir = join(scratch, "CG-AL-X064", "starter");
+    await ensureDir(starterDir);
+    await Deno.writeTextFile(
+      join(starterDir, "App.AL"),
+      "codeunit 1 A { }",
+    );
+
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(draft?.starterDir, starterDir);
+  });
+
   it("resolves models from a named preset", () => {
     const models = resolvePresetModels(
       { benchmarkPresets: { flagship: { llms: ["a/b", "c/d"] } } },

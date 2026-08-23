@@ -35,6 +35,7 @@ import {
   ensureTestCodeunitRange,
   ensureTestDependencies,
 } from "../al/app-manifest.ts";
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
 import { allocateTaskId, allocateTestCodeunitId, taskIdExists } from "./ids.ts";
 import type { SymbolPathResolver } from "./workspace.ts";
 import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
@@ -112,6 +113,14 @@ export async function scaffoldDraft(opts: {
   id?: string;
   slug: string;
   withPrereq?: boolean;
+  /**
+   * Scaffold a diagnose-task draft instead of a trap-task one: creates
+   * `scratch/<id>/starter/` (the buggy starter application the model must
+   * fix) instead of `naive/`, and points `task.yml` at `diagnose.md`. The
+   * starter IS the naive side for this task shape - there is nothing else
+   * to author into a separate directory.
+   */
+  diagnose?: boolean;
   /** BC container the generated workspace targets. Defaults to `DEFAULT_PROBE_CONTAINER`. */
   container?: string;
   roots: IdRoots;
@@ -124,6 +133,7 @@ export async function scaffoldDraft(opts: {
 }): Promise<DraftMeta> {
   const { slug, roots } = opts;
   const withPrereq = opts.withPrereq ?? false;
+  const diagnose = opts.diagnose ?? false;
 
   if (!KEBAB_CASE_PATTERN.test(slug)) {
     throw new Error(
@@ -173,7 +183,11 @@ export async function scaffoldDraft(opts: {
   const createdAt = new Date().toISOString();
 
   await ensureDir(join(draftDir, "correct"));
-  await ensureDir(join(draftDir, "naive"));
+  if (diagnose) {
+    await ensureDir(join(draftDir, DRAFT_STARTER_DIRNAME));
+  } else {
+    await ensureDir(join(draftDir, "naive"));
+  }
 
   let prereqAppJson: AppJson | undefined;
   if (withPrereq) {
@@ -195,7 +209,7 @@ export async function scaffoldDraft(opts: {
 
   await Deno.writeTextFile(
     join(draftDir, "task.yml"),
-    renderTaskYaml(id, testCodeunitId),
+    renderTaskYaml(id, testCodeunitId, diagnose),
   );
   await Deno.writeTextFile(
     join(draftDir, "correct", `${id}.Test.al`),
@@ -205,10 +219,12 @@ export async function scaffoldDraft(opts: {
     join(draftDir, "correct", "app.json"),
     renderSolutionAppJson(id, "correct", prereqAppJson),
   );
-  await Deno.writeTextFile(
-    join(draftDir, "naive", "app.json"),
-    renderSolutionAppJson(id, "naive", prereqAppJson),
-  );
+  if (!diagnose) {
+    await Deno.writeTextFile(
+      join(draftDir, "naive", "app.json"),
+      renderSolutionAppJson(id, "naive", prereqAppJson),
+    );
+  }
   await Deno.writeTextFile(join(draftDir, "NOTES.md"), renderNotes(id, slug));
 
   const meta: DraftMeta = { id, slug, testCodeunitId, createdAt, withPrereq };
@@ -231,6 +247,7 @@ export async function scaffoldDraft(opts: {
     draftDir,
     repoRoot: Deno.cwd(),
     hasPrereq: withPrereq,
+    diagnose,
     testCodeunitId,
     container: opts.container ?? DEFAULT_PROBE_CONTAINER,
     symbolPaths,
@@ -245,10 +262,14 @@ export async function scaffoldDraft(opts: {
  * matching `TaskManifestSchema` exactly - the schema is `.strict()`, so a
  * stray key would fail to parse just as loudly as a missing one.
  */
-function renderTaskYaml(id: string, testCodeunitId: number): string {
+function renderTaskYaml(
+  id: string,
+  testCodeunitId: number,
+  diagnose: boolean,
+): string {
   const manifest = {
     id,
-    prompt_template: "code-gen.md",
+    prompt_template: diagnose ? "diagnose.md" : "code-gen.md",
     fix_template: "bugfix.md",
     max_attempts: 2,
     description: "TODO: state what to build. Describe WHAT, never HOW, " +

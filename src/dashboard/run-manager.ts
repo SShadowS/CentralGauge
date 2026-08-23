@@ -48,6 +48,7 @@ import {
   buildGenerationPrompt,
   DEFAULT_TEMPLATE_DIR,
 } from "../llm/prompt-building.ts";
+import { loadStarterCode } from "../tasks/starter-code.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { providerOfModelSlug } from "./model-caller.ts";
 
@@ -189,6 +190,15 @@ export type ModelCaller = (
  * a UI whose whole point is judging responses at a glance. `objects` is `[]`
  * and the rejection's message lands in `error`, which is what a caller uses
  * to tell "no answer" apart from a genuine empty-signature comparison.
+ *
+ * `starterCode` is loaded ONCE by the caller (`runQuick`), not per model —
+ * a diagnose task's starter application is the same text for every model in
+ * the run, so re-reading `draft.starterDir` per model would just re-read the
+ * same files N times. `undefined` here means either the draft has no
+ * `starterDir` or the load raced the files away between listing and run;
+ * either way `buildGenerationPrompt` is what decides whether that omission
+ * is fatal (a diagnose template with no starter code throws), and that
+ * throw is what surfaces on this model's `error` field below.
  */
 async function runOneModel(
   model: string,
@@ -196,6 +206,7 @@ async function runOneModel(
   renderer: PromptTemplateRenderer,
   signature: TrapSignature,
   call: ModelCaller,
+  starterCode: string | undefined,
 ): Promise<Omit<ModelResponse, "rowAssignments" | "rowIdentityConflicts">> {
   let prompt = "";
   let systemPrompt: string | undefined;
@@ -206,6 +217,7 @@ async function runOneModel(
       description: draft.description,
       taskId: draft.id,
       maxAttempts: draft.maxAttempts,
+      ...(starterCode !== undefined ? { starterCode } : {}),
       taskPrompts: draft.prompts,
       provider: providerOfModelSlug(model),
     });
@@ -348,9 +360,38 @@ export async function runQuick(opts: {
   // a run is still asked from the same text.
   const renderer = opts.renderer ?? new TemplateRenderer(DEFAULT_TEMPLATE_DIR);
 
+  // Loaded ONCE for the whole run, not once per model — a diagnose task's
+  // starter application is identical text for every model asked. See
+  // `runOneModel`'s doc comment for what `undefined` means here.
+  //
+  // Wrapped in try/catch deliberately: `loadStarterCode` only swallows
+  // ENOENT itself (see its own doc comment), so anything else it can throw
+  // — `starterDir` pointing at a FILE rather than a directory
+  // (Deno.errors.NotADirectory), a permission error, whatever — must not
+  // reject `runQuick` as a whole. This module's own contract is that one
+  // model erroring never aborts the others; a run-level throw here would
+  // abort ALL of them. Treating any load failure as "no starter code" hands
+  // the decision to `buildGenerationPrompt`'s own guard, which turns a
+  // still-missing `{{starter_code}}` into a loud PER-MODEL error instead.
+  let starterCode: string | undefined;
+  if (opts.draft.starterDir !== undefined) {
+    try {
+      starterCode = await loadStarterCode(opts.draft.starterDir);
+    } catch {
+      starterCode = undefined;
+    }
+  }
+
   const responses = await Promise.all(
     opts.models.map((model) =>
-      runOneModel(model, opts.draft, renderer, signature, opts.call)
+      runOneModel(
+        model,
+        opts.draft,
+        renderer,
+        signature,
+        opts.call,
+        starterCode,
+      )
     ),
   );
 

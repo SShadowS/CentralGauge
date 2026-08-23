@@ -109,6 +109,49 @@ describe("workbench/oracle-files", () => {
     );
   });
 
+  it("refuses any <id>.*.al in starter/ (diagnose-task drafts)", async () => {
+    // starter/ is the naive-side solution dir for a diagnose-task draft
+    // (Task 5's scaffoldDraft `diagnose` option) - probeDraft (Task 6) wires
+    // it into the same live `--solution` role naive/ plays for a trap-task
+    // draft, so it needs the identical reserved-prefix refusal.
+    await ensureDir(join(draftDir, "starter"));
+    await Deno.writeTextFile(
+      join(draftDir, "starter", `${ID}.MockThing.al`),
+      'codeunit 88806 "X Mock" { }',
+    );
+    const error = await assertRejects(
+      () => classifyOracleFiles({ id: ID, draftDir }),
+      OracleFileError,
+    );
+    assertStringIncludes(error.message, "starter/");
+  });
+
+  it("refuses a case-mismatched <id>.*.al in starter/", async () => {
+    await ensureDir(join(draftDir, "starter"));
+    await Deno.writeTextFile(
+      join(draftDir, "starter", "cg-al-x053.Mock.al"),
+      'codeunit 88806 "X Mock" { }',
+    );
+    await assertRejects(
+      () => classifyOracleFiles({ id: ID, draftDir }),
+      OracleFileError,
+    );
+  });
+
+  it("does not refuse an unprefixed file in starter/", async () => {
+    // Guards the refusal from widening into "no starter/ files allowed" -
+    // the buggy application's own (unprefixed) files are exactly what
+    // starter/ exists to hold.
+    await ensureDir(join(draftDir, "starter"));
+    await Deno.writeTextFile(
+      join(draftDir, "starter", "Buggy.Codeunit.al"),
+      'codeunit 70001 "Buggy" { }',
+    );
+    const set = await classifyOracleFiles({ id: ID, draftDir });
+    assertEquals(set.oracle, `${ID}.Test.al`);
+    assertEquals(set.companions, []);
+  });
+
   it("refuses a case-mismatched companion in correct/", async () => {
     // NTFS makes this the same prefix; both copiers' `startsWith` does not.
     // Classified as a companion and promoted, then injected by NEITHER

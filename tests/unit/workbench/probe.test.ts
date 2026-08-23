@@ -594,6 +594,110 @@ describe("workbench/probe", () => {
     );
 
     it(
+      "uses starter/ as the naive side when the draft is diagnose-shaped " +
+        "(starter/ has .al files, naive/ has none)",
+      async () => {
+        // A diagnose draft (scaffoldDraft's `diagnose` option) never gets a
+        // naive/ solution file - naive/ from beforeEach is left in place,
+        // empty, to prove its bare existence does not defeat detection.
+        await ensureDir(join(draftDir, "starter"));
+        await Deno.writeTextFile(
+          join(draftDir, "starter", "Buggy.Codeunit.al"),
+          'codeunit 70001 "Buggy" { }\n',
+        );
+
+        const calls: string[][] = [];
+        await probeDraft(id, { scratchDir, runner: recordingRunner(calls) });
+
+        assertEquals(calls.length, 2);
+        const naiveCall = calls.find((a) =>
+          a[a.indexOf("--expect") + 1] === "fail"
+        );
+        assertEquals(
+          naiveCall?.[naiveCall.indexOf("--solution") + 1],
+          join(draftDir, "starter"),
+        );
+        assertEquals(naiveCall?.includes("--strict-fail-mode"), true);
+
+        const correctCall = calls.find((a) =>
+          a[a.indexOf("--expect") + 1] === "pass"
+        );
+        assertEquals(
+          correctCall?.[correctCall.indexOf("--solution") + 1],
+          join(draftDir, "correct"),
+        );
+      },
+    );
+
+    it(
+      "refuses when both naive/ and starter/ carry .al files, naming both dirs",
+      async () => {
+        await Deno.writeTextFile(
+          join(draftDir, "naive", "Solution.al"),
+          'codeunit 70001 "Solution" { }\n',
+        );
+        await ensureDir(join(draftDir, "starter"));
+        await Deno.writeTextFile(
+          join(draftDir, "starter", "Buggy.Codeunit.al"),
+          'codeunit 70002 "Buggy" { }\n',
+        );
+
+        const calls: string[][] = [];
+        const error = await assertRejects(() =>
+          probeDraft(id, { scratchDir, runner: recordingRunner(calls) })
+        );
+        assertStringIncludes(
+          (error as Error).message,
+          join(draftDir, "naive"),
+        );
+        assertStringIncludes(
+          (error as Error).message,
+          join(draftDir, "starter"),
+        );
+        assertEquals(calls.length, 0);
+      },
+    );
+
+    it(
+      "refreshes the workspace with diagnose: true for a starter-shaped draft",
+      async () => {
+        await ensureDir(join(draftDir, "starter"));
+        await Deno.writeTextFile(
+          join(draftDir, "starter", "Buggy.Codeunit.al"),
+          'codeunit 70001 "Buggy" { }\n',
+        );
+        await Deno.writeTextFile(
+          join(draftDir, "task.yml"),
+          `id: ${id}\nexpected:\n  testCodeunitId: 80099\n`,
+        );
+
+        await probeDraft(id, {
+          scratchDir,
+          runner: stubRunner({ correct: 0, naive: 0 }),
+        });
+
+        const raw = await Deno.readTextFile(
+          join(draftDir, `${id}.code-workspace`),
+        );
+        const ws = JSON.parse(raw) as {
+          folders: Array<{ path: string; name: string }>;
+          tasks: { tasks: Array<{ label: string; command: string }> };
+        };
+        assertEquals(ws.folders.some((f) => f.path === "starter"), true);
+        assertEquals(ws.folders.some((f) => f.path === "naive"), false);
+
+        const naiveTask = ws.tasks.tasks.find((t) =>
+          t.label.includes("starter")
+        );
+        assertEquals(naiveTask !== undefined, true);
+        assertStringIncludes(
+          naiveTask?.command ?? "",
+          `scratch/${id}/starter`,
+        );
+      },
+    );
+
+    it(
       "leaves a pre-existing workspace and checklist untouched when no " +
         "codeunit id resolves (the refresh is skipped, not defaulted)",
       async () => {

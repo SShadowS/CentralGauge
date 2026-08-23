@@ -485,5 +485,59 @@ describe("workbench/scaffold", () => {
 
       assertEquals(second.testCodeunitId, first.testCodeunitId + 1);
     });
+
+    it("diagnose: true creates starter/ instead of naive/, and points task.yml at diagnose.md", async () => {
+      const meta = await scaffoldDraft({
+        slug: "diagnose-me",
+        diagnose: true,
+        roots,
+      });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(await exists(join(draftDir, "starter")), true);
+      assertEquals(await exists(join(draftDir, "naive")), false);
+
+      const taskYaml = await Deno.readTextFile(join(draftDir, "task.yml"));
+      assertStringIncludes(taskYaml, "prompt_template: diagnose.md");
+    });
+
+    it("diagnose: false (default) still creates naive/ and no starter/", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(await exists(join(draftDir, "naive")), true);
+      assertEquals(await exists(join(draftDir, "starter")), false);
+
+      const taskYaml = await Deno.readTextFile(join(draftDir, "task.yml"));
+      assertStringIncludes(taskYaml, "prompt_template: code-gen.md");
+    });
+
+    it("diagnose + withPrereq together: starter/ and prereq/ both exist, no naive/, and the prereq dependency is wired", async () => {
+      const meta = await scaffoldDraft({
+        slug: "diagnose-with-dep",
+        diagnose: true,
+        withPrereq: true,
+        roots,
+      });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(await exists(join(draftDir, "starter")), true);
+      assertEquals(await exists(join(draftDir, "naive")), false);
+      assertEquals(await exists(join(draftDir, "prereq", "app.json")), true);
+
+      const taskYaml = await Deno.readTextFile(join(draftDir, "task.yml"));
+      assertStringIncludes(taskYaml, "prompt_template: diagnose.md");
+
+      const prereqAppJson = JSON.parse(
+        await Deno.readTextFile(join(draftDir, "prereq", "app.json")),
+      ) as { id: string };
+      const correctAppJson = JSON.parse(
+        await Deno.readTextFile(join(draftDir, "correct", "app.json")),
+      ) as { dependencies: Array<{ id: string }> };
+      assertEquals(
+        correctAppJson.dependencies.some((d) => d.id === prereqAppJson.id),
+        true,
+      );
+    });
   });
 });

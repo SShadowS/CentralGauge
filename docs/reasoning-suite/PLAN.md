@@ -33,7 +33,7 @@ Standing constraints (from CLAUDE.md + session rules):
 - [ ] **Premise probe: `TestPermissions`** — can a test simulate a
       restricted role deterministically under the SOAP runner? Gates the
       permissions category (3 tasks). Deferred until perf probe lands.
-- [ ] **Diagnose-task format** (the one real engineering task):
+- [x] **Diagnose-task format** (the one real engineering task):
   - `templates/diagnose.md` prompt template: starter code + symptom.
   - Task YAML support for starter source files (files live under
     `tasks/`, so they are inside the task-set hash).
@@ -99,3 +99,4 @@ Standing constraints (from CLAUDE.md + session rules):
 | Date | What moved |
 |---|---|
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
+| 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |

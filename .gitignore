@@ -97,6 +97,15 @@ tests/al/*/.alpackages/
 tests/al/*/output/
 tests/al/*/rad.json
 
+# AL build artifacts for committed diagnose-task starter applications.
+# tasks/starter/<id>/ is opened as a live AL project root during authoring
+# (scratch/<id>/starter/, same layout, moves here wholesale on promote), so
+# it accumulates the same editor/compiler artifacts as the tests/al/ projects
+# above.
+tasks/starter/*/.alpackages/
+tasks/starter/*/output/
+tasks/starter/*/rad.json
+
 # Plan G — workflow orchestrator output (CI-only).
 weekly-cycle-result.json
 digest.md

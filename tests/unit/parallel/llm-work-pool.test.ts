@@ -4,6 +4,7 @@
  * Tests the work pool for parallel LLM calls with rate limiting.
  */
 
+import { join } from "@std/path";
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 
@@ -13,10 +14,14 @@ import {
 } from "../../../src/parallel/llm-work-pool.ts";
 import { ProviderRateLimiter } from "../../../src/parallel/rate-limiter.ts";
 import type { ParallelExecutionConfig } from "../../../src/parallel/types.ts";
+import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
+import { MockLLMAdapter } from "../../../src/llm/mock-adapter.ts";
 import {
+  cleanupTempDir,
   createMockLLMWorkItem,
   createMockTaskExecutionContext,
   createMockTaskManifest,
+  createTempDir,
 } from "../../utils/test-helpers.ts";
 
 // Mock rate limiter that allows immediate execution
@@ -640,5 +645,159 @@ Provide the corrected code:`;
     assertEquals(limited.length, 20);
     assertEquals(limited[0], "Error 1");
     assertEquals(limited[19], "Error 20");
+  });
+});
+
+describe("Diagnose-task starter code rendering", () => {
+  // The pool's TemplateRenderer resolves "templates" relative to Deno.cwd()
+  // (same as the real bench), and starterDirForTask resolves
+  // "tasks/starter/<id>" the same way — so these tests build a temp project
+  // root and chdir into it, mirroring
+  // tests/unit/dashboard/run-manager.test.ts's chdir+finally pattern.
+  function createDiagnoseConfig(
+    provider: string,
+  ): ParallelExecutionConfig {
+    return {
+      maxGlobalConcurrency: 1,
+      providerConcurrency: new Map([
+        [provider, { concurrent: 2, rpm: 1000, tpm: 1000000 }],
+      ]),
+      compileQueueSize: 100,
+      resultBufferSize: 50,
+      streamResults: false,
+      compileQueueTimeout: 300000,
+      taskConcurrency: 1,
+      templateDir: "templates",
+    };
+  }
+
+  function createDiagnoseRateLimiter(provider: string): ProviderRateLimiter {
+    return new ProviderRateLimiter(
+      new Map([[provider, { concurrent: 100, rpm: 1000, tpm: 1000000 }]]),
+    );
+  }
+
+  it("renders tasks/starter/<id> into the attempt-1 prompt for a diagnose-template task", async () => {
+    const cwd = Deno.cwd();
+    const root = await createTempDir("llm-work-pool-starter");
+    const provider = "diagnose-starter-capture";
+    const capturedPrompts: string[] = [];
+
+    LLMAdapterRegistry.register(provider, () => {
+      const adapter = new MockLLMAdapter();
+      const origGenerateCode = adapter.generateCode.bind(adapter);
+      adapter.generateCode = (req, ctx) => {
+        capturedPrompts.push(req.prompt);
+        return origGenerateCode(req, ctx);
+      };
+      return adapter;
+    });
+
+    try {
+      const starterDir = join(root, "tasks", "starter", "CG-AL-X070");
+      await Deno.mkdir(starterDir, { recursive: true });
+      await Deno.writeTextFile(
+        join(starterDir, "A.Table.al"),
+        'table 50100 "A"\n{\n}\n',
+      );
+
+      const templatesDir = join(root, "templates");
+      await Deno.mkdir(templatesDir, { recursive: true });
+      const diagnoseTemplate = await Deno.readTextFile(
+        join(cwd, "templates", "diagnose.md"),
+      );
+      await Deno.writeTextFile(
+        join(templatesDir, "diagnose.md"),
+        diagnoseTemplate,
+      );
+
+      Deno.chdir(root);
+
+      const manifest = createMockTaskManifest({
+        id: "CG-AL-X070",
+        prompt_template: "diagnose.md",
+      });
+      const item = createMockLLMWorkItem({
+        taskManifest: manifest,
+        llmProvider: provider,
+        llmModel: "mock-gpt-4",
+        context: createMockTaskExecutionContext({
+          manifest,
+          llmProvider: provider,
+        }),
+      });
+
+      const pool = new LLMWorkPool(
+        createDiagnoseConfig(provider),
+        createDiagnoseRateLimiter(provider),
+      );
+
+      const result = await pool.submit(item);
+      assertEquals(result.error, undefined);
+
+      const prompt = capturedPrompts.at(-1);
+      assertEquals(prompt !== undefined, true);
+      assertEquals(prompt!.includes("// FILE: A.Table.al"), true);
+    } finally {
+      Deno.chdir(cwd);
+      await cleanupTempDir(root);
+    }
+  });
+
+  it("fails loudly when a diagnose-template task has no tasks/starter/<id> directory", async () => {
+    const cwd = Deno.cwd();
+    const root = await createTempDir("llm-work-pool-starter-missing");
+    const provider = "diagnose-starter-missing";
+
+    // A valid registered adapter is needed so the failure under test is the
+    // missing-starter-code error from buildRequest, not an unrelated
+    // "unknown adapter" error from getAdapter.
+    LLMAdapterRegistry.register(provider, () => new MockLLMAdapter());
+
+    try {
+      const templatesDir = join(root, "templates");
+      await Deno.mkdir(templatesDir, { recursive: true });
+      const diagnoseTemplate = await Deno.readTextFile(
+        join(cwd, "templates", "diagnose.md"),
+      );
+      await Deno.writeTextFile(
+        join(templatesDir, "diagnose.md"),
+        diagnoseTemplate,
+      );
+
+      // Deliberately no tasks/starter/CG-AL-X070 directory.
+      Deno.chdir(root);
+
+      const manifest = createMockTaskManifest({
+        id: "CG-AL-X070",
+        prompt_template: "diagnose.md",
+      });
+      const item = createMockLLMWorkItem({
+        taskManifest: manifest,
+        llmProvider: provider,
+        llmModel: "mock-gpt-4",
+        context: createMockTaskExecutionContext({
+          manifest,
+          llmProvider: provider,
+        }),
+      });
+
+      const pool = new LLMWorkPool(
+        createDiagnoseConfig(provider),
+        createDiagnoseRateLimiter(provider),
+      );
+
+      const result = await pool.submit(item);
+      assertEquals(result.success, false);
+      assertEquals(
+        result.error?.includes(
+          "prompt template requires starter code but none was found for CG-AL-X070",
+        ),
+        true,
+      );
+    } finally {
+      Deno.chdir(cwd);
+      await cleanupTempDir(root);
+    }
   });
 });

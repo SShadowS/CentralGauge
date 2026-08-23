@@ -1,16 +1,18 @@
 /**
  * Promote gate for the task workbench.
  *
- * `promoteDraft` is the last checkpoint before a hand-authored trap-task
- * becomes something models are scored against: it moves a `scratch/<id>/`
- * draft's `task.yml`, the oracle-side file set in `correct/` (the `<id>.Test.al`
+ * `promoteDraft` is the last checkpoint before a hand-authored task becomes
+ * something models are scored against: it moves a `scratch/<id>/` draft's
+ * `task.yml`, the oracle-side file set in `correct/` (the `<id>.Test.al`
  * oracle itself plus any `<id>.*.al` companions - mocks, spies, helper
- * enums), and (when present) `prereq/` into the committed `tasks/` and
- * `tests/al/` trees. Because that move changes
- * `task_sets.hash` (see CLAUDE.md's "Task-set hash scope"), it refuses far
- * more than it accepts - a task that a naive solution also passes tests
- * nothing, and a task promoted on an infra hiccup is worse, because it
- * looks validated when it is not.
+ * enums), (when present) `prereq/`, and (for a diagnose-task draft - see
+ * Task 5's `scaffoldDraft` `diagnose` option) `starter/`, into the committed
+ * `tasks/` and `tests/al/` trees. Because that move changes `task_sets.hash`
+ * (see CLAUDE.md's "Task-set hash scope"; `starter/`'s `.al` files are hashed
+ * too - see `src/ingest/catalog/task-set-hash.ts`), it refuses far more than
+ * it accepts - a task that a naive solution also passes tests nothing, and a
+ * task promoted on an infra hiccup is worse, because it looks validated when
+ * it is not.
  *
  * Load-bearing refusals:
  *
@@ -55,6 +57,7 @@ import type { ProbeVerdict } from "./probe.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
 import { DEFAULT_PROBE_CONTAINER } from "./scaffold.ts";
 import { parseTaskManifest } from "../tasks/interfaces.ts";
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
 import { writeWorkspace } from "./workspace.ts";
 
 export type PromoteDifficulty = "easy" | "medium" | "hard";
@@ -79,6 +82,14 @@ export interface PromoteResult {
    * one (`scratch/<id>/prereq/` -> `tests/al/dependencies/<id>/`).
    */
   movedPrereq?: string;
+  /**
+   * Repo-canonical path the starter application was moved to, when this is
+   * a diagnose-task draft (`scratch/<id>/starter/` ->
+   * `tasks/starter/<id>/`) - see `starterDirForTask` in
+   * `src/tasks/starter-code.ts`, the read side that resolves this same
+   * location at bench time.
+   */
+  movedStarter?: string;
   /** Always `true` - promoting always changes `task_sets.hash`. */
   hashChanged: true;
   /** Whether `--force` was used to skip the probe gate. */
@@ -235,12 +246,16 @@ async function assertVerdictIsFresh(
 
   const candidates = [join(draftDir, "task.yml")];
 
-  // Only source files, and never editor state. Once correct/, naive/ and
-  // prereq/ are live AL projects, the AL extension and AL Test Runner write
-  // .altestrunner/, rad.json, .vscode/ and .alpackages/ into them; treating
-  // those as draft edits would force a spurious multi-minute re-probe after
-  // every session.
-  for (const solutionDir of ["correct", "naive", "prereq"]) {
+  // Only source files, and never editor state. Once correct/, naive/,
+  // starter/ and prereq/ are live AL projects, the AL extension and AL Test
+  // Runner write .altestrunner/, rad.json, .vscode/ and .alpackages/ into
+  // them; treating those as draft edits would force a spurious multi-minute
+  // re-probe after every session. `starter/` is walked for a diagnose-task
+  // draft for the same reason `naive/` is walked for a trap-task one: it IS
+  // the naive side the cached verdict was probed against, so an edit to it
+  // after a green probe must invalidate the verdict exactly like an edit to
+  // naive/ would.
+  for (const solutionDir of ["correct", "naive", "prereq", "starter"]) {
     const dir = join(draftDir, solutionDir);
     if (!(await exists(dir))) continue;
     for await (const entry of walk(dir, { includeDirs: false })) {
@@ -435,6 +450,29 @@ async function removeDroppedImportedFile(
 }
 
 /**
+ * True when `dir` contains at least one file (non-recursive) whose name ends
+ * in `.al`, case-insensitively. A missing directory is `false`, not an error.
+ *
+ * The same STRUCTURAL test `probeDraft` (`src/workbench/probe.ts`) uses to
+ * tell a diagnose-task draft (`starter/` holds the buggy application) apart
+ * from a trap-task one (`naive/`) - `scaffoldDraft` `ensureDir`s `starter/`
+ * empty at scaffold time, so bare existence cannot make that call.
+ */
+async function dirHasAlFiles(dir: string): Promise<boolean> {
+  try {
+    for await (const entry of Deno.readDir(dir)) {
+      if (entry.isFile && entry.name.toLowerCase().endsWith(".al")) {
+        return true;
+      }
+    }
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+  return false;
+}
+
+/**
  * True if `id` appears as a whole token in some filename under `dir` (any
  * subdirectory, any difficulty) - i.e. not immediately followed by another
  * digit, so a filename for `CG-AL-X005` cannot false-positive against one
@@ -532,6 +570,17 @@ export async function promoteDraft(
   const testTargetPath = join(roots.testsDir, difficulty, `${id}.Test.al`);
   const prereqTargetDir = join(roots.testsDir, "dependencies", id);
 
+  // Diagnose-task draft detection - structural, same test probeDraft uses
+  // (see dirHasAlFiles's doc comment). `starterDir` is the draft-side
+  // source; `starterTargetDir` is where it lands once promoted, mirroring
+  // `starterDirForTask(projectRoot, id)` (src/tasks/starter-code.ts) but
+  // built from `roots.tasksDir` instead of a repo root, exactly like every
+  // other destination path in this function - `roots` points at a temp tree
+  // under test.
+  const starterDir = join(draftDir, DRAFT_STARTER_DIRNAME);
+  const starterTargetDir = join(roots.tasksDir, DRAFT_STARTER_DIRNAME, id);
+  const isDiagnose = await dirHasAlFiles(starterDir);
+
   await refuseIfExists(
     taskTargetPath,
     "task manifest",
@@ -545,6 +594,14 @@ export async function promoteDraft(
     allowedOverwrites,
   );
   await refuseIfExists(prereqTargetDir, "prereq dir", roots, allowedOverwrites);
+  if (isDiagnose) {
+    await refuseIfExists(
+      starterTargetDir,
+      "starter dir",
+      roots,
+      allowedOverwrites,
+    );
+  }
   for (const name of oracleSet.companions) {
     await refuseIfExists(
       join(roots.testsDir, difficulty, name),
@@ -665,6 +722,7 @@ export async function promoteDraft(
   const movedPairs: Array<{ from: string; to: string }> = [];
   let taskWritten = false;
   let prereqMoved = false;
+  let starterMoved = false;
   try {
     await ensureDir(dirname(taskTargetPath));
     await ensureDir(dirname(testTargetPath));
@@ -707,6 +765,18 @@ export async function promoteDraft(
       prereqMoved = true;
     }
 
+    if (isDiagnose) {
+      await ensureDir(dirname(starterTargetDir));
+      // Recursive replace, not a merge - same reasoning as the prereq move
+      // above: `overwrite` only fires here for an importedFrom-allow-listed
+      // destination (refuseIfExists already ran), so removing whatever sits
+      // there first is correct, not lossy.
+      await move(starterDir, starterTargetDir, {
+        overwrite: await exists(starterTargetDir),
+      });
+      starterMoved = true;
+    }
+
     // Defensive re-validation of what now sits at the destination. Only a
     // pathological write/read roundtrip issue trips this, since the
     // in-memory object above already validated.
@@ -719,6 +789,22 @@ export async function promoteDraft(
     // cleanup also failed. Rollback failures are collected and appended
     // instead of replacing the primary message.
     const rollbackErrors: string[] = [];
+    if (starterMoved) {
+      // Undone before prereqMoved below - starter/ is moved chronologically
+      // AFTER prereq/ in the try block above, so LIFO rollback undoes it
+      // first.
+      try {
+        await move(starterTargetDir, starterDir);
+      } catch (rollbackError) {
+        rollbackErrors.push(
+          `restoring ${starterTargetDir} -> ${starterDir}: ${
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError)
+          }`,
+        );
+      }
+    }
     if (prereqMoved) {
       try {
         await move(prereqTargetDir, draftPrereqDir);
@@ -883,6 +969,7 @@ export async function promoteDraft(
       symbolPaths: [],
       state: "promoted",
       difficulty,
+      diagnose: isDiagnose,
     });
   } catch (error) {
     postCommitWarnings.push(
@@ -901,6 +988,7 @@ export async function promoteDraft(
       `tests/al/${difficulty}/${n}`
     ),
     ...(meta?.withPrereq ? { movedPrereq: `tests/al/dependencies/${id}` } : {}),
+    ...(isDiagnose ? { movedStarter: `tasks/starter/${id}` } : {}),
     hashChanged: true,
     forced: force,
     ...(postCommitWarnings.length > 0 ? { postCommitWarnings } : {}),

@@ -508,6 +508,146 @@ describe("workbench/promote", () => {
       );
     });
 
+    describe("diagnose drafts (starter/)", () => {
+      /**
+       * `scaffoldDraft`'s `diagnose` option only `ensureDir`s `starter/`
+       * empty (Task 5) - the operator authors the buggy application by hand,
+       * same as `correct/`/`naive/` for a trap-task draft. `promoteDraft`
+       * detects diagnose-ness structurally (dirHasAlFiles), so a test
+       * fixture must actually write an `.al` file in, not just rely on the
+       * directory's bare existence.
+       */
+      async function writeStarterFile(id: string): Promise<void> {
+        await Deno.writeTextFile(
+          join(roots.scratchDir, id, "starter", "Buggy.Codeunit.al"),
+          'codeunit 70001 "Buggy" { }\n',
+        );
+      }
+
+      it("moves scratch/<id>/starter/ to tasks/starter/<id>/ and reports movedStarter", async () => {
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X053",
+          slug: "poisoned-rescue",
+          diagnose: true,
+          roots,
+        });
+        await writeStarterFile(meta.id);
+
+        // Not yet in the committed tree - scaffoldDraft only writes it
+        // under scratch/.
+        assertEquals(
+          await exists(join(roots.tasksDir, "starter", meta.id)),
+          false,
+        );
+
+        const result = await promoteDraft(meta.id, {
+          difficulty: "hard",
+          roots,
+          verdict: passingVerdict(),
+        });
+
+        assertEquals(result.movedStarter, `tasks/starter/${meta.id}`);
+        assertEquals(
+          await exists(
+            join(roots.tasksDir, "starter", meta.id, "Buggy.Codeunit.al"),
+          ),
+          true,
+        );
+        // Moved, not copied - nothing left behind in scratch/.
+        assertEquals(
+          await exists(join(roots.scratchDir, meta.id, "starter")),
+          false,
+        );
+      });
+
+      it("refuses when the starter target already exists - no --force override", async () => {
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X053",
+          slug: "poisoned-rescue",
+          diagnose: true,
+          roots,
+        });
+        await writeStarterFile(meta.id);
+        await ensureDir(join(roots.tasksDir, "starter", meta.id));
+        await Deno.writeTextFile(
+          join(roots.tasksDir, "starter", meta.id, "Existing.al"),
+          'codeunit 70099 "Existing" { }\n',
+        );
+
+        await assertRejects(
+          () =>
+            promoteDraft(meta.id, {
+              difficulty: "hard",
+              roots,
+              verdict: passingVerdict(),
+              force: true,
+            }),
+          Error,
+          "starter dir already exists",
+        );
+
+        // Nothing moved out of scratch/ on refusal.
+        assertEquals(
+          await exists(join(roots.scratchDir, meta.id, "starter")),
+          true,
+        );
+      });
+
+      it("refuses when a starter/ file was edited after the cached verdict (staleness)", async () => {
+        // starter/ IS the naive side the cached verdict was probed against
+        // for a diagnose draft - an edit after a green probe must invalidate
+        // it exactly like an edit to naive/ would for a trap-task draft.
+        const meta = await scaffoldDraft({
+          id: "CG-AL-X053",
+          slug: "poisoned-rescue",
+          diagnose: true,
+          roots,
+        });
+        await writeStarterFile(meta.id);
+        const starterAl = join(
+          roots.scratchDir,
+          meta.id,
+          "starter",
+          "Buggy.Codeunit.al",
+        );
+        const verdict: ProbeVerdict = {
+          correct: "pass",
+          naive: "fail",
+          discriminates: true,
+          at: new Date().toISOString(),
+        };
+        const future = new Date(Date.now() + 60_000);
+        await Deno.utime(starterAl, future, future);
+
+        await assertRejects(
+          () => promoteDraft(meta.id, { difficulty: "hard", roots, verdict }),
+          Error,
+          "modified after the cached probe verdict",
+        );
+        // Nothing moved out of scratch/ on refusal.
+        assertEquals(
+          await exists(join(roots.tasksDir, "starter", meta.id)),
+          false,
+        );
+      });
+
+      it("a non-diagnose draft's promote is unaffected: no movedStarter, no tasks/starter/<id> created", async () => {
+        const meta = await scaffoldDraft({ slug: "day-close", roots });
+
+        const result = await promoteDraft(meta.id, {
+          difficulty: "hard",
+          roots,
+          verdict: passingVerdict(),
+        });
+
+        assertEquals(result.movedStarter, undefined);
+        assertEquals(
+          await exists(join(roots.tasksDir, "starter", meta.id)),
+          false,
+        );
+      });
+    });
+
     it("uses the slug recorded in .meta.json when opts.slug is not given", async () => {
       const meta = await scaffoldDraft({ slug: "inner-commit", roots });
 

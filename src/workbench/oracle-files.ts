@@ -25,6 +25,8 @@
 
 import { join } from "@std/path";
 
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
+
 /** Basenames of the oracle-side files in a draft's `correct/` directory. */
 export interface OracleFileSet {
   /** Always `<id>.Test.al`. */
@@ -108,6 +110,7 @@ export async function classifyOracleFiles(
   const { id, draftDir } = opts;
   const correctDir = join(draftDir, "correct");
   const naiveDir = join(draftDir, "naive");
+  const starterDir = join(draftDir, DRAFT_STARTER_DIRNAME);
   const oracleName = `${id}.Test.al`;
 
   // --- Refusal 1: a bare <id>.al would overwrite every model's submission.
@@ -126,21 +129,35 @@ export async function classifyOracleFiles(
     }
   }
 
-  // --- Refusal 2: no <id>.*.al may live in naive/.
-  // copyAlFilesToDir writes it into the naive verify dir, then
-  // copyCompanionTestFiles overwrites it from correct/ (later write wins),
-  // so the naive verdict would stop reflecting naive/'s actual content.
-  // Oracle-side files are injected from correct/ on BOTH runs, so naive/
-  // never legitimately needs one.
-  for (const name of await listAlFiles(naiveDir)) {
-    if (hasTaskPrefix(id, name)) {
-      throw new OracleFileError(
-        `Draft ${id}: naive/${name} uses the reserved "${id}." prefix. ` +
-          `Oracle-side files are injected into the naive run from correct/, ` +
-          `and a same-named file in naive/ is silently overwritten by that ` +
-          `injection — so the naive verdict would not reflect what is ` +
-          `actually in naive/. Move it to correct/ or rename it.`,
-      );
+  // --- Refusal 2: no <id>.*.al may live in the naive-side solution dir -
+  // naive/ for a trap-task draft, starter/ for a diagnose-task draft (Task 5's
+  // scaffoldDraft `diagnose` option; Task 6 wires starter/ into probeDraft as
+  // a live `--solution` dir). `copyAlFilesToDir` writes it into that dir's
+  // verify staging copy, then `copyCompanionTestFiles` overwrites it from
+  // correct/ (later write wins - both calls are solution-dir-agnostic in
+  // mcp/al-tools-server.ts), so that side's verdict would stop reflecting its
+  // actual content. Oracle-side files are injected from correct/ on BOTH
+  // runs, so neither naive/ nor starter/ ever legitimately needs one. Checked
+  // unconditionally on both directories - a missing one (e.g. starter/ on a
+  // trap-task draft) is simply empty per `listAlFiles`, so this is a no-op
+  // for the shape that doesn't apply.
+  for (
+    const [label, dir] of [
+      ["naive", naiveDir],
+      [DRAFT_STARTER_DIRNAME, starterDir],
+    ] as const
+  ) {
+    for (const name of await listAlFiles(dir)) {
+      if (hasTaskPrefix(id, name)) {
+        throw new OracleFileError(
+          `Draft ${id}: ${label}/${name} uses the reserved "${id}." prefix. ` +
+            `Oracle-side files are injected into the ${label} run from ` +
+            `correct/, and a same-named file in ${label}/ is silently ` +
+            `overwritten by that injection — so the ${label} verdict would ` +
+            `not reflect what is actually in ${label}/. Move it to correct/ ` +
+            `or rename it.`,
+        );
+      }
     }
   }
 

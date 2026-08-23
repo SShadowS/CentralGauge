@@ -51,6 +51,7 @@ import type { ProbeOutcome as RawProbeOutcome } from "../../scripts/trap-probe.t
 import type { DraftMeta } from "./scaffold.ts";
 import type { SymbolPathResolver } from "./workspace.ts";
 import { classifyOracleFiles } from "./oracle-files.ts";
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
 import { resolveSymbolPaths, writeWorkspace } from "./workspace.ts";
 
 /**
@@ -228,17 +229,49 @@ export async function resolveDraftSlugForWorkspace(
 }
 
 /**
- * Runs the discrimination probe for `scratch/<id>/`: `correct/` against
- * `--expect pass`, `naive/` against `--expect fail`. Writes the verdict to
- * `scratch/<id>/.probe.json` (Task 5's promote gate and the Phase 2 panel
- * both read it without re-running the probe) and returns it.
+ * True when `dir` contains at least one file (non-recursive) whose name ends
+ * in `.al`, case-insensitively. A missing directory is `false`, not an error.
  *
- * Throws, naming which, when `correct/` or `naive/` does not exist yet, and
- * throws `OracleFileError` (via `classifyOracleFiles`) when the
- * `correct/<id>.Test.al` oracle is missing or the draft's file layout would
- * fake discrimination - a draft that has not been filled in, or filled in
- * unsafely, is a different situation from one that genuinely does not
- * discriminate, and must not be silently scored as a failure.
+ * This is the STRUCTURAL test that decides whether a draft is diagnose-shaped
+ * (`scratch/<id>/starter/` holds the buggy application that IS the naive
+ * side) rather than trap-shaped (`naive/`) - never a `.meta.json` flag, since
+ * none exists. `scaffoldDraft` (Task 5) `ensureDir`s `starter/` empty at
+ * scaffold time, so bare existence cannot distinguish an authored diagnose
+ * draft from one nobody has filled in yet.
+ */
+async function dirHasAlFiles(dir: string): Promise<boolean> {
+  try {
+    for await (const entry of Deno.readDir(dir)) {
+      if (entry.isFile && entry.name.toLowerCase().endsWith(".al")) {
+        return true;
+      }
+    }
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+  return false;
+}
+
+/**
+ * Runs the discrimination probe for `scratch/<id>/`: `correct/` against
+ * `--expect pass`, and the naive side against `--expect fail`. The naive side
+ * is `naive/` for a trap-task draft, or `starter/` for a diagnose-task draft
+ * (Task 5's `scaffoldDraft` `diagnose` option) - detected structurally by
+ * which one actually has `.al` files, since a diagnose draft has no `naive/`
+ * at all and `.meta.json` carries no flag for this. A draft carrying `.al`
+ * files under BOTH is refused, naming both directories - a draft must pick
+ * one shape. Writes the verdict to `scratch/<id>/.probe.json` (Task 5's
+ * promote gate and the Phase 2 panel both read it without re-running the
+ * probe) and returns it.
+ *
+ * Throws, naming which, when `correct/` is missing, or when the resolved
+ * naive side (`naive/` for a trap-task draft) does not exist yet, and throws
+ * `OracleFileError` (via `classifyOracleFiles`) when the `correct/<id>.Test.al`
+ * oracle is missing or the draft's file layout would fake discrimination - a
+ * draft that has not been filled in, or filled in unsafely, is a different
+ * situation from one that genuinely does not discriminate, and must not be
+ * silently scored as a failure.
  */
 export async function probeDraft(
   id: string,
@@ -258,6 +291,7 @@ export async function probeDraft(
   const draftDir = join(opts.scratchDir, id);
   const correctDir = join(draftDir, "correct");
   const naiveDir = join(draftDir, "naive");
+  const starterDir = join(draftDir, DRAFT_STARTER_DIRNAME);
 
   if (!(await exists(correctDir))) {
     throw new Error(
@@ -265,7 +299,25 @@ export async function probeDraft(
         `a reference solution that should pass before it can run.`,
     );
   }
-  if (!(await exists(naiveDir))) {
+
+  // Diagnose-shaped drafts (Task 5's scaffoldDraft `diagnose` option) have no
+  // naive/ at all - the buggy starter application IS the naive side. See
+  // {@link dirHasAlFiles} for why this is a structural check, not a flag.
+  const naiveHasAlFiles = await dirHasAlFiles(naiveDir);
+  const starterHasAlFiles = await dirHasAlFiles(starterDir);
+
+  if (naiveHasAlFiles && starterHasAlFiles) {
+    throw new Error(
+      `Draft ${id} has .al files under BOTH naive/ (${naiveDir}) and ` +
+        `starter/ (${starterDir}) - a draft must pick one shape, a ` +
+        `trap-task's naive/ or a diagnose-task's starter/, not both.`,
+    );
+  }
+
+  const diagnose = starterHasAlFiles;
+  const naiveSideDir = diagnose ? starterDir : naiveDir;
+
+  if (!diagnose && !(await exists(naiveDir))) {
     throw new Error(
       `Draft ${id} is missing naive/ at ${naiveDir} - the probe needs a ` +
         `plausible-wrong solution that should fail before it can run.`,
@@ -311,6 +363,7 @@ export async function probeDraft(
       container,
       symbolPaths,
       state: "draft",
+      diagnose,
     });
   }
 
@@ -346,7 +399,7 @@ export async function probeDraft(
     "--task",
     id,
     "--solution",
-    naiveDir,
+    naiveSideDir,
     "--expect",
     "fail",
     "--container",

@@ -69,6 +69,9 @@ export interface TaskNewOptions {
   slug: string;
   id?: string;
   withPrereq?: boolean;
+  /** Scaffold a diagnose-task draft (`starter/`, no `naive/`) instead of a
+   *  trap-task one. Forwarded to `scaffoldDraft`. */
+  diagnose?: boolean;
   /** BC container the generated workspace targets. Forwarded to `scaffoldDraft`. */
   container?: string;
   /** Override for tests; defaults to the real repo tree under `Deno.cwd()`. */
@@ -103,6 +106,7 @@ export async function runTaskNew(opts: TaskNewOptions): Promise<DraftMeta> {
     ...(opts.id !== undefined ? { id: opts.id } : {}),
     slug: opts.slug,
     ...(opts.withPrereq !== undefined ? { withPrereq: opts.withPrereq } : {}),
+    ...(opts.diagnose !== undefined ? { diagnose: opts.diagnose } : {}),
     ...(opts.container !== undefined ? { container: opts.container } : {}),
     ...(opts.resolveSymbols !== undefined
       ? { resolveSymbols: opts.resolveSymbols }
@@ -354,6 +358,9 @@ export async function runTaskPromote(
   if (result.movedPrereq) {
     console.log(okIndent + result.movedPrereq);
   }
+  if (result.movedStarter) {
+    console.log(okIndent + result.movedStarter);
+  }
 
   const bangIndent = " ".repeat("[!]  ".length);
   // Post-commit tidy-up failures: the promotion itself succeeded, so these
@@ -489,6 +496,11 @@ export function registerTaskCommand(cli: Command): void {
       { default: false },
     )
     .option(
+      "--diagnose",
+      "Scaffold a diagnose-task draft (scratch/<id>/starter/, no naive/) " +
+        "instead of a trap-task one",
+    )
+    .option(
       "--container <container:string>",
       "BC container the generated workspace's symbol resolution and " +
         "single-side probe tasks target (default: Cronus28 — the only " +
@@ -499,6 +511,7 @@ export function registerTaskCommand(cli: Command): void {
         slug: opts.slug,
         ...(opts.id !== undefined ? { id: opts.id } : {}),
         withPrereq: opts.withPrereq,
+        ...(opts.diagnose !== undefined ? { diagnose: opts.diagnose } : {}),
         ...(opts.container !== undefined ? { container: opts.container } : {}),
       });
     });

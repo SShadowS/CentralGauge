@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
-import { basename } from "@std/path";
+import { basename, join } from "@std/path";
 
 import type { DraftSummary } from "../../../src/dashboard/drafts.ts";
 import {
   runQuick,
   writeRunArtifact,
 } from "../../../src/dashboard/run-manager.ts";
+import { TemplateRenderer } from "../../../src/templates/renderer.ts";
 import { cleanupTempDir, createTempDir } from "../../utils/test-helpers.ts";
 
 const CORRECT = `codeunit 71410 "A"
@@ -465,6 +466,81 @@ describe("dashboard/run-manager", () => {
     await assertRejects(() =>
       writeRunArtifact(dir, { ...run, draftId: "../../escaped" })
     );
+  });
+
+  // Uses the real TemplateRenderer against the repo's templates/diagnose.md,
+  // not the local stub above — the stub resolves its own hand-rolled
+  // interpolation and never reads {{starter_code}}, so it cannot prove the
+  // starter code actually reaches the rendered prompt. loadStarterCode's
+  // "// FILE: <basename>" header is the signal a real diagnose-task prompt
+  // must carry.
+  it("renders starter code into the prompt for a diagnose draft with a starterDir", async () => {
+    const starterDir = await createTempDir("dashboard-starter-test");
+    try {
+      await Deno.writeTextFile(
+        join(starterDir, "App.Codeunit.al"),
+        'codeunit 50100 "App"\n{\n}\n',
+      );
+
+      const run = await runQuick({
+        draft: {
+          ...draft,
+          dir,
+          promptTemplate: "diagnose.md",
+          starterDir,
+        },
+        models: ["anthropic/m"],
+        renderer: new TemplateRenderer(),
+        correctSources: [CORRECT],
+        naiveSources: [NAIVE],
+        call: () =>
+          Promise.resolve({
+            content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+            finishReason: "stop" as const,
+          }),
+      });
+
+      assertStringIncludes(run.responses[0]?.prompt ?? "", "// FILE:");
+    } finally {
+      await cleanupTempDir(starterDir);
+    }
+  });
+
+  // Fix round 1, Important #1: the hoisted starter-code load used to be
+  // unguarded, so any I/O error other than ENOENT (loadStarterCode only
+  // swallows NotFound itself) rejected runQuick as a WHOLE — violating this
+  // module's own "one model erroring never aborts the others" contract.
+  // starterDir pointing at a file, not a directory, is a real way to hit
+  // that: Deno.readDir on a file throws NotADirectory.
+  it("treats a starter-code load failure as no starter code, without rejecting the run", async () => {
+    const starterFile = join(dir, "starter-is-a-file.al");
+    await Deno.writeTextFile(starterFile, "not a directory");
+
+    const run = await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        promptTemplate: "diagnose.md",
+        starterDir: starterFile,
+      },
+      models: ["anthropic/m", "openai/n"],
+      renderer: new TemplateRenderer(),
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+
+    assertEquals(run.responses.length, 2);
+    for (const response of run.responses) {
+      assertStringIncludes(
+        response.error ?? "",
+        "prompt template requires starter code",
+      );
+    }
   });
 
   it("attaches tiered prereq findings to each response", async () => {
