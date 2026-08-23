@@ -545,9 +545,9 @@ compiler/test failure, same as a trap task's fix attempt.
 ### The task-set hash consequence
 
 `tasks/starter/<id>/**` is inside the task-set hash, the same as
-`tests/al/**`: every file there matching a recognized text extension (`.al`,
-`.yml`, `.json`, `.xml`, `.rdlc`, `.md`, `.txt`), matched case-insensitively,
-is hashed. Editing a starter file after promotion moves `task_sets.hash` just
+`tests/al/**`: every file there matching a recognized text extension (`.yml`,
+`.yaml`, `.al`, `.json`, `.xml`, `.rdlc`, `.md`, `.txt`), matched
+case-insensitively, is hashed. Editing a starter file after promotion moves `task_sets.hash` just
 like editing the oracle would. Prompt construction itself is also folded in
 as a versioned policy string (`PROMPT_POLICY_VERSION` in
 `src/ingest/catalog/task-set-hash.ts`) - bumping that string moves the hash
@@ -565,7 +565,7 @@ diff by eye instead of letting a formatter near it.
 
 - **`task import` does not reconstruct `starter/`.** Pulling an
   already-promoted diagnose task back into the workbench (see
-  [Workbench: Import, model selector, VS Code, LLM exchange](./workbench.md))
+  [Workbench: Import, Model Selector, VS Code, LLM Exchange](./workbench.md))
   copies the oracle, its companions, and `prereq/` when present, but not
   `tasks/starter/<id>/`. Copy it into `scratch/<id>/starter/` by hand before
   probing; a follow-up will close this.
