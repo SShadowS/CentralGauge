@@ -485,5 +485,31 @@ describe("workbench/scaffold", () => {
 
       assertEquals(second.testCodeunitId, first.testCodeunitId + 1);
     });
+
+    it("diagnose: true creates starter/ instead of naive/, and points task.yml at diagnose.md", async () => {
+      const meta = await scaffoldDraft({
+        slug: "diagnose-me",
+        diagnose: true,
+        roots,
+      });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(await exists(join(draftDir, "starter")), true);
+      assertEquals(await exists(join(draftDir, "naive")), false);
+
+      const taskYaml = await Deno.readTextFile(join(draftDir, "task.yml"));
+      assertStringIncludes(taskYaml, "prompt_template: diagnose.md");
+    });
+
+    it("diagnose: false (default) still creates naive/ and no starter/", async () => {
+      const meta = await scaffoldDraft({ slug: "day-close", roots });
+      const draftDir = join(roots.scratchDir, meta.id);
+
+      assertEquals(await exists(join(draftDir, "naive")), true);
+      assertEquals(await exists(join(draftDir, "starter")), false);
+
+      const taskYaml = await Deno.readTextFile(join(draftDir, "task.yml"));
+      assertStringIncludes(taskYaml, "prompt_template: code-gen.md");
+    });
   });
 });

@@ -4,10 +4,11 @@
  */
 
 import { exists } from "@std/fs";
-import { join } from "@std/path";
+import { join, resolve } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 
 import type { PromptInjectionConfig } from "../prompts/types.ts";
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
 
 export interface DraftSummary {
   id: string;
@@ -42,6 +43,14 @@ export interface DraftSummary {
    */
   prereqFiles: string[];
   testCodeunitId?: number;
+  /**
+   * Absolute path to `scratch/<id>/starter/`, present only when that
+   * directory contains at least one `.al` file — the same test
+   * `loadStarterCode` applies, so a caller that sees this field can call
+   * `loadStarterCode` and trust it will not come back `undefined` (barring a
+   * race where the files are deleted between listing and use).
+   */
+  starterDir?: string;
 }
 
 /**
@@ -174,6 +183,14 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
     const hasPrereq = await isDirectory(prereqPath);
     const prereqFiles = await listTopLevelFiles(prereqPath);
 
+    // starterDir is present only when scratch/<id>/starter/ actually holds a
+    // .al file — the same condition loadStarterCode itself resolves under,
+    // so a caller that sees this field can trust a subsequent
+    // loadStarterCode(starterDir) call to succeed (barring a delete race).
+    const starterPath = resolve(dir, DRAFT_STARTER_DIRNAME);
+    const starterFiles = await listTopLevelFiles(starterPath);
+    const hasStarterAl = starterFiles.some((name) => name.endsWith(".al"));
+
     // Build the summary object, spreading optional fields only when defined
     const summary: DraftSummary = {
       id,
@@ -187,6 +204,7 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
       ...(maxAttempts !== undefined ? { maxAttempts } : {}),
       ...(prompts !== undefined ? { prompts } : {}),
       ...(testCodeunitId !== undefined ? { testCodeunitId } : {}),
+      ...(hasStarterAl ? { starterDir: starterPath } : {}),
     };
 
     drafts.push(summary);

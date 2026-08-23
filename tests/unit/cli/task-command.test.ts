@@ -68,7 +68,7 @@ Deno.test("task registers a new subcommand under the task parent", () => {
   assertEquals(sub?.getName(), "new");
 });
 
-Deno.test("task new exposes --slug, --id, --with-prereq options", () => {
+Deno.test("task new exposes --slug, --id, --with-prereq, --diagnose options", () => {
   const cli = new Command();
   registerTaskCommand(cli);
   const sub = cli.getCommand("task")?.getCommand("new");
@@ -77,6 +77,7 @@ Deno.test("task new exposes --slug, --id, --with-prereq options", () => {
   assertEquals(names.includes("slug"), true);
   assertEquals(names.includes("id"), true);
   assertEquals(names.includes("with-prereq"), true);
+  assertEquals(names.includes("diagnose"), true);
 });
 
 Deno.test("task registers a probe subcommand under the task parent", () => {
@@ -207,6 +208,31 @@ Deno.test("runTaskNew", async (t) => {
         ),
         false,
       );
+    } finally {
+      await teardown();
+    }
+  });
+
+  await t.step("--diagnose is forwarded to scaffoldDraft", async () => {
+    await setup();
+    try {
+      const meta = await runTaskNew({
+        slug: "fix-the-bug",
+        diagnose: true,
+        roots,
+      });
+      assertEquals(
+        await exists(join(roots.scratchDir, meta.id, "starter")),
+        true,
+      );
+      assertEquals(
+        await exists(join(roots.scratchDir, meta.id, "naive")),
+        false,
+      );
+      const taskYaml = await Deno.readTextFile(
+        join(roots.scratchDir, meta.id, "task.yml"),
+      );
+      assertStringIncludes(taskYaml, "prompt_template: diagnose.md");
     } finally {
       await teardown();
     }
