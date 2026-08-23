@@ -1,0 +1,26 @@
+id: CG-AL-X065
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages order lines. Codeunit "CG X065 Repricer" recalculates the "Line Total" of every order line in a category. Users report that after RepriceCategory runs for a category holding several lines, only one of the category''s lines ends up with an updated "Line Total"; the others keep their previous value. Fix the application so RepriceCategory updates every line in the category.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - var-record
+    - filters
+    - findset
+    - borrowed-cursor
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X065.Test.al
+  testCodeunitId: 88818

@@ -6,11 +6,11 @@ reason in Notes) — they stop re-mining the same ground.
 
 **Counts** (update when editing rows):
 
-- Candidates mined: 0
+- Candidates mined: 1
 - Passed Sonnet filter (Sonnet failed to solve): 0
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 0 / 100
-- Tasks promoted: 0 / 100
+- Tasks built: 1 / 100
+- Tasks promoted: 1 / 100
 
 **Column vocabulary**
 
@@ -24,3 +24,4 @@ reason in Notes) — they stop re-mining the same ground.
 
 | id | source | cat | sonnet | fable | status | notes |
 |---|---|---|---|---|---|---|
+| R001 | pr:52841 (+52724, 52196) | 1 | - | - | promoted (CG-AL-X065) | PILOT of the diagnose format. var-record filter wipe: helper borrows the caller's var record as its aggregation cursor; only one line per category gets repriced. Probe: correct 6/6, starter fails 4/6 (single-line + direct-contract tests pass on starter by design). Auditor HIGH (unfiltered-aggregation hole) closed with the GAMMA test before promote. Skipped the model filter: format validation, not difficulty selection. |
