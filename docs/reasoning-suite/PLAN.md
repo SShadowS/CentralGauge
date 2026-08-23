@@ -46,7 +46,7 @@ Standing constraints (from CLAUDE.md + session rules):
 
 ### Phase 1 — Mining sweeps (parallel subagents; output = ledger rows)
 
-- [ ] **Sweep A: volotests triage.** `docs/volotests/` holds 103
+- [x] DONE 2026-08-23 (4 agents; reports in `sweeps/`) **Sweep A: volotests triage.** `docs/volotests/` holds 103
       structured dirs (`metadata.yaml`, `task.md`, `starter/`, `solution/`,
       `tests/`): algorithm 26, basics 25, integrations 13, filtering 12,
       performance 9, extensibility 7, error 7, transactions 4. Subagents
@@ -54,7 +54,7 @@ Standing constraints (from CLAUDE.md + session rules):
       conversion candidates (perf/transactions/error/extensibility first).
       Conversion recipe: plant a defect in `solution/`, symptom becomes the
       task, original `tests/` seed the oracle.
-- [ ] **Sweep B: Postgres PR corpus re-sweep** (DevOpsWorker pipeline DB,
+- [x] DONE 2026-08-23 (2 lenses; reports in `sweeps/`) **Sweep B: Postgres PR corpus re-sweep** (DevOpsWorker pipeline DB,
       `postgres://pipeline:pipeline@localhost:5432/pipeline`). New lens:
       multi-object logic bugs + ALL performance findings (dropped by the
       2026-08-20 trap mining for lack of an oracle — the SQL-count oracle
@@ -62,7 +62,7 @@ Standing constraints (from CLAUDE.md + session rules):
       multi-round PRs by round SPACING (same-day re-runs are noise),
       agents fall back to deno `npm:pg` when the postgres MCP won't load,
       no shared scratchpad files between agents.
-- [ ] **Sweep C: Azure DevOps work items.** Bug-type work items are
+- [x] DONE 2026-08-23 (report in `sweeps/`) **Sweep C: Azure DevOps work items.** Bug-type work items are
       symptom-first prose — directly our task phrasing. ADO MCP tools are
       available in-session.
 
@@ -99,4 +99,5 @@ Standing constraints (from CLAUDE.md + session rules):
 | Date | What moved |
 |---|---|
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
+| 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |
