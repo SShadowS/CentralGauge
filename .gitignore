@@ -64,6 +64,8 @@ temp/
 # AI
 CLAUDE.md
 PLAN.md
+# The Reasoning-100 plan is a committed team document, not an AI scratch plan.
+!docs/reasoning-suite/PLAN.md
 .claude/
 .mcp.json
 .serena/
