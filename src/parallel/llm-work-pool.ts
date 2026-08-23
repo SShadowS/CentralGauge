@@ -32,6 +32,7 @@ import {
   buildGenerationPrompt,
   DEFAULT_TEMPLATE_DIR,
 } from "../llm/prompt-building.ts";
+import { loadStarterCode, starterDirForTask } from "../tasks/starter-code.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
@@ -513,13 +514,24 @@ export class LLMWorkPool {
     // so a second lookalike pipeline is not allowed to exist.
     let applied;
     if (item.attemptNumber === 1 || !previousAttempt) {
-      // First attempt - render template with task description
+      // First attempt - render template with task description. Diagnose-task
+      // manifests reference `{{starter_code}}` in their prompt_template; the
+      // starter app lives at tasks/starter/<id>/ (Task 1's starter-code.ts)
+      // and is rendered in here so attempt 1 sees the buggy app to diagnose.
+      // Non-diagnose templates don't reference the placeholder, so a missing
+      // starter dir (starterCode undefined) is silently fine for them —
+      // buildGenerationPrompt only throws when the rendered template still
+      // contains the literal placeholder.
+      const starterCode = await loadStarterCode(
+        starterDirForTask(Deno.cwd(), item.taskManifest.id),
+      );
       applied = await buildGenerationPrompt({
         renderer: this.templateRenderer,
         promptTemplate: item.taskManifest.prompt_template,
         description: item.context.instructions,
         taskId: item.taskManifest.id,
         maxAttempts: item.taskManifest.max_attempts,
+        ...(starterCode !== undefined ? { starterCode } : {}),
         taskPrompts: item.taskManifest.prompts,
         cliOverrides: item.context.promptOverrides,
         provider: item.llmProvider,
