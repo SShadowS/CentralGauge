@@ -4,6 +4,7 @@ import { join } from "@std/path";
 import {
   computeTaskSetHash,
   isEditorOnlyAppJson,
+  PROMPT_POLICY_VERSION,
   resolveCurrentTaskSetHash,
 } from "../../../src/ingest/catalog/task-set-hash.ts";
 import {
@@ -41,14 +42,30 @@ Deno.test("hash is deterministic and order-independent across YAML edits", async
   }
 });
 
-Deno.test("hash ignores non-yml files inside tasks/", async () => {
+Deno.test("hash ignores files with unrecognized extensions inside tasks/", async () => {
   const root = await makeProjectRoot();
   try {
     await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
     const h1 = await computeTaskSetHash(root);
-    await Deno.writeTextFile(`${root}/tasks/easy/readme.md`, "docs");
+    // .log is not in TEXT_EXTENSIONS, so it is not task content.
+    await Deno.writeTextFile(`${root}/tasks/easy/notes.log`, "docs");
     const h2 = await computeTaskSetHash(root);
     assertEquals(h1, h2);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash now covers non-.yml TEXT_EXTENSIONS files inside tasks/ (widened for starter files)", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const h1 = await computeTaskSetHash(root);
+    // .md is in TEXT_EXTENSIONS — the tasks-side filter is no longer
+    // .yml-only, so this must move the hash.
+    await Deno.writeTextFile(`${root}/tasks/easy/readme.md`, "docs");
+    const h2 = await computeTaskSetHash(root);
+    assertNotEquals(h1, h2);
   } finally {
     await Deno.remove(root, { recursive: true });
   }
@@ -574,4 +591,101 @@ Deno.test("computeTaskSetHash: editor-only app.json carve-out", async (t) => {
       await cleanupTempDir(root);
     }
   });
+});
+
+// --- Task 2: tasks/starter/<id> AL files + prompt-policy version ----------
+
+Deno.test("hash changes when a tasks/starter/<id> AL file is added", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const before = await computeTaskSetHash(root);
+
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/App.Codeunit.al`,
+      "codeunit 70070 App { }",
+    );
+    const after = await computeTaskSetHash(root);
+    assertNotEquals(
+      before,
+      after,
+      "a starter AL file must be part of the task set content",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash changes again when a starter file's content is edited", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/App.Codeunit.al`,
+      "codeunit 70070 App { }",
+    );
+    const h1 = await computeTaskSetHash(root);
+
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/App.Codeunit.al`,
+      "codeunit 70070 App { procedure P() begin end; }",
+    );
+    const h2 = await computeTaskSetHash(root);
+    assertNotEquals(h1, h2);
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash ignores a starter file placed under an excluded output/ dir segment", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/App.Codeunit.al`,
+      "codeunit 70070 App { }",
+    );
+    const baseline = await computeTaskSetHash(root);
+
+    await Deno.mkdir(`${root}/tasks/starter/CG-AL-X070/output`, {
+      recursive: true,
+    });
+    await Deno.writeTextFile(
+      `${root}/tasks/starter/CG-AL-X070/output/x.al`,
+      "codeunit 99999 Built { }",
+    );
+    const after = await computeTaskSetHash(root);
+    assertEquals(
+      after,
+      baseline,
+      "an output/ dir segment under tasks/starter must still be excluded",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
+});
+
+Deno.test("hash changes when the prompt-policy version changes", async () => {
+  const root = await makeProjectRoot();
+  try {
+    await Deno.writeTextFile(`${root}/tasks/easy/a.yml`, "id: A");
+    const h1 = await computeTaskSetHash(root, PROMPT_POLICY_VERSION);
+    const h2 = await computeTaskSetHash(root, "pp2-different-version");
+    assertNotEquals(
+      h1,
+      h2,
+      "the literal PROMPT_POLICY_VERSION string must participate in the hash",
+    );
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
 });

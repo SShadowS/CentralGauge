@@ -26,12 +26,29 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
 }
 
 /**
+ * Version tag for the prompt-construction policy used when assembling
+ * "diagnose" task prompts (starter code + task description -> LLM prompt).
+ *
+ * Fed into {@link computeTaskSetHash} as its own framed entry, so bumping
+ * this string moves `task_sets.hash` even when no file on disk changed —
+ * required because prompt construction logic lives in code, not in a hashed
+ * file, and a changed prompt must never share a hash with scores produced
+ * under the old prompt. Bump it on every change to how a diagnose prompt is
+ * built from `tasks/starter/<id>/**`.
+ */
+export const PROMPT_POLICY_VERSION = "pp1-diagnose-2026-08-23";
+
+/**
  * Compute a deterministic content hash that defines a task_set snapshot.
  *
  * Scope (relative to projectRoot):
- *   - tasks/**\/*.yml                  (manifests)
+ *   - tasks/**\/* matching {@link TEXT_EXTENSIONS}  (manifests, and starter
+ *                                       code for "diagnose" tasks under
+ *                                       tasks/starter/<id>/**, e.g. .al files)
  *   - tests/al/**                      (test codeunits, prereq apps,
  *                                       support files — RDLC, layouts, etc.)
+ *   - the literal {@link PROMPT_POLICY_VERSION} string (not file content —
+ *                                       see "Framing" below)
  *
  * Excluded (build artifacts, regenerable from source):
  *   - any path segment starting with "." (editor/tool state — see collectFiles)
@@ -40,6 +57,7 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
  *   - files matching cache_*.json  (alpackages cache manifests)
  *   - rad.json and Thumbs.db  (dot-less editor/OS droppings — see SKIP_FILE_RE)
  *   - tests/al/app.json and tests/al/<difficulty>/app.json (editor configuration)
+ *   - files under tasks/** whose extension is not in TEXT_EXTENSIONS
  *
  * Framing (binary-safe):
  *   For each file, compute its SHA-256 separately, then feed
@@ -47,8 +65,21 @@ export function isEditorOnlyAppJson(relUnderTestsAl: string): boolean {
  *   into the outer SHA-256. Per-file digests are fixed length, so framing
  *   cannot be ambiguated by file content (unlike the previous NUL-delimited
  *   concat which could collide on binary support files).
+ *
+ *   The prompt-policy version is fed FIRST, as its own frame, before any
+ *   file frames:
+ *     u32-be(labelLen) || labelBytes
+ *   where labelBytes = utf8("policy:" + policyVersion). There is no
+ *   trailing content-digest section for this frame — unlike a file frame,
+ *   the "content" (the version string) is already fully and unambiguously
+ *   encoded inside the length-prefixed label itself, so a separate digest
+ *   would be redundant. Feeding it first means every prompt-policy bump
+ *   moves the hash regardless of what files exist on disk.
  */
-export async function computeTaskSetHash(projectRoot: string): Promise<string> {
+export async function computeTaskSetHash(
+  projectRoot: string,
+  policyVersion: string = PROMPT_POLICY_VERSION,
+): Promise<string> {
   // tasks/ is the canonical project marker — its absence means we're not
   // inside a CentralGauge checkout. tests/al/ is optional (test harnesses
   // and minimal repos may omit it).
@@ -56,7 +87,7 @@ export async function computeTaskSetHash(projectRoot: string): Promise<string> {
   const tasksFiles = await collectFiles(
     projectRoot,
     "tasks",
-    (rel) => rel.endsWith(".yml"),
+    (rel) => TEXT_EXTENSIONS.some((ext) => rel.endsWith(ext)),
   );
   const alFiles = await collectFiles(
     projectRoot,
@@ -69,6 +100,18 @@ export async function computeTaskSetHash(projectRoot: string): Promise<string> {
 
   const enc = new TextEncoder();
   const chunks: Uint8Array[] = [];
+
+  // Policy-version frame — see "Framing" in the doc comment above.
+  const policyLabelBytes = enc.encode(`policy:${policyVersion}`);
+  const policyLenBuf = new Uint8Array(4);
+  new DataView(policyLenBuf.buffer).setUint32(
+    0,
+    policyLabelBytes.length,
+    false,
+  );
+  chunks.push(policyLenBuf);
+  chunks.push(policyLabelBytes);
+
   for (const { rel, digest } of all) {
     const pathBytes = enc.encode(rel);
     const lenBuf = new Uint8Array(4);
