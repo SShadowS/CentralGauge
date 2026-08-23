@@ -473,6 +473,107 @@ description: Create a page based on the existing "Product Category" table (ID 69
 
 Full details, including chained prereqs: `.claude/rules/prereq-apps.md`.
 
+## Diagnose tasks
+
+Everything above describes the trap-task shape: a `correct/`/`naive/` pair
+judged by discrimination. A second shape exists alongside it: **diagnose
+tasks**, where the model is handed a complete, already-broken application and
+a symptom, and must return the complete corrected application. There is no
+`task.yml` schema change for this - `prompt_template: diagnose.md` is what
+selects it, and the starter application is auto-detected from the task id by
+convention, the same way a prereq app is (`.claude/rules/prereq-apps.md`
+documents both conventions side by side).
+
+### Scaffold one
+
+```bash
+deno task start task new --slug day-close-fix --diagnose
+```
+
+`--diagnose` creates `scratch/<id>/starter/` instead of `naive/` and writes
+`prompt_template: diagnose.md` into `task.yml`. `fix_template` stays
+`bugfix.md`, unchanged - only the first generation prompt is diagnose-specific.
+`starter/` scaffolds **empty**, with no `app.json`: write both it and the
+buggy AL objects yourself, the same way you would author a real standalone
+application. `al_verify` requires an `app.json` in every solution directory it
+compiles, `starter/` included, so a `starter/` with `.al` files but no
+`app.json` will not probe. `--diagnose` and `--with-prereq` combine freely: a
+diagnose task's starter application can still reference an existing prereq
+object it should not itself define.
+
+### The convention paths
+
+| State | Path |
+|---|---|
+| Draft | `scratch/<id>/starter/` |
+| Promoted | `tasks/starter/<id>/` |
+
+`task promote` moves the whole `starter/` directory across in one piece -
+unlike `naive/`, which never moves at all; only the oracle test file leaves
+`correct/`. Promote refuses if `tasks/starter/<id>/` already exists, the same
+unconditional rule as every other destination, and lists the starter
+destination in its summary.
+
+### The naive-is-starter gate rule
+
+`task probe` tells a diagnose draft from a trap-task one structurally:
+whichever of `naive/` or `starter/` actually holds `.al` files decides the
+shape - never a `.meta.json` flag, since none is written. A draft with `.al`
+files under both is refused outright, naming both directories, before any
+container work starts. For a diagnose draft, `starter/` IS the naive side: it
+is probed with `--expect fail` and `--strict-fail-mode`, exactly like a trap
+task's `naive/` - it must compile and then fail the oracle's assertions. The
+reserved `<id>.` filename prefix rule ("The `<id>.` filename prefix inside
+`correct/` is reserved" above) applies to `starter/` exactly as it does to
+`naive/`.
+
+### What the model is asked to return
+
+`templates/diagnose.md` renders every `.al` file under the starter directory,
+sorted and concatenated with `// FILE: <name>` headers, between
+`BEGIN-APP`/`END-APP`, followed by the task's `description` as the symptom.
+The model must return the **complete corrected application** - every object,
+including the ones it did not change - not a diff and not a single file. A
+diagnose-template task with no starter code at all fails loudly the moment its
+prompt is built (`prompt template requires starter code but none was found
+for <id>`), rather than silently sending an empty app section to the model.
+
+Only the attempt-1 generation prompt renders starter code; the attempt-2 fix
+path is unchanged - it works from the model's own attempt-1 output plus the
+compiler/test failure, same as a trap task's fix attempt.
+
+### The task-set hash consequence
+
+`tasks/starter/<id>/**` is inside the task-set hash, the same as
+`tests/al/**`: every file there matching a recognized text extension (`.al`,
+`.yml`, `.json`, `.xml`, `.rdlc`, `.md`, `.txt`), matched case-insensitively,
+is hashed. Editing a starter file after promotion moves `task_sets.hash` just
+like editing the oracle would. Prompt construction itself is also folded in
+as a versioned policy string (`PROMPT_POLICY_VERSION` in
+`src/ingest/catalog/task-set-hash.ts`) - bumping that string moves the hash
+even when no starter file on disk changed, which is what protects against a
+changed prompt silently mixing with scores produced under the old one.
+
+### A caveat while editing the template
+
+`templates/diagnose.md` is deliberately never run through `deno fmt` - it is
+prompt content the model reads verbatim, not documentation, and reformatting
+it changes every diagnose prompt built from it. If you touch it, review the
+diff by eye instead of letting a formatter near it.
+
+### Known gaps
+
+- **`task import` does not reconstruct `starter/`.** Pulling an
+  already-promoted diagnose task back into the workbench (see
+  [Workbench: Import, model selector, VS Code, LLM exchange](./workbench.md))
+  copies the oracle, its companions, and `prereq/` when present, but not
+  `tasks/starter/<id>/`. Copy it into `scratch/<id>/starter/` by hand before
+  probing; a follow-up will close this.
+- **The generated `CHECKLIST.md` is still `naive/`-oriented.** A diagnose
+  draft's checklist still describes `naive/*.al` and `naive/app.json`, which
+  the draft has neither of. Read "naive" as "the naive-side directory" -
+  `starter/` for this draft shape - until this is fixed.
+
 ## Troubleshooting
 
 **`No app.json found in .../correct`** — you are on a pre-workbench draft, or an
@@ -528,7 +629,9 @@ Worth knowing before they surprise you.
 |---|---|
 | `scratch/<id>/` | Your draft. Gitignored. |
 | `scratch/<id>/.runs/` | Quick-run artifacts from `workbench serve`. Gitignored, never ingested. |
+| `scratch/<id>/starter/` | Diagnose-task draft: the buggy starter application. |
 | `tasks/<difficulty>/<id>-<slug>.yml` | Promoted task manifest. |
+| `tasks/starter/<id>/` | Promoted starter application. Inside the task-set hash. |
 | `tests/al/<difficulty>/<id>.Test.al` | Promoted oracle and companions. |
 | `tests/al/dependencies/<id>/` | Promoted prereq app. |
 | `site/catalog/task-categories.yml` | Group and tag metadata. Not hashed. |

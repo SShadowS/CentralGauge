@@ -7,10 +7,12 @@ a draft directly in VS Code, and a per-model view of the raw LLM request and
 response.
 
 For scaffolding a brand-new task from scratch and the mechanics of the probe
-gate, see [Authoring a Benchmark Trap Task](./task-authoring-guide.md). For
-the full CLI reference (`workbench serve` options, the matrix vocabulary,
-compile-and-test escalation, HTTP endpoints), see
-[CLI Command Reference — workbench](./cli/commands.md#workbench).
+gate, see [Authoring a Benchmark Trap Task](./task-authoring-guide.md). That
+guide also covers the `--diagnose` scaffold flag and the starter-code task
+shape it produces; see [Diagnose drafts](#diagnose-drafts) below for what
+changes on this page's surfaces. For the full CLI reference (`workbench
+serve` options, the matrix vocabulary, compile-and-test escalation, HTTP
+endpoints), see [CLI Command Reference — workbench](./cli/commands.md#workbench).
 
 ## Launch
 
@@ -59,6 +61,11 @@ files, and the prereq), so import regenerates them with the exact same
 renderer `task new` uses rather than copying anything stale. A
 `<id>.code-workspace` is written just like a fresh scaffold, so "open in
 VS Code" (below) works immediately.
+
+Import always creates `naive/` (with a regenerated `app.json` and nothing
+else) and never creates `starter/` at all, regardless of whether the
+promoted task is diagnose-shaped. See [Diagnose drafts](#diagnose-drafts)
+below for what to do about that.
 
 Import refuses outright — before touching anything — when `scratch/<id>/`
 already exists: it never overwrites in-progress authoring work. It also
@@ -212,3 +219,48 @@ The same two fields back the saved run artifacts: every entry in
 `scratch/<id>/.runs/<id>-<timestamp>.json` now records `systemPrompt` (when
 one was sent) and `finishReason` alongside the `prompt` and `rawResponse` it
 already carried, so past runs are inspectable without replaying them.
+
+## Diagnose drafts
+
+`task new --diagnose` scaffolds the other task shape this workbench
+supports: a starter application the model must fix, instead of a
+correct/naive pair. The scaffold, probe, and promote mechanics are covered in
+full in [Authoring a Benchmark Trap Task: Diagnose
+tasks](./task-authoring-guide.md#diagnose-tasks). This section covers only
+what changes on the `workbench serve` surfaces documented above.
+
+**Import does not reconstruct `starter/`.** Pulling an already-promoted
+diagnose task back into the workbench (see "Importing a promoted task" above)
+copies the oracle, its companions, and `prereq/` when present, but not
+`tasks/starter/<id>/`. Copy that directory into `scratch/<id>/starter/` by
+hand, alongside the `naive/` import always creates, before probing. The
+leftover empty `naive/` is harmless, since diagnose detection looks only at
+which directory actually holds `.al` files, not at which directories exist.
+Without a manually restored `starter/`, an imported diagnose draft probes as
+if it were trap-shaped, against an empty `naive/`, and reports the same
+`correct=compile_fail` verdict any freshly imported draft reports before a
+solution is written. See "The probe gate does not change" above: the
+"write a reference solution in `correct/` and a plausible-wrong one in
+`naive/`" instruction there does not apply to a diagnose task, which has no
+`naive/` shape to write into. This also means the "overwrite only where it
+came from" re-promote rule (above) never covers `starter/`: `importedFrom`
+carries no starter path, so re-promoting a diagnose task through this
+workflow hits `promoteDraft`'s ordinary unconditional refusal on
+`tasks/starter/<id>/` if you reconstructed `starter/` by hand and it already
+exists there.
+
+**Quick-run and the exchange view are starter-aware.** "Ask models" loads the
+draft's `starter/` directory once per run, not once per model, and renders it
+into every model's prompt through the same `diagnose.md` template and
+`buildGenerationPrompt` path the bench uses. The "Prompt sent" panel
+described above shows that rendered starter application like any other
+prompt. A starter directory that exists but fails to load (a permission
+error, or `starter/` resolving to something that is not a directory) is
+treated the same as no starter code at all: the per-model call fails with the
+template's own missing-starter-code error rather than aborting the whole run.
+
+**The generated workspace and promote summary are diagnose-aware.** The
+`.code-workspace` a diagnose draft opens lists `starter (buggy application)`
+where a trap-task draft would list `naive`, and `task promote`'s summary
+prints the starter destination (`tasks/starter/<id>`) alongside the task
+manifest and oracle it moves.

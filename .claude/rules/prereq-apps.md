@@ -22,6 +22,22 @@ tests/al/dependencies/CG-AL-E002/
   ProductCategory.Table.al
 ```
 
+## A sibling convention: starter code for diagnose tasks
+
+Diagnose-task drafts (`prompt_template: diagnose.md`) reuse this same
+auto-detection idea from the other end of the pipeline: a starter AL
+application lives at `tasks/starter/<id>/` (promoted) or
+`scratch/<id>/starter/` (draft), auto-discovered from the task id with no
+`task.yml` schema change - exactly like the prereq convention above. The
+difference is which side of the run each convention feeds. A prereq app is
+publish-side: it compiles and installs into the container so the model's own
+generated code has something to depend on. Starter code is prompt-side: it is
+never compiled here at all - it gets rendered into the `diagnose.md` template
+between `BEGIN-APP`/`END-APP` and shown to the model, which must return the
+complete corrected application. See `src/tasks/starter-code.ts`
+(`loadStarterCode`, `starterDirForTask`) and `docs/task-authoring-guide.md`'s
+"Diagnose tasks" section for the full convention.
+
 ## App.json Template
 
 ```json
