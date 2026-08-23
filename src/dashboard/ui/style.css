@@ -605,3 +605,41 @@ table.matrix tbody th {
   max-height: 420px;
   overflow-y: auto;
 }
+
+.detail-exchange {
+  margin-top: 10px;
+}
+
+.exchange-meta {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.exchange-section {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+}
+
+.exchange-section summary {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.exchange-section .exchange-text {
+  margin: 0;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+}

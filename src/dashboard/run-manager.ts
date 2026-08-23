@@ -89,6 +89,20 @@ export interface ModelResponse {
    * `error` says why.
    */
   prompt: string;
+  /**
+   * The system prompt this model was sent, when the draft's `prompts` block
+   * declared one for the model's provider (`AppliedPromptInjection`).
+   * Genuinely absent when the request carried none — the UI's exchange view
+   * uses presence to decide whether to render a system-prompt section at
+   * all, so "no system prompt" and "empty system prompt" must not collapse.
+   */
+  systemPrompt?: string;
+  /**
+   * The provider's finish reason for the raw response ("stop", "length",
+   * "content_filter", ...). `"error"` on the catch path, matching the
+   * `resolveCandidate("", "error")` the same path feeds `resolution` with.
+   */
+  finishReason: LLMResponse["finishReason"];
   rawResponse: string;
   resolution: CandidateResolution;
   objects: AlObject[];
@@ -184,6 +198,7 @@ async function runOneModel(
   call: ModelCaller,
 ): Promise<Omit<ModelResponse, "rowAssignments" | "rowIdentityConflicts">> {
   let prompt = "";
+  let systemPrompt: string | undefined;
   try {
     const applied = await buildGenerationPrompt({
       renderer,
@@ -195,6 +210,7 @@ async function runOneModel(
       provider: providerOfModelSlug(model),
     });
     prompt = applied.prompt;
+    systemPrompt = applied.systemPrompt;
 
     const { content, finishReason } = await call(model, {
       prompt: applied.prompt,
@@ -211,6 +227,8 @@ async function runOneModel(
     return {
       model,
       prompt,
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      finishReason,
       rawResponse: content,
       resolution,
       objects,
@@ -222,6 +240,10 @@ async function runOneModel(
     return {
       model,
       prompt,
+      // Whatever was rendered before the throw — the render itself may be
+      // what threw, in which case both stay at their empty defaults.
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      finishReason: "error",
       rawResponse: "",
       resolution: resolveCandidate("", "error"),
       objects: [],

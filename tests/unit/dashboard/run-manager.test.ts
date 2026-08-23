@@ -350,6 +350,43 @@ describe("dashboard/run-manager", () => {
     assertEquals(seen.get("openai/gpt")?.systemPrompt, undefined);
   });
 
+  // The UI's exchange view renders BOTH sides of the call, so the response
+  // record must carry what was actually sent and how the provider finished:
+  // `systemPrompt` present exactly when one went out, `finishReason` from
+  // the provider on success and the literal "error" on the catch path
+  // (matching the resolveCandidate("", "error") that path already feeds).
+  it("records systemPrompt and finishReason on the response", async () => {
+    const run = await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        prompts: {
+          injections: {
+            anthropic: { generation: { system: "SYS" } },
+          },
+        },
+      },
+      models: ["anthropic/opus", "openai/gpt", "broken/model"],
+      renderer: { render: () => Promise.resolve("BASE") },
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: (model) =>
+        model === "broken/model"
+          ? Promise.reject(new Error("401"))
+          : Promise.resolve({
+            content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+            finishReason: "length" as const,
+          }),
+    });
+
+    const byModel = new Map(run.responses.map((r) => [r.model, r]));
+    assertEquals(byModel.get("anthropic/opus")?.systemPrompt, "SYS");
+    assertEquals(byModel.get("anthropic/opus")?.finishReason, "length");
+    assertEquals(byModel.get("openai/gpt")?.systemPrompt, undefined);
+    assertEquals(byModel.get("openai/gpt")?.finishReason, "length");
+    assertEquals(byModel.get("broken/model")?.finishReason, "error");
+  });
+
   // The dashboard resolves a model spec exactly as the bench does
   // (resolveProviderAndModel, shared from src/llm/model-aliases.ts): the
   // alias table first, then a provider/model split, then the spec itself as

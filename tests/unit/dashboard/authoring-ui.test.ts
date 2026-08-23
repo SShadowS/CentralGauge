@@ -146,6 +146,7 @@ interface DashboardState {
   drafts: unknown[];
   selectedDir: string | null;
   run: { responses: unknown[]; rows?: unknown[] } | null;
+  detailResponse: unknown;
   selectedModel: string | null;
   runDraftDir: string | null;
   verify: VerifyState;
@@ -252,23 +253,102 @@ describe("dashboard/ui app.js", () => {
     assertEquals(allClasses(header).includes("badge verdict-bad"), true);
   });
 
-  // The model name is a button that opens the prompt this model was actually
-  // sent — the only place an author can read the question, and the reason the
-  // prompt is carried per response rather than once per run.
-  it("opens the prompt that was sent when the model name is clicked", async () => {
+  // The model name is a button that opens the full LLM exchange for this
+  // model — request (system prompt when one was sent, prompt) AND raw
+  // response, each in its own labelled section, with a metadata line naming
+  // the finish reason and extraction. The only place an author can read
+  // both sides of the call.
+  it("opens the request and response exchange when the model name is clicked", async () => {
     const ui = await loadUi();
-    const header = ui.buildColumnHeader({
+    const response = {
       model: "anthropic/opus",
       prompt: "## Task\n\nWrite a codeunit.",
+      systemPrompt: "You are an AL developer.",
+      finishReason: "stop",
+      rawResponse: "```al\ncodeunit 70000 X { }\n```",
       resolution: readyResolution,
       classification: { verdict: "avoided-the-mistake" },
       objects: [],
-    });
+    };
+    const header = ui.buildColumnHeader(response);
     const name = header.children[0];
     assertEquals(name?.className, "model-name");
     name?.listeners["click"]?.[0]?.();
-    assertEquals(detailSource.textContent, "## Task\n\nWrite a codeunit.");
-    assertEquals(detailTitle.textContent, "anthropic/opus — prompt sent");
+
+    assertEquals(
+      detailTitle.textContent,
+      "anthropic/opus — LLM request & response",
+    );
+    // The plain-text pane is hidden and cleared; the structured view owns
+    // the panel.
+    assertEquals(detailSource.textContent, "");
+    assertEquals(detailSource["hidden"], true);
+
+    const exchange = node("detail-exchange");
+    assertEquals(exchange["hidden"], false);
+    const text = allText(exchange);
+    assertStringIncludes(text, "finish: stop");
+    assertStringIncludes(text, "extraction: delimiters (95%)");
+    assertStringIncludes(text, "System prompt");
+    assertStringIncludes(text, "You are an AL developer.");
+    assertStringIncludes(text, "Prompt sent");
+    assertStringIncludes(text, "## Task\n\nWrite a codeunit.");
+    assertStringIncludes(text, "Raw response");
+    assertStringIncludes(text, "codeunit 70000 X { }");
+    // The exchange holds the whole response, so "Use as wrong answer" is
+    // armed from it.
+    assertEquals(ui.state.detailResponse, response);
+  });
+
+  // A request that carried no system prompt renders no system-prompt
+  // section at all — presence is the signal, not emptiness. And the raw
+  // response of a model that returned nothing says so instead of rendering
+  // a blank block.
+  it("omits the system-prompt section when none was sent and labels an empty response", async () => {
+    const ui = await loadUi();
+    const header = ui.buildColumnHeader({
+      model: "openai/gpt",
+      prompt: "P",
+      finishReason: "error",
+      rawResponse: "",
+      resolution: notReadyResolution,
+      classification: { verdict: "cannot-compare" },
+      error: "401 invalid api key",
+      objects: [],
+    });
+    header.children[0]?.listeners["click"]?.[0]?.();
+
+    const text = allText(node("detail-exchange"));
+    assertEquals(text.includes("System prompt"), false);
+    assertStringIncludes(text, "finish: error");
+    assertStringIncludes(text, "401 invalid api key");
+    assertStringIncludes(text, "(empty response)");
+  });
+
+  // The plain-text detail view (any cell click) must in turn hide the
+  // exchange, or a stale exchange lingers beneath shorter cell text.
+  it("hides the exchange view again when a plain detail view opens", async () => {
+    const ui = await loadUi();
+    const response = {
+      model: "anthropic/opus",
+      prompt: "P",
+      finishReason: "stop",
+      rawResponse: "R",
+      resolution: readyResolution,
+      classification: { verdict: "avoided-the-mistake" },
+      objects: [],
+    };
+    const header = ui.buildColumnHeader(response);
+    header.children[0]?.listeners["click"]?.[0]?.();
+    assertEquals(node("detail-exchange")["hidden"], false);
+
+    const cell = ui.buildCell(
+      { key: "codeunit|x", kind: "codeunit", name: "X" },
+      { ...response, rowAssignments: {} },
+    );
+    cell.listeners["click"]?.[0]?.();
+    assertEquals(node("detail-exchange")["hidden"], true);
+    assertEquals(detailSource["hidden"], false);
   });
 
   // parseAlObjects returns {objects: [], hasError: true} for a syntax error

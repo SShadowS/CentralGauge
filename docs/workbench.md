@@ -1,9 +1,10 @@
-# Workbench: Import, Model Selector, VS Code
+# Workbench: Import, Model Selector, VS Code, LLM Exchange
 
-This page covers three things added to `centralgauge workbench serve` on top
-of the core draft → probe → promote loop: pulling an already-promoted task
-back into the workbench for editing, a slug-picker for the model list, and a
-button to open a draft directly in VS Code.
+This page covers additions to `centralgauge workbench serve` on top of the
+core draft → probe → promote loop: pulling an already-promoted task back into
+the workbench for editing, a slug-picker for the model list, a button to open
+a draft directly in VS Code, and a per-model view of the raw LLM request and
+response.
 
 For scaffolding a brand-new task from scratch and the mechanics of the probe
 gate, see [Authoring a Benchmark Trap Task](./task-authoring-guide.md). For
@@ -87,14 +88,14 @@ discriminating.
 
 ## Re-promoting: overwrite only where it came from
 
-Promotion normally refuses if *any* destination path already exists, with no
+Promotion normally refuses if _any_ destination path already exists, with no
 `--force` override — silently overwriting a shipped task has no legitimate
 use case. An imported draft is the one deliberate exception to that rule.
 
 When you import a task, its `scratch/<id>/.meta.json` records exactly which
 repo paths it came from (`importedFrom.taskYml`, `.testFile`, each entry in
 `.companions`, and `.prereqDir` when the task has one). `task promote <id>
---difficulty <difficulty>` is allowed to overwrite *only* those recorded
+--difficulty <difficulty>` is allowed to overwrite _only_ those recorded
 paths — nothing else. A draft that was hand-scaffolded via `task new`, or one
 that was never imported, has no `importedFrom` at all, so every destination
 for it still refuses unconditionally: the pre-import behavior is the default,
@@ -103,8 +104,8 @@ not a special case carved out by this feature.
 Two edge cases the overwrite rule accounts for:
 
 - **Renaming on re-promote.** Promoting under a `--slug` or `--difficulty`
-  different from the one the draft was imported under writes to a *new*
-  destination and then deletes the stale file(s) at the *old* recorded path.
+  different from the one the draft was imported under writes to a _new_
+  destination and then deletes the stale file(s) at the _old_ recorded path.
   This cleanup runs after the move has already committed, so a failure here
   is reported as a warning rather than rolling back a promotion that
   otherwise succeeded.
@@ -171,14 +172,43 @@ alone is not guaranteed unique (two directories can report the same
 draft" dropdown's option value actually carries, and it is what
 `updateOpenVsCodeButton` stores on the button's `data-dir`. Failure modes:
 
-| Status | Meaning |
-|---|---|
-| `404` | No draft with that directory. |
-| `409` | The draft has no `.code-workspace` file yet — re-run `task new` or `task import` to generate one. |
-| `500` (JSON body) | Launching the editor itself failed — most commonly, the `code` CLI is not on `PATH`. |
+| Status            | Meaning                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------- |
+| `404`             | No draft with that directory.                                                                     |
+| `409`             | The draft has no `.code-workspace` file yet — re-run `task new` or `task import` to generate one. |
+| `500` (JSON body) | Launching the editor itself failed — most commonly, the `code` CLI is not on `PATH`.              |
 
 **Requires the `code` CLI on `PATH`.** On Windows, `code` ships as a `.cmd`
 shim, which `Deno.Command` cannot exec directly without a shell — the server
 launches it via `cmd /c code -- <workspace-path>` for that reason. The
 launched process is detached; the request returns as soon as the editor has
 been asked to start, not once it has actually opened.
+
+## Reading a model's raw LLM request and response
+
+Every model's column header in the matrix is a button. Clicking it opens the
+full exchange for that model's call in the detail panel:
+
+- **A metadata line** — the provider's finish reason (`stop`, `length`,
+  `content_filter`, or `error` when the call threw), the code-extraction
+  method and its confidence, and the prompt/response sizes in characters.
+- **System prompt** — present only when the draft's `prompts` block declared
+  a system injection for this model's provider. No section is rendered when
+  the request carried none.
+- **Prompt sent** — the exact prompt this model received, rendered
+  server-side from the draft's `task.yml` through the bench's own attempt-1
+  path. Prompt injections are provider-scoped, so two columns in one run can
+  legitimately show different text.
+- **Raw response** — the model's unprocessed answer, before any code
+  extraction. An empty response renders as `(empty response)`; a thrown
+  provider error (bad slug, missing API key, 401) is shown above the
+  sections.
+
+Each section is collapsible; the response starts expanded. "Use as wrong
+answer" works from this view — it promotes the shown response's extracted
+code into `naive/`, same as from a cell.
+
+The same two fields back the saved run artifacts: every entry in
+`scratch/<id>/.runs/<id>-<timestamp>.json` now records `systemPrompt` (when
+one was sent) and `finishReason` alongside the `prompt` and `rawResponse` it
+already carried, so past runs are inspectable without replaying them.

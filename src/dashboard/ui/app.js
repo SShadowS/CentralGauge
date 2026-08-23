@@ -31,11 +31,12 @@ const state = {
    *  dir-vs-id lesson `/api/run`'s own validation is built around). `null`
    *  until a run completes. */
   runDraftDir: null,
-  /** The response currently shown in the detail panel, or `null` when the
-   *  panel is showing something that is not a per-(model, object) cell (the
-   *  "prompt sent" view). Backs "Use as wrong answer": the action promotes a
-   *  RESPONSE's whole code, not whichever single object's source happens to
-   *  be on screen, so it is keyed off this rather than off the row. */
+  /** The response currently shown in the detail panel — set by both the
+   *  per-(model, object) cell views and the model-name exchange view, or
+   *  `null` when the panel shows neither. Backs "Use as wrong answer": the
+   *  action promotes a RESPONSE's whole code, not whichever single object's
+   *  source happens to be on screen, so it is keyed off this rather than
+   *  off the row. */
   detailResponse: null,
   /** Escalation (spec §6/§9): per-model latest `VerifyOutcome` pushed over
    *  `/api/verify-events`, keyed by `response.model` — every event names its
@@ -408,8 +409,85 @@ async function promoteCurrentResponse() {
 function showDetail(title, source, response) {
   const panel = document.getElementById("detail-panel");
   document.getElementById("detail-title").textContent = title;
-  document.getElementById("detail-source").textContent = source;
+  const pre = document.getElementById("detail-source");
+  pre.textContent = source;
+  pre.hidden = false;
+  // The structured exchange view and the plain-text view share the panel;
+  // whichever opens hides the other so a stale one never lingers beneath.
+  const exchange = document.getElementById("detail-exchange");
+  exchange.hidden = true;
+  exchange.innerHTML = "";
   state.detailResponse = response || null;
+  updatePromoteAction();
+  panel.hidden = false;
+}
+
+/** One collapsible section of the exchange view. `text` is rendered via
+ *  textContent (never HTML) — model output is untrusted. */
+function exchangeSection(label, text, open) {
+  const details = el("details", "exchange-section");
+  if (open) details.open = true;
+  details.appendChild(el("summary", "", label));
+  details.appendChild(el("pre", "exchange-text", text));
+  return details;
+}
+
+/**
+ * The full request/response exchange for one model call, in the detail
+ * panel: a metadata line (finish reason, extraction method + confidence,
+ * sizes), then the system prompt (only when one was sent), the prompt, and
+ * the raw response — each collapsible, response expanded by default. This
+ * is the readable per-call record; the column header's model-name button
+ * opens it.
+ */
+function showExchange(response) {
+  const panel = document.getElementById("detail-panel");
+  document.getElementById("detail-title").textContent =
+    `${response.model} — LLM request & response`;
+  const pre = document.getElementById("detail-source");
+  pre.textContent = "";
+  pre.hidden = true;
+
+  const exchange = document.getElementById("detail-exchange");
+  exchange.innerHTML = "";
+
+  const pct = Math.round((response.resolution.confidence || 0) * 100);
+  const meta = el(
+    "p",
+    "exchange-meta",
+    `finish: ${response.finishReason || "(unknown)"}` +
+      ` · extraction: ${response.resolution.method} (${pct}%)` +
+      ` · prompt: ${(response.prompt || "").length} chars` +
+      ` · response: ${(response.rawResponse || "").length} chars`,
+  );
+  exchange.appendChild(meta);
+
+  if (response.error) {
+    exchange.appendChild(el("p", "diagnostic-error", response.error));
+  }
+
+  if (response.systemPrompt !== undefined) {
+    exchange.appendChild(
+      exchangeSection("System prompt", response.systemPrompt, false),
+    );
+  }
+  exchange.appendChild(
+    exchangeSection(
+      "Prompt sent",
+      response.prompt || "(no prompt was rendered — see the error above)",
+      false,
+    ),
+  );
+  exchange.appendChild(
+    exchangeSection(
+      "Raw response",
+      response.rawResponse || "(empty response)",
+      true,
+    ),
+  );
+
+  exchange.hidden = false;
+  state.detailResponse = response;
   updatePromoteAction();
   panel.hidden = false;
 }
@@ -705,21 +783,20 @@ function verifyAll() {
 
 /** The column header for one model: name, then verdict or no-code state.
  *
- * The name is a button: it opens the exact prompt this model was sent,
- * rendered server-side from the draft's task.yml through the bench's own
- * attempt-1 path. An author calibrating a draft needs to read the question,
- * and prompt injections are provider-scoped, so two columns in one run can
- * legitimately hold different text. */
+ * The name is a button: it opens the full LLM exchange for this model —
+ * the exact prompt (and system prompt, when one was sent) rendered
+ * server-side from the draft's task.yml through the bench's own attempt-1
+ * path, plus the raw response and its finish reason. An author calibrating
+ * a draft needs to read both sides, and prompt injections are
+ * provider-scoped, so two columns in one run can legitimately hold
+ * different text. */
 function buildColumnHeader(response) {
   const frag = document.createDocumentFragment();
   const name = el("button", "model-name", response.model);
   name.type = "button";
-  name.title = "Show the prompt this model was sent";
+  name.title = "Show this model's LLM request and response";
   name.addEventListener("click", () => {
-    showDetail(
-      `${response.model} — prompt sent`,
-      response.prompt || "(no prompt was rendered — see the error below)",
-    );
+    showExchange(response);
   });
   frag.appendChild(name);
 
