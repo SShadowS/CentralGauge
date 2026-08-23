@@ -1,0 +1,28 @@
+id: CG-AL-X098
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application is an internal extension platform built around integration events: several independent business processes, among them freight calculation, order-line defaults, loyalty-program eligibility, and reference-code resolution, each publish an event that other parts of the platform subscribe to, so behavior can be added or overridden without changing the core process directly. Two complaints have come in. Table "CG X072 Loyalty Candidate" records each candidate''s lifetime spend, a manual VIP override, and the "Priority Support Approved" verdict; codeunit "CG X072 Loyalty Gatekeeper"''s EvaluateAllPending procedure runs every candidate that has not yet been decided through EvaluateCandidate and writes the verdict back onto the record. A candidate is meant to qualify for priority support either by reaching the lifetime-spend threshold or by having the VIP override switched on. Users report that after EvaluateAllPending runs, several candidates whose lifetime spend clearly reaches the threshold are left with "Priority Support Approved" unchecked, while other candidates with similar or even lower spend do get approved - the pattern does not line up with the spend amount at all. On the unapproved candidates the VIP override shows off, and switching it on does get them approved, but candidates are supposed to also qualify on spend alone. Separately, codeunit "CG X094 Reference Engine" exposes ResolveReference(Category, SourceNo, PeriodNo), which combines a resolved reference body with a mandatory fiscal-period segment that every reference must carry, whichever category it belongs to. Codeunit "CG X094 Custom Rule" supplies a custom reference body for category CUSTOM; every other category uses the engine''s own default body. Users report that references produced for category CUSTOM are missing their fiscal-period segment, while references for every other category carry it correctly. Fix the application so every candidate that qualifies on spend alone, on the VIP override alone, or on both, ends up approved, and so every reference carries its fiscal-period segment no matter which category resolved it.'
+domains:
+  - codeunits
+  - tables
+  - events
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - composite
+    - event-subscriber
+    - shared-var-parameter
+    - ishandled-gate
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X098.Test.al
+  testCodeunitId: 89194

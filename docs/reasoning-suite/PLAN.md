@@ -99,11 +99,16 @@ Standing constraints (from CLAUDE.md + session rules):
       12). Five platform facts measured (decisions.md entry 11), incl.
       the permissions ground rules: bare Restrictive grants nothing;
       Library - Lower Permissions push is mandatory. **31 / 100.**
-- [ ] Operator mixes filtered material into tasks; **composite tasks**
-      (see categories.md #10) deliberately combine several volotest apps +
-      PR-derived defects into one large prompt — some prompts well past
-      10k tokens — so models must locate the relevant code before
-      reasoning about it.
+- [x] Composite batch 1 (2026-08-24): CG-AL-X096..X100 promoted - 5 of
+      category 3's 10, assembled verbatim from gated donors (model
+      ratified in decisions.md entry 12; plan at
+      scratch/composite-plan.md). Fable spot-check on X097: solved -
+      vaguer symptom wording is the lever for the remaining five.
+      **36 / 100.** Remaining category-3 five build later with vaguer
+      symptoms + bigger donor sets.
+- [ ] Remaining composite tasks (5 of 10) with vaguer symptoms; some
+      prompts well past 10k tokens so models must locate the relevant
+      code before reasoning about it.
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
 

@@ -1,0 +1,34 @@
+id: CG-AL-X096
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application is an integration stack for a warehouse and logistics partner network. It includes a resilient HTTP client that retries transient exchange-rate lookups, an XML importer that parses incoming shipment status messages, a wire-format codec that exchanges decimals and dates with partner systems, and codeunit "CG X093 Order Export", one of the stack''s export modules, which builds the JSON payload a warehouse partner''s integration reads for each order, with an orderNo, customerNo and orderDate at the top level and one lines array entry per order line carrying lineNo, itemNo, description, quantity, unitPrice and lineAmount. The exchange-rate client, the shipment importer and the wire-format codec are all working correctly today and must not be changed. Only the order export module has problems, and two have appeared since the partner went live. First, their intake system rejects the order whenever its date falls on one of the first nine days of a month or in one of the first nine months of the year; orders dated later in the month or year go through without complaint. Second, every line''s unitPrice fails their automated import validation, while lineNo, quantity and lineAmount on the very same lines import without issue. Fix the order export module so every order it exports is accepted by the partner''s intake system, without changing anything about the export that already works and without changing any other module in the stack.'
+domains:
+  - codeunits
+  - tables
+  - interfaces
+  - json
+  - web-services
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - diagnose
+    - composite
+    - json
+    - jsonobject
+    - iso-8601
+    - culture-invariant-numbers
+    - http-retry
+    - xml-namespaces
+    - wire-format
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X096.Test.al
+  testCodeunitId: 89192

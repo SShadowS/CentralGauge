@@ -1,0 +1,31 @@
+id: CG-AL-X099
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application is an operations backend covering four independent modules. A pending-reference queue reports whether any Annual or Quarterly reference is still due by a given period end. A session tracks which ledger entries have been applied and keeps a running total of their remaining amounts. A per-team report adds up adjustment amounts across every case currently assigned to a team. And a batch valuation prices item journal batches before posting. The queue, the session totals, and the team report all perform correctly today and are not the concern here. The batch valuation is the problem: Codeunit "CG X089 Batch Valuation" exposes ValueByItem(TemplateName, BatchName), which returns a dictionary mapping each distinct item number appearing on the batch''s lines - where both the batch''s Template Name and Batch Name must match - to the total value of that item''s lines, each line''s Quantity times the item''s current "CG X089 Item"."Unit Price". Lines also carry their own "Unit Amount", stamped when the line was entered and possibly out of date; the value must always reflect the item''s current price, never that stamp. Negative quantities reduce an item''s value. An item that sits on no matching line must not appear in the result, and an item whose current price is 0 must still appear, valued at exactly 0. A batch with no matching lines returns an empty dictionary. The batch valuation preview used to return almost instantly. It has gotten progressively slower as batches have come to touch more distinct items, even though the total amount of data involved has not grown - the slowdown tracks the number of distinct items a batch touches, not the size of any one lookup or how many lines the batch holds. Fix the application so the batch valuation''s database cost no longer grows with the number of distinct items a batch touches, however many lines those items are spread across, without changing the behavior of the queue, the session totals, or the team report.'
+domains:
+  - tables
+  - codeunits
+  - queries
+  - flowfields
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - n-plus-one
+    - sql-counters
+    - bulk-lookup
+    - composite
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X099.Test.al
+  testCodeunitId: 89195

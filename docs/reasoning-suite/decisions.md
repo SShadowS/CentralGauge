@@ -128,3 +128,36 @@ Append-only. Each entry: date, decision, why.
       whose naive and correct sides BOTH scale with N (~1.5x apart,
       e.g. SetLoadFields-before-Rename) cannot satisfy the 10x budget
       rule at all - drop such candidates from the perf category.
+
+12. **Composite assembly model ratified** (2026-08-24, composite batch 1,
+    X096-X100; full plan at `scratch/composite-plan.md`):
+    - **Verbatim-donor assembly**: symptom parts contribute their donor
+      STARTER code verbatim, distractor parts their donor CORRECT code;
+      donor object names/ids kept (separate starter projects never
+      co-compile, id-audit confirmed clean). 1-2 live symptoms per
+      composite; oracle = merged donor oracles in ONE new test codeunit
+      (fresh test-band id); donor oracle-side companions are copied,
+      renamed to the composite prefix, and renumbered.
+    - **Healthy-module framing convention**: the description names all
+      modules at product level and states the non-flagged ones must keep
+      behaving as today (the must-not-change contract the distractor
+      tests enforce), but never issues per-module innocence verdicts
+      beyond that ("are functioning correctly and are not in scope" was
+      audited out as free elimination).
+    - **Fable spot-check** (decision 9's packaged-task check) on X097:
+      SOLVED in under a minute - the donor-inherited symptom wording
+      scoped the defect to one procedure. Confirms composites in this
+      first batch tier the mid-field (locating + fixing across 8-14
+      files), not the frontier; the difficulty lever for the REMAINING
+      five category-3 tasks is vaguer symptom wording and bigger donor
+      sets, not more modules with precise symptoms.
+    - **Known property**: verbatim assembly means a model benched on a
+      donor task and its composite in the same run sees the same code
+      and bugs twice - donor/composite score correlation is expected and
+      should be treated as a feature of the packaging axis, not
+      contamination.
+    - **X100+ convention gap**: `renderSolutionAppJson` and
+      `derivePrereqSuffix` cap at X099 (2-digit GUID segments). X100's
+      app.jsons were hand-written with extended segments (`c100`/`e100`:
+      1 hex char + 3 digits, still 4 hex chars). Extend the scaffold
+      before batch 4 reaches X101.

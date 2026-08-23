@@ -9,8 +9,8 @@ reason in Notes) - they stop re-mining the same ground.
 - Candidates mined: 148 (146 raw + 1 rejected + 1 promoted)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 31 / 100
-- Tasks promoted: 31 / 100
+- Tasks built: 36 / 100
+- Tasks promoted: 36 / 100
 
 **Column vocabulary**
 
@@ -273,6 +273,23 @@ cascade is platform-level, not application-level as the mining sweep
 assumed; the GetFilter blank token is a 2-char literal, not an empty
 string). Suite now stands at 60 X-series tasks total: 49 traps plus 11
 reasoning.
+
+## Composite batch 1 (2026-08-24)
+
+Five category-3 composites (X096-X100) promoted, assembled per
+`scratch/composite-plan.md` (verbatim-donor model, ratified in
+decisions.md entry 12). One row per composite below; donors listed as
+live/distractor. Fable spot-check ran on X097 (solved in under a
+minute - consistent with decision 9; composites tier the mid-field, and
+vaguer symptom wording is the difficulty lever left for the next five).
+
+| id | source | cat | sonnet | fable | status | notes |
+|---|---|---|---|---|---|---|
+| C001 | synth:composite | 3 | - | - | promoted (CG-AL-X096) | Integration stack, 4 donors: LIVE X093 (json locale defects); distractors X082/X083/X092. 47-test merged oracle; X082 mock companion renamed/renumbered to CG-AL-X096/89292. Probe: correct 47/47, starter fails exactly the 3 X093 tests. Audit clean. |
+| C002 | synth:composite | 3 | - | fable:solved | promoted (CG-AL-X097) | Pricing engine, 3 donors: LIVE X077 (PeriodsOverlap boolean); distractors X066/X079. 35-test merged oracle; ClearAllData split per donor. Audit MED trimmed the "not in scope" clause. Fable spot-check: solved (<1 min; description scoping led straight to the module). |
+| C003 | synth:composite | 3 | - | - | promoted (CG-AL-X098) | Event platform, 4 donors, TWO live: X072 (subscriber overwrite) + X094 (IsHandled gap); distractors X067/X081. 28-test merged oracle; X094 OtherRule companion renumbered 89294; event cross-talk audited disjoint. Starter fails exactly the 5-test union. Known property: donor score correlation (verbatim assembly). |
+| C004 | synth:composite | 3 | - | - | promoted (CG-AL-X099) | Performance suite, 4 perf donors: LIVE X089; distractors X069/X084/X090. 37-test merged oracle with all four SQL-counter budget tests coexisting (merged 8-table ClearAll never inside a measured window). Starter fails only X089's budget test. Audit clean. |
+| C005 | synth:composite | 3 | - | - | promoted (CG-AL-X100) | Data/state suite, 4 donors, TWO live: X078 (accumulator) + X086 (rename skip); distractors X065/X075. 35-test merged oracle; SeedContact arity collision resolved (SeedSyncContact). First X100+ task: renderSolutionAppJson caps at X099, app.jsons hand-written with extended c100/e100 GUID segments - extend the scaffold before batch 4 reaches X101. Starter fails exactly the 6-test union. Audit clean. |
 
 ## Build batch 3 (2026-08-23)
 

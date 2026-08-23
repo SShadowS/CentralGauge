@@ -1,0 +1,35 @@
+id: CG-AL-X100
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  The application is a master-data synchronization suite covering royalty statements, campaign contact lists, order pricing, and an external contact feed. Two independent problems have been reported.
+  First, codeunit "CG X078 Statement" builds royalty statements for licensed theatrical performances via BuildStatement, writing one line per performance into a "CG X078 Statement Line" buffer and returning two summary totals, TotalAmount and TotalCredits. Users report that when statements for several agreements are generated back-to-back in the same session, each later statement's totals come back too high: every individual line is correct (right plays, right per-line amounts and credits, right order), but the two summary totals at the bottom are inflated by whatever the previous agreement's statement already added up to. An agreement with no performances at all still reports the previous statement's totals instead of 0.00 and 0.
+  Second, codeunit "CG X086 Feed Import" reads each line of "CG X086 Feed Line" and calls codeunit "CG X086 Contact Sync"'s SyncContact procedure, which updates a local "CG X086 Contact" record's Contact Id to whatever id the feed currently reports for it, then refreshes Company Name, VAT Registration No., Address, Status, and Last Synced from the feed line. When the feed reports that two contacts have merged and now share a target id, but that target id already identifies a different local contact, the losing contact keeps having its Company Name, VAT Registration No., Address, Status, and Last Synced refreshed from the feed on every subsequent sync, while its Contact Id in our system never changes to the merged target id, and the already-correct contact at that target id is left exactly as it was. The two contacts stay permanently split under different ids no matter how many times the feed reports the merge, and nothing about the conflict is ever surfaced to whoever runs the import.
+  Codeunit "CG X065 Repricer" and codeunit "CG X075 Campaign Call List" are both working correctly and are not part of either report.
+  Fix the application so BuildStatement's totals always reflect only the current agreement's own performances, and so a feed-reported merge that collides with an existing contact id can no longer be applied silently: the conflict must be surfaced, and neither contact's stored data may change until the conflict is resolved.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - composite
+    - accumulator-reset
+    - var-parameter
+    - running-total
+    - identity-merge
+    - silent-skip
+    - guard-clause
+    - rename
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X100.Test.al
+  testCodeunitId: 89196
