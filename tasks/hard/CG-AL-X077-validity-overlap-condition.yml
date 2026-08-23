@@ -1,0 +1,26 @@
+id: CG-AL-X077
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages an item''s price list validity windows. Codeunit "CG X077 Validity Analyzer" exposes MergeValidityPeriods, which combines the item''s windows into continuous coverage periods, and CountConflictingPairs, which counts how many pairs of windows actually overlap. Users report that CountConflictingPairs is significantly undercounting conflicts - most noticeably, an item''s open-ended window (no "Ending Date" set, meaning it never expires) is essentially never flagged as overlapping any of the item''s other windows, even when the continuous-coverage view clearly shows another window''s dates sitting entirely inside it. The continuous-coverage view itself always looks correct; only the conflicting-pairs count is unreliable. Fix the application so CountConflictingPairs correctly counts every unordered pair of windows that share at least one calendar day, including pairs where one window is open-ended.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - interval-overlap
+    - boolean-operator
+    - blank-date-sentinel
+    - temp-record
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X077.Test.al
+  testCodeunitId: 88830

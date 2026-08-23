@@ -1,0 +1,28 @@
+id: CG-AL-X080
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application syncs shipment tracking status from a parcel carrier''s API. Codeunit "CG X080 Shipment Status Sync" receives a shipment number and the carrier''s numeric status code and stores the mapped status on "CG X080 Shipment Tracking". Since the carrier started returning a new status code, shipments carrying that status get stuck showing Unknown on the shipment tracking list, even though the carrier''s own tracking portal already shows those shipments as arrived at the next stage. The original status codes the carrier has always sent still sync correctly on every refresh; only the newly introduced code fails to resolve to anything but Unknown, no matter how many times the sync job is re-run. Fix the application so every status code the carrier''s API sends resolves to its correct status.'
+domains:
+  - codeunits
+  - enums
+  - reflection
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - enum
+    - extensible-enum
+    - enumextension
+    - wire-mapping
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X080.Test.al
+  testCodeunitId: 88833

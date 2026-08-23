@@ -1,0 +1,26 @@
+id: CG-AL-X076
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application imports legacy amount lines from a nightly feed. Codeunit "CG X076 Import Job" exposes ImportBatch, which calls "CG X076 Legacy Importer"''s ImportLine once per line and counts how many lines were actually imported. A well-formed, non-negative amount text should produce one "CG X076 Legacy Amount" row for its entry code and count as imported; a badly-formed or negative amount text should be rejected, reporting failure and leaving no row behind. Calling ParseAmount or TryParseAmount directly with the very same amount texts already behaves correctly, converting well-formed text and rejecting bad text. Since the latest deployment, no legacy amount ever lands in the table any more: ImportBatch never manages to import a single line, no matter how many lines in the batch are well-formed and non-negative. Fix the application so every well-formed, non-negative line in a batch is actually imported and counted, while a badly-formed or negative line still reports failure and leaves no row behind.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: error-transactions
+  tags:
+    - diagnose
+    - tryfunction
+    - error-handling
+    - legacy-import
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X076.Test.al
+  testCodeunitId: 88829

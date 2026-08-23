@@ -1,0 +1,26 @@
+id: CG-AL-X081
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages order lines for graded items. Table "CG X081 Item" records each item''s optional "Quality Grade"; table "CG X081 Order Line" carries its own "Quality Grade" field that is meant to always mirror whichever item is on the line, refreshed every time "Item No." is validated. Users report that order lines don''t reliably reflect the item''s grade. Adding a fresh line for a graded item, or for a gradeless item, works fine, and re-validating a line from one graded item to another graded item also updates correctly. But when a line already showing a grade is re-validated to a different item that has no grade of its own, the line keeps showing the old item''s grade instead of going blank - the line no longer mirrors the item that is actually on it. Fix the application so an order line''s "Quality Grade" always matches the item currently on the line, including going blank when that item has none.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - event-subscriber
+    - blank-guard
+    - line-defaults
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X081.Test.al
+  testCodeunitId: 88834

@@ -1,0 +1,26 @@
+id: CG-AL-X082
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application refreshes exchange rates from an external provider. The nightly refresh (RefreshRate in codeunit "CG X082 Exchange Rate Sync", which calls "CG X082 Resilient Http Client") is supposed to survive brief outages from the rates provider by retrying up to its attempt budget. In practice, whenever the provider answers with 429 (rate limited) or any 5xx status other than exactly 500 - for example 502, 503, or 504 - RefreshRate gives up after a single request and logs a failed "CG X082 Call Log" entry with "Total Backoff (ms)" at 0, even though several attempts were still available. The exact same kind of outage reported as a plain 500 recovers fine after one or two retries. Fix the application so every outage that is actually transient gets the same retry treatment, regardless of which specific status code the provider happens to return.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - diagnose
+    - http-retry
+    - status-code-classification
+    - backoff
+    - retry-budget
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X082.Test.al
+  testCodeunitId: 88835

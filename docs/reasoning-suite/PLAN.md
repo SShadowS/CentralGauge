@@ -30,9 +30,12 @@ Standing constraints (from CLAUDE.md + session rules):
 - [x] **Premise probe: `SessionInformation` SQL counters** on Cronus28 —
       PASSED 2026-08-23. Probe at `scratch/probe-perf/`, results in
       `decisions.md` entry 8. Perf category (15 tasks) is unblocked.
-- [ ] **Premise probe: `TestPermissions`** — can a test simulate a
-      restricted role deterministically under the SOAP runner? Gates the
-      permissions category (3 tasks). Deferred until perf probe lands.
+- [x] **Premise probe: `TestPermissions`** — PASSED 2026-08-23. Restrictive
+      engages under the SOAP runner: Insert on an unpermissioned custom
+      table raises the real permission error; reads allowed; DeleteAll on
+      an EMPTY table does not raise (no rows, no check). Probe at
+      `scratch/probe-testperm/`, decisions.md entry 10. Permissions
+      category (3 tasks) unblocked.
 - [x] **Diagnose-task format** (the one real engineering task):
   - `templates/diagnose.md` prompt template: starter code + symptom.
   - Task YAML support for starter source files (files live under
@@ -85,8 +88,11 @@ Standing constraints (from CLAUDE.md + session rules):
       hard-tier + 6 mid-tier, first perf-oracle task (X069), two platform
       facts corrected by measurement (Rename/TableRelation cascade;
       GetFilter blank token). **11 / 100.**
-- [ ] Build batch 2: next ~10 from the remaining filter-built apps
-      (X076-X085 allocated).
+- [x] Build batch 2 (2026-08-23): CG-AL-X076..X085 promoted. Every audit
+      produced actionable findings; two more platform facts measured
+      (write-inside-try restriction is dynamically scoped and pierces
+      enclosing TryFunctions; AL's non-short-circuit boolean evaluation
+      bites on 0D arithmetic). **21 / 100.**
 - [ ] Operator mixes filtered material into tasks; **composite tasks**
       (see categories.md #10) deliberately combine several volotest apps +
       PR-derived defects into one large prompt — some prompts well past

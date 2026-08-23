@@ -1,0 +1,27 @@
+id: CG-AL-X079
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Codeunit "CG X079 Charge Allocator" spreads a "CG X079 Charge Header" record''s Total Charge Amount across its "CG X079 Charge Line" records in proportion to each line''s Weight, storing the result in each line''s Allocated Amount and marking the header Allocated. Finance has noticed that on some invoices the Allocated Amount values recorded on a charge''s lines do not add up to the header''s Total Charge Amount: sometimes the lines total a cent short of the header, sometimes a cent or more over. The mismatch shows up most often on charges where several lines carry the same or nearly the same Weight, and it gets worse as a charge has more lines or as line weights carry more decimal places. Finance cannot post a batch where a charge''s lines do not close exactly to its header total. Fix the application so that for any charge, however many lines it has and whatever weights they carry, the sum of the lines'' Allocated Amount always equals the header''s Total Charge Amount exactly, while every line''s Allocated Amount still lands within a cent of its proportional share of the total.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: rounding-allocation
+  tags:
+    - diagnose
+    - rounding
+    - allocation
+    - invariant
+    - decimal
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X079.Test.al
+  testCodeunitId: 88832

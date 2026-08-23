@@ -1,0 +1,25 @@
+id: CG-AL-X078
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages royalty statements for licensed theatrical performances. Codeunit "CG X078 Statement" builds the statement for one agreement via BuildStatement, writing one line per performance into a "CG X078 Statement Line" buffer and returning the two summary totals, TotalAmount and TotalCredits. Users report that when statements for several agreements are generated back-to-back in the same session, each later statement''s totals come back too high: every individual line is correct (right plays, right per-line amounts and credits, right order), but the two summary totals at the bottom are inflated by whatever the previous agreement''s statement already added up to. An agreement with no performances at all still reports the previous statement''s totals instead of 0.00 and 0. Fix the application so BuildStatement''s totals always reflect only the current agreement''s own performances.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - accumulator-reset
+    - var-parameter
+    - running-total
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X078.Test.al
+  testCodeunitId: 88831

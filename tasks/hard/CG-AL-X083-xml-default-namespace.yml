@@ -1,0 +1,27 @@
+id: CG-AL-X083
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application imports FreightEx carrier shipment-status messages: codeunit "CG X083 Shipment Import Mgt." parses each incoming message and writes one row per shipment to the "CG X083 Shipment Import Entry" table. Since production traffic started arriving, every entry the import writes shows a Package Count of 0 and a Status of Empty Shipment, even for shipments that clearly are not empty. The same row''s Tracking No. Count and Weight Unit columns come back populated and correct, so packages obviously did arrive - only the package count is wrong. GetLastImportedPackageCount likewise always reports 0 for any shipment. Nothing throws an error anywhere; the import just runs and silently under-counts every single time, whereas it worked fine against the old test messages. Fix the application so Package Count reflects the actual number of packages in each shipment.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - diagnose
+    - xml
+    - xpath
+    - namespaces
+    - xml-namespace-manager
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X083.Test.al
+  testCodeunitId: 88836

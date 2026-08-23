@@ -74,3 +74,15 @@ Append-only. Each entry: date, decision, why.
    cross-column-search, queue-scan) seed the hard tier; single-defect
    tasks still have leaderboard value for the mid-field, so solved-by-
    Sonnet does NOT disqualify a candidate, it tiers it.
+
+10. **TestPermissions premise probe PASSED** (2026-08-23, Cronus28, SOAP
+    runner; probe at `scratch/probe-testperm/`). `TestPermissions =
+    Restrictive` genuinely engages: an Insert on a custom table shipping
+    no permission set raises "Sorry, the current permissions prevented
+    the action. (TableData 70094 ... Insert ...)". Reads are allowed.
+    Nuance: `DeleteAll()` on an EMPTY table does not raise (no rows means
+    no permission check), so permission oracles must deny on operations
+    that touch actual rows or use Insert as the canonical denied write.
+    Category 12 oracle shape: Restrictive test codeunit + asserterror on
+    the denied operation + app-shipped PermissionSet objects granting the
+    selective access the task is about.
