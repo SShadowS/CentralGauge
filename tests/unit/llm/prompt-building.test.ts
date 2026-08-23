@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { fromFileUrl } from "@std/path";
 
 import {
@@ -255,5 +255,35 @@ END-CODE
     });
     assertEquals(asGeneration.prompt, "BASE");
     assertEquals(asFix.prompt, "FIX-BASE");
+  });
+
+  it("renders starter code between BEGIN-APP/END-APP and the description under ## The problem", async () => {
+    const applied = await buildGenerationPrompt({
+      ...base,
+      promptTemplate: "diagnose.md",
+      description: "The codeunit throws when Amount is negative.",
+      starterCode: 'codeunit 50100 "Buggy" { }',
+    });
+    assertStringIncludes(
+      applied.prompt,
+      'BEGIN-APP\ncodeunit 50100 "Buggy" { }\nEND-APP',
+    );
+    assertStringIncludes(
+      applied.prompt,
+      "## The problem\n\nThe codeunit throws when Amount is negative.",
+    );
+  });
+
+  it("throws when the diagnose template still needs starter code after render", async () => {
+    await assertRejects(
+      () =>
+        buildGenerationPrompt({
+          ...base,
+          promptTemplate: "diagnose.md",
+          description: "The codeunit throws when Amount is negative.",
+        }),
+      Error,
+      `prompt template requires starter code but none was found for ${base.taskId}`,
+    );
   });
 });

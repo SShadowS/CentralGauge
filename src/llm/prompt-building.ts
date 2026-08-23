@@ -76,6 +76,12 @@ export async function buildGenerationPrompt(opts: {
   description: string;
   taskId: string;
   maxAttempts?: number | undefined;
+  /** Diagnose-task starter code, rendered as `{{starter_code}}`. The caller
+   *  loads it (this function only renders); omit for non-diagnose tasks.
+   *  If the rendered base prompt still contains the literal
+   *  `{{starter_code}}` placeholder (template needed it but none was
+   *  supplied), this function throws. */
+  starterCode?: string | undefined;
   /** `TaskManifest.prompts`. */
   taskPrompts?: PromptInjectionConfig | undefined;
   cliOverrides?: CLIPromptOverrides | undefined;
@@ -88,8 +94,15 @@ export async function buildGenerationPrompt(opts: {
       description: opts.description,
       task_id: opts.taskId,
       max_attempts: opts.maxAttempts,
+      starter_code: opts.starterCode,
     },
   );
+
+  if (basePrompt.includes("{{starter_code}}")) {
+    throw new Error(
+      `prompt template requires starter code but none was found for ${opts.taskId}`,
+    );
+  }
 
   return PromptInjectionResolver.resolveAndApply(
     basePrompt,
