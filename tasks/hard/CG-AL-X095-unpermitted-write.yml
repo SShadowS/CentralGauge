@@ -1,0 +1,25 @@
+id: CG-AL-X095
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages documents that get posted into an archive kept for record-keeping. Codeunit "CG X095 Doc Poster" exposes PostDocument, which records a document''s current description and amount as a new entry in the archive and then marks the document posted, and EditDescription, which updates a document''s description before it is posted. Users who have full rights to create, edit, and post documents report that editing a document works exactly as expected, but PostDocument raises a permissions error partway through and leaves the document unposted. Fix the application so PostDocument completes without error, records an accurate archive entry for the document, and marks it posted.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: error-transactions
+  tags:
+    - diagnose
+    - permissions
+    - tabledata-grant
+    - posting-order
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X095.Test.al
+  testCodeunitId: 89092

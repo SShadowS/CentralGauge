@@ -1,0 +1,26 @@
+id: CG-AL-X086
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application keeps a local "CG X086 Contact" record for every contact reported by an external feed. Codeunit "CG X086 Feed Import" reads each line of "CG X086 Feed Line" and calls codeunit "CG X086 Contact Sync"''s SyncContact procedure, which updates the local contact''s Contact Id to whatever id the feed currently reports for it, then refreshes Company Name, VAT Registration No., Address, Status, and Last Synced from the feed line. When the feed reports that two contacts have merged and now share a target id, but that target id already identifies a different local contact, the losing contact keeps having its Company Name, VAT Registration No., Address, Status, and Last Synced refreshed from the feed on every subsequent sync, while its Contact Id in our system never changes to the merged target id, and the already-correct contact at that target id is left exactly as it was. The two contacts stay permanently split under different ids no matter how many times the feed reports the merge, and nothing about the conflict is ever surfaced to whoever runs the import. Fix the application so a feed-reported merge that collides with an existing contact id can no longer be applied silently: the conflict must be surfaced, and neither contact''s stored data may change until the conflict is resolved.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - identity-merge
+    - silent-skip
+    - guard-clause
+    - rename
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X086.Test.al
+  testCodeunitId: 89083

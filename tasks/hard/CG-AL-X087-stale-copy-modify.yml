@@ -1,0 +1,26 @@
+id: CG-AL-X087
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages document headers that support being copied into new documents. Codeunit "CG X087 Document Copy Mgt" exposes CopyDocument, which creates a new document from an existing one; a correctly copied document ends up released, carries the reference recorded at the moment it was released, and is marked as audited. Users report that after CopyDocument runs, the new document is correctly marked as audited, but its status reverts to showing the document as merely copied rather than released, and the release reference recorded moments earlier is gone. Fix the application so CopyDocument leaves the new document released, carrying its release reference, and audited.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - event-subscriber
+    - var-record
+    - lost-update
+    - stale-reference
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X087.Test.al
+  testCodeunitId: 89084

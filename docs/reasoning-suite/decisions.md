@@ -86,3 +86,45 @@ Append-only. Each entry: date, decision, why.
     Category 12 oracle shape: Restrictive test codeunit + asserterror on
     the denied operation + app-shipped PermissionSet objects granting the
     selective access the task is about.
+
+11. **Build-batch-3 measured platform facts (2026-08-23, Cronus28,
+    BC 28.4, SOAP runner).** Each measured by a probe during the batch:
+    - **NST data-cache nuance**: a REPEAT Get of the SAME row is served
+      free (0 statements), and a write to a DIFFERENT row of the table
+      does NOT invalidate it. Only distinct-key Gets cost a statement
+      each (the batch-1 "point Gets aren't absorbed" fact applies to
+      distinct keys). Consequence: counter oracles must not rely on a
+      cold instance re-reading an already-read row.
+    - **Per-row filtered FindSets are NOT absorbed** by the cache: an
+      N+1 loop of SetRange+FindSet measured 201 statements at N=200
+      after warm-up (X090). Per-row scans and per-row Gets are both
+      reliable perf-oracle defect classes.
+    - **`SelectLatestVersion()` flushes the session data cache** - call
+      it immediately before a counter snapshot to force ANY DB-backed
+      read in the measured window to cost >= 1 statement (X091's guard
+      against DB-backed shared-store rewrites). The legitimate in-memory
+      cache still measures 0.
+    - **Same-session stale-instance Modify is a SILENT LOST UPDATE**:
+      it does not trip BC's optimistic-concurrency check (that error is
+      cross-session only); the stale buffer overwrites every field a
+      sibling writer changed (X087). Oracles catch it via final-state
+      asserts, not asserterror.
+    - **Permissions category ground rules** (X095, two probe rounds):
+      `[Permissions(PermissionSet = ...)]` is not valid at object level
+      (AL0198); bare `TestPermissions = Restrictive` grants NOTHING
+      from app-shipped PermissionSet objects (even covered tables deny);
+      the working oracle shape is Restrictive + `Library - Lower
+      Permissions.PushPermissionSetWithoutDefaults('<set>')` as the
+      first statement of every test (prefer WithoutDefaults - the plain
+      variant silently assigns D365 Basic). Codeunit-level `Permissions`
+      property elevation is also denied under Restrictive on this
+      container (x003 premise notes), so the fix a task can accept is
+      extending the PermissionSet object. Library - Lower Permissions
+      (132217) ships in Tests-TestLibraries, already in
+      TEST_TOOLKIT_DEPENDENCIES.
+    - **Perf-oracle scope limit**: a rows budget is unsatisfiable for a
+      whole-batch procedure (any correct implementation reads O(M) rows
+      on the measured call) - budget statements only there. And a defect
+      whose naive and correct sides BOTH scale with N (~1.5x apart,
+      e.g. SetLoadFields-before-Rename) cannot satisfy the 10x budget
+      rule at all - drop such candidates from the perf category.

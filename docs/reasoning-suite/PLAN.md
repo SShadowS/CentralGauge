@@ -93,6 +93,12 @@ Standing constraints (from CLAUDE.md + session rules):
       (write-inside-try restriction is dynamically scoped and pierces
       enclosing TryFunctions; AL's non-short-circuit boolean evaluation
       bites on 0D arithmetic). **21 / 100.**
+- [x] Build batch 3 (2026-08-23): CG-AL-X086..X095 promoted - three
+      filter apps, three perf-oracle, two serialization, one fresh
+      IsHandled design, and the FIRST permissions task (X095, category
+      12). Five platform facts measured (decisions.md entry 11), incl.
+      the permissions ground rules: bare Restrictive grants nothing;
+      Library - Lower Permissions push is mandatory. **31 / 100.**
 - [ ] Operator mixes filtered material into tasks; **composite tasks**
       (see categories.md #10) deliberately combine several volotest apps +
       PR-derived defects into one large prompt — some prompts well past

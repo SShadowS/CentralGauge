@@ -1,0 +1,27 @@
+id: CG-AL-X093
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Codeunit "CG X093 Order Export" builds the JSON payload a warehouse partner''s integration reads for each order, with an orderNo, customerNo and orderDate at the top level and one lines array entry per order line carrying lineNo, itemNo, description, quantity, unitPrice and lineAmount. Two problems have appeared since the partner went live. First, their intake system rejects the order whenever its date falls on one of the first nine days of a month or in one of the first nine months of the year; orders dated later in the month or year go through without complaint. Second, every line''s unitPrice fails their automated import validation, while lineNo, quantity and lineAmount on the very same lines import without issue. Fix the application so every order it exports is accepted by the partner''s intake system, without changing anything about the export that already works.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - diagnose
+    - json
+    - jsonobject
+    - iso-8601
+    - culture-invariant-numbers
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X093.Test.al
+  testCodeunitId: 89090
