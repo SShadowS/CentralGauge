@@ -502,13 +502,16 @@ diagnose task's starter application can still reference an existing prereq
 object it should not itself define.
 
 Starter application object ids follow the same authoring convention as any
-other authored solution: keep them inside the 70000-74999 band, the same one
-`deno task id-audit` enforces for `correct/`/`naive/`. `starter/app.json`'s
-`idRanges` must cover every id `starter/` actually uses. Get either wrong and
-the probe can still pass - it compiles `starter/` against its own manifest -
-while the bench candidate manifest, which spans 70000-89999, fails every
-model on the out-of-band id. That failure looks like a model problem; it is a
-task-authoring one.
+other authored solution: keep them inside the 70000-74999 band. `id-audit`
+does not currently check this for `starter/`, in either state - `scratch/`
+is in its skip list, so a draft is never scanned, and a promoted
+`tasks/starter/<id>/` falls into an unclassified compilation unit, so only
+the 75000-79999 reserved-buffer check still applies there. Verify starter
+ids by hand. `starter/app.json`'s `idRanges` must cover every id `starter/`
+actually uses regardless: get that wrong and the probe can still pass - it
+compiles `starter/` against its own manifest - while the bench candidate
+manifest, which spans 70000-89999, fails every model on the out-of-band id.
+That failure looks like a model problem; it is a task-authoring one.
 
 ### The convention paths
 
