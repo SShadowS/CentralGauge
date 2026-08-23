@@ -358,6 +358,9 @@ export async function runTaskPromote(
   if (result.movedPrereq) {
     console.log(okIndent + result.movedPrereq);
   }
+  if (result.movedStarter) {
+    console.log(okIndent + result.movedStarter);
+  }
 
   const bangIndent = " ".repeat("[!]  ".length);
   // Post-commit tidy-up failures: the promotion itself succeeded, so these
