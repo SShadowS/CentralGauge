@@ -68,17 +68,25 @@ Standing constraints (from CLAUDE.md + session rules):
 
 ### Phase 2 — Model-as-difficulty-filter
 
-- [ ] Workflow per batch: each shortlisted candidate gets a **Sonnet-model
-      agent** (per-agent model override) receiving the BEFORE code + the
-      symptom; it must diagnose and fix. A separate **judge agent** grades
-      the answer against the known human fix — never the solver's
-      self-report. Sonnet-solved → mid/easy, discard or downgrade.
-- [ ] Survivors re-run with a **Fable-model agent** + judge. Surviving
-      Fable = hardest raw material.
-- [ ] Ledger updated with `sonnet-filter` / `fable-filter` verdicts.
+- [x] DONE 2026-08-23, batch 1 only, then closed by ruling. 24 top
+      candidates through build → Sonnet-solve → Fable-judge → Fable-solve:
+      Sonnet 20 solved / 3 partial / 1 failed; Fable solved all 4
+      escalations. Decision 9: raw-candidate filtering STOPS (nothing
+      survives Fable as a single-defect small app); the filter returns as a
+      pre-promotion spot-check on PACKAGED (composite) tasks.
+      solved-by-Sonnet tiers a candidate, it does not disqualify it.
+- [x] Ledger updated with sonnet/fable verdicts for all 24; the 24 built
+      buggy apps preserved under `scratch/filter-batch1/`.
 
 ### Phase 3 — Build to 100
 
+- [x] Pilot CG-AL-X065 (2026-08-23) validated the diagnose format end to
+      end. Build batch 1 (2026-08-23): CG-AL-X066..X075 promoted — 4
+      hard-tier + 6 mid-tier, first perf-oracle task (X069), two platform
+      facts corrected by measurement (Rename/TableRelation cascade;
+      GetFilter blank token). **11 / 100.**
+- [ ] Build batch 2: next ~10 from the remaining filter-built apps
+      (X076-X085 allocated).
 - [ ] Operator mixes filtered material into tasks; **composite tasks**
       (see categories.md #10) deliberately combine several volotest apps +
       PR-derived defects into one large prompt — some prompts well past
@@ -99,5 +107,6 @@ Standing constraints (from CLAUDE.md + session rules):
 | Date | What moved |
 |---|---|
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
+| 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |
 | 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |
