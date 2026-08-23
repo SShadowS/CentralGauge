@@ -189,7 +189,9 @@ export async function listDrafts(scratchDir: string): Promise<DraftSummary[]> {
     // loadStarterCode(starterDir) call to succeed (barring a delete race).
     const starterPath = resolve(dir, DRAFT_STARTER_DIRNAME);
     const starterFiles = await listTopLevelFiles(starterPath);
-    const hasStarterAl = starterFiles.some((name) => name.endsWith(".al"));
+    const hasStarterAl = starterFiles.some((name) =>
+      name.toLowerCase().endsWith(".al")
+    );
 
     // Build the summary object, spreading optional fields only when defined
     const summary: DraftSummary = {

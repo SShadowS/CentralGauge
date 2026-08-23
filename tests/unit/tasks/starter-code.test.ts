@@ -37,6 +37,22 @@ Deno.test("starter-code", async (t) => {
     }
   });
 
+  await t.step(
+    "loads a dir with only an uppercase .AL file, keeping its original basename",
+    async () => {
+      const dir = await createTempDir("starter-upper");
+      try {
+        await Deno.writeTextFile(join(dir, "App.AL"), "codeunit App");
+        assertEquals(
+          await loadStarterCode(dir),
+          "// FILE: App.AL\ncodeunit App",
+        );
+      } finally {
+        await cleanupTempDir(dir);
+      }
+    },
+  );
+
   await t.step("starterDirForTask composes tasks/starter/<id>", () => {
     assertEquals(
       starterDirForTask("U:/repo", "CG-AL-X070"),

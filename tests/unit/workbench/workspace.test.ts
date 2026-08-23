@@ -310,7 +310,10 @@ describe("workbench/workspace", () => {
       assertEquals(naive?.command.includes("--strict-fail-mode"), true);
     });
 
-    it("still targets starter/ for the naive-side probe task once promoted, for a diagnose draft", () => {
+    it("targets the promoted tasks/starter/<id> path for the naive-side probe task once promoted, for a diagnose draft", () => {
+      // promoteDraft MOVES scratch/<id>/starter to tasks/starter/<id> - the
+      // promoted-state command must follow, not keep pointing at the
+      // now-deleted scratch path (I2).
       const ws = JSON.parse(
         renderWorkspace({ ...promoted, diagnose: true }),
       ) as {
@@ -321,7 +324,11 @@ describe("workbench/workspace", () => {
       );
       assertStringIncludes(
         starterTask?.command ?? "",
-        `--solution scratch/${ID}/starter`,
+        `--solution tasks/starter/${ID}`,
+      );
+      assertEquals(
+        starterTask?.command.includes(`scratch/${ID}/starter`),
+        false,
       );
     });
   });

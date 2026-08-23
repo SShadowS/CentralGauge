@@ -299,6 +299,19 @@ describe("dashboard/drafts", () => {
     assertEquals(withEmptyStarter?.starterDir, undefined);
   });
 
+  it("reports starterDir when starter/ has only an uppercase .AL file", async () => {
+    await makeDraft("CG-AL-X064");
+    const starterDir = join(scratch, "CG-AL-X064", "starter");
+    await ensureDir(starterDir);
+    await Deno.writeTextFile(
+      join(starterDir, "App.AL"),
+      "codeunit 1 A { }",
+    );
+
+    const draft = (await listDrafts(scratch))[0];
+    assertEquals(draft?.starterDir, starterDir);
+  });
+
   it("resolves models from a named preset", () => {
     const models = resolvePresetModels(
       { benchmarkPresets: { flagship: { llms: ["a/b", "c/d"] } } },

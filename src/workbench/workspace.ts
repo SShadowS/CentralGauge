@@ -253,8 +253,12 @@ interface WorkspaceTask {
  *   oracle from `tests/al/<difficulty>/<id>.Test.al`, the codeunit id from
  *   `tasks/<difficulty>/<id>-*.yml`, and the prereq from
  *   `tests/al/dependencies/<id>/` by convention - exactly where promotion
- *   just put everything. `--solution scratch/<id>/<side>` still applies:
- *   those directories, and the solutions inside them, survive promotion.
+ *   just put everything. `--solution scratch/<id>/<side>` still applies for
+ *   `correct/`/`naive/`: those directories, and the solutions inside them,
+ *   survive promotion untouched. A diagnose draft's `starter/` does NOT -
+ *   `promoteDraft` MOVES the whole directory to `tasks/starter/<id>/`, so the
+ *   promoted naive-side `--solution` for a diagnose task points there instead
+ *   of at the (now-nonexistent) `scratch/<id>/starter`.
  *
  * The four flags must be dropped TOGETHER, never individually: `planProbe`
  * explicitly REFUSES `--test-codeunit-id`/`--prereq-dir`/`--stage-symbols-dir`
@@ -275,19 +279,24 @@ interface WorkspaceTask {
  * name: a diagnose draft (`ctx.diagnose`) has no `naive/` on disk at all -
  * `--solution` for the `"naive"` side resolves to `scratch/<id>/starter`
  * instead, since the starter application IS the naive side for that task
- * shape.
+ * shape. Once promoted, `starter/` has moved to `tasks/starter/<id>/` (see
+ * above), so the promoted-state diagnose command points `--solution` there
+ * instead of at the scratch path, which no longer holds it.
  */
 function buildProbeCommand(
   ctx: WorkspaceContext,
   side: "correct" | "naive",
 ): string {
-  const solutionDir = side === "naive" && ctx.diagnose
-    ? DRAFT_STARTER_DIRNAME
-    : side;
+  const isDiagnoseNaive = side === "naive" && ctx.diagnose;
+  const solutionPath = isDiagnoseNaive
+    ? (ctx.state === "promoted"
+      ? `tasks/${DRAFT_STARTER_DIRNAME}/${ctx.id}`
+      : `scratch/${ctx.id}/${DRAFT_STARTER_DIRNAME}`)
+    : `scratch/${ctx.id}/${side}`;
   const parts = [
     "deno run -A scripts/trap-probe.ts",
     `--task ${ctx.id}`,
-    `--solution scratch/${ctx.id}/${solutionDir}`,
+    `--solution ${solutionPath}`,
     `--expect ${side === "correct" ? "pass" : "fail"}`,
     `--container ${ctx.container}`,
   ];

@@ -501,6 +501,15 @@ compiles, `starter/` included, so a `starter/` with `.al` files but no
 diagnose task's starter application can still reference an existing prereq
 object it should not itself define.
 
+Starter application object ids follow the same authoring convention as any
+other authored solution: keep them inside the 70000-74999 band, the same one
+`deno task id-audit` enforces for `correct/`/`naive/`. `starter/app.json`'s
+`idRanges` must cover every id `starter/` actually uses. Get either wrong and
+the probe can still pass - it compiles `starter/` against its own manifest -
+while the bench candidate manifest, which spans 70000-89999, fails every
+model on the out-of-band id. That failure looks like a model problem; it is a
+task-authoring one.
+
 ### The convention paths
 
 | State | Path |

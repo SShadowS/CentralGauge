@@ -34,7 +34,7 @@ export async function loadStarterCode(
   try {
     const entries = await Deno.readDir(dir);
     for await (const entry of entries) {
-      if (entry.isFile && entry.name.endsWith(".al")) {
+      if (entry.isFile && entry.name.toLowerCase().endsWith(".al")) {
         alFiles.push(entry.name);
       }
     }
