@@ -57,6 +57,19 @@ describe("workbench/workspace", () => {
       assertEquals(ws.folders.map((f) => f.path).includes("prereq"), true);
     });
 
+    // Fix round 1, item 3: a diagnose draft has scratch/<id>/starter/ on
+    // disk instead of naive/ (scaffoldDraft's diagnose option) - the
+    // workspace's second AL project root must follow, or it offers a folder
+    // that does not exist.
+    it("lists starter/ instead of naive/ for a diagnose draft", () => {
+      const ws = JSON.parse(
+        renderWorkspace(draftCtx({ diagnose: true })),
+      ) as { folders: Array<{ path: string }> };
+      const paths = ws.folders.map((f) => f.path);
+      assertEquals(paths.includes("starter"), true);
+      assertEquals(paths.includes("naive"), false);
+    });
+
     it("hides the sub-projects from the draft root folder", () => {
       const ws = JSON.parse(renderWorkspace(draftCtx())) as {
         settings: Record<string, Record<string, boolean>>;
@@ -67,6 +80,7 @@ describe("workbench/workspace", () => {
       const exclude = ws.settings["files.exclude"]!;
       assertEquals(exclude["correct"], true);
       assertEquals(exclude["naive"], true);
+      assertEquals(exclude["starter"], true);
     });
 
     it("sets al.packageCachePath from symbolPaths", () => {
@@ -179,6 +193,48 @@ describe("workbench/workspace", () => {
         assertEquals(task?.command.includes("--stage-symbols-dir"), false);
       }
     });
+
+    // Fix round 1, item 3: the naive-side single-side task is the "naive
+    // only" label on disk pointed at scratch/<id>/naive - for a diagnose
+    // draft there is no naive/ at all, so both the label and the --solution
+    // target must follow scratch/<id>/starter/ instead.
+    it("targets starter/ and relabels the naive-side probe task for a diagnose draft", () => {
+      const ws = JSON.parse(
+        renderWorkspace(draftCtx({ diagnose: true })),
+      ) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      assertEquals(
+        ws.tasks.tasks.some((t) => t.label === "probe: naive only"),
+        false,
+      );
+      const starterTask = ws.tasks.tasks.find((t) =>
+        t.label === "probe: starter (naive side)"
+      );
+      assertStringIncludes(
+        starterTask?.command ?? "",
+        `--solution scratch/${ID}/starter`,
+      );
+      assertStringIncludes(starterTask?.command ?? "", "--expect fail");
+      assertStringIncludes(starterTask?.command ?? "", "--strict-fail-mode");
+    });
+
+    it("still targets naive/ and keeps the plain label for a non-diagnose draft", () => {
+      const ws = JSON.parse(renderWorkspace(draftCtx())) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      assertEquals(
+        ws.tasks.tasks.some((t) => t.label === "probe: starter (naive side)"),
+        false,
+      );
+      const naiveTask = ws.tasks.tasks.find((t) =>
+        t.label === "probe: naive only"
+      );
+      assertStringIncludes(
+        naiveTask?.command ?? "",
+        `--solution scratch/${ID}/naive`,
+      );
+    });
   });
 
   describe("renderWorkspace (promoted state)", () => {
@@ -252,6 +308,21 @@ describe("workbench/workspace", () => {
       const naive = ws.tasks.tasks.find((t) => t.label === "probe: naive only");
       assertEquals(correct?.command.includes("--strict-fail-mode"), false);
       assertEquals(naive?.command.includes("--strict-fail-mode"), true);
+    });
+
+    it("still targets starter/ for the naive-side probe task once promoted, for a diagnose draft", () => {
+      const ws = JSON.parse(
+        renderWorkspace({ ...promoted, diagnose: true }),
+      ) as {
+        tasks: { tasks: Array<{ label: string; command: string }> };
+      };
+      const starterTask = ws.tasks.tasks.find((t) =>
+        t.label === "probe: starter (naive side)"
+      );
+      assertStringIncludes(
+        starterTask?.command ?? "",
+        `--solution scratch/${ID}/starter`,
+      );
     });
   });
 

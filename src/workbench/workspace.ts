@@ -45,6 +45,7 @@ import { join, relative } from "@std/path";
 
 import type { PromoteDifficulty } from "./promote.ts";
 import { compilerCacheKey } from "../container/compiler-cache-key.ts";
+import { DRAFT_STARTER_DIRNAME } from "../tasks/starter-code.ts";
 
 /** Everything `renderWorkspace`/`renderChecklist`/`resolveSymbolPaths` need, resolved by the caller. */
 export interface WorkspaceContext {
@@ -58,6 +59,15 @@ export interface WorkspaceContext {
   repoRoot: string;
   /** Whether the draft has a `prereq/` project. */
   hasPrereq: boolean;
+  /**
+   * Whether this is a diagnose-task draft: `scratch/<id>/starter/` (the
+   * buggy starter application) exists instead of `naive/` - the starter IS
+   * the naive side for this task shape. Defaults to `false` (trap-task
+   * shape, `naive/`) when the caller doesn't know - `promoteDraft` and
+   * `importPromotedTask` don't plumb this yet, so their workspaces keep the
+   * pre-existing `naive/`-oriented behavior until they do.
+   */
+  diagnose?: boolean;
   /** AL test codeunit id. Only used in draft state's single-side probe tasks' `--test-codeunit-id` - promoted state resolves it from the committed task.yml instead. */
   testCodeunitId: number;
   /** BC container name, baked into the single-side probe tasks' `--container`. */
@@ -153,13 +163,22 @@ interface WorkspaceFolder {
  * then each AL project the draft owns. Paths are plain relative names - the
  * workspace file lives in `draftDir` itself, so no `relative()` computation
  * is needed here (contrast {@link promotedFolders}).
+ *
+ * A diagnose draft (`ctx.diagnose`) has `starter/` on disk instead of
+ * `naive/` - see `scaffoldDraft`'s `diagnose` option - so its second AL
+ * project root must point there instead, or the workspace would offer a
+ * project folder that does not exist.
  */
 function draftFolders(ctx: WorkspaceContext): WorkspaceFolder[] {
   const folders: WorkspaceFolder[] = [
     { path: ".", name: `${ctx.id} (draft)` },
     { path: "correct", name: "correct (oracle solution)" },
-    { path: "naive", name: "naive (plausible-wrong)" },
   ];
+  if (ctx.diagnose) {
+    folders.push({ path: "starter", name: "starter (buggy application)" });
+  } else {
+    folders.push({ path: "naive", name: "naive (plausible-wrong)" });
+  }
   if (ctx.hasPrereq) {
     folders.push({ path: "prereq", name: "prereq" });
   }
@@ -250,15 +269,25 @@ interface WorkspaceTask {
  * because every value here - the id, repo-relative paths, the container name
  * - is space-free, so there is no quoting to get wrong and a single string is
  * simplest to read straight out of `tasks.json`.
+ *
+ * `side` is the LOGICAL side (drives `--expect`/`--strict-fail-mode`, and the
+ * commands' own labelling in `buildTasks`), not necessarily the directory
+ * name: a diagnose draft (`ctx.diagnose`) has no `naive/` on disk at all -
+ * `--solution` for the `"naive"` side resolves to `scratch/<id>/starter`
+ * instead, since the starter application IS the naive side for that task
+ * shape.
  */
 function buildProbeCommand(
   ctx: WorkspaceContext,
   side: "correct" | "naive",
 ): string {
+  const solutionDir = side === "naive" && ctx.diagnose
+    ? DRAFT_STARTER_DIRNAME
+    : side;
   const parts = [
     "deno run -A scripts/trap-probe.ts",
     `--task ${ctx.id}`,
-    `--solution scratch/${ctx.id}/${side}`,
+    `--solution scratch/${ctx.id}/${solutionDir}`,
     `--expect ${side === "correct" ? "pass" : "fail"}`,
     `--container ${ctx.container}`,
   ];
@@ -312,7 +341,7 @@ function buildTasks(ctx: WorkspaceContext): WorkspaceTask[] {
       problemMatcher: [],
     },
     {
-      label: "probe: naive only",
+      label: ctx.diagnose ? "probe: starter (naive side)" : "probe: naive only",
       type: "shell",
       command: buildProbeCommand(ctx, "naive"),
       options: { cwd },
@@ -355,12 +384,13 @@ export function renderWorkspace(ctx: WorkspaceContext): string {
     // attempt to narrow any folder down to a single visible file - see the
     // module doc for why that is impossible (`files.exclude` has no
     // negation and is resource-scoped, so this one value applies to every
-    // folder in the workspace, including correct/naive/prereq themselves,
-    // where it is a harmless no-op since none of those directories contain
-    // a same-named child).
+    // folder in the workspace, including correct/naive/starter/prereq
+    // themselves, where it is a harmless no-op since none of those
+    // directories contain a same-named child).
     "files.exclude": {
       "correct": true,
       "naive": true,
+      "starter": true,
       "prereq": true,
       ".symbols": true,
       ".meta.json": true,

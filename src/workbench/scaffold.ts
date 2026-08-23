@@ -247,6 +247,7 @@ export async function scaffoldDraft(opts: {
     draftDir,
     repoRoot: Deno.cwd(),
     hasPrereq: withPrereq,
+    diagnose,
     testCodeunitId,
     container: opts.container ?? DEFAULT_PROBE_CONTAINER,
     symbolPaths,

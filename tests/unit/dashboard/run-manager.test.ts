@@ -506,6 +506,43 @@ describe("dashboard/run-manager", () => {
     }
   });
 
+  // Fix round 1, Important #1: the hoisted starter-code load used to be
+  // unguarded, so any I/O error other than ENOENT (loadStarterCode only
+  // swallows NotFound itself) rejected runQuick as a WHOLE — violating this
+  // module's own "one model erroring never aborts the others" contract.
+  // starterDir pointing at a file, not a directory, is a real way to hit
+  // that: Deno.readDir on a file throws NotADirectory.
+  it("treats a starter-code load failure as no starter code, without rejecting the run", async () => {
+    const starterFile = join(dir, "starter-is-a-file.al");
+    await Deno.writeTextFile(starterFile, "not a directory");
+
+    const run = await runQuick({
+      draft: {
+        ...draft,
+        dir,
+        promptTemplate: "diagnose.md",
+        starterDir: starterFile,
+      },
+      models: ["anthropic/m", "openai/n"],
+      renderer: new TemplateRenderer(),
+      correctSources: [CORRECT],
+      naiveSources: [NAIVE],
+      call: () =>
+        Promise.resolve({
+          content: `BEGIN-CODE\n${CORRECT}\nEND-CODE`,
+          finishReason: "stop" as const,
+        }),
+    });
+
+    assertEquals(run.responses.length, 2);
+    for (const response of run.responses) {
+      assertStringIncludes(
+        response.error ?? "",
+        "prompt template requires starter code",
+      );
+    }
+  });
+
   it("attaches tiered prereq findings to each response", async () => {
     const PREREQ = `table 69001 "CG Quote"
 {

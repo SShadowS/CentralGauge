@@ -363,9 +363,24 @@ export async function runQuick(opts: {
   // Loaded ONCE for the whole run, not once per model — a diagnose task's
   // starter application is identical text for every model asked. See
   // `runOneModel`'s doc comment for what `undefined` means here.
-  const starterCode = opts.draft.starterDir !== undefined
-    ? await loadStarterCode(opts.draft.starterDir)
-    : undefined;
+  //
+  // Wrapped in try/catch deliberately: `loadStarterCode` only swallows
+  // ENOENT itself (see its own doc comment), so anything else it can throw
+  // — `starterDir` pointing at a FILE rather than a directory
+  // (Deno.errors.NotADirectory), a permission error, whatever — must not
+  // reject `runQuick` as a whole. This module's own contract is that one
+  // model erroring never aborts the others; a run-level throw here would
+  // abort ALL of them. Treating any load failure as "no starter code" hands
+  // the decision to `buildGenerationPrompt`'s own guard, which turns a
+  // still-missing `{{starter_code}}` into a loud PER-MODEL error instead.
+  let starterCode: string | undefined;
+  if (opts.draft.starterDir !== undefined) {
+    try {
+      starterCode = await loadStarterCode(opts.draft.starterDir);
+    } catch {
+      starterCode = undefined;
+    }
+  }
 
   const responses = await Promise.all(
     opts.models.map((model) =>
