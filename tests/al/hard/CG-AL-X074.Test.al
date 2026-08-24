@@ -159,4 +159,46 @@ codeunit 88827 "CG-AL-X074 Test"
         OtherExpenseReport.Get('R0008');
         Assert.AreEqual(777, OtherExpenseReport."Total Comment Count", 'A different report''s stored count must not change');
     end;
+
+    [Test]
+    procedure UpdateReportSummaryExcludesAnUnrelatedReportsComments()
+    var
+        CommentLine: Record "CG X074 Comment Line";
+        ExpenseReport: Record "CG X074 Report";
+        CommentMgt: Codeunit "CG X074 Comment Mgt.";
+    begin
+        CommentLine.DeleteAll();
+        ExpenseReport.DeleteAll();
+
+        SeedReport('R0007', 0);
+        CommentMgt.AddComment('R0007', 'a');
+        CommentMgt.AddComment('R0007', 'b');
+
+        SeedComment('R0008', 1, 'unrelated');
+        SeedComment('R0008', 2, 'unrelated');
+        SeedComment('R0008', 3, 'unrelated');
+
+        ExpenseReport.Get('R0007');
+        CommentMgt.UpdateReportSummary(ExpenseReport);
+
+        ExpenseReport.Get('R0007');
+        Assert.AreEqual(2, ExpenseReport."Total Comment Count",
+          'A report''s updated comment count must reflect only its own comments, not another report''s');
+    end;
+
+    [Test]
+    procedure LineNumberingDoesNotLeakAcrossReports()
+    var
+        CommentLine: Record "CG X074 Comment Line";
+        CommentMgt: Codeunit "CG X074 Comment Mgt.";
+    begin
+        CommentLine.DeleteAll();
+
+        CommentMgt.AddComment('R9999', 'someone else''s first note');
+        CommentMgt.AddComment('R0001', 'first note for a different report');
+
+        CommentLine.Get('R0001', 10000);
+        Assert.AreEqual('first note for a different report', CommentLine."Comment Text",
+          'A report''s first comment must always start at its own first line, regardless of what other reports already contain');
+    end;
 }

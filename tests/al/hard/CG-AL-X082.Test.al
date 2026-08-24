@@ -317,4 +317,19 @@ codeunit 88835 "CG-AL-X082 Test"
         Assert.AreEqual(0, Client.GetTotalBackoffMs(), 'Expected the second call, which never retried, to report a backoff tally of 0 - not the 100 ms left over from the first call');
         Assert.AreEqual(3, MockHandler.GetRequestCount(), 'Expected three requests in total: two for the first call (500 then 200) and one for the second (200)');
     end;
+
+    [Test]
+    procedure AttemptsThatReportNoStatusAreNeverTreatedAsARepeatOfTheAttemptBeforeThem()
+    var
+        Client: Codeunit "CG X082 Resilient Http Client";
+        Handler: Codeunit "CG-AL-X082 NoStatus Handler";
+        ResponseBody: Text;
+    begin
+        // [SCENARIO] A retried attempt whose handler swallows an internal error and reports no status must be judged on its own, not on whatever status the attempt before it happened to report
+        Assert.IsFalse(Client.GetWithRetry('https://rates.example.com/v1/latest?base=USDPLN', 3, Handler, ResponseBody),
+            'Expected GetWithRetry to return false once an attempt reports no status at all');
+        Assert.AreEqual(2, Handler.GetRequestCount(), 'Expected exactly two requests: the retried 500 and the follow-up attempt that reported no status - a request reporting nothing must not be mistaken for another 500 and retried again');
+        Assert.AreEqual(100, Client.GetTotalBackoffMs(), 'Expected the backoff tally for exactly one retry to be 100 ms, not the extra retry a status carried over from the previous attempt would trigger');
+        Assert.AreEqual('', ResponseBody, 'Expected the response body to end up empty when no attempt ever succeeded');
+    end;
 }

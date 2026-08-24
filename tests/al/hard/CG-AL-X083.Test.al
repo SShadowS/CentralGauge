@@ -240,6 +240,45 @@ codeunit 88836 "CG-AL-X083 Test"
     end;
 
     [Test]
+    procedure GetLastImportedPackageCountReflectsOnlyItsOwnShipmentAfterALaterImportOfAnother()
+    var
+        ImportEntry: Record "CG X083 Shipment Import Entry";
+        Mgt: Codeunit "CG X083 Shipment Import Mgt.";
+        Any: Codeunit Any;
+        ShipmentA: Code[20];
+        ShipmentB: Code[20];
+        PayloadA: Text;
+        PayloadB: Text;
+    begin
+        ImportEntry.DeleteAll();
+
+        ShipmentA := CopyStr('SHP-' + UpperCase(Any.AlphanumericText(8)), 1, MaxStrLen(ShipmentA));
+        ShipmentB := CopyStr('SHP-' + UpperCase(Any.AlphanumericText(8)), 1, MaxStrLen(ShipmentB));
+
+        PayloadA := ShippingMessage(
+            '<Header><ShipmentNo>' + ShipmentA + '</ShipmentNo></Header>' +
+            '<Packages><Package><Weight unit="KG">1.0</Weight></Package><Package><Weight unit="KG">1.0</Weight></Package></Packages>');
+        Mgt.ImportShipmentStatus(PayloadA);
+
+        // Shipment B is imported afterward, so its entry carries a higher
+        // Entry No. than shipment A's - the exact shape that exposes an
+        // unfiltered lookup.
+        PayloadB := ShippingMessage(
+            '<Header><ShipmentNo>' + ShipmentB + '</ShipmentNo></Header>' +
+            '<Packages>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '</Packages>');
+        Mgt.ImportShipmentStatus(PayloadB);
+
+        Assert.AreEqual(2, Mgt.GetLastImportedPackageCount(ShipmentA),
+            'Expected shipment A''s own most recently imported package count, not a different shipment''s count just because that other shipment was imported afterward');
+    end;
+
+    [Test]
     procedure GetLastImportedPackageCountIsZeroForAShipmentNeverImported()
     var
         ImportEntry: Record "CG X083 Shipment Import Entry";

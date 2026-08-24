@@ -495,6 +495,22 @@ codeunit 89195 "CG-AL-X099 Test"
     end;
 
     [Test]
+    procedure RemovingAnEntryThatWasNeverAppliedLeavesTheSessionUntouched()
+    var
+        TotalMgt: Codeunit "CG X084 Total Mgt";
+        Buffer: Record "CG X084 Total Buffer" temporary;
+    begin
+        ClearAll();
+        CreateLedgerEntry(1, 'DOC1', 100, 100);
+        TotalMgt.AddAppliedEntry(Buffer, 1);
+
+        TotalMgt.RemoveAppliedEntry(Buffer, 999);
+
+        Assert.IsTrue(Buffer.Get(1), 'An entry that was never applied must not disturb an entry that genuinely is in the session');
+        Assert.AreEqual(1, TotalMgt.AppliedEntryCount(), 'Removing an entry that was never applied must not change how many entries the session is tracking');
+    end;
+
+    [Test]
     procedure AddingOneMoreEntryToALargeSessionCostsWorkIndependentOfSessionSize()
     var
         TotalMgt: Codeunit "CG X084 Total Mgt";

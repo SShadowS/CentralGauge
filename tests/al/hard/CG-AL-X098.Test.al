@@ -2,6 +2,7 @@ codeunit 89194 "CG-AL-X098 Test"
 {
     Subtype = Test;
     TestPermissions = Disabled;
+    EventSubscriberInstance = Manual;
 
     var
         Assert: Codeunit Assert;
@@ -21,6 +22,27 @@ codeunit 89194 "CG-AL-X098 Test"
         Unbound: Boolean;
     begin
         Unbound := UnbindSubscription(Promotion);
+    end;
+
+    local procedure ActivateFreightOverride(var Override: Codeunit "CG-AL-X098 Test")
+    var
+        Bound: Boolean;
+    begin
+        Bound := BindSubscription(Override);
+    end;
+
+    local procedure DeactivateFreightOverride(var Override: Codeunit "CG-AL-X098 Test")
+    var
+        Unbound: Boolean;
+    begin
+        Unbound := UnbindSubscription(Override);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"CG X067 Freight Calculator", 'OnBeforeCalculateFreight', '', false, false)]
+    local procedure ApplyAFlatFreightOverride(Amount: Decimal; var Freight: Decimal; var IsHandled: Boolean)
+    begin
+        Freight := 42.5;
+        IsHandled := true;
     end;
 
     local procedure ActivateOtherRule(var OtherRule: Codeunit "CG-AL-X098 Other Rule")
@@ -212,6 +234,21 @@ codeunit 89194 "CG-AL-X098 Test"
             StrSubstNo('Expected the standard charge for an order of %1 - below the threshold, the activated promotion must still leave it alone', Amount));
 
         DeactivatePromotion(Promotion);
+    end;
+
+    [Test]
+    procedure CalculatedFreightReflectsTheAmountAnActiveOverrideSets()
+    var
+        Calculator: Codeunit "CG X067 Freight Calculator";
+        Override: Codeunit "CG-AL-X098 Test";
+    begin
+        // [SCENARIO] A subscriber other than the promotion has taken over this call and set its own charge
+        ActivateFreightOverride(Override);
+
+        Assert.AreEqual(42.5, Calculator.CalculateFreight(1),
+            'Expected the returned charge to reflect the amount an active override sets, not a fixed zero');
+
+        DeactivateFreightOverride(Override);
     end;
 
     [Test]

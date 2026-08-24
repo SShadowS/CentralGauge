@@ -443,6 +443,60 @@ codeunit 89192 "CG-AL-X096 Test"
     end;
 
     [Test]
+    procedure AttemptsThatReportNoStatusAreNeverTreatedAsARepeatOfTheAttemptBeforeThem()
+    var
+        Client: Codeunit "CG X082 Resilient Http Client";
+        Handler: Codeunit "CG-AL-X096 NoStatus Handler";
+        ResponseBody: Text;
+    begin
+        // [SCENARIO] A retried attempt whose handler swallows an internal error and reports no status must be judged on its own, not on whatever status the attempt before it happened to report
+        Assert.IsFalse(Client.GetWithRetry('https://rates.example.com/v1/latest?base=USDPLN', 3, Handler, ResponseBody),
+            'Expected GetWithRetry to return false once an attempt reports no status at all');
+        Assert.AreEqual(2, Handler.GetRequestCount(), 'Expected exactly two requests: the retried 500 and the follow-up attempt that reported no status - a request reporting nothing must not be mistaken for another 500 and retried again');
+        Assert.AreEqual(100, Client.GetTotalBackoffMs(), 'Expected the backoff tally for exactly one retry to be 100 ms, not the extra retry a status carried over from the previous attempt would trigger');
+        Assert.AreEqual('', ResponseBody, 'Expected the response body to end up empty when no attempt ever succeeded');
+    end;
+
+    [Test]
+    procedure GetLastImportedPackageCountReflectsOnlyItsOwnShipmentAfterALaterImportOfAnother()
+    var
+        ImportEntry: Record "CG X083 Shipment Import Entry";
+        Mgt: Codeunit "CG X083 Shipment Import Mgt.";
+        Any: Codeunit Any;
+        ShipmentA: Code[20];
+        ShipmentB: Code[20];
+        PayloadA: Text;
+        PayloadB: Text;
+    begin
+        ImportEntry.DeleteAll();
+
+        ShipmentA := CopyStr('SHP-' + UpperCase(Any.AlphanumericText(8)), 1, MaxStrLen(ShipmentA));
+        ShipmentB := CopyStr('SHP-' + UpperCase(Any.AlphanumericText(8)), 1, MaxStrLen(ShipmentB));
+
+        PayloadA := ShippingMessage(
+            '<Header><ShipmentNo>' + ShipmentA + '</ShipmentNo></Header>' +
+            '<Packages><Package><Weight unit="KG">1.0</Weight></Package><Package><Weight unit="KG">1.0</Weight></Package></Packages>');
+        Mgt.ImportShipmentStatus(PayloadA);
+
+        // Shipment B is imported afterward, so its entry carries a higher
+        // Entry No. than shipment A's - the exact shape that exposes an
+        // unfiltered lookup.
+        PayloadB := ShippingMessage(
+            '<Header><ShipmentNo>' + ShipmentB + '</ShipmentNo></Header>' +
+            '<Packages>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '<Package><Weight unit="KG">1.0</Weight></Package>' +
+            '</Packages>');
+        Mgt.ImportShipmentStatus(PayloadB);
+
+        Assert.AreEqual(2, Mgt.GetLastImportedPackageCount(ShipmentA),
+            'Expected shipment A''s own most recently imported package count, not a different shipment''s count just because that other shipment was imported afterward');
+    end;
+
+    [Test]
     procedure ImportCountsEveryPackageAndKeepsOtherFieldsAccurate()
     var
         ImportEntry: Record "CG X083 Shipment Import Entry";

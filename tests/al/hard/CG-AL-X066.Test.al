@@ -242,4 +242,61 @@ codeunit 88819 "CG-AL-X066 Test"
         Assert.AreEqual(777.77, ShipmentCostOf(OtherItemLedgerEntryNo),
           'Expected a recorded cost for a different item to be unaffected by recomputing this item');
     end;
+
+    [Test]
+    procedure RecomputingOneItemNeverProcessesAnotherItemsLedgerEntries()
+    var
+        Engine: Codeunit "CG X066 Costing Engine";
+        ShipmentNo: Integer;
+    begin
+        ClearAllData();
+        SeedEntry('MULTI-A', 5, 1.00);
+        ShipmentNo := SeedEntry('MULTI-A', -5, 0);
+        SeedEntry('MULTI-B', 3, 2.00);
+        SeedEntry('MULTI-B', -3, 0);
+
+        Engine.CalculateShipmentCosts('MULTI-A');
+
+        Assert.AreEqual(5.00, ShipmentCostOf(ShipmentNo),
+          'Expected the requested item''s shipment to cost exactly its own drawn quantity times unit cost');
+        Assert.AreEqual(0, ShipmentCostRowCount('MULTI-B'),
+          'Expected recomputing one item to never write a recorded cost row for a different item''s ledger entries');
+    end;
+
+    [Test]
+    procedure ZeroQuantityEntryStillRecordsAZeroCostShipmentRow()
+    var
+        Engine: Codeunit "CG X066 Costing Engine";
+        ShipmentNo: Integer;
+    begin
+        ClearAllData();
+        ShipmentNo := SeedEntry('ZERO1', 0, 5.00);
+
+        Engine.CalculateShipmentCosts('ZERO1');
+
+        Assert.AreEqual(0.00, ShipmentCostOf(ShipmentNo),
+          'Expected a zero-quantity entry to still be recorded as a shipment with zero cost, not skipped entirely');
+    end;
+
+    [Test]
+    procedure InsufficientInventoryErrorReportsNeededBeforeOnHand()
+    var
+        Engine: Codeunit "CG X066 Costing Engine";
+        ErrorText: Text;
+        NeededPos: Integer;
+        OnHandPos: Integer;
+    begin
+        ClearAllData();
+        SeedEntry('ERRSWAP', 2, 1.00);
+        SeedEntry('ERRSWAP', -5, 0);
+
+        asserterror Engine.CalculateShipmentCosts('ERRSWAP');
+        ErrorText := GetLastErrorText();
+
+        NeededPos := StrPos(ErrorText, '5');
+        OnHandPos := StrPos(ErrorText, '2');
+        Assert.IsTrue(NeededPos > 0, 'Expected the error to mention the quantity actually needed');
+        Assert.IsTrue(OnHandPos > 0, 'Expected the error to mention the quantity actually on hand');
+        Assert.IsTrue(NeededPos < OnHandPos, 'Expected the error to report the quantity needed before the quantity on hand');
+    end;
 }

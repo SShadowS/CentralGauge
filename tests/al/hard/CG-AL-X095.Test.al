@@ -118,4 +118,27 @@ codeunit 89092 "CG-AL-X095 Test"
         Document.Get('DOC-004');
         Assert.IsFalse(Document.Posted, 'A document must not end up marked posted when its archive entry could not be recorded');
     end;
+
+    [Test]
+    procedure PostingAndEditingBothReachAnyIntegrationWatchingTheDocument()
+    var
+        Document: Record "CG X095 Document";
+        Poster: Codeunit "CG X095 Doc Poster";
+        Observer: Codeunit "CG-AL-X095 Modify Observer";
+        Bound: Boolean;
+    begin
+        LibraryLowerPermissions.PushPermissionSetWithoutDefaults('CG X095 Doc User');
+
+        Document.DeleteAll();
+        Seed('DOC-030', 'Pending Order', 60);
+        Seed('DOC-031', 'Draft Memo', 15);
+
+        Bound := BindSubscription(Observer);
+        Poster.PostDocument('DOC-030');
+        Poster.EditDescription('DOC-031', 'Finalized Memo');
+        Bound := UnbindSubscription(Observer);
+
+        Assert.IsTrue(Observer.HasObserved('DOC-030'), 'Expected posting a document to be observable to any integration watching the document''s modify events, not only visible in its stored fields');
+        Assert.IsTrue(Observer.HasObserved('DOC-031'), 'Expected editing a document to be observable to any integration watching the document''s modify events, not only visible in its stored fields');
+    end;
 }

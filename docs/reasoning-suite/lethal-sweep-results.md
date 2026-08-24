@@ -55,3 +55,24 @@ standalone runs.
 Survivor triage (equivalent vs oracle hole vs unreached) follows the
 X077 pilot procedure; per-task raw reports live in the gitignored
 scratch/lethal-t1/<id>/ dirs (report.json + lethal-run.log).
+
+## Fix round (2026-08-24)
+
+Triage verdict across all 84 survivors: 12 genuine oracle holes in 8
+tasks, everything else equivalent (two recurring false-positive shapes:
+redundant Init() on fresh locals; Modify(true->false) with no OnModify
+trigger/subscriber) or accepted (X088 notification wrapper, X074 page
+glue, X089 statements-only design). 12 kill tests + 3 oracle-side
+companions added: X066 (cross-item isolation, zero-qty boundary,
+error-arg order), X067 (event out-param passthrough via test-local
+Manual subscriber - Test+Manual on one codeunit measured to compile and
+run), X073 (rename-actually-renames, unfiltered count), X074 (two
+missing-SetRange on-theme kills), X082 (stale StatusCode across retry
+attempts, two-request design - single-request cannot distinguish
+zero-init from cleared), X083 (unfiltered FindLast real bug), X084
+(remove-never-added would RemoveAt(0) on a 1-indexed List), X095 (one
+OnAfterModifyEvent observer kills both Modify(false) survivors).
+Mirrored into composites X096/X097/X098/X099. All 12 changed tasks
+re-probed green on Cronus28; id-audit clean. Identifier lesson
+re-learned: companion names hit the 30-char cap (renamed NoStatus
+Handler).

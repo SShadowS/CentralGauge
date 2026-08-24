@@ -144,4 +144,37 @@ codeunit 88826 "CG-AL-X073 Test"
 
         Assert.IsFalse(CategoryReportFilter.FindFirst(), 'No report filter existed for this category, so a rename must not create one');
     end;
+
+    [Test]
+    procedure RenameActuallyRenamesTheCategoryRecordItself()
+    var
+        ProductCategory: Record "CG X073 Product Category";
+        RenameMgt: Codeunit "CG X073 Category Rename Mgt.";
+    begin
+        ClearAll();
+        RenameMgt.CreateCategory('OLDCAT', 'Old Category');
+
+        RenameMgt.RenameCategory('OLDCAT', 'NEWCAT');
+
+        Assert.IsTrue(ProductCategory.Get('NEWCAT'), 'The category record itself must exist under its new code after a rename');
+        Assert.AreEqual('Old Category', ProductCategory.Description, 'The category''s own description must survive the rename');
+        Assert.IsFalse(ProductCategory.Get('OLDCAT'), 'The category record must no longer exist under its old code after a rename');
+    end;
+
+    [Test]
+    procedure CountMatchingProductsExcludesProductsInAnUnrelatedCategory()
+    var
+        RenameMgt: Codeunit "CG X073 Category Rename Mgt.";
+    begin
+        ClearAll();
+        RenameMgt.CreateCategory('OLDCAT', 'Old Category');
+        RenameMgt.CreateCategory('OTHERCAT', 'Other Category');
+        RenameMgt.AssignProduct('P001', 'Widget', 'OLDCAT', 12.5);
+        RenameMgt.AssignProduct('P002', 'Gadget', 'OLDCAT', 7.25);
+        RenameMgt.AssignProduct('P900', 'Unrelated Item', 'OTHERCAT', 50);
+        RenameMgt.CreateReportFilter('FILT1', 'Category Summary', 'OLDCAT');
+
+        Assert.AreEqual(2, RenameMgt.CountMatchingProducts('FILT1'),
+          'A report filter must count only products in its own category, not every product in the company');
+    end;
 }
