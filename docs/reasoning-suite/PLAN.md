@@ -106,9 +106,15 @@ Standing constraints (from CLAUDE.md + session rules):
       vaguer symptom wording is the lever for the remaining five.
       **36 / 100.** Remaining category-3 five build later with vaguer
       symptoms + bigger donor sets.
-- [ ] Remaining composite tasks (5 of 10) with vaguer symptoms; some
-      prompts well past 10k tokens so models must locate the relevant
-      code before reasoning about it.
+- [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
+      symptom distant from defect (see hardness-strategy.md), >= 1
+      genuinely entangled distractor each (tooling-plan.md T3 gate);
+      some prompts well past 10k tokens.
+- [ ] Tool-assisted hardening per `tooling-plan.md`: T2 alsem
+      defect-visibility ledger column (no container), T1 LethAL oracle
+      bypass-audit pilot on 3 tasks, T4 stubborn-mutant harvest for
+      batch-5+ candidates. Prerequisite for T1/T4: make the scratch-only
+      correct/ solutions durable (commit under a hash-excluded dir).
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
 
