@@ -190,11 +190,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
       );
     }
 
-    // Chunked below, so this write cannot be a single atomic batch and the
-    // bump cannot ride along in it. It goes in `finally` instead: a partial
-    // write that threw still changed leaderboard-visible data and MUST
-    // invalidate. A spurious bump after a total failure costs one recompute;
-    // a missed bump after a partial write costs 24h of stale data.
+    // Chunked below, so this write cannot be a single atomic batch and the bump
+    // cannot ride along inside it. Instead the bump runs unconditionally after
+    // the attempt, and a bump failure is fatal to the request — see below.
+    let writeError: unknown = null;
     try {
       if (setupStatements.length > 0) await db.batch(setupStatements);
 
@@ -225,10 +224,30 @@ export const POST: RequestHandler = async ({ request, platform }) => {
           await db.batch(taskStatements.slice(i, i + CHUNK));
         }
       }
-    } finally {
-      // Never let a bump failure mask the write error that got us here.
-      await bumpDataEpoch(db).catch((err) =>
-        console.error("[task-sets] epoch bump failed:", err)
+    } catch (err) {
+      writeError = err;
+    }
+
+    // Invalidate even when the writes threw: a partial write still changed
+    // leaderboard-visible data, so the caches must not be trusted either way.
+    const bumped = await bumpDataEpoch(db)
+      .then(() => true)
+      .catch((err) => {
+        console.error("[task-sets] epoch bump failed:", err);
+        return false;
+      });
+
+    // Surface the original write failure first — it is the more informative one.
+    if (writeError) throw writeError;
+    // Writes landed but invalidation did not. Reporting success here would tell
+    // the caller their publish is live when every colo is still serving the old
+    // aggregates for the next 24h, which is exactly the failure the epoch
+    // scheme exists to prevent. Fail loudly instead.
+    if (!bumped) {
+      throw new ApiError(
+        500,
+        "epoch_bump_failed",
+        "Writes committed but cache invalidation failed. Readers may serve pre-publish aggregates until the operator runs `npm run bump-epoch`.",
       );
     }
 

@@ -261,155 +261,12 @@ export async function computeLeaderboard(
   // first.
   // ---------------------------------------------------------------------------
 
-  const LATENCY_WIDE_FETCH = 200;
+  // Sorting moved out of SQL entirely — see the TS sort near the end of this
+  // function. WIDE_FETCH caps the unordered fetch; the trim to q.limit happens
+  // after the sort, so no row that belongs in the top-N is dropped early.
+  const WIDE_FETCH = 500;
 
-  /**
-   * Build the SQL ORDER BY clause and any extra bind params needed for it.
-   *
-   * Returns `{ clause, extraParams, sqlLimit }`.
-   *   - `clause`       — the full `ORDER BY ... ` string (empty for latency).
-   *   - `extraParams`  — bind values for any `?` in the ORDER BY expression.
-   *   - `sqlLimit`     — the LIMIT value to pass to SQL (q.limit normally;
-   *                      LATENCY_WIDE_FETCH for latency_p95_ms).
-   */
-  function buildOrderBy(): {
-    clause: string;
-    extraParams: Array<string | number>;
-    sqlLimit: number;
-  } {
-    const dir = q.direction === "asc" ? "ASC" : "DESC";
-    // Final tiebreaker: model.id DESC for deterministic ordering.
-    const tie = `, m.id DESC`;
 
-    // Correlated subquery expressions reused from the SELECT list.
-    // These must include the same scope-IN clauses so ORDER BY matches the
-    // denominator semantics (same scope in SELECT and ORDER BY).
-    const P1_EXPR = `(SELECT COUNT(DISTINCT r1.task_id)
-       FROM results r1 JOIN runs ru1 ON ru1.id = r1.run_id
-       WHERE ru1.model_id = m.id AND r1.attempt = 1 AND r1.passed = 1
-         ${taskSetClauseSubA1}
-         ${scopeInA1.clause})`;
-    const P2_ONLY_EXPR = `(SELECT COUNT(DISTINCT r2.task_id)
-       FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
-       WHERE ru2.model_id = m.id AND r2.attempt = 2 AND r2.passed = 1
-         AND NOT EXISTS (
-           SELECT 1 FROM results r1b JOIN runs ru1b ON ru1b.id = r1b.run_id
-           WHERE ru1b.model_id = m.id AND r1b.task_id = r2.task_id
-             AND r1b.attempt = 1 AND r1b.passed = 1
-             ${taskSetClauseSubA2NotExists}
-             ${scopeInA2NotExists.clause}
-         )
-         ${taskSetClauseSubA2}
-         ${scopeInA2.clause})`;
-
-    switch (q.sort) {
-      case "auc_2":
-        // AUC@2 = (2·p1 + p2_only) / (2·denominator). Single-numerator form;
-        // tiebreak pass_at_1 (same dir), then m.id DESC via ${tie}.
-        // Bind order mirrors pass_at_n: P1 scope-IN, P2-only scope-IN
-        // (NotExists then main), denominator; then P1 scope-IN + denominator
-        // again for the tiebreak occurrence.
-        return {
-          clause: `ORDER BY (2 * (${P1_EXPR}) + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(2 * ?, 0) ${dir}, (${P1_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
-          extraParams: [
-            // Primary: (2*p1 + p2_only) / (2*denominator)
-            ...taskSetParamsA1,
-            ...scopeInA1.params,
-            ...taskSetParamsA2NotExists,
-            ...scopeInA2NotExists.params,
-            ...taskSetParamsA2,
-            ...scopeInA2.params,
-            denominator,
-            // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
-            // task-set + scope-IN params again).
-            ...taskSetParamsA1,
-            ...scopeInA1.params,
-            denominator,
-          ],
-          sqlLimit: q.limit,
-        };
-
-      case "pass_at_n":
-        // Strict: (p1 + p2_only) / denominator. Same denominator used in SELECT.
-        // Tiebreaker chain: pass_at_1 (same dir), then m.id DESC. Without the
-        // pass_at_1 middle tier, models tied on pass_at_n collapse to m.id DESC
-        // alone — newer models win regardless of first-try quality, contrary
-        // to the spec's "rewards first-try when total pass rate ties" rule.
-        return {
-          clause: `ORDER BY (${P1_EXPR} + ${P2_ONLY_EXPR}) * 1.0 / NULLIF(?, 0) ${dir}, ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
-          extraParams: [
-            // Primary: (p1 + p2_only) / denominator
-            ...taskSetParamsA1,
-            ...scopeInA1.params,
-            ...taskSetParamsA2NotExists,
-            ...scopeInA2NotExists.params,
-            ...taskSetParamsA2,
-            ...scopeInA2.params,
-            denominator,
-            // Tiebreaker: p1 / denominator (P1_EXPR appears again, needs its
-            // task-set + scope-IN params again).
-            ...taskSetParamsA1,
-            ...scopeInA1.params,
-            denominator,
-          ],
-          sqlLimit: q.limit,
-        };
-
-      case "pass_at_1":
-        // Strict first-try rate: p1 / denominator.
-        return {
-          clause: `ORDER BY ${P1_EXPR} * 1.0 / NULLIF(?, 0) ${dir}${tie}`,
-          extraParams: [...taskSetParamsA1, ...scopeInA1.params, denominator],
-          sqlLimit: q.limit,
-        };
-
-      case "avg_score":
-        // AVG(r.score) is a plain aggregate — directly referenceable in ORDER BY.
-        return {
-          clause: `ORDER BY AVG(r.score) ${dir}${tie}`,
-          extraParams: [],
-          sqlLimit: q.limit,
-        };
-
-      case "avg_cost_usd":
-        // Repeat the expression (SQLite cannot reference SELECT aliases in ORDER BY).
-        return {
-          clause: `ORDER BY SUM(${rowCostUsd()}) / NULLIF(COUNT(DISTINCT r.task_id), 0) ${dir}${tie}`,
-          extraParams: [],
-          sqlLimit: q.limit,
-        };
-
-      case "cost_per_pass_usd":
-        // Total cost / tasks_passed_strict (p1 + p2_only). Nullif prevents /0.
-        // The SQL expression contains P1_EXPR + P2_ONLY_EXPR ONCE each, so only
-        // ONE set of scope-IN params is required (not two). Duplicating them
-        // causes a bind-order bug when category/difficulty filters are active.
-        return {
-          clause: `ORDER BY (SUM(${rowCostUsd()}) / NULLIF(${P1_EXPR} + ${P2_ONLY_EXPR}, 0)) ${dir}${tie}`,
-          extraParams: [
-            ...taskSetParamsA1,
-            ...scopeInA1.params,
-            ...taskSetParamsA2NotExists,
-            ...scopeInA2NotExists.params,
-            ...taskSetParamsA2,
-            ...scopeInA2.params,
-          ],
-          sqlLimit: q.limit,
-        };
-
-      case "latency_p95_ms":
-        // SQLite lacks PERCENTILE_CONT; the p95 is computed in TS via
-        // computeModelAggregates. Use a wide SQL LIMIT so the TS post-sort
-        // operates on a large enough pool; direction is honoured in TS.
-        return {
-          clause: `ORDER BY avg_score DESC${tie}`,
-          extraParams: [],
-          sqlLimit: LATENCY_WIDE_FETCH,
-        };
-    }
-  }
-
-  const orderBy = buildOrderBy();
 
   // Pass@1 / Pass@2 use correlated subqueries scoped to model_id (NOT run_id),
   // so multi-run "best across runs per task" semantics hold (cf. plan B1 design
@@ -467,7 +324,6 @@ export async function computeLeaderboard(
     JOIN cost_snapshots cs ON cs.model_id = runs.model_id AND cs.pricing_version = runs.pricing_version
     ${whereClause}
     GROUP BY m.id
-    ${orderBy.clause}
     LIMIT ?
   `;
 
@@ -502,10 +358,11 @@ export async function computeLeaderboard(
   //   3. taskSetParamsA2 + scopeInA2.params  – for tasks_passed_attempt_2_only
   //   4. params[]          – outer WHERE (task_set, tier, family, since,
   //                          difficulty JOIN, category WHERE)
-  //   5. orderBy.extraParams – ORDER BY subquery task-set + scope-IN params
-  //                            + denominator (A.6: one set per ORDER BY
-  //                            expression)
-  //   6. orderBy.sqlLimit  – LIMIT clause
+  //   5. WIDE_FETCH        – LIMIT clause
+  //
+  // There are no ORDER BY params any more: sorting is done in TS, which is
+  // what retired the fragile "one param set per textual occurrence of
+  // P1_EXPR/P2_ONLY_EXPR" rule this comment used to have to describe.
   const allParams = [
     ...taskSetParamsA1,
     ...scopeInA1.params,
@@ -514,8 +371,7 @@ export async function computeLeaderboard(
     ...taskSetParamsA2,
     ...scopeInA2.params,
     ...params,
-    ...orderBy.extraParams,
-    orderBy.sqlLimit,
+    WIDE_FETCH,
   ];
 
   const rows = await (timer
@@ -690,38 +546,95 @@ export async function computeLeaderboard(
     };
   });
 
-  // A.6: TS post-sort for latency_p95_ms only.
+  // ---------------------------------------------------------------------------
+  // Sorting. All of it, in TypeScript.
   //
-  // All other sort fields are now handled in SQL ORDER BY before LIMIT
-  // (see buildOrderBy() above). latency_p95_ms is the sole exception because
-  // SQLite lacks PERCENTILE_CONT — the p95 is computed in TS from per-result
-  // duration rows via computeModelAggregates (latencyPercentilesByModel).
-  // To avoid the pre-A.6 LIMIT-then-sort bug, buildOrderBy() widens the SQL
-  // LIMIT to LATENCY_WIDE_FETCH (200) for this sort field, giving the TS
-  // post-sort a large enough pool to work with. The trimmed slice is returned.
+  // This used to be a SQL ORDER BY. For auc_2 / pass_at_n / pass_at_1 /
+  // cost_per_pass_usd that clause repeated the P1/P2 correlated subqueries, and
+  // SQLite re-evaluates them to build the sort key instead of reusing the
+  // SELECT-list columns it just computed. Measured against production D1 on the
+  // default auc_2 sort:
+  //
+  //     full query, with ORDER BY .................. 117,015 rows read
+  //     identical query, ORDER BY removed ..........  12,605 rows read
+  //     ORDER BY rewritten to reference aliases .... 117,015 (no help)
+  //     MATERIALIZED CTE + outer ORDER BY ..........  61,495 (partial)
+  //
+  // So ~90% of the cost of the most expensive query in the system was spent
+  // ordering ~22 rows. Every sort key is already computed above from the same
+  // integers, so doing it here is both free and exact.
+  //
+  // It also retires buildOrderBy()'s bind-order plumbing, which had to
+  // interleave one set of task-set + scope-IN params per *textual occurrence*
+  // of P1_EXPR/P2_ONLY_EXPR and had already caused a bind-order bug under
+  // category/difficulty filters.
+  //
+  // The pre-A.6 "LIMIT then re-sort" bug does not come back: SQL now fetches up
+  // to WIDE_FETCH rows unordered, and the trim to q.limit happens after this
+  // sort, so nothing that belongs in the top-N can be dropped beforehand.
+  // ---------------------------------------------------------------------------
+  const sortable = mapped.map((row, i) => ({ row, modelId: rows[i].model_id }));
+
   if (q.sort === "latency_p95_ms") {
+    // Preserved verbatim. 0 means "no data" and must sort LAST in both
+    // directions, which the generic null-is-lowest rule below would get wrong.
     if (q.direction === "asc") {
-      // Ascending: lower latency first; 0 (no data) sorts last.
-      mapped.sort(
+      sortable.sort(
         (a, b) =>
-          (a.latency_p95_ms || Infinity) - (b.latency_p95_ms || Infinity) ||
-          b.model.slug.localeCompare(a.model.slug),
+          (a.row.latency_p95_ms || Infinity) - (b.row.latency_p95_ms || Infinity) ||
+          b.row.model.slug.localeCompare(a.row.model.slug),
       );
     } else {
-      // Descending: higher latency first; 0 (no data) sorts last.
-      mapped.sort(
+      sortable.sort(
         (a, b) =>
-          (b.latency_p95_ms || -Infinity) - (a.latency_p95_ms || -Infinity) ||
-          b.model.slug.localeCompare(a.model.slug),
+          (b.row.latency_p95_ms || -Infinity) - (a.row.latency_p95_ms || -Infinity) ||
+          b.row.model.slug.localeCompare(a.row.model.slug),
       );
     }
-    // Trim to the requested limit (SQL fetched LATENCY_WIDE_FETCH rows).
-    const trimmed = mapped.slice(0, q.limit);
-    trimmed.forEach((row, idx) => {
-      row.rank = idx + 1;
+  } else {
+    const dirMul = q.direction === "asc" ? 1 : -1;
+    // Comparison rather than subtraction: -Infinity minus -Infinity is NaN,
+    // which would corrupt the sort when two rows both have a null key.
+    const cmp = (x: number, y: number) => (x < y ? -1 : x > y ? 1 : 0);
+    // SQLite orders NULL below every value, so DESC puts nulls last and ASC
+    // puts them first. -Infinity reproduces that ordering exactly.
+    const nz = (v: number | null | undefined) =>
+      v === null || v === undefined ? -Infinity : v;
+
+    // nz() on every key: several of these fields are optional on
+    // LeaderboardRow (auc_2 and pass_at_1 were added in later cache versions),
+    // and an absent key must order like SQL NULL rather than crash or become
+    // NaN.
+    const aucKey = (r: LeaderboardRow) => nz(r.auc_2);
+    const keyOf: Record<string, (r: LeaderboardRow) => number> = {
+      auc_2: aucKey,
+      pass_at_n: (r) => nz(r.pass_at_n),
+      pass_at_1: (r) => nz(r.pass_at_1),
+      avg_score: (r) => nz(r.avg_score),
+      avg_cost_usd: (r) => nz(r.avg_cost_usd),
+      cost_per_pass_usd: (r) => nz(r.cost_per_pass_usd),
+    };
+    const key = keyOf[q.sort] ?? aucKey;
+    // auc_2 and pass_at_n tie-break on pass_at_1 in the SAME direction before
+    // falling through to model id, mirroring the old ORDER BY chains. Without
+    // that middle tier, models tied on the headline metric collapse to newest-
+    // model-wins regardless of first-try quality.
+    const passAt1Tiebreak = q.sort === "auc_2" || q.sort === "pass_at_n";
+
+    sortable.sort((a, b) => {
+      const d = cmp(key(a.row), key(b.row)) * dirMul;
+      if (d !== 0) return d;
+      if (passAt1Tiebreak) {
+        const t = cmp(nz(a.row.pass_at_1), nz(b.row.pass_at_1)) * dirMul;
+        if (t !== 0) return t;
+      }
+      return b.modelId - a.modelId; // m.id DESC, as the SQL tiebreaker was
     });
-    return trimmed;
   }
 
-  return mapped;
+  const trimmed = sortable.slice(0, q.limit).map((e) => e.row);
+  trimmed.forEach((row, idx) => {
+    row.rank = idx + 1;
+  });
+  return trimmed;
 }

@@ -487,9 +487,21 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     // way out instead: a spurious bump costs one recompute, whereas a write
     // that landed without a bump would serve stale aggregates for the full
     // 24h TTL. See src/lib/server/data-epoch.ts.
-    await bumpDataEpoch(db).catch((err) =>
-      console.error("[shortcomings/batch] epoch bump failed:", err)
-    );
+    const bumped = await bumpDataEpoch(db)
+      .then(() => true)
+      .catch((err) => {
+        console.error("[shortcomings/batch] epoch bump failed:", err);
+        return false;
+      });
+    // Returning 200 with a failed bump would report a publish as live while
+    // every colo still serves the pre-publish aggregates for 24h. Fail loudly.
+    if (!bumped) {
+      throw new ApiError(
+        500,
+        "epoch_bump_failed",
+        "Writes committed but cache invalidation failed. Readers may serve pre-publish aggregates until the operator runs `npm run bump-epoch`.",
+      );
+    }
 
     for (const slug of invalidationSlugs) {
       await invalidateConcept(slug);

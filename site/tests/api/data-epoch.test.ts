@@ -208,3 +208,71 @@ describe("user-facing cache-control stays private", () => {
     expect(cc).not.toMatch(/s-maxage/);
   });
 });
+
+describe("query canonicalization bounds the cache-key space", () => {
+  // Every distinct cache key is a guaranteed miss, and a miss recomputes the
+  // full aggregate (measured at ~117k rows before the sort fix, ~12.6k after).
+  // An unbounded key dimension is therefore a way to burn the daily D1 read
+  // budget on demand. These guard the bounds on the three parsed params that
+  // were previously unvalidated.
+
+  it("collapses timestamps within a day onto one cache key", async () => {
+    const a = await SELF.fetch(
+      "https://x/api/v1/leaderboard?since=2026-05-05T13:45:12.345Z",
+    );
+    const b = await SELF.fetch(
+      "https://x/api/v1/leaderboard?since=2026-05-05T00:00:00.000Z",
+    );
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const [ja, jb] = [await a.json(), await b.json()] as Array<
+      { filters: { since: string | null } }
+    >;
+    // Both normalize to the same UTC day boundary, so they share a slot.
+    expect(ja.filters.since).toBe(jb.filters.since);
+    expect(ja.filters.since).toBe("2026-05-05T00:00:00.000Z");
+  });
+
+  it("treats a cutoff before every run as no cutoff", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?since=1970-01-02T00:00:00.000Z",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<{ filters: { since: string | null } }>();
+    // Semantically identical to omitting the filter, so it must not mint its
+    // own key — otherwise every pre-history date is a free full recompute.
+    expect(body.filters.since).toBeNull();
+  });
+
+  it("clamps future cutoffs onto a single key", async () => {
+    const a = await SELF.fetch(
+      "https://x/api/v1/leaderboard?since=2999-01-01T00:00:00.000Z",
+    );
+    const b = await SELF.fetch(
+      "https://x/api/v1/leaderboard?since=2998-06-15T00:00:00.000Z",
+    );
+    const [ja, jb] = [await a.json(), await b.json()] as Array<
+      { filters: { since: string | null } }
+    >;
+    // Both select the empty set; they must not be two distinct keys.
+    expect(ja.filters.since).toBe(jb.filters.since);
+  });
+
+  it("rejects non-slug category and family values", async () => {
+    for (const q of [
+      "category=" + encodeURIComponent("../../etc/passwd"),
+      "category=" + "a".repeat(120),
+      "family=" + encodeURIComponent("has spaces"),
+    ]) {
+      const res = await SELF.fetch(`https://x/api/v1/leaderboard?${q}`);
+      expect(res.status, `${q} must be rejected`).toBe(400);
+    }
+  });
+
+  it("still accepts well-formed slugs", async () => {
+    const res = await SELF.fetch(
+      "https://x/api/v1/leaderboard?category=easy&family=claude",
+    );
+    expect(res.status).toBe(200);
+  });
+});
