@@ -314,6 +314,35 @@ describe("workbench/scaffold", () => {
       );
     });
 
+    it("X100+ ids use the extended 1-hex-char + 3-digit GUID segments", async () => {
+      // The 2-digit scheme (0aNN/0cNN/0eNN) caps at X099; X100+ switches to
+      // aNNN/cNNN/eNNN - still 4 hex chars, still non-colliding with the
+      // legacy segments (different first character). Ruled in
+      // docs/reasoning-suite/decisions.md entry 12; X100 itself shipped with
+      // hand-written c100/e100 app.jsons before this was implemented.
+      const meta = await scaffoldDraft({
+        id: "CG-AL-X101",
+        slug: "extended-segment",
+        withPrereq: true,
+        roots,
+      });
+      assertEquals(meta.id, "CG-AL-X101");
+
+      const draftDir = join(roots.scratchDir, "CG-AL-X101");
+      const correct = JSON.parse(
+        await Deno.readTextFile(join(draftDir, "correct", "app.json")),
+      ) as { id: string };
+      const naive = JSON.parse(
+        await Deno.readTextFile(join(draftDir, "naive", "app.json")),
+      ) as { id: string };
+      const prereq = JSON.parse(
+        await Deno.readTextFile(join(draftDir, "prereq", "app.json")),
+      ) as { id: string };
+      assertEquals(correct.id, "a1b2c3d4-c101-0000-0000-000000000101");
+      assertEquals(naive.id, "a1b2c3d4-e101-0000-0000-000000000101");
+      assertEquals(prereq.id, "a1b2c3d4-a101-0000-0000-000000000001");
+    });
+
     it("withPrereq: false (default) does not create a prereq/ entry", async () => {
       const meta = await scaffoldDraft({ slug: "day-close", roots });
       const appJsonPath = join(

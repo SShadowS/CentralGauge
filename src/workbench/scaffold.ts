@@ -389,26 +389,32 @@ export function renderSolutionAppJson(
   // `0c<NN>` / `0e<NN>` never collide with derivePrereqSuffix's `0a<NN>`,
   // and both are valid hex - `x` is not, which is why the task letter cannot
   // be used directly (see derivePrereqSuffix's own note).
-  const segment = side === "correct" ? CORRECT_APP_SEGMENT : NAIVE_APP_SEGMENT;
   const digits = /^CG-AL-X(\d+)$/.exec(id)?.[1];
   if (digits === undefined) {
     throw new Error(`Cannot derive a solution app id from "${id}".`);
   }
   const value = Number(digits);
-  if (value > 99) {
-    // Same two-digit ceiling as derivePrereqSuffix, and for the same reason:
-    // `segment` + the numeric part must total exactly 4 hex chars. Fail
-    // loudly rather than emit a mis-sized GUID segment.
+  if (value > 999) {
+    // The GUID segment holds exactly 4 hex chars; even the extended 1-char
+    // scheme below caps at 3 digits. Fail loudly rather than emit a
+    // mis-sized segment.
     throw new Error(
-      `Solution app id derivation only supports two-digit X-ids (00-99); ` +
-        `got "${id}". Extend the convention before scaffolding X100+.`,
+      `Solution app id derivation only supports X-ids up to 999; ` +
+        `got "${id}". Extend the convention before scaffolding X1000+.`,
     );
   }
-  const twoDigit = String(value).padStart(2, "0");
+  // X001-X099 keep the committed 2-char segment (0cNN/0eNN); X100+ use the
+  // extended 1-char + 3-digit form (cNNN/eNNN) ruled in
+  // docs/reasoning-suite/decisions.md entry 12 - still 4 hex chars, and the
+  // differing first character keeps the two generations non-colliding.
+  const segment = value > 99
+    ? (side === "correct" ? "c" : "e") + String(value).padStart(3, "0")
+    : (side === "correct" ? CORRECT_APP_SEGMENT : NAIVE_APP_SEGMENT) +
+      String(value).padStart(2, "0");
   const tail = String(value).padStart(12, "0");
 
   const appJson: AppJson = {
-    id: `a1b2c3d4-${segment}${twoDigit}-0000-0000-${tail}`,
+    id: `a1b2c3d4-${segment}-0000-0000-${tail}`,
     name: `${id} ${side}`,
     publisher: "CentralGauge",
     version: "1.0.0.0",
@@ -452,15 +458,20 @@ function derivePrereqSuffix(id: string): string {
   // the thing to bound - its numeric VALUE is. Every committed precedent
   // is a two-digit value (X001..X052 -> 0a01..0a52).
   const value = Number(digits);
-  if (value > 99) {
-    // A three-digit value would overflow the GUID's 4-hex-char segment
-    // (`0a` + digits must stay at 4 chars total) - fail loudly rather than
+  if (value > 999) {
+    // Even the extended 1-char scheme below caps at 3 digits (the GUID
+    // segment holds exactly 4 hex chars) - fail loudly rather than
     // silently emit a GUID with the wrong segment length.
     throw new Error(
-      `Prereq GUID suffix derivation only supports two-digit X-ids ` +
-        `(00-99); got "${id}" whose numeric suffix would overflow the ` +
-        `GUID segment. Extend the convention before scaffolding X100+.`,
+      `Prereq GUID suffix derivation only supports X-ids up to 999; ` +
+        `got "${id}" whose numeric suffix would overflow the ` +
+        `GUID segment. Extend the convention before scaffolding X1000+.`,
     );
+  }
+  // X001-X099 keep the committed 0aNN form; X100+ use aNNN (decisions.md
+  // entry 12) - same 4-hex-char width, non-colliding first character.
+  if (value > 99) {
+    return `a${String(value).padStart(3, "0")}`;
   }
   return `0a${String(value).padStart(2, "0")}`;
 }
