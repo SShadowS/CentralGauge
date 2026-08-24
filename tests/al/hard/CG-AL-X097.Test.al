@@ -355,6 +355,147 @@ codeunit 89193 "CG-AL-X097 Test"
         Assert.ExpectedError('before the starting date');
     end;
 
+    [Test]
+    procedure PeriodsSharingExactlyOneDayAreConflictingWhicheverLineComesFirst()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] A shared day is a conflict whichever line comes first - the lower-numbered line starts later and shares only its first day with the higher-numbered line's last day
+        AddLine(PriceLine, 10000, DMY2Date(10, 1, 2027), DMY2Date(20, 1, 2027));
+        AddLine(PriceLine, 20000, DMY2Date(1, 1, 2027), DMY2Date(10, 1, 2027));
+
+        Assert.AreEqual(1, Analyzer.CountConflictingPairs(PriceLine), 'A shared day is a conflict whichever line comes first');
+    end;
+
+    [Test]
+    procedure MergeProducesSeparatePeriodsAcrossARealGap()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] Two windows merge into one continuous period, but a third window with a real gap after them must stay a separate second period
+        AddLine(PriceLine, 10000, DMY2Date(1, 1, 2027), DMY2Date(10, 1, 2027));
+        AddLine(PriceLine, 20000, DMY2Date(5, 1, 2027), DMY2Date(15, 1, 2027));
+        AddLine(PriceLine, 30000, DMY2Date(1, 3, 2027), DMY2Date(10, 3, 2027));
+
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(2, MergedPeriod.Count(), 'A real gap after a merged group must start a new, separate coverage period rather than folding everything into one');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(1, 1, 2027), MergedPeriod."Starting Date", 'The first coverage period must start on the earliest window''s starting date');
+        Assert.AreEqual(DMY2Date(15, 1, 2027), MergedPeriod."Ending Date", 'The first coverage period must end on the later of the two overlapping windows'' ending dates');
+        MergedPeriod.Get(20000);
+        Assert.AreEqual(DMY2Date(1, 3, 2027), MergedPeriod."Starting Date", 'The second coverage period must start on the gapped window''s own starting date');
+        Assert.AreEqual(DMY2Date(10, 3, 2027), MergedPeriod."Ending Date", 'The second coverage period must end on the gapped window''s own ending date');
+    end;
+
+    [Test]
+    procedure MergeCombinesTouchingWindowsWithNoGapIntoOnePeriod()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] One window ends the exact day before the next begins - no gap day between them, so they merge into one continuous coverage period
+        AddLine(PriceLine, 10000, DMY2Date(1, 1, 2027), DMY2Date(10, 1, 2027));
+        AddLine(PriceLine, 20000, DMY2Date(11, 1, 2027), DMY2Date(20, 1, 2027));
+
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(1, MergedPeriod.Count(), 'Touching windows with no gap day between them must merge into a single continuous coverage period');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(1, 1, 2027), MergedPeriod."Starting Date", 'The merged coverage period must start on the earlier window''s starting date');
+        Assert.AreEqual(DMY2Date(20, 1, 2027), MergedPeriod."Ending Date", 'The merged coverage period must end on the later window''s ending date');
+    end;
+
+    [Test]
+    procedure MergeSortsLinesByStartingDateRegardlessOfLineNoOrder()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] The earlier-starting window is entered under the higher line number - the merge must still process windows in date order, not insertion order
+        AddLine(PriceLine, 10000, DMY2Date(15, 1, 2027), DMY2Date(31, 1, 2027));
+        AddLine(PriceLine, 20000, DMY2Date(1, 1, 2027), DMY2Date(20, 1, 2027));
+
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(1, MergedPeriod.Count(), 'Two overlapping windows must merge into a single continuous coverage period regardless of which one has the higher line number');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(1, 1, 2027), MergedPeriod."Starting Date", 'The merged coverage period must start on the earliest starting date even when that window has the higher line number');
+        Assert.AreEqual(DMY2Date(31, 1, 2027), MergedPeriod."Ending Date", 'The merged coverage period must end on the latest ending date');
+    end;
+
+    [Test]
+    procedure MergeAcceptsASingleDayWindow()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] A window that starts and ends on the same day is a legitimate one-day validity period, not a reversed range
+        AddLine(PriceLine, 10000, DMY2Date(5, 1, 2027), DMY2Date(5, 1, 2027));
+
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(1, MergedPeriod.Count(), 'A single-day window must not be rejected as an invalid range');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(5, 1, 2027), MergedPeriod."Starting Date", 'A single-day coverage period must start on that day');
+        Assert.AreEqual(DMY2Date(5, 1, 2027), MergedPeriod."Ending Date", 'A single-day coverage period must end on that same day');
+    end;
+
+    [Test]
+    procedure MergeValidatesEveryLineRegardlessOfAnyCallerAppliedFilter()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] A reversed window on an item the caller has filtered out must still be rejected - validation cannot depend on a filter the caller happens to have set
+        PriceLine.Init();
+        PriceLine."Line No." := 10000;
+        PriceLine."Item No." := 'A';
+        PriceLine."Starting Date" := DMY2Date(1, 1, 2027);
+        PriceLine."Ending Date" := DMY2Date(31, 1, 2027);
+        PriceLine.Insert();
+
+        PriceLine.Init();
+        PriceLine."Line No." := 20000;
+        PriceLine."Item No." := 'B';
+        PriceLine."Starting Date" := DMY2Date(10, 5, 2027);
+        PriceLine."Ending Date" := DMY2Date(1, 5, 2027);
+        PriceLine.Insert();
+
+        PriceLine.SetRange("Item No.", 'A');
+
+        asserterror Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+        Assert.ExpectedError('before the starting date');
+    end;
+
+    [Test]
+    procedure MergeCalledTwiceOnTheSameOutputBufferReflectsOnlyTheSecondCall()
+    var
+        PriceLine: Record "CG X077 Price Validity Line" temporary;
+        MergedPeriod: Record "CG X077 Price Validity Line" temporary;
+        Analyzer: Codeunit "CG X077 Validity Analyzer";
+    begin
+        // [SCENARIO] A caller that reuses the same output buffer across two merges must see only the second call's periods, not a mix of both
+        AddLine(PriceLine, 10000, DMY2Date(1, 1, 2027), DMY2Date(10, 1, 2027));
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        PriceLine.DeleteAll();
+        AddLine(PriceLine, 10000, DMY2Date(1, 6, 2027), DMY2Date(10, 6, 2027));
+        Analyzer.MergeValidityPeriods(PriceLine, MergedPeriod);
+
+        Assert.AreEqual(1, MergedPeriod.Count(), 'A second merge into a reused output buffer must leave only the second call''s periods behind');
+        MergedPeriod.Get(10000);
+        Assert.AreEqual(DMY2Date(1, 6, 2027), MergedPeriod."Starting Date", 'The output buffer must reflect only the second call''s period, not any period left over from the first call');
+        Assert.AreEqual(DMY2Date(10, 6, 2027), MergedPeriod."Ending Date", 'The output buffer must reflect only the second call''s period, not any period left over from the first call');
+    end;
+
     // ============================================================
     // Costing module tests
     // ============================================================

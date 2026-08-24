@@ -20,6 +20,45 @@ Written 2026-08-24. Tools verified on this machine:
 
 ## T1 - Oracle bypass audit via LethAL (highest value, do first)
 
+**PILOT RESULT (2026-08-24, X077 on Cronus28): the approach works and
+paid for itself immediately.** 47 mutants in 41s wall-clock (~0.4s per
+mutant - the schemata + control-app design compiles once and toggles at
+runtime). First run: score 66.0%, 16 survivors against a TWICE-AUDITED
+oracle. Triage: 5 equivalent, 11 genuine oracle holes - including a
+plausible wrong-fix variant of the planted-defect predicate itself
+(mirror-orientation `<=`->`<` in PeriodsOverlap) that passed all 14
+tests. 7 kill tests added (X077 oracle 14->21 tests, mirrored into
+X097's merged oracle 35->42), both re-probed green, confirmation run:
+score 87.2%, 6 survivors = exactly the 5 equivalents + 1 deliberately
+skipped weak one. Full triage: `lethal-t1-x077-triage.md`.
+
+**Operational quirks learned (write-once, save the next hour):**
+- Config needs `"tenant": "default"` (web-service 401 without it) and
+  explicit `alcPath`/`altoolPath` - AL extension 18.x moved the
+  binaries from `bin/win32/` to `bin/`, and LethAL fabricates the old
+  path without checking (doctor reports it [ok] anyway).
+- One-time per container: publish
+  `U:\git\LethAL\extensions\lethal-control\lethal-control.app` via
+  Publish-BcContainerApp (-sync -install -skipVerification). It stays
+  resident; the bench prenuke only sweeps CG-AL-* names.
+- LethAL never publishes the TEST app: compile it yourself (alc against
+  the keyed compiler-cache symbols dir works) and publish it via the
+  DEV endpoint (`-useDevEndpoint -credential`) - a Global-scope test
+  app cannot depend on LethAL's dev-scope instrumented app.
+- Trap-probe leftovers collide: a stale `CG-AL-X0NN starter` on the
+  container blocks the pilot publish on shared object ids (and the
+  failure gets recorded as a false per-file publish ceiling - run
+  `lethal clear-ceiling` after fixing an extrinsic failure).
+- BC tenant data-version bookkeeping outlives unpublish: after LethAL's
+  version-bumped instrumented app has been installed, re-installing a
+  lower-versioned app needs `Start-NAVAppDataUpgrade` (or a version
+  bump above the remembered ExtensionDataVersion).
+- Split layout per task: `app/` (reference solution, from
+  reference/solutions/<id>/, MINUS the oracle) + `tests/` (the
+  committed oracle + its own app.json depending on the app id).
+- The keyed compiler cache symbols dir doubles as packagecachepath for
+  local alc compiles - no symbol downloads needed.
+
 For each promoted diagnose task: point LethAL at the task's `correct/`
 app (from `scratch/CG-AL-X0NN/correct/` - the only copy; see the
 durability note below) with the task's oracle as the test app, on a

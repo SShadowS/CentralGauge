@@ -119,10 +119,17 @@ Standing constraints (from CLAUDE.md + session rules):
       planted class); the 19 invisible are the hard-tier candidate pool.
       Lesson from X097: lint-invisible is necessary, not sufficient -
       symptom distance is the other half.
-- [ ] Tool-assisted hardening, remaining: T1 LethAL oracle bypass-audit
-      pilot on 3 tasks (X089/X094/X077), T3 entanglement gate wired into
-      the next composite batch, T4 stubborn-mutant harvest for batch-5+
-      candidates.
+- [x] T1 LethAL pilot (2026-08-24, X077): mutation testing found 11
+      REAL holes in a twice-audited oracle, incl. a passing wrong-fix
+      variant of the planted-defect predicate. 7 kill tests added
+      (X077 14->21 tests, X097 mirror 35->42), both re-probed green;
+      mutation score 66.0% -> 87.2% (remaining 6 survivors = triaged
+      equivalents). ~0.4s/mutant. Quirks + procedure in
+      tooling-plan.md; triage in lethal-t1-x077-triage.md.
+- [ ] Tool-assisted hardening, remaining: T1 sweep over the other 35
+      diagnose tasks (feasible at ~1 min/task; batch after each build
+      round), T3 entanglement gate wired into the next composite batch,
+      T4 stubborn-mutant harvest for batch-5+ candidates.
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
 
