@@ -2,7 +2,6 @@ import type { RequestHandler } from "./$types";
 import { getAll } from "$lib/server/db";
 import { errorResponse } from "$lib/server/errors";
 import { computeSeverity } from "$lib/server/severity";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 
 interface RawRow {
   al_concept: string;
@@ -17,7 +16,13 @@ interface RawRow {
 }
 
 const CACHE_NAME = "cg-shortcomings";
-const CACHE_TTL_S = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 export const GET: RequestHandler = async ({ request, platform }) => {
   const env = platform!.env;
@@ -27,12 +32,14 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     // back to the next request without invoking this handler, silently
     // bypassing any future ETag/304 negotiation.
     const cache = await caches.open(CACHE_NAME);
-    // Canonical key: append _cv so old-version entries retire on deploy
-    // without a global cache purge. Other query params are preserved so
-    // test-side cache busting (e.g. ?_cb=N) still produces unique keys.
-    const cacheUrl = new URL(request.url);
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("shortcomings", {}, epoch);
     const cached = await cache.match(cacheKey);
     if (cached) return cached;
 
@@ -110,7 +117,7 @@ export const GET: RequestHandler = async ({ request, platform }) => {
       headers: {
         "content-type": "application/json",
         "cache-control":
-          `public, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=300`,
+          `public, s-maxage=${ttl}, stale-while-revalidate=300`,
       },
     });
     // Inline put — NOT ctx.waitUntil — so the next request (and tests)

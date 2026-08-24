@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { broadcastEvent } from "$lib/server/broadcaster";
 import { blobHashFromKey } from "$lib/server/ingest";
@@ -156,12 +157,16 @@ export const POST: RequestHandler = async ({ params, request, platform }) => {
           now,
           JSON.stringify({ blob_count: keys.length }),
         ),
+      // Bump the data epoch IN THIS BATCH. This is the publish event: it
+      // retires every cached aggregate in every colo at once (Cache API is
+      // per-colo and cannot be purged, so invalidation has to happen through
+      // the cache KEY — see src/lib/server/data-epoch.ts).
+      //
+      // It must stay inside the batch. Outside it, a committed finalize paired
+      // with a failed bump would leave every colo serving the pre-publish
+      // leaderboard until the 24h TTL expired.
+      bumpDataEpochStmt(db),
     ]);
-
-    // Leaderboard cache (Cache API) is per-colo and cannot be enumerated or
-    // purged cross-region. Stale entries clear within the configured TTL
-    // (~60s). DB remains source of truth, so the SSE broadcast below is what
-    // drives live UI updates between commit and TTL expiry.
 
     // Best-effort SSE broadcast: a DO outage must not fail an already-committed
     // finalize. The event drives the live leaderboard UI; subscribers that miss

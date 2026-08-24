@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -44,14 +45,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     const openWeight = p.open_weight === undefined || p.open_weight === null
       ? null
       : p.open_weight ? 1 : 0;
-    await db.prepare(
+    const stmt = db.prepare(
       `INSERT INTO model_families(slug, vendor, display_name, open_weight)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(slug) DO UPDATE SET
          vendor = excluded.vendor,
          display_name = excluded.display_name,
          open_weight = COALESCE(excluded.open_weight, open_weight)`,
-    ).bind(p.slug, p.vendor, p.display_name, openWeight).run();
+    ).bind(p.slug, p.vendor, p.display_name, openWeight);
+    // Catalog edits move leaderboard columns (cost, metadata, openness),
+    // so retire every cached aggregate. In-batch with the write: a
+    // committed edit paired with a failed bump would serve pre-edit
+    // numbers until the 24h TTL. See src/lib/server/data-epoch.ts.
+    await db.batch([stmt, bumpDataEpochStmt(db)]);
     return jsonResponse({ ok: true }, 200);
   } catch (err) {
     return errorResponse(err);

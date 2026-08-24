@@ -3,9 +3,14 @@ import { cachedJson } from "$lib/server/cache";
 import { computeMatrix } from "$lib/server/matrix";
 import { ApiError, errorResponse } from "$lib/server/errors";
 import type { MatrixResponse } from "$lib/shared/api-types";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 
-const CACHE_TTL_SECONDS = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
@@ -40,9 +45,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // full census. Compressed to ~80KB on the wire. 60s TTL handles flux
     // from new ingest events.
     const cache = await platform!.caches.open("cg-matrix");
-    const cacheUrl = new URL(url.toString());
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("matrix", { set, category, difficulty }, epoch);
 
     let payload: MatrixResponse | null = null;
     const cached = await cache.match(cacheKey);
@@ -59,7 +69,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "cache-control": `public, s-maxage=${ttl}`,
         },
       });
       await cache.put(cacheKey, storeRes);

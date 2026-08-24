@@ -6,9 +6,14 @@ import type {
   CategoriesIndexItem,
   CategoriesIndexResponse,
 } from "$lib/shared/api-types";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 
-const CACHE_TTL_SECONDS = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
@@ -16,11 +21,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
     // Named cache (cg-categories) — same pattern as /api/v1/leaderboard.
     // 60s TTL is sufficient for a low-frequency aggregate endpoint.
     const cache = await platform!.caches.open("cg-categories");
-    const cacheUrl = new URL(url.toString());
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), {
-      method: "GET",
-    });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("categories", {}, epoch);
 
     let payload: CategoriesIndexResponse | null = null;
     const cached = await cache.match(cacheKey);
@@ -160,7 +168,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "cache-control": `public, s-maxage=${ttl}`,
         },
       });
       await cache.put(cacheKey, storeRes);

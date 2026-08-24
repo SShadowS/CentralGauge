@@ -31,6 +31,19 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM lifecycle_events`),
     // 0014_lifecycle_nonce.sql (V7 replay prevention)
     env.DB.prepare(`DELETE FROM lifecycle_nonces`),
+    // 0016_cache_epoch.sql — bump (do NOT delete: the row is a singleton
+    // pinned by a CHECK constraint). Bumping gives each `it` block a fresh
+    // cache-key namespace for every epoch-keyed endpoint, which is stronger
+    // isolation than the old `?_cb=<unique>` trick: that only varied the URL,
+    // and normalized cache keys deliberately ignore unknown query params now
+    // (see src/lib/server/data-epoch.ts — junk params minting distinct cache
+    // slots was an unbounded recompute amplifier in production).
+    //
+    // Caveat this inherits: a test that mutates D1 DIRECTLY (not through an
+    // API route) mid-`it` and then re-fetches will read its own stale cache,
+    // because a direct write bumps nothing. Seed before the first fetch, or
+    // call bumpEpochForTest() after the direct write.
+    env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`),
   ]);
 
   const blobs = await env.BLOBS.list();
@@ -65,13 +78,24 @@ export async function resetDb(): Promise<void> {
 
   // Note: named Cache API entries (caches.open('cg-...')) are not cleared
   // here because miniflare's caches.open() in test setup operates on a
-  // different cache than the one inside the worker isolate. Tests that
-  // exercise cached endpoints should vary the request URL (e.g. `?_cb=N`)
-  // per assertion to bypass cache poisoning between tests.
+  // different cache than the one inside the worker isolate. Epoch-keyed
+  // endpoints no longer need a per-assertion cache-buster: the bump above
+  // moves every one of their keys. `?_cb=N` is now inert on those endpoints
+  // (unknown params are excluded from the normalized key) and can be dropped.
   //
   // Wave 5 / Plan E: the lifecycle-family-diff named cache also holds
   // entries by Request URL. Tests use unique family slugs per `it` block
   // so cross-test poisoning is not currently observable; if a future test
   // re-uses a slug across files, pre-warm with a unique cache-buster
   // query param the same way concepts.test.ts does (`?_cb=<unique>`).
+}
+
+/**
+ * Bump the data epoch by hand. Needed only when a test writes to D1 directly
+ * (bypassing the API routes that bump in-batch) and then re-reads a cached
+ * endpoint expecting to see the change.
+ */
+export async function bumpEpochForTest(): Promise<void> {
+  await env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`)
+    .run();
 }

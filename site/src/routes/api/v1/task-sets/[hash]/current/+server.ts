@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { BUMP_DATA_EPOCH_SQL } from "$lib/server/data-epoch";
 import { verifySignedRequest } from "$lib/server/signature";
 import { ApiError, errorResponse, jsonResponse } from "$lib/server/errors";
 import { broadcastEvent } from "$lib/server/broadcaster";
@@ -79,6 +80,10 @@ export const POST: RequestHandler = async ({ request, platform, params }) => {
           JSON.stringify({ hash, key_id: verified.key_id }),
         ],
       },
+      // Promoting a task set changes what every aggregate endpoint returns
+      // (they filter on `is_current`). Bump in-batch so the cached leaderboard
+      // cannot outlive the promotion. See src/lib/server/data-epoch.ts.
+      { sql: BUMP_DATA_EPOCH_SQL, params: [] },
     ]);
 
     // Leaderboard cache (Cache API) is per-colo and cannot be enumerated or

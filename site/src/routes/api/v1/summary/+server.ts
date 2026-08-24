@@ -5,7 +5,6 @@ import { rowCostUsd } from "$lib/server/cost-sql";
 import { errorResponse } from "$lib/server/errors";
 import { parseChangelog } from "$lib/server/changelog";
 import type { ChangelogEntry, SummaryStats } from "$lib/shared/api-types";
-import { CACHE_VERSION } from "$lib/server/cache-version";
 // Build-time `?raw` import: Vite inlines the markdown file's contents as a
 // string at bundle time. The path crosses the site/ boundary; the precedent
 // is `site/src/lib/shared/canonical.ts` (re-export from `../../shared`).
@@ -13,7 +12,13 @@ import { CACHE_VERSION } from "$lib/server/cache-version";
 // (zero D1 writes; deterministic bundles).
 import changelogMarkdown from "../../../../../../docs/site/changelog.md?raw";
 
-const CACHE_TTL_SECONDS = 60;
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 // Parse once at module init. The result is shared across all requests
 // served by this Worker isolate; it can never change without a redeploy.
@@ -33,11 +38,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
   try {
     const cache = await platform!.caches.open("cg-summary");
-    const cacheUrl = new URL(url.toString());
-    cacheUrl.searchParams.set('_cv', CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl.toString(), {
-      method: "GET",
-    });
+    // Ordering contract (see data-epoch.ts): epoch read BEFORE any
+    // query feeding the payload, and never re-read in the request.
+    const epoch = await readDataEpoch(env.DB);
+    const ttl = isFallbackEpoch(epoch)
+      ? DEGRADED_TTL_SECONDS
+      : EPOCH_KEYED_TTL_SECONDS;
+    // Key off parsed params only — never the raw URL. See buildCacheKey.
+    const cacheKey = buildCacheKey("summary", {}, epoch);
 
     let payload: SummaryStats | null = null;
     const cached = await cache.match(cacheKey);
@@ -107,7 +115,7 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": `public, s-maxage=${CACHE_TTL_SECONDS}`,
+          "cache-control": `public, s-maxage=${ttl}`,
         },
       });
       await cache.put(cacheKey, storeRes);

@@ -22,7 +22,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ci": "npm run build && npm run seed:e2e && playwright test",
     "test:lhci": "lhci autorun",
-    "seed:e2e": "tsx scripts/seed-e2e.ts"
+    "seed:e2e": "tsx scripts/seed-e2e.ts",
+    "bump-epoch": "tsx scripts/bump-epoch.ts"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",

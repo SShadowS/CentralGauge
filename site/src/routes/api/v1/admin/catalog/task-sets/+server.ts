@@ -1,4 +1,5 @@
 import type { RequestHandler } from "./$types";
+import { bumpDataEpochStmt } from "$lib/server/data-epoch";
 import {
   type SignedAdminRequest,
   verifySignedRequest,
@@ -44,12 +45,14 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     }
     // Idempotent by hash; repeated uploads of the same task_set noop on the
     // immutable fields and let the operator update the optional display_name.
-    await db.prepare(
+    const stmt = db.prepare(
       `INSERT INTO task_sets(hash, created_at, task_count, display_name, is_current)
        VALUES (?, ?, ?, ?, 0)
        ON CONFLICT(hash) DO UPDATE SET
          display_name = COALESCE(excluded.display_name, task_sets.display_name)`,
-    ).bind(p.hash, p.created_at, p.task_count, p.display_name ?? null).run();
+    ).bind(p.hash, p.created_at, p.task_count, p.display_name ?? null);
+    // In-batch with the write — see src/lib/server/data-epoch.ts.
+    await db.batch([stmt, bumpDataEpochStmt(db)]);
     // Optional: atomically flip the current marker to this hash. Useful for
     // ingest paths where a freshly created task_set should immediately be
     // promoted as the leaderboard's "current" set.
@@ -59,6 +62,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
         db.prepare(`UPDATE task_sets SET is_current = 1 WHERE hash = ?`).bind(
           p.hash,
         ),
+        // Promotion changes what every `is_current` aggregate returns.
+        bumpDataEpochStmt(db),
       ]);
     }
     return jsonResponse({ ok: true }, 200);
