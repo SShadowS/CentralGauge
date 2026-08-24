@@ -110,11 +110,19 @@ Standing constraints (from CLAUDE.md + session rules):
       symptom distant from defect (see hardness-strategy.md), >= 1
       genuinely entangled distractor each (tooling-plan.md T3 gate);
       some prompts well past 10k tokens.
-- [ ] Tool-assisted hardening per `tooling-plan.md`: T2 alsem
-      defect-visibility ledger column (no container), T1 LethAL oracle
-      bypass-audit pilot on 3 tasks, T4 stubborn-mutant harvest for
-      batch-5+ candidates. Prerequisite for T1/T4: make the scratch-only
-      correct/ solutions durable (commit under a hash-excluded dir).
+- [x] T1/T4 prerequisite (2026-08-24): 47 promoted tasks' correct/
+      reference solutions committed under hash-excluded
+      `reference/solutions/` (fa6d4d82).
+- [x] T2 alsem defect-visibility scoring (2026-08-24): 4 visible / 13
+      partial / 19 invisible across the 36 diagnose tasks; full table in
+      `alsem-visibility.md`. All 4 visible are perf tasks (d1 flags the
+      planted class); the 19 invisible are the hard-tier candidate pool.
+      Lesson from X097: lint-invisible is necessary, not sufficient -
+      symptom distance is the other half.
+- [ ] Tool-assisted hardening, remaining: T1 LethAL oracle bypass-audit
+      pilot on 3 tasks (X089/X094/X077), T3 entanglement gate wired into
+      the next composite batch, T4 stubborn-mutant harvest for batch-5+
+      candidates.
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
 
