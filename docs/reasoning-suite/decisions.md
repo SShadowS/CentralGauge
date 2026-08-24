@@ -161,3 +161,31 @@ Append-only. Each entry: date, decision, why.
       app.jsons were hand-written with extended segments (`c100`/`e100`:
       1 hex char + 3 digits, still 4 hex chars). Extend the scaffold
       before batch 4 reaches X101.
+
+13. **Build-batch-4 measured platform facts (2026-08-24, Cronus28,
+    BC 28.4).** Probes at scratch/probe-variant/ and
+    scratch/probe-listref/, both re-runnable:
+    - **Variant Is* probes are EXACT.** An Integer payload answers only
+      IsInteger; Code only IsCode (not IsText); Option only IsOption
+      (not IsInteger); Char only IsChar. The volotest corpus's claim
+      that probe ORDER matters (IsText-before-IsCode etc.) is FALSE on
+      this platform - R069 rejected, and any future candidate premised
+      on Variant probe overlap dies with it.
+    - **List-of-T sharing semantics**: plain `B := A` SHARES the
+      underlying list (mutations through A appear in B), and
+      `Outer.Add(Inner)` shares too - but `Clear(ListVar)` REBINDS the
+      variable to a fresh empty list instead of clearing the shared
+      instance. Consequence 1: R033's chunk-aliasing defect cannot be
+      planted plausibly (any Clear() in the reuse path accidentally
+      fixes it) - rejected. Consequence 2: the Clear-rebinds asymmetry
+      is a strong future trap seed (two views diverge silently after
+      one side Clears).
+    - **Key-order + enum-ordinal FindFirst premise CONFIRMED** (X105):
+      a secondary key ordering an enum field returns the
+      lowest-ordinal status first when no status filter is applied,
+      deterministically.
+    - Process ruling: volotest premises about PLATFORM semantics (as
+      opposed to pure logic) must be premise-probed before a build
+      slot is spent - two of this batch's ten slots burned probe
+      cycles on stale volotest claims; a 2-minute premise probe first
+      is strictly cheaper.

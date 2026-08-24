@@ -9,8 +9,8 @@ reason in Notes) - they stop re-mining the same ground.
 - Candidates mined: 148 (146 raw + 1 rejected + 1 promoted)
 - Passed Sonnet filter (Sonnet failed to solve): 4
 - Passed Fable filter (Fable failed or struggled): 0
-- Tasks built: 36 / 100
-- Tasks promoted: 36 / 100
+- Tasks built: 46 / 100
+- Tasks promoted: 46 / 100
 
 **Column vocabulary**
 
@@ -273,6 +273,26 @@ cascade is platform-level, not application-level as the mining sweep
 assumed; the GetFilter blank token is a 2-char literal, not an empty
 string). Suite now stands at 60 X-series tasks total: 49 traps plus 11
 reasoning.
+
+## Build batch 4 (2026-08-24)
+
+Ten diagnose tasks (X101-X110) promoted: five volotest conversions
+(R051->X101, R063->X102, R018->X109, R027->X110, R011->X107), four
+fresh ledger designs (R114->X104, R123->X105, R112->X106, R122->X108),
+and R127->X103 after TWO abandoned premises in that slot. First batch
+scaffolded through the extended X100+ GUID convention (a99f1d14) and
+built under the mutation-hardening brief; audits still found 1 HIGH
+(X103 setup-exists proxy guard) + 3 MEDs (X106 Base Total pin, X109
+memoization bypass, X110 ledger-dedupe bypass), all fixed + re-probed.
+THREE platform premises settled by measurement (decisions entry 13):
+Variant Is* probes are EXACT on BC28 (killed R069 - the volotest's
+overlap claim is false); List `:=`/`Add` SHARE the underlying list but
+`Clear()` REBINDS to a fresh one (killed R033's aliasing shape; the
+rebind asymmetry is itself a future trap seed); X105's key-order/
+enum-ordinal FindFirst premise CONFIRMED. Row updates: R051, R063,
+R127, R114, R123, R112, R011, R122, R018, R027 -> promoted; R069 +
+R033 -> rejected (premise measured false on BC28). Suite now 95
+X-series tasks: 49 traps + 46 reasoning.
 
 ## Composite batch 1 (2026-08-24)
 

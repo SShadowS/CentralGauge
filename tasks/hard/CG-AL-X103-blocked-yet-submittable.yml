@@ -1,0 +1,25 @@
+id: CG-AL-X103
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Codeunit "CG X103 Submitter" exposes Guard, which validates a submission before it goes out, and BuildPayload, which derives the outbound notification e-mail for a submission. Users report two related problems. Some submissions are rejected by Guard even though BuildPayload would still derive a perfectly usable e-mail for them - Guard is blocking documents that would submit fine. Other submissions pass Guard''s validation without complaint, yet the e-mail BuildPayload derives for them comes back blank - Guard is letting through documents it should have rejected. Fix Guard so it rejects a submission exactly when, and only when, BuildPayload would be unable to derive a usable e-mail for it.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - validation
+    - fallback
+    - wrong-field
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X103.Test.al
+  testCodeunitId: 89297

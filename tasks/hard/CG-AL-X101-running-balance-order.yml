@@ -1,0 +1,26 @@
+id: CG-AL-X101
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application tracks account ledger entries and builds account statements from them. Codeunit "CG X101 Statement Builder" exposes RecordEntry, which posts one ledger entry under a single ledger-wide entry-number sequence and returns the assigned number, and BuildStatement, which fills a caller''s buffer with an account''s statement: only that account''s entries, newest first by posting date with same-day ties going to the higher-numbered entry, numbered 1 at the top counting down without gaps, each line carrying the account''s balance immediately after that entry (its own amount plus every older same-account entry''s amount). Support reports that for accounts whose entries were not all recorded in date order - for example, an entry with an earlier posting date recorded after entries with later posting dates already exist on the account - BuildStatement puts the wrong entries on top and computes running balances that no longer match the account''s real history, even though statements for accounts whose entries happened to be recorded in date order still come out right. Fix the application so BuildStatement produces a correct statement for every account regardless of the order in which its entries were recorded.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - running-balance
+    - set-current-key
+    - sort-order
+    - statement
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X101.Test.al
+  testCodeunitId: 89295

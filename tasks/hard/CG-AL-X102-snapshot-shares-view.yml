@@ -1,0 +1,25 @@
+id: CG-AL-X102
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages working calculation rows in a buffer table. Codeunit "CG X102 Buffer Service" offers two ways to hand those rows to a caller: TakeSnapshot, used by an audit trail that needs the rows exactly as they stood at one moment, permanently, and AttachSharedView, used by a live monitor that needs to keep following the working rows as they continue to change afterwards. A teammate implemented both procedures the same way, and now the audit trail''s snapshot keeps changing to match every later edit made to the working rows instead of staying fixed. Fix the application so TakeSnapshot returns rows that stay exactly as they were at the moment it was called, no matter what happens to the working rows afterwards, while AttachSharedView keeps tracking the working rows live in both directions.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - diagnose
+    - temporary-table
+    - record-var
+    - copy-semantics
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X102.Test.al
+  testCodeunitId: 89296

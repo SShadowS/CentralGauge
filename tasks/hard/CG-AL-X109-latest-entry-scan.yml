@@ -1,0 +1,28 @@
+id: CG-AL-X109
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application tracks "CG X109 Activity Entry" rows posted under a "Document No.". Codeunit "CG X109 Entry Finder" exposes FindLatest, which a support "latest activity" panel calls to show the single most recent entry posted under a given document number. The lookup always returns the right entry, but a document that has accumulated dozens or hundreds of entries makes every lookup visibly slower than a document with only a handful, even though the panel only ever needs the one entry it returns. Fix the application so a lookup costs the same regardless of how many entries the requested document has accumulated, while still returning the correct entry for that document and continuing to ignore entries posted under any other document.'
+domains:
+  - tables
+  - codeunits
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - full-table-scan
+    - sql-counters
+    - key-order
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X109.Test.al
+  testCodeunitId: 89303

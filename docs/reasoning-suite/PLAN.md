@@ -106,6 +106,10 @@ Standing constraints (from CLAUDE.md + session rules):
       vaguer symptom wording is the lever for the remaining five.
       **36 / 100.** Remaining category-3 five build later with vaguer
       symptoms + bigger donor sets.
+- [x] Build batch 4 (2026-08-24): CG-AL-X101..X110 promoted under the
+      mutation-hardening brief; 1 HIGH + 3 MEDs audit-fixed; three
+      platform premises settled by measurement (decisions entry 13),
+      two of them killing their candidates (R069, R033). **46 / 100.**
 - [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
       symptom distant from defect (see hardness-strategy.md), >= 1
       genuinely entangled distractor each (tooling-plan.md T3 gate);

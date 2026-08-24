@@ -1,0 +1,35 @@
+id: CG-AL-X105
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  The application tracks spending-authorization entries for approvers in table "CG X105 Approval Entry" ("Approver ID", Status [Rejected / Approved / Pending], "Amount Limit"). Codeunit "CG X105 Approval Lookup" exposes
+
+      procedure GetApprovalLimit(ApproverID: Code[20]; var Entry: Record "CG X105 Approval Entry"): Boolean
+
+  which is meant to return the approver's current approved entry, or false when the approver has none. Codeunit "CG X105 Spend Guard" exposes
+
+      procedure IsWithinLimit(ApproverID: Code[20]; RequestedAmount: Integer): Boolean
+
+  which authorizes a request when it is within the approver's approved limit. Users report that some approvers who genuinely have an approved authorization on file are being denied, or authorized against the wrong limit, whenever an older rejected (or a pending) entry also exists for them. Fix the application so GetApprovalLimit always returns the approver's approved entry when one exists, never a rejected or pending one.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - key-order
+    - findfirst
+    - enum-ordinal
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X105.Test.al
+  testCodeunitId: 89299

@@ -1,0 +1,26 @@
+id: CG-AL-X106
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages documents that go through an archiving workflow. Codeunit "CG X106 Archive Mgt" exposes ArchiveDocument, which archives an existing document; a correctly archived document ends up carrying an enrichment note describing its total and an archive tag reflecting whether it qualifies as a priority document. Users report that after ArchiveDocument runs, the archived document correctly carries its archive tag, but the enrichment note is blank instead of describing the document''s total. Fix the application so ArchiveDocument leaves the archived document carrying both its enrichment note and its archive tag.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: interfaces-events
+  tags:
+    - diagnose
+    - event-subscriber
+    - var-record
+    - shared-record
+    - lost-update
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X106.Test.al
+  testCodeunitId: 89300

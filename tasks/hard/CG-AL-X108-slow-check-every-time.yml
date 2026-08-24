@@ -1,0 +1,27 @@
+id: CG-AL-X108
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application decides whether a customer''s entitled feature set is currently active through codeunit "CG X108 Feature Gate" and its single procedure IsFeatureActive. Every module a customer has registered lives as its own row in table "CG X108 Module Registration", each with its own entitlement flag, and IsFeatureActive is meant to walk that list once per session and remember the answer, so that every later call in the same session returns instantly, without walking the list again, no matter how many modules are registered. On systems where every registered module is entitled, this is exactly what happens. But on at least one customer''s system, where one of the registered modules is not entitled, every single screen and action that calls IsFeatureActive keeps paying the cost of walking the entire module list again from scratch, for as long as the session lasts - the customer describes entering a purchase order as feeling like it takes forever. Fix the application so that, once IsFeatureActive has genuinely determined the answer - whichever way that answer comes out - every later call in the same session reuses it without walking the module list again, while every call, from any part of the application, keeps reporting exactly the correct entitlement state.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - singleinstance
+    - caching
+    - entitlement
+    - sql-budget
+    - session-scope
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X108.Test.al
+  testCodeunitId: 89302
