@@ -376,3 +376,23 @@ Append-only. Each entry: date, decision, why.
       `(First = 0DT) or (Abs(First - Second) < 10)` - evaluates the right side
       regardless and throws. This is the batch-2 non-short-circuit fact
       reaching DateTime, and it is a live trap seed in its own right.
+
+20. **A codeunit instance's in-memory state SURVIVES an `asserterror`, and
+    validate-first is distinguishable from record-first (2026-08-25,
+    Cronus28, BC 28.4).** Probe at `scratch/probe-batch5h/`. Raised by the
+    CG-AL-X116 audit, which wanted a test proving an over-long entry is
+    rejected BEFORE it is recorded and correctly refused to recommend it
+    unconditionally, citing entry 18's lesson.
+    Measured, on a codeunit holding a `List of [Text]`:
+    - two entries added, then a third call caught by `asserterror`: the list
+      still holds **both** originals (`countAfter=2`,
+      `joined=[GOOD-1, GOOD-2]`). In-memory codeunit state is not part of the
+      write transaction, so the error does not roll it back.
+    - validate-then-record leaves **1** entry; record-then-validate leaves
+      **2** (the rejected value stays). **Distinguishable.**
+    Consequence: an oracle CAN grade "rejected before it is recorded" by
+    calling the failing operation under `asserterror` and then asserting the
+    collection's contents. Note the asymmetry against entry 18: DATABASE and
+    IsolatedStorage writes before a raise are rolled back, in-memory
+    collections are not. Both facts are needed to know which shape an
+    error-flow oracle can grade.
