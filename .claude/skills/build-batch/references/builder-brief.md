@@ -148,6 +148,59 @@ The fix the environment accepts is extending the PermissionSet OBJECT
   only, ship to BOTH probe sides; ids in a free 89xxx slot (grep
   first). A bare `<id>.al` is forbidden in starter/ AND correct/.
 
+## Batch-5 addendum (every one of these cost a fix round)
+
+**Grade the operands, not just a derived value.** Two of batch 5's four
+HIGH bypasses were the same shape. X118 asserted only that a journal
+line's two legs sum to zero, so "round BOTH legs" - a rewrite that
+destroys the user's recorded amount - passed every test. X120 observed
+pending state only through the three query procedures the model may
+rewrite, so deriving all three from the record's own fields passed all
+12 tests with the defect untouched and the pending table accumulating
+stale rows. If a procedure's contract is "X is stored in table T", pin
+table T directly in at least one test. If it is "A and B must agree",
+assert A and B, not just their relationship.
+
+**Cross-entity isolation on EVERY procedure that filters by an entity,
+not just the obvious ones.** X120 covered it for two procedures and
+missed the third; a rewrite to `Reset(); DeleteAll()` wiped every
+record's rows and passed. Seed a second entity and assert both that it
+is unaffected AND that its own field values survived - an unflagged but
+corrupted neighbour is the failure the flag-only check misses.
+
+**Sweeps, not more named tests, when the hidden set is the measurement.**
+Decisions entry 21: every FAILING test's name and assert message ships
+to the model on attempt 2. So N named tests over N hidden cases hand
+over all N on the first retry - grading more cases in separate tests is
+NOT the same as grading more cases. A deterministic `for` sweep over the
+range discloses ONE value per attempt while grading the whole space.
+Keep values the description already discloses as named tests; they leak
+nothing. Assert.AreEqual printing expected-vs-actual is inherent and
+accepted; stating the RULE or the remediation in a message is not.
+
+**The description must not over-promise relative to what the fix
+actually does.** Three instances in one batch: X111 promised cost
+"tracks only the open sub-item work" while the fix reads every row,
+X118 promised legs "always net to exactly zero" while the fix rounded,
+X117 pinned ISO-8601 the prose never required. The first is the
+dangerous kind - it pushed models toward the filter and key work
+decisions entry 17 proved invisible to the SQL counters. Write the
+contract to match what the oracle actually measures.
+
+**Perf fixtures decide which half-fixes survive.** X111's budget was
+sound but its fixture held exactly ONE parent item, so "call CalcFields
+once per distinct parent" cost ~3 statements and passed. Shape the
+fixture so the naive class, every half-fix class, and the correct class
+land far apart, then state all three predicted costs. And beware two
+graded totals that coincide: X111's value asserts both expected 10, so
+a constant `exit(10)` passed the whole oracle.
+
+**A test resting on unmeasured platform behaviour is not worth adding.**
+Ask the controller to premise-probe it first (decisions entry 13's
+ruling; entries 18 and 19 are what happens either way). Two batch-5
+premises died on measurement and two audit findings were withdrawn by
+it.
+
 ## What you do NOT do
 
 - No probe, no container work, no compile, no commit, no promote - the
