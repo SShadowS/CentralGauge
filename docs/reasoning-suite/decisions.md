@@ -189,3 +189,91 @@ Append-only. Each entry: date, decision, why.
       slot is spent - two of this batch's ten slots burned probe
       cycles on stale volotest claims; a 2-minute premise probe first
       is strictly cheaper.
+
+14. **Build-batch-5 premise probes (2026-08-25, Cronus28, BC 28.4, SOAP
+    runner).** Probe kept re-runnable at `scratch/probe-batch5/`.
+    - **A narrow `SetLoadFields` whose loop reads an omitted field costs a
+      CONSTANT penalty, not a per-row one.** At N=200: a wide scan and a
+      correctly-covered narrow scan both measured 1 statement / 201 rows;
+      omitting `E-Mail` and reading it on EVERY row measured 4 statements /
+      202 rows, and reading it on every TENTH row measured the same
+      4 statements / 202 rows. The platform evidently widens the load set
+      after the first JIT reload rather than re-fetching per row, so the
+      penalty is ~3 statements regardless of N or of how many rows touch
+      the omitted field. Consequence: **R020 rejected** - a 4x gap cannot
+      satisfy the >=10x perf-budget rule (same disqualification as R094 in
+      batch 3). This CORRECTS decisions entry 8, which listed "per-row JIT
+      loads (narrow SetLoadFields then reading an unloaded field in the
+      loop)" in the measurable defect menu: that entry was reasoning from
+      the observed cache-miss statement, not from a measured per-row cost.
+      The measurable perf menu is now per-row `Get` on distinct keys,
+      per-row filtered `FindSet`, `CalcFields` in a loop, missing keys
+      (scan width), and nested unfiltered loops.
+    - **DateTime does NOT survive a SQL round-trip exactly.** Writing 13
+      DateTimes at 0..12 ms past a whole second and re-reading each after
+      `SelectLatestVersion()`: only 4 of 13 came back exactly equal, and the
+      maximum drift was 2 ms (pattern consistent with SQL `datetime`'s
+      1/300 s tick). Consequence for R057 (CG-AL-X115): its shown-subset
+      boundary spec (same within 10 ms, different beyond) is an
+      APPLICATION rule the task defines, and it survives - but the oracle
+      MUST compare in-memory DateTime values and must never round-trip a
+      boundary case through a table. Two round-tripped values can drift up
+      to 4 ms apart, which is enough to move a 9 ms case across a 10 ms
+      boundary.
+
+15. **Category 4 (minimal-change constraint) is BLOCKED on a format gap,
+    not on a candidate shortage (2026-08-25).** categories.md assumed the
+    constraint would be "mechanically enforced by the existing companion
+    mechanism, which overwrites same-named model output". Reading the bench
+    path (`src/parallel/compile-queue.ts`) shows that is not what happens
+    for a diagnose task: the model's whole submission is written to ONE
+    file, `<taskId>.al`, and the oracle-side companions (`<taskId>.*.al`
+    from `tests/al/<difficulty>/`) are copied ALONGSIDE it. A model that
+    re-declares a frozen object therefore hits an AL0264 duplicate-object
+    COMPILE error - while `templates/diagnose.md` rule 2 explicitly orders
+    it to "Return the COMPLETE corrected application: every object,
+    including the ones you did not change". The two instructions are in
+    direct contradiction, so a category-4 task built today would fail every
+    model for a prompt-contract reason rather than a reasoning one.
+    Ruling: category 4 needs a small, deliberate format change first - a
+    read-only-context block in the diagnose template (objects shown for
+    reasoning, explicitly excluded from the returned application), which
+    moves `PROMPT_POLICY_VERSION` and therefore `task_sets.hash`. Not a
+    build-batch slot. R115 stays `raw`; batch 5 swapped it for R091.
+    Putting the frozen objects in the PREREQ app instead is a viable
+    alternative shape (the model cannot redefine a 69xxx object in another
+    extension at all) but it hits the same rule-2 contradiction the moment
+    the prereq source is shown in the prompt, so it needs the same
+    template block.
+
+16. **Build-batch-5 premise probes, rounds 2 and 3 (2026-08-25, Cronus28,
+    BC 28.4, SOAP runner).** Probes at `scratch/probe-batch5b/` and
+    `scratch/probe-batch5c/`, both re-runnable.
+    - **Bare `Format(Decimal)` is wire-unsafe in two ways, and format 9 only
+      fixes one of them.** Measured: `Format(250.0)` = `250`,
+      `Format(250.0, 0, 9)` = `250`, and only
+      `Format(250.0, 0, '<Precision,2:2><Standard Format,9>')` = `250.00`.
+      So format 9 does NOT force two decimals. Separately,
+      `Format(1234.567)` = `1,234.567` - the bare form injects a THOUSANDS
+      SEPARATOR, which `Format(..., 0, 9)` strips (`1234.567`). R088
+      (CG-AL-X116) confirmed, and the group separator is the stronger of
+      the two visible defects.
+    - **Bare `Format(Date)` differs from `Format(Date, 0, 9)` sharply on this
+      container's session locale (US, month-first, 2-digit year).** 4 Jul
+      2026 renders `07/04/26` bare and `2026-07-04` under format 9;
+      23 Nov 2026 renders `11/23/26` vs `2026-11-23`. Dropping the `,0,9`
+      from an XML attribute is exact-string assertable with no locale switch
+      needed. R091 (CG-AL-X117) confirmed.
+    - **`IsolatedStorage` is fully usable from a test body under the SOAP
+      runner**: Set / Contains / Get / Delete all returned Yes, and Contains
+      after Delete returned No. But **`IsolatedStorage.Delete` is REFUSED
+      inside a caller-defined `[TryFunction]`** - "Call to the function
+      'DELETE' is not allowed inside the call to 'RunTests' when it is used
+      as a TryFunction". This is the batch-2 write-inside-try restriction
+      reaching IsolatedStorage. Consequence: oracles for this family must
+      use `asserterror`, never a TryFunction wrapper.
+    - **A destructive IsolatedStorage step performed before a raised error
+      SURVIVES that error.** Under `asserterror`, a procedure that deletes a
+      secret and then raises leaves the secret gone (Contains = No).
+      R085 (CG-AL-X120) confirmed: the delete-before-validate symptom is
+      directly oracle-able via asserterror plus a survives-check.
