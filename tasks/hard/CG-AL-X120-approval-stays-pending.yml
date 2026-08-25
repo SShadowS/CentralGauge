@@ -1,0 +1,31 @@
+id: CG-AL-X120
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Codeunit "CG X120 Approval Reconciler" keeps a pending-verification list for records of "CG X120 Approved Record" in sync with which of their fields currently differ from what was last approved. For example, changing "Contact Name" away from its approved value puts the record on that list.
+
+  Users report that once a field has been flagged, putting it back to the value that was last approved does not clear the flag - a record can end up matching its approved values on every field and still show up on the pending-verification list, sometimes indefinitely.
+
+  Fix the application so the pending-verification list reflects the record's current state.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - pending-verification
+    - hidden-superset
+    - spec-from-tests
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X120.Test.al
+  testCodeunitId: 89314

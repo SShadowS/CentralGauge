@@ -1,0 +1,26 @@
+id: CG-AL-X118
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application records journal entries as single lines. Each line names an Account No. and a Counter Account No., carries an Amount, and stores a Balancing Amount that must offset the Amount exactly, so the line''s two sides always net to zero. Validating the Counter Account No. on a line computes the Balancing Amount from the Amount already recorded on that line. Finance has noticed that on some journal entries, once the counter account is set, a line''s Amount and Balancing Amount no longer net to zero - the entry no longer balances. The mismatch only appears when the counter account is denominated in a currency that has no minor units at all, such as Japanese Yen; an entry whose counter account uses an ordinary foreign currency with its own decimal places never shows the problem. Fix the application so that for any account and counter account, and whatever currency each side uses, a journal line''s Amount and Balancing Amount always net to exactly zero once the counter account has been set.'
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: rounding-allocation
+  tags:
+    - diagnose
+    - rounding
+    - currency-precision
+    - balance-invariant
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X118.Test.al
+  testCodeunitId: 89312

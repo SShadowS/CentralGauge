@@ -1,0 +1,25 @@
+id: CG-AL-X116
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Your company pays vendors through a bank payment batch, and each payment carries a single free-text remittance line capped at 140 characters - all the receiving bank shows the vendor''s accountant when the money lands. Codeunit "CG X116 Remittance Composer" builds that line from the invoices covered by one payment, through two public procedures: AddInvoice(InvoiceNo: Text; Amount: Decimal), which records one invoice as an entry - the invoice number, a single space, and the amount written with exactly two decimals and a dot as the decimal separator, with no thousand separators - only positive amounts are exercised - and GetRemittanceText(): Text, which returns the composed line. GetRemittanceText joins the recorded entries with a comma and a space, in the order they were added, and returns an empty text when nothing has been added; when the full joined text is at most 140 characters, it is returned exactly as built. Entries are never split: once the full join is too long, the text keeps the longest possible run of leading entries and ends with the suffix "and N more", where N is every invoice left out. When not even the first entry fits alongside the suffix, the returned text is just the bare suffix. A single invoice whose entry alone would need more than 140 characters could never be sent at all, so AddInvoice must reject it with an error mentioning the limit of 140 the moment it is added, before it is recorded. Vendors'' accountants have been reporting amounts that come through wrong on their statements, and payment batches that get bounced by the bank once a payment covers more than a handful of invoices - fix the composer so every remittance line it builds is correctly formatted and never exceeds the 140-character limit.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: integration-serialization
+  tags:
+    - diagnose
+    - text-composition
+    - culture-invariant-format
+    - capacity-planning
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X116.Test.al
+  testCodeunitId: 89310

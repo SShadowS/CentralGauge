@@ -1,0 +1,28 @@
+id: CG-AL-X111
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Work items are organized into a checklist tree: table "CG X111 Work Item" stores each item together with a "Parent No." pointing at whichever item it is nested under, a Status of open or done, and its own Estimated Hours. Codeunit "CG X111 Work Item Report" exposes OpenSubItemHoursAcrossChecklist, a dashboard figure that adds up the estimated hours of every open sub-item across the whole checklist - an item only counts if it is itself nested under some other item, and is itself still open. It used to return instantly; now that the checklist has grown to hold hundreds of items, calling it takes noticeably longer, and the slowdown tracks the total number of items in the checklist rather than how much open sub-item work is actually being added up. Fix the application so producing the figure does not get more expensive as the checklist grows, while still returning exactly the same total.'
+domains:
+  - tables
+  - codeunits
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - calcfields-in-loop
+    - flowfield-per-row
+    - sql-counters
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X111.Test.al
+  testCodeunitId: 89305

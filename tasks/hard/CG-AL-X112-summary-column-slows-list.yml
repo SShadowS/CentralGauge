@@ -1,0 +1,28 @@
+id: CG-AL-X112
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages Job Agreements. Each agreement can accumulate entries in table "CG X112 Status Entry" (a severity, a message, and whether it has been resolved). Given a batch of agreements and an as-of date, codeunit "CG X112 Summary Builder"''s BuildSummaries reports, for every agreement in the batch, the most recently logged status entry that is still unresolved as of that date - or an all-clear message when the agreement has none. Building the summaries has gotten progressively slower the larger the batch of agreements being summarized, even though only a handful of agreements in any given batch typically have an open issue. Fix the application so building the summaries no longer takes longer to run the more agreements are included in the batch, while still reporting the exact same summary for every agreement.'
+domains:
+  - tables
+  - codeunits
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - n-plus-one
+    - sql-counters
+    - bulk-preload
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X112.Test.al
+  testCodeunitId: 89306

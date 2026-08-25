@@ -1,0 +1,30 @@
+id: CG-AL-X115
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  The application decides whether two recorded timestamps represent the same real-world moment, and whether a changed record needs to be pushed to another system. Codeunit "CG X115 Change Detector" exposes IsSameMoment and ShouldResync over pairs of timestamps.
+  The integration team has confirmed the required behavior: two timestamps 0, 3 or 9 milliseconds apart must be reported as the same moment by IsSameMoment, whichever one is passed first; two timestamps exactly 10 milliseconds apart, or 20 milliseconds apart, must be reported as different moments, whichever one is passed first. An undefined timestamp must be reported as the same moment as another undefined timestamp, but never as the same moment as a real timestamp, whichever argument is the undefined one.
+  ShouldResync must report false when its two timestamps are the same moment under the rule above, and true when they are not - except that a record whose stored "last synced" timestamp is undefined has never been synced, and must always be reported as needing a resync.
+  Fix the application so IsSameMoment and ShouldResync produce the confirmed behavior for every pair of timestamps they are given, not only the ones described above.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - spec-from-tests
+    - boundary-induction
+    - datetime
+    - sql-rounding-tolerance
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X115.Test.al
+  testCodeunitId: 89309

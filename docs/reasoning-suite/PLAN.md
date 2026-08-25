@@ -110,6 +110,16 @@ Standing constraints (from CLAUDE.md + session rules):
       mutation-hardening brief; 1 HIGH + 3 MEDs audit-fixed; three
       platform premises settled by measurement (decisions entry 13),
       two of them killing their candidates (R069, R033). **46 / 100.**
+- [x] Build batch 5 (2026-08-25): CG-AL-X111..X120 promoted. **56 / 100.**
+      Four HIGH bypasses found by audit AFTER a green probe (X113
+      memoization, X118 sum-only grading, X120 derive-on-read, X111
+      constant-return plus a per-parent half-fix), and a fifth opened by
+      X114's own redesign and caught by a second regression audit. Three
+      candidates killed by measurement (decisions 14, 17, 18): missing keys
+      are invisible to the SQL counters, a narrow SetLoadFields JIT reload
+      is constant not per-row, and a raise rolls back an IsolatedStorage
+      delete. Entry 17 re-derives the perf menu from measurement after three
+      of entry 8's five items were falsified.
 - [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
       symptom distant from defect (see hardness-strategy.md), >= 1
       genuinely entangled distractor each (tooling-plan.md T3 gate);
@@ -156,4 +166,5 @@ Standing constraints (from CLAUDE.md + session rules):
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
 | 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |
 | 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
+| 2026-08-25 | Build batch 5 promoted (56/100). Perf-oracle menu re-derived from measurement; attempt-2 leak path traced in source; T2 visibility scored for batches 4 and 5; batch-4 LethAL sweep + 2 kill tests. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |

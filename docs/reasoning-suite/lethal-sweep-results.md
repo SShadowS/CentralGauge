@@ -168,3 +168,13 @@ unscorable, consistent with the first sweep's treatment.
   installed". LethAL stamps its instrumented build with a large generated
   version, so a modest bump (1.0.0.4) fails identically. Pass
   `-Version 2.0.0.0` to the prep script, or uninstall the instrumented app.
+
+### A third operational note (2026-08-25, from build batch 5's promotion)
+
+The zero-budget measurement trick - temporarily setting a perf budget to 0
+so the assertion's failure text prints the ACTUAL counter value, then
+restoring it - leaves `.probe.json` recording `correct: "fail"`. `task
+promote` reads that file and refuses ("probe does not discriminate -
+correct/ did not pass its own oracle"), which is the gate working exactly
+as designed. Re-probe cleanly after any such measurement run, before
+promoting. It cost two refusals in batch 5 (X111, X112).
