@@ -180,6 +180,43 @@ export async function computeLeaderboard(
   const scopeInA1 = buildScopeInClause("r1", "ru1");
   const scopeInA2 = buildScopeInClause("r2", "ru2");
   const scopeInA2NotExists = buildScopeInClause("r1b", "ru1b");
+
+  /**
+   * Run-level filters mirrored into the correlated P1/P2 subqueries.
+   *
+   * `tier` and `since` restrict which RUNS are in scope, but the subqueries
+   * join their own `runs` alias and were scoped only by model, task set,
+   * category and difficulty. So a model that had one recent verified run
+   * appeared in the outer result with pass numerators counted across ALL its
+   * runs, including older and out-of-tier ones — a filtered leaderboard could
+   * report a pass_at_1 that no in-scope run achieved.
+   *
+   * This is unlike `family` / `openness`, which are model-level: the outer
+   * WHERE already decides which model_ids exist, and the subqueries correlate
+   * on m.id, so those need no mirroring (see the comment above).
+   *
+   * Fixing this became urgent with epoch-keyed caching: a wrong number now
+   * persists as the canonical answer served by every colo until the next
+   * publish, rather than being recomputed within a minute.
+   */
+  function buildRunScopeClause(
+    ruAlias: string,
+  ): { clause: string; params: Array<string | number> } {
+    const parts: string[] = [];
+    const bind: Array<string | number> = [];
+    if (q.tier !== "all") {
+      parts.push(`AND ${ruAlias}.tier = ?`);
+      bind.push(q.tier);
+    }
+    if (q.since) {
+      parts.push(`AND ${ruAlias}.started_at >= ?`);
+      bind.push(q.since);
+    }
+    return { clause: parts.join(" "), params: bind };
+  }
+  const runScopeA1 = buildRunScopeClause("ru1");
+  const runScopeA2 = buildRunScopeClause("ru2");
+  const runScopeA2NotExists = buildRunScopeClause("ru1b");
   if (q.tier !== "all") {
     wheres.push(`runs.tier = ?`);
     params.push(q.tier);
@@ -294,6 +331,7 @@ export async function computeLeaderboard(
        WHERE ru1.model_id = m.id AND r1.attempt = 1 AND r1.passed = 1
          ${taskSetClauseSubA1}
          ${scopeInA1.clause}
+         ${runScopeA1.clause}
       ) AS tasks_passed_attempt_1,
       (SELECT COUNT(DISTINCT r2.task_id)
        FROM results r2 JOIN runs ru2 ON ru2.id = r2.run_id
@@ -304,9 +342,11 @@ export async function computeLeaderboard(
              AND r1b.attempt = 1 AND r1b.passed = 1
              ${taskSetClauseSubA2NotExists}
              ${scopeInA2NotExists.clause}
+             ${runScopeA2NotExists.clause}
          )
          ${taskSetClauseSubA2}
          ${scopeInA2.clause}
+         ${runScopeA2.clause}
       ) AS tasks_passed_attempt_2_only,
       AVG(r.score) AS avg_score,
       -- Per-task cost: total $ spent / distinct task count. Per-task is a
@@ -366,10 +406,13 @@ export async function computeLeaderboard(
   const allParams = [
     ...taskSetParamsA1,
     ...scopeInA1.params,
+    ...runScopeA1.params,
     ...taskSetParamsA2NotExists,
     ...scopeInA2NotExists.params,
+    ...runScopeA2NotExists.params,
     ...taskSetParamsA2,
     ...scopeInA2.params,
+    ...runScopeA2.params,
     ...params,
     WIDE_FETCH,
   ];

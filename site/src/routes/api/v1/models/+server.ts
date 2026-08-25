@@ -2,7 +2,10 @@ import type { RequestHandler } from "./$types";
 import { cachedJson } from "$lib/server/cache";
 import { getAll } from "$lib/server/db";
 import { errorResponse } from "$lib/server/errors";
-import { computeModelAggregates } from "$lib/server/model-aggregates";
+import {
+  computeModelAggregatesLite,
+  type LiteAggregate,
+} from "$lib/server/model-aggregates";
 
 interface ModelRow {
   id: number;
@@ -32,17 +35,14 @@ export const GET: RequestHandler = async ({ request, platform }) => {
     // The /models index is used for catalog discoverability — we want users to
     // find models that have runs on any task set, not just the current one.
     // See api-types.ts:402-408 for the documented contract.
+    // Lite path: this endpoint reads only the four plain aggregates below, and
+    // the full computeModelAggregates costs 475,387 rows against production to
+    // produce them (it also computes P1/P2 correlated subqueries, cost, tokens,
+    // consistency and the CI denominator, none of which are read here). The
+    // lite query costs 1,406.
     const aggMap = allModelIds.length === 0
-      ? new Map<
-        number,
-        {
-          run_count: number;
-          verified_runs: number;
-          avg_score: number | null;
-          last_run_at: string | null;
-        }
-      >()
-      : await computeModelAggregates(env.DB, { modelIds: allModelIds });
+      ? new Map<number, LiteAggregate>()
+      : await computeModelAggregatesLite(env.DB, { modelIds: allModelIds });
 
     const data = rows.map((r) => {
       const agg = aggMap.get(r.id);
