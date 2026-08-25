@@ -277,3 +277,80 @@ Append-only. Each entry: date, decision, why.
       secret and then raises leaves the secret gone (Contains = No).
       R085 (CG-AL-X120) confirmed: the delete-before-validate symptom is
       directly oracle-able via asserterror plus a survives-check.
+
+17. **The perf-oracle defect menu, re-derived from measurement
+    (2026-08-25, Cronus28, BC 28.4).** Probes at `scratch/probe-batch5d/`
+    and `scratch/probe-batch5e/`. Decisions entry 8 wrote a five-item
+    "measurable defect menu" partly by reasoning from shape rather than by
+    measuring each item. Three of the five are now falsified, all three by
+    the same underlying fact: **`SessionInformation.SqlRowsRead` counts rows
+    RETURNED to the AL layer, not rows scanned in SQL, and
+    `SqlStatementsExecuted` counts round trips, not work done inside one.**
+    - **Missing keys are INVISIBLE.** Two tables with identical fields and
+      identical data, differing only in whether a key on the filtered field
+      exists, measured IDENTICALLY: an N+1 walk over 600 rows / 20 parents
+      cost 20 statements / 620 rows on BOTH; a single highly selective
+      filter over 2000 rows where only 20 match cost 1 statement / 21 rows
+      on BOTH. The unkeyed side genuinely scans the whole table in SQL and
+      the counters never see it. **R098 rejected**, and CG-AL-X111 had to be
+      re-aimed mid-batch (its probe gate caught this: the starter passed the
+      rows budget). R101 (leading-wildcard SetFilter defeating an index seek)
+      dies with it - same cause, same invisibility.
+    - **Nested UNFILTERED loops are measurably CHEAPER than the filtered
+      version.** 40 parents x 15 children: loading every child per parent and
+      filtering in AL cost 2 statements / 642 rows, while a correct
+      per-parent `SetRange` + `FindSet` cost 41 statements / 681 rows. The
+      unfiltered inner read is IDENTICAL every iteration, so the NST cache
+      serves it free after the first (entry 8's own repeat-identical-read
+      fact), while distinct filtered reads each cost a statement (entry 11).
+      Removed from the menu: an oracle built on it would grade the correct
+      fix as the expensive one.
+    - **`CalcFields` on a FlowField in a loop IS measurable, on statements.**
+      Same seed: per-parent `CalcFields` cost 41 statements / 81 rows against
+      1 statement / 601 rows for a single pass over the children and
+      1 statement / 1 row for a `CalcSums` over the SIFT key. 41x on
+      statements, so it clears the 10x rule comfortably. Budget statements,
+      never rows - the SIFT-backed FlowField reads aggregates, so the naive
+      side reads FEWER rows than the correct one.
+
+    **The measured menu, after this entry.** Only these four are known to
+    work; anything else needs a probe before a slot is spent:
+    1. Per-row `Get` on DISTINCT keys (1000 statements / 1000 rows at
+       N=1000, entry 8). Repeat Gets of the SAME row are free (entry 11).
+    2. Per-row filtered `FindSet` / `FindFirst` (201 statements at N=200,
+       entry 11; 41 at N=40 here). Budget statements.
+    3. `CalcFields` in a loop (41 statements at N=40, this entry). Budget
+       statements.
+    4. Returning N rows where an aggregate or existence check returns ~1
+       (601 rows vs 1 for `CalcSums`, this entry). Budget rows.
+
+18. **CORRECTION to entry 16: an IsolatedStorage delete performed before a
+    raised error is ROLLED BACK, not survived (2026-08-25, Cronus28,
+    BC 28.4).** Probe at `scratch/probe-batch5f/`.
+    Entry 16 concluded that a destructive step before a raise survives it.
+    That conclusion was drawn from a test that Set a key, called an
+    `asserterror` procedure which Deleted and then raised, and observed
+    `Contains = No`. **That observation cannot distinguish the two
+    hypotheses** - "the delete stood" and "the whole transaction rolled back,
+    taking the uncommitted SEED with it" - because both leave the key absent.
+    CG-AL-X120's correct/ side then failed its own symptom test, which is what
+    the second hypothesis predicts, and a probe with a `Commit()` between the
+    seed and the asserterror settles it:
+    - committed seed, delete-then-raise: **present = Yes, value = 'seeded'**
+      (the delete was undone)
+    - committed seed, raise WITHOUT deleting (control): present = Yes
+    - uncommitted seed, delete-then-raise: present = No (entry 16's shape -
+      the seed itself never survived)
+
+    Consequence: **R085 rejected.** Its whole mechanic is that reordering
+    validate-then-delete into delete-then-validate destroys the stored secret
+    even though the call still correctly raises. On BC's transaction model the
+    raise rolls the delete back, so both orderings leave identical observable
+    state and the task cannot discriminate. CG-AL-X120 was re-aimed mid-batch.
+
+    Process lesson, stated plainly because it cost a task slot: a probe that
+    observes an ABSENCE must include the control that distinguishes "the thing
+    was removed" from "the thing was never there". Entry 16's probe had no
+    control, and the builder-brief's own rule - `Commit()` before `asserterror`
+    whenever a test asserts persisted state after an expected error - was the
+    warning that applied to the probe itself and was not followed.
