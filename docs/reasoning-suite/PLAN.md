@@ -136,6 +136,11 @@ Standing constraints (from CLAUDE.md + session rules):
       T4 stubborn-mutant harvest for batch-5+ candidates.
 - [ ] Batches of ~10 through: workbench author → probe gate →
       `al-test-auditor` → promote. Ledger counts tracked at the top.
+- [ ] **Suite-wide perf-message de-leak** (decisions entry 21): 15 assert
+      messages across 8 promoted oracles name the graded SQL counter, which
+      hands a perf task's diagnosis to the model on attempt 2. One focused
+      pass, BEFORE the set is complete - the hash moves with every promotion
+      anyway, so it is free now and expensive after the re-bench.
 
 ### Phase 4 — Suite integration
 

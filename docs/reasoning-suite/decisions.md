@@ -396,3 +396,37 @@ Append-only. Each entry: date, decision, why.
     IsolatedStorage writes before a raise are rolled back, in-memory
     collections are not. Both facts are needed to know which shape an
     error-flow oracle can grade.
+
+21. **Failing test NAMES and assert MESSAGES ship to the model on attempt 2 -
+    verified in source, and there is a suite-wide leak to fix (2026-08-25).**
+    Raised independently by three of build-batch-5's four audits, and traced
+    end to end rather than assumed:
+    - `src/parallel/orchestrator.ts:1131-1137` pushes
+      `"  ${test.name}: ${test.error}"` into `failureReasons` for every FAILING
+      test.
+    - `llm-work-pool.ts:585-594` (`extractErrors`) returns
+      `[...attempt.failureReasons]` verbatim.
+    - `llm-work-pool.ts:542-548` passes that as `errors` to `buildFixPrompt`,
+      which renders it as `{{error_snippet}}` in `templates/bugfix.md`.
+
+    Oracle COMMENTS do not ship; test names and assert messages do. The
+    practical rule, applied across batch 5: `Assert.AreEqual` printing
+    expected-vs-actual is inherent and acceptable, and a single failing value
+    is one data point. Stating the RULE, the mechanism, or the remediation in
+    a message upgrades that data point into the answer, and it inflates
+    `auc_2` above `pass_at_1` invisibly - a hardcoding model banks 0.5 on a
+    task designed to give it zero, and in the score file it looks like an
+    ordinary attempt-2 repair.
+
+    **The outstanding suite-wide item**: 15 assert messages across 8 promoted
+    oracles (X069, X084, X089, X090, X091, X099 x3, X108, X109, X112, X113)
+    say "statement budget" or "execute at most N SQL statements", naming the
+    graded counter. For a perf task, "reduce SQL round trips" is the
+    diagnosis. Deliberately NOT fixed piecemeal during batch 5: changing it in
+    one oracle while eight others keep the wording buys nothing and breaks a
+    shipped convention. Do it as one focused pass, and do it BEFORE the set is
+    complete - the task-set hash moves with every promotion anyway, so the
+    change is free now and expensive later. A message-text edit cannot break a
+    passing test, but re-probe a sample: note that a promoted diagnose task
+    cannot be re-probed in place, since `promote` MOVES `starter/` out of the
+    draft (see `lethal-sweep-results.md`).
