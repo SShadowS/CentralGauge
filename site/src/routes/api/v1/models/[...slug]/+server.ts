@@ -16,6 +16,7 @@ import {
   EPOCH_KEYED_TTL_SECONDS,
   DEGRADED_TTL_SECONDS,
 } from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
 
 interface ModelRow {
   id: number;
@@ -93,6 +94,22 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     const cached = await cache.match(cacheKey);
     if (cached) {
       return cachedJson(request, await cached.json());
+    }
+
+    // L2: globally shared, so only the first colo pays the compute after an
+    // invalidation. See src/lib/server/shared-cache.ts.
+    const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
+    if (shared) {
+      await cache.put(
+        cacheKey,
+        new Response(shared, {
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
+          },
+        }),
+      ).catch((err) => console.error("[model-detail] L1 backfill failed:", err));
+      return cachedJson(request, JSON.parse(shared));
     }
 
     const model = await getFirst<ModelRow>(
@@ -332,6 +349,8 @@ export const GET: RequestHandler = async ({ request, params, platform }) => {
     // Stored copy carries the public s-maxage; the user-facing response stays
     // private so adapter-cloudflare cannot tee it into caches.default without
     // an epoch in the key.
+    await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(body));
+
     await cache.put(
       cacheKey,
       new Response(JSON.stringify(body), {

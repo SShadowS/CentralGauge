@@ -31,6 +31,10 @@ export async function resetDb(): Promise<void> {
     env.DB.prepare(`DELETE FROM lifecycle_events`),
     // 0014_lifecycle_nonce.sql (V7 replay prevention)
     env.DB.prepare(`DELETE FROM lifecycle_nonces`),
+    // 0017_payload_cache.sql — the globally-shared L2. Purely derived data, so
+    // it is cleared outright rather than bumped; leaving rows behind would let
+    // one `it` block serve another block's payload from the shared tier.
+    env.DB.prepare(`DELETE FROM payload_cache`),
     // 0016_cache_epoch.sql — bump (do NOT delete: the row is a singleton
     // pinned by a CHECK constraint). Bumping gives each `it` block a fresh
     // cache-key namespace for every epoch-keyed endpoint, which is stronger

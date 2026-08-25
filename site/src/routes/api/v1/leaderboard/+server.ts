@@ -17,6 +17,7 @@ import {
   EPOCH_KEYED_TTL_SECONDS,
   DEGRADED_TTL_SECONDS,
 } from '$lib/server/data-epoch';
+import { sharedCacheGet, sharedCacheSet } from '$lib/server/shared-cache';
 
 export const GET: RequestHandler = async ({ request, url, platform }) => {
   const env = platform!.env;
@@ -61,6 +62,29 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // Cached hits carry the Server-Timing header from the original compute
       // request — expose it so observers can distinguish warm vs. cold paths.
       serverTimingHeader = cached.headers.get('server-timing');
+    }
+
+    // L2: the globally-shared payload cache. Cache API is per-colo, so without
+    // this every colo pays its own cold compute after an invalidation — measured
+    // at ~13M rows to re-warm the site once. Here the first colo to ask computes
+    // and stores; the rest read one row. Checked before the rate limiter, since
+    // an L2 hit is not the expensive path the limiter exists to bound.
+    if (!payload) {
+      const shared = await sharedCacheGet(env.DB, cacheKey.url, epoch);
+      if (shared) {
+        payload = JSON.parse(shared) as LeaderboardResponse;
+        // Backfill L1 so this colo serves subsequent requests for 1 row. Full
+        // TTL, not the degraded one: nothing degraded is ever stored in L2.
+        await cache.put(
+          cacheKey,
+          new Response(shared, {
+            headers: {
+              'content-type': 'application/json; charset=utf-8',
+              'cache-control': `public, s-maxage=${EPOCH_KEYED_TTL_SECONDS}`,
+            },
+          }),
+        ).catch((err) => console.error('[leaderboard] L1 backfill failed:', err));
+      }
     }
 
     if (!payload) {
@@ -179,6 +203,14 @@ export const GET: RequestHandler = async ({ request, url, platform }) => {
       // `private`: a public long-lived s-maxage there would let the adapter
       // store the SSR'd HTML in caches.default with no epoch in its key,
       // leaving an un-invalidatable homepage. Guarded by a regression test.
+      // Share the computed payload globally, so no other colo repeats this.
+      // Degraded payloads are excluded: in L1 a tier-less response poisons one
+      // colo for 60s, but in L2 it would poison every colo until the next
+      // publish.
+      if (!degraded) {
+        await sharedCacheSet(env.DB, cacheKey.url, epoch, JSON.stringify(payload));
+      }
+
       const storeRes = new Response(JSON.stringify(payload), {
         headers: {
           'content-type': 'application/json; charset=utf-8',

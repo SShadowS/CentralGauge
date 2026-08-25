@@ -5,6 +5,7 @@ import { isCanary } from "$lib/server/canary";
 import { gateAdminRequest } from "$lib/server/admin-gate";
 import type { CfAccessEnv } from "$lib/server/cf-access";
 import { runNightlyBackup } from "./cron/nightly-backup";
+import { prunePayloadCache } from "$lib/server/shared-cache";
 import { runDailyDriftProbe } from "./cron/catalog-drift";
 
 export { LeaderboardBroadcaster } from "./do/leaderboard-broadcaster";
@@ -30,6 +31,31 @@ export async function scheduled(
   ctx: ExecutionContext,
 ): Promise<void> {
   if (controller.cron === "0 2 * * *") {
+    // Prune superseded shared-cache entries. Deliberately here and not in the
+    // publish batch: pruning during a publish races an in-flight request that
+    // read epoch N, computed slowly, and inserts N after the prune has run.
+    // On a schedule that leftover row is simply collected the following night.
+    ctx.waitUntil(
+      prunePayloadCache(env.DB)
+        .then((n) => {
+          if (n > 0) {
+            console.log(JSON.stringify({
+              ts: new Date().toISOString(),
+              level: "info",
+              msg: "payload_cache_pruned",
+              rows: n,
+            }));
+          }
+        })
+        .catch((err) => {
+          console.error(JSON.stringify({
+            ts: new Date().toISOString(),
+            level: "error",
+            msg: "payload_cache_prune_failed",
+            err: err instanceof Error ? err.message : String(err),
+          }));
+        }),
+    );
     ctx.waitUntil(
       runNightlyBackup(env).catch((err) => {
         console.error(JSON.stringify({

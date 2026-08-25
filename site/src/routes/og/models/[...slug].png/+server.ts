@@ -11,6 +11,8 @@ import {
   EPOCH_KEYED_TTL_SECONDS,
   DEGRADED_TTL_SECONDS,
 } from "$lib/server/data-epoch";
+import { sharedCacheGet, sharedCacheSet } from "$lib/server/shared-cache";
+import { b64ToBytes, bytesToB64 } from "$shared/base64";
 
 export const prerender = false;
 
@@ -34,6 +36,34 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   const ogKey = buildCacheKey("og-model", { slug: params.slug ?? "" }, epoch);
   const ogHit = await ogCache.match(ogKey);
   if (ogHit) return ogHit;
+
+  // L2: globally shared. The expensive part of this route is the D1 aggregate
+  // above the render, so without a shared tier every colo repeats it after an
+  // invalidation. PNG bytes are base64'd for the TEXT column — roughly a third
+  // larger, still far under the 512KB cap.
+  const ogShared = await sharedCacheGet(env.DB, ogKey.url, epoch);
+  if (ogShared) {
+    const decoded = b64ToBytes(ogShared);
+    // Slice to an exact ArrayBuffer: Response wants a buffer, not a view, and
+    // a view could in principle span a larger backing buffer.
+    // `.buffer` is typed ArrayBufferLike (ArrayBuffer | SharedArrayBuffer);
+    // b64ToBytes only ever allocates a plain ArrayBuffer.
+    const bytes = decoded.buffer.slice(
+      decoded.byteOffset,
+      decoded.byteOffset + decoded.byteLength,
+    ) as ArrayBuffer;
+    const backfill = new Response(bytes, {
+      headers: {
+        "content-type": "image/png",
+        "cache-control": `public, s-maxage=${ogTtl}`,
+        "x-og-cache": "epoch",
+      },
+    });
+    await ogCache.put(ogKey, backfill.clone()).catch((err) =>
+      console.error("[og-model] L1 backfill failed:", err)
+    );
+    return backfill;
+  }
 
   const flags = loadFlags(
     env as unknown as Record<string, string | undefined>,
@@ -103,6 +133,13 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
   // Do not use res.clone(): cloning ties the stored copy's body to the returned
   // response's stream, and a failure there is swallowed by the catch below,
   // producing a silent cache that never populates.
+  await sharedCacheSet(
+    env.DB,
+    ogKey.url,
+    epoch,
+    bytesToB64(new Uint8Array(out.body)),
+  );
+
   await ogCache.put(
     ogKey,
     new Response(out.body, {
