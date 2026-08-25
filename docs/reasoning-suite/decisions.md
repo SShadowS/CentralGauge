@@ -354,3 +354,25 @@ Append-only. Each entry: date, decision, why.
     control, and the builder-brief's own rule - `Commit()` before `asserterror`
     whenever a test asserts persisted state after an expected error - was the
     warning that applied to the probe itself and was not followed.
+
+19. **`0DT` arithmetic THROWS, exactly like `0D` (2026-08-25, Cronus28,
+    BC 28.4).** Probe at `scratch/probe-batch5g/`. Build batch 2 measured that
+    AL's boolean operators do not short-circuit and that `0D` arithmetic
+    throws; the DateTime equivalent was never measured. It behaves the same
+    way: `Real - 0DT`, `0DT - Real` and `0DT - 0DT` all raise **"The date is
+    not valid."** Both probe tests died on their first subtraction, before
+    reaching their own reporting `Error`.
+    Consequences, raised by the CG-AL-X115 oracle audit:
+    - The explicit `if (First = 0DT) or (Second = 0DT) then exit(First =
+      Second);` guard in X115's reference fix is **observable, required
+      behaviour, not dead code**. A rewrite that drops it and applies the
+      tolerance unconditionally does not quietly return the same answers - it
+      raises a platform runtime error on every 0DT input. So "apply the
+      tolerance everywhere" is NOT a safe blanket rewrite, and any test that
+      passes 0DT pins the guard. The audit finding that assumed otherwise is
+      withdrawn on this measurement.
+    - The guard must stay in its own `if` whose operands are pure comparisons.
+      Folding it into one non-short-circuiting boolean with the arithmetic -
+      `(First = 0DT) or (Abs(First - Second) < 10)` - evaluates the right side
+      regardless and throws. This is the batch-2 non-short-circuit fact
+      reaching DateTime, and it is a live trap seed in its own right.
