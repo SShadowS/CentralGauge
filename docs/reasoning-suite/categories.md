@@ -83,9 +83,23 @@ subscriber) IS the task. Tests knowledge of BC extension points.
 
 ### 5. Fill-the-hole (8)
 
-One procedure is stubbed (raises "not implemented"); its contract is never
-stated, only inferable from three call sites with different expectations.
-Tests spec-inference from usage.
+A piece of behavior is missing and its contract is never stated, only
+inferable from the code around it. Tests spec-inference from usage. Two
+shapes are admitted:
+
+- **Stub**: one procedure raises "not implemented"; its contract is
+  inferable from three call sites with different expectations.
+- **Absent branch**: a dispatch has no case for one input, so those inputs
+  fall through silently; the missing branch's contract is inferable from
+  the sibling branches and from the output's own field constraints.
+
+The absent-branch shape was added 2026-08-25 after CG-AL-X119 (the first
+category-5 task) was built that way and audited. It is arguably the harder
+of the two - a silent no-op gives the model no landmark, where a raised
+stub announces exactly where to look. Whichever shape is used, the oracle
+must grade EVERY tier of the inferable contract, including the tiers a
+model only reaches when the primary source is blank or absent; an ungraded
+tier means the task claims to test inference it never checks.
 
 ### 6. Event-driven wiring (8)
 
@@ -110,10 +124,24 @@ cases fails the hidden ones.
 
 ### 9. Rounding / allocation invariants (5)
 
-"The allocated lines must sum exactly to the rounded total, for any
-split." Largest-remainder reasoning inside Decimal/Round constraints.
-Near-zero syntax content. Oracle: exact totals across many partitions,
-including the adversarial ones (1/3 splits, 0.005 boundaries).
+Two sub-shapes share this category, and the allocation should keep at
+least one of each:
+
+- **Multi-line allocation**: "the allocated lines must sum exactly to the
+  rounded total, for any split." Largest-remainder reasoning inside
+  Decimal/Round constraints. Oracle: exact totals across many partitions,
+  including the adversarial ones (1/3 splits, 0.005 boundaries).
+- **Two-leg invariant**: a single record's two sides must net to exactly
+  zero whatever precision each side is denominated in. No split and no
+  remainder distribution, so 1/3 partitions have nowhere to appear -
+  the adversarial inputs are instead the precision mismatches (whole-unit
+  currencies, finer-than-line currencies, amounts carrying a decimal the
+  line's own currency cannot represent).
+
+Near-zero syntax content either way. CG-AL-X118 is the first, and is a
+two-leg invariant; booking every category-9 slot that way would leave the
+suite with no largest-remainder coverage at all, so the remaining slots
+should lean multi-line.
 
 ### 10. Multi-company semantics (4)
 
