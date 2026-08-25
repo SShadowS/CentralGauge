@@ -104,3 +104,70 @@ Total: 36.
    real defect, so it does not push the verdict to "partial".
 4. No file-presence anomalies beyond X090's (checked every task for a file
    on one side only; only X090 flagged).
+
+## Build batch 5 (CG-AL-X111 - CG-AL-X120), scored 2026-08-25
+
+Same method, run against the DRAFT starters at `scratch/CG-AL-X1NN/starter/`
+before promotion (the defect site is the diff of `starter/` against the
+draft's own `correct/`, which is what `reference/solutions/` will mirror).
+Raw findings in `scratch/alsem-t2/CG-AL-X1NN.json`; every `.err` was empty.
+
+| Task | File / procedure | Defect construct | Verdict | Matching detector(s) |
+|---|---|---|---|---|
+| X111 | CGX111WorkItemReport.Codeunit.al / `OpenSubItemHoursAcrossChecklist` | `CalcFields` on a FlowField inside the per-item loop instead of computing from already-loaded fields | **visible** | d1-db-op-in-loop, on the exact CalcFields line |
+| X112 | CGX112SummaryBuilder.Codeunit.al / `BuildSummaries` | Per-row filtered lookup against a shared status table instead of one bulk pre-load into a Dictionary | **visible** | d18-constant-filter-in-loop (targets the construct almost exactly), d1-db-op-in-loop |
+| X113 | CGX113DispatchCheck.Codeunit.al / `IsUnassigned` | Walks the whole set with FindSet/repeat to answer a yes/no question instead of `IsEmpty()` | **invisible** | none anywhere in the project |
+| X114 | CGX114AllowanceCalc.Codeunit.al / `CalculateAllowance` | `>=` where the statutory rule needs strict `>` on a tier boundary | **invisible** | none |
+| X115 | CGX115ChangeDetector.Codeunit.al / `IsSameMoment`, `ShouldResync` | Strict DateTime equality where the rule is a tolerance, plus missing 0DT guards | **invisible** | none |
+| X116 | CGX116RemittanceComposer.Codeunit.al / `AddInvoice`, `GetRemittanceText` | Bare `Format(Decimal)` in a wire payload, and an overflow trim that ignores the suffix's own capacity | **invisible** | none |
+| X117 | CGX117OrderXmlExport.Codeunit.al / `ExportOrder` | `Format(Date)` without the `,0,9` argument in an XML attribute | **partial** | d3-missing-setloadfields lands in the changed procedure but targets an unrelated construct |
+| X118 | CGX118JournalLineMgt.Codeunit.al / `AssignCounterAccount` | Rounds the balancing amount to the counter account's currency precision during a temporary field state, dropping the remainder | **partial** | d3-missing-setloadfields in the changed procedure, construct unrelated |
+| X119 | CGX119Exporter.Codeunit.al / the absent `Charge` branch | OMISSION: a per-line-type dispatch has no branch for one line type | **invisible** | the file carries ambient d1/d3 findings, but the defect has no changed line for one to land on and no detector targets a missing case branch |
+| X120 | CGX120ApprovalReconciler.Codeunit.al / `SetContactName`, `SetCreditLimit` | No path detecting "current value == originally approved value", so a change-then-revert leaves a stale pending entry | **partial** | d3-missing-setloadfields in both changed procedures, construct unrelated |
+
+Batch 5 totals: **visible 2, partial 3, invisible 5.**
+
+Running totals across all scored diagnose tasks: **visible 6, partial 20,
+invisible 30** (56 tasks) - see the batch-4 section below, scored in the
+same sitting.
+
+Two observations worth carrying forward:
+
+1. **The visible/perf correlation held again.** Both visible verdicts are
+   the two perf tasks whose defect is literally a database operation inside
+   a loop, which is what d1 and d18 are built to find. That is the expected
+   price of the perf category, not a defect in those tasks.
+2. **X113 is the interesting negative.** It is also a perf task, and alsem
+   found NOTHING anywhere in the project - walking a set with FindSet/repeat
+   purely to answer a yes/no question is not flagged by any of the 54
+   detectors, because the loop body contains no database operation. A perf
+   defect that is lint-invisible is unusual and makes X113 hard-tier
+   material by the T2 prior, unlike its two batch-mates.
+
+## Build batch 4 (CG-AL-X101 - CG-AL-X110), scored 2026-08-25
+
+Batch 4 promoted without a T2 pass; scored here from the committed
+`tasks/starter/CG-AL-X10N/` against `reference/solutions/CG-AL-X10N/`.
+
+| Task | File / procedure | Defect construct | Verdict | Matching detector(s) |
+|---|---|---|---|---|
+| X101 | CGX101StatementBuilder.Codeunit.al / `BuildStatement` | OMISSION: the `SetCurrentKey` that ordered the running-balance scan is absent | **invisible** | file carries d1/d3 findings, neither at the defect; no detector targets a missing SetCurrentKey |
+| X102 | CGX102BufferService.Codeunit.al / `TakeSnapshot` | One `Copy(Source, true)` one-liner used for both a deep copy and a shared view | **invisible** | none |
+| X103 | CGX103Submitter.Codeunit.al / `Guard` | Pre-post guard tests a field the downstream serializer never reads | **invisible** | only finding is in a different procedure |
+| X104 | CGX104PriceSync.Codeunit.al / `SyncPriceList` | `DeleteAll()` across related tables sequenced BEFORE the nested payload is parsed and validated | **partial** | d1-db-op-in-loop in the changed procedure, construct unrelated |
+| X105 | CGX105ApprovalLookup.Codeunit.al / `GetApprovalLimit` | OMISSION: no Status filter, so a key ordering an enum field returns the lowest-ordinal (rejected) row first | **invisible** | none anywhere in the project |
+| X106 | CGX106FinalizeMgt.Codeunit.al / `StampArchiveTag` | A defensive full re-read into a shared `var` Record wipes an earlier subscriber's not-yet-persisted field | **partial** | d3-missing-setloadfields in the changed procedure, construct unrelated |
+| X107 | CGX107DealStamp.Codeunit.al / the `[EventSubscriber]` attribute | Subscriber re-pointed from a Before-Insert to an After-Insert event, so a `var` record field write never persists | **partial** | d12-dead-integration-event fires on the now-unsubscribed publisher in the OTHER file - different location, but it is genuinely pointing at this defect's fingerprint rather than at ambient noise, which is why this is partial and not invisible |
+| X108 | CGX108FeatureGate.Codeunit.al / `IsFeatureActive` | A SingleInstance cache flag set only on the success path, so a failed first check re-runs forever | **invisible** | findings sit in a different procedure |
+| X109 | CGX109EntryFinder.Codeunit.al / `FindLatest` | Manual max-tracking loop instead of `FindLast()` in key order | **invisible** | none |
+| X110 | CGX110PostBatch.Codeunit.al / `PostBatch` | Second (write) pass gets a fresh record variable that forgets to copy the Status filter, re-posting already-posted lines | **partial** | d1-db-op-in-loop, d3-missing-setloadfields and d10-self-modifying-loop all land in the changed procedure; d10 is the closest but targets in-loop modification, not the dropped filter |
+
+Batch 4 totals: **visible 0, partial 4, invisible 6.**
+
+The strongest T2 result of the program so far: not one batch-4 defect is
+lint-visible, and half of them are invisible outright. Three of the six
+invisible ones are OMISSION faults (X101, X105, and, in batch 5, X119),
+which is the class the mutation literature calls uncoupled from mutation
+operators and which no detector in a 54-detector suite is built to find.
+That matches hardness-strategy.md's reading and makes omission faults a
+deliberate lever rather than an accident.
