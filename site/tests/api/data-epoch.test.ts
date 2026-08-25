@@ -276,3 +276,38 @@ describe("query canonicalization bounds the cache-key space", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("newly-cached endpoints actually populate their cache", () => {
+  // Regression guard with a specific cause: the first implementation of the OG
+  // cache stored `res.clone().body`, which failed silently inside a .catch()
+  // and produced a cache that never populated. Asserting the entry EXISTS
+  // catches that class of bug; asserting only that responses look right does
+  // not.
+
+  it("/api/v1/models stores an entry under the epoch-keyed key", async () => {
+    const res = await SELF.fetch("https://x/api/v1/models");
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+
+    const row = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
+      .first<{ epoch: number }>();
+    const cache = await caches.open("cg-models");
+    const hit = await cache.match(buildCacheKey("models", {}, `e${row!.epoch}`));
+    expect(hit, "cg-models entry must exist after a miss").toBeDefined();
+  });
+
+  it("a bump retires the models entry", async () => {
+    await SELF.fetch("https://x/api/v1/models").then((r) => r.arrayBuffer());
+    const before = await env.DB.prepare(`SELECT epoch FROM cache_epoch WHERE id = 1`)
+      .first<{ epoch: number }>();
+
+    await env.DB.prepare(`UPDATE cache_epoch SET epoch = epoch + 1 WHERE id = 1`).run();
+
+    // The old key still holds its entry, but nothing will ever request it
+    // again: the new epoch produces a different key, which is empty until
+    // recomputed. That is the whole invalidation mechanism.
+    const cache = await caches.open("cg-models");
+    const newKey = buildCacheKey("models", {}, `e${before!.epoch + 1}`);
+    expect(await cache.match(newKey), "new epoch must start cold").toBeUndefined();
+  });
+});

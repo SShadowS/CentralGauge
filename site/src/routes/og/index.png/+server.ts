@@ -4,6 +4,13 @@ import { loadFlags } from "$lib/server/flags";
 import { renderOgPng } from "$lib/server/og-render";
 import { isCanary } from "$lib/server/canary";
 import { computeModelAggregates } from "$lib/server/model-aggregates";
+import {
+  buildCacheKey,
+  readDataEpoch,
+  isFallbackEpoch,
+  EPOCH_KEYED_TTL_SECONDS,
+  DEGRADED_TTL_SECONDS,
+} from "$lib/server/data-epoch";
 
 export const prerender = false;
 
@@ -14,6 +21,24 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     );
   }
   const env = platform.env;
+
+  // Epoch-keyed named cache, checked BEFORE any D1 work.
+  //
+  // Placement matters: renderOgPng already has an R2 payload-hash cache, but it
+  // is keyed on a payload this handler computes from D1 first, so it saves the
+  // Satori render and ZERO D1 rows. The expensive part (computeModelAggregates
+  // plus the count queries below) runs before it. Caching has to happen here.
+  //
+  // Ordering contract (data-epoch.ts): epoch read first, never re-read.
+  const ogCache = await platform.caches.open("cg-og");
+  const epoch = await readDataEpoch(env.DB);
+  const ogTtl = isFallbackEpoch(epoch)
+    ? DEGRADED_TTL_SECONDS
+    : EPOCH_KEYED_TTL_SECONDS;
+  const ogKey = buildCacheKey("og-index", {}, epoch);
+  const ogHit = await ogCache.match(ogKey);
+  if (ogHit) return ogHit;
+
   const flags = loadFlags(
     env as unknown as Record<string, string | undefined>,
     isCanary(url),
@@ -72,11 +97,37 @@ export const GET: RequestHandler = async ({ url, platform }) => {
     },
   });
 
-  return new Response(out.body, {
+  const res = new Response(out.body, {
     headers: {
       "content-type": out.contentType,
+      // Deliberately NOT a long s-maxage. These URLs end in .png, so
+      // Cloudflare's edge already caches them by URL honoring this header — and
+      // a URL-keyed edge copy carries no epoch, so a publish could not
+      // invalidate it. Short here; the epoch-keyed named cache below is what
+      // actually absorbs the load.
       "cache-control": out.cacheControl,
       "x-og-cache": out.cacheHit ? "hit" : "miss",
     },
   });
+
+  // `out.body` is an ArrayBuffer, so both Responses are built from it directly.
+  // Do not use res.clone(): cloning ties the stored copy's body to the returned
+  // response's stream, and a failure there is swallowed by the catch below,
+  // producing a silent cache that never populates.
+  await ogCache.put(
+    ogKey,
+    new Response(out.body, {
+      headers: {
+        "content-type": out.contentType,
+        "cache-control": `public, s-maxage=${ogTtl}`,
+        // Marks responses served from the epoch-keyed cache, which short-
+        // circuits before any D1 work. Distinct from renderOgPng's own
+        // "hit"/"miss", which only reports whether the Satori render was
+        // reused and says nothing about read cost.
+        "x-og-cache": "epoch",
+      },
+    }),
+  ).catch((err) => console.error("[og-index] cache put failed:", err));
+
+  return res;
 };
