@@ -73,13 +73,42 @@ reasoning about it, resisting the urge to "fix" healthy code (oracle
 asserts distractor behaviors unchanged). Build these LAST, by combining
 already-gated single-app tasks, so every part's oracle is already proven.
 
-### 4. Minimal-change constraint (8)
+### 4. Minimal-change constraint (8) — BLOCKED, and the count is under review
 
 Symptom's root cause sits in object A, but the model may only submit
-object Z (A/B ship as fixed oracle-side companion files — mechanically
-enforced by the existing companion mechanism, which overwrites same-named
-model output). Finding the legitimate interception point (event, wrapper,
+object Z. Finding the legitimate interception point (event, wrapper,
 subscriber) IS the task. Tests knowledge of BC extension points.
+
+**The enforcement premise this category was allocated on is FALSE.** This
+section used to claim the constraint was "mechanically enforced by the
+existing companion mechanism, which overwrites same-named model output".
+It is not: the bench writes the model's whole submission to ONE file,
+`<taskId>.al`, and copies companions ALONGSIDE it, so a model that
+re-declares a frozen object gets an AL0264 duplicate-object COMPILE error
+while `templates/diagnose.md` rule 2 orders it to return every object.
+See decisions entry 15. Nothing can be built here until that is resolved.
+
+Three things the fix has to settle, none of them yet measured:
+
+1. **Whether models obey "shown but do not return" at all.** A
+   read-only-context block makes non-compliance a fair failure instead of
+   a contract failure, but it is honour-system prompt engineering, not
+   enforcement. It needs a pilot task the way the diagnose format itself
+   needed CG-AL-X065.
+2. **Whether the block should be conditional.** It must render only for
+   tasks that declare read-only objects, or the 56 already-promoted
+   tasks' rendered prompts change for no benefit and inherit a re-audit
+   obligation.
+3. **Whether the prereq app is the better carrier.** A 69xxx object in a
+   separate extension CANNOT be redeclared, which is real mechanical
+   enforcement rather than an instruction. It needs the same rule-2
+   amendment, so it is strictly stronger combined with the block than the
+   block alone, and should be evaluated rather than assumed away.
+
+The count of 8 is itself a bet on the unmeasured premise above. Trimming
+it toward 4-5 and moving the balance to category 1 (which has ~70 mined
+candidates against 3 remaining slots) is the standing recommendation;
+it is a program-level allocation change and has not been applied.
 
 ### 5. Fill-the-hole (8)
 

@@ -430,3 +430,100 @@ Append-only. Each entry: date, decision, why.
     passing test, but re-probe a sample: note that a promoted diagnose task
     cannot be re-probed in place, since `promote` MOVES `starter/` out of the
     draft (see `lethal-sweep-results.md`).
+
+22. **Build-batch-6 premise probes (2026-08-26, Cronus28, BC 28.4, SOAP
+    runner).** Seven claims measured before any slot was spent, per entry 13.
+    Probes at `scratch/probe-batch6/`, `probe-batch6b/`, `probe-batch6c/`.
+    Six confirmed, one killed a candidate.
+    - **Two companies exist on the container**: `My Company` (the session's
+      own) and `CRONUS Danmark A/S`. `ChangeCompany` works from a test, and a
+      row inserted in one company is NOT visible through a ChangeCompany view
+      of the other. **Category 10 is unblocked** - it had been gated on this
+      since categories.md was written.
+    - **`DataPerCompany = false` genuinely SHARES one row set across
+      companies** (a row written here came back with its value intact through
+      a ChangeCompany view), while a default `DataPerCompany` table isolates.
+      categories.md's own category-10 example - "a setting changed in company
+      A shows up in company B" - is real and oracle-able, not assumed.
+    - **`[ConfirmHandler]` engages under the SOAP runner**: the handler ran,
+      received the prompt text, and its reply was honoured. Category 8's
+      dialog-policy candidate (R056) is viable.
+    - **`MakeDateFilter` mutates its `var` parameter in place**: `'t'` became
+      `'08/25/26'`. R072's premise confirmed.
+    - **`EventSubscriberInstance = Manual` scopes to the INSTANCE, not the
+      procedure.** Binding ONE codeunit that carries two unrelated
+      `[EventSubscriber]` procedures activated BOTH (alpha and beta handlers
+      each fired), where neither fired unbound. R111's premise confirmed, and
+      this is a genuine knowledge-gap trap: a codeunit bound for one purpose
+      silently activates every subscription it happens to carry.
+    - **`ReadIsolation::UpdLock` forces a real SQL read past the NST data
+      cache.** A plain repeat `Get` of the same row measured 0 statements /
+      0 rows (entry 11's cache fact), while the identical read under UpdLock
+      measured 1 statement / 1 row. So a FLOOR-shaped perf oracle - assert a
+      read costs AT LEAST one statement - is possible, which is a new oracle
+      shape for this suite and may unlock categories.md's "stretch: locking /
+      isolation" row without needing a second live session.
+    - **KILLED: codeunit-level `Permissions` elevation is denied**, confirming
+      entry 11's cross-reference for this exact shape. Under `Restrictive`
+      with a pushed set granting only `R`, a codeunit declaring
+      `Permissions = tabledata X = IMD` still could not Insert: "Sorry, the
+      current permissions prevented the action. (TableData 70098 ...
+      **IndirectInsert**)". **R138 rejected** - its whole fix is moving the
+      grant onto the helper codeunit so it travels with the code, and that
+      does not work here. Category 12's last seeded candidate is gone; its two
+      remaining slots need fresh designs built on entry 11's working shape
+      (extend the PermissionSet OBJECT).
+
+    Process note: the permissions probe's first version wrapped both writes in
+    `[TryFunction]` to catch the denial and died on "Call to the function
+    'INSERT' is not allowed inside the call to 'RunTests' when it is used as a
+    TryFunction" - the write-inside-try restriction reaching permissions
+    exactly as entry 16 found it reaching IsolatedStorage. The builder brief
+    already carries this rule; the probe author (me) did not follow it.
+    `asserterror` is the only usable idiom for a denied write.
+
+23. **Category-4 format work is sequenced AFTER build batch 6, as its own
+    piece, bundled with the entry-21 de-leak pass (2026-08-26).** Ruling
+    taken after a cross-family second opinion (Fable 5, via pi, given the
+    plan/categories/decisions/ledger files and `templates/diagnose.md`).
+    - **Not folded into batch 6.** Batch 6's ten candidates were premise-probed
+      under the CURRENT prompt contract. Coupling them to unproven format
+      engineering is the pattern entries 14, 17, 18 and 22 punish - four
+      candidates killed by measurement, two of them after being built.
+    - **The format fix is itself an unmeasured premise, and was being treated
+      as engineering.** Nobody has measured whether models actually obey a
+      "shown but do not return" instruction; a model carrying rule-2 habits
+      will still re-declare the frozen object and hit AL0264. It needs a pilot
+      task the way the diagnose format itself needed CG-AL-X065, and that is
+      not a build-batch activity.
+    - **The read-only block MUST be conditional** - rendered only for tasks
+      that declare read-only objects. Otherwise the 56 promoted tasks'
+      rendered prompts change for no benefit and inherit a re-audit
+      obligation. This is an acceptance criterion of the work, not a detail.
+    - **Bundle with entry 21's suite-wide message de-leak**: both are
+      hash-moving and template/oracle-adjacent, and doing them together buys
+      ONE `PROMPT_POLICY_VERSION` bump instead of two.
+    - **"Immediately after batch 6" is load-bearing**, not decoration. Cat 4
+      is 8 of 44 remaining slots and cat-4 candidate mining cannot even be
+      validated against a template that contradicts the enforcement story. If
+      this slips past batch 7's selection, the call was wrong by drift.
+    - **The prereq app is a real alternative and must be evaluated, not
+      assumed away.** A 69xxx object in a separate extension CANNOT be
+      redeclared - mechanical enforcement, where the template block only makes
+      non-compliance a fair failure. Both need the same rule-2 amendment, so
+      combined they are strictly stronger than the block alone.
+    - `categories.md`'s category-4 section stated the falsified enforcement
+      premise as fact and has been corrected in place.
+
+    **Allocation recommendations recorded, NOT applied** (program-level
+    changes, deliberately left for the operator):
+    - Cat 4's count of 8 is a bet on the unmeasured premise above; trim toward
+      4-5 and move the balance to category 1, which holds ~70 mined candidates
+      against 3 remaining slots (entry 9: solved-by-Sonnet tiers a task rather
+      than disqualifying it, so mid-field value is real).
+    - **Cat 12 is in worse shape than cat 4** and is the better candidate if
+      any category is cut rather than fixed: entry 22 killed its last seeded
+      candidate, and it has exactly ONE demonstrated oracle shape (X095's
+      extend-the-PermissionSet-object pattern) for 2 remaining bespoke slots.
+    - Cat 10 unblocked this batch (entry 22) but has essentially no mined
+      candidates for its 4 slots. Mining is needed now, not at batch 8.
