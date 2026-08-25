@@ -90,6 +90,31 @@ codeunit 89304 "CG-AL-X110 Test"
     end;
 
     [Test]
+    procedure PostingIntoALedgerWithNoEntriesStartsNumberingAtOne()
+    var
+        LedgerEntry: Record "CG X110 Ledger Entry";
+        PostBatch: Codeunit "CG X110 Post Batch";
+    begin
+        // [SCENARIO] The very first entry written into an empty ledger is numbered 1
+        // Every other test in this suite scopes itself by batch name and pins entry
+        // numbers only relative to whatever the ledger already held, so the
+        // empty-ledger case is the one place an absolute number is observable.
+        LedgerEntry.DeleteAll();
+        CreateLine('BATCH-16', 10, 'ACC-1', WorkDate(), 100);
+        CreateLine('BATCH-16', 20, 'ACC-2', WorkDate(), -100);
+
+        PostBatch.PostBatch('BATCH-16');
+
+        LedgerEntry.SetRange("Batch Name", 'BATCH-16');
+        LedgerEntry.FindFirst();
+        Assert.AreEqual(1, LedgerEntry."Entry No.",
+            'Expected the first entry written into a ledger that held no entries to be numbered 1');
+        LedgerEntry.FindLast();
+        Assert.AreEqual(2, LedgerEntry."Entry No.",
+            'Expected the second entry to follow the first with no gap');
+    end;
+
+    [Test]
     procedure EntriesFollowLineNumberOrder()
     var
         LedgerEntry: Record "CG X110 Ledger Entry";

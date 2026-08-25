@@ -29,6 +29,13 @@
 .PARAMETER Force
     Rebuild the layout for tasks that already have one.
 
+.PARAMETER Version
+    Version stamped on both generated apps. Bump it above the previous sweep's
+    when re-preparing a task whose oracle changed - see the parameter comment.
+
+.EXAMPLE
+    pwsh -Command "& ./scripts/lethal-t1-prep.ps1 -Tasks @('CG-AL-X101') -Force -Version 1.0.0.4"
+
 .EXAMPLE
     pwsh -File scripts/lethal-t1-prep.ps1 -Tasks CG-AL-X111,CG-AL-X112
 .EXAMPLE
@@ -43,6 +50,19 @@ param(
     [string]$AltoolPath = 'C:/Users/SShadowS/.vscode/extensions/ms-dynamics-smb.al-18.0.2668733/bin/altool.exe',
     [string]$PackageCachePath = 'C:/ProgramData/BcContainerHelper/compiler-cache-15ff3c5d109b/symbols',
     [string]$ControlSymbolPath = 'U:/git/LethAL/extensions/lethal-control/lethal-control.app',
+    # Version stamped on both generated apps.
+    #
+    # 1.0.0.2 is right for a task's FIRST sweep (above 1.0.0.0, so a later
+    # plain re-install does not need Start-NAVAppDataUpgrade).
+    #
+    # Re-sweeping a task whose oracle changed is different, and the failure is
+    # opaque: publish returns a bare "Status Code UnprocessableEntity" and only
+    # the inner message names the cause - "Cannot install ... because a newer
+    # version 1.0.20690.34635 was already installed". LethAL stamps its
+    # instrumented build with a LARGE generated version, so bumping to 1.0.0.4
+    # is still far below it and fails identically. Use something clearly above
+    # that stamp - 2.0.0.0 works - or uninstall the instrumented app first.
+    [string]$Version = '1.0.0.2',
     [switch]$Force
 )
 
@@ -131,10 +151,7 @@ foreach ($id in $Tasks) {
 
     $appManifest = Join-Path $appDir 'app.json'
     $app = Get-Content $appManifest -Raw | ConvertFrom-Json
-    # LethAL publishes a version-bumped instrumented build; BC remembers the
-    # highest ExtensionDataVersion a tenant has seen, so start above 1.0.0.0
-    # or a later re-install of the plain app needs Start-NAVAppDataUpgrade.
-    $app.version = '1.0.0.2'
+    $app.version = $Version
     $app.name = "$id correct"
     $appId = $app.id
     $app | ConvertTo-Json -Depth 10 | Set-Content $appManifest -Encoding UTF8
@@ -154,7 +171,7 @@ foreach ($id in $Tasks) {
         id           = "a1b2c3d4-2$shortId-0000-0000-000000000$shortId"
         name         = "$id LethAL Tests"
         publisher    = 'CentralGauge'
-        version      = '1.0.0.2'
+        version      = $Version
         platform     = '28.0.0.0'
         application  = '28.0.0.0'
         idRanges     = @(@{ from = 80000; to = 89999 })

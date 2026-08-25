@@ -215,7 +215,7 @@ codeunit 89295 "CG-AL-X101 Test"
     end;
 
     [Test]
-    procedure RebuildEmptiesTheBufferFirst()
+    procedure RebuildReplacesTheWholeStatementWhateverTheCallerWasViewing()
     var
         StatementLine: Record "CG X101 Statement Line" temporary;
         StatementBuilder: Codeunit "CG X101 Statement Builder";
@@ -226,6 +226,10 @@ codeunit 89295 "CG-AL-X101 Test"
         SeedEntry(2, 'ACC-T8A', DMY2Date(6, 1, 2026), 20.00, 'A two');
         SeedEntry(3, 'ACC-T8B', DMY2Date(8, 1, 2026), 5.00, 'B only');
         StatementBuilder.BuildStatement('ACC-T8A', StatementLine);
+        // The caller is left looking at a narrowed view of its own buffer. A
+        // rebuild must still replace the whole statement, not just the part
+        // the caller happened to have in view.
+        StatementLine.SetRange("Line No.", 1, 1);
 
         StatementBuilder.BuildStatement('ACC-T8B', StatementLine);
 
