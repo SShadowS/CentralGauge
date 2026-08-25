@@ -125,6 +125,7 @@ scripts/*
 !scripts/trap-probe.ts
 !scripts/harvest-candidate-corpus.ts
 !scripts/id-audit.ts
+!scripts/lethal-t1-prep.ps1
 TestLookupSandbox.md
 bug.md
 dockerstatus.md
