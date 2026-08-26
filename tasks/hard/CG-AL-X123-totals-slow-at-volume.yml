@@ -1,0 +1,28 @@
+id: CG-AL-X123
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'Codeunit "CG X123 Project Hours" exposes TotalHoursBilled, which the project dashboard calls to show how many hours have been logged against a project, drawn from table "CG X123 Labor Entry". For a project that has just started, the figure appears instantly; for a project that has been running a long time and has accumulated hundreds of logged entries, the same figure visibly hangs before it appears, even though the number it eventually shows is correct. A correction entry (negative hours, used to reverse an earlier over-logged entry) must still reduce the total, not be skipped, and a project code nothing has ever been logged against must show exactly 0, with no error. Fix the application so looking up the total costs about the same for a heavily-logged project as for a brand-new one, while still returning exactly the same total as before.'
+domains:
+  - tables
+  - codeunits
+  - performance
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - full-row-scan
+    - sql-counters
+    - aggregate-total
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X123.Test.al
+  testCodeunitId: 89317

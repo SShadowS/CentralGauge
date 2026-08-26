@@ -1,0 +1,33 @@
+id: CG-AL-X128
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Codeunit "CG X128 Collection Policy" lets each company configure its own grace period (how many days an overdue customer invoice is allowed before it counts as late) and its own late-fee percentage, and uses those settings to decide whether an invoice is overdue and how large its late fee should be.
+
+  Staff have noticed that changing the grace period or the late-fee percentage while working in one company also changes it in a completely different company on the same database - a company that had deliberately configured a longer grace period, or a lower late fee, finds its own setting silently replaced by whatever another company's staff set last, and vice versa.
+
+  The intercompany transfer rate used elsewhere in the application is, by design, the same in every company and must stay that way.
+
+  Fix the application so each company's grace period and late-fee percentage belong to that company alone, without changing how the intercompany transfer rate behaves.
+domains:
+  - tables
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - diagnose
+    - multi-company
+    - data-per-company
+    - shared-vs-isolated-setup
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X128.Test.al
+  testCodeunitId: 89322

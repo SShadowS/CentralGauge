@@ -120,6 +120,15 @@ Standing constraints (from CLAUDE.md + session rules):
       is constant not per-row, and a raise rolls back an IsolatedStorage
       delete. Entry 17 re-derives the perf menu from measurement after three
       of entry 8's five items were falsified.
+- [x] Build batch 6 (2026-08-26): CG-AL-X121..X130 promoted. **66 / 100.**
+      Seven premises measured first (entries 22, 27, 28), unblocking category
+      10 and confirming the Manual-binding instance-scope trap. Three
+      candidates killed by measurement (R138, R025, R072) plus two ledger
+      repairs (R098, R101) - all the same shape: true in isolation, no
+      observable difference in the shape a task needs. Five surviving bypasses
+      found by audit, every one past a green probe; X125 needed a restructure
+      because its description stated the whole predicate. First promoted
+      companion file since batch 3 (X122's oracle-side spy).
 - [ ] Remaining composite tasks (5 of 10): explicit behavior specs but
       symptom distant from defect (see hardness-strategy.md), >= 1
       genuinely entangled distractor each (tooling-plan.md T3 gate);
@@ -166,5 +175,6 @@ Standing constraints (from CLAUDE.md + session rules):
 | 2026-08-23 | Scaffolded; categories allocated; perf premise probe started. |
 | 2026-08-23 | Phase 2 batch 1 filtered (Sonnet 20/24, Fable 4/4; decision 9 closes raw filtering). Build batch 1: X066-X075 promoted, 11/100. |
 | 2026-08-23 | Phase 1 mining complete: 7 parallel sweeps, 147 candidates merged into `ledger.md` (R002-R148) with cross-sweep dedup; raw reports committed under `sweeps/`. Lessons: strip spoiler comments from reused volotest solutions; famous-kata contamination risk; the nine `performance-*` volotests carry turnkey SQL-counter oracles; `transactions-counter-lock` hints locking may be single-session testable. |
+| 2026-08-26 | Build batch 6 promoted (66/100). Category 10 unblocked by measurement; three candidates killed by probes; the perf menu narrowed again (entry 26: a filtered FindSet scan is 1 statement at any row count). |
 | 2026-08-25 | Build batch 5 promoted (56/100). Perf-oracle menu re-derived from measurement; attempt-2 leak path traced in source; T2 visibility scored for batches 4 and 5; batch-4 LethAL sweep + 2 kill tests. |
 | 2026-08-23 | Diagnose-task format shipped (Tasks 1-7, `docs/superpowers/plans/2026-08-23-diagnose-task-format.md`): `tasks/starter/<id>/` / `scratch/<id>/starter/` convention, `templates/diagnose.md`, `PROMPT_POLICY_VERSION` folded into `task_sets.hash`, bench attempt-1 wiring, and workbench scaffold (`task new --diagnose`) / probe / promote support. Known gaps: `task import` does not reconstruct `starter/` for a promoted diagnose task; the draft `CHECKLIST.md` stays `naive/`-oriented for diagnose drafts. |

@@ -1,0 +1,30 @@
+id: CG-AL-X126
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  The product catalog reserves display space for a shrunk photo before the real thumbnail image loads, so the page layout does not jump around while pictures stream in. Codeunit "CG X126 Thumbnail Sizer" exposes CalculateThumbnailSize, which takes an original picture's pixel width and height plus the maximum pixel size the reserved box may use, and returns the box's width and height through two var parameters.
+  The design team has confirmed the required behavior with worked examples. A 100x40 original with a maximum of 50 must reserve a 50x20 box, and a 40x100 original with the same maximum must reserve 20x50 - the longer side becomes the maximum and the shorter side shrinks by the same factor. An 80x80 original with a maximum of 32 must reserve exactly 32x32.
+  A 100x40 original with a maximum of 64 must reserve 64x26, and a 20x10 original with a maximum of 15 must reserve 15x8. A 100x40 original with a maximum of 41 must reserve 41x16, not 41x17.
+  A 20x10 original reserves 20x10 for a maximum of 64, and still 20x10 for a maximum of exactly 20. A 100x2 original with a maximum of 10 must reserve 10x1, not 10x0.
+  Fix the application so CalculateThumbnailSize produces the confirmed behavior for every original size and maximum it is given, not only the examples described above.
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - spec-from-tests
+    - boundary-induction
+    - rounding
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X126.Test.al
+  testCodeunitId: 89320

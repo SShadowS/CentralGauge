@@ -1,0 +1,25 @@
+id: CG-AL-X127
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages job cards for work carried out at a site, each identified by a site code. Table "CG X127 Site Setup" records, per company, whether a given site code is currently under a restriction, and codeunit "CG X127 Site Guard" is consulted whenever a job card''s site code is set, refusing the job card when the site is restricted. Users report that a site code they use every day without issue is occasionally refused anyway. Fix the application so a job card''s site code is refused only when the restriction is recorded for the company the job card belongs to.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - diagnose
+    - multi-company
+    - site-restriction
+    - scope-of-check
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X127.Test.al
+  testCodeunitId: 89321

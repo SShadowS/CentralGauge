@@ -1,0 +1,26 @@
+id: CG-AL-X129
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application prices service bookings. Table "CG X129 Rate Card" holds one card per tier and table "CG X129 Booking" holds the bookings, each naming its tier and the hours booked. Codeunit "CG X129 Booking Pricer" prices them: PriceBooking and RepriceTier record an amount onto a booking, QuoteHourly returns what an hourly booking would cost without recording anything, and PriceFlatFeeBooking and QuoteFlatFee do the same for bookings charged as a single flat fee. The flat-fee side works. The hourly side does not work at all: every attempt to price or quote an hourly booking fails outright, so those bookings sit with no amount on them and none of them can be invoiced. Fix the application so hourly bookings price the way the rest of the pricing does.'
+domains:
+  - tables
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - fill-the-hole
+    - stub
+    - spec-from-siblings
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X129.Test.al
+  testCodeunitId: 89323

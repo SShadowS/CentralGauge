@@ -1,0 +1,26 @@
+id: CG-AL-X124
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application keeps a running summary on each shipment. Table "CG X124 Shipment Header" stores a Total Weight and a Line Count alongside the customer and route, and table "CG X124 Shipment Line" holds the individual lines. Codeunit "CG X124 Shipment Totals" exposes Recalculate(ShipmentNo), which brings a shipment''s stored Total Weight and Line Count back in step with the lines it currently has, plus TotalWeightOf and LineCountOf for reading them back. Warehouse staff report that recalculating a shipment with a handful of lines is instant, but a shipment with a couple of hundred lines takes far longer than the extra lines can account for, and the wait grows steadily worse as lines are added. The totals themselves always come out right. Fix the application so recalculating a shipment with a couple of hundred lines is no longer disproportionately slow, while still storing exactly the same totals it stores today.'
+domains:
+  - tables
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: performance-diagnosis
+  tags:
+    - diagnose
+    - performance
+    - read-in-loop
+    - same-row-write-invalidates-cache
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X124.Test.al
+  testCodeunitId: 89318

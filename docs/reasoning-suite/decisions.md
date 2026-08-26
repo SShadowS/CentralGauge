@@ -527,3 +527,170 @@ Append-only. Each entry: date, decision, why.
       extend-the-PermissionSet-object pattern) for 2 remaining bespoke slots.
     - Cat 10 unblocked this batch (entry 22) but has essentially no mined
       candidates for its 4 slots. Mining is needed now, not at batch 8.
+
+24. **The FLOOR-shaped oracle does NOT survive inside a realistic allocator -
+    R025 rejected, and entry 11's cache rule extended (2026-08-26, Cronus28,
+    BC 28.4).** Probe at `scratch/probe-batch6d/`.
+    Entry 22 measured, in isolation, that a plain repeat `Get` of the same row
+    costs 0 statements while the same read under `ReadIsolation::UpdLock`
+    costs 1, and concluded a FLOOR-shaped budget (assert a read costs AT LEAST
+    one statement) was therefore possible. CG-AL-X124 was built on that, and
+    its starter then passed the floor - the task did not discriminate.
+    The cause, measured:
+    - plain repeat read, **no intervening write**: 0 statements (entry 22's
+      shape, reproduced)
+    - plain read **after writing the SAME row**: **1 statement**
+    - `UpdLock` read in that same position: **1 statement** - **not separable**
+
+    So **a write to the SAME row DOES invalidate the cache.** Entry 11 measured
+    only that a write to a DIFFERENT row does not, and that gap is what entry
+    22's conclusion silently relied on. Any realistic number allocator writes
+    the counter row back, which means the next plain read already costs a
+    statement and the floor is satisfied by the un-fixed path too.
+    **R025 rejected**: its defect is unmeasurable in the only shape the task
+    could plausibly take. The floor oracle remains valid ONLY where nothing
+    writes the row being read, and a counter allocator inherently writes it -
+    so categories.md's "stretch: locking / isolation" row stays blocked, and
+    entry 22's optimism about unlocking it is withdrawn.
+
+    Process note: this is the second time in two batches that a fact measured
+    in ISOLATION did not survive contact with the surrounding code shape (the
+    first was entry 18's absence-without-a-control). A premise probe should
+    reproduce the shape the task will actually have, not just the mechanism in
+    the abstract.
+
+25. **`SetFilter` already resolves date shorthand natively - R072 rejected
+    (2026-08-26, Cronus28, BC 28.4).** Probe at `scratch/probe-batch6e/`.
+    Entry 22 measured that `Codeunit "Filter Tokens".MakeDateFilter` mutates
+    its `var` parameter in place (`'t'` became a written-out date), and R072 /
+    CG-AL-X129 was built on the assumption that applying the ORIGINAL text
+    instead of the rewritten one is therefore observable. It is not: the
+    task's starter passed all nine tests.
+    Measured, seeding rows on the work date and the days either side, then
+    comparing what a raw `SetFilter` matches against what the rewritten form
+    matches, for seven inputs:
+
+    | input | raw match | rewritten match | differ |
+    |---|---|---|---|
+    | `t` | today | today | **no** |
+    | `today` | today | today | **no** |
+    | `w` | today | today | **no** |
+    | `yesterday` | yesterday | yesterday | **no** |
+    | `tomorrow` | tomorrow | tomorrow | **no** |
+    | `t..t` | today | today | **no** |
+    | `..t` | today + yesterday | today + yesterday | **no** |
+
+    The base filter parser understands all of them, so the rewrite changes
+    nothing a filter can observe. `MakeDateFilter`'s value is producing a
+    LITERAL string - for display, for storage, or for handing somewhere that
+    is not a filter - not for `SetFilter`. Note also that `MakeDateFilter`
+    leaves `..t` untouched while `SetFilter` still resolves it, which is the
+    same conclusion from the other direction.
+    **R072 rejected**, and category 5 now has zero seeded candidates for its
+    six remaining slots.
+
+    This is the third measurement in two batches where a fact that is TRUE in
+    isolation (entry 22's in-place mutation is real) does not produce an
+    observable defect in the shape a task needs. Entry 24 recorded the rule;
+    this is another instance of it. A premise probe must measure the
+    DIFFERENCE the task will grade, not just that the mechanism exists.
+
+26. **A filtered `FindSet` scan costs ONE statement regardless of how many rows
+    it returns (2026-08-26, Cronus28, BC 28.4).** Probe at
+    `scratch/probe-batch6f/`. Measured at five row counts, with the buffered
+    inserts flushed out of the window first: **n=10 -> 1, n=50 -> 1, n=200 ->
+    1, n=500 -> 1, n=1000 -> 1.** Result-set paging is not visible in
+    `SqlStatementsExecuted`.
+
+    Two things this settles, both raised by the batch-6 perf audit against
+    CG-AL-X124:
+    - **The audit's hypothesis was wrong, and so was its worry.** It proposed
+      that 4 of X124's correct-side 7 statements were ~200 buffered
+      `Insert()` calls flushing inside the measured window at the first read
+      of the line table, and warned the graded delta therefore carried the
+      very N-dependence the budget exists to exclude. Forcing the flush out of
+      the window with a `Count()` before the snapshot left the delta at 7
+      unchanged, and this probe shows the scan itself is flat in N. So X124's 7
+      is FIXED overhead, the budget of 20 is safe, and no N-dependence exists.
+      The finding was worth chasing and the reasoning was sound - it was simply
+      not what the container does.
+    - **Statements cannot grade scan width at all.** Combined with entry 17
+      (missing keys are invisible because `SqlRowsRead` counts rows RETURNED,
+      not scanned), this closes the picture: rows-read is the ONLY counter that
+      sees how much of a table a query touched, and statements see only the
+      number of round trips. A statements budget therefore grades round-trip
+      COUNT and nothing else - which is exactly why X124 (per-row Get plus
+      per-row Modify, ~2 per line) is statement-measurable while X123
+      (one scan versus one aggregate) is not.
+
+    Process note, third instance of the same shape: entries 24 and 25 both
+    recorded a fact that was true in isolation but produced no observable
+    difference in the task's shape. This is the mirror image - a hypothesis
+    about the measurement apparatus that was plausible, specific, and wrong.
+    Measuring it cost one probe and saved widening a budget that did not need
+    widening.
+
+27. **`[ConfirmHandler]` dispatch reaches APPLICATION code, and a declared
+    handler that never fires FAILS the test (2026-08-26, Cronus28, BC 28.4).**
+    Probe at `scratch/probe-batch6g/`.
+    Entry 22 measured that a declared ConfirmHandler engages, but it raised
+    `Confirm` inside the TEST codeunit. CG-AL-X125 raises it from the app under
+    test and appeared not to work, so the narrower question had to be settled.
+    Measured, with the dialog raised from a separate application codeunit and
+    `GuiAllowed` returning No throughout:
+    - bare `Confirm(text)`: handler fired, count 1, reply honoured
+    - `Confirm(text, false)` with an explicit default: fired, count 1
+    - `Confirm` preceded by a table write in the same call: fired, count 1
+
+    So dispatch is not limited to the test codeunit, an explicit default does
+    not bypass the handler, and an earlier write in the same call does not
+    suppress it. Entry 22's conclusion holds and is now wider.
+
+    **The separate fact, which is what actually bit X125:** a test declaring
+    `[HandlerFunctions('X')]` whose handler is NEVER invoked FAILS, with "The
+    following UI handlers were not executed: X". Observed on X125's correct side
+    - its silent-path tests declared a handler precisely so they could assert a
+    zero ask count, and failed for having nothing to handle.
+
+    Consequence for the oracle shape, and it is the opposite of what looks
+    safer: a test that expects NO dialog must NOT declare a handler. The
+    absence is then asserted by the platform itself - if the code under test
+    raises a dialog, there is no handler and the test fails. That is exactly the
+    shape X125 shipped originally, which an audit flagged as resting on an
+    unmeasured premise. The premise is now measured and the shape is correct;
+    adding a handler "to be explicit" is what breaks it.
+
+28. **Two INDEPENDENTLY bound Manual subscribers to the same event both fire,
+    and unbinding one does not affect the other (2026-08-26, Cronus28,
+    BC 28.4).** Probe at `scratch/probe-batch6h/`.
+    Entry 22 measured two subscriber PROCEDURES on ONE bound instance. This is
+    the different claim CG-AL-X122's oracle-side spy needs: an application
+    notifier and an oracle spy, each `EventSubscriberInstance = Manual`, bound
+    separately, both watching the same event. Measured across three phases:
+    - app subscriber bound alone: app 1, spy 0
+    - spy additionally bound: app 1, spy 1 - **both fire**
+    - app unbound, spy still bound: app 0, spy 1 - unbinding is independent
+
+    So an oracle-side spy can count an event the application's own subscriber
+    is also handling, without either suppressing the other. X122's deferred
+    fix is unblocked.
+
+    **Process note, because this probe was wrong twice before it was right, and
+    both mistakes were mine rather than the platform's:**
+    1. First attempt bound a second INSTANCE of the test codeunit as the spy
+       and then read the counter off the RUNNING instance. Different objects,
+       so it reported zero hits and looked exactly like a platform limitation -
+       "test-local Manual subscribers do not fire". It would have been recorded
+       as a false platform fact, and it contradicts a measurement already in
+       the builder brief. A spy must be a separate codeunit with a getter,
+       which is also the shape the real fix takes.
+    2. Second attempt renamed the subscriber's parameter and hit AL0282: an
+       event subscriber's parameter must carry the PUBLISHER's parameter name.
+       Renaming it back to `Hits` then shadowed the codeunit's own `Hits`
+       counter, so `Hits += 1` incremented the parameter and the getter still
+       returned zero - the same false conclusion by a second route.
+
+    The general lesson, and it is the sharper version of entries 24 and 26:
+    measure the shape the fix will actually take, and when a probe reports "the
+    platform cannot do this", suspect the probe first. Two of this batch's
+    candidates died on real measurements; this one nearly died on two fake ones.

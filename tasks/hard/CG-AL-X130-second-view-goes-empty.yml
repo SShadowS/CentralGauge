@@ -1,0 +1,25 @@
+id: CG-AL-X130
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: 'The application manages onboarding for new customers. Codeunit "CG X130 Signup Queue" collects the ids of customers waiting for a welcome call, and codeunit "CG X130 Outreach Tracker" is attached to the queue so it can report at any time exactly which customers are still waiting, including customers who sign up after it starts watching. At the end of each business day, StartNewDay is called on the queue so the next day begins with no customers waiting. From the second day onward, users report that the tracker keeps reporting the same handful of customers from the first day and never picks up any customer who signs up on a later day, even though the queue itself correctly shows only the new day''s signups. Fix the application so the tracker always reports exactly the same waiting customers as the queue, on every day, while continuing to update immediately as new customers sign up.'
+domains:
+  - codeunits
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: records-runtime
+  tags:
+    - diagnose
+    - list-of-t
+    - clear-rebinds
+    - shared-list
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X130.Test.al
+  testCodeunitId: 89324

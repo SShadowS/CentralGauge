@@ -1,0 +1,33 @@
+id: CG-AL-X125
+prompt_template: diagnose.md
+fix_template: bugfix.md
+max_attempts: 2
+description: |-
+  Codeunit "CG X125 Refund Releaser" exposes ReleaseRefund over a "CG X125 Refund Request" record. Most requests release immediately with no interruption, but some deserve a deliberate question first, based on the request's amount and on what is already on record for that customer.
+
+  The team has confirmed the required behavior for these requests: a request from customer 'CUST-A', which has no declined request on record, for 400 releases immediately, asking nothing, and "Manual Overrides" stays unchanged. A request from customer 'CUST-A' for 800 asks "Refund request %1 needs approval before release. Release it anyway?" (with %1 the request's "Entry No.") before doing anything else - answering Yes releases it, returns true, and adds one to "Manual Overrides"; answering No leaves the request exactly as it was, returns false, and records the decline against that customer and amount. A request from customer 'CUST-B', which already has one declined request on record, for only 50 asks the very same question before releasing, and is handled the same way once answered.
+
+  Users report that ReleaseRefund does not reliably reproduce this behavior for every request it is given - only for the ones already described above. Fix the application so ReleaseRefund produces the confirmed behavior for every request it is given, not only the ones described above.
+domains:
+  - codeunits
+  - tables
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
+metadata:
+  category: business-logic
+  tags:
+    - diagnose
+    - spec-from-tests
+    - hidden-superset
+    - policy-lookup
+    - customer-classification
+    - boolean-logic
+  difficulty: hard
+  cohort: reasoning-100
+  origin: hand-authored
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-X125.Test.al
+  testCodeunitId: 89319
