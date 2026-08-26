@@ -6,7 +6,7 @@ reason in Notes) - they stop re-mining the same ground.
 
 **Counts** (update when editing rows):
 
-- Candidates mined: 148 (81 raw + 1 filtered + 10 rejected + 56 promoted)
+- Candidates mined: 149 (81 raw + 1 filtered + 11 rejected + 56 promoted)
 - Promoted tasks not sourced from a ledger row: 5 composites (C001-C005),
   CG-AL-X111 (re-aimed after R098 was measured false), and CG-AL-X124,
   CG-AL-X128, CG-AL-X129, CG-AL-X130 (batch-6 fresh designs - see below)
@@ -175,6 +175,7 @@ reason in Notes) - they stop re-mining the same ground.
 | R146 | wi:80446 | 10 | - | - | raw | A company name captured at IMPORT TIME becomes permanently stale (and un-clearable) after the company is later renamed, blocking deletion forever - a denormalized-name-never-refreshed trap, category 10 (multi-company semantics). |
 | R147 | wi:81498 | 1 | - | - | raw | A translation table's key field is declared SHORTER than the base table's key it mirrors, so long keys silently TRUNCATE and COLLIDE - a schema-mismatch-between-sibling-tables bug. |
 | R148 | wi:75902 | 1 | - | - | raw | Two code paths post the same kind of transaction; only ONE rewrites a field the SHARED posting routine depends on, so the OTHER path silently re-applies stale data - an asymmetric-precondition bug across two callers of one shared routine. |
+| R149 | pr53808:tryfunction-as-rollback-around-writes | - | - | - | rejected | Model recommends [TryFunction] as a safety net around DB writes when the requirement is transactional isolation and the answer is Codeunit.Run. Premise evidence unusually strong: observed twice in one session on a real PR review (ADO 53808), where a frontier model stated the no-rollback fact CORRECTLY and still chose the wrong tool - a tool-SELECTION failure, distinct from H008 (TryFunction pattern), H038/H041 (Codeunit.Run used directly). REJECTED 2026-08-26 on hardness, not validity (decisions 29): oracle-side it is unobservable (a write inside any caller-defined TryFunction is refused under RunTests, so the naive form never executes); starter-side it DOES discriminate, but the AL error names the defect outright ("not allowed inside ... TryFunction"), so any model repairs it on attempt 2. Revisit only if a non-test execution path settles whether the restriction is production semantics rather than a RunTests artifact. |
 
 ## Sweep round 1 summary (2026-08-23)
 

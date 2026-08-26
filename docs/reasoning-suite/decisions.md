@@ -694,3 +694,46 @@ Append-only. Each entry: date, decision, why.
     measure the shape the fix will actually take, and when a probe reports "the
     platform cannot do this", suspect the probe first. Two of this batch's
     candidates died on real measurements; this one nearly died on two fake ones.
+
+29. **A plain table `Insert` is REFUSED inside a caller-defined
+    `[TryFunction]` under the SOAP test runner**, generalising entry 16 from
+    `IsolatedStorage.Delete` and the permissions probe's denied write to
+    ordinary table writes. Measured 2026-08-26 on Cronus28 (BC 28.4), probe
+    `scratch/probe-trywrite/` (codeunit 80089, table 70089), re-runnable.
+    The probe died at its FIRST case - a bare `Insert` inside a TryFunction
+    that does not even fail - with "Call to the function 'INSERT' is not
+    allowed inside the call to 'RunTests' when it is used as a TryFunction."
+    The no-rollback question the probe was built to answer is therefore
+    UNANSWERABLE from inside a test: the write never executes.
+
+    Consequence for oracle authoring: unchanged, and now confirmed for the
+    general case - `asserterror` is the only usable idiom, never a
+    TryFunction wrapper. That rule is already in the builder brief; this is
+    the third time a probe author has rediscovered it the hard way
+    (entry 16, the permissions probe, and this one). Consider it settled and
+    stop re-measuring it.
+
+    Consequence for TASK design, which is the new part. The recurring
+    real-world defect "model recommends `[TryFunction]` as a safety net
+    around database writes, when the requirement is transactional isolation
+    and the answer is `Codeunit.Run`" is a genuine and well-evidenced model
+    failure - observed twice in one session on a real PR review, where a
+    frontier model stated the no-rollback fact correctly and still chose the
+    wrong tool. It is NOT buildable as a trap task here, for a reason that
+    survives entry 28's "suspect the probe first" test:
+
+    - Oracle-side: unobservable. The oracle cannot exercise a
+      TryFunction-wrapped write at all.
+    - Starter-side: observable but self-explaining. A starter whose
+      TryFunction wraps a write does fail, and a `Codeunit.Run` reference
+      solution does pass, so it DISCRIMINATES - but the AL error names the
+      defect outright ("not allowed inside ... TryFunction"), so any model
+      repairs it on attempt 2. It fails the hardness bar rather than the
+      validity bar.
+
+    Left open: whether the restriction is genuine production semantics or an
+    artifact of `RunTests` being itself a TryFunction. The seed PR quoted in
+    the `extract-trap-task` skill claims the production rule ("TryFunctions
+    can't contain database writes on-prem"). This harness cannot settle it -
+    every measurement from inside a test carries the `RunTests` wrapper. A
+    production-scope answer would need a non-test execution path.
