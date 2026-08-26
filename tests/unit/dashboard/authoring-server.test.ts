@@ -1224,6 +1224,7 @@ describe("dashboard/server", () => {
             signature: { sites: [] },
             responses: [],
             rows: [],
+            totalCostUsd: 0,
           }),
         writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),
       }),
@@ -1268,6 +1269,7 @@ describe("dashboard/server", () => {
             signature: { sites: [] },
             responses: [],
             rows: [],
+            totalCostUsd: 0,
           });
         },
         writeRunArtifact: () => Promise.resolve("/tmp/nope/run.json"),

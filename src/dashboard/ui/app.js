@@ -182,11 +182,17 @@ function renderTrapSummary(run) {
 /** Where the run was saved, or why it was not. */
 function renderArtifactNote(run) {
   const note = document.getElementById("artifact-note");
+  // What this run cost, beside where it was saved. `totalCostUsd` is the
+  // sum of each adapter's own `estimatedCost`; a run whose models reported
+  // no usage shows nothing rather than a misleading $0.00.
+  const cost = typeof run.totalCostUsd === "number" && run.totalCostUsd > 0
+    ? ` — $${run.totalCostUsd.toFixed(4)}`
+    : "";
   if (run.artifactPath) {
-    note.textContent = `Saved to ${run.artifactPath}`;
+    note.textContent = `Saved to ${run.artifactPath}${cost}`;
     note.className = "artifact-note";
   } else if (run.artifactError) {
-    note.textContent = `Could not save this run: ${run.artifactError}`;
+    note.textContent = `Could not save this run: ${run.artifactError}${cost}`;
     note.className = "artifact-note artifact-note-failed";
   } else {
     note.textContent = "";

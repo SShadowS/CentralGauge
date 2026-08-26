@@ -104,6 +104,10 @@ export function createModelCaller(
       return {
         content: streamed.response.content,
         finishReason: streamed.response.finishReason,
+        // Carried, not dropped. The adapter already priced this
+        // (`estimatedCost`), and without it a quick run spends real money
+        // and reports nothing.
+        usage: streamed.response.usage,
       };
     }
 
@@ -111,6 +115,7 @@ export function createModelCaller(
     return {
       content: result.response.content,
       finishReason: result.response.finishReason,
+      usage: result.response.usage,
     };
   };
 }

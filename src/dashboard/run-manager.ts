@@ -28,7 +28,7 @@ import type {
 } from "../al/trap-signature.ts";
 import type { CandidateResolution } from "../llm/candidate-resolution.ts";
 import type { PromptTemplateRenderer } from "../llm/prompt-building.ts";
-import type { LLMResponse } from "../llm/types.ts";
+import type { LLMResponse, TokenUsage } from "../llm/types.ts";
 import type { DraftSummary } from "./drafts.ts";
 
 import { parseAlObjects } from "../al/object-parser.ts";
@@ -43,6 +43,7 @@ import {
   classifyAgainstSignature,
   deriveTrapSignature,
 } from "../al/trap-signature.ts";
+import { recordRunCosts } from "./cost-ledger.ts";
 import { resolveCandidate } from "../llm/candidate-resolution.ts";
 import {
   buildGenerationPrompt,
@@ -144,6 +145,12 @@ export interface ModelResponse {
    * ran, even when `findings` came back empty.
    */
   prereqBinding?: BinderResult;
+  /**
+   * What this response cost, as the adapter reported it. Absent when the
+   * caller supplied no usage (every test fake) or when the call threw
+   * before any tokens were billed.
+   */
+  usage?: TokenUsage;
 }
 
 export interface QuickRun {
@@ -159,6 +166,12 @@ export interface QuickRun {
   signature: TrapSignature;
   responses: ModelResponse[];
   rows: MatrixRow[];
+  /**
+   * Sum of every response's `usage.estimatedCost`, in USD. `0` when no
+   * response reported one, which is also what every test sees. Summed here
+   * rather than in the UI so the artifact on disk carries it too.
+   */
+  totalCostUsd: number;
 }
 
 /** What a model is asked. Mirrors the `LLMRequest` fields the bench's
@@ -171,7 +184,21 @@ export interface ModelRequest {
 export type ModelCaller = (
   model: string,
   request: ModelRequest,
-) => Promise<{ content: string; finishReason: LLMResponse["finishReason"] }>;
+) => Promise<{
+  content: string;
+  finishReason: LLMResponse["finishReason"];
+  /**
+   * Token usage as the adapter reported it, including the adapter's own
+   * `estimatedCost`. Optional because every test injects a fake caller and
+   * a fake has no usage to report; production always supplies it.
+   *
+   * The dashboard used to drop this on the floor: `createModelCaller`
+   * returned only content and finishReason, so a quick run spent real money
+   * and showed nothing. Every adapter already computes `estimatedCost`
+   * (see anthropic-adapter.ts:442), so carrying it costs nothing.
+   */
+  usage?: TokenUsage;
+}>;
 
 /**
  * Renders the prompt for one model and calls `call` with it, turning the
@@ -224,7 +251,7 @@ async function runOneModel(
     prompt = applied.prompt;
     systemPrompt = applied.systemPrompt;
 
-    const { content, finishReason } = await call(model, {
+    const { content, finishReason, usage } = await call(model, {
       prompt: applied.prompt,
       ...(applied.systemPrompt !== undefined
         ? { systemPrompt: applied.systemPrompt }
@@ -246,6 +273,7 @@ async function runOneModel(
       objects,
       hasParseError: hasError,
       classification,
+      ...(usage !== undefined ? { usage } : {}),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -452,6 +480,10 @@ export async function runQuick(opts: {
     }),
   );
 
+  // Best-effort spend record. Never throws; a gap in the ledger is better
+  // than a failed run.
+  await recordRunCosts(opts.draft.id, boundResponses);
+
   return {
     draftId: opts.draft.id,
     startedAt: new Date().toISOString(),
@@ -460,6 +492,10 @@ export async function runQuick(opts: {
     // than re-derived by the UI from a copy of the identity rules.
     responses: boundResponses,
     rows,
+    totalCostUsd: boundResponses.reduce(
+      (sum, r) => sum + (r.usage?.estimatedCost ?? 0),
+      0,
+    ),
   };
 }
 
