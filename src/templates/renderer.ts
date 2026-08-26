@@ -39,7 +39,17 @@ export class TemplateRenderer {
       );
     }
 
-    const content = await Deno.readTextFile(templatePath);
+    // Normalise CRLF at the read boundary. This repo has known CRLF/LF
+    // drift on Windows checkouts, and a template stored with CRLF renders a
+    // prompt containing CRLF - which means the SAME task sends different
+    // bytes to a model depending on who checked the repo out. The prompt is
+    // part of a task's identity, so that is a reproducibility defect, not a
+    // formatting preference. Normalising here fixes every caller at once.
+    const CR = String.fromCharCode(13);
+    const content = (await Deno.readTextFile(templatePath)).replaceAll(
+      CR,
+      "",
+    );
     this.templateCache.set(templateName, content);
     return content;
   }
