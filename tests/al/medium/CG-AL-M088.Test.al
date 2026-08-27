@@ -73,4 +73,19 @@ codeunit 80088 "CG-AL-M088 Test"
         Result := SubEngine.CalculateProratedRefund(100, -5, "Subscription Plan"::Basic);
         Assert.AreEqual(0, Result, 'Negative days used should return 0');
     end;
+
+    [Test]
+    procedure TestRefund_ZeroDaysUsed()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] Zero days used is a full refund, not a rejected one. The spec
+        // rejects only NEGATIVE days, so the guard boundary matters: the tests above
+        // pass 15, 10 and -5 and never zero, so widening the guard to <= 0 silently
+        // zeroes every same-day cancellation.
+        // Basic = 30 days total. Amount 300. Used 0 days.
+        // Refund = (300 / 30) * (30 - 0) = 10 * 30 = 300. Exact, no rounding.
+        Result := SubEngine.CalculateProratedRefund(300, 0, "Subscription Plan"::Basic);
+        Assert.AreEqual(300, Result, 'Cancelling before any day is used must refund the whole amount');
+    end;
 }

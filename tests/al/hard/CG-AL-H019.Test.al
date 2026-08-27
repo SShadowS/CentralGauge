@@ -29,33 +29,31 @@ codeunit 80020 "CG-AL-H019 Test"
     end;
 
     [Test]
-    procedure TestTryProcessData_Success()
+    procedure TestTryProcessData_ReportsSuccess()
     var
         Success: Boolean;
     begin
+        // Replaces TestTryProcessData_Success and TestTryProcessData_NoException,
+        // which both called this and then asserted Assert.IsTrue(true, ...) - so a
+        // TryFunction that reported FAILURE satisfied them both.
         Success := InternalService.TryProcessData();
 
-        // TryFunction should not throw, just return success/failure
-        Assert.IsTrue(true, 'TryFunction should execute without throwing');
-    end;
-
-    [Test]
-    procedure TestTryProcessData_NoException()
-    var
-        Success: Boolean;
-    begin
-        // TryFunction catches exceptions internally
-        Success := InternalService.TryProcessData();
-
-        // Regardless of internal logic, should not throw
-        Assert.IsTrue(true, 'TryFunction should handle errors gracefully');
+        // Spec item 3: 'Returns true on success'. Nothing is asserted about how the
+        // helper is written or what it returns.
+        Assert.IsTrue(Success, 'The processing attempt was reported as unsuccessful');
     end;
 
     [Test]
     procedure TestCodeunitAccessible()
+    var
+        Result: Text;
     begin
-        // Since we're in the same app, Internal access should work
-        // This test verifies compilation succeeds with Internal access
-        Assert.IsTrue(true, 'Internal codeunit should be accessible within same app');
+        // Being in the same app, Internal access works - the compile proves that
+        // much on its own. Calling through and asserting on the answer is what
+        // makes the test observe anything at runtime; it previously asserted
+        // Assert.IsTrue(true, ...).
+        Result := InternalService.GetPublicData();
+
+        Assert.AreNotEqual('', Result, 'An internal codeunit reached from inside the same app should still answer');
     end;
 }

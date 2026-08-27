@@ -108,4 +108,26 @@ codeunit 80008 "CG-AL-H007 Test"
         // At max boundary
         ValidationEngine.ValidateInRange(100, 10, 100, 'Amount');
     end;
+
+    [Test]
+    procedure TestValidateInRange_ErrorTextNamesBoundsInOrder()
+    var
+        MinValue: Decimal;
+        MaxValue: Decimal;
+    begin
+        // [SCENARIO] The message names the bounds the right way round. The two
+        // asserterror tests above stop at the substring 'Value must be between',
+        // which is short of the substituted values - so a solution that emitted the
+        // bounds swapped ('between 100 and 10') satisfied them both.
+        MinValue := 10;
+        MaxValue := 100;
+
+        asserterror ValidationEngine.ValidateInRange(5, MinValue, MaxValue, 'Amount');
+
+        // Building the expected text with StrSubstNo over the same Decimal locals in
+        // (min, max) order makes the assertion order-sensitive while still matching
+        // the implementation's own decimal rendering, so the baseline cannot go red
+        // on a Format(Decimal) surprise.
+        Assert.ExpectedError(StrSubstNo('Value must be between %1 and %2', MinValue, MaxValue));
+    end;
 }

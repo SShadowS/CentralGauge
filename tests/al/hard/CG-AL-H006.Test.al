@@ -37,7 +37,24 @@ codeunit 80007 "CG-AL-H006 Test"
         CountBefore := Counter.GetCallCount();
         CountAfter := Counter.GetCallCount();
 
+        // Absolute before relative: a getter that always answered 0 would satisfy
+        // AreEqual(CountBefore, CountAfter) on its own.
+        Assert.AreEqual(2, CountBefore, 'GetCallCount should report the two increments already made');
+        Assert.AreEqual(2, CountAfter, 'GetCallCount should still report two after being read once');
         Assert.AreEqual(CountBefore, CountAfter, 'GetCallCount should not change the count');
+    end;
+
+    [Test]
+    procedure GetCallCountReportsTheNumberOfIncrements()
+    begin
+        // [SCENARIO] GetCallCount reports the running count, not merely a value that
+        // is stable and zero. Every other test that touches it asserts only a
+        // relative or zero-valued property, so a getter hardcoded to 0 passed them all.
+        Counter.Reset();
+        Counter.IncrementAndGet();
+        Counter.IncrementAndGet();
+
+        Assert.AreEqual(2, Counter.GetCallCount(), 'Expected the call count to report the two increments already made');
     end;
 
     [Test]
@@ -114,6 +131,9 @@ codeunit 80007 "CG-AL-H006 Test"
         // Use a different variable pointing to same SingleInstance codeunit
         Count2 := Counter2.GetCallCount();
 
+        // Again absolute first, so a constant-0 getter cannot satisfy the shared-state
+        // claim by answering 0 through both variables.
+        Assert.AreEqual(2, Count2, 'The second variable should report the two increments made through the first');
         Assert.AreEqual(Count1, Count2, 'SingleInstance should share state across variables');
     end;
 }
